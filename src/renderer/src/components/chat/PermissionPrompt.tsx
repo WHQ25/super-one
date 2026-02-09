@@ -15,19 +15,19 @@ export function PermissionPrompt() {
   const display = getToolDisplay(toolName, input, cwd, homedir)
 
   return (
-    <div className="mx-3 mb-2 rounded-lg border border-neutral-600 bg-neutral-700/60 p-3">
+    <div className="mx-3 mb-2 rounded-lg border border-border bg-muted/60 p-3">
       <div className="mb-2 flex items-center gap-1.5 text-xs">
-        <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-neutral-400" />
-        <span className="font-medium text-neutral-200">{toolName}</span>
+        <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="font-medium text-foreground">{toolName}</span>
       </div>
       {display.summary && (
-        <p className="mb-2 truncate text-xs text-neutral-400">{display.summary}</p>
+        <p className="mb-2 truncate text-xs text-muted-foreground">{display.summary}</p>
       )}
       {blockedPath && (
         <p className="mb-2 truncate text-xs text-amber-400">Blocked path: {blockedPath}</p>
       )}
       {decisionReason && (
-        <p className="mb-2 text-xs text-neutral-500">{decisionReason}</p>
+        <p className="mb-2 text-xs text-muted-foreground">{decisionReason}</p>
       )}
       <div className="flex gap-2">
         <Button

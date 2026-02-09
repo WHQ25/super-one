@@ -12,7 +12,7 @@ export function ChatSuggestions() {
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4">
-      <p className="text-sm font-medium text-neutral-300">Try an example to design...</p>
+      <p className="text-sm font-medium text-foreground">Try an example to design...</p>
       <div className="flex w-full flex-col gap-2">
         {SUGGESTIONS.map((text) => (
           <button
@@ -24,7 +24,7 @@ export function ChatSuggestions() {
           </button>
         ))}
       </div>
-      <p className="mt-2 text-center text-xs text-neutral-500">
+      <p className="mt-2 text-center text-xs text-muted-foreground">
         Claude Code will help you design and iterate on your product.
       </p>
     </div>

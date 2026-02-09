@@ -36,8 +36,8 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
   return (
     <div
       className={cn(
-        'my-1 rounded bg-neutral-700/50 transition-colors',
-        expandable && 'cursor-pointer hover:bg-neutral-700/70'
+        'my-1 rounded bg-muted/50 transition-colors',
+        expandable && 'cursor-pointer hover:bg-muted/70'
       )}
     >
       <div
@@ -47,18 +47,18 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
         {isStreaming ? (
           <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
         ) : (
-          <ToolIcon icon={display.icon} className="size-3 shrink-0 text-neutral-400" />
+          <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className="font-medium text-neutral-300">{toolName}</span>
+        <span className="font-medium text-foreground">{toolName}</span>
         {summary && (
-          <span className="min-w-0 truncate text-neutral-500">{summary}</span>
+          <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
         )}
         {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
-          <span className="ml-auto shrink-0 text-neutral-500">{Math.round(elapsedSeconds)}s</span>
+          <span className="ml-auto shrink-0 text-muted-foreground">{Math.round(elapsedSeconds)}s</span>
         )}
         {expandable && (
           <ChevronRight
-            className={cn('ml-auto size-3 shrink-0 text-neutral-500 transition-transform duration-200', expanded && 'rotate-90')}
+            className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')}
           />
         )}
       </div>
@@ -72,8 +72,8 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
             <div className="px-2 pb-1.5">
               {toolName === 'Bash' && summary && (
                 <div className="mb-1">
-                  <div className="mb-0.5 text-[11px] font-medium text-neutral-500">Command</div>
-                  <div className="overflow-x-auto rounded bg-neutral-900/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-neutral-300 whitespace-pre-wrap">
+                  <div className="mb-0.5 text-[11px] font-medium text-muted-foreground">Command</div>
+                  <div className="overflow-x-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap">
                     {summary}
                   </div>
                 </div>
@@ -82,7 +82,7 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
               {toolName === 'Write' && <WriteDiff params={params} />}
               {hasResult && !hasDiff && (
                 <div>
-                  {toolName === 'Bash' && <div className="mb-0.5 text-[11px] font-medium text-neutral-500">Output</div>}
+                  {toolName === 'Bash' && <div className="mb-0.5 text-[11px] font-medium text-muted-foreground">Output</div>}
                   <ToolResult text={result!} />
                 </div>
               )}
@@ -108,13 +108,13 @@ function ToolResult({ text }: { text: string }) {
 
   return (
     <div>
-      <div className="overflow-x-auto rounded bg-neutral-900/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-neutral-400 whitespace-pre-wrap">
+      <div className="overflow-x-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
         {visibleText}
       </div>
       {isLong && (
         <button
           onClick={(e) => { e.stopPropagation(); setShowAll((s) => !s) }}
-          className="mt-0.5 flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-300 transition-colors"
+          className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', showAll && 'rotate-90')} />
           {showAll ? 'Collapse' : `${hiddenCount} more line${hiddenCount > 1 ? 's' : ''}`}
@@ -144,8 +144,8 @@ function QAResult({ text }: { text: string }) {
   return (
     <div className="space-y-1">
       {pairs.map((pair, i) => (
-        <div key={i} className="rounded bg-neutral-900/70 px-2 py-1.5 text-[11px] leading-relaxed">
-          <div className="text-neutral-400">{pair.question}</div>
+        <div key={i} className="rounded bg-background/70 px-2 py-1.5 text-[11px] leading-relaxed">
+          <div className="text-muted-foreground">{pair.question}</div>
           <div className="text-green-400">{pair.answer}</div>
         </div>
       ))}
@@ -205,12 +205,12 @@ function DiffView({ lines }: { lines: DiffLine[] }) {
   const gw = gutterWidth(maxLine)
 
   return (
-    <div className="overflow-x-auto rounded bg-neutral-900/70 p-2 text-[11px] font-mono leading-relaxed text-neutral-300">
+    <div className="overflow-x-auto rounded bg-background/70 p-2 text-[11px] font-mono leading-relaxed text-foreground">
       {lines.map((line, i) => {
         const s = LINE_STYLE[line.kind]
         return (
           <div key={i} className={s.bg}>
-            <span className="select-none text-neutral-600 mr-2">
+            <span className="select-none text-muted-foreground/50 mr-2">
               {String(line.lineNum).padStart(gw)}
             </span>
             <span className={cn('select-none mr-1', s.markerColor)}>{s.marker}</span>
@@ -275,7 +275,7 @@ function WriteDiff({ params }: { params: Record<string, unknown> }) {
     <div>
       <DiffView lines={visibleLines} />
       {truncated && (
-        <div className="mt-0.5 px-2 text-[11px] text-neutral-500">
+        <div className="mt-0.5 px-2 text-[11px] text-muted-foreground">
           ... {allLines.length - MAX_LINES} more lines
         </div>
       )}

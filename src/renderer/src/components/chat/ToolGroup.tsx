@@ -24,7 +24,7 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
     <div className="my-1">
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-1.5 rounded bg-neutral-700/50 px-2 py-1.5 text-xs text-neutral-400 transition-colors hover:bg-neutral-700/70"
+        className="flex w-full items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70"
       >
         <ChevronRight
           className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-90')}
@@ -32,12 +32,12 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
         {hasStreamingTool && (
           <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
         )}
-        <span className="text-neutral-300">{summary}</span>
-        <span className="ml-auto shrink-0 text-neutral-500">{toolUses.length} calls</span>
+        <span className="text-foreground">{summary}</span>
+        <span className="ml-auto shrink-0 text-muted-foreground">{toolUses.length} calls</span>
       </button>
 
       {expanded && (
-        <div className="ml-2 mt-0.5 border-l border-neutral-700 pl-2">
+        <div className="ml-2 mt-0.5 border-l border-border pl-2">
           {blocks.map((block, i) => {
             if (block.type === 'tool_use') {
               return (
@@ -46,7 +46,7 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
             }
             if (block.type === 'tool_result') {
               return (
-                <div key={i} className="my-1 rounded bg-neutral-700/50 px-2 py-1 text-xs text-neutral-400">
+                <div key={i} className="my-1 rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
                   {block.summary}
                 </div>
               )

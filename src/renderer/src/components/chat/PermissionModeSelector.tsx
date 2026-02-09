@@ -7,13 +7,14 @@ import type { PermissionMode } from '../../../../shared/agent-types'
 /** Ordered list of permission modes — used for cycling via Shift+Tab. */
 export const PERMISSION_MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions']
 
-const modes: { id: PermissionMode; label: string; description: string; icon: React.ReactNode; color: string }[] = [
+const modes: { id: PermissionMode; label: string; description: string; icon: React.ReactNode; color: string; hoverColor: string }[] = [
   {
     id: 'default',
     label: 'Normal',
     description: 'Prompts for dangerous operations',
     icon: <Shield className="size-3" />,
-    color: 'text-neutral-400',
+    color: 'text-muted-foreground',
+    hoverColor: 'hover:text-foreground',
   },
   {
     id: 'acceptEdits',
@@ -21,6 +22,7 @@ const modes: { id: PermissionMode; label: string; description: string; icon: Rea
     description: 'Auto-accept file edit operations',
     icon: <ShieldCheck className="size-3" />,
     color: 'text-amber-400',
+    hoverColor: 'hover:text-amber-300',
   },
   {
     id: 'plan',
@@ -28,6 +30,7 @@ const modes: { id: PermissionMode; label: string; description: string; icon: Rea
     description: 'Planning only, no actual execution',
     icon: <PenLine className="size-3" />,
     color: 'text-blue-400',
+    hoverColor: 'hover:text-blue-300',
   },
   {
     id: 'bypassPermissions',
@@ -35,6 +38,7 @@ const modes: { id: PermissionMode; label: string; description: string; icon: Rea
     description: 'Bypass all permission checks',
     icon: <ShieldOff className="size-3" />,
     color: 'text-red-400',
+    hoverColor: 'hover:text-red-300',
   },
 ]
 
@@ -48,7 +52,7 @@ export function PermissionModeSelector() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className={`flex items-center gap-1 text-[11px] transition-colors hover:text-neutral-300 ${current.color}`}>
+        <button className={`flex items-center gap-1 text-[11px] transition-colors ${current.color} ${current.hoverColor}`}>
           {current.icon}
           <span>{current.label}</span>
         </button>
@@ -56,7 +60,7 @@ export function PermissionModeSelector() {
       <PopoverContent
         align="start"
         side="top"
-        className="w-52 border-neutral-700 bg-neutral-800 p-1"
+        className="w-52 border-border bg-card p-1"
       >
         {modes.map((mode) => (
           <button
@@ -67,15 +71,15 @@ export function PermissionModeSelector() {
             }}
             className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
               mode.id === permissionMode
-                ? 'bg-neutral-700 text-white'
-                : 'text-neutral-300 hover:bg-neutral-700/50'
+                ? 'bg-muted text-foreground'
+                : 'text-foreground hover:bg-muted/50'
             }`}
           >
             <div className={`flex items-center gap-1.5 font-medium ${mode.color}`}>
               {mode.icon}
               {mode.label}
             </div>
-            <div className="mt-0.5 text-[10px] text-neutral-500">{mode.description}</div>
+            <div className="mt-0.5 text-[10px] text-muted-foreground">{mode.description}</div>
           </button>
         ))}
       </PopoverContent>

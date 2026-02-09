@@ -14,13 +14,13 @@ export function CollapsibleOutput({ text }: CollapsibleOutputProps) {
   return (
     <div className="my-1">
       {expanded && (
-        <div className="overflow-x-auto rounded bg-neutral-900/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-neutral-400 whitespace-pre-wrap">
+        <div className="overflow-x-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
           {text}
         </div>
       )}
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-300 transition-colors"
+        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
       >
         <ChevronRight
           className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-90')}

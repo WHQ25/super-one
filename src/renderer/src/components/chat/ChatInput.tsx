@@ -98,9 +98,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       return (
         <>
           <span className="text-blue-400">{cmdPart}</span>
-          {rest && <span className="text-white">{rest}</span>}
+          {rest && <span className="text-foreground">{rest}</span>}
           {remainingHints.length > 0 && (
-            <span className="text-neutral-500">{hintPrefix}{remainingHints.join(' ')}</span>
+            <span className="text-muted-foreground">{hintPrefix}{remainingHints.join(' ')}</span>
           )}
         </>
       )
@@ -279,16 +279,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Design with Claude Code..."
-          className="flex-1 bg-transparent text-sm text-white placeholder-neutral-500 outline-none"
+          className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none"
         />
       )
     }
 
     return (
-      <div className="relative border-t border-neutral-700 px-3 py-2">
+      <div className="relative border-t border-border px-3 py-2">
         {/* Slash command autocomplete */}
         {matchingCommands.length > 0 && (
-          <div className="absolute bottom-full left-0 right-0 z-10 mb-0.5 max-h-64 overflow-y-auto rounded-t-lg border border-neutral-700 bg-neutral-800 p-1">
+          <div className="absolute bottom-full left-0 right-0 z-10 mb-0.5 max-h-64 overflow-y-auto rounded-t-lg border border-border bg-card p-1">
             {matchingCommands.map((cmd, i) => (
               <button
                 key={cmd.name}
@@ -302,14 +302,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 }}
                 className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors ${
                   i === slashIndex
-                    ? 'bg-neutral-700 text-white'
-                    : 'text-neutral-300 hover:bg-neutral-700/50'
+                    ? 'bg-muted text-foreground'
+                    : 'text-foreground hover:bg-muted/50'
                 }`}
               >
                 <span className="flex min-w-0 items-center gap-1.5 font-medium">
                   <span className="text-blue-400">/{cmd.name}</span>
                   {cmd.argumentHint && (
-                    <span className="truncate text-neutral-500 font-normal">{cmd.argumentHint}</span>
+                    <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
                   )}
                   {cmd.isSkill && (
                     <span className="rounded bg-emerald-900/50 px-1 py-px text-[10px] font-normal text-emerald-400">
@@ -318,7 +318,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   )}
                 </span>
                 {cmd.description && (
-                  <span className={cn('text-neutral-500 leading-snug', cmd.isSkill && 'line-clamp-2')}>
+                  <span className={cn('text-muted-foreground leading-snug', cmd.isSkill && 'line-clamp-2')}>
                     {cmd.description}
                   </span>
                 )}
@@ -345,7 +345,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             {attachments.map((att, i) => (
               <div
                 key={i}
-                className="group relative size-12 overflow-hidden rounded border border-neutral-600"
+                className="group relative size-12 overflow-hidden rounded border border-border"
               >
                 <img
                   src={`data:${att.mimeType};base64,${att.base64}`}
@@ -354,9 +354,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 />
                 <button
                   onClick={() => removeAttachment(i)}
-                  className="absolute -right-0.5 -top-0.5 hidden rounded-full bg-neutral-800 p-0.5 group-hover:block"
+                  className="absolute -right-0.5 -top-0.5 hidden rounded-full bg-card p-0.5 group-hover:block"
                 >
-                  <X className="size-2.5 text-neutral-300" />
+                  <X className="size-2.5 text-foreground" />
                 </button>
               </div>
             ))}
@@ -405,8 +405,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             placeholder="Ask anything..."
             rows={1}
             className={cn(
-              'w-full resize-none bg-transparent text-sm leading-5 placeholder-neutral-500 outline-none',
-              slashHighlight ? 'text-transparent caret-white' : 'text-white'
+              'w-full resize-none bg-transparent text-sm leading-5 placeholder-muted-foreground outline-none',
+              slashHighlight ? 'text-transparent caret-foreground' : 'text-foreground'
             )}
           />
         </div>
@@ -416,7 +416,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             {/* Model selector */}
             <Popover open={modelOpen} onOpenChange={setModelOpen}>
               <PopoverTrigger asChild>
-                <button className="flex items-center gap-0.5 text-[11px] text-neutral-500 hover:text-neutral-300 transition-colors">
+                <button className="flex items-center gap-0.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
                   <span className="max-w-[140px] truncate">{currentModelName}</span>
                   <ChevronDown className="size-3" />
                 </button>
@@ -424,7 +424,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               <PopoverContent
                 align="start"
                 side="top"
-                className="w-64 max-h-60 overflow-y-auto border-neutral-700 bg-neutral-800 p-1"
+                className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1"
               >
                 {availableModels.map((model) => (
                   <button
@@ -435,20 +435,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     }}
                     className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
                       model.id === selectedModel
-                        ? 'bg-neutral-700 text-white'
-                        : 'text-neutral-300 hover:bg-neutral-700/50'
+                        ? 'bg-muted text-foreground'
+                        : 'text-foreground hover:bg-muted/50'
                     }`}
                   >
                     <div className="font-medium">{model.name}</div>
                     {model.description && (
-                      <div className="mt-0.5 text-[10px] text-neutral-500 line-clamp-1">
+                      <div className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">
                         {model.description}
                       </div>
                     )}
                   </button>
                 ))}
                 {availableModels.length === 0 && (
-                  <div className="px-2 py-1.5 text-xs text-neutral-500">Loading models...</div>
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading models...</div>
                 )}
               </PopoverContent>
             </Popover>
@@ -456,7 +456,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             {/* Permission mode */}
             <PermissionModeSelector />
 
-            <div className="mx-0.5 h-3 w-px bg-neutral-700" />
+            <div className="mx-0.5 h-3 w-px bg-border" />
 
             {/* Image upload */}
             <input
@@ -471,7 +471,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               size="icon-xs"
               variant="ghost"
               onClick={() => fileInputRef.current?.click()}
-              className="text-neutral-500 hover:text-neutral-300"
+              className="text-muted-foreground hover:text-foreground"
             >
               <Paperclip className="size-3" />
             </Button>
@@ -484,7 +484,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 size="icon-xs"
                 variant="ghost"
                 onClick={() => interrupt()}
-                className="text-neutral-400 hover:text-white"
+                className="text-muted-foreground hover:text-foreground"
               >
                 <Square className="size-3" />
               </Button>
@@ -494,7 +494,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 variant="ghost"
                 onClick={handleSend}
                 disabled={!canSend}
-                className="text-neutral-400 hover:text-white disabled:opacity-30"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-30"
               >
                 <ArrowUp className="size-3.5" />
               </Button>

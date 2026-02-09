@@ -246,7 +246,7 @@ export function ChatPanel() {
         position: 'fixed',
       }}
       className={cn(
-        'z-50 flex flex-col overflow-hidden border border-neutral-700 shadow-2xl',
+        'z-50 flex flex-col overflow-hidden border border-border shadow-2xl',
         !noTransition && 'transition-[top,right,bottom,left,height,border-radius] duration-200 ease-out'
       )}
     >
@@ -255,7 +255,7 @@ export function ChatPanel() {
       {/* Header / pill bar — draggable area */}
       <div
         className={cn(
-          'flex shrink-0 items-center gap-2 bg-neutral-900 px-3 py-2',
+          'flex shrink-0 items-center gap-2 bg-background px-3 py-2',
           isDragging ? 'cursor-grabbing' : 'cursor-grab'
         )}
         style={{ height: COLLAPSED_H }}
@@ -265,21 +265,21 @@ export function ChatPanel() {
           size="icon-xs"
           variant="ghost"
           onClick={handleToggle}
-          className="shrink-0 cursor-pointer text-neutral-400 hover:text-white"
+          className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
         >
           {isOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
         </Button>
 
         {isOpen ? (
           <>
-            <span className="flex-1 text-center text-sm font-medium text-neutral-200">
+            <span className="flex-1 text-center text-sm font-medium text-foreground">
               New Chat
             </span>
             <Button
               size="icon-xs"
               variant="ghost"
               onClick={() => resetSession()}
-              className="shrink-0 cursor-pointer text-neutral-400 hover:text-white"
+              className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
             >
               <Plus className="size-4" />
             </Button>
@@ -292,7 +292,7 @@ export function ChatPanel() {
                 size="icon-xs"
                 variant="ghost"
                 onClick={() => interrupt()}
-                className="shrink-0 cursor-pointer text-neutral-400 hover:text-white"
+                className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
               >
                 <Square className="size-3" />
               </Button>
@@ -301,7 +301,7 @@ export function ChatPanel() {
                 size="icon-xs"
                 variant="ghost"
                 onClick={() => compactInputRef.current?.send()}
-                className="shrink-0 cursor-pointer text-neutral-400 hover:text-white"
+                className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
               >
                 <ArrowUp className="size-3.5" />
               </Button>
@@ -311,7 +311,7 @@ export function ChatPanel() {
       </div>
 
       {/* Expanded content — hidden by overflow when collapsed */}
-      <div className="relative flex min-h-0 flex-1 flex-col bg-neutral-800">
+      <div className="relative flex min-h-0 flex-1 flex-col bg-card">
         <SlashCommandOverlay />
         <div className="flex-1 overflow-hidden">
           {messages.length === 0 ? (

@@ -59,9 +59,9 @@ function InlineMarkdown({ text }: { text: string }) {
       {parts.map((p, i) => {
         switch (p.type) {
           case 'bold':
-            return <strong key={i} className="font-semibold text-neutral-100">{p.text}</strong>
+            return <strong key={i} className="font-semibold text-foreground">{p.text}</strong>
           case 'code':
-            return <code key={i} className="rounded bg-neutral-700 px-1 py-0.5 text-[10px] text-blue-300">{p.text}</code>
+            return <code key={i} className="rounded bg-muted px-1 py-0.5 text-[10px] text-blue-300">{p.text}</code>
           case 'link':
             return <span key={i} className="text-blue-400 underline">{p.text}</span>
           default:
@@ -77,7 +77,7 @@ export function ReleaseNotesView({ content }: { content: string }) {
 
   if (entries.length === 0) {
     return (
-      <pre className="whitespace-pre-wrap text-xs leading-relaxed text-neutral-200">{content}</pre>
+      <pre className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{content}</pre>
     )
   }
 
@@ -85,13 +85,13 @@ export function ReleaseNotesView({ content }: { content: string }) {
     <div className="flex flex-col gap-4">
       {entries.map((entry) => (
         <div key={entry.version}>
-          <div className="mb-1.5 text-xs font-semibold text-neutral-200">
+          <div className="mb-1.5 text-xs font-semibold text-foreground">
             v{entry.version}
           </div>
           <ul className="flex flex-col gap-1">
             {entry.items.map((item, i) => (
-              <li key={i} className="flex gap-1.5 text-[11px] leading-relaxed text-neutral-400">
-                <span className="mt-0.5 shrink-0 text-neutral-600">•</span>
+              <li key={i} className="flex gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                <span className="mt-0.5 shrink-0 text-muted-foreground/50">•</span>
                 <span><InlineMarkdown text={item} /></span>
               </li>
             ))}

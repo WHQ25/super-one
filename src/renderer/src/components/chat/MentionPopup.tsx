@@ -100,16 +100,16 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const agentStartIdx = filteredFiles.length
 
     return (
-      <div className="absolute bottom-full left-0 right-0 z-10 mb-0.5 max-h-72 overflow-hidden rounded-t-lg border border-neutral-700 bg-neutral-800 flex flex-col">
+      <div className="absolute bottom-full left-0 right-0 z-10 mb-0.5 max-h-72 overflow-hidden rounded-t-lg border border-border bg-card flex flex-col">
         {/* Content */}
         <div className="overflow-y-auto p-1 flex-1 min-h-0">
           {/* Breadcrumbs */}
           {breadcrumbs.length > 0 && (
-            <div className="flex items-center gap-0.5 px-2 py-1 text-[10px] text-neutral-500">
+            <div className="flex items-center gap-0.5 px-2 py-1 text-[10px] text-muted-foreground">
               <button
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => onSelect('')}
-                className="hover:text-neutral-300"
+                className="hover:text-foreground"
               >
                 root
               </button>
@@ -119,7 +119,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                   <button
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => onSelect(breadcrumbs.slice(0, i + 1).join('/') + '/')}
-                    className="hover:text-neutral-300"
+                    className="hover:text-foreground"
                   >
                     {seg}
                   </button>
@@ -130,7 +130,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
           {/* Files section */}
           {filteredFiles.length > 0 && filteredAgents.length > 0 && (
-            <div className="px-2 pt-1 pb-0.5 text-[10px] font-medium uppercase text-neutral-500">
+            <div className="px-2 pt-1 pb-0.5 text-[10px] font-medium uppercase text-muted-foreground">
               Files
             </div>
           )}
@@ -147,11 +147,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               className={cn(
                 'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
                 i === selectedIndex
-                  ? 'bg-neutral-700 text-white'
-                  : 'text-neutral-300 hover:bg-neutral-700/50'
+                  ? 'bg-muted text-foreground'
+                  : 'text-foreground hover:bg-muted/50'
               )}
             >
-              <span className="shrink-0 text-neutral-500">
+              <span className="shrink-0 text-muted-foreground">
                 {entry.isDirectory ? '\uD83D\uDCC1' : '\uD83D\uDCC4'}
               </span>
               <span className="truncate">{entry.name}</span>
@@ -161,7 +161,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           {/* Agents section */}
           {filteredAgents.length > 0 && (
             <>
-              <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium uppercase text-neutral-500">
+              <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium uppercase text-muted-foreground">
                 Agents
               </div>
               {filteredAgents.map((agent, ai) => {
@@ -179,16 +179,16 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                     className={cn(
                       'flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs transition-colors',
                       flatIdx === selectedIndex
-                        ? 'bg-neutral-700 text-white'
-                        : 'text-neutral-300 hover:bg-neutral-700/50'
+                        ? 'bg-muted text-foreground'
+                        : 'text-foreground hover:bg-muted/50'
                     )}
                   >
                     <span className="font-medium text-purple-400 truncate">@{agent.name}</span>
-                    <span className="shrink-0 rounded bg-neutral-700/60 px-1 py-px text-[10px] text-neutral-500">
+                    <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
                       agent
                     </span>
                     {agent.description && (
-                      <span className="text-neutral-500 truncate">{agent.description}</span>
+                      <span className="text-muted-foreground truncate">{agent.description}</span>
                     )}
                   </button>
                 )
@@ -197,17 +197,17 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           )}
 
           {flatItems.length === 0 && (
-            <div className="px-2 py-1.5 text-xs text-neutral-500">No matches</div>
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">No matches</div>
           )}
         </div>
 
         {/* Footer hint */}
-        <div className="border-t border-neutral-700 px-2 py-1 text-[10px] text-neutral-500 shrink-0">
-          <kbd className="rounded bg-neutral-700 px-1">Tab</kbd>/<kbd className="rounded bg-neutral-700 px-1">Enter</kbd> select
+        <div className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground shrink-0">
+          <kbd className="rounded bg-muted px-1">Tab</kbd>/<kbd className="rounded bg-muted px-1">Enter</kbd> select
           <span className="mx-1.5">&middot;</span>
-          <kbd className="rounded bg-neutral-700 px-1">&uarr;&darr;</kbd> navigate
+          <kbd className="rounded bg-muted px-1">&uarr;&darr;</kbd> navigate
           <span className="mx-1.5">&middot;</span>
-          <kbd className="rounded bg-neutral-700 px-1">Esc</kbd> close
+          <kbd className="rounded bg-muted px-1">Esc</kbd> close
         </div>
       </div>
     )

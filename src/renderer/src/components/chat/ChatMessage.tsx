@@ -89,7 +89,7 @@ function renderBlock(
       return (
         <div
           key={index}
-          className="my-1 flex items-center gap-1.5 rounded bg-neutral-700/50 px-2 py-1 text-xs text-neutral-300"
+          className="my-1 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs text-foreground"
         >
           <ImageIcon className="size-3 shrink-0" />
           <span className="truncate">{block.name}</span>
@@ -124,8 +124,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
         className={cn(
           'min-w-0 rounded-xl py-2 text-sm',
           isUser
-            ? 'max-w-[85%] bg-neutral-700 px-3 text-white'
-            : 'max-w-full text-neutral-100'
+            ? 'max-w-[85%] bg-muted px-3 text-foreground'
+            : 'max-w-full text-foreground'
         )}
       >
         {isUser
@@ -150,10 +150,10 @@ export function ChatMessage({ message }: ChatMessageProps) {
             })
         }
         {isStreaming && message.content.length === 0 && (
-          <Loader2 className="size-4 animate-spin text-neutral-400" />
+          <Loader2 className="size-4 animate-spin text-muted-foreground" />
         )}
         {message.status === 'interrupted' && (
-          <div className="mt-1 flex items-center gap-1 text-xs text-neutral-500">
+          <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <OctagonX className="size-3" />
             <span>Response interrupted</span>
           </div>

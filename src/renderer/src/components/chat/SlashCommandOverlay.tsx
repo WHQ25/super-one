@@ -17,7 +17,7 @@ function CommandContent({ command, content }: { command: string; content: string
       return <ReleaseNotesView content={content} />
     default:
       return (
-        <pre className="whitespace-pre-wrap text-xs leading-relaxed text-neutral-200">
+        <pre className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
           {content}
         </pre>
       )
@@ -56,15 +56,15 @@ export function SlashCommandOverlay() {
   const title = output.command ? `/${output.command}` : 'Command Output'
 
   return (
-    <div className="absolute inset-0 z-20 flex flex-col bg-neutral-800">
+    <div className="absolute inset-0 z-20 flex flex-col bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-neutral-700 px-3 py-2">
-        <span className="text-xs font-medium text-neutral-400">{title}</span>
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <span className="text-xs font-medium text-muted-foreground">{title}</span>
         <Button
           size="icon-xs"
           variant="ghost"
           onClick={dismiss}
-          className="text-neutral-400 hover:text-white"
+          className="text-muted-foreground hover:text-foreground"
         >
           <X className="size-3.5" />
         </Button>
@@ -76,8 +76,8 @@ export function SlashCommandOverlay() {
       </div>
 
       {/* Footer hint */}
-      <div className="border-t border-neutral-700 px-3 py-1.5 text-center text-[10px] text-neutral-500">
-        Press <kbd className="rounded bg-neutral-700 px-1 py-0.5 text-neutral-400">Esc</kbd> to close
+      <div className="border-t border-border px-3 py-1.5 text-center text-[10px] text-muted-foreground">
+        Press <kbd className="rounded bg-muted px-1 py-0.5 text-muted-foreground">Esc</kbd> to close
       </div>
     </div>
   )

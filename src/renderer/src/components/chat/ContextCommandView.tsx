@@ -108,7 +108,7 @@ export function ContextCommandView({ content }: { content: string }) {
   if (!data) {
     // Fallback to raw text if parsing fails
     return (
-      <pre className="whitespace-pre-wrap text-xs leading-relaxed text-neutral-200">{content}</pre>
+      <pre className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{content}</pre>
     )
   }
 
@@ -116,8 +116,8 @@ export function ContextCommandView({ content }: { content: string }) {
     <div className="flex flex-col gap-4">
       {/* Header */}
       <div className="text-center">
-        <div className="text-sm font-medium text-neutral-200">{data.model}</div>
-        <div className="mt-0.5 text-xs text-neutral-400">
+        <div className="text-sm font-medium text-foreground">{data.model}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">
           {formatTokens(data.totalTokens)} / {formatTokens(data.maxTokens)} tokens ({data.percentage}%)
         </div>
       </div>
@@ -134,9 +134,9 @@ export function ContextCommandView({ content }: { content: string }) {
                 className="size-2.5 shrink-0 rounded-full"
                 style={{ backgroundColor: COLORS[i % COLORS.length] }}
               />
-              <span className="text-neutral-300">{cat.name}</span>
+              <span className="text-foreground">{cat.name}</span>
             </div>
-            <div className="flex items-center gap-2 text-neutral-500">
+            <div className="flex items-center gap-2 text-muted-foreground">
               <span>{formatTokens(cat.tokens)}</span>
               <span className="w-10 text-right">{cat.percentage.toFixed(1)}%</span>
             </div>

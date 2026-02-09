@@ -8,7 +8,7 @@ export function InlineCode({ children, className, ...props }: React.ComponentPro
   return (
     <code
       {...props}
-      className={`rounded bg-neutral-700 px-1 py-0.5 text-xs text-neutral-200 ${className ?? ''}`.trim()}
+      className={`rounded bg-muted px-1 py-0.5 text-xs text-foreground ${className ?? ''}`.trim()}
     >
       {children}
     </code>

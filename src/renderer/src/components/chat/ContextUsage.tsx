@@ -20,7 +20,7 @@ export function ContextUsage() {
 
   // Color based on usage
   const color =
-    pct > 0.8 ? '#ef4444' : pct > 0.5 ? '#f59e0b' : '#6366f1'
+    pct > 0.7 ? '#ef4444' : pct > 0.4 ? '#f59e0b' : '#22c55e'
 
   return (
     <div className="group relative flex items-center">
@@ -31,7 +31,7 @@ export function ContextUsage() {
           cy="7"
           r={radius}
           fill="none"
-          stroke="#404040"
+          className="stroke-border"
           strokeWidth="2"
         />
         {/* Used arc */}
@@ -51,7 +51,7 @@ export function ContextUsage() {
       </svg>
 
       {/* Hover tooltip */}
-      <div className="pointer-events-none absolute bottom-full right-0 mb-2 hidden whitespace-nowrap rounded bg-neutral-700 px-2 py-1.5 text-[10px] leading-relaxed text-neutral-300 shadow-lg group-hover:block">
+      <div className="pointer-events-none absolute bottom-full right-0 mb-2 hidden whitespace-nowrap rounded bg-muted px-2 py-1.5 text-[10px] leading-relaxed text-foreground shadow-lg group-hover:block">
         <div>Context: {formatTokens(contextTokens)} / {formatTokens(CONTEXT_WINDOW)} ({(pct * 100).toFixed(0)}%)</div>
         {totalCostUsd > 0 && <div>Cost: ${totalCostUsd.toFixed(4)}</div>}
       </div>

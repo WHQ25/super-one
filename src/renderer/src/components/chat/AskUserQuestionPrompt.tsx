@@ -67,10 +67,10 @@ export function AskUserQuestionPrompt() {
   )
 
   return (
-    <div className="mx-3 mb-2 space-y-3 rounded-lg border border-blue-600/40 bg-neutral-700/60 p-3">
+    <div className="mx-3 mb-2 space-y-3 rounded-lg border border-blue-600/40 bg-muted/60 p-3">
       {questions.map((q) => (
         <div key={q.question}>
-          <p className="mb-1.5 text-xs font-medium text-neutral-200">{q.question}</p>
+          <p className="mb-1.5 text-xs font-medium text-foreground">{q.question}</p>
           <div className="flex flex-wrap gap-1.5">
             {q.options.map((opt) => {
               const selected = q.multiSelect
@@ -83,7 +83,7 @@ export function AskUserQuestionPrompt() {
                   className={`cursor-pointer rounded px-2 py-1 text-xs transition ${
                     selected
                       ? 'bg-blue-600 text-white'
-                      : 'bg-neutral-600 text-neutral-300 hover:bg-neutral-500'
+                      : 'bg-muted text-foreground hover:bg-accent'
                   }`}
                   title={opt.description}
                 >
@@ -97,7 +97,7 @@ export function AskUserQuestionPrompt() {
             placeholder="Other..."
             value={otherTexts[q.question] ?? ''}
             onChange={(e) => setOther(q, e.target.value)}
-            className="mt-1.5 w-full rounded bg-neutral-600 px-2 py-1 text-xs text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1.5 w-full rounded bg-muted px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
       ))}

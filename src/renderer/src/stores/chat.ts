@@ -135,7 +135,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
           }),
           totalCostUsd: s.totalCostUsd + (event.metadata?.costUsd ?? 0),
-          contextTokens: event.metadata?.usage?.inputTokens ?? s.contextTokens,
+          contextTokens: (() => {
+            const u = event.metadata?.usage
+            if (!u) return s.contextTokens
+            const total = u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens
+            return total > 0 ? total : s.contextTokens
+          })(),
         }))
         break
 

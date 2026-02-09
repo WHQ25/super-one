@@ -18,6 +18,10 @@ interface ChatState {
   selectedModel: string
   availableModels: ModelOption[]
 
+  // Input draft (shared between compact and expanded ChatInput)
+  draftText: string
+  setDraftText: (text: string) => void
+
   // Image attachments
   attachments: ImageAttachment[]
 
@@ -86,6 +90,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   session: null,
   totalCostUsd: 0,
   contextTokens: 0,
+
+  draftText: '',
+  setDraftText: (text) => set({ draftText: text }),
 
   selectedModel: '',
   availableModels: [],

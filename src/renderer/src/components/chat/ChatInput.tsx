@@ -18,13 +18,16 @@ interface ChatInputProps {
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   function ChatInput({ compact }, ref) {
-    const [text, setText] = useState('')
+    const text = useChatStore((s) => s.draftText)
+    const setText = useChatStore((s) => s.setDraftText)
     const [modelOpen, setModelOpen] = useState(false)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const sendMessage = useChatStore((s) => s.sendMessage)
     const interrupt = useChatStore((s) => s.interrupt)
+    const isOpen = useChatStore((s) => s.isOpen)
+    const toggleOpen = useChatStore((s) => s.toggleOpen)
     const status = useChatStore((s) => s.status)
     const selectedModel = useChatStore((s) => s.selectedModel)
     const availableModels = useChatStore((s) => s.availableModels)
@@ -41,6 +44,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [mentionActive, setMentionActive] = useState(false)
     const [mentionIndex, setMentionIndex] = useState(0)
     const mentionRef = useRef<MentionPopupHandle>(null)
+
+    // Auto-focus expanded textarea when panel opens
+    useEffect(() => {
+      if (!compact && isOpen && textareaRef.current) {
+        const el = textareaRef.current
+        // Focus and move cursor to end
+        el.focus()
+        el.selectionStart = el.value.length
+        el.selectionEnd = el.value.length
+      }
+    }, [compact, isOpen])
 
     // Detect @ trigger position based on cursor in text
     const mentionInfo = useMemo(() => {
@@ -120,13 +134,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         const endsWithSlash = value.endsWith('/')
         // If selecting a directory (ends with /), keep the mention active and update query
         if (endsWithSlash) {
-          setText((prev) => prev.slice(0, mentionInfo.atIndex + 1) + value)
+          setText(text.slice(0, mentionInfo.atIndex + 1) + value)
           setMentionIndex(0)
           textareaRef.current?.focus()
           return
         }
         // Insert the selected value and close
-        setText((prev) => prev.slice(0, mentionInfo.atIndex) + `@${value} `)
+        setText(text.slice(0, mentionInfo.atIndex) + `@${value} `)
         setMentionActive(false)
         setMentionIndex(0)
         textareaRef.current?.focus()
@@ -150,6 +164,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
+        // Ignore key events during IME composition (e.g. Chinese input)
+        if (e.nativeEvent.isComposing) return
+
+        // Shift+Enter in collapsed mode → expand the panel with newline
+        if (e.key === 'Enter' && e.shiftKey && !isOpen) {
+          e.preventDefault()
+          toggleOpen()
+          return
+        }
+
         // @ mention navigation (takes priority when active)
         if (mentionInfo && mentionActive) {
           const count = mentionRef.current?.getItemCount() ?? 0
@@ -211,7 +235,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           handleSend()
         }
       },
-      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionInfo, mentionActive]
+      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionInfo, mentionActive, isOpen, toggleOpen]
     )
 
     const handleInput = useCallback(() => {

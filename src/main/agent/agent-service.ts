@@ -57,6 +57,14 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.SLASH_COMMANDS, async () => {
       return this.claude.getSlashCommands()
     })
+
+    ipcMain.handle(AgentIpcChannels.LIST_DIRECTORY, async (_event, relativePath: string) => {
+      return this.claude.listDirectory(relativePath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.LIST_AGENTS, async () => {
+      return this.claude.getAgents()
+    })
   }
 
   async initialize(config: ClaudeAgentConfig): Promise<void> {
@@ -80,5 +88,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_STATUS)
     ipcMain.removeHandler(AgentIpcChannels.ACCOUNT_INFO)
     ipcMain.removeHandler(AgentIpcChannels.SLASH_COMMANDS)
+    ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
+    ipcMain.removeHandler(AgentIpcChannels.LIST_AGENTS)
   }
 }

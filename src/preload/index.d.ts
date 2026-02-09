@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AccountInfo, AgentEvent, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SendMessageRequest, SlashCommandInfo } from '../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, ListDirEntry, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SendMessageRequest, SlashCommandInfo } from '../shared/agent-types'
 
 interface AgentAPI {
   sendMessage(request: SendMessageRequest): Promise<void>
@@ -14,6 +14,8 @@ interface AgentAPI {
   getMcpServerStatus(): Promise<McpServerInfo[]>
   getAccountInfo(): Promise<AccountInfo>
   getSlashCommands(): Promise<SlashCommandInfo[]>
+  listDirectory(relativePath: string): Promise<ListDirEntry[]>
+  listAgents(): Promise<AgentInfo[]>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, ModelOption, PermissionMode, PermissionRequest, RewindFilesResult, SessionInfo, SlashCommandInfo } from '../../../shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, ModelOption, PermissionMode, PermissionRequest, RewindFilesResult, SessionInfo, SlashCommandInfo } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 
@@ -30,6 +30,9 @@ interface ChatState {
 
   // Slash commands
   slashCommands: SlashCommandInfo[]
+
+  // Agents (for @ mention)
+  agents: AgentInfo[]
 
   // Slash command overlay
   slashCommandOutput: { command: string; content: string } | null
@@ -64,6 +67,9 @@ interface ChatState {
 
   // Slash command actions
   fetchSlashCommands: () => Promise<void>
+
+  // Agent actions (for @ mention)
+  fetchAgents: () => Promise<void>
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -83,6 +89,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   permissionMode: 'default',
   pendingQuestion: null,
   slashCommands: [],
+  agents: [],
   slashCommandOutput: null,
   _pendingSlashCommand: '' as string,
 
@@ -207,6 +214,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           selectedModel: s.selectedModel || event.models[0]?.id || '',
           slashCommands: event.slashCommands,
         }))
+        get().fetchAgents()
         break
 
       case 'hook_started':
@@ -362,11 +370,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       setTimeout(() => get().fetchSlashCommands(), 2000)
     }
   },
+
+  fetchAgents: async () => {
+    try {
+      const agents = await window.agent.listAgents()
+      set({ agents })
+    } catch {
+      setTimeout(() => get().fetchAgents(), 2000)
+    }
+  },
 }))
 
 // Eagerly fetch resources — retries until session is ready
 useChatStore.getState().fetchModels()
 useChatStore.getState().fetchSlashCommands()
+useChatStore.getState().fetchAgents()
 
 /** Apply a content delta to the content array, merging consecutive text blocks and deduplicating tool_use. */
 function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {

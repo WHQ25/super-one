@@ -1,8 +1,8 @@
-import { existsSync, readdirSync } from 'fs'
-import { join } from 'path'
+import { existsSync, readdirSync, readFileSync } from 'fs'
+import { join, resolve } from 'path'
 import { homedir } from 'os'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
-import type { AccountInfo, AgentEvent, ChatMessage, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, rejectAllPending, respondToPermission, respondToQuestion, type PendingPermission, type PendingQuestion } from './claude-permissions'
 import { mapModelInfo } from './claude-models'
 import { MessageBridge } from './message-bridge'
@@ -25,6 +25,58 @@ function discoverSkillNames(cwd: string): Set<string> {
   }
   return names
 }
+
+/** Read .md files from a directory and return AgentInfo entries. */
+function scanAgentDir(dir: string, source: AgentInfo['source'], namePrefix = ''): AgentInfo[] {
+  if (!existsSync(dir)) return []
+  const agents: AgentInfo[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.md')) continue
+    const name = namePrefix + entry.name.replace(/\.md$/, '')
+    let description = ''
+    try {
+      const first = readFileSync(join(dir, entry.name), 'utf-8').split('\n')[0]
+      description = first.replace(/^#+\s*/, '').trim()
+    } catch {}
+    agents.push({ name, description, source })
+  }
+  return agents
+}
+
+/** Discover agents from user, project, and plugin sources. */
+function discoverAgents(cwd: string): AgentInfo[] {
+  const agents: AgentInfo[] = []
+
+  // 1. User agents: ~/.claude/agents/*.md
+  agents.push(...scanAgentDir(join(homedir(), '.claude', 'agents'), 'user'))
+
+  // 2. Project agents: {cwd}/.claude/agents/*.md
+  agents.push(...scanAgentDir(join(cwd, '.claude', 'agents'), 'project'))
+
+  // 3. Plugin agents
+  const pluginsFile = join(homedir(), '.claude', 'plugins', 'installed_plugins.json')
+  if (existsSync(pluginsFile)) {
+    try {
+      const data = JSON.parse(readFileSync(pluginsFile, 'utf-8'))
+      const plugins: Record<string, Array<{ scope?: string; installPath?: string; projectPath?: string }>> = data.plugins ?? {}
+      for (const [pluginKey, entries] of Object.entries(plugins)) {
+        // Extract the plugin name (part before @, e.g. "code-simplifier" from "code-simplifier@claude-plugins-official")
+        const pluginName = pluginKey.split('@')[0]
+        for (const entry of entries) {
+          const { scope, installPath, projectPath } = entry
+          if (!installPath) continue
+          const include = scope === 'user' || ((scope === 'project' || scope === 'local') && projectPath === cwd)
+          if (!include) continue
+          agents.push(...scanAgentDir(join(installPath, 'agents'), 'plugin', `${pluginName}:`))
+        }
+      }
+    } catch {}
+  }
+
+  return agents
+}
+
+const EXCLUDED_DIRS = new Set(['.', 'node_modules', 'dist', 'build', '__pycache__'])
 
 export interface ClaudeAgentConfig {
   cwd: string
@@ -52,6 +104,7 @@ export class ClaudeAgent {
   private cachedSlashCommands: SlashCommandInfo[] | null = null
   private cachedAccount: AccountInfo | null = null
   private currentPermissionMode: PermissionMode = 'default'
+  private cachedAgents: AgentInfo[] = []
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
 
@@ -59,6 +112,9 @@ export class ClaudeAgent {
     this.config = config
     this.onEvent = onEvent
     this.ready = true
+
+    // Cache agents at init time
+    this.cachedAgents = discoverAgents(config.cwd)
 
     // Eagerly create session — triggers system init, makes slash commands/models/MCP available
     this.createSession()
@@ -228,6 +284,40 @@ export class ClaudeAgent {
 
   async getSlashCommands(): Promise<SlashCommandInfo[]> {
     return this.cachedSlashCommands ?? []
+  }
+
+  getAgents(): AgentInfo[] {
+    return this.cachedAgents
+  }
+
+  listDirectory(relativePath: string): ListDirEntry[] {
+    if (!this.config) return []
+    const cwd = this.config.cwd
+    const target = resolve(cwd, relativePath)
+
+    // Security: ensure target is within cwd
+    if (!target.startsWith(cwd)) return []
+
+    if (!existsSync(target)) return []
+
+    try {
+      const entries = readdirSync(target, { withFileTypes: true })
+      const result: ListDirEntry[] = []
+      for (const entry of entries) {
+        // Skip hidden dirs/files and common build directories
+        if (entry.name.startsWith('.') && entry.isDirectory()) continue
+        if (entry.isDirectory() && EXCLUDED_DIRS.has(entry.name)) continue
+        result.push({ name: entry.name, isDirectory: entry.isDirectory() })
+      }
+      // Sort: directories first, then alphabetically
+      result.sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
+      return result
+    } catch {
+      return []
+    }
   }
 
   isReady(): boolean {

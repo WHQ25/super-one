@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ArrowUp, Square, ChevronDown, Paperclip, X } from 'lucide-react'
 import { PermissionModeSelector } from './PermissionModeSelector'
 import { ContextUsage } from './ContextUsage'
+import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
 
 export interface ChatInputHandle {
   send: () => void
@@ -35,6 +36,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const slashItemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
+
+    // @ mention state
+    const [mentionActive, setMentionActive] = useState(false)
+    const [mentionIndex, setMentionIndex] = useState(0)
+    const mentionRef = useRef<MentionPopupHandle>(null)
+
+    // Detect @ trigger position based on cursor in text
+    const mentionInfo = useMemo(() => {
+      if (!mentionActive) return null
+      // Find the last unescaped @ before the text end
+      const atIdx = text.lastIndexOf('@')
+      if (atIdx === -1) return null
+      const query = text.slice(atIdx + 1)
+      // Close if there's a space in the query (unless it's a path separator)
+      if (query.includes(' ')) return null
+      return { atIndex: atIdx, query }
+    }, [text, mentionActive])
 
     // Scroll selected slash command into view
     useEffect(() => {
@@ -96,11 +114,33 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       []
     )
 
+    const handleMentionSelect = useCallback(
+      (value: string) => {
+        if (!mentionInfo) return
+        const endsWithSlash = value.endsWith('/')
+        // If selecting a directory (ends with /), keep the mention active and update query
+        if (endsWithSlash) {
+          setText((prev) => prev.slice(0, mentionInfo.atIndex + 1) + value)
+          setMentionIndex(0)
+          textareaRef.current?.focus()
+          return
+        }
+        // Insert the selected value and close
+        setText((prev) => prev.slice(0, mentionInfo.atIndex) + `@${value} `)
+        setMentionActive(false)
+        setMentionIndex(0)
+        textareaRef.current?.focus()
+      },
+      [mentionInfo]
+    )
+
     const handleSend = useCallback(() => {
       if (!canSend) return
       sendMessage(text.trim())
       setText('')
       setSlashIndex(-1)
+      setMentionActive(false)
+      setMentionIndex(0)
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
       }
@@ -110,6 +150,37 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
+        // @ mention navigation (takes priority when active)
+        if (mentionInfo && mentionActive) {
+          const count = mentionRef.current?.getItemCount() ?? 0
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setMentionIndex((i) => (count > 0 ? (i + 1) % count : 0))
+            return
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setMentionIndex((i) => (count > 0 ? (i <= 0 ? count - 1 : i - 1) : 0))
+            return
+          }
+          if (e.key === 'Tab') {
+            e.preventDefault()
+            mentionRef.current?.confirmSelection()
+            return
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            setMentionActive(false)
+            setMentionIndex(0)
+            return
+          }
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            mentionRef.current?.confirmSelection()
+            return
+          }
+        }
+
         // Slash command navigation
         if (matchingCommands.length > 0) {
           if (e.key === 'ArrowDown') {
@@ -140,7 +211,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           handleSend()
         }
       },
-      [handleSend, matchingCommands, slashIndex, selectSlashCommand]
+      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionInfo, mentionActive]
     )
 
     const handleInput = useCallback(() => {
@@ -232,6 +303,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           </div>
         )}
 
+        {/* @ mention autocomplete */}
+        {mentionInfo && mentionActive && matchingCommands.length === 0 && (
+          <MentionPopup
+            ref={mentionRef}
+            query={mentionInfo.query}
+            selectedIndex={mentionIndex}
+            onSelect={handleMentionSelect}
+            onSetSelectedIndex={setMentionIndex}
+            onClose={() => { setMentionActive(false); setMentionIndex(0) }}
+          />
+        )}
+
         {/* Attachment thumbnails */}
         {attachments.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
@@ -269,8 +352,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             ref={textareaRef}
             value={text}
             onChange={(e) => {
-              setText(e.target.value)
+              const val = e.target.value
+              setText(val)
               setSlashIndex(-1)
+
+              // Detect @ mention trigger
+              const cursorPos = e.target.selectionStart ?? val.length
+              const textBeforeCursor = val.slice(0, cursorPos)
+              const lastAt = textBeforeCursor.lastIndexOf('@')
+              if (lastAt !== -1) {
+                const afterAt = textBeforeCursor.slice(lastAt + 1)
+                // Activate if no space in the query
+                if (!afterAt.includes(' ')) {
+                  if (!mentionActive) {
+                    setMentionIndex(0)
+                  }
+                  setMentionActive(true)
+                } else {
+                  setMentionActive(false)
+                }
+              } else {
+                setMentionActive(false)
+              }
+
               handleInput()
             }}
             onKeyDown={handleKeyDown}

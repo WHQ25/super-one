@@ -39,6 +39,12 @@ const agentAPI = {
   getSlashCommands: () =>
     ipcRenderer.invoke(AgentIpcChannels.SLASH_COMMANDS),
 
+  listDirectory: (relativePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LIST_DIRECTORY, relativePath),
+
+  listAgents: () =>
+    ipcRenderer.invoke(AgentIpcChannels.LIST_AGENTS),
+
   onAgentEvent: (callback: (event: unknown) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: unknown): void => {
       callback(event)

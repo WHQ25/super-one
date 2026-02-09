@@ -128,6 +128,19 @@ export interface SlashCommandInfo {
   isSkill: boolean
 }
 
+// --- @ mention: agents & directory listing ---
+
+export interface AgentInfo {
+  name: string
+  description: string
+  source: 'user' | 'project' | 'plugin'
+}
+
+export interface ListDirEntry {
+  name: string
+  isDirectory: boolean
+}
+
 // --- Hook events ---
 
 export interface HookEvent {
@@ -207,4 +220,6 @@ export const AgentIpcChannels = {
   MCP_SERVER_STATUS: 'agent:mcp-server-status',
   ACCOUNT_INFO: 'agent:account-info',
   SLASH_COMMANDS: 'agent:slash-commands',
+  LIST_DIRECTORY: 'agent:list-directory',
+  LIST_AGENTS: 'agent:list-agents',
 } as const

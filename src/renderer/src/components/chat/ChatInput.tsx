@@ -1,4 +1,5 @@
-import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
+import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, useEffect } from 'react'
+import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -33,15 +34,57 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const slashCommands = useChatStore((s) => s.slashCommands)
 
     const [slashIndex, setSlashIndex] = useState(-1)
+    const slashItemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
+
+    // Scroll selected slash command into view
+    useEffect(() => {
+      if (slashIndex >= 0) {
+        slashItemRefs.current.get(slashIndex)?.scrollIntoView({ block: 'nearest' })
+      }
+    }, [slashIndex])
+
+    // Highlighted slash command overlay content
+    const slashHighlight = useMemo(() => {
+      if (!text.startsWith('/')) return null
+      const match = text.match(/^(\/\S*)(.*)$/s)
+      if (!match) return null
+      const cmdPart = match[1]
+      const rest = match[2]
+      const cmdName = cmdPart.slice(1)
+      const exact = slashCommands.find((c) => c.name === cmdName)
+      const hasMatch = slashCommands.some((c) => c.name.toLowerCase().startsWith(cmdName.toLowerCase()))
+      if (!hasMatch && !exact) return null
+
+      // Parse hint tokens (e.g. "<file> <message>" → ["<file>", "<message>"])
+      const hintTokens = exact?.argumentHint?.match(/<[^>]+>|\[[^\]]+\]/g) ?? []
+      // Count user-provided args to determine remaining hints
+      const trimmedRest = rest.trimStart()
+      const filledCount = trimmedRest ? trimmedRest.split(/\s+/).length : 0
+      const remainingHints = hintTokens.slice(filledCount)
+      const hintPrefix = rest.endsWith(' ') ? '' : ' '
+
+      return (
+        <>
+          <span className="text-blue-400">{cmdPart}</span>
+          {rest && <span className="text-white">{rest}</span>}
+          {remainingHints.length > 0 && (
+            <span className="text-neutral-500">{hintPrefix}{remainingHints.join(' ')}</span>
+          )}
+        </>
+      )
+    }, [text, slashCommands])
 
     const isStreaming = status === 'streaming'
     const canSend = (text.trim().length > 0 || attachments.length > 0) && !isStreaming
 
     // Filter slash commands based on current input
+    const HIDDEN_COMMANDS = new Set(['keybindings-help', 'debug'])
     const matchingCommands = useMemo(() => {
       if (!text.startsWith('/') || text.includes(' ')) return []
       const query = text.slice(1).toLowerCase()
-      return slashCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(query))
+      return slashCommands.filter(
+        (cmd) => cmd.name.toLowerCase().startsWith(query) && !HIDDEN_COMMANDS.has(cmd.name)
+      )
     }, [text, slashCommands])
 
     const selectSlashCommand = useCallback(
@@ -154,18 +197,36 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             {matchingCommands.map((cmd, i) => (
               <button
                 key={cmd.name}
+                ref={(el) => {
+                  if (el) slashItemRefs.current.set(i, el)
+                  else slashItemRefs.current.delete(i)
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault()
                   selectSlashCommand(cmd.name)
                 }}
-                className={`flex w-full items-baseline gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors ${
                   i === slashIndex
                     ? 'bg-neutral-700 text-white'
                     : 'text-neutral-300 hover:bg-neutral-700/50'
                 }`}
               >
-                <span className="shrink-0 font-medium text-blue-400">/{cmd.name}</span>
-                <span className="truncate text-neutral-500">{cmd.description}</span>
+                <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                  <span className="text-blue-400">/{cmd.name}</span>
+                  {cmd.argumentHint && (
+                    <span className="truncate text-neutral-500 font-normal">{cmd.argumentHint}</span>
+                  )}
+                  {cmd.isSkill && (
+                    <span className="rounded bg-emerald-900/50 px-1 py-px text-[10px] font-normal text-emerald-400">
+                      skill
+                    </span>
+                  )}
+                </span>
+                {cmd.description && (
+                  <span className={cn('text-neutral-500 leading-snug', cmd.isSkill && 'line-clamp-2')}>
+                    {cmd.description}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -195,19 +256,32 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           </div>
         )}
 
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            setSlashIndex(-1)
-            handleInput()
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask anything..."
-          rows={1}
-          className="w-full resize-none bg-transparent text-sm text-white placeholder-neutral-500 outline-none"
-        />
+        <div className="relative w-full">
+          {slashHighlight && (
+            <div
+              className="pointer-events-none absolute inset-0 whitespace-pre-wrap break-words text-sm leading-5"
+              aria-hidden
+            >
+              {slashHighlight}
+            </div>
+          )}
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value)
+              setSlashIndex(-1)
+              handleInput()
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask anything..."
+            rows={1}
+            className={cn(
+              'w-full resize-none bg-transparent text-sm leading-5 placeholder-neutral-500 outline-none',
+              slashHighlight ? 'text-transparent caret-white' : 'text-white'
+            )}
+          />
+        </div>
 
         <div className="mt-1 flex items-center justify-between">
           <div className="flex items-center gap-1">

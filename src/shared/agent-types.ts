@@ -25,6 +25,7 @@ export interface SessionInfo {
   mcpServers: { name: string; status: string }[]
   permissionMode: PermissionMode
   slashCommands: string[]
+  skills: string[]
   claudeCodeVersion: string
   cwd: string
 }
@@ -124,6 +125,7 @@ export interface SlashCommandInfo {
   name: string
   description: string
   argumentHint: string
+  isSkill: boolean
 }
 
 // --- Hook events ---
@@ -159,6 +161,7 @@ export type AgentEvent =
   | { type: 'task_notification'; taskId: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
+  | { type: 'init_ready'; models: ModelOption[]; slashCommands: SlashCommandInfo[] }
 
 export type AgentStatus = 'idle' | 'streaming' | 'error'
 

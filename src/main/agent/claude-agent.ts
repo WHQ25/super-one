@@ -1,9 +1,30 @@
+import { existsSync, readdirSync } from 'fs'
+import { join } from 'path'
+import { homedir } from 'os'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import type { AccountInfo, AgentEvent, ChatMessage, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, rejectAllPending, respondToPermission, respondToQuestion, type PendingPermission, type PendingQuestion } from './claude-permissions'
-import { refreshModelsFromQuery } from './claude-models'
+import { mapModelInfo } from './claude-models'
 import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
+
+/** Scan skill directories and return a Set of skill names. */
+function discoverSkillNames(cwd: string): Set<string> {
+  const skillDirs = [
+    join(homedir(), '.claude', 'skills'),
+    join(cwd, '.claude', 'skills'),
+  ]
+  const names = new Set<string>()
+  for (const dir of skillDirs) {
+    if (!existsSync(dir)) continue
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (existsSync(join(dir, entry.name, 'SKILL.md'))) {
+        names.add(entry.name)
+      }
+    }
+  }
+  return names
+}
 
 export interface ClaudeAgentConfig {
   cwd: string
@@ -28,6 +49,8 @@ export class ClaudeAgent {
 
   private ready = false
   private cachedModels: ModelOption[] = []
+  private cachedSlashCommands: SlashCommandInfo[] | null = null
+  private cachedAccount: AccountInfo | null = null
   private currentPermissionMode: PermissionMode = 'default'
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
@@ -67,10 +90,25 @@ export class ClaudeAgent {
     this.sessionQuery = handle.query
     this.iterationDone = handle.iterationDone
 
-    // Fetch models from the live query (more accurate than CLI fallback)
-    refreshModelsFromQuery(handle.query).then((models) => {
-      if (models.length > 0) this.cachedModels = models
-    })
+    // Eagerly fetch init result via control channel and cache everything
+    handle.query.initializationResult().then((init) => {
+      const skillNames = discoverSkillNames(this.config!.cwd)
+
+      this.cachedModels = init.models.map(mapModelInfo)
+      this.cachedAccount = {
+        email: init.account.email,
+        organization: init.account.organization,
+        subscriptionType: init.account.subscriptionType,
+      }
+      this.cachedSlashCommands = init.commands.map((c) => ({
+        name: c.name,
+        description: c.description,
+        argumentHint: c.argumentHint,
+        isSkill: skillNames.has(c.name),
+      }))
+
+      this.emit({ type: 'init_ready', models: this.cachedModels, slashCommands: this.cachedSlashCommands })
+    }).catch(() => {})
   }
 
   async sendMessage(request: SendMessageRequest): Promise<void> {
@@ -185,32 +223,11 @@ export class ClaudeAgent {
   }
 
   async getAccountInfo(): Promise<AccountInfo> {
-    if (!this.sessionQuery) return {}
-    try {
-      const info = await this.sessionQuery.accountInfo()
-      return {
-        email: info.email,
-        organization: info.organization,
-        subscriptionType: info.subscriptionType,
-      }
-    } catch {
-      return {}
-    }
+    return this.cachedAccount ?? {}
   }
 
   async getSlashCommands(): Promise<SlashCommandInfo[]> {
-    if (!this.sessionQuery) return []
-    try {
-      // Use initializationResult() which waits for full init including user commands
-      const init = await this.sessionQuery.initializationResult()
-      return init.commands.map((c) => ({
-        name: c.name,
-        description: c.description,
-        argumentHint: c.argumentHint,
-      }))
-    } catch {
-      return []
-    }
+    return this.cachedSlashCommands ?? []
   }
 
   isReady(): boolean {
@@ -241,6 +258,8 @@ export class ClaudeAgent {
     this.iterationDone = null
     this.sessionId = ''
     this.currentMessageId = ''
+    this.cachedSlashCommands = null
+    this.cachedAccount = null
   }
 
   async dispose(): Promise<void> {

@@ -35,6 +35,7 @@ export function createSessionQuery(
       allowDangerouslySkipPermissions: options.permissionMode === 'bypassPermissions',
       canUseTool: options.canUseTool,
       enableFileCheckpointing: true,
+      settingSources: ['user', 'project', 'local'],
       resume: options.resume,
     },
   })
@@ -106,20 +107,9 @@ async function iterateMessages(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const sys = msg as any
           if (sys.subtype === 'init') {
+            // Note: The SDK does not yield the init message through the async iterator.
+            // Use query.initializationResult() (control channel) for init data instead.
             if (sys.session_id) onSessionId?.(sys.session_id)
-            emit({
-              type: 'session_init',
-              session: {
-                sessionId: sys.session_id ?? '',
-                model: sys.model ?? '',
-                tools: sys.tools ?? [],
-                mcpServers: sys.mcp_servers ?? [],
-                permissionMode: sys.permissionMode ?? 'default',
-                slashCommands: sys.slash_commands ?? [],
-                claudeCodeVersion: sys.claude_code_version ?? '',
-                cwd: sys.cwd ?? '',
-              },
-            })
           } else if (sys.subtype === 'hook_started') {
             emit({
               type: 'hook_started',

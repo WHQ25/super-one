@@ -201,6 +201,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }))
         break
 
+      case 'init_ready':
+        set((s) => ({
+          availableModels: event.models,
+          selectedModel: s.selectedModel || event.models[0]?.id || '',
+          slashCommands: event.slashCommands,
+        }))
+        break
+
       case 'hook_started':
       case 'hook_complete':
       case 'task_notification':

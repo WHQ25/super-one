@@ -34,7 +34,7 @@ export async function refreshModelsFromQuery(activeQuery: Query): Promise<ModelO
  *  If description contains "·" (e.g. "Opus 4.6 · Most capable..."),
  *  use left side as name and right side as description.
  *  Otherwise fall back to displayName + full description. */
-function mapModelInfo(m: { value: string; displayName: string; description?: string }): ModelOption {
+export function mapModelInfo(m: { value: string; displayName: string; description?: string }): ModelOption {
   const desc = m.description ?? ''
   const sepIdx = desc.indexOf('·')
   if (sepIdx !== -1) {

@@ -163,7 +163,7 @@ export class ClaudeAgent {
         isSkill: skillNames.has(c.name),
       }))
 
-      this.emit({ type: 'init_ready', models: this.cachedModels, slashCommands: this.cachedSlashCommands })
+      this.emit({ type: 'init_ready', models: this.cachedModels, slashCommands: this.cachedSlashCommands, cwd: this.config!.cwd, homedir: homedir() })
     }).catch(() => {})
   }
 
@@ -317,6 +317,18 @@ export class ClaudeAgent {
       return result
     } catch {
       return []
+    }
+  }
+
+  /** Find the 1-based line number where `text` first appears in a file. */
+  findLineNumber(filePath: string, text: string): number | null {
+    try {
+      const content = readFileSync(filePath, 'utf-8')
+      const idx = content.indexOf(text)
+      if (idx === -1) return null
+      return content.substring(0, idx).split('\n').length
+    } catch {
+      return null
     }
   }
 

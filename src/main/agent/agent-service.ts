@@ -65,6 +65,10 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.LIST_AGENTS, async () => {
       return this.claude.getAgents()
     })
+
+    ipcMain.handle(AgentIpcChannels.FIND_LINE_NUMBER, async (_event, filePath: string, text: string) => {
+      return this.claude.findLineNumber(filePath, text)
+    })
   }
 
   async initialize(config: ClaudeAgentConfig): Promise<void> {
@@ -90,5 +94,6 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SLASH_COMMANDS)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
     ipcMain.removeHandler(AgentIpcChannels.LIST_AGENTS)
+    ipcMain.removeHandler(AgentIpcChannels.FIND_LINE_NUMBER)
   }
 }

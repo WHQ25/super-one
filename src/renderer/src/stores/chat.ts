@@ -34,6 +34,10 @@ interface ChatState {
   // Agents (for @ mention)
   agents: AgentInfo[]
 
+  // Paths (for display shortening)
+  cwd: string
+  homedir: string
+
   // Slash command overlay
   slashCommandOutput: { command: string; content: string } | null
   _pendingSlashCommand: string
@@ -90,6 +94,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingQuestion: null,
   slashCommands: [],
   agents: [],
+  cwd: '',
+  homedir: '',
   slashCommandOutput: null,
   _pendingSlashCommand: '' as string,
 
@@ -213,6 +219,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           availableModels: event.models,
           selectedModel: s.selectedModel || event.models[0]?.id || '',
           slashCommands: event.slashCommands,
+          cwd: event.cwd,
+          homedir: event.homedir,
         }))
         get().fetchAgents()
         break

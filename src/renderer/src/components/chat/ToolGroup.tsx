@@ -1,0 +1,86 @@
+import { useState } from 'react'
+import { ChevronRight, Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { ToolBlock } from './ToolBlock'
+import type { ContentBlock } from '../../../../shared/agent-types'
+
+interface ToolGroupProps {
+  blocks: ContentBlock[]
+  isStreaming: boolean
+}
+
+/** Collapsible group for consecutive read-only tool calls (Read, Glob, Grep). */
+export function ToolGroup({ blocks }: ToolGroupProps) {
+  const toolUses = blocks.filter((b) => b.type === 'tool_use')
+  const hasStreamingTool = toolUses.some((b) => b.type === 'tool_use' && b.status === 'streaming')
+  const [expanded, setExpanded] = useState(hasStreamingTool)
+
+  const summary = generateSummary(toolUses)
+  const streamingTool = hasStreamingTool
+    ? toolUses.find((b) => b.type === 'tool_use' && b.status === 'streaming')
+    : null
+
+  return (
+    <div className="my-1">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className="flex w-full items-center gap-1.5 rounded bg-neutral-700/50 px-2 py-1.5 text-xs text-neutral-400 transition-colors hover:bg-neutral-700/70"
+      >
+        <ChevronRight
+          className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-90')}
+        />
+        {hasStreamingTool && (
+          <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
+        )}
+        <span className="text-neutral-300">{summary}</span>
+        <span className="ml-auto shrink-0 text-neutral-500">{toolUses.length} calls</span>
+      </button>
+
+      {expanded && (
+        <div className="ml-2 mt-0.5 border-l border-neutral-700 pl-2">
+          {blocks.map((block, i) => {
+            if (block.type === 'tool_use') {
+              return (
+                <ToolBlock key={i} toolName={block.toolName} input={block.input} status={block.status} elapsedSeconds={block.elapsedSeconds} />
+              )
+            }
+            if (block.type === 'tool_result') {
+              return (
+                <div key={i} className="my-1 rounded bg-neutral-700/50 px-2 py-1 text-xs text-neutral-400">
+                  {block.summary}
+                </div>
+              )
+            }
+            return null
+          })}
+        </div>
+      )}
+
+      {!expanded && streamingTool && streamingTool.type === 'tool_use' && (
+        <div className="mt-0.5">
+          <ToolBlock toolName={streamingTool.toolName} input={streamingTool.input} status={streamingTool.status} elapsedSeconds={streamingTool.elapsedSeconds} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function generateSummary(toolUses: ContentBlock[]): string {
+  const counts: Record<string, number> = {}
+  for (const t of toolUses) {
+    if (t.type === 'tool_use') counts[t.toolName] = (counts[t.toolName] || 0) + 1
+  }
+
+  const parts = Object.entries(counts).map(([name, count]) => {
+    const p = count > 1
+    switch (name) {
+      case 'Read': return `read ${count} file${p ? 's' : ''}`
+      case 'Grep': return `${count} search${p ? 'es' : ''}`
+      case 'Glob': return `${count} glob${p ? 's' : ''}`
+      case 'WebSearch': return `${count} web search${p ? 'es' : ''}`
+      case 'WebFetch': return `fetched ${count} page${p ? 's' : ''}`
+      default: return `${name} \u00d7${count}`
+    }
+  })
+  return parts.join(', ')
+}

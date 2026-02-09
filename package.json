@@ -20,6 +20,7 @@
     "@streamdown/code": "^1.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "diff": "^8.0.3",
     "lucide-react": "^0.563.0",
     "radix-ui": "^1.4.3",
     "react": "^19.2.4",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",
+    "@types/diff": "^8.0.0",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.3",

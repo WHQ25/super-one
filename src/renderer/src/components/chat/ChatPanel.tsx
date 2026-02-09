@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useState } from 'react'
+import { useRef, useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { useChatStore } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
@@ -62,7 +62,8 @@ export function ChatPanel() {
   const resetSession = useChatStore((s) => s.resetSession)
   const interrupt = useChatStore((s) => s.interrupt)
 
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollViewportRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
   const compactInputRef = useRef<ChatInputHandle>(null)
 
   // Expanded height (user-resizable)
@@ -84,11 +85,40 @@ export function ChatPanel() {
   const panelH = isOpen ? expandedH : COLLAPSED_H
   const isAtTop = corner.startsWith('t')
 
-  // Auto-scroll on new messages
+  // Track whether user is near the bottom of the scroll area
   useEffect(() => {
-    const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    const el = scrollViewportRef.current
+    if (!el) return
+    const handleScroll = (): void => {
+      const threshold = 40
+      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [messages.length > 0]) // re-attach when ScrollArea mounts/unmounts
+
+  // Auto-scroll only when user was already near the bottom (sync before paint to avoid flash)
+  useLayoutEffect(() => {
+    const el = scrollViewportRef.current
+    if (el && isNearBottomRef.current) {
+      el.scrollTop = el.scrollHeight
+    }
   }, [messages])
+
+  // Catch async content size changes (image loads, dynamic content, etc.)
+  useEffect(() => {
+    const viewport = scrollViewportRef.current
+    if (!viewport) return
+    const content = viewport.firstElementChild as HTMLElement | null
+    if (!content) return
+    const observer = new ResizeObserver(() => {
+      if (isNearBottomRef.current) {
+        viewport.scrollTop = viewport.scrollHeight
+      }
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [messages.length > 0])
 
   // Shift+Tab cycles permission mode
   const cyclePermissionMode = useChatStore((s) => s.cyclePermissionMode)
@@ -287,8 +317,8 @@ export function ChatPanel() {
           {messages.length === 0 ? (
             <ChatSuggestions />
           ) : (
-            <ScrollArea className="h-full">
-              <div ref={scrollRef} className="flex flex-col gap-3 p-3">
+            <ScrollArea className="h-full" viewportRef={scrollViewportRef}>
+              <div className="flex flex-col gap-3 p-3">
                 {messages.map((msg) => (
                   <ChatMessage key={msg.id} message={msg} />
                 ))}

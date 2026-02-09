@@ -4,27 +4,84 @@ import { Loader2, ImageIcon, OctagonX } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { ToolBlock } from './ToolBlock'
-import { CodeBlock, InlineCode } from './CodeBlock'
+import { ToolGroup } from './ToolGroup'
+import { createStreamdownCodeComponent } from './CodeBlock'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 const streamdownPlugins = { code: codePlugin }
-const streamdownComponents = {
-  pre: CodeBlock,
-  code: ({ children, className, ...props }: React.ComponentProps<'code'>) => {
-    if (!className) return <InlineCode {...props}>{children}</InlineCode>
-    return <code {...props} className={className}>{children}</code>
-  },
-}
+const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
 
 interface ChatMessageProps {
   message: ChatMessageType
 }
 
-function renderBlock(block: ContentBlock, index: number, isStreaming: boolean) {
+/** Tools whose consecutive calls can be collapsed into a summary group. */
+const COLLAPSIBLE_TOOLS = new Set(['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'])
+
+type RenderSegment =
+  | { kind: 'block'; block: ContentBlock; index: number }
+  | { kind: 'tools'; blocks: ContentBlock[]; startIndex: number }
+
+interface GroupResult {
+  segments: RenderSegment[]
+  toolNameMap: Map<string, string>
+  toolResultMap: Map<string, string>
+}
+
+/** Group consecutive collapsible tool blocks; everything else stays individual. */
+function groupContent(content: ContentBlock[]): GroupResult {
+  const toolNameMap = new Map<string, string>()
+  const toolResultMap = new Map<string, string>()
+  for (const block of content) {
+    if (block.type === 'tool_use') {
+      toolNameMap.set(block.toolUseId, block.toolName)
+    } else if (block.type === 'tool_result' && block.summary) {
+      toolResultMap.set(block.toolUseId, block.summary)
+    }
+  }
+
+  const segments: RenderSegment[] = []
+  let group: ContentBlock[] = []
+  let groupStart = 0
+
+  const flush = () => {
+    if (group.length === 0) return
+    segments.push({ kind: 'tools', blocks: group, startIndex: groupStart })
+    group = []
+  }
+
+  for (let i = 0; i < content.length; i++) {
+    const block = content[i]
+
+    if (block.type === 'tool_use' && COLLAPSIBLE_TOOLS.has(block.toolName)) {
+      if (group.length === 0) groupStart = i
+      group.push(block)
+    } else if (block.type === 'tool_result' && COLLAPSIBLE_TOOLS.has(toolNameMap.get(block.toolUseId) ?? '')) {
+      group.push(block)
+    } else {
+      flush()
+      segments.push({ kind: 'block', block, index: i })
+    }
+  }
+  flush()
+  return { segments, toolNameMap, toolResultMap }
+}
+
+function renderBlock(
+  block: ContentBlock,
+  index: number,
+  isStreaming: boolean,
+  toolResultMap?: Map<string, string>,
+) {
   switch (block.type) {
     case 'text':
       return (
-        <Streamdown key={index} plugins={streamdownPlugins} components={streamdownComponents} isAnimating={isStreaming}>
+        <Streamdown
+          key={index}
+          plugins={streamdownPlugins}
+          components={streamdownComponents}
+          isAnimating={isStreaming}
+        >
           {block.text}
         </Streamdown>
       )
@@ -39,22 +96,27 @@ function renderBlock(block: ContentBlock, index: number, isStreaming: boolean) {
         </div>
       )
     case 'tool_use':
-      return <ToolBlock key={index} toolName={block.toolName} input={block.input} status={block.status} elapsedSeconds={block.elapsedSeconds} />
-    case 'tool_result':
       return (
-        <div
+        <ToolBlock
           key={index}
-          className="my-1 rounded bg-neutral-700/50 px-2 py-1 text-xs text-neutral-400"
-        >
-          {block.summary}
-        </div>
+          toolName={block.toolName}
+          input={block.input}
+          status={block.status}
+          elapsedSeconds={block.elapsedSeconds}
+          result={toolResultMap?.get(block.toolUseId)}
+        />
       )
+    case 'tool_result':
+      // Rendered inside the parent ToolBlock, skip here
+      return null
   }
 }
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming'
+
+  const grouped = isUser ? null : groupContent(message.content)
 
   return (
     <div className={cn('w-0 min-w-full flex', isUser ? 'justify-end' : 'justify-start')}>
@@ -66,7 +128,27 @@ export function ChatMessage({ message }: ChatMessageProps) {
             : 'max-w-full text-neutral-100'
         )}
       >
-        {message.content.map((block, i) => renderBlock(block, i, isStreaming))}
+        {isUser
+          ? message.content.map((block, i) => renderBlock(block, i, false))
+          : grouped!.segments.map((seg) => {
+              if (seg.kind === 'block') {
+                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap)
+              }
+              const toolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
+              if (toolUseCount <= 1) {
+                return seg.blocks.map((block, i) =>
+                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap)
+                )
+              }
+              return (
+                <ToolGroup
+                  key={`tg-${seg.startIndex}`}
+                  blocks={seg.blocks}
+                  isStreaming={isStreaming}
+                />
+              )
+            })
+        }
         {isStreaming && message.content.length === 0 && (
           <Loader2 className="size-4 animate-spin text-neutral-400" />
         )}

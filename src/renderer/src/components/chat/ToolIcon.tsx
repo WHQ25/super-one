@@ -1,4 +1,4 @@
-import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Wrench } from 'lucide-react'
+import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, Wrench } from 'lucide-react'
 import type { ToolIcon as ToolIconName } from './tool-display'
 
 const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
@@ -8,6 +8,7 @@ const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
   'file-plus': FilePlus,
   'search': Search,
   'folder-search': FolderSearch,
+  'globe': Globe,
   'wrench': Wrench,
 }
 

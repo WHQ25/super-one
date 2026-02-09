@@ -6,11 +6,13 @@ import { getToolDisplay } from './tool-display'
 export function PermissionPrompt() {
   const pendingPermission = useChatStore((s) => s.pendingPermission)
   const respondToPermission = useChatStore((s) => s.respondToPermission)
+  const cwd = useChatStore((s) => s.cwd)
+  const homedir = useChatStore((s) => s.homedir)
 
   if (!pendingPermission) return null
 
   const { requestId, toolName, input, decisionReason, blockedPath, allowAlwaysAllow } = pendingPermission
-  const display = getToolDisplay(toolName, input)
+  const display = getToolDisplay(toolName, input, cwd, homedir)
 
   return (
     <div className="mx-3 mb-2 rounded-lg border border-neutral-600 bg-neutral-700/60 p-3">

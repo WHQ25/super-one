@@ -45,6 +45,9 @@ const agentAPI = {
   listAgents: () =>
     ipcRenderer.invoke(AgentIpcChannels.LIST_AGENTS),
 
+  findLineNumber: (filePath: string, text: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.FIND_LINE_NUMBER, filePath, text),
+
   onAgentEvent: (callback: (event: unknown) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: unknown): void => {
       callback(event)

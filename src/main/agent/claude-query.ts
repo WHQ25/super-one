@@ -79,18 +79,41 @@ async function iterateMessages(
 ): Promise<void> {
   // Track content_block index → tool_use_id for input_json_delta correlation
   const activeToolBlocks = new Map<number, string>()
+  // Track tool_use_id → tool_name so we can tag tool_result events
+  const toolIdToName = new Map<string, string>()
 
   try {
     for await (const msg of q) {
       const messageId = getCurrentMessageId()
 
-      // Slash command output arrives as a user message with <local-command-stdout> wrapper
+      // User messages carry tool results and slash command output
       if (msg.type === 'user') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userMsg = msg as any
-        const raw = typeof userMsg.message?.content === 'string'
-          ? userMsg.message.content
-          : ''
+        const msgContent = userMsg.message?.content
+
+        // Extract tool_result blocks from array content
+        if (Array.isArray(msgContent)) {
+          for (const block of msgContent) {
+            if (block.type === 'tool_result' && block.tool_use_id) {
+              const text = extractToolResultText(block.content)
+              if (text) {
+                emit({
+                  type: 'content_delta',
+                  messageId,
+                  delta: {
+                    type: 'tool_result',
+                    toolUseId: block.tool_use_id,
+                    summary: text,
+                  },
+                })
+              }
+            }
+          }
+        }
+
+        // Slash command output arrives as a string with <local-command-stdout> wrapper
+        const raw = typeof msgContent === 'string' ? msgContent : ''
         if (raw.includes('<local-command-stdout>')) {
           const text = raw
             .replace(/<local-command-stdout>\n?/g, '')
@@ -170,6 +193,7 @@ async function iterateMessages(
           if (Array.isArray(content)) {
             for (const block of content) {
               if (block.type === 'tool_use') {
+                toolIdToName.set(block.id ?? '', block.name ?? 'unknown')
                 emit({
                   type: 'content_delta',
                   messageId,
@@ -196,6 +220,7 @@ async function iterateMessages(
           if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
             // Track index → toolUseId for input_json_delta correlation
             activeToolBlocks.set(event.index, event.content_block.id ?? '')
+            toolIdToName.set(event.content_block.id ?? '', event.content_block.name ?? 'unknown')
             emit({
               type: 'content_delta',
               messageId,
@@ -243,13 +268,15 @@ async function iterateMessages(
         }
 
         case 'tool_use_summary': {
-          const summary = msg as { summary?: string; preceding_tool_use_ids?: string[] }
-          if (summary.summary) {
-            const toolUseId = summary.preceding_tool_use_ids?.[0] ?? ''
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const raw = msg as any
+          const summaryText = raw.summary as string | undefined
+          if (summaryText) {
+            const toolUseId = raw.preceding_tool_use_ids?.[0] ?? raw.tool_use_id ?? ''
             emit({
               type: 'content_delta',
               messageId,
-              delta: { type: 'tool_result', toolUseId, summary: summary.summary },
+              delta: { type: 'tool_result', toolUseId, summary: summaryText },
             })
           }
           break
@@ -259,15 +286,6 @@ async function iterateMessages(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result = msg as any
           const metadata = buildResultMetadata(result, getCurrentStartTime())
-
-          // Emit result text (e.g. slash command output) as content before completing
-          if (result.result && typeof result.result === 'string') {
-            emit({
-              type: 'content_delta',
-              messageId,
-              delta: { type: 'text', text: result.result },
-            })
-          }
 
           if (getInterrupted()) {
             emit({ type: 'message_interrupted', messageId, metadata })
@@ -332,4 +350,18 @@ function buildResultMetadata(result: any, startTime: number): MessageMetadata {
   }
 
   return metadata
+}
+
+/** Extract readable text from a tool_result content field. */
+function extractToolResultText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((b: any) => b.type === 'text' && b.text)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((b: any) => b.text)
+      .join('\n')
+  }
+  return ''
 }

@@ -16,6 +16,7 @@ interface AgentAPI {
   getSlashCommands(): Promise<SlashCommandInfo[]>
   listDirectory(relativePath: string): Promise<ListDirEntry[]>
   listAgents(): Promise<AgentInfo[]>
+  findLineNumber(filePath: string, text: string): Promise<number | null>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 

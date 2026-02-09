@@ -47,21 +47,21 @@ export function createCanUseTool(
     })
 
     const result = await new Promise<{ allow: boolean; alwaysAllow?: boolean }>((resolve) => {
+      // If already aborted before prompting, deny immediately
+      if (context.signal.aborted) {
+        resolve({ allow: false })
+        return
+      }
+
       pendingPermissions.set(requestId, {
         resolve,
         suggestions: context.suggestions,
         toolUseID: context.toolUseID,
       })
-
-      const onAbort = (): void => {
-        pendingPermissions.delete(requestId)
-        resolve({ allow: false })
-      }
-      if (context.signal.aborted) {
-        onAbort()
-        return
-      }
-      context.signal.addEventListener('abort', onAbort, { once: true })
+      // Note: We intentionally do NOT listen for future abort events.
+      // The SDK may fire abort while the user is still deciding on the
+      // permission prompt. Cleanup is handled by rejectAllPending() on
+      // session reset/interrupt.
     })
 
     const pending = pendingPermissions.get(requestId)
@@ -70,6 +70,7 @@ export function createCanUseTool(
     if (result.allow) {
       return {
         behavior: 'allow' as const,
+        updatedInput: input,
         updatedPermissions: result.alwaysAllow ? context.suggestions : undefined,
         toolUseID,
       }
@@ -94,17 +95,14 @@ async function handleAskUserQuestion(
   })
 
   const answers = await new Promise<Record<string, string>>((resolve) => {
-    pendingQuestions.set(requestId, { resolve })
-
-    const onAbort = (): void => {
-      pendingQuestions.delete(requestId)
-      resolve({}) // Empty answers on abort
-    }
     if (context.signal.aborted) {
-      onAbort()
+      resolve({})
       return
     }
-    context.signal.addEventListener('abort', onAbort, { once: true })
+
+    pendingQuestions.set(requestId, { resolve })
+    // Note: We intentionally do NOT listen for future abort events.
+    // Cleanup is handled by rejectAllPending() on session reset/interrupt.
   })
 
   return {

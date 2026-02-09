@@ -174,7 +174,7 @@ export type AgentEvent =
   | { type: 'task_notification'; taskId: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
-  | { type: 'init_ready'; models: ModelOption[]; slashCommands: SlashCommandInfo[] }
+  | { type: 'init_ready'; models: ModelOption[]; slashCommands: SlashCommandInfo[]; cwd: string; homedir: string }
 
 export type AgentStatus = 'idle' | 'streaming' | 'error'
 
@@ -222,4 +222,5 @@ export const AgentIpcChannels = {
   SLASH_COMMANDS: 'agent:slash-commands',
   LIST_DIRECTORY: 'agent:list-directory',
   LIST_AGENTS: 'agent:list-agents',
+  FIND_LINE_NUMBER: 'agent:find-line-number',
 } as const

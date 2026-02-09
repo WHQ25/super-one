@@ -21,6 +21,9 @@ const agentAPI = {
   answerQuestion: (requestId: string, answers: Record<string, string>) =>
     ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, requestId, answers),
 
+  dismissQuestion: (requestId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DISMISS_QUESTION, requestId),
+
   resetSession: () =>
     ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION),
 

@@ -8,7 +8,7 @@ export interface PendingPermission {
 }
 
 export interface PendingQuestion {
-  resolve: (answers: Record<string, string>) => void
+  resolve: (answers: Record<string, string> | null) => void
 }
 
 export function createCanUseTool(
@@ -94,9 +94,9 @@ async function handleAskUserQuestion(
     request: { requestId, questions },
   })
 
-  const answers = await new Promise<Record<string, string>>((resolve) => {
+  const answers = await new Promise<Record<string, string> | null>((resolve) => {
     if (context.signal.aborted) {
-      resolve({})
+      resolve(null)
       return
     }
 
@@ -104,6 +104,10 @@ async function handleAskUserQuestion(
     // Note: We intentionally do NOT listen for future abort events.
     // Cleanup is handled by rejectAllPending() on session reset/interrupt.
   })
+
+  if (answers === null) {
+    return { behavior: 'deny' as const, message: 'User dismissed the question', toolUseID: context.toolUseID }
+  }
 
   return {
     behavior: 'allow' as const,
@@ -137,6 +141,17 @@ export function respondToQuestion(
   }
 }
 
+export function dismissQuestion(
+  pendingQuestions: Map<string, PendingQuestion>,
+  requestId: string
+): void {
+  const pending = pendingQuestions.get(requestId)
+  if (pending) {
+    pendingQuestions.delete(requestId)
+    pending.resolve(null)
+  }
+}
+
 export function rejectAllPending(
   pendingPermissions: Map<string, PendingPermission>,
   pendingQuestions?: Map<string, PendingQuestion>
@@ -147,7 +162,7 @@ export function rejectAllPending(
   pendingPermissions.clear()
   if (pendingQuestions) {
     for (const pending of pendingQuestions.values()) {
-      pending.resolve({})
+      pending.resolve(null)
     }
     pendingQuestions.clear()
   }

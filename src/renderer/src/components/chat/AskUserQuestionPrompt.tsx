@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { useChatStore } from '@/stores/chat'
 import type { UserQuestion } from '../../../../shared/agent-types'
@@ -6,9 +6,24 @@ import type { UserQuestion } from '../../../../shared/agent-types'
 export function AskUserQuestionPrompt() {
   const pendingQuestion = useChatStore((s) => s.pendingQuestion)
   const answerQuestion = useChatStore((s) => s.answerQuestion)
+  const dismissQuestion = useChatStore((s) => s.dismissQuestion)
 
   const [selections, setSelections] = useState<Record<string, string>>({})
   const [otherTexts, setOtherTexts] = useState<Record<string, string>>({})
+
+  const handleEsc = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape' && pendingQuestion) {
+      e.preventDefault()
+      dismissQuestion(pendingQuestion.requestId)
+      setSelections({})
+      setOtherTexts({})
+    }
+  }, [pendingQuestion, dismissQuestion])
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [handleEsc])
 
   if (!pendingQuestion) return null
 

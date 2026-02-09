@@ -214,6 +214,7 @@ export const AgentIpcChannels = {
   PERMISSION_RESPONSE: 'agent:permission-response',
   SET_PERMISSION_MODE: 'agent:set-permission-mode',
   ANSWER_QUESTION: 'agent:answer-question',
+  DISMISS_QUESTION: 'agent:dismiss-question',
   RESET_SESSION: 'agent:reset-session',
   REWIND_FILES: 'agent:rewind-files',
   GET_SESSION_ID: 'agent:get-session-id',

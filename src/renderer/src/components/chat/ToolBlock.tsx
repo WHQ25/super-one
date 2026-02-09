@@ -23,8 +23,9 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
   const display = getToolDisplay(toolName, params, cwd, homedir)
   const isStreaming = status === 'streaming'
   const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && Object.keys(params).length > 0
-  const hasResult = !!result && !isStreaming && toolName !== 'Read'
-  const expandable = hasDiff || hasResult
+  const hasResult = !!result && !isStreaming && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
+  const hasQA = toolName === 'AskUserQuestion' && !!result && !isStreaming
+  const expandable = hasDiff || hasResult || hasQA
   const [expanded, setExpanded] = useState(false)
 
   // For unknown tools, show truncated raw input as fallback
@@ -69,9 +70,23 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
         >
           <div className="overflow-hidden">
             <div className="px-2 pb-1.5">
+              {toolName === 'Bash' && summary && (
+                <div className="mb-1">
+                  <div className="mb-0.5 text-[11px] font-medium text-neutral-500">Command</div>
+                  <div className="overflow-x-auto rounded bg-neutral-900/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-neutral-300 whitespace-pre-wrap">
+                    {summary}
+                  </div>
+                </div>
+              )}
               {toolName === 'Edit' && <EditDiff params={params} />}
               {toolName === 'Write' && <WriteDiff params={params} />}
-              {hasResult && !hasDiff && <ToolResult text={result!} />}
+              {hasResult && !hasDiff && (
+                <div>
+                  {toolName === 'Bash' && <div className="mb-0.5 text-[11px] font-medium text-neutral-500">Output</div>}
+                  <ToolResult text={result!} />
+                </div>
+              )}
+              {hasQA && <QAResult text={result!} />}
             </div>
           </div>
         </div>
@@ -105,6 +120,35 @@ function ToolResult({ text }: { text: string }) {
           {showAll ? 'Collapse' : `${hiddenCount} more line${hiddenCount > 1 ? 's' : ''}`}
         </button>
       )}
+    </div>
+  )
+}
+
+/** Parse AskUserQuestion result text into question→answer pairs. */
+function parseQAPairs(text: string): Array<{ question: string; answer: string }> {
+  // Format: "question"="answer", "question"="answer"
+  const pairs: Array<{ question: string; answer: string }> = []
+  const regex = /"([^"]+)"="([^"]*)"/g
+  let match
+  while ((match = regex.exec(text)) !== null) {
+    pairs.push({ question: match[1], answer: match[2] })
+  }
+  return pairs
+}
+
+/** Render AskUserQuestion result as Q&A pairs. */
+function QAResult({ text }: { text: string }) {
+  const pairs = parseQAPairs(text)
+  if (pairs.length === 0) return null
+
+  return (
+    <div className="space-y-1">
+      {pairs.map((pair, i) => (
+        <div key={i} className="rounded bg-neutral-900/70 px-2 py-1.5 text-[11px] leading-relaxed">
+          <div className="text-neutral-400">{pair.question}</div>
+          <div className="text-green-400">{pair.answer}</div>
+        </div>
+      ))}
     </div>
   )
 }

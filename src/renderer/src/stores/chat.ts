@@ -68,6 +68,7 @@ interface ChatState {
 
   // Question actions
   answerQuestion: (requestId: string, answers: Record<string, string>) => void
+  dismissQuestion: (requestId: string) => void
 
   // Slash command actions
   fetchSlashCommands: () => Promise<void>
@@ -356,6 +357,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   answerQuestion: (requestId, answers) => {
     window.agent.answerQuestion(requestId, answers)
+    set({ pendingQuestion: null })
+  },
+
+  dismissQuestion: (requestId) => {
+    window.agent.dismissQuestion(requestId)
     set({ pendingQuestion: null })
   },
 

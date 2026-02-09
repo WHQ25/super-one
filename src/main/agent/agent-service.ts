@@ -34,6 +34,10 @@ export class AgentService {
       this.claude.respondToQuestion(requestId, answers)
     })
 
+    ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, requestId: string) => {
+      this.claude.dismissQuestion(requestId)
+    })
+
     ipcMain.handle(AgentIpcChannels.RESET_SESSION, async () => {
       await this.claude.resetSession()
     })
@@ -86,6 +90,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
     ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)
     ipcMain.removeHandler(AgentIpcChannels.ANSWER_QUESTION)
+    ipcMain.removeHandler(AgentIpcChannels.DISMISS_QUESTION)
     ipcMain.removeHandler(AgentIpcChannels.RESET_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.REWIND_FILES)
     ipcMain.removeHandler(AgentIpcChannels.GET_SESSION_ID)

@@ -1,6 +1,6 @@
 /** Shared tool name → icon key + summary extraction for ToolBlock & PermissionPrompt. */
 
-export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'wrench'
+export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'message-circle' | 'wrench'
 
 export interface ToolDisplay {
   icon: ToolIcon
@@ -46,6 +46,12 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       return { icon: 'globe', summary: String(input.query ?? '') }
     case 'WebFetch':
       return { icon: 'globe', summary: String(input.url ?? '') }
+    case 'Skill':
+      return { icon: 'wrench', summary: String(input.skill ?? '') }
+    case 'AskUserQuestion': {
+      const questions = Array.isArray(input.questions) ? input.questions : []
+      return { icon: 'message-circle', summary: `${questions.length} question${questions.length !== 1 ? 's' : ''}` }
+    }
     default:
       return { icon: 'wrench', summary: '' }
   }

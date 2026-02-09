@@ -3,7 +3,7 @@ import { join, resolve } from 'path'
 import { homedir } from 'os'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import type { AccountInfo, AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
-import { createCanUseTool, rejectAllPending, respondToPermission, respondToQuestion, type PendingPermission, type PendingQuestion } from './claude-permissions'
+import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, type PendingPermission, type PendingQuestion } from './claude-permissions'
 import { mapModelInfo } from './claude-models'
 import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
@@ -215,6 +215,10 @@ export class ClaudeAgent {
 
   respondToQuestion(requestId: string, answers: Record<string, string>): void {
     respondToQuestion(this.pendingQuestions, requestId, answers)
+  }
+
+  dismissQuestion(requestId: string): void {
+    dismissQuestion(this.pendingQuestions, requestId)
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {

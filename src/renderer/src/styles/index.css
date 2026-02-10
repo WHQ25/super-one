@@ -119,3 +119,122 @@ body {
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
+
+/* =============================================
+   Chat markdown styling (scoped to .chat-md)
+   Uses Streamdown's data-streamdown attributes
+   ============================================= */
+
+/* --- Headings --- */
+.chat-md [data-streamdown="heading-1"] {
+  font-size: 1.1em;
+  font-weight: 700;
+  margin: 0.75em 0 0.25em;
+  line-height: 1.4;
+}
+.chat-md [data-streamdown="heading-2"] {
+  font-size: 1.05em;
+  font-weight: 600;
+  margin: 0.6em 0 0.2em;
+  line-height: 1.4;
+}
+.chat-md [data-streamdown="heading-3"] {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 0.5em 0 0.15em;
+  line-height: 1.4;
+}
+.chat-md [data-streamdown="heading-4"],
+.chat-md [data-streamdown="heading-5"],
+.chat-md [data-streamdown="heading-6"] {
+  font-size: 1em;
+  font-weight: 500;
+  margin: 0.4em 0 0.1em;
+  line-height: 1.4;
+}
+
+/* --- Links --- */
+.chat-md [data-streamdown="link"] {
+  color: oklch(0.65 0.15 250);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chat-md [data-streamdown="link"]:hover {
+  color: oklch(0.72 0.17 250);
+}
+
+/* --- Lists --- */
+.chat-md [data-streamdown="unordered-list"] {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin: 0.3em 0;
+}
+.chat-md [data-streamdown="ordered-list"] {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin: 0.3em 0;
+}
+.chat-md [data-streamdown="list-item"] {
+  margin: 0.15em 0;
+}
+.chat-md [data-streamdown="list-item"] [data-streamdown="unordered-list"],
+.chat-md [data-streamdown="list-item"] [data-streamdown="ordered-list"] {
+  margin: 0.1em 0;
+}
+/* Nested unordered list markers */
+.chat-md [data-streamdown="unordered-list"] [data-streamdown="unordered-list"] {
+  list-style-type: circle;
+}
+.chat-md [data-streamdown="unordered-list"] [data-streamdown="unordered-list"] [data-streamdown="unordered-list"] {
+  list-style-type: square;
+}
+
+/* --- Blockquotes --- */
+.chat-md [data-streamdown="blockquote"] {
+  border-left: 3px solid var(--border);
+  padding-left: 0.75em;
+  margin: 0.4em 0;
+  color: var(--muted-foreground);
+}
+.chat-md [data-streamdown="blockquote"] [data-streamdown="blockquote"] {
+  margin: 0.2em 0;
+}
+
+/* --- Horizontal rule --- */
+.chat-md [data-streamdown="horizontal-rule"] {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.6em 0;
+}
+
+/* --- Tables (GitHub style) --- */
+.chat-md [data-streamdown="table-wrapper"] {
+  overflow-x: auto;
+  margin: 0.4em 0;
+  border-radius: 0.375rem;
+  border: 1px solid var(--border);
+}
+.chat-md [data-streamdown="table"] {
+  border-collapse: collapse;
+  white-space: nowrap;
+  width: max-content;
+  font-size: 12px;
+}
+.chat-md [data-streamdown="table-header-cell"],
+.chat-md [data-streamdown="table-cell"] {
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  text-align: left;
+}
+.chat-md [data-streamdown="table-header-cell"] {
+  font-weight: 600;
+  background-color: var(--muted);
+}
+.chat-md [data-streamdown="table-row"]:nth-child(2n) {
+  background-color: color-mix(in oklch, var(--muted), transparent 60%);
+}
+
+/* --- Paragraphs --- */
+.chat-md p {
+  margin: 0.3em 0;
+}

@@ -9,7 +9,11 @@ import { createStreamdownCodeComponent } from './CodeBlock'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 const streamdownPlugins = { code: codePlugin }
-const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
+const streamdownControls = { table: false }
+
+const streamdownComponents = {
+  code: createStreamdownCodeComponent(codePlugin),
+}
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -78,8 +82,10 @@ function renderBlock(
       return (
         <Streamdown
           key={index}
+          className="chat-md"
           plugins={streamdownPlugins}
           components={streamdownComponents}
+          controls={streamdownControls}
           isAnimating={isStreaming}
         >
           {block.text}
@@ -107,8 +113,15 @@ function renderBlock(
         />
       )
     case 'tool_result':
-      // Rendered inside the parent ToolBlock, skip here
-      return null
+      // Normally rendered inside the parent ToolBlock via toolResultMap.
+      // If orphaned (no matching tool_use), show a compact fallback.
+      if (toolResultMap?.has(block.toolUseId)) return null
+      if (!block.summary) return null
+      return (
+        <div key={index} className="my-0.5 overflow-x-auto rounded bg-muted/50 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+          {block.summary}
+        </div>
+      )
   }
 }
 
@@ -122,9 +135,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
     <div className={cn('w-0 min-w-full flex', isUser ? 'justify-end' : 'justify-start')}>
       <div
         className={cn(
-          'min-w-0 rounded-xl py-2 text-sm',
+          'min-w-0 text-sm',
           isUser
-            ? 'max-w-[85%] bg-muted px-3 text-foreground'
+            ? 'max-w-[85%] rounded-xl bg-[#007AFF] text-white dark:bg-[#3A3A3C] dark:text-foreground px-3 py-2'
             : 'max-w-full text-foreground'
         )}
       >

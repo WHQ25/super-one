@@ -129,13 +129,13 @@ function SessionHistory() {
       ) : (
         <div className="flex-1 overflow-hidden">
           <ScrollArea className="h-full">
-            <div className="flex flex-col gap-0.5 p-2">
+            <div className="flex w-0 min-w-full flex-col gap-0.5 p-2">
               {sessions.map((entry) => (
                 <div
                   key={entry.sessionId}
                   onClick={() => handleResume(entry)}
                   className={cn(
-                    'group rounded-md px-2.5 py-2 text-left transition-colors',
+                    'group overflow-hidden rounded-md px-2.5 py-2 text-left transition-colors',
                     entry.sessionId === currentSessionId
                       ? 'bg-accent'
                       : 'cursor-pointer hover:bg-muted'
@@ -147,6 +147,7 @@ function SessionHistory() {
                       value={editingTitle}
                       onChange={(e) => setEditingTitle(e.target.value)}
                       onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing) return
                         if (e.key === 'Enter') { e.preventDefault(); confirmRename() }
                         if (e.key === 'Escape') { e.preventDefault(); setEditingSessionId(null) }
                       }}
@@ -155,7 +156,7 @@ function SessionHistory() {
                       autoFocus
                     />
                   ) : (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 overflow-hidden">
                       <div className="min-w-0 flex-1 truncate text-xs font-medium">{entry.title}</div>
                       <button
                         onClick={(e) => startEditing(entry, e)}
@@ -231,8 +232,8 @@ export function ChatPanel() {
       const threshold = 40
       isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
 
-      // Trigger load-more when scrolled near top
-      if (el.scrollTop < 500) {
+      // Trigger load-more when scrolled near top (skip during drag/resize)
+      if (el.scrollTop < 500 && !dragRef.current.dragging) {
         const { hasMoreHistory, isLoadingHistory } = useChatStore.getState()
         if (hasMoreHistory && !isLoadingHistory) {
           // Snapshot scroll position before prepend
@@ -258,8 +259,13 @@ export function ChatPanel() {
       const heightDiff = el.scrollHeight - prevScrollHeightRef.current
       el.scrollTop = prevScrollTopRef.current + heightDiff
       isPrependingRef.current = false
-    } else if (isNearBottomRef.current) {
-      el.scrollTop = el.scrollHeight
+    } else {
+      // Always scroll to bottom when user just sent a message, or when already near bottom
+      const lastMsg = messages[messages.length - 1]
+      if (isNearBottomRef.current || lastMsg?.role === 'user') {
+        el.scrollTop = el.scrollHeight
+        isNearBottomRef.current = true
+      }
     }
   }, [messages])
 

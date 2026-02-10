@@ -1,4 +1,4 @@
-import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, MessageCircleQuestion, Wrench, Plug } from 'lucide-react'
+import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot } from 'lucide-react'
 import type { ToolIcon as ToolIconName } from './tool-display'
 
 const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
@@ -12,6 +12,8 @@ const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
   'message-circle': MessageCircleQuestion,
   'wrench': Wrench,
   'plug': Plug,
+  'clipboard-list': ClipboardList,
+  'bot': Bot,
 }
 
 interface ToolIconProps {

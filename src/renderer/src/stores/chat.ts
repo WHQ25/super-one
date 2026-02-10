@@ -89,6 +89,7 @@ interface ChatState {
   renameSession: (sessionId: string, title: string) => Promise<void>
 
   // History pagination
+  _historySessionId: string | null
   historyCursor: number | null
   hasMoreHistory: boolean
   isLoadingHistory: boolean
@@ -122,6 +123,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   _pendingSlashCommand: '' as string,
   sessions: [],
   showHistory: false,
+  _historySessionId: null,
   historyCursor: null,
   hasMoreHistory: false,
   isLoadingHistory: false,
@@ -344,7 +346,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   resetSession: async () => {
     await window.agent.resetSession()
-    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [] })
+    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], _historySessionId: null, historyCursor: null, hasMoreHistory: false })
   },
 
   rewindFiles: async (userMessageId: string) => {
@@ -452,7 +454,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   resumeSession: async (sessionId) => {
     // Reset current UI state
-    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], showHistory: false, historyCursor: null, hasMoreHistory: false, isLoadingHistory: false })
+    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], showHistory: false, _historySessionId: sessionId, historyCursor: null, hasMoreHistory: false, isLoadingHistory: false })
 
     // Load history messages before SDK resume
     try {
@@ -470,9 +472,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await window.app.resumeSession(sessionId)
   },
   loadMoreHistory: async () => {
-    const { isLoadingHistory, hasMoreHistory, historyCursor, session } = get()
+    const { isLoadingHistory, hasMoreHistory, historyCursor, _historySessionId } = get()
     if (isLoadingHistory || !hasMoreHistory || historyCursor === null) return
-    const sessionId = session?.sessionId
+    const sessionId = _historySessionId
     if (!sessionId) return
 
     set({ isLoadingHistory: true })

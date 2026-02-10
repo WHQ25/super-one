@@ -8,13 +8,14 @@ function encodeCwd(cwd: string): string {
   return cwd.replace(/\//g, '-')
 }
 
-/** Strip XML-like internal tags from text; discard entirely if it starts with a command tag. */
+/** Strip XML-like internal tags from text; discard entirely if it starts with a system tag. */
 function stripInternalTags(text: string): string {
   const trimmed = text.trim()
-  if (trimmed.startsWith('<command-name>')) return ''
+  if (trimmed.startsWith('<command-name>') || trimmed.startsWith('<task-notification>')) return ''
   return trimmed
     .replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/g, '')
     .replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/g, '')
+    .replace(/<task-notification>[\s\S]*?<\/task-notification>/g, '')
     .trim()
 }
 

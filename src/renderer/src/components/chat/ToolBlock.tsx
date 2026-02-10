@@ -69,7 +69,7 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
       )}
     >
       <div
-        className="flex items-center gap-1.5 px-2 py-1 text-xs"
+        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={expandable ? () => setExpanded((e) => !e) : undefined}
       >
         {isStreaming ? (

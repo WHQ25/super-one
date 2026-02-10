@@ -1,7 +1,8 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, type ClaudeAgentConfig } from './claude-agent'
-import { AgentIpcChannels, type AgentEvent, type PermissionMode, type ResourceScope, type SendMessageRequest, type SessionHistoryEntry } from '../../shared/agent-types'
-import { getSessionHistory, saveSession, deleteSession, renameSession } from '../session-history'
+import { AgentIpcChannels, type AgentEvent, type PermissionMode, type ResourceScope, type SendMessageRequest } from '../../shared/agent-types'
+import { listSessions, loadSessionMessages, clearSessionMessageCache } from '../session-history'
+import { setSessionTitle } from '../session-titles'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import { probeMcpServers, getCachedMcpMeta } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
@@ -161,23 +162,20 @@ export class AgentService {
 
     // Session history
     ipcMain.handle(AgentIpcChannels.SESSIONS_LIST, () => {
-      return getSessionHistory()
-    })
-
-    ipcMain.handle(AgentIpcChannels.SESSIONS_SAVE, (_event, entry: SessionHistoryEntry) => {
-      saveSession(entry)
-    })
-
-    ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, (_event, sessionId: string) => {
-      deleteSession(sessionId)
-    })
-
-    ipcMain.handle(AgentIpcChannels.SESSIONS_RENAME, (_event, sessionId: string, name: string) => {
-      renameSession(sessionId, name)
+      return listSessions(this.claude.getCwd())
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, sessionId: string) => {
+      clearSessionMessageCache()
       await this.claude.resumeSession(sessionId)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, (_event, sessionId: string, limit: number, cursor?: number) => {
+      return loadSessionMessages(this.claude.getCwd(), sessionId, limit, cursor)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_RENAME, (_event, sessionId: string, title: string) => {
+      setSessionTitle(sessionId, title)
     })
   }
 
@@ -228,9 +226,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_LIBRARY)
     ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_SAVE)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_RENAME)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_RESUME)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_MESSAGES)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_RENAME)
   }
 }

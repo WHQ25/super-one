@@ -128,14 +128,12 @@ const appAPI = {
   // Session history
   listSessions: () =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST),
-  saveSession: (entry: unknown) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SAVE, entry),
-  deleteSession: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE, sessionId),
-  renameSession: (sessionId: string, name: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RENAME, sessionId, name),
   resumeSession: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RESUME, sessionId),
+  loadSessionMessages: (sessionId: string, limit: number, cursor?: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, sessionId, limit, cursor),
+  renameSession: (sessionId: string, title: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RENAME, sessionId, title),
 }
 
 if (process.contextIsolated) {

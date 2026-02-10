@@ -1,5 +1,6 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AccountInfo, AgentEvent, AgentInfo, ListDirEntry, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, ModelOption, PermissionMode, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo } from '../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, ListDirEntry, LoadSessionMessagesResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, ModelOption, PermissionMode, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo } from '../shared/agent-types'
+
 
 interface AgentAPI {
   sendMessage(request: SendMessageRequest): Promise<void>
@@ -52,10 +53,9 @@ interface AppAPI {
 
   // Session history
   listSessions(): Promise<SessionHistoryEntry[]>
-  saveSession(entry: SessionHistoryEntry): Promise<void>
-  deleteSession(sessionId: string): Promise<void>
-  renameSession(sessionId: string, name: string): Promise<void>
   resumeSession(sessionId: string): Promise<void>
+  loadSessionMessages(sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
+  renameSession(sessionId: string, title: string): Promise<void>
 }
 
 declare global {

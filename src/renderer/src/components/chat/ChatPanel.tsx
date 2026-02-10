@@ -2,15 +2,15 @@ import { useRef, useCallback, useEffect, useLayoutEffect, useState } from 'react
 import { useChatStore } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
-import { ChevronUp, ChevronDown, Plus, ArrowUp, Square } from 'lucide-react'
+import { ChevronUp, ChevronDown, Plus, ArrowUp, Square, Clock, ArrowLeft, Loader2, GitBranch, Pencil } from 'lucide-react'
 import { ChatInput, type ChatInputHandle } from './ChatInput'
 import { ChatMessage } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
 import { SlashCommandOverlay } from './SlashCommandOverlay'
-import { SessionPopover } from './SessionPopover'
 import { cn } from '@/lib/utils'
+import type { SessionHistoryEntry } from '../../../../shared/agent-types'
 
 const OFFSET = 16
 const TITLEBAR_H = 44
@@ -55,6 +55,131 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
+function formatRelativeTime(isoDate: string): string {
+  const diff = Date.now() - new Date(isoDate).getTime()
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return new Date(isoDate).toLocaleDateString()
+}
+
+function SessionHistory() {
+  const sessions = useChatStore((s) => s.sessions)
+  const resumeSession = useChatStore((s) => s.resumeSession)
+  const renameSession = useChatStore((s) => s.renameSession)
+  const toggleHistory = useChatStore((s) => s.toggleHistory)
+  const currentSessionId = useChatStore((s) => s.session?.sessionId)
+
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
+
+  // ESC to close history (or cancel editing)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        if (editingSessionId) {
+          setEditingSessionId(null)
+        } else {
+          toggleHistory()
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [toggleHistory, editingSessionId])
+
+  const handleResume = (entry: SessionHistoryEntry) => {
+    if (editingSessionId) return
+    if (entry.sessionId === currentSessionId) return
+    resumeSession(entry.sessionId)
+  }
+
+  const startEditing = (entry: SessionHistoryEntry, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingSessionId(entry.sessionId)
+    setEditingTitle(entry.title)
+  }
+
+  const confirmRename = () => {
+    if (!editingSessionId) return
+    const trimmed = editingTitle.trim()
+    if (trimmed) {
+      renameSession(editingSessionId, trimmed)
+    }
+    setEditingSessionId(null)
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <Button size="icon-xs" variant="ghost" onClick={toggleHistory} className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="size-4" />
+        </Button>
+        <span className="text-xs font-medium">History</span>
+      </div>
+      {sessions.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
+          No sessions found
+        </div>
+      ) : (
+        <div className="flex-1 overflow-hidden">
+          <ScrollArea className="h-full">
+            <div className="flex flex-col gap-0.5 p-2">
+              {sessions.map((entry) => (
+                <div
+                  key={entry.sessionId}
+                  onClick={() => handleResume(entry)}
+                  className={cn(
+                    'group rounded-md px-2.5 py-2 text-left transition-colors',
+                    entry.sessionId === currentSessionId
+                      ? 'bg-accent'
+                      : 'cursor-pointer hover:bg-muted'
+                  )}
+                >
+                  {editingSessionId === entry.sessionId ? (
+                    <input
+                      className="w-full rounded border border-border bg-background px-1 py-0.5 text-xs font-medium outline-none focus:ring-1 focus:ring-ring"
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); confirmRename() }
+                        if (e.key === 'Escape') { e.preventDefault(); setEditingSessionId(null) }
+                      }}
+                      onBlur={confirmRename}
+                      onClick={(e) => e.stopPropagation()}
+                      autoFocus
+                    />
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <div className="min-w-0 flex-1 truncate text-xs font-medium">{entry.title}</div>
+                      <button
+                        onClick={(e) => startEditing(entry, e)}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span>{formatRelativeTime(entry.lastActiveAt)}</span>
+                    <span>{entry.messageCount} messages</span>
+                    {entry.gitBranch && <span className="flex items-center gap-0.5 truncate"><GitBranch className="size-2.5" />{entry.gitBranch}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ChatPanel() {
   const isOpen = useChatStore((s) => s.isOpen)
   const corner = useChatStore((s) => s.corner)
@@ -64,10 +189,20 @@ export function ChatPanel() {
   const status = useChatStore((s) => s.status)
   const resetSession = useChatStore((s) => s.resetSession)
   const interrupt = useChatStore((s) => s.interrupt)
+  const showHistory = useChatStore((s) => s.showHistory)
+  const toggleHistory = useChatStore((s) => s.toggleHistory)
+  const hasMoreHistory = useChatStore((s) => s.hasMoreHistory)
+  const isLoadingHistory = useChatStore((s) => s.isLoadingHistory)
+  const loadMoreHistory = useChatStore((s) => s.loadMoreHistory)
 
   const scrollViewportRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
   const compactInputRef = useRef<ChatInputHandle>(null)
+
+  // Scroll position preservation for history prepend
+  const prevScrollHeightRef = useRef<number>(0)
+  const prevScrollTopRef = useRef<number>(0)
+  const isPrependingRef = useRef(false)
 
   // Expanded height (user-resizable)
   const [expandedH, setExpandedH] = useState(DEFAULT_EXPANDED_H)
@@ -88,22 +223,42 @@ export function ChatPanel() {
   const panelH = isOpen ? expandedH : COLLAPSED_H
   const isAtTop = corner.startsWith('t')
 
-  // Track whether user is near the bottom of the scroll area
+  // Track whether user is near the bottom of the scroll area + trigger load-more
   useEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
     const handleScroll = (): void => {
       const threshold = 40
       isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+
+      // Trigger load-more when scrolled near top
+      if (el.scrollTop < 500) {
+        const { hasMoreHistory, isLoadingHistory } = useChatStore.getState()
+        if (hasMoreHistory && !isLoadingHistory) {
+          // Snapshot scroll position before prepend
+          prevScrollHeightRef.current = el.scrollHeight
+          prevScrollTopRef.current = el.scrollTop
+          isPrependingRef.current = true
+          loadMoreHistory()
+        }
+      }
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
-  }, [messages.length > 0]) // re-attach when ScrollArea mounts/unmounts
+  }, [messages.length > 0, loadMoreHistory]) // re-attach when ScrollArea mounts/unmounts
 
   // Auto-scroll only when user was already near the bottom (sync before paint to avoid flash)
+  // Also preserve scroll position after history prepend
   useLayoutEffect(() => {
     const el = scrollViewportRef.current
-    if (el && isNearBottomRef.current) {
+    if (!el) return
+
+    if (isPrependingRef.current) {
+      // Restore scroll position after messages were prepended
+      const heightDiff = el.scrollHeight - prevScrollHeightRef.current
+      el.scrollTop = prevScrollTopRef.current + heightDiff
+      isPrependingRef.current = false
+    } else if (isNearBottomRef.current) {
       el.scrollTop = el.scrollHeight
     }
   }, [messages])
@@ -276,7 +431,12 @@ export function ChatPanel() {
         {isOpen ? (
           <>
             <div className="flex-1" />
-            <SessionPopover />
+            <div
+              onClick={toggleHistory}
+              className="shrink-0 cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Clock className="size-4" />
+            </div>
             <Button
               size="icon-xs"
               variant="ghost"
@@ -314,23 +474,34 @@ export function ChatPanel() {
 
       {/* Expanded content — hidden by overflow when collapsed */}
       <div className="relative flex min-h-0 flex-1 flex-col bg-card">
-        <SlashCommandOverlay />
-        <div className="flex-1 overflow-hidden">
-          {messages.length === 0 ? (
-            <ChatSuggestions />
-          ) : (
-            <ScrollArea className="h-full" viewportRef={scrollViewportRef}>
-              <div className="flex flex-col gap-3 p-3">
-                {messages.map((msg) => (
-                  <ChatMessage key={msg.id} message={msg} />
-                ))}
-              </div>
-            </ScrollArea>
-          )}
-        </div>
-        <PermissionPrompt />
-        <AskUserQuestionPrompt />
-        <ChatInput />
+        {showHistory ? (
+          <SessionHistory />
+        ) : (
+          <>
+            <SlashCommandOverlay />
+            <div className="flex-1 overflow-hidden">
+              {messages.length === 0 ? (
+                <ChatSuggestions />
+              ) : (
+                <ScrollArea className="h-full" viewportRef={scrollViewportRef}>
+                  <div className="flex flex-col gap-1.5 p-3">
+                    {isLoadingHistory && (
+                      <div className="flex items-center justify-center py-2">
+                        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                    {messages.map((msg) => (
+                      <ChatMessage key={msg.id} message={msg} />
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </div>
+            <PermissionPrompt />
+            <AskUserQuestionPrompt />
+            <ChatInput />
+          </>
+        )}
       </div>
     </div>
   )

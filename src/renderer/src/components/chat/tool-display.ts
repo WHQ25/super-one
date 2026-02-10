@@ -1,6 +1,6 @@
 /** Shared tool name → icon key + summary extraction for ToolBlock & PermissionPrompt. */
 
-export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'message-circle' | 'wrench'
+export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'message-circle' | 'wrench' | 'plug'
 
 export interface ToolDisplay {
   icon: ToolIcon
@@ -25,8 +25,20 @@ export function shortenPath(filePath: string, cwd?: string, homedir?: string): s
   return filePath
 }
 
+/** Parse MCP tool name pattern `mcp__{serverName}__{toolName}`. */
+export function parseMcpToolName(toolName: string): { serverName: string; mcpToolName: string } | null {
+  const match = toolName.match(/^mcp__(.+?)__(.+)$/)
+  if (!match) return null
+  return { serverName: match[1], mcpToolName: match[2] }
+}
+
 export function getToolDisplay(toolName: string, input: Record<string, unknown>, cwd?: string, homedir?: string): ToolDisplay {
   const sp = (p: string): string => shortenPath(p, cwd, homedir)
+
+  // MCP tools: mcp__{serverName}__{toolName}
+  if (toolName.startsWith('mcp__')) {
+    return { icon: 'plug', summary: '' }
+  }
 
   switch (toolName) {
     case 'Bash':

@@ -302,13 +302,16 @@ export interface McpLibraryEntry {
 
 export interface SessionHistoryEntry {
   sessionId: string
-  name: string
-  cwd: string
-  model: string
-  createdAt: string
-  lastActiveAt: string
-  messageCount: number
-  totalCostUsd: number
+  title: string        // First user message, truncated
+  lastActiveAt: string // File modification time
+  gitBranch?: string
+  messageCount: number // Total user + assistant messages
+}
+
+export interface LoadSessionMessagesResult {
+  messages: ChatMessage[]
+  cursor: number | null  // Index of earliest loaded message, null if no more
+  hasMore: boolean
 }
 
 // --- IPC channel constants ---
@@ -364,8 +367,7 @@ export const AgentIpcChannels = {
 
   // Session history
   SESSIONS_LIST: 'sessions:list',
-  SESSIONS_SAVE: 'sessions:save',
-  SESSIONS_DELETE: 'sessions:delete',
-  SESSIONS_RENAME: 'sessions:rename',
   SESSIONS_RESUME: 'sessions:resume',
+  SESSIONS_LOAD_MESSAGES: 'sessions:load-messages',
+  SESSIONS_RENAME: 'sessions:rename',
 } as const

@@ -62,7 +62,7 @@ function FileContentView({ code, language }: { code: string; language: string })
   )
 }
 
-type FrontmatterValue = string | Record<string, FrontmatterValue>
+type FrontmatterValue = string | { [key: string]: FrontmatterValue }
 
 function parseFrontmatter(content: string): { meta: Record<string, FrontmatterValue> | null; body: string } {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/)

@@ -3,8 +3,13 @@ import { Loader2, ChevronRight } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chat'
+import { useSettingsStore } from '@/stores/settings'
+import { createCodePlugin } from '@streamdown/code'
 import { ToolIcon } from './ToolIcon'
-import { getToolDisplay, parseToolInput } from './tool-display'
+import { HighlightedCodeBlock } from './CodeBlock'
+import { getToolDisplay, parseToolInput, parseMcpToolName } from './tool-display'
+
+const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 
 interface ToolBlockProps {
   toolName: string
@@ -16,11 +21,30 @@ interface ToolBlockProps {
 
 const DIFF_TOOLS = new Set(['Edit', 'Write'])
 
+/** Try to format a string as prettified JSON. Returns null if not valid JSON. */
+function tryPrettifyJson(text: string): string | null {
+  try {
+    const parsed = JSON.parse(text)
+    if (typeof parsed === 'object' && parsed !== null) {
+      return JSON.stringify(parsed, null, 2)
+    }
+  } catch { /* not JSON */ }
+  return null
+}
+
 export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: ToolBlockProps) {
   const cwd = useChatStore((s) => s.cwd)
   const homedir = useChatStore((s) => s.homedir)
   const params = parseToolInput(input)
   const display = getToolDisplay(toolName, params, cwd, homedir)
+  const mcpInfo = parseMcpToolName(toolName)
+  const isMcp = mcpInfo !== null
+  const mcpMeta = useSettingsStore((s) => s.mcpMeta)
+  const mcpLibrary = useSettingsStore((s) => s.mcpLibrary)
+  const mcpIconSrc = isMcp
+    ? (mcpMeta[mcpInfo.serverName]?.icons?.[0]?.src
+      ?? mcpLibrary.find((e) => e.name === mcpInfo.serverName)?.icons?.[0]?.src)
+    : undefined
   const isStreaming = status === 'streaming'
   const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && Object.keys(params).length > 0
   const hasResult = !!result && !isStreaming && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
@@ -29,27 +53,33 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
   const [expanded, setExpanded] = useState(false)
 
   // For unknown tools, show truncated raw input as fallback
-  const summary = display.summary || (display.icon === 'wrench' && input.length > 0
+  const summary = display.summary || (!isMcp && display.icon === 'wrench' && input.length > 0
     ? (input.length > 80 ? input.slice(0, 80) + '\u2026' : input)
     : '')
+
+  const displayName = mcpInfo
+    ? <>{mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{mcpInfo.mcpToolName}</>
+    : toolName
 
   return (
     <div
       className={cn(
-        'my-1 rounded bg-muted/50 transition-colors',
+        'my-0.5 rounded bg-muted/50 transition-colors',
         expandable && 'cursor-pointer hover:bg-muted/70'
       )}
     >
       <div
-        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
+        className="flex items-center gap-1.5 px-2 py-1 text-xs"
         onClick={expandable ? () => setExpanded((e) => !e) : undefined}
       >
         {isStreaming ? (
           <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
+        ) : isMcp && mcpIconSrc ? (
+          <img src={mcpIconSrc} alt={mcpInfo.serverName} className="size-3.5 shrink-0 rounded-sm object-cover" />
         ) : (
           <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className="font-medium text-foreground">{toolName}</span>
+        <span className="font-medium text-foreground">{displayName}</span>
         {summary && (
           <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
         )}
@@ -83,7 +113,7 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
               {hasResult && !hasDiff && (
                 <div>
                   {toolName === 'Bash' && <div className="mb-0.5 text-[11px] font-medium text-muted-foreground">Output</div>}
-                  <ToolResult text={result!} />
+                  {isMcp ? <PrettyJSONCodeBlock text={result!} /> : <ToolResult text={result!} />}
                 </div>
               )}
               {hasQA && <QAResult text={result!} />}
@@ -115,6 +145,33 @@ function ToolResult({ text }: { text: string }) {
         <button
           onClick={(e) => { e.stopPropagation(); setShowAll((s) => !s) }}
           className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', showAll && 'rotate-90')} />
+          {showAll ? 'Collapse' : `${hiddenCount} more line${hiddenCount > 1 ? 's' : ''}`}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Prettified JSON code block with syntax highlighting and truncation. */
+function PrettyJSONCodeBlock({ text }: { text: string }) {
+  const prettified = tryPrettifyJson(text) ?? text
+  const lines = prettified.split('\n')
+  const previewLines = 20
+  const isLong = lines.length > previewLines
+  const [showAll, setShowAll] = useState(false)
+  const hiddenCount = lines.length - previewLines
+  const visibleText = showAll || !isLong ? prettified : lines.slice(0, previewLines).join('\n')
+  const language = tryPrettifyJson(text) ? 'json' : 'text'
+
+  return (
+    <div className="-mx-2">
+      <HighlightedCodeBlock code={visibleText} language={language} codePlugin={codePlugin} />
+      {isLong && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowAll((s) => !s) }}
+          className="mt-0.5 ml-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', showAll && 'rotate-90')} />
           {showAll ? 'Collapse' : `${hiddenCount} more line${hiddenCount > 1 ? 's' : ''}`}

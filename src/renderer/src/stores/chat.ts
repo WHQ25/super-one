@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, ModelOption, PermissionMode, PermissionRequest, RewindFilesResult, SessionHistoryEntry, SessionInfo, SlashCommandInfo } from '../../../shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, LoadSessionMessagesResult, ModelOption, PermissionMode, PermissionRequest, RewindFilesResult, SessionHistoryEntry, SessionInfo, SlashCommandInfo } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 
@@ -82,10 +82,17 @@ interface ChatState {
 
   // Session history
   sessions: SessionHistoryEntry[]
+  showHistory: boolean
   fetchSessions: () => Promise<void>
-  deleteSessionHistory: (sessionId: string) => Promise<void>
-  renameSessionHistory: (sessionId: string, name: string) => Promise<void>
+  toggleHistory: () => void
   resumeSession: (sessionId: string) => Promise<void>
+  renameSession: (sessionId: string, title: string) => Promise<void>
+
+  // History pagination
+  historyCursor: number | null
+  hasMoreHistory: boolean
+  isLoadingHistory: boolean
+  loadMoreHistory: () => Promise<void>
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -114,6 +121,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   slashCommandOutput: null,
   _pendingSlashCommand: '' as string,
   sessions: [],
+  showHistory: false,
+  historyCursor: null,
+  hasMoreHistory: false,
+  isLoadingHistory: false,
 
   dismissSlashCommandOutput: () => set({ slashCommandOutput: null }),
 
@@ -152,20 +163,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
             return total > 0 ? total : s.contextTokens
           })(),
         }))
-        // Update session history
-        const session = prevState.session
-        if (session) {
-          window.app.saveSession({
-            sessionId: session.sessionId,
-            name: prevState.sessions.find((s) => s.sessionId === session.sessionId)?.name ?? 'New Chat',
-            cwd: session.cwd,
-            model: session.model,
-            createdAt: prevState.sessions.find((s) => s.sessionId === session.sessionId)?.createdAt ?? new Date().toISOString(),
-            lastActiveAt: new Date().toISOString(),
-            messageCount: get().messages.filter((m) => m.role === 'user').length,
-            totalCostUsd: newCost,
-          }).catch(() => {})
-        }
         break
       }
 
@@ -212,17 +209,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Fetch resources now that session is active
         get().fetchModels()
         get().fetchSlashCommands()
-        // Auto-save session to history
-        window.app.saveSession({
-          sessionId: event.session.sessionId,
-          name: 'New Chat',
-          cwd: event.session.cwd,
-          model: event.session.model,
-          createdAt: new Date().toISOString(),
-          lastActiveAt: new Date().toISOString(),
-          messageCount: 0,
-          totalCostUsd: 0,
-        }).catch(() => {})
         break
 
       case 'ask_user_question':
@@ -449,23 +435,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch {}
   },
 
-  deleteSessionHistory: async (sessionId) => {
-    await window.app.deleteSession(sessionId)
-    set((s) => ({ sessions: s.sessions.filter((e) => e.sessionId !== sessionId) }))
+  toggleHistory: () => {
+    const willShow = !get().showHistory
+    if (willShow) get().fetchSessions()
+    set({ showHistory: willShow })
   },
 
-  renameSessionHistory: async (sessionId, name) => {
-    await window.app.renameSession(sessionId, name)
+  renameSession: async (sessionId, title) => {
+    await window.app.renameSession(sessionId, title)
     set((s) => ({
-      sessions: s.sessions.map((e) => (e.sessionId === sessionId ? { ...e, name } : e)),
+      sessions: s.sessions.map((entry) =>
+        entry.sessionId === sessionId ? { ...entry, title } : entry
+      ),
     }))
   },
 
   resumeSession: async (sessionId) => {
     // Reset current UI state
-    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [] })
-    // Resume the SDK session
+    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], showHistory: false, historyCursor: null, hasMoreHistory: false, isLoadingHistory: false })
+
+    // Load history messages before SDK resume
+    try {
+      const result: LoadSessionMessagesResult = await window.app.loadSessionMessages(sessionId, 10)
+      set({
+        messages: result.messages,
+        historyCursor: result.cursor,
+        hasMoreHistory: result.hasMore,
+      })
+    } catch {
+      // History loading is best-effort
+    }
+
+    // Resume the SDK session (new messages will append)
     await window.app.resumeSession(sessionId)
+  },
+  loadMoreHistory: async () => {
+    const { isLoadingHistory, hasMoreHistory, historyCursor, session } = get()
+    if (isLoadingHistory || !hasMoreHistory || historyCursor === null) return
+    const sessionId = session?.sessionId
+    if (!sessionId) return
+
+    set({ isLoadingHistory: true })
+    try {
+      const result: LoadSessionMessagesResult = await window.app.loadSessionMessages(sessionId, 20, historyCursor)
+      set((s) => ({
+        messages: [...result.messages, ...s.messages],
+        historyCursor: result.cursor,
+        hasMoreHistory: result.hasMore,
+        isLoadingHistory: false,
+      }))
+    } catch {
+      set({ isLoadingHistory: false })
+    }
   },
 }))
 

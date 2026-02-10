@@ -7,6 +7,7 @@ import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from 
 import { probeMcpServers, getCachedMcpMeta } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
 import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill } from '../skills-service'
+import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
 import { backupMcpServers, listLibrary, deleteLibraryEntry } from '../mcp-library-service'
 
 export class AgentService {
@@ -79,6 +80,44 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.FIND_LINE_NUMBER, async (_event, filePath: string, text: string) => {
       return this.claude.findLineNumber(filePath, text)
+    })
+
+    // Plugins
+    ipcMain.handle(AgentIpcChannels.PLUGINS_LIST, () => {
+      return listPlugins(this.claude.getCwd())
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_READ, (_event, key: string) => {
+      return readPluginContent(this.claude.getCwd(), key)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_READ_FILE, (_event, key: string, relativePath: string) => {
+      return readPluginFile(this.claude.getCwd(), key, relativePath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_DELETE, (_event, key: string, scope: ResourceScope) => {
+      deletePlugin(key, scope, this.claude.getCwd())
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_LIST_MARKETPLACE, () => {
+      return listMarketplacePlugins(this.claude.getCwd())
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_INSTALL, async (_event, key: string, scope: ResourceScope) => {
+      await installPlugin(key, scope, this.claude.getCwd())
+      try { await this.claude.refreshSession() } catch { /* session may not be active */ }
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_UPDATE, async (_event, updates: Array<{ key: string; scope: ResourceScope }>) => {
+      const cwd = this.claude.getCwd()
+      for (const { key, scope } of updates) {
+        updatePlugin(key, scope, cwd)
+      }
+      try { await this.claude.refreshSession() } catch { /* session may not be active */ }
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE, async (_event, name: string) => {
+      await updateMarketplace(name)
     })
 
     // Skills
@@ -211,6 +250,14 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
     ipcMain.removeHandler(AgentIpcChannels.LIST_AGENTS)
     ipcMain.removeHandler(AgentIpcChannels.FIND_LINE_NUMBER)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ_FILE)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_DELETE)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_LIST_MARKETPLACE)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_INSTALL)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_UPDATE)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_READ)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_READ_FILE)

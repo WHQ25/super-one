@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState, useRef } from 'react'
 import { ChevronDown, ChevronRight, Folder, FolderOpen, PanelLeftClose, PanelLeftOpen, Code, BookOpen, Puzzle } from 'lucide-react'
-import { FileIcon as UntitledFileIcon } from '@untitledui/file-icons'
+import { cn } from '@/lib/utils'
+import { FileIcon } from '@/components/ui/FileIcon'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
@@ -149,26 +150,9 @@ const EXT_LANG_MAP: Record<string, string> = {
   rb: 'ruby',
 }
 
-// Map non-standard extensions to @untitledui/file-icons supported types
-const EXT_ICON_MAP: Record<string, string> = {
-  ts: 'code', tsx: 'code', jsx: 'code',
-  py: 'code', rs: 'code', go: 'code', rb: 'code',
-  sh: 'code', bash: 'code', zsh: 'code',
-  md: 'document', yaml: 'document', yml: 'document', toml: 'document',
-}
-
 function inferLanguage(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
   return EXT_LANG_MAP[ext] ?? 'text'
-}
-
-function getFileIconType(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  return EXT_ICON_MAP[ext] ?? (ext || 'empty')
-}
-
-function FileIcon({ name }: { name: string }) {
-  return <UntitledFileIcon type={getFileIconType(name)} size={16} className="shrink-0" />
 }
 
 function buildPath(prefix: string, name: string): string {
@@ -302,20 +286,19 @@ function SkillCard({ skill }: { skill: SkillInfo }) {
   )
 
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div className={cn('rounded-lg border border-border bg-card', isExpanded && 'col-span-full')}>
       <div
         role="button"
         onClick={handleToggle}
-        className="flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        className="flex cursor-pointer flex-col gap-1.5 p-4 text-left transition-colors hover:bg-muted/50"
       >
-        <Puzzle className="size-5 shrink-0 text-muted-foreground" />
-        <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <Puzzle className="size-4 shrink-0 text-muted-foreground" />
           <span className="text-sm font-medium">{skill.displayName}</span>
-          {skill.description && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{skill.description}</p>
-          )}
         </div>
-        {isExpanded ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
+        {skill.description && (
+          <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{skill.description}</p>
+        )}
       </div>
 
       {isExpanded && skillDetail && (
@@ -381,7 +364,7 @@ function SkillSection({ title, skills }: { title: string; skills: SkillInfo[] })
   return (
     <div>
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
-      <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-3">
         {skills.map((skill) => (
           <SkillCard key={`${skill.scope}:${skill.name}`} skill={skill} />
         ))}
@@ -408,7 +391,7 @@ export function SkillsPage() {
   const projectSkills = skills.filter((s) => s.scope === 'project')
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">Skills</h2>

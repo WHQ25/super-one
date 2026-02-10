@@ -91,6 +91,26 @@ const appAPI = {
     }
   },
 
+  // Plugins
+  listPlugins: () =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_LIST),
+  readPlugin: (key: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_READ, key),
+  readPluginFile: (pluginKey: string, relativePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_READ_FILE, pluginKey, relativePath),
+  deletePlugin: (key: string, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_DELETE, key, scope),
+  listMarketplacePlugins: () =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_LIST_MARKETPLACE),
+  installPlugin: (key: string, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_INSTALL, key, scope),
+
+  updatePlugins: (updates: Array<{ key: string; scope: string }>) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_UPDATE, updates),
+
+  updateMarketplace: (name: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE, name),
+
   // Skills
   listSkills: () =>
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_LIST),

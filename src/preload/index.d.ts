@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AccountInfo, AgentEvent, AgentInfo, ListDirEntry, LoadSessionMessagesResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, ModelOption, PermissionMode, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo } from '../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, ModelOption, PermissionMode, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -30,6 +30,16 @@ interface AppAPI {
   checkClaude(): Promise<boolean>
   installClaude(): Promise<void>
   onSetupEvent(callback: (event: SetupEvent) => void): () => void
+
+  // Plugins
+  listPlugins(): Promise<PluginInfo[]>
+  readPlugin(key: string): Promise<PluginDetail | null>
+  readPluginFile(pluginKey: string, relativePath: string): Promise<string | null>
+  deletePlugin(key: string, scope: ResourceScope): Promise<void>
+  listMarketplacePlugins(): Promise<MarketplacePlugin[]>
+  installPlugin(key: string, scope: ResourceScope): Promise<void>
+  updatePlugins(updates: Array<{ key: string; scope: ResourceScope }>): Promise<void>
+  updateMarketplace(name: string): Promise<void>
 
   // Skills
   listSkills(): Promise<SkillInfo[]>

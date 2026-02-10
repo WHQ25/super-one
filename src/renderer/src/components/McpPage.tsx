@@ -526,7 +526,7 @@ function ServerSection({ title, configs, mcpStatus, mcpMeta }: { title: string; 
   return (
     <div>
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
-      <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-3">
         {configs.map((config) => (
           <ServerCard key={config.name} config={config} status={mcpStatus.find((s) => s.name === config.name)} meta={mcpMeta[config.name]} />
         ))}
@@ -557,7 +557,7 @@ export function McpPage() {
   const projectConfigs = mcpConfigs.filter((c) => c.scope === 'project')
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">MCP Servers</h2>

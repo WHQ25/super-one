@@ -3,7 +3,7 @@ import type { RecentFolder, SetupEvent } from '../../../shared/agent-types'
 
 type AppView = 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
-type SettingsTab = 'skills' | 'mcp'
+type SettingsTab = 'skills' | 'mcp' | 'plugins'
 
 interface AppState {
   view: AppView

@@ -229,6 +229,51 @@ export interface RecentFolder {
 
 export type ResourceScope = 'user' | 'project'
 
+// --- Plugins ---
+
+export interface PluginManifest {
+  name: string
+  version?: string
+  description: string
+  author?: { name: string; email?: string }
+}
+
+export interface PluginInfo {
+  name: string            // e.g., "code-review"
+  marketplace: string     // e.g., "claude-plugins-official"
+  key: string             // e.g., "code-review@claude-plugins-official"
+  scope: ResourceScope
+  description: string
+  author?: string
+  version?: string
+  installPath: string
+  installedAt?: string
+  hasCommands: boolean
+  hasAgents: boolean
+  hasSkills: boolean
+  hasHooks: boolean
+  hasMcpServers: boolean
+  latestVersion?: string
+  hasUpdate: boolean
+}
+
+export interface PluginDetail extends PluginInfo {
+  files: SkillFileEntry[]
+}
+
+export interface MarketplacePlugin {
+  name: string
+  marketplace: string
+  key: string              // "name@marketplace"
+  description: string
+  author?: string
+  installCount?: number
+  installed: boolean
+  installedScope?: ResourceScope
+  marketplaceLastUpdated?: string
+  marketplaceSource?: string   // e.g. "github:anthropics/claude-plugins-official" or "directory:/path"
+}
+
 // --- Skills ---
 
 export interface SkillInfo {
@@ -344,6 +389,16 @@ export const AgentIpcChannels = {
   LIST_DIRECTORY: 'agent:list-directory',
   LIST_AGENTS: 'agent:list-agents',
   FIND_LINE_NUMBER: 'agent:find-line-number',
+
+  // Plugins
+  PLUGINS_LIST: 'plugins:list',
+  PLUGINS_READ: 'plugins:read',
+  PLUGINS_READ_FILE: 'plugins:read-file',
+  PLUGINS_DELETE: 'plugins:delete',
+  PLUGINS_LIST_MARKETPLACE: 'plugins:list-marketplace',
+  PLUGINS_INSTALL: 'plugins:install',
+  PLUGINS_UPDATE: 'plugins:update',
+  PLUGINS_UPDATE_MARKETPLACE: 'plugins:update-marketplace',
 
   // Skills
   SKILLS_LIST: 'skills:list',

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, ResourceScope, SkillDetail, SkillInfo } from '../../../shared/agent-types'
+import type { MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo } from '../../../shared/agent-types'
 
 interface SettingsState {
   // Skills
@@ -31,6 +31,20 @@ interface SettingsState {
   // MCP library
   mcpLibrary: McpLibraryEntry[]
   fetchMcpLibrary: () => Promise<void>
+
+  // Plugins
+  plugins: PluginInfo[]
+  pluginDetail: PluginDetail | null
+  pluginFileContent: string | null
+  pluginFilePath: string | null
+  marketplacePlugins: MarketplacePlugin[]
+  fetchPlugins: () => Promise<void>
+  readPlugin: (key: string) => Promise<void>
+  readPluginFile: (pluginKey: string, relativePath: string) => Promise<void>
+  clearPluginDetail: () => void
+  deletePlugin: (key: string, scope: ResourceScope) => Promise<void>
+  fetchMarketplacePlugins: () => Promise<void>
+  installPlugin: (key: string, scope: ResourceScope) => Promise<void>
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -43,6 +57,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   mcpMeta: {},
   selectedMcpName: null,
   mcpLibrary: [],
+  plugins: [],
+  pluginDetail: null,
+  pluginFileContent: null,
+  pluginFilePath: null,
+  marketplacePlugins: [],
 
   fetchSkills: async () => {
     const skills = await window.app.listSkills()
@@ -159,5 +178,43 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } catch {
       // ignore
     }
+  },
+
+  fetchPlugins: async () => {
+    const plugins = await window.app.listPlugins()
+    set({ plugins })
+  },
+
+  readPlugin: async (key) => {
+    const detail = await window.app.readPlugin(key)
+    set({ pluginDetail: detail })
+  },
+
+  readPluginFile: async (pluginKey, relativePath) => {
+    const content = await window.app.readPluginFile(pluginKey, relativePath)
+    set({ pluginFileContent: content, pluginFilePath: relativePath })
+  },
+
+  clearPluginDetail: () => set({ pluginDetail: null, pluginFileContent: null, pluginFilePath: null }),
+
+  deletePlugin: async (key, scope) => {
+    await window.app.deletePlugin(key, scope)
+    set({ pluginDetail: null, pluginFileContent: null, pluginFilePath: null })
+    await get().fetchPlugins()
+  },
+
+  fetchMarketplacePlugins: async () => {
+    try {
+      const marketplacePlugins = await window.app.listMarketplacePlugins()
+      set({ marketplacePlugins })
+    } catch {
+      // ignore
+    }
+  },
+
+  installPlugin: async (key, scope) => {
+    await window.app.installPlugin(key, scope)
+    await get().fetchPlugins()
+    await get().fetchMarketplacePlugins()
   },
 }))

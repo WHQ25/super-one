@@ -10,12 +10,10 @@ import { createSessionQuery, buildUserMessage } from './claude-query'
 
 /** Scan skill directories and return a Set of skill names. */
 function discoverSkillNames(cwd: string): Set<string> {
-  const skillDirs = [
-    join(homedir(), '.claude', 'skills'),
-    join(cwd, '.claude', 'skills'),
-  ]
   const names = new Set<string>()
-  for (const dir of skillDirs) {
+
+  // 1. User + project skills
+  for (const dir of [join(homedir(), '.claude', 'skills'), join(cwd, '.claude', 'skills')]) {
     if (!existsSync(dir)) continue
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (existsSync(join(dir, entry.name, 'SKILL.md'))) {
@@ -23,6 +21,31 @@ function discoverSkillNames(cwd: string): Set<string> {
       }
     }
   }
+
+  // 2. Plugin skills
+  const pluginsFile = join(homedir(), '.claude', 'plugins', 'installed_plugins.json')
+  if (existsSync(pluginsFile)) {
+    try {
+      const data = JSON.parse(readFileSync(pluginsFile, 'utf-8'))
+      const plugins: Record<string, Array<{ scope?: string; installPath?: string; projectPath?: string }>> = data.plugins ?? {}
+      for (const entries of Object.values(plugins)) {
+        for (const entry of entries) {
+          const { scope, installPath, projectPath } = entry
+          if (!installPath) continue
+          const include = scope === 'user' || ((scope === 'project' || scope === 'local') && projectPath === cwd)
+          if (!include) continue
+          const skillsDir = join(installPath, 'skills')
+          if (!existsSync(skillsDir)) continue
+          for (const s of readdirSync(skillsDir, { withFileTypes: true })) {
+            if (existsSync(join(skillsDir, s.name, 'SKILL.md'))) {
+              names.add(s.name)
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
   return names
 }
 

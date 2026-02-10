@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AccountInfo, AgentEvent, AgentInfo, ListDirEntry, McpServerInfo, ModelOption, PermissionMode, RecentFolder, RewindFilesResult, SendMessageRequest, SetupEvent, SlashCommandInfo } from '../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, ListDirEntry, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, ModelOption, PermissionMode, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo } from '../shared/agent-types'
 
 interface AgentAPI {
   sendMessage(request: SendMessageRequest): Promise<void>
@@ -29,6 +29,33 @@ interface AppAPI {
   checkClaude(): Promise<boolean>
   installClaude(): Promise<void>
   onSetupEvent(callback: (event: SetupEvent) => void): () => void
+
+  // Skills
+  listSkills(): Promise<SkillInfo[]>
+  readSkill(name: string): Promise<SkillDetail | null>
+  readSkillFile(skillName: string, relativePath: string): Promise<string | null>
+  installSkill(sourcePath: string): Promise<SkillInfo>
+  deleteSkill(name: string, scope: ResourceScope): Promise<void>
+
+  // MCP config
+  listMcpConfigs(): Promise<McpServerConfig[]>
+  saveMcpConfig(name: string, config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>, scope: ResourceScope): Promise<void>
+  deleteMcpConfig(name: string, scope: ResourceScope): Promise<void>
+  toggleMcpConfig(name: string, disabled: boolean, scope: ResourceScope): Promise<void>
+  probeMcpServers(): Promise<Record<string, McpServerMeta>>
+  reconnectMcpServer(serverName: string): Promise<void>
+  oauthAuthorize(serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse'): Promise<Record<string, string>>
+
+  // MCP library
+  listMcpLibrary(): Promise<McpLibraryEntry[]>
+  deleteMcpLibraryEntry(name: string): Promise<void>
+
+  // Session history
+  listSessions(): Promise<SessionHistoryEntry[]>
+  saveSession(entry: SessionHistoryEntry): Promise<void>
+  deleteSession(sessionId: string): Promise<void>
+  renameSession(sessionId: string, name: string): Promise<void>
+  resumeSession(sessionId: string): Promise<void>
 }
 
 declare global {

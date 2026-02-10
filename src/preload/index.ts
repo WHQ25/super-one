@@ -90,6 +90,52 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.SETUP_EVENT, handler)
     }
   },
+
+  // Skills
+  listSkills: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SKILLS_LIST),
+  readSkill: (name: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SKILLS_READ, name),
+  readSkillFile: (skillName: string, relativePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SKILLS_READ_FILE, skillName, relativePath),
+  installSkill: (sourcePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SKILLS_INSTALL, sourcePath),
+  deleteSkill: (name: string, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SKILLS_DELETE, name, scope),
+
+  // MCP config
+  listMcpConfigs: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_LIST_CONFIG),
+  saveMcpConfig: (name: string, config: { command: string; args: string[]; env: Record<string, string> }, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_SAVE_CONFIG, name, config, scope),
+  deleteMcpConfig: (name: string, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_DELETE_CONFIG, name, scope),
+  toggleMcpConfig: (name: string, disabled: boolean, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_TOGGLE_CONFIG, name, disabled, scope),
+  probeMcpServers: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_PROBE_SERVERS),
+  reconnectMcpServer: (serverName: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_RECONNECT_SERVER, serverName),
+  oauthAuthorize: (serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, serverUrl, headers, transport),
+
+  // MCP library
+  listMcpLibrary: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_LIST_LIBRARY),
+  deleteMcpLibraryEntry: (name: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY, name),
+
+  // Session history
+  listSessions: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST),
+  saveSession: (entry: unknown) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SAVE, entry),
+  deleteSession: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE, sessionId),
+  renameSession: (sessionId: string, name: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RENAME, sessionId, name),
+  resumeSession: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RESUME, sessionId),
 }
 
 if (process.contextIsolated) {

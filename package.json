@@ -18,6 +18,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@streamdown/code": "^1.0.1",
+    "@untitledui/file-icons": "^0.0.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "diff": "^8.0.3",

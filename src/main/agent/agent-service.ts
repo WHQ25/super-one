@@ -1,6 +1,12 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, type ClaudeAgentConfig } from './claude-agent'
-import { AgentIpcChannels, type AgentEvent, type PermissionMode, type SendMessageRequest } from '../../shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type PermissionMode, type ResourceScope, type SendMessageRequest, type SessionHistoryEntry } from '../../shared/agent-types'
+import { getSessionHistory, saveSession, deleteSession, renameSession } from '../session-history'
+import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
+import { probeMcpServers, getCachedMcpMeta } from '../mcp-probe-service'
+import { authorizeHttpMcpServer } from '../mcp-oauth'
+import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill } from '../skills-service'
+import { backupMcpServers, listLibrary, deleteLibraryEntry } from '../mcp-library-service'
 
 export class AgentService {
   private claude = new ClaudeAgent()
@@ -73,6 +79,106 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.FIND_LINE_NUMBER, async (_event, filePath: string, text: string) => {
       return this.claude.findLineNumber(filePath, text)
     })
+
+    // Skills
+    ipcMain.handle(AgentIpcChannels.SKILLS_LIST, () => {
+      return listSkills(this.claude.getCwd())
+    })
+
+    ipcMain.handle(AgentIpcChannels.SKILLS_READ, (_event, name: string) => {
+      return readSkillContent(this.claude.getCwd(), name)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SKILLS_READ_FILE, (_event, skillName: string, relativePath: string) => {
+      return readSkillFile(this.claude.getCwd(), skillName, relativePath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SKILLS_INSTALL, (_event, sourcePath: string) => {
+      return installSkill(sourcePath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SKILLS_DELETE, (_event, name: string, scope: ResourceScope) => {
+      deleteSkill(name, scope, this.claude.getCwd())
+    })
+
+    // MCP config
+    ipcMain.handle(AgentIpcChannels.MCP_LIST_CONFIG, () => {
+      return listMcpConfigs(this.claude.getCwd())
+    })
+
+    ipcMain.handle(AgentIpcChannels.MCP_SAVE_CONFIG, async (_event, name: string, config: Record<string, unknown>, scope: ResourceScope) => {
+      saveMcpConfig(name, config, scope, this.claude.getCwd())
+      try {
+        await this.claude.reconnectMcpServer(name)
+        await this.claude.refreshSession()
+      } catch { /* session may not be active */ }
+    })
+
+    ipcMain.handle(AgentIpcChannels.MCP_DELETE_CONFIG, async (_event, name: string, scope: ResourceScope) => {
+      deleteMcpConfig(name, scope, this.claude.getCwd())
+      try {
+        await this.claude.toggleMcpServer(name, false)
+        await this.claude.refreshSession()
+      } catch { /* session may not be active */ }
+    })
+
+    ipcMain.handle(AgentIpcChannels.MCP_TOGGLE_CONFIG, async (_event, name: string, disabled: boolean, scope: ResourceScope) => {
+      toggleMcpConfig(name, disabled, scope, this.claude.getCwd())
+      try {
+        await this.claude.toggleMcpServer(name, !disabled)
+        await this.claude.refreshSession()
+      } catch { /* session may not be active */ }
+    })
+
+    ipcMain.handle(AgentIpcChannels.MCP_PROBE_SERVERS, async () => {
+      const configs = listMcpConfigs(this.claude.getCwd())
+      const meta = await probeMcpServers(configs)
+      // Auto-backup successfully probed servers to library
+      try { backupMcpServers(configs, meta) } catch { /* ignore */ }
+      return meta
+    })
+
+    ipcMain.handle(AgentIpcChannels.MCP_RECONNECT_SERVER, async (_event, serverName: string) => {
+      try {
+        await this.claude.reconnectMcpServer(serverName)
+      } catch {
+        // Session may not be active
+      }
+    })
+
+    ipcMain.handle(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, async (_event, serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') => {
+      return authorizeHttpMcpServer(serverUrl, headers, transport)
+    })
+
+    // MCP library
+    ipcMain.handle(AgentIpcChannels.MCP_LIST_LIBRARY, () => {
+      return listLibrary()
+    })
+
+    ipcMain.handle(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY, (_event, name: string) => {
+      deleteLibraryEntry(name)
+    })
+
+    // Session history
+    ipcMain.handle(AgentIpcChannels.SESSIONS_LIST, () => {
+      return getSessionHistory()
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_SAVE, (_event, entry: SessionHistoryEntry) => {
+      saveSession(entry)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, (_event, sessionId: string) => {
+      deleteSession(sessionId)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_RENAME, (_event, sessionId: string, name: string) => {
+      renameSession(sessionId, name)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, sessionId: string) => {
+      await this.claude.resumeSession(sessionId)
+    })
   }
 
   async initialize(config: ClaudeAgentConfig): Promise<void> {
@@ -107,5 +213,24 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
     ipcMain.removeHandler(AgentIpcChannels.LIST_AGENTS)
     ipcMain.removeHandler(AgentIpcChannels.FIND_LINE_NUMBER)
+    ipcMain.removeHandler(AgentIpcChannels.SKILLS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.SKILLS_READ)
+    ipcMain.removeHandler(AgentIpcChannels.SKILLS_READ_FILE)
+    ipcMain.removeHandler(AgentIpcChannels.SKILLS_INSTALL)
+    ipcMain.removeHandler(AgentIpcChannels.SKILLS_DELETE)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_CONFIG)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_SAVE_CONFIG)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_CONFIG)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_TOGGLE_CONFIG)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_PROBE_SERVERS)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_RECONNECT_SERVER)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_OAUTH_AUTHORIZE)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_LIBRARY)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_SAVE)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_RENAME)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_RESUME)
   }
 }

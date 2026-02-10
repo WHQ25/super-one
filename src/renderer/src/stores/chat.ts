@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, ModelOption, PermissionMode, PermissionRequest, RewindFilesResult, SessionInfo, SlashCommandInfo } from '../../../shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, ModelOption, PermissionMode, PermissionRequest, RewindFilesResult, SessionHistoryEntry, SessionInfo, SlashCommandInfo } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 
@@ -79,6 +79,13 @@ interface ChatState {
 
   // Agent actions (for @ mention)
   fetchAgents: () => Promise<void>
+
+  // Session history
+  sessions: SessionHistoryEntry[]
+  fetchSessions: () => Promise<void>
+  deleteSessionHistory: (sessionId: string) => Promise<void>
+  renameSessionHistory: (sessionId: string, name: string) => Promise<void>
+  resumeSession: (sessionId: string) => Promise<void>
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -106,6 +113,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   homedir: '',
   slashCommandOutput: null,
   _pendingSlashCommand: '' as string,
+  sessions: [],
 
   dismissSlashCommandOutput: () => set({ slashCommandOutput: null }),
 
@@ -124,7 +132,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }))
         break
 
-      case 'message_complete':
+      case 'message_complete': {
+        const prevState = get()
+        const newCost = prevState.totalCostUsd + (event.metadata?.costUsd ?? 0)
         set((s) => ({
           messages: s.messages.map((msg) => {
             if (msg.id !== event.messageId) return msg
@@ -134,7 +144,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               metadata: event.metadata ? { ...msg.metadata, ...event.metadata } : msg.metadata,
             }
           }),
-          totalCostUsd: s.totalCostUsd + (event.metadata?.costUsd ?? 0),
+          totalCostUsd: newCost,
           contextTokens: (() => {
             const u = event.metadata?.usage
             if (!u) return s.contextTokens
@@ -142,7 +152,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
             return total > 0 ? total : s.contextTokens
           })(),
         }))
+        // Update session history
+        const session = prevState.session
+        if (session) {
+          window.app.saveSession({
+            sessionId: session.sessionId,
+            name: prevState.sessions.find((s) => s.sessionId === session.sessionId)?.name ?? 'New Chat',
+            cwd: session.cwd,
+            model: session.model,
+            createdAt: prevState.sessions.find((s) => s.sessionId === session.sessionId)?.createdAt ?? new Date().toISOString(),
+            lastActiveAt: new Date().toISOString(),
+            messageCount: get().messages.filter((m) => m.role === 'user').length,
+            totalCostUsd: newCost,
+          }).catch(() => {})
+        }
         break
+      }
 
       case 'message_interrupted':
         set((s) => ({
@@ -187,6 +212,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Fetch resources now that session is active
         get().fetchModels()
         get().fetchSlashCommands()
+        // Auto-save session to history
+        window.app.saveSession({
+          sessionId: event.session.sessionId,
+          name: 'New Chat',
+          cwd: event.session.cwd,
+          model: event.session.model,
+          createdAt: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString(),
+          messageCount: 0,
+          totalCostUsd: 0,
+        }).catch(() => {})
         break
 
       case 'ask_user_question':
@@ -404,6 +440,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch {
       setTimeout(() => get().fetchAgents(), 2000)
     }
+  },
+
+  fetchSessions: async () => {
+    try {
+      const sessions = await window.app.listSessions()
+      set({ sessions })
+    } catch {}
+  },
+
+  deleteSessionHistory: async (sessionId) => {
+    await window.app.deleteSession(sessionId)
+    set((s) => ({ sessions: s.sessions.filter((e) => e.sessionId !== sessionId) }))
+  },
+
+  renameSessionHistory: async (sessionId, name) => {
+    await window.app.renameSession(sessionId, name)
+    set((s) => ({
+      sessions: s.sessions.map((e) => (e.sessionId === sessionId ? { ...e, name } : e)),
+    }))
+  },
+
+  resumeSession: async (sessionId) => {
+    // Reset current UI state
+    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [] })
+    // Resume the SDK session
+    await window.app.resumeSession(sessionId)
   },
 }))
 

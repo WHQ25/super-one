@@ -266,6 +266,32 @@ export class ClaudeAgent {
     }
   }
 
+  async reconnectMcpServer(serverName: string): Promise<void> {
+    if (!this.sessionQuery) throw new Error('No active session')
+    await this.sessionQuery.reconnectMcpServer(serverName)
+  }
+
+  async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
+    if (!this.sessionQuery) throw new Error('No active session')
+    console.log(`[MCP] toggleMcpServer("${serverName}", ${enabled}) — calling SDK...`)
+    try {
+      const result = await this.sessionQuery.toggleMcpServer(serverName, enabled)
+      console.log(`[MCP] toggleMcpServer result:`, JSON.stringify(result))
+    } catch (err) {
+      console.error(`[MCP] toggleMcpServer error:`, err)
+      throw err
+    }
+  }
+
+  /** Reset session and recreate with resume, preserving conversation history. */
+  async refreshSession(): Promise<void> {
+    const prevSessionId = this.sessionId
+    console.log(`[MCP] refreshSession — resetting (sessionId=${prevSessionId})...`)
+    await this.resetSession()
+    this.createSession(prevSessionId || undefined)
+    console.log(`[MCP] refreshSession — session recreated (resume=${prevSessionId || 'none'})`)
+  }
+
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
     if (!this.sessionQuery) return []
     try {
@@ -276,6 +302,10 @@ export class ClaudeAgent {
         error: s.error,
         scope: s.scope,
         toolCount: s.tools?.length,
+        tools: s.tools?.map((t: { name: string; description?: string }) => ({
+          name: t.name,
+          description: t.description,
+        })),
       }))
     } catch {
       return []
@@ -334,6 +364,10 @@ export class ClaudeAgent {
     } catch {
       return null
     }
+  }
+
+  getCwd(): string {
+    return this.config?.cwd ?? ''
   }
 
   isReady(): boolean {

@@ -103,12 +103,18 @@ export interface AskUserQuestionRequest {
 
 // --- MCP server status ---
 
+export interface McpToolInfo {
+  name: string
+  description?: string
+}
+
 export interface McpServerInfo {
   name: string
   status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
   error?: string
   scope?: string
   toolCount?: number
+  tools?: McpToolInfo[]
 }
 
 // --- Account info ---
@@ -219,6 +225,92 @@ export interface RecentFolder {
   lastOpened: string  // ISO timestamp
 }
 
+// --- Resource scope ---
+
+export type ResourceScope = 'user' | 'project'
+
+// --- Skills ---
+
+export interface SkillInfo {
+  name: string
+  displayName: string
+  scope: ResourceScope
+  description: string
+  hasConfig: boolean
+}
+
+export interface SkillFileEntry {
+  name: string
+  isDirectory: boolean
+  children?: SkillFileEntry[]
+}
+
+export interface SkillDetail extends SkillInfo {
+  files: SkillFileEntry[]
+}
+
+// --- MCP config ---
+
+export interface McpServerConfig {
+  name: string
+  type: 'stdio' | 'http' | 'sse'
+  scope: ResourceScope
+  disabled?: boolean
+  // stdio fields
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  // http fields
+  url?: string
+  headers?: Record<string, string>
+}
+
+// --- MCP server metadata (from initialize) ---
+
+export interface McpIconInfo {
+  src: string
+  mimeType?: string
+  sizes?: string[]
+  theme?: 'light' | 'dark'
+}
+
+export interface McpServerMeta {
+  name: string
+  version?: string
+  description?: string
+  websiteUrl?: string
+  icons?: McpIconInfo[]
+  tools?: McpToolInfo[]
+}
+
+// --- MCP library ---
+
+export interface McpLibraryEntry {
+  name: string
+  type: 'stdio' | 'http' | 'sse'
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  headers?: Record<string, string>
+  description?: string
+  icons?: McpIconInfo[]
+  savedAt: string
+}
+
+// --- Session history ---
+
+export interface SessionHistoryEntry {
+  sessionId: string
+  name: string
+  cwd: string
+  model: string
+  createdAt: string
+  lastActiveAt: string
+  messageCount: number
+  totalCostUsd: number
+}
+
 // --- IPC channel constants ---
 
 export const AgentIpcChannels = {
@@ -249,4 +341,31 @@ export const AgentIpcChannels = {
   LIST_DIRECTORY: 'agent:list-directory',
   LIST_AGENTS: 'agent:list-agents',
   FIND_LINE_NUMBER: 'agent:find-line-number',
+
+  // Skills
+  SKILLS_LIST: 'skills:list',
+  SKILLS_READ: 'skills:read',
+  SKILLS_READ_FILE: 'skills:read-file',
+  SKILLS_INSTALL: 'skills:install',
+  SKILLS_DELETE: 'skills:delete',
+
+  // MCP config
+  MCP_LIST_CONFIG: 'mcp:list-config',
+  MCP_SAVE_CONFIG: 'mcp:save-config',
+  MCP_DELETE_CONFIG: 'mcp:delete-config',
+  MCP_TOGGLE_CONFIG: 'mcp:toggle-config',
+  MCP_PROBE_SERVERS: 'mcp:probe-servers',
+  MCP_RECONNECT_SERVER: 'mcp:reconnect-server',
+  MCP_OAUTH_AUTHORIZE: 'mcp:oauth-authorize',
+
+  // MCP library
+  MCP_LIST_LIBRARY: 'mcp:list-library',
+  MCP_DELETE_LIBRARY_ENTRY: 'mcp:delete-library-entry',
+
+  // Session history
+  SESSIONS_LIST: 'sessions:list',
+  SESSIONS_SAVE: 'sessions:save',
+  SESSIONS_DELETE: 'sessions:delete',
+  SESSIONS_RENAME: 'sessions:rename',
+  SESSIONS_RESUME: 'sessions:resume',
 } as const

@@ -9,9 +9,12 @@ import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
 import { SlashCommandOverlay } from './SlashCommandOverlay'
+import { SessionPopover } from './SessionPopover'
 import { cn } from '@/lib/utils'
 
 const OFFSET = 16
+const TITLEBAR_H = 44
+const TOP_OFFSET = TITLEBAR_H + 8
 const PANEL_W = 360
 const COLLAPSED_H = 44
 const DEFAULT_EXPANDED_H = 450
@@ -23,7 +26,7 @@ type Corner = 'br' | 'bl' | 'tr' | 'tl'
 /** CSS position properties for corner-anchored mode (responds to window resize) */
 function cornerStyle(corner: Corner): React.CSSProperties {
   return {
-    top: corner.startsWith('t') ? OFFSET : undefined,
+    top: corner.startsWith('t') ? TOP_OFFSET : undefined,
     bottom: corner.startsWith('b') ? OFFSET : undefined,
     left: corner.endsWith('l') ? OFFSET : undefined,
     right: corner.endsWith('r') ? OFFSET : undefined,
@@ -36,7 +39,7 @@ function cornerToXY(corner: Corner, panelH: number): { x: number; y: number } {
   const h = window.innerHeight
   return {
     x: corner.endsWith('l') ? OFFSET : w - PANEL_W - OFFSET,
-    y: corner.startsWith('t') ? OFFSET : h - panelH - OFFSET,
+    y: corner.startsWith('t') ? TOP_OFFSET : h - panelH - OFFSET,
   }
 }
 
@@ -272,9 +275,8 @@ export function ChatPanel() {
 
         {isOpen ? (
           <>
-            <span className="flex-1 text-center text-sm font-medium text-foreground">
-              New Chat
-            </span>
+            <div className="flex-1" />
+            <SessionPopover />
             <Button
               size="icon-xs"
               variant="ghost"

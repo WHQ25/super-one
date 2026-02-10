@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import type { RecentFolder, SetupEvent } from '../../../shared/agent-types'
 
-type AppView = 'startup' | 'setup' | 'main'
+type AppView = 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
+type SettingsTab = 'skills' | 'mcp'
 
 interface AppState {
   view: AppView
@@ -13,6 +14,9 @@ interface AppState {
   installStatus: InstallStatus
   installOutput: string
 
+  // Settings
+  settingsTab: SettingsTab
+
   fetchRecentFolders: () => Promise<void>
   selectAndOpenFolder: () => Promise<void>
   openFolder: (folderPath: string) => Promise<void>
@@ -20,6 +24,8 @@ interface AppState {
   startInstall: () => Promise<void>
   handleSetupEvent: (event: SetupEvent) => void
   continueToMain: () => void
+  navigateTo: (view: AppView) => void
+  setSettingsTab: (tab: SettingsTab) => void
 }
 
 async function openFolderWithCheck(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<void> {
@@ -39,6 +45,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   recentFolders: [],
   installStatus: 'idle',
   installOutput: '',
+  settingsTab: 'skills',
 
   fetchRecentFolders: async () => {
     const folders = await window.app.getRecentFolders()
@@ -88,6 +95,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ view: 'main' })
     }
   },
+
+  navigateTo: (view) => set({ view }),
+
+  setSettingsTab: (tab) => set({ settingsTab: tab }),
 }))
 
 // Load recent folders on module init

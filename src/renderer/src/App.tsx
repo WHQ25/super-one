@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, Settings } from 'lucide-react'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
+import { SettingsLayout } from '@/components/SettingsLayout'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useAppStore } from '@/stores/app'
 
@@ -19,7 +20,7 @@ function useTheme() {
 function App(): React.JSX.Element {
   useAgentEvents()
   const theme = useTheme()
-  const { view, currentFolder } = useAppStore()
+  const { view, currentFolder, navigateTo } = useAppStore()
 
   const folderName = currentFolder?.split('/').pop() ?? null
 
@@ -35,14 +36,23 @@ function App(): React.JSX.Element {
           <span className="truncate text-xs text-muted-foreground">{folderName}</span>
         )}
 
-        {/* Right: theme toggle */}
-        <button
-          onClick={theme.toggle}
-          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          {theme.dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-        </button>
+        {/* Right: settings + theme toggle */}
+        <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          {view === 'main' && (
+            <button
+              onClick={() => navigateTo('settings')}
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Settings className="size-4" />
+            </button>
+          )}
+          <button
+            onClick={theme.toggle}
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {theme.dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+          </button>
+        </div>
       </div>
 
       {view === 'startup' && <StartupPage />}
@@ -59,6 +69,7 @@ function App(): React.JSX.Element {
           <ChatPanel />
         </>
       )}
+      {view === 'settings' && <SettingsLayout />}
     </div>
   )
 }

@@ -11,9 +11,9 @@ export interface ImageAttachment {
 // --- Content blocks ---
 
 export type ContentBlock =
-  | { type: 'text'; text: string }
-  | { type: 'tool_use'; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number }
-  | { type: 'tool_result'; toolUseId: string; summary: string }
+  | { type: 'text'; text: string; parentToolUseId?: string | null }
+  | { type: 'tool_use'; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; parentToolUseId?: string | null }
+  | { type: 'tool_result'; toolUseId: string; summary: string; parentToolUseId?: string | null }
   | { type: 'image'; name: string }
 
 // --- Session info (from system init) ---
@@ -163,8 +163,8 @@ export interface HookEvent {
 export type AgentEvent =
   | { type: 'message_start'; message: ChatMessage }
   | { type: 'content_delta'; messageId: string; delta: ContentBlock }
-  | { type: 'tool_input_delta'; messageId: string; toolUseId: string; partialJson: string }
-  | { type: 'tool_progress'; messageId: string; toolUseId: string; toolName: string; elapsedSeconds: number }
+  | { type: 'tool_input_delta'; messageId: string; toolUseId: string; partialJson: string; parentToolUseId?: string | null }
+  | { type: 'tool_progress'; messageId: string; toolUseId: string; toolName: string; elapsedSeconds: number; parentToolUseId?: string | null }
   | { type: 'message_complete'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_interrupted'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_error'; messageId: string; error: string }
@@ -180,6 +180,7 @@ export type AgentEvent =
   | { type: 'task_notification'; taskId: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
+  | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
   | { type: 'init_ready'; models: ModelOption[]; slashCommands: SlashCommandInfo[]; cwd: string; homedir: string }
 
 export type AgentStatus = 'idle' | 'streaming' | 'error'

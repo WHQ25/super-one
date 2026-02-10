@@ -65,7 +65,7 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       return { icon: 'message-circle', summary: `${questions.length} question${questions.length !== 1 ? 's' : ''}` }
     }
     case 'Task':
-      return { icon: 'bot', summary: String(input.description ?? '') }
+      return { icon: 'bot', summary: String(input.name ?? input.subagent_type ?? input.description ?? '') }
     case 'TaskOutput':
       return { icon: 'clipboard-list', summary: String(input.task_id ?? '') }
     default:

@@ -50,6 +50,9 @@ interface ChatState {
   addMention: (mention: Mention) => void
   removeMention: (value: string) => void
 
+  // Subagent token usage: parentToolUseId → total tokens
+  subagentTokens: Record<string, number>
+
   // Paths (for display shortening)
   cwd: string
   homedir: string
@@ -130,6 +133,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   slashCommands: [],
   agents: [],
   mentions: [],
+  subagentTokens: {},
   cwd: '',
   homedir: '',
   slashCommandOutput: null,
@@ -303,6 +307,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Could show compacting indicator in UI
         break
 
+      case 'subagent_usage':
+        set((s) => ({
+          subagentTokens: {
+            ...s.subagentTokens,
+            [event.parentToolUseId]: event.inputTokens + event.outputTokens,
+          },
+        }))
+        break
+
       case 'slash_command_output':
         // Show in overlay and remove the slash command's chat messages
         set((s) => {
@@ -362,11 +375,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setCorner: (corner) => set({ corner }),
 
-  clearMessages: () => set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, pendingPermission: null, pendingQuestion: null, mentions: [] }),
+  clearMessages: () => set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, pendingPermission: null, pendingQuestion: null, mentions: [], subagentTokens: {} }),
 
   resetSession: async () => {
     await window.agent.resetSession()
-    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], mentions: [], _historySessionId: null, historyCursor: null, hasMoreHistory: false })
+    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], mentions: [], subagentTokens: {}, _historySessionId: null, historyCursor: null, hasMoreHistory: false })
   },
 
   rewindFiles: async (userMessageId: string) => {

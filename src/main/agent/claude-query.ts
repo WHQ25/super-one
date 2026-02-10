@@ -81,6 +81,11 @@ async function iterateMessages(
   const activeToolBlocks = new Map<number, string>()
   // Track tool_use_id → tool_name so we can tag tool_result events
   const toolIdToName = new Map<string, string>()
+  // Track the last assistant message's usage (= current context window snapshot)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let lastAssistantUsage: any = null
+  // Track cumulative token usage per subagent (parent_tool_use_id)
+  const subagentUsage = new Map<string, { input: number; output: number }>()
 
   try {
     for await (const msg of q) {
@@ -90,6 +95,7 @@ async function iterateMessages(
       if (msg.type === 'user') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userMsg = msg as any
+        const parentToolUseId = userMsg.parent_tool_use_id ?? null
         const msgContent = userMsg.message?.content
 
         // Extract tool_result blocks from array content
@@ -105,6 +111,7 @@ async function iterateMessages(
                     type: 'tool_result',
                     toolUseId: block.tool_use_id,
                     summary: text,
+                    parentToolUseId,
                   },
                 })
               }
@@ -189,6 +196,27 @@ async function iterateMessages(
         }
 
         case 'assistant': {
+          // Capture per-API-call usage for context window tracking
+          if (msg.message?.usage) lastAssistantUsage = msg.message.usage
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const assistantParent = (msg as any).parent_tool_use_id ?? null
+
+          // Track subagent token usage
+          if (assistantParent && msg.message?.usage) {
+            const u = msg.message.usage
+            const prev = subagentUsage.get(assistantParent) ?? { input: 0, output: 0 }
+            prev.input += u.input_tokens ?? 0
+            prev.output += u.output_tokens ?? 0
+            subagentUsage.set(assistantParent, prev)
+            emit({
+              type: 'subagent_usage',
+              messageId,
+              parentToolUseId: assistantParent,
+              inputTokens: prev.input,
+              outputTokens: prev.output,
+            })
+          }
+
           const content = msg.message?.content
           if (Array.isArray(content)) {
             for (const block of content) {
@@ -204,6 +232,7 @@ async function iterateMessages(
                     input: typeof block.input === 'string'
                       ? block.input
                       : JSON.stringify(block.input ?? {}),
+                    parentToolUseId: assistantParent,
                   },
                 })
               }
@@ -214,8 +243,10 @@ async function iterateMessages(
 
         case 'stream_event': {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const event = (msg as any).event
+          const streamMsg = msg as any
+          const event = streamMsg.event
           if (!event) break
+          const streamParent = streamMsg.parent_tool_use_id ?? null
 
           if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
             // Track index → toolUseId for input_json_delta correlation
@@ -230,6 +261,7 @@ async function iterateMessages(
                 toolUseId: event.content_block.id ?? '',
                 input: '',
                 status: 'streaming',
+                parentToolUseId: streamParent,
               },
             })
           } else if (event.type === 'content_block_delta') {
@@ -237,7 +269,7 @@ async function iterateMessages(
               emit({
                 type: 'content_delta',
                 messageId,
-                delta: { type: 'text', text: event.delta.text },
+                delta: { type: 'text', text: event.delta.text, parentToolUseId: streamParent },
               })
             } else if (event.delta?.type === 'input_json_delta' && event.delta.partial_json) {
               const toolUseId = activeToolBlocks.get(event.index) ?? ''
@@ -246,6 +278,7 @@ async function iterateMessages(
                 messageId,
                 toolUseId,
                 partialJson: event.delta.partial_json,
+                parentToolUseId: streamParent,
               })
             }
           } else if (event.type === 'content_block_stop') {
@@ -263,6 +296,7 @@ async function iterateMessages(
             toolUseId: tp.tool_use_id ?? '',
             toolName: tp.tool_name ?? '',
             elapsedSeconds: tp.elapsed_time_seconds ?? 0,
+            parentToolUseId: tp.parent_tool_use_id ?? null,
           })
           break
         }
@@ -276,7 +310,7 @@ async function iterateMessages(
             emit({
               type: 'content_delta',
               messageId,
-              delta: { type: 'tool_result', toolUseId, summary: summaryText },
+              delta: { type: 'tool_result', toolUseId, summary: summaryText, parentToolUseId: raw.parent_tool_use_id ?? null },
             })
           }
           break
@@ -285,7 +319,7 @@ async function iterateMessages(
         case 'result': {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result = msg as any
-          const metadata = buildResultMetadata(result, getCurrentStartTime())
+          const metadata = buildResultMetadata(result, getCurrentStartTime(), lastAssistantUsage)
 
           if (getInterrupted()) {
             emit({ type: 'message_interrupted', messageId, metadata })
@@ -317,7 +351,7 @@ async function iterateMessages(
 
 /** Extract rich metadata from an SDK result message. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildResultMetadata(result: any, startTime: number): MessageMetadata {
+function buildResultMetadata(result: any, startTime: number, lastAssistantUsage?: any): MessageMetadata {
   const metadata: MessageMetadata = {
     durationMs: Date.now() - startTime,
     costUsd: result.total_cost_usd,
@@ -325,12 +359,15 @@ function buildResultMetadata(result: any, startTime: number): MessageMetadata {
     stopReason: result.stop_reason ?? null,
   }
 
-  if (result.usage) {
+  // Use the last assistant message's usage as context window snapshot
+  // (result.usage is cumulative across all turns, not a context window size)
+  const u = lastAssistantUsage ?? result.usage
+  if (u) {
     metadata.usage = {
-      inputTokens: result.usage.input_tokens ?? 0,
-      outputTokens: result.usage.output_tokens ?? 0,
-      cacheReadInputTokens: result.usage.cache_read_input_tokens ?? 0,
-      cacheCreationInputTokens: result.usage.cache_creation_input_tokens ?? 0,
+      inputTokens: u.input_tokens ?? 0,
+      outputTokens: u.output_tokens ?? 0,
+      cacheReadInputTokens: u.cache_read_input_tokens ?? 0,
+      cacheCreationInputTokens: u.cache_creation_input_tokens ?? 0,
     }
   }
 

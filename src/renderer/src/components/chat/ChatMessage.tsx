@@ -5,6 +5,7 @@ import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
+import { SubagentBlock } from './SubagentBlock'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { FileIcon } from '@/components/ui/FileIcon'
 
@@ -26,6 +27,7 @@ const COLLAPSIBLE_TOOLS = new Set(['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetc
 type RenderSegment =
   | { kind: 'block'; block: ContentBlock; index: number }
   | { kind: 'tools'; blocks: ContentBlock[]; startIndex: number }
+  | { kind: 'subagent'; taskBlock: ContentBlock & { type: 'tool_use' }; childBlocks: ContentBlock[]; resultBlock?: ContentBlock; startIndex: number }
 
 interface GroupResult {
   segments: RenderSegment[]
@@ -33,7 +35,7 @@ interface GroupResult {
   toolResultMap: Map<string, string>
 }
 
-/** Group consecutive collapsible tool blocks; everything else stays individual. */
+/** Group consecutive collapsible tool blocks and subagent blocks; everything else stays individual. */
 function groupContent(content: ContentBlock[]): GroupResult {
   const toolNameMap = new Map<string, string>()
   const toolResultMap = new Map<string, string>()
@@ -45,9 +47,20 @@ function groupContent(content: ContentBlock[]): GroupResult {
     }
   }
 
+  // Collect Task tool_use ids for subagent grouping
+  const taskToolUseIds = new Set<string>()
+  for (const block of content) {
+    if (block.type === 'tool_use' && block.toolName === 'Task') {
+      taskToolUseIds.add(block.toolUseId)
+    }
+  }
+
   const segments: RenderSegment[] = []
   let group: ContentBlock[] = []
   let groupStart = 0
+
+  // Active subagent collectors: taskToolUseId → segment reference
+  const activeSubagents = new Map<string, RenderSegment & { kind: 'subagent' }>()
 
   const flush = () => {
     if (group.length === 0) return
@@ -58,6 +71,35 @@ function groupContent(content: ContentBlock[]): GroupResult {
   for (let i = 0; i < content.length; i++) {
     const block = content[i]
 
+    // Check if this block belongs to a subagent
+    const parentId = 'parentToolUseId' in block ? block.parentToolUseId : null
+    if (parentId && activeSubagents.has(parentId)) {
+      activeSubagents.get(parentId)!.childBlocks.push(block)
+      continue
+    }
+
+    // Check if this is a Task tool_result (closes a subagent)
+    if (block.type === 'tool_result' && taskToolUseIds.has(block.toolUseId) && activeSubagents.has(block.toolUseId)) {
+      activeSubagents.get(block.toolUseId)!.resultBlock = block
+      activeSubagents.delete(block.toolUseId)
+      continue
+    }
+
+    // Start a new subagent segment for Task tool_use
+    if (block.type === 'tool_use' && block.toolName === 'Task') {
+      flush()
+      const seg: RenderSegment & { kind: 'subagent' } = {
+        kind: 'subagent',
+        taskBlock: block,
+        childBlocks: [],
+        startIndex: i,
+      }
+      segments.push(seg)
+      activeSubagents.set(block.toolUseId, seg)
+      continue
+    }
+
+    // Normal grouping for collapsible tools
     if (block.type === 'tool_use' && COLLAPSIBLE_TOOLS.has(block.toolName)) {
       if (group.length === 0) groupStart = i
       group.push(block)
@@ -209,6 +251,17 @@ export function ChatMessage({ message }: ChatMessageProps) {
               block.type === 'text' ? <UserTextBlock key={i} text={block.text} /> : renderBlock(block, i, false)
             )
           : grouped!.segments.map((seg) => {
+              if (seg.kind === 'subagent') {
+                return (
+                  <SubagentBlock
+                    key={`sa-${seg.startIndex}`}
+                    taskBlock={seg.taskBlock}
+                    childBlocks={seg.childBlocks}
+                    resultBlock={seg.resultBlock}
+                    isStreaming={isStreaming}
+                  />
+                )
+              }
               if (seg.kind === 'block') {
                 return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap)
               }

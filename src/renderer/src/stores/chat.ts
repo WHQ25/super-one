@@ -3,6 +3,13 @@ import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMe
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 
+export type MentionKind = 'file' | 'directory' | 'agent'
+export interface Mention {
+  kind: MentionKind
+  value: string
+  displayName: string
+}
+
 interface ChatState {
   messages: ChatMessage[]
   isOpen: boolean
@@ -37,6 +44,11 @@ interface ChatState {
 
   // Agents (for @ mention)
   agents: AgentInfo[]
+
+  // Mention chips
+  mentions: Mention[]
+  addMention: (mention: Mention) => void
+  removeMention: (value: string) => void
 
   // Paths (for display shortening)
   cwd: string
@@ -117,6 +129,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingQuestion: null,
   slashCommands: [],
   agents: [],
+  mentions: [],
   cwd: '',
   homedir: '',
   slashCommandOutput: null,
@@ -307,15 +320,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (content: string) => {
-    const { selectedModel, attachments } = get()
+    const { selectedModel, attachments, mentions } = get()
+
+    // Prepend mention paths to the content (ensure exactly one space between mentions and text)
+    const mentionPrefix = mentions.map((m) => `@${m.value}`).join(' ')
+    const trimmed = content.trim()
+    const finalContent = mentionPrefix
+      ? trimmed ? `${mentionPrefix} ${trimmed}` : mentionPrefix
+      : trimmed
 
     // Track slash command name for overlay routing
-    const slashMatch = content.match(/^\/(\S+)/)
+    const slashMatch = finalContent.match(/^\/(\S+)/)
     set({ _pendingSlashCommand: slashMatch ? slashMatch[1] : '' })
 
     const userContent: ContentBlock[] = [
       ...attachments.map((img) => ({ type: 'image' as const, name: img.name })),
-      { type: 'text' as const, text: content },
+      { type: 'text' as const, text: finalContent },
     ]
 
     const userMessage: ChatMessage = {
@@ -326,9 +346,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       createdAt: new Date().toISOString(),
       providerId: 'local',
     }
-    set((s) => ({ messages: [...s.messages, userMessage], isOpen: true, attachments: [] }))
+    set((s) => ({ messages: [...s.messages, userMessage], isOpen: true, attachments: [], mentions: [] }))
     await window.agent.sendMessage({
-      content,
+      content: finalContent,
       model: selectedModel || undefined,
       images: attachments.length > 0 ? attachments : undefined,
     })
@@ -342,11 +362,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setCorner: (corner) => set({ corner }),
 
-  clearMessages: () => set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, pendingPermission: null, pendingQuestion: null }),
+  clearMessages: () => set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, pendingPermission: null, pendingQuestion: null, mentions: [] }),
 
   resetSession: async () => {
     await window.agent.resetSession()
-    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], _historySessionId: null, historyCursor: null, hasMoreHistory: false })
+    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], mentions: [], _historySessionId: null, historyCursor: null, hasMoreHistory: false })
   },
 
   rewindFiles: async (userMessageId: string) => {
@@ -429,6 +449,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       setTimeout(() => get().fetchAgents(), 2000)
     }
   },
+
+  addMention: (mention) =>
+    set((s) => {
+      if (s.mentions.some((m) => m.value === mention.value)) return s
+      return { mentions: [...s.mentions, mention] }
+    }),
+
+  removeMention: (value) =>
+    set((s) => ({ mentions: s.mentions.filter((m) => m.value !== value) })),
 
   fetchSessions: async () => {
     try {

@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
+import { Folder } from 'lucide-react'
+import { FileIcon } from '@/components/ui/FileIcon'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import type { AgentInfo, ListDirEntry } from '../../../../shared/agent-types'
 
 export interface MentionPopupHandle {
-  /** Confirm the currently selected item (called on Enter/Tab) */
-  confirmSelection: () => void
+  /** Tab: directory → navigate into; file/agent → select */
+  confirmTab: () => void
+  /** Enter: always select (directory also selected directly) */
+  confirmEnter: () => void
   /** Get current item count */
   getItemCount: () => number
 }
@@ -13,7 +17,7 @@ export interface MentionPopupHandle {
 interface MentionPopupProps {
   query: string
   selectedIndex: number
-  onSelect: (value: string) => void
+  onSelect: (value: string, action: 'navigate' | 'select') => void
   onSetSelectedIndex: (index: number) => void
   onClose: () => void
 }
@@ -64,34 +68,49 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     ]
 
     const handleFileClick = useCallback(
-      (entry: ListDirEntry) => {
+      (entry: ListDirEntry, action: 'navigate' | 'select') => {
         const fullPath = currentPath ? `${currentPath}/${entry.name}` : entry.name
         if (entry.isDirectory) {
-          onSelect(fullPath + '/')
+          onSelect(fullPath + '/', action)
         } else {
-          onSelect(fullPath)
+          onSelect(fullPath, 'select')
         }
       },
       [currentPath, onSelect]
     )
 
+    const getSelectedItem = useCallback(() => {
+      if (flatItems.length === 0) return null
+      const idx = Math.max(0, Math.min(selectedIndex, flatItems.length - 1))
+      return flatItems[idx]
+    }, [flatItems, selectedIndex])
+
     // Expose imperative methods for parent keyboard handling
     useImperativeHandle(
       ref,
       () => ({
-        confirmSelection: () => {
-          if (flatItems.length === 0) return
-          const idx = Math.max(0, Math.min(selectedIndex, flatItems.length - 1))
-          const item = flatItems[idx]
+        confirmTab: () => {
+          const item = getSelectedItem()
+          if (!item) return
           if (item.kind === 'file') {
-            handleFileClick(item.entry)
+            // Directory → navigate into; file → select
+            handleFileClick(item.entry, item.entry.isDirectory ? 'navigate' : 'select')
           } else {
-            onSelect(item.agent.name)
+            onSelect(item.agent.name, 'select')
+          }
+        },
+        confirmEnter: () => {
+          const item = getSelectedItem()
+          if (!item) return
+          if (item.kind === 'file') {
+            handleFileClick(item.entry, 'select')
+          } else {
+            onSelect(item.agent.name, 'select')
           }
         },
         getItemCount: () => flatItems.length,
       }),
-      [selectedIndex, flatItems, handleFileClick, onSelect]
+      [getSelectedItem, handleFileClick, onSelect]
     )
 
     const breadcrumbs = currentPath ? currentPath.split('/').filter(Boolean) : []
@@ -108,7 +127,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             <div className="flex items-center gap-0.5 px-2 py-1 text-[10px] text-muted-foreground">
               <button
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => onSelect('')}
+                onClick={() => onSelect('', 'navigate')}
                 className="hover:text-foreground"
               >
                 root
@@ -118,7 +137,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                   <span>/</span>
                   <button
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => onSelect(breadcrumbs.slice(0, i + 1).join('/') + '/')}
+                    onClick={() => onSelect(breadcrumbs.slice(0, i + 1).join('/') + '/', 'navigate')}
                     className="hover:text-foreground"
                   >
                     {seg}
@@ -142,7 +161,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                 else itemRefs.current.delete(i)
               }}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => handleFileClick(entry)}
+              onClick={() => handleFileClick(entry, entry.isDirectory ? 'navigate' : 'select')}
               onMouseEnter={() => onSetSelectedIndex(i)}
               className={cn(
                 'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
@@ -151,9 +170,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                   : 'text-foreground hover:bg-muted/50'
               )}
             >
-              <span className="shrink-0 text-muted-foreground">
-                {entry.isDirectory ? '\uD83D\uDCC1' : '\uD83D\uDCC4'}
-              </span>
+              {entry.isDirectory ? (
+                <Folder className="size-3.5 shrink-0 text-blue-500" />
+              ) : (
+                <FileIcon name={entry.name} size={14} />
+              )}
               <span className="truncate">{entry.name}</span>
             </button>
           ))}
@@ -174,7 +195,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                       else itemRefs.current.delete(flatIdx)
                     }}
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => onSelect(agent.name)}
+                    onClick={() => onSelect(agent.name, 'select')}
                     onMouseEnter={() => onSetSelectedIndex(flatIdx)}
                     className={cn(
                       'flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs transition-colors',
@@ -203,7 +224,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
         {/* Footer hint */}
         <div className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground shrink-0">
-          <kbd className="rounded bg-muted px-1">Tab</kbd>/<kbd className="rounded bg-muted px-1">Enter</kbd> select
+          <kbd className="rounded bg-muted px-1">Tab</kbd> autocomplete
+          <span className="mx-1.5">&middot;</span>
+          <kbd className="rounded bg-muted px-1">Enter</kbd> select
           <span className="mx-1.5">&middot;</span>
           <kbd className="rounded bg-muted px-1">&uarr;&darr;</kbd> navigate
           <span className="mx-1.5">&middot;</span>

@@ -3,7 +3,9 @@ import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ArrowUp, Square, ChevronDown, Paperclip, X } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, Paperclip, X, Folder } from 'lucide-react'
+import { FileIcon } from '@/components/ui/FileIcon'
+import type { MentionKind } from '@/stores/chat'
 import { PermissionModeSelector } from './PermissionModeSelector'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
@@ -36,6 +38,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const addAttachment = useChatStore((s) => s.addAttachment)
     const removeAttachment = useChatStore((s) => s.removeAttachment)
     const slashCommands = useChatStore((s) => s.slashCommands)
+    const mentions = useChatStore((s) => s.mentions)
+    const addMention = useChatStore((s) => s.addMention)
+    const removeMention = useChatStore((s) => s.removeMention)
+    const agents = useChatStore((s) => s.agents)
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const slashItemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
@@ -53,6 +59,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         el.focus()
         el.selectionStart = el.value.length
         el.selectionEnd = el.value.length
+        // Detect active @ mention from shared draftText (e.g. typed in compact mode)
+        const lastAt = text.lastIndexOf('@')
+        if (lastAt !== -1 && !text.slice(lastAt + 1).includes(' ')) {
+          setMentionActive(true)
+          setMentionIndex(0)
+        }
       }
     }, [compact, isOpen])
 
@@ -107,7 +119,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     }, [text, slashCommands])
 
     const isStreaming = status === 'streaming'
-    const canSend = (text.trim().length > 0 || attachments.length > 0) && !isStreaming
+    const canSend = (text.trim().length > 0 || attachments.length > 0 || mentions.length > 0) && !isStreaming
 
     // Filter slash commands based on current input
     const HIDDEN_COMMANDS = new Set(['keybindings-help', 'debug'])
@@ -129,23 +141,34 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     )
 
     const handleMentionSelect = useCallback(
-      (value: string) => {
+      (value: string, action: 'navigate' | 'select') => {
         if (!mentionInfo) return
-        const endsWithSlash = value.endsWith('/')
-        // If selecting a directory (ends with /), keep the mention active and update query
-        if (endsWithSlash) {
+
+        if (action === 'navigate') {
+          // Directory navigation — update the @query in text, keep popup open
           setText(text.slice(0, mentionInfo.atIndex + 1) + value)
           setMentionIndex(0)
           textareaRef.current?.focus()
           return
         }
-        // Insert the selected value and close
-        setText(text.slice(0, mentionInfo.atIndex) + `@${value} `)
+
+        // Determine mention kind
+        const isAgent = agents.some((a) => a.name === value)
+        const kind: MentionKind = isAgent ? 'agent' : value.endsWith('/') ? 'directory' : 'file'
+        const displayName = value.split('/').filter(Boolean).pop() || value
+
+        addMention({ kind, value, displayName })
+
+        // Remove @query portion from text
+        const before = text.slice(0, mentionInfo.atIndex)
+        const after = text.slice(mentionInfo.atIndex + 1 + mentionInfo.query.length)
+        setText(before + after)
+
         setMentionActive(false)
         setMentionIndex(0)
         textareaRef.current?.focus()
       },
-      [mentionInfo]
+      [mentionInfo, agents, addMention]
     )
 
     const handleSend = useCallback(() => {
@@ -189,7 +212,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
           if (e.key === 'Tab') {
             e.preventDefault()
-            mentionRef.current?.confirmSelection()
+            mentionRef.current?.confirmTab()
             return
           }
           if (e.key === 'Escape') {
@@ -200,7 +223,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
-            mentionRef.current?.confirmSelection()
+            mentionRef.current?.confirmEnter()
             return
           }
         }
@@ -230,12 +253,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             return
           }
         }
+        // Backspace on empty text → remove last mention chip
+        if (e.key === 'Backspace' && text === '' && mentions.length > 0) {
+          e.preventDefault()
+          removeMention(mentions[mentions.length - 1].value)
+          return
+        }
+
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault()
           handleSend()
         }
       },
-      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionInfo, mentionActive, isOpen, toggleOpen]
+      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionInfo, mentionActive, isOpen, toggleOpen, text, mentions, removeMention]
     )
 
     const handleInput = useCallback(() => {
@@ -276,9 +306,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         <input
           type="text"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value
+            setText(val)
+            // Typing @ in compact mode → expand panel and activate mention
+            if (val.endsWith('@') && !isOpen) {
+              setMentionActive(true)
+              setMentionIndex(0)
+              toggleOpen()
+            }
+          }}
           onKeyDown={handleKeyDown}
-          placeholder="Design with Claude Code..."
+          placeholder="Ask anything..."
           className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none"
         />
       )
@@ -359,6 +398,43 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   <X className="size-2.5 text-foreground" />
                 </button>
               </div>
+            ))}
+          </div>
+        )}
+
+        {/* Mention chips */}
+        {mentions.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {mentions.map((m) => (
+              <span
+                key={m.value}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',
+                  m.kind === 'agent'
+                    ? 'border-purple-500/40 bg-purple-500/10 text-purple-400'
+                    : 'border-border bg-muted/50 text-foreground'
+                )}
+              >
+                {m.kind === 'agent' ? (
+                  <span className="font-medium">@{m.displayName}</span>
+                ) : m.kind === 'directory' ? (
+                  <>
+                    <Folder className="size-3.5 shrink-0 text-blue-500" />
+                    <span>{m.displayName}</span>
+                  </>
+                ) : (
+                  <>
+                    <FileIcon name={m.displayName} size={12} />
+                    <span>{m.displayName}</span>
+                  </>
+                )}
+                <button
+                  onClick={() => removeMention(m.value)}
+                  className="ml-0.5 rounded-sm hover:bg-muted"
+                >
+                  <X className="size-2.5" />
+                </button>
+              </span>
             ))}
           </div>
         )}

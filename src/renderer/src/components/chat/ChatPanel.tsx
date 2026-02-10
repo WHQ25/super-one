@@ -2,7 +2,7 @@ import { useRef, useCallback, useEffect, useLayoutEffect, useState } from 'react
 import { useChatStore } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
-import { ChevronUp, ChevronDown, Plus, ArrowUp, Square, Clock, ArrowLeft, Loader2, GitBranch, Pencil } from 'lucide-react'
+import { ChevronUp, ChevronDown, Plus, ArrowUp, Square, Clock, ArrowLeft, Loader2, GitBranch, Pencil, Search, X } from 'lucide-react'
 import { ChatInput, type ChatInputHandle } from './ChatInput'
 import { ChatMessage } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
@@ -76,6 +76,8 @@ function SessionHistory() {
 
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
 
   // ESC to close history (or cancel editing)
   useEffect(() => {
@@ -114,15 +116,35 @@ function SessionHistory() {
     setEditingSessionId(null)
   }
 
+  const filteredSessions = searchQuery
+    ? sessions.filter((s) => s.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    : sessions
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Button size="icon-xs" variant="ghost" onClick={toggleHistory} className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-4" />
         </Button>
-        <span className="text-xs font-medium">History</span>
+        <div className="flex flex-1 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1">
+          <Search className="size-3 shrink-0 text-muted-foreground" />
+          <input
+            ref={searchRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search sessions..."
+            className="min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder-muted-foreground outline-none"
+            autoFocus
+          />
+          {searchQuery && (
+            <button onClick={() => { setSearchQuery(''); searchRef.current?.focus() }} className="text-muted-foreground hover:text-foreground">
+              <X className="size-3" />
+            </button>
+          )}
+        </div>
       </div>
-      {sessions.length === 0 ? (
+      {filteredSessions.length === 0 ? (
         <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
           No sessions found
         </div>
@@ -130,7 +152,7 @@ function SessionHistory() {
         <div className="flex-1 overflow-hidden">
           <ScrollArea className="h-full">
             <div className="flex w-0 min-w-full flex-col gap-0.5 p-2">
-              {sessions.map((entry) => (
+              {filteredSessions.map((entry) => (
                 <div
                   key={entry.sessionId}
                   onClick={() => handleResume(entry)}

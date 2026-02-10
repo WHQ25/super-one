@@ -81,6 +81,13 @@ export class AgentService {
     })
   }
 
+  async openFolder(cwd: string): Promise<void> {
+    await this.claude.dispose()
+    await this.claude.initialize({ cwd }, (event: AgentEvent) => {
+      this.mainWindow?.webContents.send(AgentIpcChannels.EVENT, event)
+    })
+  }
+
   async dispose(): Promise<void> {
     await this.claude.dispose()
 

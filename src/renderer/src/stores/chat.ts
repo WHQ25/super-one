@@ -407,11 +407,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 }))
 
-// Eagerly fetch resources — retries until session is ready
-useChatStore.getState().fetchModels()
-useChatStore.getState().fetchSlashCommands()
-useChatStore.getState().fetchAgents()
-
 /** Apply a content delta to the content array, merging consecutive text blocks and deduplicating tool_use. */
 function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {
   if (delta.type === 'text') {

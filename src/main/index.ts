@@ -1,7 +1,11 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'path'
+import { existsSync } from 'fs'
+import { execFile, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import { AgentService } from './agent/agent-service'
+import { AgentIpcChannels } from '../shared/agent-types'
+import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
 
 const agentService = new AgentService()
 
@@ -24,9 +28,90 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // Setup agent IPC handlers
+  // Setup agent IPC handlers (does NOT auto-initialize)
   agentService.setup(mainWindow)
-  agentService.initialize({ cwd: process.cwd() })
+
+  // App-level IPC handlers
+  ipcMain.handle(AgentIpcChannels.SELECT_FOLDER, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
+  ipcMain.handle(AgentIpcChannels.GET_RECENT_FOLDERS, () => {
+    return getRecentFolders()
+  })
+
+  ipcMain.handle(AgentIpcChannels.REMOVE_RECENT_FOLDER, (_event, folderPath: string) => {
+    removeRecentFolder(folderPath)
+    return getRecentFolders()
+  })
+
+  ipcMain.handle(AgentIpcChannels.OPEN_FOLDER, async (_event, folderPath: string) => {
+    if (!existsSync(folderPath)) return false
+    addRecentFolder(folderPath)
+    await agentService.openFolder(folderPath)
+    return true
+  })
+
+  const testInstall = process.env.TEST_INSTALL_CLAUDE === '1'
+
+  ipcMain.handle(AgentIpcChannels.SETUP_CHECK_CLAUDE, () => {
+    if (testInstall) return false
+    const cmd = process.platform === 'win32' ? 'where' : 'which'
+    return new Promise<boolean>((resolve) => {
+      execFile(cmd, ['claude'], (error) => {
+        resolve(!error)
+      })
+    })
+  })
+
+  ipcMain.handle(AgentIpcChannels.SETUP_INSTALL_CLAUDE, () => {
+    const isWin = process.platform === 'win32'
+    const testCmd = "printf '\\e[31mRed\\e[0m \\e[32mGreen\\e[0m \\e[33mYellow\\e[0m \\e[34mBlue\\e[0m \\e[35mPurple\\e[0m \\e[36mCyan\\e[0m \\e[1;32mBold Green\\e[0m\\n\\e[90mDim\\e[0m \\e[91mBright Red\\e[0m \\e[92mBright Green\\e[0m \\e[93mBright Yellow\\e[0m\\n'"
+    const installCmd = isWin
+      ? 'irm https://claude.ai/install.ps1 | iex'
+      : (testInstall ? testCmd : 'curl -fsSL https://claude.ai/install.sh | bash')
+
+    const colorEnv = {
+      ...process.env,
+      TERM: 'xterm-256color',
+      FORCE_COLOR: '1',
+      CLICOLOR_FORCE: '1',
+    }
+    const child = isWin
+      ? spawn('powershell', ['-NoProfile', '-Command', installCmd], { env: colorEnv })
+      : spawn('bash', ['-c', installCmd], { env: colorEnv })
+
+    child.stdout.on('data', (data: Buffer) => {
+      mainWindow.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+        type: 'install_output',
+        data: data.toString(),
+      })
+    })
+
+    child.stderr.on('data', (data: Buffer) => {
+      mainWindow.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+        type: 'install_output',
+        data: data.toString(),
+      })
+    })
+
+    child.on('close', (code) => {
+      mainWindow.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+        type: 'install_complete',
+        code: code ?? 1,
+      })
+    })
+
+    child.on('error', (err) => {
+      mainWindow.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+        type: 'install_error',
+        error: err.message,
+      })
+    })
+  })
 
   if (is.dev) {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
@@ -56,5 +141,11 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  ipcMain.removeHandler(AgentIpcChannels.SELECT_FOLDER)
+  ipcMain.removeHandler(AgentIpcChannels.GET_RECENT_FOLDERS)
+  ipcMain.removeHandler(AgentIpcChannels.REMOVE_RECENT_FOLDER)
+  ipcMain.removeHandler(AgentIpcChannels.OPEN_FOLDER)
+  ipcMain.removeHandler(AgentIpcChannels.SETUP_CHECK_CLAUDE)
+  ipcMain.removeHandler(AgentIpcChannels.SETUP_INSTALL_CLAUDE)
   agentService.dispose()
 })

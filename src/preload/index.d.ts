@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AccountInfo, AgentEvent, AgentInfo, ListDirEntry, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SendMessageRequest, SlashCommandInfo } from '../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, ListDirEntry, McpServerInfo, ModelOption, PermissionMode, RecentFolder, RewindFilesResult, SendMessageRequest, SetupEvent, SlashCommandInfo } from '../shared/agent-types'
 
 interface AgentAPI {
   sendMessage(request: SendMessageRequest): Promise<void>
@@ -21,9 +21,20 @@ interface AgentAPI {
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 
+interface AppAPI {
+  selectFolder(): Promise<string | null>
+  getRecentFolders(): Promise<RecentFolder[]>
+  removeRecentFolder(folderPath: string): Promise<RecentFolder[]>
+  openFolder(folderPath: string): Promise<boolean>
+  checkClaude(): Promise<boolean>
+  installClaude(): Promise<void>
+  onSetupEvent(callback: (event: SetupEvent) => void): () => void
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
     agent: AgentAPI
+    app: AppAPI
   }
 }

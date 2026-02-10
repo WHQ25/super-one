@@ -204,9 +204,34 @@ export interface RewindFilesResult {
   deletions?: number
 }
 
+// --- Setup events ---
+
+export type SetupEvent =
+  | { type: 'install_output'; data: string }
+  | { type: 'install_complete'; code: number }
+  | { type: 'install_error'; error: string }
+
+// --- Recent folder ---
+
+export interface RecentFolder {
+  path: string
+  name: string       // basename
+  lastOpened: string  // ISO timestamp
+}
+
 // --- IPC channel constants ---
 
 export const AgentIpcChannels = {
+  // App-level channels
+  SELECT_FOLDER: 'app:select-folder',
+  GET_RECENT_FOLDERS: 'app:get-recent-folders',
+  REMOVE_RECENT_FOLDER: 'app:remove-recent-folder',
+  OPEN_FOLDER: 'app:open-folder',
+  SETUP_CHECK_CLAUDE: 'app:setup-check-claude',
+  SETUP_INSTALL_CLAUDE: 'app:setup-install-claude',
+  SETUP_EVENT: 'app:setup-event',
+
+  // Agent channels
   SEND_MESSAGE: 'agent:send-message',
   INTERRUPT: 'agent:interrupt',
   AVAILABLE_MODELS: 'agent:available-models',

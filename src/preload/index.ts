@@ -62,10 +62,41 @@ const agentAPI = {
   },
 }
 
+const appAPI = {
+  selectFolder: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SELECT_FOLDER),
+
+  getRecentFolders: () =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_RECENT_FOLDERS),
+
+  removeRecentFolder: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOVE_RECENT_FOLDER, folderPath),
+
+  openFolder: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.OPEN_FOLDER, folderPath),
+
+  checkClaude: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SETUP_CHECK_CLAUDE),
+
+  installClaude: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SETUP_INSTALL_CLAUDE),
+
+  onSetupEvent: (callback: (event: unknown) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, event: unknown): void => {
+      callback(event)
+    }
+    ipcRenderer.on(AgentIpcChannels.SETUP_EVENT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.SETUP_EVENT, handler)
+    }
+  },
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('agent', agentAPI)
+    contextBridge.exposeInMainWorld('app', appAPI)
   } catch (error) {
     console.error(error)
   }
@@ -74,4 +105,6 @@ if (process.contextIsolated) {
   window.electron = electronAPI
   // @ts-ignore
   window.agent = agentAPI
+  // @ts-ignore
+  window.app = appAPI
 }

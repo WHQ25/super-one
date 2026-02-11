@@ -44,6 +44,12 @@ function createWindow(): void {
     return getRecentFolders()
   })
 
+  ipcMain.handle(AgentIpcChannels.ADD_RECENT_FOLDER, (_event, folderPath: string) => {
+    if (!existsSync(folderPath)) return false
+    addRecentFolder(folderPath)
+    return true
+  })
+
   ipcMain.handle(AgentIpcChannels.REMOVE_RECENT_FOLDER, (_event, folderPath: string) => {
     removeRecentFolder(folderPath)
     return getRecentFolders()
@@ -162,15 +168,25 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
+let quitting = false
+app.on('before-quit', (e) => {
+  if (quitting) return
+  e.preventDefault()
+  quitting = true
+
   ipcMain.removeHandler(AgentIpcChannels.SELECT_FOLDER)
   ipcMain.removeHandler(AgentIpcChannels.GET_RECENT_FOLDERS)
+  ipcMain.removeHandler(AgentIpcChannels.ADD_RECENT_FOLDER)
   ipcMain.removeHandler(AgentIpcChannels.REMOVE_RECENT_FOLDER)
   ipcMain.removeHandler(AgentIpcChannels.OPEN_FOLDER)
   ipcMain.removeHandler(AgentIpcChannels.OPEN_TMP_FOLDER)
   ipcMain.removeHandler(AgentIpcChannels.CLOSE_PROJECT)
   ipcMain.removeHandler(AgentIpcChannels.SETUP_CHECK_CLAUDE)
   ipcMain.removeHandler(AgentIpcChannels.SETUP_INSTALL_CLAUDE)
-  agentService.dispose()
-  closeDb()
+
+  const timeout = new Promise<void>((r) => setTimeout(r, 5000))
+  Promise.race([agentService.dispose(), timeout]).finally(() => {
+    closeDb()
+    app.quit()
+  })
 })

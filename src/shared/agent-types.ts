@@ -247,7 +247,7 @@ export interface RecentFolder {
   id: string          // UUID primary key
   path: string
   name: string        // basename
-  lastOpened: string   // ISO timestamp — updated on every open
+  lastOpened: string   // ISO timestamp — last user message time or added time
   addedAt: string      // ISO timestamp — set once on first add
 }
 
@@ -354,6 +354,11 @@ export interface McpServerMeta {
   tools?: McpToolInfo[]
 }
 
+export interface McpCheckResult {
+  status: McpServerInfo[]
+  meta: Record<string, McpServerMeta>
+}
+
 // --- MCP library ---
 
 export interface McpLibraryEntry {
@@ -391,6 +396,7 @@ export const AgentIpcChannels = {
   // App-level channels
   SELECT_FOLDER: 'app:select-folder',
   GET_RECENT_FOLDERS: 'app:get-recent-folders',
+  ADD_RECENT_FOLDER: 'app:add-recent-folder',
   REMOVE_RECENT_FOLDER: 'app:remove-recent-folder',
   OPEN_FOLDER: 'app:open-folder',
   OPEN_TMP_FOLDER: 'app:open-tmp-folder',
@@ -441,8 +447,7 @@ export const AgentIpcChannels = {
   MCP_SAVE_CONFIG: 'mcp:save-config',
   MCP_DELETE_CONFIG: 'mcp:delete-config',
   MCP_TOGGLE_CONFIG: 'mcp:toggle-config',
-  MCP_PROBE_SERVERS: 'mcp:probe-servers',
-  MCP_RECONNECT_SERVER: 'mcp:reconnect-server',
+  MCP_CHECK_SERVERS: 'mcp:check-servers',
   MCP_OAUTH_AUTHORIZE: 'mcp:oauth-authorize',
 
   // MCP library

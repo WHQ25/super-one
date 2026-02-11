@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Plus, ChevronRight, Clipboard, X, ArrowLeft, Check, Library, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { ProjectSelector } from '@/components/coding/ProjectSelector'
+import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { McpDetailPage } from './McpDetailPage'
 import type { McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta } from '../../../shared/agent-types'
@@ -29,7 +31,7 @@ export function McpIcon({ name, meta, size = 'sm' }: { name: string; meta?: McpS
 }
 
 function ServerCard({ config, status, meta }: { config: McpServerConfig; status?: McpServerInfo; meta?: McpServerMeta }) {
-  const { selectMcp, toggleMcpConfig, reconnectMcpServer } = useSettingsStore()
+  const { selectMcp, toggleMcpConfig, checkMcpServers } = useSettingsStore()
   const [reconnecting, setReconnecting] = useState(false)
   const serverStatus = status?.status ?? (config.disabled ? 'disabled' : 'pending')
   const isEnabled = !config.disabled
@@ -51,7 +53,7 @@ function ServerCard({ config, status, meta }: { config: McpServerConfig; status?
     e.stopPropagation()
     setReconnecting(true)
     try {
-      await reconnectMcpServer(config.name)
+      await checkMcpServers()
     } finally {
       setReconnecting(false)
     }
@@ -536,15 +538,27 @@ function ServerSection({ title, configs, mcpStatus, mcpMeta }: { title: string; 
 }
 
 export function McpPage() {
-  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, selectedMcpName, fetchMcpConfigs, fetchMcpStatus, probeMcpServers, fetchMcpLibrary } = useSettingsStore()
+  const currentFolder = useAppStore((s) => s.currentFolder)
+  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, selectMcp } = useSettingsStore()
   const [addView, setAddView] = useState<'none' | 'form' | 'library'>('none')
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
+    selectMcp(null)
+    setAddView('none')
     fetchMcpConfigs()
-    fetchMcpStatus()
-    probeMcpServers()
+    checkMcpServers()
     fetchMcpLibrary()
-  }, [fetchMcpConfigs, fetchMcpStatus, probeMcpServers, fetchMcpLibrary])
+  }, [currentFolder, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, selectMcp])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await checkMcpServers()
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   // Detail page
   if (selectedMcpName) {
@@ -558,12 +572,17 @@ export function McpPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">MCP Servers</h2>
           <p className="text-sm text-muted-foreground">Manage Model Context Protocol server configurations</p>
         </div>
         <div className="flex gap-2">
+          <ProjectSelector mode="switch" />
+          <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+            Refresh
+          </Button>
           {mcpLibrary.length > 0 && (
             <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}>
               <Library className="size-4" />

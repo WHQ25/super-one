@@ -27,6 +27,7 @@ interface AppState {
 
   fetchRecentFolders: () => Promise<void>
   selectAndOpenFolder: () => Promise<void>
+  selectAndSwitchFolder: () => Promise<void>
   openFolder: (folderPath: string) => Promise<void>
   openTmpFolder: () => Promise<void>
   removeRecentFolder: (folderPath: string) => Promise<void>
@@ -85,6 +86,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     await openFolderDirect(folderPath, set)
   },
 
+  selectAndSwitchFolder: async () => {
+    const folderPath = await window.app.selectFolder()
+    if (!folderPath) return
+    const ok = await window.app.addRecentFolder(folderPath)
+    if (!ok) return
+    set({ currentFolder: folderPath })
+    await useAppStore.getState().fetchRecentFolders()
+    const { useChatStore } = await import('./chat')
+    useChatStore.getState().ensureSession(folderPath)
+    useChatStore.getState().switchProject(folderPath)
+  },
+
   openFolder: async (folderPath: string) => {
     await openFolderDirect(folderPath, set)
   },
@@ -100,8 +113,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   switchToProject: (folderPath: string) => {
     set({ currentFolder: folderPath })
-    // Just switch the active session — no IPC call (agent already running)
+    // Just switch the active session — no IPC call (agent may not be running)
     import('./chat').then(({ useChatStore }) => {
+      useChatStore.getState().ensureSession(folderPath)
       useChatStore.getState().switchProject(folderPath)
     })
   },

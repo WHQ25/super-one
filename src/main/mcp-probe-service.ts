@@ -5,7 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
-import type { McpServerConfig, McpServerMeta } from '../shared/agent-types'
+import type { McpCheckResult, McpServerConfig, McpServerInfo, McpServerMeta, McpToolInfo } from '../shared/agent-types'
 
 const CACHE_FILE = 'mcp-server-meta-cache.json'
 
@@ -27,7 +27,26 @@ function writeCache(cache: Record<string, McpServerMeta>): void {
   writeFileSync(getCachePath(), JSON.stringify(cache, null, 2))
 }
 
-async function probeOne(config: McpServerConfig): Promise<McpServerMeta | null> {
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message
+  return String(error)
+}
+
+function isAuthError(config: McpServerConfig, message: string): boolean {
+  if (config.type !== 'http' && config.type !== 'sse') return false
+  return /(^|[^0-9])(401|403)([^0-9]|$)|unauthorized|forbidden|oauth|authorization/i.test(message)
+}
+
+async function checkOne(config: McpServerConfig): Promise<{ status: McpServerInfo; meta?: McpServerMeta }> {
+  if (config.disabled) {
+    return {
+      status: {
+        name: config.name,
+        status: 'disabled',
+      },
+    }
+  }
+
   const client = new Client({ name: 'superone-probe', version: '1.0.0' })
 
   let transport: StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
@@ -50,7 +69,13 @@ async function probeOne(config: McpServerConfig): Promise<McpServerMeta | null> 
       env: { ...process.env, ...(config.env ?? {}) } as Record<string, string>,
     })
   } else {
-    return null
+    return {
+      status: {
+        name: config.name,
+        status: 'failed',
+        error: 'Invalid MCP configuration',
+      },
+    }
   }
 
   try {
@@ -62,7 +87,7 @@ async function probeOne(config: McpServerConfig): Promise<McpServerMeta | null> 
     const info = client.getServerVersion()
 
     // Also fetch tools list for descriptions
-    let tools: McpServerMeta['tools']
+    let tools: McpToolInfo[] = []
     try {
       const toolsResult = await Promise.race([
         client.listTools(),
@@ -73,7 +98,7 @@ async function probeOne(config: McpServerConfig): Promise<McpServerMeta | null> 
         description: t.description,
       }))
     } catch {
-      // tools list optional
+      // tools list optional; server can still be connected
     }
 
     const meta: McpServerMeta = {
@@ -87,36 +112,67 @@ async function probeOne(config: McpServerConfig): Promise<McpServerMeta | null> 
         sizes: icon.sizes,
         theme: icon.theme,
       })),
-      tools,
+      tools: tools.length > 0 ? tools : undefined,
     }
 
     await client.close()
-    return meta
-  } catch {
+    return {
+      status: {
+        name: config.name,
+        status: 'connected',
+        toolCount: tools.length,
+        tools,
+      },
+      meta,
+    }
+  } catch (error) {
+    const message = toErrorMessage(error)
+    const status: McpServerInfo['status'] = isAuthError(config, message) ? 'needs-auth' : 'failed'
     try { await client.close() } catch { /* ignore */ }
-    return null
+    return {
+      status: {
+        name: config.name,
+        status,
+        error: message,
+      },
+    }
   }
 }
 
-export async function probeMcpServers(configs: McpServerConfig[]): Promise<Record<string, McpServerMeta>> {
+export async function checkMcpServers(configs: McpServerConfig[]): Promise<McpCheckResult> {
   const cache = readCache()
-  const toProbe = configs.filter((c) => !c.disabled && !cache[c.name])
+  const checks = await Promise.all(configs.map(async (config) => checkOne(config)))
 
-  const results = await Promise.allSettled(
-    toProbe.map(async (config) => {
-      const meta = await probeOne(config)
-      if (meta) cache[config.name] = meta
+  const status: McpServerInfo[] = []
+  const meta: Record<string, McpServerMeta> = {}
+  let cacheChanged = false
+
+  for (let i = 0; i < configs.length; i++) {
+    const config = configs[i]
+    const check = checks[i]
+    status.push({
+      ...check.status,
+      scope: config.scope,
     })
-  )
 
-  // Only write cache if we got new results
-  if (results.some((r) => r.status === 'fulfilled')) {
+    if (check.meta) {
+      meta[config.name] = check.meta
+      if (JSON.stringify(cache[config.name]) !== JSON.stringify(check.meta)) {
+        cache[config.name] = check.meta
+        cacheChanged = true
+      }
+      continue
+    }
+
+    if (cache[config.name]) {
+      meta[config.name] = cache[config.name]
+    }
+  }
+
+  if (cacheChanged) {
     writeCache(cache)
   }
 
-  return cache
+  return { status, meta }
 }
 
-export function getCachedMcpMeta(): Record<string, McpServerMeta> {
-  return readCache()
-}

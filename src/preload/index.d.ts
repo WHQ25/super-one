@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AccountInfo, AgentEvent, AgentInfo, ChatMessage, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, ModelOption, PermissionMode, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo } from '../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, ChatMessage, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -28,6 +28,7 @@ interface AgentAPI {
 interface AppAPI {
   selectFolder(): Promise<string | null>
   getRecentFolders(): Promise<RecentFolder[]>
+  addRecentFolder(folderPath: string): Promise<boolean>
   removeRecentFolder(folderPath: string): Promise<RecentFolder[]>
   openFolder(folderPath: string): Promise<boolean>
   openTmpFolder(): Promise<string>
@@ -58,8 +59,7 @@ interface AppAPI {
   saveMcpConfig(projectPath: string, name: string, config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>, scope: ResourceScope): Promise<void>
   deleteMcpConfig(projectPath: string, name: string, scope: ResourceScope): Promise<void>
   toggleMcpConfig(projectPath: string, name: string, disabled: boolean, scope: ResourceScope): Promise<void>
-  probeMcpServers(projectPath: string): Promise<Record<string, McpServerMeta>>
-  reconnectMcpServer(projectPath: string, serverName: string): Promise<void>
+  checkMcpServers(projectPath: string): Promise<McpCheckResult>
   oauthAuthorize(serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse'): Promise<Record<string, string>>
 
   // MCP library

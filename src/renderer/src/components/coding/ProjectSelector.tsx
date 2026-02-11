@@ -11,13 +11,17 @@ import {
 interface ProjectSelectorProps {
   /** Compact mode for status bar usage */
   compact?: boolean
+  /** open: switch and initialize agent; switch: only switch settings context */
+  mode?: 'open' | 'switch'
 }
 
-export function ProjectSelector({ compact }: ProjectSelectorProps) {
+export function ProjectSelector({ compact, mode = 'open' }: ProjectSelectorProps) {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
   const openFolder = useAppStore((s) => s.openFolder)
+  const switchToProject = useAppStore((s) => s.switchToProject)
   const selectAndOpenFolder = useAppStore((s) => s.selectAndOpenFolder)
+  const selectAndSwitchFolder = useAppStore((s) => s.selectAndSwitchFolder)
 
   const projectName = currentFolder?.split('/').pop() ?? 'No Project'
 
@@ -42,7 +46,13 @@ export function ProjectSelector({ compact }: ProjectSelectorProps) {
         {recentFolders.map((folder) => (
           <DropdownMenuItem
             key={folder.path}
-            onClick={() => openFolder(folder.path)}
+            onClick={() => {
+              if (mode === 'switch') {
+                switchToProject(folder.path)
+              } else {
+                void openFolder(folder.path)
+              }
+            }}
             className="gap-2"
           >
             {folder.path === currentFolder ? (
@@ -57,7 +67,16 @@ export function ProjectSelector({ compact }: ProjectSelectorProps) {
           </DropdownMenuItem>
         ))}
         {recentFolders.length > 0 && <DropdownMenuSeparator />}
-        <DropdownMenuItem onClick={() => selectAndOpenFolder()} className="gap-2">
+        <DropdownMenuItem
+          onClick={() => {
+            if (mode === 'switch') {
+              void selectAndSwitchFolder()
+            } else {
+              void selectAndOpenFolder()
+            }
+          }}
+          className="gap-2"
+        >
           <Plus className="size-4 shrink-0" />
           <span>Add Project...</span>
         </DropdownMenuItem>

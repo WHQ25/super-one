@@ -27,6 +27,8 @@ import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
 import { Button } from '@/components/ui/button'
+import { ProjectSelector } from '@/components/coding/ProjectSelector'
+import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import type { MarketplacePlugin, PluginInfo, ResourceScope, SkillFileEntry } from '../../../shared/agent-types'
 import { cn } from '@/lib/utils'
@@ -641,17 +643,20 @@ function MarketplaceDetailView({
 
       {/* Header */}
       <div className="mb-5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold">{summary.name}</h2>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleUpdate}
-            disabled={updating}
-          >
-            <RefreshCw className={cn('size-3.5', updating && 'animate-spin')} />
-            {updating ? 'Updating...' : 'Update'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <ProjectSelector mode="switch" />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleUpdate}
+              disabled={updating}
+            >
+              <RefreshCw className={cn('size-3.5', updating && 'animate-spin')} />
+              {updating ? 'Updating...' : 'Update'}
+            </Button>
+          </div>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
           {summary.source && <SourceLink source={summary.source} size="md" />}
@@ -701,20 +706,24 @@ function MarketplaceDetailView({
 type PluginsTab = 'marketplace' | 'installed'
 
 export function PluginsPage() {
+  const currentFolder = useAppStore((s) => s.currentFolder)
   const {
     plugins,
     marketplacePlugins,
     fetchPlugins,
     fetchMarketplacePlugins,
     installPlugin,
+    clearPluginDetail,
   } = useSettingsStore()
   const [tab, setTab] = useState<PluginsTab>('marketplace')
   const [selectedMarketplace, setSelectedMarketplace] = useState<string | null>(null)
 
   useEffect(() => {
+    clearPluginDetail()
+    setSelectedMarketplace(null)
     fetchPlugins()
     fetchMarketplacePlugins()
-  }, [fetchPlugins, fetchMarketplacePlugins])
+  }, [currentFolder, clearPluginDetail, fetchPlugins, fetchMarketplacePlugins])
 
   // Derive marketplace summaries from plugins data
   const marketplaceSummaries = useMemo(() => {
@@ -749,7 +758,6 @@ export function PluginsPage() {
   const handleUpdateAll = async () => {
     setUpdatingAll(true)
     try {
-      const { useAppStore } = await import('@/stores/app')
       const pp = useAppStore.getState().currentFolder ?? ''
       await window.app.updatePlugins(pp, updatablePlugins.map((p) => ({ key: p.key, scope: p.scope })))
       await fetchPlugins()
@@ -782,9 +790,12 @@ export function PluginsPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold">Plugins</h2>
-        <p className="text-sm text-muted-foreground">Browse and manage Claude Code plugins</p>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Plugins</h2>
+          <p className="text-sm text-muted-foreground">Browse and manage Claude Code plugins</p>
+        </div>
+        <ProjectSelector mode="switch" />
       </div>
 
       {/* Tabs */}

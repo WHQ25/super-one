@@ -78,6 +78,9 @@ const appAPI = {
   getRecentFolders: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_RECENT_FOLDERS),
 
+  addRecentFolder: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ADD_RECENT_FOLDER, folderPath),
+
   removeRecentFolder: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.REMOVE_RECENT_FOLDER, folderPath),
 
@@ -141,16 +144,26 @@ const appAPI = {
   // MCP config
   listMcpConfigs: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_LIST_CONFIG, projectPath),
-  saveMcpConfig: (projectPath: string, name: string, config: { command: string; args: string[]; env: Record<string, string> }, scope: string) =>
+  saveMcpConfig: (
+    projectPath: string,
+    name: string,
+    config: {
+      type?: 'stdio' | 'http' | 'sse'
+      command?: string
+      args?: string[]
+      env?: Record<string, string>
+      url?: string
+      headers?: Record<string, string>
+    },
+    scope: string
+  ) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_SAVE_CONFIG, projectPath, name, config, scope),
   deleteMcpConfig: (projectPath: string, name: string, scope: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_DELETE_CONFIG, projectPath, name, scope),
   toggleMcpConfig: (projectPath: string, name: string, disabled: boolean, scope: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_TOGGLE_CONFIG, projectPath, name, disabled, scope),
-  probeMcpServers: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MCP_PROBE_SERVERS, projectPath),
-  reconnectMcpServer: (projectPath: string, serverName: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MCP_RECONNECT_SERVER, projectPath, serverName),
+  checkMcpServers: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_CHECK_SERVERS, projectPath),
   oauthAuthorize: (serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, serverUrl, headers, transport),
 

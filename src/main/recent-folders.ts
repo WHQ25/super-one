@@ -5,21 +5,25 @@ import type { RecentFolder } from '../shared/agent-types'
 
 export function getRecentFolders(): RecentFolder[] {
   const db = getDb()
+  // Sort by the most recent user message time, falling back to project added time
   const rows = db.prepare(`
     SELECT p.id, p.path, p.name, p.added_at,
-           COALESCE(MAX(s.last_active_at), p.last_opened_at) AS last_opened_at
+           COALESCE(
+             (SELECT MAX(m.created_at) FROM chat_messages m
+              JOIN sessions s ON s.claude_session_id = m.claude_session_id
+              WHERE s.project_id = p.id AND m.role = 'user'),
+             p.added_at
+           ) AS last_active
     FROM projects p
-    LEFT JOIN sessions s ON s.project_id = p.id
-    GROUP BY p.id
-    ORDER BY last_opened_at DESC
-  `).all() as Array<{ id: string; path: string; name: string; added_at: string; last_opened_at: string }>
+    ORDER BY last_active DESC
+  `).all() as Array<{ id: string; path: string; name: string; added_at: string; last_active: string }>
 
   return rows.map((r) => ({
     id: r.id,
     path: r.path,
     name: r.name,
     addedAt: r.added_at,
-    lastOpened: r.last_opened_at,
+    lastOpened: r.last_active,
   }))
 }
 
@@ -29,11 +33,11 @@ export function addRecentFolder(folderPath: string): void {
   const name = basename(folderPath)
 
   db.prepare(`
-    INSERT INTO projects (id, path, name, added_at, last_opened_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO projects (id, path, name, added_at)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
       name = excluded.name
-  `).run(randomUUID(), folderPath, name, now, now)
+  `).run(randomUUID(), folderPath, name, now)
 }
 
 

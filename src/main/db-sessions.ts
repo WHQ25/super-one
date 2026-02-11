@@ -9,7 +9,6 @@ interface DbSession {
   claude_session_id: string | null
   title: string | null
   created_at: string
-  last_active_at: string
   total_cost_usd: number | null
   context_tokens: number | null
 }
@@ -33,16 +32,21 @@ export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[]
 
   const db = getDb()
   const rows = db.prepare(`
-    SELECT id, claude_session_id, title, created_at, last_active_at
-    FROM sessions
-    WHERE project_id = ?
-    ORDER BY last_active_at DESC
-  `).all(projectId) as DbSession[]
+    SELECT s.id, s.claude_session_id, s.title, s.created_at,
+           COALESCE(
+             (SELECT MAX(m.created_at) FROM chat_messages m
+              WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
+             s.created_at
+           ) AS last_user_msg_at
+    FROM sessions s
+    WHERE s.project_id = ?
+    ORDER BY last_user_msg_at DESC
+  `).all(projectId) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string }>
 
   return rows.map((r) => ({
     sessionId: r.claude_session_id ?? r.id,
     title: r.title ?? 'Untitled',
-    lastActiveAt: r.last_active_at,
+    lastActiveAt: r.last_user_msg_at,
     messageCount: 0,
   }))
 }
@@ -57,20 +61,12 @@ export function createSession(folderPath: string, claudeSessionId: string, title
   const now = new Date().toISOString()
 
   db.prepare(`
-    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at, last_active_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(claude_session_id) DO UPDATE SET
-      last_active_at = excluded.last_active_at
-  `).run(id, projectId, claudeSessionId, title ?? null, now, now)
+    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(claude_session_id) DO NOTHING
+  `).run(id, projectId, claudeSessionId, title ?? null, now)
 
   return id
-}
-
-/** Update session's last_active_at */
-export function touchSession(claudeSessionId: string): void {
-  const db = getDb()
-  const now = new Date().toISOString()
-  db.prepare('UPDATE sessions SET last_active_at = ? WHERE claude_session_id = ?').run(now, claudeSessionId)
 }
 
 /** Update session title */
@@ -85,7 +81,6 @@ export function saveSessionState(
   data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string },
 ): void {
   const db = getDb()
-  const now = new Date().toISOString()
 
   const upsertMsg = db.prepare(`
     INSERT INTO chat_messages (id, claude_session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json)
@@ -99,19 +94,22 @@ export function saveSessionState(
   const updateSession = data.title
     ? db.prepare(`
         UPDATE sessions
-        SET total_cost_usd = ?, context_tokens = ?, last_active_at = ?,
+        SET total_cost_usd = ?, context_tokens = ?,
             title = CASE WHEN title IS NULL OR title = '' THEN ? ELSE title END
         WHERE claude_session_id = ?
       `)
     : db.prepare(`
         UPDATE sessions
-        SET total_cost_usd = ?, context_tokens = ?, last_active_at = ?
+        SET total_cost_usd = ?, context_tokens = ?
         WHERE claude_session_id = ?
       `)
 
+  // Skip messages still streaming — they haven't completed and shouldn't be persisted
+  const settled = data.messages.filter((m) => m.status !== 'streaming')
+
   const tx = db.transaction(() => {
-    for (let i = 0; i < data.messages.length; i++) {
-      const msg = data.messages[i]
+    for (let i = 0; i < settled.length; i++) {
+      const msg = settled[i]
       upsertMsg.run(
         msg.id,
         claudeSessionId,
@@ -126,9 +124,9 @@ export function saveSessionState(
     }
 
     if (data.title) {
-      updateSession.run(data.totalCostUsd, data.contextTokens, now, data.title, claudeSessionId)
+      updateSession.run(data.totalCostUsd, data.contextTokens, data.title, claudeSessionId)
     } else {
-      updateSession.run(data.totalCostUsd, data.contextTokens, now, claudeSessionId)
+      updateSession.run(data.totalCostUsd, data.contextTokens, claudeSessionId)
     }
   })
 

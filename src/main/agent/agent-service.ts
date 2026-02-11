@@ -16,7 +16,7 @@ function getGitRoot(cwd: string): string {
 }
 import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState } from '../db-sessions'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
-import { probeMcpServers, getCachedMcpMeta } from '../mcp-probe-service'
+import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
 import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill } from '../skills-service'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
@@ -258,20 +258,15 @@ export class AgentService {
       } catch { /* session may not be active */ }
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_PROBE_SERVERS, async (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.MCP_CHECK_SERVERS, async (_event, projectPath: string) => {
       const configs = listMcpConfigs(projectPath)
-      const meta = await probeMcpServers(configs)
-      // Auto-backup successfully probed servers to library
-      try { backupMcpServers(configs, meta) } catch { /* ignore */ }
-      return meta
-    })
-
-    ipcMain.handle(AgentIpcChannels.MCP_RECONNECT_SERVER, async (_event, projectPath: string, serverName: string) => {
-      try {
-        await this.getAgent(projectPath).reconnectMcpServer(serverName)
-      } catch {
-        // Session may not be active
-      }
+      const result = await checkMcpServers(configs)
+      const connectedNames = new Set(result.status.filter((s) => s.status === 'connected').map((s) => s.name))
+      const connectedMeta = Object.fromEntries(
+        Object.entries(result.meta).filter(([name]) => connectedNames.has(name))
+      )
+      try { backupMcpServers(configs, connectedMeta) } catch { /* ignore */ }
+      return result
     })
 
     ipcMain.handle(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, async (_event, serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') => {
@@ -422,8 +417,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.MCP_SAVE_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.MCP_TOGGLE_CONFIG)
-    ipcMain.removeHandler(AgentIpcChannels.MCP_PROBE_SERVERS)
-    ipcMain.removeHandler(AgentIpcChannels.MCP_RECONNECT_SERVER)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_CHECK_SERVERS)
     ipcMain.removeHandler(AgentIpcChannels.MCP_OAUTH_AUTHORIZE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_LIBRARY)
     ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY)

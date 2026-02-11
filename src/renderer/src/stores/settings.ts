@@ -26,13 +26,11 @@ interface SettingsState {
   mcpMeta: Record<string, McpServerMeta>
   selectedMcpName: string | null
   fetchMcpConfigs: () => Promise<void>
-  fetchMcpStatus: () => Promise<void>
-  probeMcpServers: () => Promise<void>
+  checkMcpServers: () => Promise<void>
   saveMcpConfig: (name: string, config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>, scope: ResourceScope) => Promise<void>
   deleteMcpConfig: (name: string, scope: ResourceScope) => Promise<void>
   toggleMcpConfig: (name: string, disabled: boolean, scope: ResourceScope) => Promise<void>
   selectMcp: (name: string | null) => void
-  reconnectMcpServer: (serverName: string) => Promise<void>
 
   // MCP library
   mcpLibrary: McpLibraryEntry[]
@@ -107,22 +105,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ mcpConfigs: configs })
   },
 
-  fetchMcpStatus: async () => {
+  checkMcpServers: async () => {
     try {
       const pp = getProjectPath()
-      const status = await window.agent.getMcpServerStatus(pp)
-      set({ mcpStatus: status })
-    } catch {
-      // Session may not be active
-    }
-  },
-
-  probeMcpServers: async () => {
-    try {
-      const pp = getProjectPath()
-      const meta = await window.app.probeMcpServers(pp)
-      set({ mcpMeta: meta })
-      // Auto-fetch library after probe (backup happens server-side)
+      const result = await window.app.checkMcpServers(pp)
+      set({ mcpStatus: result.status, mcpMeta: result.meta })
       await get().fetchMcpLibrary()
     } catch {
       // ignore
@@ -133,12 +120,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const pp = getProjectPath()
     await window.app.saveMcpConfig(pp, name, config, scope)
     await get().fetchMcpConfigs()
-    // Session refreshed in main process; poll status after it settles
-    ;(async () => {
-      await new Promise((r) => setTimeout(r, 2000))
-      await get().fetchMcpStatus()
-      await get().probeMcpServers()
-    })()
+    await get().checkMcpServers()
   },
 
   deleteMcpConfig: async (name, scope) => {
@@ -146,11 +128,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await window.app.deleteMcpConfig(pp, name, scope)
     set({ selectedMcpName: null })
     await get().fetchMcpConfigs()
-    // Session refreshed in main process; poll status after it settles
-    ;(async () => {
-      await new Promise((r) => setTimeout(r, 2000))
-      await get().fetchMcpStatus()
-    })()
+    await get().checkMcpServers()
   },
 
   toggleMcpConfig: async (name, disabled, scope) => {
@@ -169,24 +147,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }))
     const pp = getProjectPath()
     await window.app.toggleMcpConfig(pp, name, disabled, scope)
-    // Session refreshed in main process; poll status after it settles
-    ;(async () => {
-      await new Promise((r) => setTimeout(r, 2000))
-      await get().fetchMcpStatus()
-    })()
+    await get().checkMcpServers()
   },
 
   selectMcp: (name) => set({ selectedMcpName: name }),
-
-  reconnectMcpServer: async (serverName) => {
-    const pp = getProjectPath()
-    await window.app.reconnectMcpServer(pp, serverName)
-    await get().fetchMcpStatus()
-    // Probe to pick up meta (icons, tool descriptions) if not cached
-    ;(async () => {
-      await get().probeMcpServers()
-    })()
-  },
 
   fetchMcpLibrary: async () => {
     try {

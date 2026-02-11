@@ -6,6 +6,8 @@ import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
 import { Button } from '@/components/ui/button'
+import { ProjectSelector } from '@/components/coding/ProjectSelector'
+import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import type { SkillFileEntry, SkillInfo } from '../../../shared/agent-types'
 
@@ -374,11 +376,13 @@ function SkillSection({ title, skills }: { title: string; skills: SkillInfo[] })
 }
 
 export function SkillsPage() {
-  const { skills, fetchSkills, installSkill } = useSettingsStore()
+  const currentFolder = useAppStore((s) => s.currentFolder)
+  const { skills, fetchSkills, installSkill, clearSkillDetail } = useSettingsStore()
 
   useEffect(() => {
+    clearSkillDetail()
     fetchSkills()
-  }, [fetchSkills])
+  }, [currentFolder, clearSkillDetail, fetchSkills])
 
   const handleInstall = async () => {
     const folderPath = await window.app.selectFolder()
@@ -392,15 +396,18 @@ export function SkillsPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Skills</h2>
           <p className="text-sm text-muted-foreground">Manage Claude Code skills</p>
         </div>
-        <Button size="sm" onClick={handleInstall}>
-          <FolderOpen className="size-4" />
-          Install Skill
-        </Button>
+        <div className="flex items-center gap-2">
+          <ProjectSelector mode="switch" />
+          <Button size="sm" onClick={handleInstall}>
+            <FolderOpen className="size-4" />
+            Install Skill
+          </Button>
+        </div>
       </div>
 
       {skills.length === 0 ? (

@@ -8,7 +8,7 @@ import type { McpServerConfig, McpServerInfo, McpServerMeta } from '../../../sha
 import { cn } from '@/lib/utils'
 
 export function McpDetailPage({ config, status, meta }: { config: McpServerConfig; status?: McpServerInfo; meta?: McpServerMeta }) {
-  const { selectMcp, saveMcpConfig, deleteMcpConfig, reconnectMcpServer, fetchMcpStatus } = useSettingsStore()
+  const { selectMcp, saveMcpConfig, deleteMcpConfig, checkMcpServers } = useSettingsStore()
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [authorizing, setAuthorizing] = useState(false)
@@ -24,16 +24,19 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
     Object.entries(config.headers ?? {}).map(([k, v]) => `${k}: ${v}`).join('\n')
   )
 
+  const parseHeadersInput = (value: string): Record<string, string> => {
+    const parsed: Record<string, string> = {}
+    if (!value.trim()) return parsed
+    for (const line of value.trim().split('\n')) {
+      const idx = line.indexOf(':')
+      if (idx > 0) parsed[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
+    }
+    return parsed
+  }
+
   const handleSave = async () => {
-    if (config.type === 'http') {
-      const parsedHeaders: Record<string, string> = {}
-      if (headers.trim()) {
-        for (const line of headers.trim().split('\n')) {
-          const idx = line.indexOf(':')
-          if (idx > 0) parsedHeaders[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
-        }
-      }
-      await saveMcpConfig(config.name, { type: 'http', url: url.trim(), headers: parsedHeaders }, config.scope)
+    if (config.type === 'http' || config.type === 'sse') {
+      await saveMcpConfig(config.name, { type: config.type, url: url.trim(), headers: parseHeadersInput(headers) }, config.scope)
     } else {
       const parsedArgs = args.trim() ? args.trim().split(/\s+/) : []
       const parsedEnv: Record<string, string> = {}
@@ -54,14 +57,15 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
   }
 
   const handleAuthorize = async () => {
+    if (config.type !== 'http' && config.type !== 'sse') return
+    const serverUrl = url.trim() || config.url?.trim() || ''
+    if (!serverUrl) return
+
     setAuthorizing(true)
     try {
-      await reconnectMcpServer(config.name)
-      // Poll status for a few seconds to pick up auth result
-      for (let i = 0; i < 6; i++) {
-        await new Promise((r) => setTimeout(r, 2000))
-        await fetchMcpStatus()
-      }
+      const verifiedHeaders = await window.app.oauthAuthorize(serverUrl, parseHeadersInput(headers), config.type)
+      await saveMcpConfig(config.name, { type: config.type, url: serverUrl, headers: verifiedHeaders }, config.scope)
+      await checkMcpServers()
     } catch {
       // ignore — status will reflect the result
     } finally {

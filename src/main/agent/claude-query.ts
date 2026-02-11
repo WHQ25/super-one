@@ -7,6 +7,7 @@ export interface SessionQueryOptions {
   model?: string
   permissionMode: PermissionMode
   canUseTool: CanUseTool
+  trackPlanFile?: (filePath: string) => void
   resume?: string
 }
 
@@ -40,7 +41,7 @@ export function createSessionQuery(
     },
   })
 
-  const iterationDone = iterateMessages(q, emit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId)
+  const iterationDone = iterateMessages(q, emit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, options.trackPlanFile)
 
   return { query: q, iterationDone }
 }
@@ -75,7 +76,8 @@ async function iterateMessages(
   getCurrentMessageId: () => string,
   getCurrentStartTime: () => number,
   getInterrupted: () => boolean,
-  onSessionId?: (id: string) => void
+  onSessionId?: (id: string) => void,
+  trackPlanFile?: (filePath: string) => void
 ): Promise<void> {
   // Track content_block index → tool_use_id for input_json_delta correlation
   const activeToolBlocks = new Map<number, string>()
@@ -222,6 +224,14 @@ async function iterateMessages(
             for (const block of content) {
               if (block.type === 'tool_use') {
                 toolIdToName.set(block.id ?? '', block.name ?? 'unknown')
+
+                // Track Write/Edit to plan files (catches auto-allowed calls that skip canUseTool)
+                if (trackPlanFile && (block.name === 'Write' || block.name === 'Edit')) {
+                  const inp = typeof block.input === 'object' && block.input !== null ? block.input : {}
+                  const filePath = (inp as Record<string, unknown>).file_path
+                  if (typeof filePath === 'string') trackPlanFile(filePath)
+                }
+
                 emit({
                   type: 'content_delta',
                   messageId,

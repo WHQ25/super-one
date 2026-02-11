@@ -10,17 +10,20 @@ import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
 import { SlashCommandOverlay } from './SlashCommandOverlay'
 import { TodoPopup } from './TodoPopup'
+import { PlanApprovalPrompt } from './PlanApprovalPrompt'
 import { cn } from '@/lib/utils'
 import type { SessionHistoryEntry } from '../../../../shared/agent-types'
 
 const OFFSET = 16
 const TITLEBAR_H = 44
 const TOP_OFFSET = TITLEBAR_H + 8
-const PANEL_W = 360
+const DEFAULT_PANEL_W = 360
+const MIN_PANEL_W = 360
+const MAX_PANEL_W = 800
 const COLLAPSED_H = 44
-const DEFAULT_EXPANDED_H = 450
-const MIN_EXPANDED_H = 250
-const MAX_EXPANDED_H = 800
+const DEFAULT_EXPANDED_H = 620
+const MIN_EXPANDED_H = 580
+const maxExpandedH = () => Math.floor(window.innerHeight * 0.9)
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 
@@ -35,11 +38,11 @@ function cornerStyle(corner: Corner): React.CSSProperties {
 }
 
 /** Convert a corner to absolute top/left (for drag start calculation) */
-function cornerToXY(corner: Corner, panelH: number): { x: number; y: number } {
+function cornerToXY(corner: Corner, panelW: number, panelH: number): { x: number; y: number } {
   const w = window.innerWidth
   const h = window.innerHeight
   return {
-    x: corner.endsWith('l') ? OFFSET : w - PANEL_W - OFFSET,
+    x: corner.endsWith('l') ? OFFSET : w - panelW - OFFSET,
     y: corner.startsWith('t') ? TOP_OFFSET : h - panelH - OFFSET,
   }
 }
@@ -210,6 +213,7 @@ export function ChatPanel() {
   const setCorner = useChatStore((s) => s.setCorner)
   const toggleOpen = useChatStore((s) => s.toggleOpen)
   const messages = useChatStore((s) => s.messages)
+  const pendingPlanApproval = useChatStore((s) => s.pendingPlanApproval)
   const status = useChatStore((s) => s.status)
   const resetSession = useChatStore((s) => s.resetSession)
   const interrupt = useChatStore((s) => s.interrupt)
@@ -228,8 +232,18 @@ export function ChatPanel() {
   const prevScrollTopRef = useRef<number>(0)
   const isPrependingRef = useRef(false)
 
-  // Expanded height (user-resizable)
-  const [expandedH, setExpandedH] = useState(DEFAULT_EXPANDED_H)
+  // Panel dimensions (user-resizable)
+  const [expandedH, setExpandedH] = useState(() => Math.min(DEFAULT_EXPANDED_H, maxExpandedH()))
+  const [panelW, setPanelW] = useState(DEFAULT_PANEL_W)
+
+  // Clamp panel height when window resizes
+  useEffect(() => {
+    const handleResize = () => {
+      setExpandedH((h) => clamp(h, MIN_EXPANDED_H, maxExpandedH()))
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Drag state: null = not dragging (use corner CSS), {x,y} = absolute top/left
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
@@ -336,7 +350,7 @@ export function ChatPanel() {
   // --- Drag handlers ---
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      const panelXY = cornerToXY(corner, panelH)
+      const panelXY = cornerToXY(corner, panelW, panelH)
       dragRef.current = {
         startX: e.clientX,
         startY: e.clientY,
@@ -363,7 +377,7 @@ export function ChatPanel() {
         window.removeEventListener('mousemove', handleMouseMove)
         window.removeEventListener('mouseup', handleMouseUp)
         if (dragRef.current.dragging) {
-          const cx = dragRef.current.panelStartX + (ev.clientX - dragRef.current.startX) + PANEL_W / 2
+          const cx = dragRef.current.panelStartX + (ev.clientX - dragRef.current.startX) + panelW / 2
           const cy = dragRef.current.panelStartY + (ev.clientY - dragRef.current.startY) + panelH / 2
           setCorner(nearestCorner(cx, cy))
         }
@@ -376,7 +390,7 @@ export function ChatPanel() {
       window.addEventListener('mousemove', handleMouseMove)
       window.addEventListener('mouseup', handleMouseUp)
     },
-    [corner, panelH, setCorner]
+    [corner, panelW, panelH, setCorner]
   )
 
   const handleToggle = useCallback(
@@ -390,7 +404,9 @@ export function ChatPanel() {
   )
 
   // --- Resize handlers ---
-  const handleResizeMouseDown = useCallback(
+  const isAtLeft = corner.endsWith('l')
+
+  const handleResizeYMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
@@ -401,7 +417,7 @@ export function ChatPanel() {
       const handleMouseMove = (ev: MouseEvent) => {
         const dy = ev.clientY - startY
         const newH = isAtTop ? startH + dy : startH - dy
-        setExpandedH(clamp(newH, MIN_EXPANDED_H, MAX_EXPANDED_H))
+        setExpandedH(clamp(newH, MIN_EXPANDED_H, maxExpandedH()))
       }
 
       const handleMouseUp = () => {
@@ -416,6 +432,33 @@ export function ChatPanel() {
     [expandedH, isAtTop]
   )
 
+  const handleResizeXMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const startX = e.clientX
+      const startW = panelW
+      setIsResizing(true)
+
+      const handleMouseMove = (ev: MouseEvent) => {
+        const dx = ev.clientX - startX
+        // Drag left edge leftward = wider (right-anchored), drag right edge rightward = wider (left-anchored)
+        const newW = isAtLeft ? startW + dx : startW - dx
+        setPanelW(clamp(newW, MIN_PANEL_W, MAX_PANEL_W))
+      }
+
+      const handleMouseUp = () => {
+        window.removeEventListener('mousemove', handleMouseMove)
+        window.removeEventListener('mouseup', handleMouseUp)
+        setIsResizing(false)
+      }
+
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp)
+    },
+    [panelW, isAtLeft]
+  )
+
   // --- Position logic ---
   const isDragging = dragPos !== null
   const noTransition = isDragging || isResizing
@@ -425,32 +468,41 @@ export function ChatPanel() {
     ? { top: dragPos.y, left: dragPos.x }
     : cornerStyle(corner)
 
-  // Resize handle: at bottom edge for top corners, top edge for bottom corners
-  const resizeHandle = isOpen && (
-    <div
-      onMouseDown={handleResizeMouseDown}
-      className={cn(
-        'absolute left-0 right-0 z-10 h-1.5 cursor-ns-resize',
-        isAtTop ? 'bottom-0' : 'top-0'
-      )}
-    />
+  // Resize handles: vertical (top/bottom edge) + horizontal (left/right edge)
+  const resizeHandles = isOpen && (
+    <>
+      <div
+        onMouseDown={handleResizeYMouseDown}
+        className={cn(
+          'absolute left-0 right-0 z-10 h-1.5 cursor-ns-resize',
+          isAtTop ? 'bottom-0' : 'top-0'
+        )}
+      />
+      <div
+        onMouseDown={handleResizeXMouseDown}
+        className={cn(
+          'absolute top-0 bottom-0 z-10 w-1.5 cursor-ew-resize',
+          isAtLeft ? 'right-0' : 'left-0'
+        )}
+      />
+    </>
   )
 
   return (
     <div
       style={{
         ...positionStyle,
-        width: PANEL_W,
+        width: panelW,
         height: panelH,
         borderRadius: isOpen ? 16 : COLLAPSED_H / 2,
         position: 'fixed',
       }}
       className={cn(
         'z-50 flex flex-col overflow-hidden border border-border shadow-2xl',
-        !noTransition && 'transition-[top,right,bottom,left,height,border-radius] duration-200 ease-out'
+        !noTransition && 'transition-[top,right,bottom,left,width,height,border-radius] duration-200 ease-out'
       )}
     >
-      {resizeHandle}
+      {resizeHandles}
 
       {/* Header / pill bar — draggable area */}
       <div
@@ -518,6 +570,8 @@ export function ChatPanel() {
       <div className="relative flex min-h-0 flex-1 flex-col bg-card">
         {showHistory ? (
           <SessionHistory />
+        ) : pendingPlanApproval ? (
+          <PlanApprovalPrompt />
         ) : (
           <>
             <SlashCommandOverlay />

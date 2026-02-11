@@ -68,6 +68,10 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       return { icon: 'bot', summary: String(input.name ?? input.subagent_type ?? input.description ?? '') }
     case 'TaskOutput':
       return { icon: 'clipboard-list', summary: String(input.task_id ?? '') }
+    case 'EnterPlanMode':
+      return { icon: 'wrench', summary: 'Entered plan mode' }
+    case 'ExitPlanMode':
+      return { icon: 'wrench', summary: 'Exited plan mode' }
     default:
       return { icon: 'wrench', summary: '' }
   }

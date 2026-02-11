@@ -42,6 +42,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const addMention = useChatStore((s) => s.addMention)
     const removeMention = useChatStore((s) => s.removeMention)
     const agents = useChatStore((s) => s.agents)
+    const permissionMode = useChatStore((s) => s.permissionMode)
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const slashItemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
@@ -317,7 +318,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             }
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Ask anything..."
+          placeholder={permissionMode === 'plan' ? 'Plan mode — describe your intent...' : 'Ask anything...'}
           className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none"
         />
       )
@@ -478,7 +479,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               handleInput()
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Ask anything..."
+            placeholder={permissionMode === 'plan' ? 'Plan mode — describe your intent...' : 'Ask anything...'}
             rows={1}
             className={cn(
               'w-full resize-none bg-transparent text-sm leading-5 placeholder-muted-foreground outline-none',

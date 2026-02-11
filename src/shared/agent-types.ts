@@ -111,6 +111,15 @@ export interface AskUserQuestionRequest {
   questions: UserQuestion[]
 }
 
+// --- Plan approval ---
+
+export interface PlanApprovalRequest {
+  requestId: string
+  planContent: string
+  planFilePath: string
+  allowedPrompts: Array<{ tool: string; prompt: string }>
+}
+
 // --- MCP server status ---
 
 export interface McpToolInfo {
@@ -183,6 +192,7 @@ export type AgentEvent =
   | { type: 'permission_mode_change'; mode: PermissionMode }
   | { type: 'session_init'; session: SessionInfo }
   | { type: 'ask_user_question'; request: AskUserQuestionRequest }
+  | { type: 'plan_approval'; request: PlanApprovalRequest }
   | { type: 'hook_started'; hook: HookEvent }
   | { type: 'hook_complete'; hook: HookEvent }
   | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number }
@@ -391,6 +401,7 @@ export const AgentIpcChannels = {
   SET_PERMISSION_MODE: 'agent:set-permission-mode',
   ANSWER_QUESTION: 'agent:answer-question',
   DISMISS_QUESTION: 'agent:dismiss-question',
+  RESPOND_PLAN_APPROVAL: 'agent:respond-plan-approval',
   RESET_SESSION: 'agent:reset-session',
   REWIND_FILES: 'agent:rewind-files',
   GET_SESSION_ID: 'agent:get-session-id',

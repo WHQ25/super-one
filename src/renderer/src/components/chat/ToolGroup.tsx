@@ -45,11 +45,7 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
               )
             }
             if (block.type === 'tool_result') {
-              return (
-                <div key={i} className="my-1 rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
-                  {block.summary}
-                </div>
-              )
+              return null
             }
             return null
           })}

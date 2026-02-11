@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Loader2, ChevronRight } from 'lucide-react'
+import { Loader2, ChevronRight, PenLine, Check, X } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chat'
@@ -62,6 +62,19 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
 
   // Hide TodoWrite from chat — handled by TodoPopup
   if (toolName === 'TodoWrite') return null
+
+  // Plan mode tools — compact inline indicator
+  if (toolName === 'EnterPlanMode') {
+    return (
+      <div className="my-0.5 flex items-center gap-1.5 rounded bg-blue-500/10 px-2 py-1.5 text-xs">
+        <PenLine className="size-3 shrink-0 text-blue-400" />
+        <span className="font-medium text-blue-400">Entered plan mode</span>
+      </div>
+    )
+  }
+  if (toolName === 'ExitPlanMode') {
+    return <ExitPlanModeBlock />
+  }
 
   const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && Object.keys(params).length > 0
   const hasResult = !!result && !isStreaming && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
@@ -353,6 +366,42 @@ function WriteDiff({ params }: { params: Record<string, unknown> }) {
           ... {allLines.length - MAX_LINES} more lines
         </div>
       )}
+    </div>
+  )
+}
+
+/** ExitPlanMode: shows pending / approved / rejected state. */
+function ExitPlanModeBlock() {
+  const outcome = useChatStore((s) => s.planApprovalOutcome)
+
+  if (!outcome) {
+    // Pending — plan is being reviewed
+    return (
+      <div className="my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs">
+        <PenLine className="size-3 shrink-0 text-muted-foreground" />
+        <span className="font-medium text-muted-foreground">Review Plan</span>
+      </div>
+    )
+  }
+
+  if (outcome.approved) {
+    return (
+      <div className="my-0.5 flex items-center gap-1.5 rounded bg-green-500/10 px-2 py-1.5 text-xs">
+        <PenLine className="size-3 shrink-0 text-green-400" />
+        <span className="font-medium text-green-400">Plan Approved</span>
+        <Check className="ml-auto size-3 shrink-0 text-green-400" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="my-0.5 flex items-center gap-1.5 rounded bg-red-500/10 px-2 py-1.5 text-xs">
+      <PenLine className="size-3 shrink-0 text-red-400" />
+      <span className="font-medium text-red-400">Plan Rejected</span>
+      {outcome.feedback && (
+        <span className="min-w-0 truncate text-red-400/70">{outcome.feedback}</span>
+      )}
+      <X className="ml-auto size-3 shrink-0 text-red-400" />
     </div>
   )
 }

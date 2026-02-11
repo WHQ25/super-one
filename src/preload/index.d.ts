@@ -10,6 +10,7 @@ interface AgentAPI {
   setPermissionMode(mode: PermissionMode): Promise<void>
   answerQuestion(requestId: string, answers: Record<string, string>): Promise<void>
   dismissQuestion(requestId: string): Promise<void>
+  respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): Promise<void>
   resetSession(): Promise<void>
   rewindFiles(userMessageId: string): Promise<RewindFilesResult>
   getSessionId(): Promise<string>

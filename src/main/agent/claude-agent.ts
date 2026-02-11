@@ -3,7 +3,7 @@ import { join, resolve } from 'path'
 import { homedir } from 'os'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import type { AccountInfo, AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
-import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, type PendingPermission, type PendingQuestion } from './claude-permissions'
+import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
 import { mapModelInfo } from './claude-models'
 import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
@@ -130,6 +130,7 @@ export class ClaudeAgent {
   private cachedAgents: AgentInfo[] = []
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
+  private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
 
   async initialize(config: ClaudeAgentConfig, onEvent: (event: AgentEvent) => void): Promise<void> {
     this.config = config
@@ -148,7 +149,7 @@ export class ClaudeAgent {
     if (this.bridge) return
 
     this.bridge = new MessageBridge()
-    const canUseTool = createCanUseTool(this.pendingPermissions, this.pendingQuestions, (e) => this.emit(e))
+    const { canUseTool, trackPlanFile } = createCanUseTool(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, (e) => this.emit(e))
 
     const handle = createSessionQuery(
       this.bridge,
@@ -157,6 +158,7 @@ export class ClaudeAgent {
         model: this.config!.model,
         permissionMode: this.currentPermissionMode,
         canUseTool,
+        trackPlanFile,
         resume: resumeSessionId,
       },
       (e) => this.emit(e),
@@ -242,6 +244,10 @@ export class ClaudeAgent {
 
   dismissQuestion(requestId: string): void {
     dismissQuestion(this.pendingQuestions, requestId)
+  }
+
+  respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void {
+    respondToPlanApproval(this.pendingPlanApprovals, requestId, approved, feedback)
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
@@ -415,7 +421,7 @@ export class ClaudeAgent {
       await this.iterationDone.catch(() => {})
     }
 
-    rejectAllPending(this.pendingPermissions, this.pendingQuestions)
+    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
     this.bridge = null
     this.sessionQuery = null
     this.iterationDone = null

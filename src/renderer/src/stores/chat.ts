@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, LoadSessionMessagesResult, ModelOption, PermissionMode, PermissionRequest, RewindFilesResult, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem } from '../../../shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, LoadSessionMessagesResult, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 
@@ -38,6 +38,11 @@ interface ChatState {
 
   // AskUserQuestion
   pendingQuestion: AskUserQuestionRequest | null
+
+  // Plan approval
+  pendingPlanApproval: PlanApprovalRequest | null
+  planApprovalOutcome: { approved: boolean; feedback?: string } | null
+  respondToPlanApproval: (requestId: string, approved: boolean, feedback?: string) => void
 
   // Slash commands
   slashCommands: SlashCommandInfo[]
@@ -136,6 +141,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingPermission: null,
   permissionMode: 'default',
   pendingQuestion: null,
+  pendingPlanApproval: null,
+  planApprovalOutcome: null,
   slashCommands: [],
   agents: [],
   mentions: [],
@@ -242,6 +249,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 }
               } catch { /* ignore malformed JSON */ }
             }
+
+            // Sync permission mode when entering plan mode
+            if (tn === 'EnterPlanMode') {
+              set({ permissionMode: 'plan' })
+            }
           }
         }
         break
@@ -316,6 +328,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       case 'ask_user_question':
         set({ pendingQuestion: event.request })
+        break
+
+      case 'plan_approval':
+        set({ pendingPlanApproval: event.request })
         break
 
       case 'tool_input_delta':
@@ -459,11 +475,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setCorner: (corner) => set({ corner }),
 
-  clearMessages: () => set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, pendingPermission: null, pendingQuestion: null, mentions: [], subagentTokens: {}, todos: {}, _nextTodoId: 1, showTodos: false }),
+  clearMessages: () => set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, pendingPermission: null, pendingQuestion: null, pendingPlanApproval: null, planApprovalOutcome: null, mentions: [], subagentTokens: {}, todos: {}, _nextTodoId: 1, showTodos: false }),
 
   resetSession: async () => {
     await window.agent.resetSession()
-    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], mentions: [], subagentTokens: {}, todos: {}, _nextTodoId: 1, showTodos: false, _historySessionId: null, historyCursor: null, hasMoreHistory: false })
+    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, pendingPlanApproval: null, planApprovalOutcome: null, slashCommands: [], mentions: [], subagentTokens: {}, todos: {}, _nextTodoId: 1, showTodos: false, _historySessionId: null, historyCursor: null, hasMoreHistory: false })
   },
 
   rewindFiles: async (userMessageId: string) => {
@@ -516,6 +532,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   dismissQuestion: (requestId) => {
     window.agent.dismissQuestion(requestId)
     set({ pendingQuestion: null })
+  },
+
+  respondToPlanApproval: (requestId, approved, feedback) => {
+    window.agent.respondToPlanApproval(requestId, approved, feedback)
+    set({ pendingPlanApproval: null, planApprovalOutcome: { approved, feedback }, ...(approved && { permissionMode: 'default' }) })
   },
 
   cyclePermissionMode: () => {

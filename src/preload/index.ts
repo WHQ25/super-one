@@ -24,6 +24,9 @@ const agentAPI = {
   dismissQuestion: (requestId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DISMISS_QUESTION, requestId),
 
+  respondToPlanApproval: (requestId: string, approved: boolean, feedback?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESPOND_PLAN_APPROVAL, requestId, approved, feedback),
+
   resetSession: () =>
     ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION),
 

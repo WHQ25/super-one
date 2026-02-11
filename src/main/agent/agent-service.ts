@@ -46,6 +46,10 @@ export class AgentService {
       this.claude.dismissQuestion(requestId)
     })
 
+    ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, requestId: string, approved: boolean, feedback?: string) => {
+      this.claude.respondToPlanApproval(requestId, approved, feedback)
+    })
+
     ipcMain.handle(AgentIpcChannels.RESET_SESSION, async () => {
       await this.claude.resetSession()
     })

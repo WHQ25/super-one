@@ -1,3 +1,6 @@
+import { readFileSync } from 'fs'
+import { join } from 'path'
+import { homedir } from 'os'
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent } from '../../shared/agent-types'
 
@@ -11,12 +14,27 @@ export interface PendingQuestion {
   resolve: (answers: Record<string, string> | null) => void
 }
 
+export interface PendingPlanApproval {
+  resolve: (result: { approved: boolean; feedback?: string }) => void
+}
+
 export function createCanUseTool(
   pendingPermissions: Map<string, PendingPermission>,
   pendingQuestions: Map<string, PendingQuestion>,
+  pendingPlanApprovals: Map<string, PendingPlanApproval>,
   emit: (event: AgentEvent) => void
 ) {
-  return async (
+  const plansDir = join(homedir(), '.claude', 'plans')
+  let trackedPlanFilePath: string | null = null
+
+  /** Track a file path — if it's a plan file, remember it for ExitPlanMode. */
+  function trackPlanFile(filePath: string): void {
+    if (filePath.startsWith(plansDir) && filePath.endsWith('.md')) {
+      trackedPlanFilePath = filePath
+    }
+  }
+
+  const canUseTool = async (
     toolName: string,
     input: Record<string, unknown>,
     context: {
@@ -27,9 +45,22 @@ export function createCanUseTool(
       signal: AbortSignal
     }
   ) => {
+    // Track Write/Edit to plan files (also tracked from event stream for auto-allowed calls)
+    if (
+      (toolName === 'Write' || toolName === 'Edit') &&
+      typeof input.file_path === 'string'
+    ) {
+      trackPlanFile(input.file_path)
+    }
+
     // AskUserQuestion — different flow: emit question, wait for answers
     if (toolName === 'AskUserQuestion') {
       return handleAskUserQuestion(input, context, pendingQuestions, emit)
+    }
+
+    // ExitPlanMode — show plan approval UI
+    if (toolName === 'ExitPlanMode') {
+      return handlePlanApproval(input, trackedPlanFilePath, context, pendingPlanApprovals, emit)
     }
 
     const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -77,6 +108,8 @@ export function createCanUseTool(
     }
     return { behavior: 'deny' as const, message: 'User denied permission', toolUseID }
   }
+
+  return { canUseTool, trackPlanFile }
 }
 
 async function handleAskUserQuestion(
@@ -113,6 +146,74 @@ async function handleAskUserQuestion(
     behavior: 'allow' as const,
     updatedInput: { questions, answers },
     toolUseID: context.toolUseID,
+  }
+}
+
+/** Read plan content from a tracked file path. */
+function readPlanFile(filePath: string | null): { path: string; content: string } | null {
+  if (!filePath) return null
+  try {
+    return { path: filePath, content: readFileSync(filePath, 'utf-8') }
+  } catch {
+    return null
+  }
+}
+
+async function handlePlanApproval(
+  input: Record<string, unknown>,
+  trackedPlanFilePath: string | null,
+  context: { toolUseID: string; signal: AbortSignal },
+  pendingPlanApprovals: Map<string, PendingPlanApproval>,
+  emit: (event: AgentEvent) => void
+) {
+  const requestId = `plan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  const planFile = readPlanFile(trackedPlanFilePath)
+  const allowedPrompts = Array.isArray(input.allowedPrompts)
+    ? (input.allowedPrompts as Array<{ tool: string; prompt: string }>)
+    : []
+
+  emit({
+    type: 'plan_approval',
+    request: {
+      requestId,
+      planContent: planFile?.content ?? '',
+      planFilePath: planFile?.path ?? '',
+      allowedPrompts,
+    },
+  })
+
+  const result = await new Promise<{ approved: boolean; feedback?: string }>((resolve) => {
+    if (context.signal.aborted) {
+      resolve({ approved: false, feedback: 'Aborted' })
+      return
+    }
+    pendingPlanApprovals.set(requestId, { resolve })
+  })
+
+  if (result.approved) {
+    return {
+      behavior: 'allow' as const,
+      updatedInput: input,
+      toolUseID: context.toolUseID,
+    }
+  }
+  return {
+    behavior: 'deny' as const,
+    message: result.feedback || 'User rejected the plan',
+    toolUseID: context.toolUseID,
+  }
+}
+
+export function respondToPlanApproval(
+  pendingPlanApprovals: Map<string, PendingPlanApproval>,
+  requestId: string,
+  approved: boolean,
+  feedback?: string
+): void {
+  const pending = pendingPlanApprovals.get(requestId)
+  if (pending) {
+    pendingPlanApprovals.delete(requestId)
+    pending.resolve({ approved, feedback })
   }
 }
 
@@ -154,7 +255,8 @@ export function dismissQuestion(
 
 export function rejectAllPending(
   pendingPermissions: Map<string, PendingPermission>,
-  pendingQuestions?: Map<string, PendingQuestion>
+  pendingQuestions?: Map<string, PendingQuestion>,
+  pendingPlanApprovals?: Map<string, PendingPlanApproval>
 ): void {
   for (const pending of pendingPermissions.values()) {
     pending.resolve({ allow: false })
@@ -165,5 +267,11 @@ export function rejectAllPending(
       pending.resolve(null)
     }
     pendingQuestions.clear()
+  }
+  if (pendingPlanApprovals) {
+    for (const pending of pendingPlanApprovals.values()) {
+      pending.resolve({ approved: false })
+    }
+    pendingPlanApprovals.clear()
   }
 }

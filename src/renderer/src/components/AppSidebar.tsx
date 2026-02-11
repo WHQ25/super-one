@@ -94,7 +94,7 @@ export function AppSidebar() {
   const sortedFolders = useMemo(() => {
     const folders = [...recentFolders]
     if (sortMode === 'added') {
-      folders.sort((a, b) => new Date(b.addedAt ?? b.lastOpened).getTime() - new Date(a.addedAt ?? a.lastOpened).getTime())
+      folders.sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
     }
     return folders
   }, [recentFolders, sortMode])
@@ -177,7 +177,7 @@ export function AppSidebar() {
                       onClick={() => toggleExpand(folder.path)}
                       className={cn(
                         'group flex h-9 cursor-pointer items-center justify-between overflow-hidden rounded-md px-2.5 transition-colors',
-                        isActive ? 'bg-accent' : 'hover:bg-muted'
+                        'hover:bg-muted'
                       )}
                     >
                       <div className="flex min-w-0 items-center gap-2">
@@ -268,7 +268,9 @@ export function AppSidebar() {
                                   'flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
                                   isPending
                                     ? 'bg-orange-500 text-white'
-                                    : 'hover:bg-muted'
+                                    : isActive && isForeground
+                                      ? 'bg-accent'
+                                      : 'hover:bg-muted'
                                 )}
                               >
                                 {isRunning

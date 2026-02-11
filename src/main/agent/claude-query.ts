@@ -222,6 +222,17 @@ async function iterateMessages(
           const content = msg.message?.content
           if (Array.isArray(content)) {
             for (const block of content) {
+              if (block.type === 'thinking' && block.thinking) {
+                emit({
+                  type: 'content_delta',
+                  messageId,
+                  delta: {
+                    type: 'thinking',
+                    thinking: block.thinking,
+                    parentToolUseId: assistantParent,
+                  },
+                })
+              }
               if (block.type === 'tool_use') {
                 toolIdToName.set(block.id ?? '', block.name ?? 'unknown')
 
@@ -280,6 +291,12 @@ async function iterateMessages(
                 type: 'content_delta',
                 messageId,
                 delta: { type: 'text', text: event.delta.text, parentToolUseId: streamParent },
+              })
+            } else if (event.delta?.type === 'thinking_delta' && event.delta.thinking) {
+              emit({
+                type: 'content_delta',
+                messageId,
+                delta: { type: 'thinking', thinking: event.delta.thinking, parentToolUseId: streamParent },
               })
             } else if (event.delta?.type === 'input_json_delta' && event.delta.partial_json) {
               const toolUseId = activeToolBlocks.get(event.index) ?? ''

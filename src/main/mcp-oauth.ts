@@ -52,7 +52,7 @@ class ElectronOAuthProvider implements OAuthClientProvider {
 
   get clientMetadata(): OAuthClientMetadata {
     return {
-      client_name: 'SuperPM Desktop',
+      client_name: 'SuperOne',
       redirect_uris: [this._redirectUrl],
       grant_types: ['authorization_code'],
       response_types: ['code'],
@@ -137,7 +137,7 @@ async function createCallbackServer(): Promise<{
         res.end(
           '<html><body style="font-family:system-ui;text-align:center;padding:60px">' +
           '<h2>Authorization Successful</h2>' +
-          '<p style="color:#999;font-size:14px">You can close this window and return to SuperPM.</p>' +
+          '<p style="color:#999;font-size:14px">You can close this window and return to SuperOne.</p>' +
           '</body></html>'
         )
         resolveCode(code)
@@ -195,7 +195,7 @@ export async function authorizeHttpMcpServer(
             params: {
               protocolVersion: '2025-03-26',
               capabilities: {},
-              clientInfo: { name: 'superpm-oauth-probe', version: '1.0.0' },
+              clientInfo: { name: 'superone-oauth-probe', version: '1.0.0' },
             },
             id: 1,
           }),

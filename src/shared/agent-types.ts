@@ -12,6 +12,7 @@ export interface ImageAttachment {
 
 export type ContentBlock =
   | { type: 'text'; text: string; parentToolUseId?: string | null }
+  | { type: 'thinking'; thinking: string; parentToolUseId?: string | null }
   | { type: 'tool_use'; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; parentToolUseId?: string | null }
   | { type: 'tool_result'; toolUseId: string; summary: string; parentToolUseId?: string | null }
   | { type: 'image'; name: string }
@@ -179,7 +180,7 @@ export interface HookEvent {
 
 // --- Main → Renderer push events ---
 
-export type AgentEvent =
+export type AgentEventBase =
   | { type: 'message_start'; message: ChatMessage }
   | { type: 'content_delta'; messageId: string; delta: ContentBlock }
   | { type: 'tool_input_delta'; messageId: string; toolUseId: string; partialJson: string; parentToolUseId?: string | null }
@@ -202,6 +203,8 @@ export type AgentEvent =
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
   | { type: 'init_ready'; models: ModelOption[]; slashCommands: SlashCommandInfo[]; cwd: string; homedir: string }
+
+export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
 
 export type AgentStatus = 'idle' | 'streaming' | 'error'
 
@@ -241,9 +244,11 @@ export type SetupEvent =
 // --- Recent folder ---
 
 export interface RecentFolder {
+  id: string          // UUID primary key
   path: string
-  name: string       // basename
-  lastOpened: string  // ISO timestamp
+  name: string        // basename
+  lastOpened: string   // ISO timestamp — updated on every open
+  addedAt: string      // ISO timestamp — set once on first add
 }
 
 // --- Resource scope ---
@@ -388,6 +393,8 @@ export const AgentIpcChannels = {
   GET_RECENT_FOLDERS: 'app:get-recent-folders',
   REMOVE_RECENT_FOLDER: 'app:remove-recent-folder',
   OPEN_FOLDER: 'app:open-folder',
+  OPEN_TMP_FOLDER: 'app:open-tmp-folder',
+  CLOSE_PROJECT: 'app:close-project',
   SETUP_CHECK_CLAUDE: 'app:setup-check-claude',
   SETUP_INSTALL_CLAUDE: 'app:setup-install-claude',
   SETUP_EVENT: 'app:setup-event',
@@ -442,9 +449,17 @@ export const AgentIpcChannels = {
   MCP_LIST_LIBRARY: 'mcp:list-library',
   MCP_DELETE_LIBRARY_ENTRY: 'mcp:delete-library-entry',
 
+  // Concurrent session management
+  PARK_SESSION: 'agent:park-session',
+  ACTIVATE_SESSION: 'agent:activate-session',
+
   // Session history
   SESSIONS_LIST: 'sessions:list',
+  SESSIONS_LIST_FOR_FOLDER: 'sessions:list-for-folder',
   SESSIONS_RESUME: 'sessions:resume',
   SESSIONS_LOAD_MESSAGES: 'sessions:load-messages',
   SESSIONS_RENAME: 'sessions:rename',
+  SESSIONS_CREATE: 'sessions:create',
+  SESSIONS_SAVE_STATE: 'sessions:save-state',
+  SESSIONS_LOAD_STATE: 'sessions:load-state',
 } as const

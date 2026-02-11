@@ -1,11 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync } from 'fs'
 import { execFile, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import { AgentService } from './agent/agent-service'
 import { AgentIpcChannels } from '../shared/agent-types'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
+import { getDb, closeDb } from './database'
 
 const agentService = new AgentService()
 
@@ -51,8 +52,19 @@ function createWindow(): void {
   ipcMain.handle(AgentIpcChannels.OPEN_FOLDER, async (_event, folderPath: string) => {
     if (!existsSync(folderPath)) return false
     addRecentFolder(folderPath)
-    await agentService.openFolder(folderPath)
+    await agentService.openFolder(folderPath) // Additive: won't dispose existing agents
     return true
+  })
+
+  ipcMain.handle(AgentIpcChannels.OPEN_TMP_FOLDER, async () => {
+    const tmpPath = join(app.getPath('userData'), 'tmp')
+    if (!existsSync(tmpPath)) mkdirSync(tmpPath, { recursive: true })
+    await agentService.openFolder(tmpPath) // Additive
+    return tmpPath
+  })
+
+  ipcMain.handle(AgentIpcChannels.CLOSE_PROJECT, async (_event, folderPath: string) => {
+    await agentService.closeProject(folderPath)
   })
 
   const testInstall = process.env.TEST_INSTALL_CLAUDE === '1'
@@ -113,6 +125,15 @@ function createWindow(): void {
     })
   })
 
+  // Fullscreen state
+  ipcMain.handle('get-fullscreen', () => mainWindow.isFullScreen())
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow.webContents.send('fullscreen-changed', true)
+  })
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow.webContents.send('fullscreen-changed', false)
+  })
+
   if (is.dev) {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
@@ -125,6 +146,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  getDb() // Initialize database
   createWindow()
 
   app.on('activate', () => {
@@ -145,7 +167,10 @@ app.on('before-quit', () => {
   ipcMain.removeHandler(AgentIpcChannels.GET_RECENT_FOLDERS)
   ipcMain.removeHandler(AgentIpcChannels.REMOVE_RECENT_FOLDER)
   ipcMain.removeHandler(AgentIpcChannels.OPEN_FOLDER)
+  ipcMain.removeHandler(AgentIpcChannels.OPEN_TMP_FOLDER)
+  ipcMain.removeHandler(AgentIpcChannels.CLOSE_PROJECT)
   ipcMain.removeHandler(AgentIpcChannels.SETUP_CHECK_CLAUDE)
   ipcMain.removeHandler(AgentIpcChannels.SETUP_INSTALL_CLAUDE)
   agentService.dispose()
+  closeDb()
 })

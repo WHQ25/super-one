@@ -128,11 +128,16 @@ export class ClaudeAgent {
   private cachedAccount: AccountInfo | null = null
   private currentPermissionMode: PermissionMode = 'default'
   private cachedAgents: AgentInfo[] = []
+  private initReady = false // true after initializationResult() resolves
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
   private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
 
-  async initialize(config: ClaudeAgentConfig, onEvent: (event: AgentEvent) => void): Promise<void> {
+  async initialize(
+    config: ClaudeAgentConfig,
+    onEvent: (event: AgentEvent) => void,
+    resumeSessionId?: string,
+  ): Promise<void> {
     this.config = config
     this.onEvent = onEvent
     this.ready = true
@@ -141,7 +146,7 @@ export class ClaudeAgent {
     this.cachedAgents = discoverAgents(config.cwd)
 
     // Eagerly create session — triggers system init, makes slash commands/models/MCP available
-    this.createSession()
+    this.createSession(resumeSessionId)
   }
 
   /** Create a new session (bridge + query). Safe to call if session already exists (no-op). */
@@ -165,7 +170,11 @@ export class ClaudeAgent {
       () => this.currentMessageId,
       () => this.currentStartTime,
       () => this.interrupted,
-      (id) => { this.sessionId = id },
+      (id) => {
+        this.sessionId = id
+        // If initializationResult() already resolved, emit session_init now
+        if (this.initReady) this.emitSessionInit()
+      },
     )
 
     this.sessionQuery = handle.query
@@ -187,6 +196,11 @@ export class ClaudeAgent {
         argumentHint: c.argumentHint,
         isSkill: skillNames.has(c.name),
       }))
+
+      this.initReady = true
+
+      // If sessionId already arrived via iterator, emit session_init now
+      if (this.sessionId) this.emitSessionInit()
 
       this.emit({ type: 'init_ready', models: this.cachedModels, slashCommands: this.cachedSlashCommands, cwd: this.config!.cwd, homedir: homedir() })
     }).catch(() => {})
@@ -426,6 +440,7 @@ export class ClaudeAgent {
     this.sessionQuery = null
     this.iterationDone = null
     this.sessionId = ''
+    this.initReady = false
     this.currentMessageId = ''
     this.cachedSlashCommands = null
     this.cachedAccount = null
@@ -443,8 +458,36 @@ export class ClaudeAgent {
     return this.cachedModels
   }
 
+  /** Emit session_init once both sessionId and init data are available. */
+  private emitSessionInit(): void {
+    if (!this.sessionId || !this.cachedSlashCommands) return
+    this.emit({
+      type: 'session_init',
+      session: {
+        sessionId: this.sessionId,
+        model: this.cachedModels[0]?.id ?? '',
+        tools: [],
+        mcpServers: [],
+        permissionMode: this.currentPermissionMode,
+        slashCommands: this.cachedSlashCommands.map((c) => c.name),
+        skills: [],
+        claudeCodeVersion: '',
+        cwd: this.config!.cwd,
+      },
+    })
+  }
+
+  isStreaming(): boolean {
+    return this.turnResolve !== null
+  }
+
+  /** Replace the event emitter (used when moving agent between project paths). */
+  updateEventEmitter(onEvent: (event: AgentEvent) => void): void {
+    this.onEvent = onEvent
+  }
+
   private emit(event: AgentEvent): void {
-    this.onEvent?.(event)
+    this.onEvent?.({ ...event, sessionId: this.sessionId || undefined })
 
     // Detect turn completion to resolve the sendMessage awaiter
     if (

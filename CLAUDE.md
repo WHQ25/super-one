@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SuperPM Desktop is an AI-powered product design tool built with Electron. It helps users articulate what their product is and what it roughly looks like, using MCP (Model Context Protocol) to let external AI agents (Claude Code, Codex, OpenCode) interact with the application content. Inspired by Pencil.dev's MCP Server pattern.
+SuperOne is an meta desktop app built with Electron. It can be a IDE, it also provide a canavs for user to create their own app using coding agent as agentic engine. Inspired by Pencil.dev's MCP Server pattern.
 
 ## Commands
 

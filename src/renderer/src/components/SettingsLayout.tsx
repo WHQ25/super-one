@@ -20,7 +20,7 @@ export function SettingsLayout() {
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* Sidebar */}
-      <div className="flex w-52 shrink-0 flex-col border-r border-border bg-background p-3">
+      <div className="flex w-64 shrink-0 flex-col border-r border-border bg-background p-3">
         <Button
           variant="ghost"
           size="sm"

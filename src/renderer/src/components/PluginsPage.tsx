@@ -749,7 +749,9 @@ export function PluginsPage() {
   const handleUpdateAll = async () => {
     setUpdatingAll(true)
     try {
-      await window.app.updatePlugins(updatablePlugins.map((p) => ({ key: p.key, scope: p.scope })))
+      const { useAppStore } = await import('@/stores/app')
+      const pp = useAppStore.getState().currentFolder ?? ''
+      await window.app.updatePlugins(pp, updatablePlugins.map((p) => ({ key: p.key, scope: p.scope })))
       await fetchPlugins()
       await fetchMarketplacePlugins()
     } finally {

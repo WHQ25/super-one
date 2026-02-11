@@ -1,6 +1,6 @@
 import { Shield, ShieldCheck, ShieldOff, PenLine } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useState } from 'react'
 import type { PermissionMode } from '../../../../shared/agent-types'
 
@@ -44,7 +44,7 @@ const modes: { id: PermissionMode; label: string; description: string; icon: Rea
 
 export function PermissionModeSelector() {
   const [open, setOpen] = useState(false)
-  const permissionMode = useChatStore((s) => s.permissionMode)
+  const permissionMode = useActiveSession((s) => s.permissionMode)
   const setPermissionMode = useChatStore((s) => s.setPermissionMode)
 
   const current = modes.find((m) => m.id === permissionMode) ?? modes[0]

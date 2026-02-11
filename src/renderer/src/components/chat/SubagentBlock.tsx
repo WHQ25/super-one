@@ -3,7 +3,7 @@ import { Bot, ChevronRight, Loader2, Check, BookOpen, Wrench } from 'lucide-reac
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
 import { parseToolInput } from './tool-display'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
@@ -58,16 +58,18 @@ function buildToolResultMap(blocks: ContentBlock[]) {
 }
 
 export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming }: SubagentBlockProps) {
-  const totalTokens = useChatStore((s) => s.subagentTokens[taskBlock.toolUseId] ?? 0)
+  const totalTokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? 0)
   const taskInput = parseTaskInput(taskBlock.input)
   const isRunning = !resultBlock && isStreaming
   const isComplete = !!resultBlock
   const isFromHistory = useRef(isComplete && totalTokens === 0)
   const [expanded, setExpanded] = useState(!isComplete)
 
-  // Timer: count elapsed seconds while subagent is running
-  const startTimeRef = useRef<number>(Date.now())
-  const [elapsed, setElapsed] = useState(0)
+  // Timer: count elapsed seconds while subagent is running.
+  // Initialize from persisted elapsedSeconds so remounting after park/restore doesn't reset to 0.
+  const baselineElapsed = taskBlock.elapsedSeconds ? Math.round(taskBlock.elapsedSeconds) : 0
+  const startTimeRef = useRef<number>(Date.now() - baselineElapsed * 1000)
+  const [elapsed, setElapsed] = useState(baselineElapsed)
 
   useEffect(() => {
     if (!isRunning) return
@@ -123,13 +125,13 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           {/* Input: prompt preview */}
           {taskInput.prompt && <PromptPreview prompt={taskInput.prompt} model={taskInput.model} />}
 
-          {/* Sub tool calls — no grouping, scrollable */}
+          {/* Sub tool calls — no grouping, scrollable with auto-scroll */}
           {childBlocks.length > 0 && (
-            <div className="max-h-[100px] overflow-y-auto border-l-2 border-purple-500/30 ml-3 pl-2.5 py-1">
+            <SubagentScrollArea isStreaming={isStreaming}>
               {childBlocks.map((block, i) =>
                 renderChildBlock(block, i, isStreaming, toolResultMap)
               )}
-            </div>
+            </SubagentScrollArea>
           )}
 
           {/* Output — collapsible with line limit */}
@@ -169,6 +171,37 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           </>
         ) : null}
       </div>}
+    </div>
+  )
+}
+
+/** Scrollable container that auto-scrolls to bottom on new content, unless user scrolled up. */
+function SubagentScrollArea({ children, isStreaming }: { children: React.ReactNode; isStreaming: boolean }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const handleScroll = (): void => {
+      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !isNearBottomRef.current) return
+    el.scrollTop = el.scrollHeight
+  })
+
+  return (
+    <div
+      ref={scrollRef}
+      className="max-h-[100px] overflow-y-auto border-l-2 border-purple-500/30 ml-3 pl-2.5 py-1"
+    >
+      {children}
     </div>
   )
 }

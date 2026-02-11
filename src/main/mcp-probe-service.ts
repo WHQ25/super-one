@@ -28,7 +28,7 @@ function writeCache(cache: Record<string, McpServerMeta>): void {
 }
 
 async function probeOne(config: McpServerConfig): Promise<McpServerMeta | null> {
-  const client = new Client({ name: 'superpm-probe', version: '1.0.0' })
+  const client = new Client({ name: 'superone-probe', version: '1.0.0' })
 
   let transport: StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
   if (config.type === 'sse' && config.url) {

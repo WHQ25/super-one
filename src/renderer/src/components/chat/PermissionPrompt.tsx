@@ -1,13 +1,13 @@
 import { Button } from '@/components/ui/button'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay } from './tool-display'
 
 export function PermissionPrompt() {
-  const pendingPermission = useChatStore((s) => s.pendingPermission)
+  const pendingPermission = useActiveSession((s) => s.pendingPermission)
   const respondToPermission = useChatStore((s) => s.respondToPermission)
-  const cwd = useChatStore((s) => s.cwd)
-  const homedir = useChatStore((s) => s.homedir)
+  const cwd = useActiveSession((s) => s.cwd)
+  const homedir = useActiveSession((s) => s.homedir)
 
   if (!pendingPermission) return null
 

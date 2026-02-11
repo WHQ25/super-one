@@ -1,5 +1,11 @@
 import { create } from 'zustand'
 import type { MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo } from '../../../shared/agent-types'
+import { useAppStore } from './app'
+
+/** Get the active project path. Returns empty string if none active. */
+function getProjectPath(): string {
+  return useAppStore.getState().currentFolder ?? ''
+}
 
 interface SettingsState {
   // Skills
@@ -64,17 +70,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   marketplacePlugins: [],
 
   fetchSkills: async () => {
-    const skills = await window.app.listSkills()
+    const pp = getProjectPath()
+    const skills = await window.app.listSkills(pp)
     set({ skills })
   },
 
   readSkill: async (name) => {
-    const detail = await window.app.readSkill(name)
+    const pp = getProjectPath()
+    const detail = await window.app.readSkill(pp, name)
     set({ skillDetail: detail })
   },
 
   readSkillFile: async (skillName, relativePath) => {
-    const content = await window.app.readSkillFile(skillName, relativePath)
+    const pp = getProjectPath()
+    const content = await window.app.readSkillFile(pp, skillName, relativePath)
     set({ skillFileContent: content, skillFilePath: relativePath })
   },
 
@@ -86,19 +95,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   deleteSkill: async (name, scope) => {
-    await window.app.deleteSkill(name, scope)
+    const pp = getProjectPath()
+    await window.app.deleteSkill(pp, name, scope)
     set({ skillDetail: null, skillFileContent: null, skillFilePath: null })
     await get().fetchSkills()
   },
 
   fetchMcpConfigs: async () => {
-    const configs = await window.app.listMcpConfigs()
+    const pp = getProjectPath()
+    const configs = await window.app.listMcpConfigs(pp)
     set({ mcpConfigs: configs })
   },
 
   fetchMcpStatus: async () => {
     try {
-      const status = await window.agent.getMcpServerStatus()
+      const pp = getProjectPath()
+      const status = await window.agent.getMcpServerStatus(pp)
       set({ mcpStatus: status })
     } catch {
       // Session may not be active
@@ -107,7 +119,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   probeMcpServers: async () => {
     try {
-      const meta = await window.app.probeMcpServers()
+      const pp = getProjectPath()
+      const meta = await window.app.probeMcpServers(pp)
       set({ mcpMeta: meta })
       // Auto-fetch library after probe (backup happens server-side)
       await get().fetchMcpLibrary()
@@ -117,7 +130,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   saveMcpConfig: async (name, config, scope) => {
-    await window.app.saveMcpConfig(name, config, scope)
+    const pp = getProjectPath()
+    await window.app.saveMcpConfig(pp, name, config, scope)
     await get().fetchMcpConfigs()
     // Session refreshed in main process; poll status after it settles
     ;(async () => {
@@ -128,7 +142,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   deleteMcpConfig: async (name, scope) => {
-    await window.app.deleteMcpConfig(name, scope)
+    const pp = getProjectPath()
+    await window.app.deleteMcpConfig(pp, name, scope)
     set({ selectedMcpName: null })
     await get().fetchMcpConfigs()
     // Session refreshed in main process; poll status after it settles
@@ -152,7 +167,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
             s.name === name ? { ...s, status: 'pending' as const } : s
           ),
     }))
-    await window.app.toggleMcpConfig(name, disabled, scope)
+    const pp = getProjectPath()
+    await window.app.toggleMcpConfig(pp, name, disabled, scope)
     // Session refreshed in main process; poll status after it settles
     ;(async () => {
       await new Promise((r) => setTimeout(r, 2000))
@@ -163,7 +179,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   selectMcp: (name) => set({ selectedMcpName: name }),
 
   reconnectMcpServer: async (serverName) => {
-    await window.app.reconnectMcpServer(serverName)
+    const pp = getProjectPath()
+    await window.app.reconnectMcpServer(pp, serverName)
     await get().fetchMcpStatus()
     // Probe to pick up meta (icons, tool descriptions) if not cached
     ;(async () => {
@@ -181,31 +198,36 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   fetchPlugins: async () => {
-    const plugins = await window.app.listPlugins()
+    const pp = getProjectPath()
+    const plugins = await window.app.listPlugins(pp)
     set({ plugins })
   },
 
   readPlugin: async (key) => {
-    const detail = await window.app.readPlugin(key)
+    const pp = getProjectPath()
+    const detail = await window.app.readPlugin(pp, key)
     set({ pluginDetail: detail })
   },
 
   readPluginFile: async (pluginKey, relativePath) => {
-    const content = await window.app.readPluginFile(pluginKey, relativePath)
+    const pp = getProjectPath()
+    const content = await window.app.readPluginFile(pp, pluginKey, relativePath)
     set({ pluginFileContent: content, pluginFilePath: relativePath })
   },
 
   clearPluginDetail: () => set({ pluginDetail: null, pluginFileContent: null, pluginFilePath: null }),
 
   deletePlugin: async (key, scope) => {
-    await window.app.deletePlugin(key, scope)
+    const pp = getProjectPath()
+    await window.app.deletePlugin(pp, key, scope)
     set({ pluginDetail: null, pluginFileContent: null, pluginFilePath: null })
     await get().fetchPlugins()
   },
 
   fetchMarketplacePlugins: async () => {
     try {
-      const marketplacePlugins = await window.app.listMarketplacePlugins()
+      const pp = getProjectPath()
+      const marketplacePlugins = await window.app.listMarketplacePlugins(pp)
       set({ marketplacePlugins })
     } catch {
       // ignore
@@ -213,7 +235,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   installPlugin: async (key, scope) => {
-    await window.app.installPlugin(key, scope)
+    const pp = getProjectPath()
+    await window.app.installPlugin(pp, key, scope)
     await get().fetchPlugins()
     await get().fetchMarketplacePlugins()
   },

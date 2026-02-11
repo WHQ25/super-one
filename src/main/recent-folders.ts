@@ -1,38 +1,50 @@
-import { app } from 'electron'
-import { join, basename } from 'path'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { basename } from 'path'
+import { randomUUID } from 'crypto'
+import { getDb } from './database'
 import type { RecentFolder } from '../shared/agent-types'
 
-const MAX_RECENT = 10
-
-function getFilePath(): string {
-  return join(app.getPath('userData'), 'recent-folders.json')
-}
-
 export function getRecentFolders(): RecentFolder[] {
-  const filePath = getFilePath()
-  if (!existsSync(filePath)) return []
-  try {
-    return JSON.parse(readFileSync(filePath, 'utf-8'))
-  } catch {
-    return []
-  }
-}
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT p.id, p.path, p.name, p.added_at,
+           COALESCE(MAX(s.last_active_at), p.last_opened_at) AS last_opened_at
+    FROM projects p
+    LEFT JOIN sessions s ON s.project_id = p.id
+    GROUP BY p.id
+    ORDER BY last_opened_at DESC
+  `).all() as Array<{ id: string; path: string; name: string; added_at: string; last_opened_at: string }>
 
-function save(folders: RecentFolder[]): void {
-  writeFileSync(getFilePath(), JSON.stringify(folders, null, 2))
+  return rows.map((r) => ({
+    id: r.id,
+    path: r.path,
+    name: r.name,
+    addedAt: r.added_at,
+    lastOpened: r.last_opened_at,
+  }))
 }
 
 export function addRecentFolder(folderPath: string): void {
-  const folders = getRecentFolders().filter((f) => f.path !== folderPath)
-  folders.unshift({
-    path: folderPath,
-    name: basename(folderPath),
-    lastOpened: new Date().toISOString(),
-  })
-  save(folders.slice(0, MAX_RECENT))
+  const db = getDb()
+  const now = new Date().toISOString()
+  const name = basename(folderPath)
+
+  db.prepare(`
+    INSERT INTO projects (id, path, name, added_at, last_opened_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(path) DO UPDATE SET
+      name = excluded.name
+  `).run(randomUUID(), folderPath, name, now, now)
 }
 
+
 export function removeRecentFolder(folderPath: string): void {
-  save(getRecentFolders().filter((f) => f.path !== folderPath))
+  const db = getDb()
+  db.prepare('DELETE FROM projects WHERE path = ?').run(folderPath)
+}
+
+/** Get project ID by path, or null if not found */
+export function getProjectId(folderPath: string): string | null {
+  const db = getDb()
+  const row = db.prepare('SELECT id FROM projects WHERE path = ?').get(folderPath) as { id: string } | undefined
+  return row?.id ?? null
 }

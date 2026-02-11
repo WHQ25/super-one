@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Loader2, ChevronRight, PenLine, Check, X } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { createCodePlugin } from '@streamdown/code'
 import { ToolIcon } from './ToolIcon'
@@ -38,8 +38,8 @@ function tryPrettifyJson(text: string): string | null {
 }
 
 export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: ToolBlockProps) {
-  const cwd = useChatStore((s) => s.cwd)
-  const homedir = useChatStore((s) => s.homedir)
+  const cwd = useActiveSession((s) => s.cwd)
+  const homedir = useActiveSession((s) => s.homedir)
   const params = parseToolInput(input)
   const display = getToolDisplay(toolName, params, cwd, homedir)
   const mcpInfo = parseMcpToolName(toolName)
@@ -314,26 +314,27 @@ function EditDiff({ params }: { params: Record<string, unknown> }) {
   const oldStr = String(params.old_string ?? '')
   const newStr = String(params.new_string ?? '')
   const filePath = String(params.file_path ?? '')
+  const activeProject = useChatStore((s) => s.activeProject)
   const [startLine, setStartLine] = useState(1)
 
   useEffect(() => {
-    if (!filePath) return
+    if (!filePath || !activeProject) return
     let cancelled = false
     const tryFind = async (): Promise<void> => {
       // Try new_string first (file already edited)
       if (newStr) {
-        const line = await window.agent.findLineNumber(filePath, newStr)
+        const line = await window.agent.findLineNumber(activeProject, filePath, newStr)
         if (!cancelled && line != null) { setStartLine(line); return }
       }
       // Fallback to old_string (edit pending or denied)
       if (oldStr) {
-        const line = await window.agent.findLineNumber(filePath, oldStr)
+        const line = await window.agent.findLineNumber(activeProject, filePath, oldStr)
         if (!cancelled && line != null) { setStartLine(line); return }
       }
     }
     tryFind()
     return () => { cancelled = true }
-  }, [filePath, oldStr, newStr])
+  }, [filePath, oldStr, newStr, activeProject])
 
   const lines = useMemo(
     () => buildDiffLines(oldStr, newStr, startLine),
@@ -372,7 +373,7 @@ function WriteDiff({ params }: { params: Record<string, unknown> }) {
 
 /** ExitPlanMode: shows pending / approved / rejected state. */
 function ExitPlanModeBlock() {
-  const outcome = useChatStore((s) => s.planApprovalOutcome)
+  const outcome = useActiveSession((s) => s.planApprovalOutcome)
 
   if (!outcome) {
     // Pending — plan is being reviewed

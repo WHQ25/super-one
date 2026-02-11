@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
@@ -12,7 +12,7 @@ const streamdownControls = { table: false }
 const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
 
 export function PlanApprovalPrompt() {
-  const pending = useChatStore((s) => s.pendingPlanApproval)
+  const pending = useActiveSession((s) => s.pendingPlanApproval)
   const respond = useChatStore((s) => s.respondToPlanApproval)
   const [feedback, setFeedback] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)

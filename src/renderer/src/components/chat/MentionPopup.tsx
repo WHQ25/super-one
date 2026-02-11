@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardR
 import { Folder } from 'lucide-react'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { cn } from '@/lib/utils'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import type { AgentInfo, ListDirEntry } from '../../../../shared/agent-types'
 
 export interface MentionPopupHandle {
@@ -20,6 +20,7 @@ interface MentionPopupProps {
   onSelect: (value: string, action: 'navigate' | 'select') => void
   onSetSelectedIndex: (index: number) => void
   onClose: () => void
+  rounded?: boolean
 }
 
 type FlatItem =
@@ -27,8 +28,9 @@ type FlatItem =
   | { kind: 'agent'; agent: AgentInfo }
 
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
-  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onClose }, ref) {
-    const agents = useChatStore((s) => s.agents)
+  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onClose, rounded }, ref) {
+    const activeProject = useChatStore((s) => s.activeProject)
+    const agents = useActiveSession((s) => s.agents)
     const [dirEntries, setDirEntries] = useState<ListDirEntry[]>([])
     const [currentPath, setCurrentPath] = useState('')
     const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
@@ -39,8 +41,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     useEffect(() => {
       const pathToList = dirPath || ''
       setCurrentPath(pathToList)
-      window.agent.listDirectory(pathToList).then(setDirEntries).catch(() => setDirEntries([]))
-    }, [dirPath])
+      if (!activeProject) return
+      window.agent.listDirectory(activeProject, pathToList).then(setDirEntries).catch(() => setDirEntries([]))
+    }, [dirPath, activeProject])
 
     // Scroll selected into view
     useEffect(() => {
@@ -119,7 +122,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const agentStartIdx = filteredFiles.length
 
     return (
-      <div className="absolute bottom-full left-0 right-0 z-10 mb-0.5 max-h-72 overflow-hidden rounded-t-lg border border-border bg-card flex flex-col">
+      <div className={cn("absolute bottom-full left-0 right-0 z-10 max-h-72 overflow-hidden border border-border bg-card flex flex-col", rounded ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg')}>
         {/* Content */}
         <div className="overflow-y-auto p-1 flex-1 min-h-0">
           {/* Breadcrumbs */}

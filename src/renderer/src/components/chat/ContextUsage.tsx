@@ -1,4 +1,4 @@
-import { useChatStore } from '@/stores/chat'
+import { useActiveSession } from '@/stores/chat'
 
 const CONTEXT_WINDOW = 200_000
 
@@ -8,8 +8,8 @@ function formatTokens(n: number): string {
 }
 
 export function ContextUsage() {
-  const contextTokens = useChatStore((s) => s.contextTokens)
-  const totalCostUsd = useChatStore((s) => s.totalCostUsd)
+  const contextTokens = useActiveSession((s) => s.contextTokens)
+  const totalCostUsd = useActiveSession((s) => s.totalCostUsd)
 
   if (contextTokens === 0 && totalCostUsd === 0) return null
 

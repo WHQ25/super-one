@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ArrowUp, Square, ChevronDown, Paperclip, X, Folder } from 'lucide-react'
@@ -9,6 +9,7 @@ import type { MentionKind } from '@/stores/chat'
 import { PermissionModeSelector } from './PermissionModeSelector'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
+import { useAppStore } from '@/stores/app'
 
 export interface ChatInputHandle {
   send: () => void
@@ -20,7 +21,7 @@ interface ChatInputProps {
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   function ChatInput({ compact }, ref) {
-    const text = useChatStore((s) => s.draftText)
+    const text = useActiveSession((s) => s.draftText)
     const setText = useChatStore((s) => s.setDraftText)
     const [modelOpen, setModelOpen] = useState(false)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -30,21 +31,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const interrupt = useChatStore((s) => s.interrupt)
     const isOpen = useChatStore((s) => s.isOpen)
     const toggleOpen = useChatStore((s) => s.toggleOpen)
-    const status = useChatStore((s) => s.status)
-    const selectedModel = useChatStore((s) => s.selectedModel)
+    const status = useActiveSession((s) => s.status)
+    const selectedModel = useActiveSession((s) => s.selectedModel)
     const availableModels = useChatStore((s) => s.availableModels)
     const setSelectedModel = useChatStore((s) => s.setSelectedModel)
-    const attachments = useChatStore((s) => s.attachments)
+    const attachments = useActiveSession((s) => s.attachments)
     const addAttachment = useChatStore((s) => s.addAttachment)
     const removeAttachment = useChatStore((s) => s.removeAttachment)
-    const slashCommands = useChatStore((s) => s.slashCommands)
-    const mentions = useChatStore((s) => s.mentions)
+    const slashCommands = useActiveSession((s) => s.slashCommands)
+    const mentions = useActiveSession((s) => s.mentions)
     const addMention = useChatStore((s) => s.addMention)
     const removeMention = useChatStore((s) => s.removeMention)
-    const agents = useChatStore((s) => s.agents)
-    const permissionMode = useChatStore((s) => s.permissionMode)
+    const agents = useActiveSession((s) => s.agents)
+    const permissionMode = useActiveSession((s) => s.permissionMode)
 
     const [slashIndex, setSlashIndex] = useState(-1)
+    const [slashDismissed, setSlashDismissed] = useState(false)
     const slashItemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
 
     // @ mention state
@@ -230,7 +232,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         }
 
         // Slash command navigation
-        if (matchingCommands.length > 0) {
+        if (matchingCommands.length > 0 && !slashDismissed) {
           if (e.key === 'ArrowDown') {
             e.preventDefault()
             setSlashIndex((i) => (i + 1) % matchingCommands.length)
@@ -251,6 +253,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
           if (e.key === 'Escape') {
             setSlashIndex(-1)
+            setSlashDismissed(true)
             return
           }
         }
@@ -324,46 +327,58 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       )
     }
 
+    const isCoding = useAppStore.getState().layoutMode === 'coding'
+
     return (
-      <div className="relative border-t border-border px-3 py-2">
+      <div className={cn(
+        'relative',
+        isCoding
+          ? 'mx-3 mb-3 rounded-xl border border-border px-4 py-3'
+          : 'border-t border-border px-3 py-2'
+      )}>
         {/* Slash command autocomplete */}
-        {matchingCommands.length > 0 && (
-          <div className="absolute bottom-full left-0 right-0 z-10 mb-0.5 max-h-64 overflow-y-auto rounded-t-lg border border-border bg-card p-1">
-            {matchingCommands.map((cmd, i) => (
-              <button
-                key={cmd.name}
-                ref={(el) => {
-                  if (el) slashItemRefs.current.set(i, el)
-                  else slashItemRefs.current.delete(i)
-                }}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  selectSlashCommand(cmd.name)
-                }}
-                className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                  i === slashIndex
-                    ? 'bg-muted text-foreground'
-                    : 'text-foreground hover:bg-muted/50'
-                }`}
-              >
-                <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                  <span className="text-blue-400">/{cmd.name}</span>
-                  {cmd.argumentHint && (
-                    <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
-                  )}
-                  {cmd.isSkill && (
-                    <span className="rounded bg-emerald-900/50 px-1 py-px text-[10px] font-normal text-emerald-400">
-                      skill
+        {matchingCommands.length > 0 && !slashDismissed && (
+          <div className={cn(
+            'absolute bottom-full left-0 right-0 z-10 flex max-h-64 flex-col overflow-hidden border border-border bg-card p-1.5',
+            isCoding ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg'
+          )}>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {matchingCommands.map((cmd, i) => (
+                <button
+                  key={cmd.name}
+                  ref={(el) => {
+                    if (el) slashItemRefs.current.set(i, el)
+                    else slashItemRefs.current.delete(i)
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    selectSlashCommand(cmd.name)
+                  }}
+                  className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                    i === slashIndex
+                      ? 'bg-muted text-foreground'
+                      : 'text-foreground hover:bg-muted/50'
+                  }`}
+                >
+                  <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                    <span className="text-blue-400">/{cmd.name}</span>
+                    {cmd.argumentHint && (
+                      <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
+                    )}
+                    {cmd.isSkill && (
+                      <span className="rounded bg-emerald-900/50 px-1 py-px text-[10px] font-normal text-emerald-400">
+                        skill
+                      </span>
+                    )}
+                  </span>
+                  {cmd.description && (
+                    <span className={cn('text-muted-foreground leading-snug', cmd.isSkill && 'line-clamp-2')}>
+                      {cmd.description}
                     </span>
                   )}
-                </span>
-                {cmd.description && (
-                  <span className={cn('text-muted-foreground leading-snug', cmd.isSkill && 'line-clamp-2')}>
-                    {cmd.description}
-                  </span>
-                )}
-              </button>
-            ))}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -376,6 +391,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             onSelect={handleMentionSelect}
             onSetSelectedIndex={setMentionIndex}
             onClose={() => { setMentionActive(false); setMentionIndex(0) }}
+            rounded={isCoding}
           />
         )}
 
@@ -456,6 +472,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               const val = e.target.value
               setText(val)
               setSlashIndex(-1)
+              setSlashDismissed(false)
 
               // Detect @ mention trigger
               const cursorPos = e.target.selectionStart ?? val.length
@@ -479,8 +496,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               handleInput()
             }}
             onKeyDown={handleKeyDown}
-            placeholder={permissionMode === 'plan' ? 'Plan mode — describe your intent...' : 'Ask anything...'}
-            rows={1}
+            placeholder={permissionMode === 'plan' ? 'Plan mode — describe your intent...' : 'Ask anything, @ to add files, / for commands'}
+            rows={isCoding ? 2 : 1}
             className={cn(
               'w-full resize-none bg-transparent text-sm leading-5 placeholder-muted-foreground outline-none',
               slashHighlight ? 'text-transparent caret-foreground' : 'text-foreground'
@@ -561,7 +578,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 size="icon-xs"
                 variant="ghost"
                 onClick={() => interrupt()}
-                className="text-muted-foreground hover:text-foreground"
+                className={cn(
+                  'text-muted-foreground hover:text-foreground',
+                  isCoding && 'size-7 rounded-full border border-border'
+                )}
               >
                 <Square className="size-3" />
               </Button>
@@ -571,7 +591,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 variant="ghost"
                 onClick={handleSend}
                 disabled={!canSend}
-                className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                className={cn(
+                  'text-muted-foreground hover:text-foreground disabled:opacity-30',
+                  isCoding && 'size-7 rounded-full border border-border'
+                )}
               >
                 <ArrowUp className="size-3.5" />
               </Button>

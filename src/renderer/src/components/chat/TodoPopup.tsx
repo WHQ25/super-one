@@ -1,11 +1,11 @@
 import { useEffect, useCallback, useRef } from 'react'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ListTodo, Circle, Loader2, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function TodoPopup() {
-  const todos = useChatStore((s) => s.todos)
-  const showTodos = useChatStore((s) => s.showTodos)
+  const todos = useActiveSession((s) => s.todos)
+  const showTodos = useActiveSession((s) => s.showTodos)
   const toggleTodos = useChatStore((s) => s.toggleTodos)
   const activeRef = useRef<HTMLDivElement>(null)
 
@@ -38,7 +38,19 @@ export function TodoPopup() {
   useEffect(() => {
     if (!allDone) return
     const timer = setTimeout(() => {
-      useChatStore.setState({ todos: {}, _nextTodoId: 1, showTodos: false })
+      const activeProject = useChatStore.getState().activeProject
+      if (activeProject) {
+        const s = useChatStore.getState()
+        const session = s.projectSessions[activeProject]
+        if (session) {
+          useChatStore.setState({
+            projectSessions: {
+              ...s.projectSessions,
+              [activeProject]: { ...session, todos: {}, _nextTodoId: 1, showTodos: false },
+            },
+          })
+        }
+      }
     }, 3000)
     return () => clearTimeout(timer)
   }, [allDone])

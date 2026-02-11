@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ContextCommandView } from './ContextCommandView'
@@ -25,7 +25,7 @@ function CommandContent({ command, content }: { command: string; content: string
 }
 
 export function SlashCommandOverlay() {
-  const output = useChatStore((s) => s.slashCommandOutput)
+  const output = useActiveSession((s) => s.slashCommandOutput)
   const dismiss = useChatStore((s) => s.dismissSlashCommandOutput)
   const scrollRef = useRef<HTMLDivElement>(null)
 

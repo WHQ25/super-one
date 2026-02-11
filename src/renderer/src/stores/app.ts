@@ -4,10 +4,12 @@ import type { RecentFolder, SetupEvent } from '../../../shared/agent-types'
 type AppView = 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type SettingsTab = 'skills' | 'mcp' | 'plugins'
+export type LayoutMode = 'canvas' | 'coding'
 
 interface AppState {
   view: AppView
   currentFolder: string | null
+  tmpFolder: string | null
   recentFolders: RecentFolder[]
 
   // Setup
@@ -17,35 +19,60 @@ interface AppState {
   // Settings
   settingsTab: SettingsTab
 
+  // Layout mode
+  layoutMode: LayoutMode
+  setLayoutMode: (mode: LayoutMode) => void
+  showSidebar: boolean
+  setShowSidebar: (show: boolean) => void
+
   fetchRecentFolders: () => Promise<void>
   selectAndOpenFolder: () => Promise<void>
   openFolder: (folderPath: string) => Promise<void>
+  openTmpFolder: () => Promise<void>
   removeRecentFolder: (folderPath: string) => Promise<void>
   startInstall: () => Promise<void>
   handleSetupEvent: (event: SetupEvent) => void
   continueToMain: () => void
   navigateTo: (view: AppView) => void
   setSettingsTab: (tab: SettingsTab) => void
+
+  // Multi-session: switch to a project that already has an agent
+  switchToProject: (folderPath: string) => void
 }
 
-async function openFolderWithCheck(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<void> {
+async function openFolderDirect(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<void> {
   const ok = await window.app.openFolder(folderPath)
   if (!ok) return
-  const hasClaude = await window.app.checkClaude()
-  if (hasClaude) {
-    set({ view: 'main', currentFolder: folderPath })
-  } else {
-    set({ view: 'setup', currentFolder: folderPath })
-  }
+  set({ currentFolder: folderPath })
+  useAppStore.getState().fetchRecentFolders()
+  // Activate this project's session in chat store
+  const { useChatStore } = await import('./chat')
+  useChatStore.getState().ensureSession(folderPath)
+  useChatStore.getState().switchProject(folderPath)
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  view: 'startup',
+  view: 'setup',
   currentFolder: null,
+  tmpFolder: null,
   recentFolders: [],
   installStatus: 'idle',
   installOutput: '',
   settingsTab: 'skills',
+  layoutMode: 'coding',
+  setLayoutMode: async (mode) => {
+    set({ layoutMode: mode })
+    if (mode === 'coding' && !get().currentFolder) {
+      const folders = get().recentFolders
+      if (folders.length > 0) {
+        await openFolderDirect(folders[0].path, set)
+      } else {
+        get().openTmpFolder()
+      }
+    }
+  },
+  showSidebar: true,
+  setShowSidebar: (show) => set({ showSidebar: show }),
 
   fetchRecentFolders: async () => {
     const folders = await window.app.getRecentFolders()
@@ -55,11 +82,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectAndOpenFolder: async () => {
     const folderPath = await window.app.selectFolder()
     if (!folderPath) return
-    await openFolderWithCheck(folderPath, set)
+    await openFolderDirect(folderPath, set)
   },
 
   openFolder: async (folderPath: string) => {
-    await openFolderWithCheck(folderPath, set)
+    await openFolderDirect(folderPath, set)
+  },
+
+  openTmpFolder: async () => {
+    const tmpPath = await window.app.openTmpFolder()
+    set({ currentFolder: tmpPath, tmpFolder: tmpPath })
+    // Activate tmp project session
+    const { useChatStore } = await import('./chat')
+    useChatStore.getState().ensureSession(tmpPath)
+    useChatStore.getState().switchProject(tmpPath)
+  },
+
+  switchToProject: (folderPath: string) => {
+    set({ currentFolder: folderPath })
+    // Just switch the active session — no IPC call (agent already running)
+    import('./chat').then(({ useChatStore }) => {
+      useChatStore.getState().switchProject(folderPath)
+    })
   },
 
   removeRecentFolder: async (folderPath: string) => {
@@ -89,10 +133,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  continueToMain: () => {
-    const { currentFolder } = get()
-    if (currentFolder) {
-      set({ view: 'main' })
+  continueToMain: async () => {
+    set({ view: 'main' })
+    if (get().layoutMode === 'coding' && !get().currentFolder) {
+      // Open the most recent project if available, otherwise fall back to tmp
+      const folders = get().recentFolders
+      if (folders.length > 0) {
+        await openFolderDirect(folders[0].path, set)
+      } else {
+        get().openTmpFolder()
+      }
     }
   },
 
@@ -100,6 +150,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSettingsTab: (tab) => set({ settingsTab: tab }),
 }))
+
+/** Whether a real project (not tmp) is open */
+export function useHasRealProject(): boolean {
+  const currentFolder = useAppStore((s) => s.currentFolder)
+  const tmpFolder = useAppStore((s) => s.tmpFolder)
+  return currentFolder !== null && currentFolder !== tmpFolder
+}
 
 // Load recent folders on module init
 useAppStore.getState().fetchRecentFolders()

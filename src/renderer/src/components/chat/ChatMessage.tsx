@@ -1,6 +1,7 @@
 import type { ChatMessage as ChatMessageType, ContentBlock } from '../../../../shared/agent-types'
+import { useState, useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { ToolBlock } from './ToolBlock'
@@ -155,6 +156,8 @@ function renderBlock(
           result={toolResultMap?.get(block.toolUseId)}
         />
       )
+    case 'thinking':
+      return <ThinkingBlock key={index} thinking={block.thinking} isStreaming={isStreaming} />
     case 'tool_result':
       // Normally rendered inside the parent ToolBlock via toolResultMap.
       // If orphaned (no matching tool_use), show a compact fallback.
@@ -166,6 +169,30 @@ function renderBlock(
         </div>
       )
   }
+}
+
+function ThinkingBlock({ thinking, isStreaming }: { thinking: string; isStreaming: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div className="my-1">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {isStreaming
+          ? <Brain className="size-3 animate-pulse text-purple-400" />
+          : <Brain className="size-3" />
+        }
+        <span>{isStreaming ? 'Thinking...' : 'Thinking'}</span>
+        <ChevronRight className={cn('size-3 transition-transform duration-200', expanded && 'rotate-90')} />
+      </button>
+      {expanded && (
+        <div className="mt-1 max-h-48 overflow-y-auto rounded border border-border bg-muted/30 px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+          {thinking}
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** Extract leading @mention tokens from user text. */
@@ -243,7 +270,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           'min-w-0 text-sm',
           isUser
             ? 'max-w-[85%] rounded-xl bg-[#007AFF] text-white dark:bg-[#3A3A3C] dark:text-foreground px-3 py-2'
-            : 'max-w-full text-foreground'
+            : 'w-full text-foreground'
         )}
       >
         {isUser
@@ -289,7 +316,46 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <span>Response interrupted</span>
           </div>
         )}
+        {!isUser && <DurationFooter message={message} />}
       </div>
+    </div>
+  )
+}
+
+function DurationFooter({ message }: { message: ChatMessageType }) {
+  const isStreaming = message.status === 'streaming'
+  const startTimeRef = useRef(() => {
+    if (message.createdAt) {
+      const t = new Date(message.createdAt).getTime()
+      if (t > 0) return t
+    }
+    return Date.now()
+  })
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    if (!isStreaming) return
+    const start = startTimeRef.current()
+    const tick = () => setElapsed(Date.now() - start)
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [isStreaming])
+
+  const durationMs = isStreaming ? elapsed : message.metadata?.durationMs
+  if (!durationMs) return null
+  if (isStreaming && durationMs < 1000) return null
+  if (!isStreaming && durationMs < 20000) return null
+
+  const seconds = Math.round(durationMs / 1000)
+  const display = seconds < 60
+    ? `${seconds}s`
+    : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+
+  return (
+    <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
+      <Clock className="size-3" />
+      <span>{display}</span>
     </div>
   )
 }

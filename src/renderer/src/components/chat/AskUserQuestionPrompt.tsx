@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import type { UserQuestion } from '../../../../shared/agent-types'
 
 export function AskUserQuestionPrompt() {
-  const pendingQuestion = useChatStore((s) => s.pendingQuestion)
+  const pendingQuestion = useActiveSession((s) => s.pendingQuestion)
   const answerQuestion = useChatStore((s) => s.answerQuestion)
   const dismissQuestion = useChatStore((s) => s.dismissQuestion)
 

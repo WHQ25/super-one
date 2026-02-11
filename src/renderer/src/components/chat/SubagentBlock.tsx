@@ -95,7 +95,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   const filesReadCount = childBlocks.filter((b) => b.type === 'tool_use' && b.toolName === 'Read').length
 
   return (
-    <div className="my-1 overflow-hidden rounded border border-border/50 bg-muted/20">
+    <div className="subagent-container my-1 overflow-hidden rounded border border-border/50 bg-muted/20">
       {/* Header: Bot icon + subagent_type + description */}
       <button
         onClick={isFromHistory.current ? undefined : () => setExpanded((e) => !e)}

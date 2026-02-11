@@ -21,7 +21,7 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
     : null
 
   return (
-    <div className="my-1">
+    <div className="tool-node my-1">
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70"
@@ -67,16 +67,24 @@ function generateSummary(toolUses: ContentBlock[]): string {
     if (t.type === 'tool_use') counts[t.toolName] = (counts[t.toolName] || 0) + 1
   }
 
-  const parts = Object.entries(counts).map(([name, count]) => {
+  const globCount = counts['Glob'] ?? 0
+  const grepCount = counts['Grep'] ?? 0
+  const parts: string[] = []
+  for (const [name, count] of Object.entries(counts)) {
+    if (name === 'Glob' || name === 'Grep') continue
     const p = count > 1
     switch (name) {
-      case 'Read': return `read ${count} file${p ? 's' : ''}`
-      case 'Grep': return `${count} search${p ? 'es' : ''}`
-      case 'Glob': return `${count} glob${p ? 's' : ''}`
-      case 'WebSearch': return `${count} web search${p ? 'es' : ''}`
-      case 'WebFetch': return `fetched ${count} page${p ? 's' : ''}`
-      default: return `${name} \u00d7${count}`
+      case 'Read': parts.push(`read ${count} file${p ? 's' : ''}`); break
+      case 'WebSearch': parts.push(`${count} web search${p ? 'es' : ''}`); break
+      case 'WebFetch': parts.push(`fetched ${count} page${p ? 's' : ''}`); break
+      default: parts.push(`${name} \u00d7${count}`)
     }
-  })
+  }
+  if (globCount > 0 || grepCount > 0) {
+    const sub: string[] = []
+    if (globCount > 0) sub.push(`${globCount} pattern${globCount > 1 ? 's' : ''}`)
+    if (grepCount > 0) sub.push(`${grepCount} code`)
+    parts.push(`searched ${sub.join(' · ')}`)
+  }
   return parts.join(', ')
 }

@@ -94,7 +94,7 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
   return (
     <div
       className={cn(
-        'my-0.5 rounded bg-muted/50 transition-colors',
+        'tool-node my-0.5 rounded bg-muted/50 transition-colors',
         expandable && 'cursor-pointer hover:bg-muted/70'
       )}
     >

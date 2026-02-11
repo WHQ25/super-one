@@ -498,7 +498,7 @@ export function ChatPanel() {
         position: 'fixed',
       }}
       className={cn(
-        'z-50 flex flex-col overflow-hidden border border-border shadow-2xl',
+        '@container z-50 flex flex-col overflow-hidden border border-border shadow-2xl',
         !noTransition && 'transition-[top,right,bottom,left,width,height,border-radius] duration-200 ease-out'
       )}
     >
@@ -567,7 +567,7 @@ export function ChatPanel() {
       </div>
 
       {/* Expanded content — hidden by overflow when collapsed */}
-      <div className="relative flex min-h-0 flex-1 flex-col bg-card">
+      <div className="relative flex min-h-0 flex-1 flex-col bg-card" style={{ zoom: panelW >= 672 ? 1.15 : panelW >= 512 ? 1.1 : 1 }}>
         {showHistory ? (
           <SessionHistory />
         ) : pendingPlanApproval ? (
@@ -580,7 +580,7 @@ export function ChatPanel() {
                 <ChatSuggestions />
               ) : (
                 <ScrollArea className="h-full" viewportRef={scrollViewportRef}>
-                  <div className="flex flex-col gap-1.5 p-3">
+                  <div className="flex flex-col gap-1.5 p-3 @lg:gap-2.5 @lg:p-3.5 @2xl:gap-2.5 @2xl:p-4">
                     {isLoadingHistory && (
                       <div className="flex items-center justify-center py-2">
                         <Loader2 className="size-4 animate-spin text-muted-foreground" />

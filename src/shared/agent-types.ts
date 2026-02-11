@@ -57,6 +57,16 @@ export interface MessageMetadata {
   stopReason?: string | null
 }
 
+// --- Todo items (derived from TaskCreate/TaskUpdate tool calls) ---
+
+export interface TodoItem {
+  id: string
+  subject: string
+  description: string
+  status: 'pending' | 'in_progress' | 'completed'
+  activeForm?: string
+}
+
 // --- Chat message ---
 
 export interface ChatMessage {

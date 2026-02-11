@@ -9,6 +9,7 @@ import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
 import { SlashCommandOverlay } from './SlashCommandOverlay'
+import { TodoPopup } from './TodoPopup'
 import { cn } from '@/lib/utils'
 import type { SessionHistoryEntry } from '../../../../shared/agent-types'
 
@@ -319,6 +320,19 @@ export function ChatPanel() {
     return () => window.removeEventListener('keydown', handler)
   }, [cyclePermissionMode])
 
+  // Ctrl+T toggles todo list popup
+  const toggleTodos = useChatStore((s) => s.toggleTodos)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      if (e.key === 't' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        toggleTodos()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [toggleTodos])
+
   // --- Drag handlers ---
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -527,6 +541,7 @@ export function ChatPanel() {
             </div>
             <PermissionPrompt />
             <AskUserQuestionPrompt />
+            <TodoPopup />
             <ChatInput />
           </>
         )}

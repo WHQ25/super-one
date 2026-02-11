@@ -11,6 +11,11 @@ import { getToolDisplay, parseToolInput, parseMcpToolName } from './tool-display
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 
+/** Dev-only: comma-separated tool names to show raw debug UI. e.g. RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate */
+const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
+  ? (import.meta.env.RENDERER_VITE_DEBUG_TOOL_NAMES ?? '').split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
+  : []
+
 interface ToolBlockProps {
   toolName: string
   input: string
@@ -46,6 +51,18 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
       ?? mcpLibrary.find((e) => e.name === mcpInfo.serverName)?.icons?.[0]?.src)
     : undefined
   const isStreaming = status === 'streaming'
+
+  // Debug mode (dev only): highest priority — show raw input/output for matching tools
+  // Set RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate to enable
+  const isDebug = DEBUG_TOOL_NAMES.length > 0 &&
+    DEBUG_TOOL_NAMES.some((n) => toolName.toLowerCase().includes(n))
+  if (isDebug) {
+    return <DebugToolBlock toolName={toolName} input={input} result={result} status={status} elapsedSeconds={elapsedSeconds} />
+  }
+
+  // Hide TodoWrite from chat — handled by TodoPopup
+  if (toolName === 'TodoWrite') return null
+
   const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && Object.keys(params).length > 0
   const hasResult = !!result && !isStreaming && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
   const hasQA = toolName === 'AskUserQuestion' && !!result && !isStreaming
@@ -336,6 +353,57 @@ function WriteDiff({ params }: { params: Record<string, unknown> }) {
           ... {allLines.length - MAX_LINES} more lines
         </div>
       )}
+    </div>
+  )
+}
+
+/** Debug view showing raw input and output for a tool call. */
+function DebugToolBlock({
+  toolName,
+  input,
+  result,
+  status,
+  elapsedSeconds,
+}: {
+  toolName: string
+  input: string
+  result?: string
+  status?: 'streaming' | 'complete'
+  elapsedSeconds?: number
+}) {
+  const isStreaming = status === 'streaming'
+  const prettyInput = tryPrettifyJson(input) ?? input
+
+  return (
+    <div className="my-0.5 rounded border border-amber-500/30 bg-muted/50">
+      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
+        {isStreaming ? (
+          <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
+        ) : (
+          <span className="size-3 shrink-0 text-center text-amber-400">&#9881;</span>
+        )}
+        <span className="font-medium text-amber-400">{toolName}</span>
+        <span className="rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-400">debug</span>
+        {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
+          <span className="ml-auto shrink-0 text-muted-foreground">{Math.round(elapsedSeconds)}s</span>
+        )}
+      </div>
+      <div className="px-2 pb-1.5 space-y-1.5">
+        <div>
+          <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">Input</div>
+          <div className="max-h-48 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
+            {prettyInput || <span className="text-muted-foreground italic">empty</span>}
+          </div>
+        </div>
+        {result && !isStreaming && (
+          <div>
+            <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">Output</div>
+            <div className="max-h-48 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-all">
+              {result}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

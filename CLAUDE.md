@@ -47,6 +47,18 @@ Build config: `electron.vite.config.ts` with three sections (main, preload, rend
 | `zod` | Schema validation (MCP tools, data models) |
 | `tailwindcss` + `@tailwindcss/vite` | Styling (v4, import-based) |
 
+## Debugging
+
+To show raw input/output for specific tool calls in the chat UI, set the `RENDERER_VITE_DEBUG_TOOL_NAMES` environment variable before running dev:
+
+```bash
+RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate bun run dev
+```
+
+- Comma-separated list of tool names (case-insensitive, partial match)
+- Only works in development mode (`import.meta.env.DEV`)
+- Matching tool blocks render a debug view with prettified JSON input and raw output instead of the normal UI
+
 ## Conventions
 
 - **Package manager**: Bun (not npm/pnpm)

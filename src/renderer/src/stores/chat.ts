@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, LoadSessionMessagesResult, ModelOption, PermissionMode, PermissionRequest, RewindFilesResult, SessionHistoryEntry, SessionInfo, SlashCommandInfo } from '../../../shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, LoadSessionMessagesResult, ModelOption, PermissionMode, PermissionRequest, RewindFilesResult, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 
@@ -61,6 +61,12 @@ interface ChatState {
   slashCommandOutput: { command: string; content: string } | null
   _pendingSlashCommand: string
   dismissSlashCommandOutput: () => void
+
+  // Todo / task tracking
+  todos: Record<string, TodoItem>
+  showTodos: boolean
+  _nextTodoId: number
+  toggleTodos: () => void
 
   handleAgentEvent: (event: AgentEvent) => void
   sendMessage: (content: string) => Promise<void>
@@ -138,6 +144,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   homedir: '',
   slashCommandOutput: null,
   _pendingSlashCommand: '' as string,
+  todos: {},
+  showTodos: false,
+  _nextTodoId: 1,
   sessions: [],
   showHistory: false,
   _historySessionId: null,
@@ -146,6 +155,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isLoadingHistory: false,
 
   dismissSlashCommandOutput: () => set({ slashCommandOutput: null }),
+  toggleTodos: () => set((s) => ({ showTodos: !s.showTodos })),
 
   handleAgentEvent: (event: AgentEvent) => {
     switch (event.type) {
@@ -160,6 +170,80 @@ export const useChatStore = create<ChatState>((set, get) => ({
             return { ...msg, content: applyDelta(msg.content, event.delta) }
           }),
         }))
+
+        // When a tool_result arrives, check if its corresponding tool_use is a
+        // todo/task tool and parse the accumulated input.  This is more reliable
+        // than watching for tool_use status:'complete' because the input is built
+        // incrementally via tool_input_delta and may not be present on the
+        // complete-status delta itself.
+        if (event.delta.type === 'tool_result') {
+          const resultDelta = event.delta
+          const msg = get().messages.find((m) => m.id === event.messageId)
+          const toolBlock = msg?.content.find(
+            (b) => b.type === 'tool_use' && b.toolUseId === resultDelta.toolUseId
+          )
+          if (toolBlock && toolBlock.type === 'tool_use') {
+            const tn = toolBlock.toolName
+            if (tn === 'TodoWrite' || tn === 'TaskCreate' || tn === 'TaskUpdate') {
+              try {
+                const input = JSON.parse(toolBlock.input)
+                if (tn === 'TodoWrite' && Array.isArray(input.todos)) {
+                  const newTodos: Record<string, TodoItem> = {}
+                  for (let i = 0; i < input.todos.length; i++) {
+                    const t = input.todos[i]
+                    const id = String(i + 1)
+                    newTodos[id] = {
+                      id,
+                      subject: t.content ?? t.subject ?? '',
+                      description: t.description ?? '',
+                      status: t.status ?? 'pending',
+                      activeForm: t.activeForm,
+                    }
+                  }
+                  set({ todos: newTodos, _nextTodoId: input.todos.length + 1, showTodos: true })
+                } else if (tn === 'TaskCreate') {
+                  const id = String(get()._nextTodoId)
+                  set((s) => ({
+                    _nextTodoId: s._nextTodoId + 1,
+                    showTodos: true,
+                    todos: {
+                      ...s.todos,
+                      [id]: {
+                        id,
+                        subject: input.subject ?? '',
+                        description: input.description ?? '',
+                        status: 'pending',
+                        activeForm: input.activeForm,
+                      },
+                    },
+                  }))
+                } else if (tn === 'TaskUpdate' && input.taskId) {
+                  set((s) => {
+                    const existing = s.todos[input.taskId]
+                    if (!existing) return s
+                    if (input.status === 'deleted') {
+                      const { [input.taskId]: _, ...rest } = s.todos
+                      return { todos: rest }
+                    }
+                    return {
+                      showTodos: true,
+                      todos: {
+                        ...s.todos,
+                        [input.taskId]: {
+                          ...existing,
+                          ...(input.status && { status: input.status }),
+                          ...(input.subject && { subject: input.subject }),
+                          ...(input.description && { description: input.description }),
+                          ...(input.activeForm && { activeForm: input.activeForm }),
+                        },
+                      },
+                    }
+                  })
+                }
+              } catch { /* ignore malformed JSON */ }
+            }
+          }
+        }
         break
 
       case 'message_complete': {
@@ -375,11 +459,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setCorner: (corner) => set({ corner }),
 
-  clearMessages: () => set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, pendingPermission: null, pendingQuestion: null, mentions: [], subagentTokens: {} }),
+  clearMessages: () => set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, pendingPermission: null, pendingQuestion: null, mentions: [], subagentTokens: {}, todos: {}, _nextTodoId: 1, showTodos: false }),
 
   resetSession: async () => {
     await window.agent.resetSession()
-    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], mentions: [], subagentTokens: {}, _historySessionId: null, historyCursor: null, hasMoreHistory: false })
+    set({ messages: [], session: null, totalCostUsd: 0, contextTokens: 0, status: 'idle', pendingPermission: null, pendingQuestion: null, slashCommands: [], mentions: [], subagentTokens: {}, todos: {}, _nextTodoId: 1, showTodos: false, _historySessionId: null, historyCursor: null, hasMoreHistory: false })
   },
 
   rewindFiles: async (userMessageId: string) => {

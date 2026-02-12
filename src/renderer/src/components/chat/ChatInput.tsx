@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ArrowUp, Square, ChevronDown, Paperclip, X, Folder } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, Paperclip, X, Folder, Bot } from 'lucide-react'
 import { FileIcon } from '@/components/ui/FileIcon'
 import type { MentionKind } from '@/stores/chat'
 import { PermissionModeSelector } from './PermissionModeSelector'
@@ -49,6 +49,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [slashDismissed, setSlashDismissed] = useState(false)
     const slashItemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
 
+    // Drag-and-drop state
+    const [isDragging, setIsDragging] = useState(false)
+    const dragCounterRef = useRef(0)
+
     // @ mention state
     const [mentionActive, setMentionActive] = useState(false)
     const [mentionIndex, setMentionIndex] = useState(0)
@@ -58,11 +62,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     useEffect(() => {
       if (!compact && isOpen && textareaRef.current) {
         const el = textareaRef.current
-        // Focus and move cursor to end
         el.focus()
         el.selectionStart = el.value.length
         el.selectionEnd = el.value.length
-        // Detect active @ mention from shared draftText (e.g. typed in compact mode)
         const lastAt = text.lastIndexOf('@')
         if (lastAt !== -1 && !text.slice(lastAt + 1).includes(' ')) {
           setMentionActive(true)
@@ -74,11 +76,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     // Detect @ trigger position based on cursor in text
     const mentionInfo = useMemo(() => {
       if (!mentionActive) return null
-      // Find the last unescaped @ before the text end
       const atIdx = text.lastIndexOf('@')
       if (atIdx === -1) return null
       const query = text.slice(atIdx + 1)
-      // Close if there's a space in the query (unless it's a path separator)
       if (query.includes(' ')) return null
       return { atIndex: atIdx, query }
     }, [text, mentionActive])
@@ -102,9 +102,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       const hasMatch = slashCommands.some((c) => c.name.toLowerCase().startsWith(cmdName.toLowerCase()))
       if (!hasMatch && !exact) return null
 
-      // Parse hint tokens (e.g. "<file> <message>" → ["<file>", "<message>"])
       const hintTokens = exact?.argumentHint?.match(/<[^>]+>|\[[^\]]+\]/g) ?? []
-      // Count user-provided args to determine remaining hints
       const trimmedRest = rest.trimStart()
       const filledCount = trimmedRest ? trimmedRest.split(/\s+/).length : 0
       const remainingHints = hintTokens.slice(filledCount)
@@ -148,7 +146,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         if (!mentionInfo) return
 
         if (action === 'navigate') {
-          // Directory navigation — update the @query in text, keep popup open
           setText(text.slice(0, mentionInfo.atIndex + 1) + value)
           setMentionIndex(0)
           textareaRef.current?.focus()
@@ -162,7 +159,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         addMention({ kind, value, displayName })
 
-        // Remove @query portion from text
+        // Remove @query from text (chip will render separately)
         const before = text.slice(0, mentionInfo.atIndex)
         const after = text.slice(mentionInfo.atIndex + 1 + mentionInfo.query.length)
         setText(before + after)
@@ -190,17 +187,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
-        // Ignore key events during IME composition (e.g. Chinese input)
         if (e.nativeEvent.isComposing) return
 
-        // Shift+Enter in collapsed mode → expand the panel with newline
+        // Shift+Enter in collapsed mode → expand the panel
         if (e.key === 'Enter' && e.shiftKey && !isOpen) {
           e.preventDefault()
           toggleOpen()
           return
         }
 
-        // @ mention navigation (takes priority when active)
+        // @ mention navigation
         if (mentionInfo && mentionActive) {
           const count = mentionRef.current?.getItemCount() ?? 0
           if (e.key === 'ArrowDown') {
@@ -257,11 +253,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             return
           }
         }
-        // Backspace on empty text → remove last mention chip
-        if (e.key === 'Backspace' && text === '' && mentions.length > 0) {
-          e.preventDefault()
-          removeMention(mentions[mentions.length - 1].value)
-          return
+
+        // Backspace on empty text → remove last mention, then last attachment
+        if (e.key === 'Backspace' && text === '') {
+          if (mentions.length > 0) {
+            e.preventDefault()
+            removeMention(mentions[mentions.length - 1].value)
+            return
+          }
+          if (attachments.length > 0) {
+            e.preventDefault()
+            removeAttachment(attachments.length - 1)
+            return
+          }
         }
 
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -269,7 +273,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           handleSend()
         }
       },
-      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionInfo, mentionActive, isOpen, toggleOpen, text, mentions, removeMention]
+      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionInfo, mentionActive, isOpen, toggleOpen, text, attachments, removeAttachment, mentions, removeMention]
     )
 
     const handleInput = useCallback(() => {
@@ -279,16 +283,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       el.style.height = `${Math.min(el.scrollHeight, 120)}px`
     }, [])
 
-    const handleFileSelect = useCallback(
-      (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files
-        if (!files) return
+    const processImageFiles = useCallback(
+      (files: FileList | File[]) => {
         for (const file of Array.from(files)) {
           if (!file.type.startsWith('image/')) continue
           const reader = new FileReader()
           reader.onload = () => {
             const result = reader.result as string
-            // Strip the data:...;base64, prefix
             const base64 = result.split(',')[1]
             if (base64) {
               addAttachment({ mimeType: file.type, base64, name: file.name })
@@ -296,10 +297,71 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
           reader.readAsDataURL(file)
         }
-        // Reset so the same file can be selected again
-        e.target.value = ''
       },
       [addAttachment]
+    )
+
+    const handleFileSelect = useCallback(
+      (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) processImageFiles(e.target.files)
+        e.target.value = ''
+      },
+      [processImageFiles]
+    )
+
+    const handlePaste = useCallback(
+      (e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items
+        if (!items) return
+        const imageFiles: File[] = []
+        for (const item of Array.from(items)) {
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile()
+            if (file) imageFiles.push(file)
+          }
+        }
+        if (imageFiles.length > 0) {
+          e.preventDefault()
+          processImageFiles(imageFiles)
+        }
+      },
+      [processImageFiles]
+    )
+
+    const handleDragEnter = useCallback((e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      dragCounterRef.current++
+      if (e.dataTransfer.types.includes('Files')) {
+        setIsDragging(true)
+      }
+    }, [])
+
+    const handleDragLeave = useCallback((e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      dragCounterRef.current--
+      if (dragCounterRef.current === 0) {
+        setIsDragging(false)
+      }
+    }, [])
+
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+    }, [])
+
+    const handleDrop = useCallback(
+      (e: React.DragEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        dragCounterRef.current = 0
+        setIsDragging(false)
+        if (e.dataTransfer.files.length > 0) {
+          processImageFiles(e.dataTransfer.files)
+        }
+      },
+      [processImageFiles]
     )
 
     const currentModelName =
@@ -313,7 +375,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           onChange={(e) => {
             const val = e.target.value
             setText(val)
-            // Typing @ in compact mode → expand panel and activate mention
             if (val.endsWith('@') && !isOpen) {
               setMentionActive(true)
               setMentionIndex(0)
@@ -330,12 +391,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const isCoding = useAppStore.getState().layoutMode === 'coding'
 
     return (
-      <div className={cn(
-        'relative',
-        isCoding
-          ? 'mx-3 mb-3 rounded-xl border border-border px-4 py-3'
-          : 'border-t border-border px-3 py-2'
-      )}>
+      <div
+        className={cn(
+          'relative',
+          isCoding
+            ? 'mx-3 mb-3 rounded-xl border border-border px-4 py-3'
+            : 'border-t border-border px-3 py-2',
+          isDragging && 'ring-2 ring-blue-500/50'
+        )}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
         {/* Slash command autocomplete */}
         {matchingCommands.length > 0 && !slashDismissed && (
           <div className={cn(
@@ -419,90 +487,79 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           </div>
         )}
 
-        {/* Mention chips */}
-        {mentions.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {mentions.map((m) => (
-              <span
-                key={m.value}
-                className={cn(
-                  'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',
-                  m.kind === 'agent'
-                    ? 'border-purple-500/40 bg-purple-500/10 text-purple-400'
-                    : 'border-border bg-muted/50 text-foreground'
-                )}
-              >
-                {m.kind === 'agent' ? (
-                  <span className="font-medium">@{m.displayName}</span>
-                ) : m.kind === 'directory' ? (
-                  <>
-                    <Folder className="size-3.5 shrink-0 text-blue-500" />
-                    <span>{m.displayName}</span>
-                  </>
-                ) : (
-                  <>
-                    <FileIcon name={m.displayName} size={12} />
-                    <span>{m.displayName}</span>
-                  </>
-                )}
-                <button
-                  onClick={() => removeMention(m.value)}
-                  className="ml-0.5 rounded-sm hover:bg-muted"
-                >
-                  <X className="size-2.5" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div className="relative w-full">
-          {slashHighlight && (
-            <div
-              className="pointer-events-none absolute inset-0 whitespace-pre-wrap break-words text-sm leading-5"
-              aria-hidden
+        <div className="relative flex w-full flex-wrap items-center gap-1">
+          {/* Mention chips */}
+          {mentions.map((m) => (
+            <span
+              key={m.value}
+              className="inline-flex shrink-0 items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs text-foreground"
             >
-              {slashHighlight}
-            </div>
-          )}
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => {
-              const val = e.target.value
-              setText(val)
-              setSlashIndex(-1)
-              setSlashDismissed(false)
+              {m.kind === 'agent' ? (
+                <Bot className="size-3 text-purple-400" />
+              ) : m.kind === 'directory' ? (
+                <Folder className="size-3 text-blue-400" />
+              ) : (
+                <FileIcon name={m.displayName} size={12} />
+              )}
+              <span className="max-w-[120px] truncate">{m.displayName}</span>
+              <button
+                onClick={() => removeMention(m.value)}
+                className="ml-0.5 text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-2.5" />
+              </button>
+            </span>
+          ))}
 
-              // Detect @ mention trigger
-              const cursorPos = e.target.selectionStart ?? val.length
-              const textBeforeCursor = val.slice(0, cursorPos)
-              const lastAt = textBeforeCursor.lastIndexOf('@')
-              if (lastAt !== -1) {
-                const afterAt = textBeforeCursor.slice(lastAt + 1)
-                // Activate if no space in the query
-                if (!afterAt.includes(' ')) {
-                  if (!mentionActive) {
-                    setMentionIndex(0)
+          {/* Textarea with overlay */}
+          <div className="relative min-w-[80px] flex-1">
+            {slashHighlight && (
+              <div
+                className="pointer-events-none absolute inset-0 whitespace-pre-wrap break-words text-sm leading-5"
+                aria-hidden
+              >
+                {slashHighlight}
+              </div>
+            )}
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onPaste={handlePaste}
+              onChange={(e) => {
+                const val = e.target.value
+                setText(val)
+                setSlashIndex(-1)
+                setSlashDismissed(false)
+
+                // Detect @ mention trigger
+                const cursorPos = e.target.selectionStart ?? val.length
+                const textBeforeCursor = val.slice(0, cursorPos)
+                const lastAt = textBeforeCursor.lastIndexOf('@')
+                if (lastAt !== -1) {
+                  const afterAt = textBeforeCursor.slice(lastAt + 1)
+                  if (!afterAt.includes(' ')) {
+                    if (!mentionActive) {
+                      setMentionIndex(0)
+                    }
+                    setMentionActive(true)
+                  } else {
+                    setMentionActive(false)
                   }
-                  setMentionActive(true)
                 } else {
                   setMentionActive(false)
                 }
-              } else {
-                setMentionActive(false)
-              }
 
-              handleInput()
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder={permissionMode === 'plan' ? 'Plan mode — describe your intent...' : 'Ask anything, @ to add files, / for commands'}
-            rows={isCoding ? 2 : 1}
-            className={cn(
-              'w-full resize-none bg-transparent text-sm leading-5 placeholder-muted-foreground outline-none',
-              slashHighlight ? 'text-transparent caret-foreground' : 'text-foreground'
-            )}
-          />
+                handleInput()
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder={mentions.length > 0 ? 'Add instructions...' : permissionMode === 'plan' ? 'Plan mode — describe your intent...' : 'Ask anything, @ to add files, / for commands'}
+              rows={isCoding ? 2 : 1}
+              className={cn(
+                'w-full resize-none bg-transparent text-sm leading-5 placeholder-muted-foreground outline-none',
+                slashHighlight ? 'text-transparent caret-foreground' : 'text-foreground'
+              )}
+            />
+          </div>
         </div>
 
         <div className="mt-1 flex items-center justify-between">
@@ -601,6 +658,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             )}
           </div>
         </div>
+
+        {/* Drag overlay */}
+        {isDragging && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-blue-500 bg-blue-500/10">
+            <span className="text-xs font-medium text-blue-400">Drop to add image</span>
+          </div>
+        )}
       </div>
     )
   }

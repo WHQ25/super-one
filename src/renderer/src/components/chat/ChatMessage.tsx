@@ -1,7 +1,7 @@
 import type { ChatMessage as ChatMessageType, ContentBlock } from '../../../../shared/agent-types'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { cn } from '@/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
@@ -107,6 +107,45 @@ function groupContent(content: ContentBlock[]): GroupResult {
   return { segments, toolNameMap, toolResultMap }
 }
 
+function CopyButton({ text, className }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      className={cn('cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/copy:opacity-100', className ?? 'absolute right-0 top-0')}
+    >
+      {copied
+        ? <Check className="size-3 text-green-400" />
+        : <Copy className="size-3" />
+      }
+    </button>
+  )
+}
+
+function CopyableText({ text, isStreaming }: { text: string; isStreaming: boolean }) {
+  return (
+    <div className="group/copy relative">
+      <Streamdown
+        className="chat-md"
+        plugins={streamdownPlugins}
+        components={streamdownComponents}
+        controls={streamdownControls}
+        isAnimating={isStreaming}
+      >
+        {text}
+      </Streamdown>
+      {!isStreaming && text.length > 0 && <CopyButton text={text} />}
+    </div>
+  )
+}
+
 function renderBlock(
   block: ContentBlock,
   index: number,
@@ -116,16 +155,7 @@ function renderBlock(
   switch (block.type) {
     case 'text':
       return (
-        <Streamdown
-          key={index}
-          className="chat-md"
-          plugins={streamdownPlugins}
-          components={streamdownComponents}
-          controls={streamdownControls}
-          isAnimating={isStreaming}
-        >
-          {block.text}
-        </Streamdown>
+        <CopyableText key={index} text={block.text} isStreaming={isStreaming} />
       )
     case 'image':
       return (
@@ -307,20 +337,26 @@ export function ChatMessage({ message }: ChatMessageProps) {
     [isUser, message.content],
   )
 
+  const userText = isUser
+    ? message.content.filter((b) => b.type === 'text').map((b) => b.type === 'text' ? b.text : '').join('\n')
+    : ''
   return (
     <div className={cn('w-0 min-w-full flex', isUser ? 'justify-end' : 'justify-start')}>
-      <div
-        className={cn(
-          'min-w-0 text-sm',
-          isUser
-            ? 'max-w-[85%] rounded-xl bg-[#007AFF] text-white dark:bg-[#3A3A3C] dark:text-foreground px-3 py-2'
-            : 'w-full text-foreground'
-        )}
-      >
-        {isUser
-          ? message.content.map((block, i) =>
-              block.type === 'text' ? <UserTextBlock key={i} text={block.text} /> : renderBlock(block, i, false)
-            )
+      <div className={cn(isUser ? 'group/copy relative mb-0 flex max-w-[85%] flex-col items-end' : 'w-full')}>
+        <div
+          className={cn(
+            'min-w-0 text-sm',
+            isUser
+              ? 'rounded-xl bg-[#007AFF] text-white dark:bg-[#3A3A3C] dark:text-foreground px-3 py-2'
+              : 'w-full text-foreground'
+          )}
+        >
+          {isUser
+            ? <>
+                {message.content.map((block, i) =>
+                  block.type === 'text' ? <UserTextBlock key={i} text={block.text} /> : renderBlock(block, i, false)
+                )}
+              </>
           : grouped!.segments.map((seg) => {
               if (seg.kind === 'subagent') {
                 return (
@@ -360,7 +396,11 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <span>Response interrupted</span>
           </div>
         )}
-        {!isUser && <DurationFooter message={message} />}
+        {!isUser && <DurationFooter message={message} copyText={message.content.filter((b) => b.type === 'text').map((b) => b.type === 'text' ? b.text : '').join('\n')} />}
+      </div>
+      {isUser && userText.length > 0 && (
+        <CopyButton text={userText} className="relative mt-1 opacity-0 group-hover/copy:opacity-100" />
+      )}
       </div>
     </div>
   )
@@ -404,7 +444,7 @@ function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 
 
 const ZERO_TOKENS = { input: 0, output: 0 }
 
-function DurationFooter({ message }: { message: ChatMessageType }) {
+function DurationFooter({ message, copyText }: { message: ChatMessageType; copyText?: string }) {
   const isStreaming = message.status === 'streaming'
   // Only subscribe to streamingTokens when this message is actually streaming
   // to avoid re-rendering all completed message footers on every token update.
@@ -434,7 +474,16 @@ function DurationFooter({ message }: { message: ChatMessageType }) {
   const hasTokens = tokenInput > 0 || tokenOutput > 0
 
   const showDuration = durationMs && (isStreaming ? durationMs >= 1000 : durationMs >= 20000)
-  if (!showDuration && !hasTokens) return null
+  const [copied, setCopied] = useState(false)
+  const handleCopy = () => {
+    if (!copyText) return
+    navigator.clipboard.writeText(copyText)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  const showCopy = !isStreaming && !!copyText
+  if (!showDuration && !hasTokens && !showCopy) return null
 
   const seconds = durationMs ? Math.round(durationMs / 1000) : 0
   const display = seconds < 60
@@ -443,6 +492,17 @@ function DurationFooter({ message }: { message: ChatMessageType }) {
 
   return (
     <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      {showCopy && (
+        <button
+          onClick={handleCopy}
+          className="cursor-pointer transition-colors hover:text-foreground"
+        >
+          {copied
+            ? <Check className="size-3 text-green-400" />
+            : <Copy className="size-3" />
+          }
+        </button>
+      )}
       {showDuration && (
         <>
           <Clock className="size-3" />

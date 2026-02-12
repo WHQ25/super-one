@@ -62,7 +62,7 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       return { icon: 'wrench', summary: String(input.skill ?? '') }
     case 'AskUserQuestion': {
       const questions = Array.isArray(input.questions) ? input.questions : []
-      return { icon: 'message-circle', summary: `${questions.length} question${questions.length !== 1 ? 's' : ''}` }
+      return { icon: 'message-circle', summary: questions.length > 0 ? `${questions.length} question${questions.length !== 1 ? 's' : ''}` : '' }
     }
     case 'Task':
       return { icon: 'bot', summary: String(input.name ?? input.subagent_type ?? input.description ?? '') }

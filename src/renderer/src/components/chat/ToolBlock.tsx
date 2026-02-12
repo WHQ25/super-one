@@ -129,9 +129,7 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
         className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={expandable ? () => setExpanded((e) => !e) : undefined}
       >
-        {isStreaming ? (
-          <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
-        ) : isDenied ? (
+        {isDenied ? (
           <Ban className="size-3 shrink-0 text-red-400" />
         ) : isMcp && mcpIconSrc ? (
           <img src={mcpIconSrc} alt={mcpInfo.serverName} className="size-3.5 shrink-0 rounded-sm object-cover" />
@@ -139,6 +137,7 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
           <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
         <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground')}>{displayName}</span>
+        {isStreaming && <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />}
         {isDenied ? (
           <>
             {summary && <span className="min-w-0 truncate text-muted-foreground">{summary}</span>}

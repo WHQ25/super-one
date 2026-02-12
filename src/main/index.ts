@@ -1,12 +1,16 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { existsSync, mkdirSync } from 'fs'
+import { homedir } from 'os'
 import { execFile, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
+import { query } from '@anthropic-ai/claude-agent-sdk'
 import { AgentService } from './agent/agent-service'
-import { AgentIpcChannels } from '../shared/agent-types'
+import { AgentIpcChannels, type ConnectResult, type StartupData } from '../shared/agent-types'
+import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
-import { getDb, closeDb } from './database'
+import { getDb, closeDb, getCachedResources, setCachedResources } from './database'
+import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
 
 const agentService = new AgentService()
 let mainWindow: BrowserWindow | null = null
@@ -163,6 +167,57 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('get-fullscreen', () => getMainWindow().isFullScreen())
+
+  ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
+    const cached = getCachedResources() as StartupData['cached']
+    const userSkills = discoverUserSkills()
+    const userCommands = discoverUserCommands()
+    const userAgents = discoverUserAgents()
+    return { cached, userSkills, userCommands, userAgents }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ConnectResult> => {
+    const q = query({
+      prompt: 'hi',
+      options: { cwd: homedir(), maxTurns: 0, permissionMode: 'default' },
+    })
+    const [modelInfos, accountInfo, commands] = await Promise.all([
+      q.supportedModels(),
+      q.accountInfo(),
+      q.supportedCommands(),
+    ])
+    q.close()
+
+    // Scan user-level resources from filesystem
+    const userSkills = discoverUserSkills()
+    const userCommands = discoverUserCommands()
+
+    console.log('[CONNECT_CLAUDE] Models:', JSON.stringify(modelInfos, null, 2))
+    console.log('[CONNECT_CLAUDE] Account:', JSON.stringify(accountInfo, null, 2))
+    console.log('[CONNECT_CLAUDE] Commands:', JSON.stringify(commands, null, 2))
+    console.log('[CONNECT_CLAUDE] User Skills:', JSON.stringify(userSkills, null, 2))
+    console.log('[CONNECT_CLAUDE] User Commands:', JSON.stringify(userCommands, null, 2))
+
+    const models = modelInfos.map(mapModelInfo)
+    const account = {
+      email: accountInfo.email,
+      organization: accountInfo.organization,
+      subscriptionType: accountInfo.subscriptionType,
+    }
+    const slashCommands = commands.map((c) => ({
+      name: c.name,
+      description: c.description,
+      argumentHint: c.argumentHint,
+      isSkill: false, // per-project isSkill tagging happens in createSession
+    }))
+
+    // Write to cache for next startup
+    setCachedResources(models, account, slashCommands)
+
+    const userAgents = discoverUserAgents()
+
+    return { models, account, slashCommands, userSkills, userCommands, userAgents }
+  })
 }
 
 app.whenReady().then(() => {

@@ -56,6 +56,48 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(claude_session_id, sort_order);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_last_user ON chat_messages(claude_session_id, role, created_at);
   `)
+
+  // Drop legacy init_cache table if it exists (data now fetched at app startup via connect-claude)
+  db.exec('DROP TABLE IF EXISTS init_cache')
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS global_resource_cache (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      models_json TEXT NOT NULL,
+      account_json TEXT NOT NULL,
+      slash_commands_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `)
+}
+
+export function getCachedResources(): { models: unknown[]; account: Record<string, unknown>; slashCommands: unknown[] } | null {
+  const row = getDb().prepare('SELECT models_json, account_json, slash_commands_json FROM global_resource_cache WHERE id = 1').get() as
+    | { models_json: string; account_json: string; slash_commands_json: string }
+    | undefined
+  if (!row) return null
+  return {
+    models: JSON.parse(row.models_json),
+    account: JSON.parse(row.account_json),
+    slashCommands: JSON.parse(row.slash_commands_json),
+  }
+}
+
+export function setCachedResources(models: unknown[], account: unknown, slashCommands: unknown[]): void {
+  getDb().prepare(`
+    INSERT INTO global_resource_cache (id, models_json, account_json, slash_commands_json, updated_at)
+    VALUES (1, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      models_json = excluded.models_json,
+      account_json = excluded.account_json,
+      slash_commands_json = excluded.slash_commands_json,
+      updated_at = excluded.updated_at
+  `).run(
+    JSON.stringify(models),
+    JSON.stringify(account),
+    JSON.stringify(slashCommands),
+    new Date().toISOString(),
+  )
 }
 
 export function closeDb(): void {

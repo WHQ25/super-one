@@ -1,11 +1,10 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AccountInfo, AgentEvent, AgentInfo, ChatMessage, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo } from '../shared/agent-types'
+import type { AgentEvent, ChatMessage, ConnectResult, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, PermissionMode, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData } from '../shared/agent-types'
 
 
 interface AgentAPI {
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
   interrupt(projectPath: string): Promise<void>
-  getAvailableModels(projectPath: string): Promise<ModelOption[]>
   respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string): Promise<void>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
   answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>): Promise<void>
@@ -17,15 +16,14 @@ interface AgentAPI {
   rewindFiles(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
   getSessionId(projectPath: string): Promise<string>
   getMcpServerStatus(projectPath: string): Promise<McpServerInfo[]>
-  getAccountInfo(projectPath: string): Promise<AccountInfo>
-  getSlashCommands(projectPath: string): Promise<SlashCommandInfo[]>
   listDirectory(projectPath: string, relativePath: string): Promise<ListDirEntry[]>
-  listAgents(projectPath: string): Promise<AgentInfo[]>
   findLineNumber(projectPath: string, filePath: string, text: string): Promise<number | null>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 
 interface AppAPI {
+  connectClaude(): Promise<ConnectResult>
+  getStartupData(): Promise<StartupData>
   selectFolder(): Promise<string | null>
   getRecentFolders(): Promise<RecentFolder[]>
   addRecentFolder(folderPath: string): Promise<boolean>

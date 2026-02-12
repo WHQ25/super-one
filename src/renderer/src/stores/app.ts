@@ -33,7 +33,7 @@ interface AppState {
   removeRecentFolder: (folderPath: string) => Promise<void>
   startInstall: () => Promise<void>
   handleSetupEvent: (event: SetupEvent) => void
-  continueToMain: () => void
+  continueToMain: () => Promise<void>
   navigateTo: (view: AppView) => void
   setSettingsTab: (tab: SettingsTab) => void
 
@@ -50,6 +50,19 @@ async function openFolderDirect(folderPath: string, set: (partial: Partial<AppSt
   const { useChatStore } = await import('./chat')
   useChatStore.getState().ensureSession(folderPath)
   useChatStore.getState().switchProject(folderPath)
+}
+
+async function refreshResourcesInBackground(): Promise<void> {
+  try {
+    const result = await window.app.connectClaude()
+    const { useChatStore } = await import('./chat')
+    useChatStore.getState().setGlobalResources(
+      result.models, result.account, result.slashCommands,
+      result.userSkills, result.userCommands, result.userAgents,
+    )
+  } catch (err) {
+    console.warn('[refreshResourcesInBackground] Failed:', err)
+  }
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -148,9 +161,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   continueToMain: async () => {
+    // Load cached resources + user resources from main process
+    const startupData = await window.app.getStartupData()
+    const { useChatStore } = await import('./chat')
+
+    if (startupData.cached) {
+      useChatStore.getState().setGlobalResources(
+        startupData.cached.models,
+        startupData.cached.account,
+        startupData.cached.slashCommands,
+        startupData.userSkills,
+        startupData.userCommands,
+        startupData.userAgents,
+      )
+    } else {
+      // First launch — no cache, enter main with empty data
+      useChatStore.getState().setGlobalResources([], {}, [], startupData.userSkills, startupData.userCommands, startupData.userAgents)
+    }
+
     set({ view: 'main' })
+
+    // Open default folder
     if (get().layoutMode === 'coding' && !get().currentFolder) {
-      // Open the most recent project if available, otherwise fall back to tmp
       const folders = get().recentFolders
       if (folders.length > 0) {
         await openFolderDirect(folders[0].path, set)
@@ -158,6 +190,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().openTmpFolder()
       }
     }
+
+    // Refresh resources in background (connect to Claude SDK, update cache + store)
+    refreshResourcesInBackground()
   },
 
   navigateTo: (view) => set({ view }),

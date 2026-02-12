@@ -3,13 +3,18 @@ import { cn } from '@/lib/utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ArrowUp, Square, ChevronDown, Paperclip, X, Folder, Bot } from 'lucide-react'
-import { FileIcon } from '@/components/ui/FileIcon'
+import { ArrowUp, Square, ChevronDown, Paperclip, X, Loader2 } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { PermissionModeSelector } from './PermissionModeSelector'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
 import { useAppStore } from '@/stores/app'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Placeholder from '@tiptap/extension-placeholder'
+import { MentionNode } from './mention-node'
+import { SlashDecoration } from './slash-decoration'
+import type { MentionNodeAttrs } from './mention-node'
 
 export interface ChatInputHandle {
   send: () => void
@@ -24,7 +29,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const text = useActiveSession((s) => s.draftText)
     const setText = useChatStore((s) => s.setDraftText)
     const [modelOpen, setModelOpen] = useState(false)
-    const textareaRef = useRef<HTMLTextAreaElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const sendMessage = useChatStore((s) => s.sendMessage)
@@ -58,30 +62,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [mentionIndex, setMentionIndex] = useState(0)
     const mentionRef = useRef<MentionPopupHandle>(null)
 
-    // Auto-focus expanded textarea when panel opens
-    useEffect(() => {
-      if (!compact && isOpen && textareaRef.current) {
-        const el = textareaRef.current
-        el.focus()
-        el.selectionStart = el.value.length
-        el.selectionEnd = el.value.length
-        const lastAt = text.lastIndexOf('@')
-        if (lastAt !== -1 && !text.slice(lastAt + 1).includes(' ')) {
-          setMentionActive(true)
-          setMentionIndex(0)
-        }
-      }
-    }, [compact, isOpen])
-
-    // Detect @ trigger position based on cursor in text
-    const mentionInfo = useMemo(() => {
-      if (!mentionActive) return null
-      const atIdx = text.lastIndexOf('@')
-      if (atIdx === -1) return null
-      const query = text.slice(atIdx + 1)
-      if (query.includes(' ')) return null
-      return { atIndex: atIdx, query }
-    }, [text, mentionActive])
+    // Track mention trigger info (computed in onUpdate, not from store text)
+    const mentionInfoRef = useRef<{ atPos: number; query: string } | null>(null)
+    // Stable refs for callbacks used inside TipTap (to avoid stale closures)
+    const mentionActiveRef = useRef(mentionActive)
+    mentionActiveRef.current = mentionActive
+    const slashCommandsRef = useRef(slashCommands)
+    slashCommandsRef.current = slashCommands
+    const mentionsRef = useRef(mentions)
+    mentionsRef.current = mentions
+    const removeMentionRef = useRef(removeMention)
+    removeMentionRef.current = removeMention
+    const processImageFilesRef = useRef<(files: FileList | File[]) => void>(() => {})
+    const setTextRef = useRef(setText)
+    setTextRef.current = setText
+    const matchingCommandsRef = useRef<typeof matchingCommands>([])
+    const slashDismissedRef = useRef(false)
+    const handleKeyDownRef = useRef<(e: KeyboardEvent) => boolean>(() => false)
 
     // Scroll selected slash command into view
     useEffect(() => {
@@ -89,35 +86,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         slashItemRefs.current.get(slashIndex)?.scrollIntoView({ block: 'nearest' })
       }
     }, [slashIndex])
-
-    // Highlighted slash command overlay content
-    const slashHighlight = useMemo(() => {
-      if (!text.startsWith('/')) return null
-      const match = text.match(/^(\/\S*)(.*)$/s)
-      if (!match) return null
-      const cmdPart = match[1]
-      const rest = match[2]
-      const cmdName = cmdPart.slice(1)
-      const exact = slashCommands.find((c) => c.name === cmdName)
-      const hasMatch = slashCommands.some((c) => c.name.toLowerCase().startsWith(cmdName.toLowerCase()))
-      if (!hasMatch && !exact) return null
-
-      const hintTokens = exact?.argumentHint?.match(/<[^>]+>|\[[^\]]+\]/g) ?? []
-      const trimmedRest = rest.trimStart()
-      const filledCount = trimmedRest ? trimmedRest.split(/\s+/).length : 0
-      const remainingHints = hintTokens.slice(filledCount)
-      const hintPrefix = rest.endsWith(' ') ? '' : ' '
-
-      return (
-        <>
-          <span className="text-blue-400">{cmdPart}</span>
-          {rest && <span className="text-foreground">{rest}</span>}
-          {remainingHints.length > 0 && (
-            <span className="text-muted-foreground">{hintPrefix}{remainingHints.join(' ')}</span>
-          )}
-        </>
-      )
-    }, [text, slashCommands])
 
     const isStreaming = status === 'streaming'
     const canSend = (text.trim().length > 0 || attachments.length > 0 || mentions.length > 0) && !isStreaming
@@ -131,24 +99,39 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         (cmd) => cmd.name.toLowerCase().startsWith(query) && !HIDDEN_COMMANDS.has(cmd.name)
       )
     }, [text, slashCommands])
+    matchingCommandsRef.current = matchingCommands
+    slashDismissedRef.current = slashDismissed
+
+    const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
     const selectSlashCommand = useCallback(
       (name: string) => {
+        const ed = editorRef.current
+        if (ed) {
+          ed.chain().focus().setContent(`/${name} `).run()
+          // Move cursor to end
+          ed.commands.focus('end')
+        }
         setText(`/${name} `)
         setSlashIndex(-1)
-        textareaRef.current?.focus()
       },
       []
     )
 
     const handleMentionSelect = useCallback(
       (value: string, action: 'navigate' | 'select') => {
-        if (!mentionInfo) return
+        const info = mentionInfoRef.current
+        const ed = editorRef.current
+        if (!info || !ed) return
 
         if (action === 'navigate') {
-          setText(text.slice(0, mentionInfo.atIndex + 1) + value)
+          // Replace @query text with new path for directory navigation
+          ed.chain()
+            .focus()
+            .deleteRange({ from: info.atPos, to: info.atPos + 1 + info.query.length })
+            .insertContentAt(info.atPos, '@' + value)
+            .run()
           setMentionIndex(0)
-          textareaRef.current?.focus()
           return
         }
 
@@ -159,71 +142,95 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         addMention({ kind, value, displayName })
 
-        // Remove @query from text (chip will render separately)
-        const before = text.slice(0, mentionInfo.atIndex)
-        const after = text.slice(mentionInfo.atIndex + 1 + mentionInfo.query.length)
-        setText(before + after)
+        // Delete @query text and insert mention node inline
+        ed.chain()
+          .focus()
+          .deleteRange({ from: info.atPos, to: info.atPos + 1 + info.query.length })
+          .insertContentAt(info.atPos, [
+            { type: 'mention', attrs: { kind, value, displayName } },
+            { type: 'text', text: ' ' },
+          ])
+          .run()
 
         setMentionActive(false)
         setMentionIndex(0)
-        textareaRef.current?.focus()
+        mentionInfoRef.current = null
       },
-      [mentionInfo, agents, addMention]
+      [agents, addMention]
     )
 
     const handleSend = useCallback(() => {
       if (!canSend) return
-      sendMessage(text.trim())
+      const ed = editorRef.current
+      // Serialize editor content with inline @mentions preserved at their positions
+      let serialized = ''
+      if (ed) {
+        ed.state.doc.descendants((node) => {
+          if (node.isText) {
+            serialized += node.text ?? ''
+          } else if (node.type.name === 'mention') {
+            serialized += `@${(node.attrs as MentionNodeAttrs).value}`
+          } else if (node.isBlock && serialized.length > 0) {
+            serialized += '\n'
+          }
+        })
+      } else {
+        serialized = text
+      }
+      sendMessage(serialized.trim())
       setText('')
+      ed?.commands.clearContent()
       setSlashIndex(-1)
       setMentionActive(false)
       setMentionIndex(0)
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto'
-      }
+      mentionInfoRef.current = null
     }, [canSend, text, sendMessage])
 
     useImperativeHandle(ref, () => ({ send: handleSend }), [handleSend])
 
-    const handleKeyDown = useCallback(
-      (e: React.KeyboardEvent) => {
-        if (e.nativeEvent.isComposing) return
+    // Core keyboard handler — works with both native and React events
+    // Returns true if the key was handled (used by ProseMirror's handleKeyDown)
+    const handleKeyDownCore = useCallback(
+      (e: KeyboardEvent | React.KeyboardEvent): boolean => {
+        const isComposing = 'nativeEvent' in e ? e.nativeEvent.isComposing : e.isComposing
+        if (isComposing) return false
 
         // Shift+Enter in collapsed mode → expand the panel
         if (e.key === 'Enter' && e.shiftKey && !isOpen) {
           e.preventDefault()
           toggleOpen()
-          return
+          return true
         }
 
         // @ mention navigation
-        if (mentionInfo && mentionActive) {
+        if (mentionInfoRef.current && mentionActive) {
           const count = mentionRef.current?.getItemCount() ?? 0
           if (e.key === 'ArrowDown') {
             e.preventDefault()
             setMentionIndex((i) => (count > 0 ? (i + 1) % count : 0))
-            return
+            return true
           }
           if (e.key === 'ArrowUp') {
             e.preventDefault()
             setMentionIndex((i) => (count > 0 ? (i <= 0 ? count - 1 : i - 1) : 0))
-            return
+            return true
           }
           if (e.key === 'Tab') {
             e.preventDefault()
             mentionRef.current?.confirmTab()
-            return
+            return true
           }
           if (e.key === 'Escape') {
             e.preventDefault()
             setMentionActive(false)
             setMentionIndex(0)
-            return
+            mentionInfoRef.current = null
+            return true
           }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
             mentionRef.current?.confirmEnter()
-            return
+            return true
           }
         }
 
@@ -232,56 +239,52 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           if (e.key === 'ArrowDown') {
             e.preventDefault()
             setSlashIndex((i) => (i + 1) % matchingCommands.length)
-            return
+            return true
           }
           if (e.key === 'ArrowUp') {
             e.preventDefault()
             setSlashIndex((i) => (i <= 0 ? matchingCommands.length - 1 : i - 1))
-            return
+            return true
           }
-          if (e.key === 'Tab' || (e.key === 'Enter' && slashIndex >= 0)) {
+          if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
             e.preventDefault()
             const idx = slashIndex >= 0 ? Math.min(slashIndex, matchingCommands.length - 1) : 0
             if (matchingCommands[idx]) {
               selectSlashCommand(matchingCommands[idx].name)
             }
-            return
+            return true
           }
           if (e.key === 'Escape') {
             setSlashIndex(-1)
             setSlashDismissed(true)
-            return
+            return true
           }
         }
 
-        // Backspace on empty text → remove last mention, then last attachment
-        if (e.key === 'Backspace' && text === '') {
-          if (mentions.length > 0) {
-            e.preventDefault()
-            removeMention(mentions[mentions.length - 1].value)
-            return
-          }
-          if (attachments.length > 0) {
+        // Backspace on empty editor → remove last attachment
+        if (e.key === 'Backspace') {
+          const ed = editorRef.current
+          if (ed && ed.isEmpty && attachments.length > 0) {
             e.preventDefault()
             removeAttachment(attachments.length - 1)
-            return
+            return true
           }
         }
 
+        // Enter → send message (Shift+Enter falls through to ProseMirror for newline)
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault()
           handleSend()
+          return true
         }
+
+        return false
       },
-      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionInfo, mentionActive, isOpen, toggleOpen, text, attachments, removeAttachment, mentions, removeMention]
+      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment]
     )
 
-    const handleInput = useCallback(() => {
-      const el = textareaRef.current
-      if (!el) return
-      el.style.height = 'auto'
-      el.style.height = `${Math.min(el.scrollHeight, 120)}px`
-    }, [])
+    // Keep ref in sync for ProseMirror's handleKeyDown (avoids stale closure)
+    handleKeyDownRef.current = handleKeyDownCore
 
     const processImageFiles = useCallback(
       (files: FileList | File[]) => {
@@ -300,30 +303,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       },
       [addAttachment]
     )
+    processImageFilesRef.current = processImageFiles
 
     const handleFileSelect = useCallback(
       (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) processImageFiles(e.target.files)
         e.target.value = ''
-      },
-      [processImageFiles]
-    )
-
-    const handlePaste = useCallback(
-      (e: React.ClipboardEvent) => {
-        const items = e.clipboardData?.items
-        if (!items) return
-        const imageFiles: File[] = []
-        for (const item of Array.from(items)) {
-          if (item.type.startsWith('image/')) {
-            const file = item.getAsFile()
-            if (file) imageFiles.push(file)
-          }
-        }
-        if (imageFiles.length > 0) {
-          e.preventDefault()
-          processImageFiles(imageFiles)
-        }
       },
       [processImageFiles]
     )
@@ -364,8 +349,128 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       [processImageFiles]
     )
 
+    // --- TipTap editor ---
+    const placeholderText = mentions.length > 0
+      ? 'Add instructions...'
+      : permissionMode === 'plan'
+        ? 'Plan mode — describe your intent...'
+        : 'Ask anything, @ to add files, / for commands'
+
+    const editor = useEditor({
+      extensions: [
+        StarterKit.configure({
+          heading: false,
+          blockquote: false,
+          bulletList: false,
+          orderedList: false,
+          codeBlock: false,
+          horizontalRule: false,
+          listItem: false,
+          code: false,
+          bold: false,
+          italic: false,
+          strike: false,
+          dropcursor: false,
+        }),
+        Placeholder.configure({ placeholder: placeholderText }),
+        MentionNode,
+        SlashDecoration.configure({ slashCommands }),
+      ],
+      content: '',
+      editorProps: {
+        attributes: {
+          class: 'w-full min-h-[60px] max-h-[120px] overflow-y-auto text-sm leading-5 outline-none text-foreground',
+        },
+        // Intercept keys BEFORE ProseMirror handles them
+        handleKeyDown: (_view, event) => {
+          return handleKeyDownRef.current(event)
+        },
+        handlePaste: (_view, event) => {
+          const items = event.clipboardData?.items
+          if (!items) return false
+          const imageFiles: File[] = []
+          for (const item of Array.from(items)) {
+            if (item.type.startsWith('image/')) {
+              const file = item.getAsFile()
+              if (file) imageFiles.push(file)
+            }
+          }
+          if (imageFiles.length > 0) {
+            event.preventDefault()
+            processImageFilesRef.current(imageFiles)
+            return true
+          }
+          return false
+        },
+        // Drop handled by outer container's onDrop to avoid duplicate processing
+        handleDrop: () => true,
+      },
+      onUpdate: ({ editor: ed }) => {
+        const plainText = ed.getText()
+        setTextRef.current(plainText)
+        setSlashIndex(-1)
+        setSlashDismissed(false)
+
+        // Sync mention nodes with store
+        const editorMentions: MentionNodeAttrs[] = []
+        ed.state.doc.descendants((node) => {
+          if (node.type.name === 'mention') {
+            editorMentions.push(node.attrs as MentionNodeAttrs)
+          }
+        })
+        // Remove mentions from store that are no longer in editor
+        const editorValues = new Set(editorMentions.map((m) => m.value))
+        for (const m of mentionsRef.current) {
+          if (!editorValues.has(m.value)) {
+            removeMentionRef.current(m.value)
+          }
+        }
+
+        // Detect @ mention trigger within the current paragraph
+        const { from } = ed.state.selection
+        const $pos = ed.state.doc.resolve(from)
+        const textInParent = $pos.parent.textBetween(0, $pos.parentOffset, undefined, '\0')
+        const lastAt = textInParent.lastIndexOf('@')
+        if (lastAt !== -1) {
+          const afterAt = textInParent.slice(lastAt + 1)
+          if (!afterAt.includes(' ') && !afterAt.includes('\0')) {
+            if (!mentionActiveRef.current) {
+              setMentionIndex(0)
+            }
+            setMentionActive(true)
+            // $pos.start() = start of paragraph content; offset 1:1 within inline content
+            mentionInfoRef.current = { atPos: $pos.start() + lastAt, query: afterAt }
+          } else {
+            setMentionActive(false)
+            mentionInfoRef.current = null
+          }
+        } else {
+          setMentionActive(false)
+          mentionInfoRef.current = null
+        }
+      },
+    })
+    editorRef.current = editor
+
+    // Auto-focus when panel opens
+    useEffect(() => {
+      if (!compact && isOpen && editor) {
+        editor.commands.focus('end')
+      }
+    }, [compact, isOpen, editor])
+
+    // Update SlashDecoration storage when slashCommands change
+    useEffect(() => {
+      if (editor) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(editor.storage as any).slashDecoration.slashCommands = slashCommands
+        // Force decoration recalculation by dispatching an empty transaction
+        editor.view.dispatch(editor.state.tr)
+      }
+    }, [slashCommands, editor])
+
     const currentModelName =
-      (availableModels.find((m) => m.id === selectedModel)?.name ?? selectedModel) || 'Loading...'
+      (availableModels.find((m) => m.id === selectedModel)?.name ?? selectedModel) || null
 
     if (compact) {
       return (
@@ -381,7 +486,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               toggleOpen()
             }
           }}
-          onKeyDown={handleKeyDown}
+          onKeyDown={handleKeyDownCore}
           placeholder={permissionMode === 'plan' ? 'Plan mode — describe your intent...' : 'Ask anything...'}
           className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none"
         />
@@ -451,14 +556,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         )}
 
         {/* @ mention autocomplete */}
-        {mentionInfo && mentionActive && matchingCommands.length === 0 && (
+        {mentionInfoRef.current && mentionActive && matchingCommands.length === 0 && (
           <MentionPopup
             ref={mentionRef}
-            query={mentionInfo.query}
+            query={mentionInfoRef.current.query}
             selectedIndex={mentionIndex}
             onSelect={handleMentionSelect}
             onSetSelectedIndex={setMentionIndex}
-            onClose={() => { setMentionActive(false); setMentionIndex(0) }}
+            onClose={() => { setMentionActive(false); setMentionIndex(0); mentionInfoRef.current = null }}
             rounded={isCoding}
           />
         )}
@@ -487,79 +592,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           </div>
         )}
 
-        <div className="relative flex w-full flex-wrap items-center gap-1">
-          {/* Mention chips */}
-          {mentions.map((m) => (
-            <span
-              key={m.value}
-              className="inline-flex shrink-0 items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs text-foreground"
-            >
-              {m.kind === 'agent' ? (
-                <Bot className="size-3 text-purple-400" />
-              ) : m.kind === 'directory' ? (
-                <Folder className="size-3 text-blue-400" />
-              ) : (
-                <FileIcon name={m.displayName} size={12} />
-              )}
-              <span className="max-w-[120px] truncate">{m.displayName}</span>
-              <button
-                onClick={() => removeMention(m.value)}
-                className="ml-0.5 text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-2.5" />
-              </button>
-            </span>
-          ))}
-
-          {/* Textarea with overlay */}
-          <div className="relative min-w-[80px] flex-1">
-            {slashHighlight && (
-              <div
-                className="pointer-events-none absolute inset-0 whitespace-pre-wrap break-words text-sm leading-5"
-                aria-hidden
-              >
-                {slashHighlight}
-              </div>
-            )}
-            <textarea
-              ref={textareaRef}
-              value={text}
-              onPaste={handlePaste}
-              onChange={(e) => {
-                const val = e.target.value
-                setText(val)
-                setSlashIndex(-1)
-                setSlashDismissed(false)
-
-                // Detect @ mention trigger
-                const cursorPos = e.target.selectionStart ?? val.length
-                const textBeforeCursor = val.slice(0, cursorPos)
-                const lastAt = textBeforeCursor.lastIndexOf('@')
-                if (lastAt !== -1) {
-                  const afterAt = textBeforeCursor.slice(lastAt + 1)
-                  if (!afterAt.includes(' ')) {
-                    if (!mentionActive) {
-                      setMentionIndex(0)
-                    }
-                    setMentionActive(true)
-                  } else {
-                    setMentionActive(false)
-                  }
-                } else {
-                  setMentionActive(false)
-                }
-
-                handleInput()
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder={mentions.length > 0 ? 'Add instructions...' : permissionMode === 'plan' ? 'Plan mode — describe your intent...' : 'Ask anything, @ to add files, / for commands'}
-              rows={isCoding ? 2 : 1}
-              className={cn(
-                'w-full resize-none bg-transparent text-sm leading-5 placeholder-muted-foreground outline-none',
-                slashHighlight ? 'text-transparent caret-foreground' : 'text-foreground'
-              )}
-            />
-          </div>
+        {/* TipTap editor */}
+        <div className="relative w-full">
+          <EditorContent editor={editor} />
         </div>
 
         <div className="mt-1 flex items-center justify-between">
@@ -568,7 +603,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             <Popover open={modelOpen} onOpenChange={setModelOpen}>
               <PopoverTrigger asChild>
                 <button className="flex items-center gap-0.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
-                  <span className="max-w-[140px] truncate">{currentModelName}</span>
+                  {currentModelName ? (
+                    <span className="max-w-[140px] truncate">{currentModelName}</span>
+                  ) : (
+                    <Loader2 className="size-3 animate-spin" />
+                  )}
                   <ChevronDown className="size-3" />
                 </button>
               </PopoverTrigger>

@@ -161,6 +161,7 @@ export interface SlashCommandInfo {
 export interface AgentInfo {
   name: string
   description: string
+  model?: string
   source: 'user' | 'project' | 'plugin'
 }
 
@@ -212,7 +213,7 @@ export type AgentEventBase =
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
   | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number }
-  | { type: 'init_ready'; models: ModelOption[]; slashCommands: SlashCommandInfo[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo }
+  | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
 
@@ -400,10 +401,32 @@ export interface LoadSessionMessagesResult {
   hasMore: boolean
 }
 
+// --- Connect result (global init at app startup) ---
+
+export interface ConnectResult {
+  models: ModelOption[]
+  account: AccountInfo
+  slashCommands: SlashCommandInfo[]
+  userSkills: SlashCommandInfo[]
+  userCommands: SlashCommandInfo[]
+  userAgents: AgentInfo[]
+}
+
+// --- Startup data (cached resources + user resources) ---
+
+export interface StartupData {
+  cached: { models: ModelOption[]; account: AccountInfo; slashCommands: SlashCommandInfo[] } | null
+  userSkills: SlashCommandInfo[]
+  userCommands: SlashCommandInfo[]
+  userAgents: AgentInfo[]
+}
+
 // --- IPC channel constants ---
 
 export const AgentIpcChannels = {
   // App-level channels
+  CONNECT_CLAUDE: 'app:connect-claude',
+  GET_STARTUP_DATA: 'app:get-startup-data',
   SELECT_FOLDER: 'app:select-folder',
   GET_RECENT_FOLDERS: 'app:get-recent-folders',
   ADD_RECENT_FOLDER: 'app:add-recent-folder',
@@ -418,7 +441,6 @@ export const AgentIpcChannels = {
   // Agent channels
   SEND_MESSAGE: 'agent:send-message',
   INTERRUPT: 'agent:interrupt',
-  AVAILABLE_MODELS: 'agent:available-models',
   EVENT: 'agent:event',
   PERMISSION_RESPONSE: 'agent:permission-response',
   SET_PERMISSION_MODE: 'agent:set-permission-mode',
@@ -429,10 +451,7 @@ export const AgentIpcChannels = {
   REWIND_FILES: 'agent:rewind-files',
   GET_SESSION_ID: 'agent:get-session-id',
   MCP_SERVER_STATUS: 'agent:mcp-server-status',
-  ACCOUNT_INFO: 'agent:account-info',
-  SLASH_COMMANDS: 'agent:slash-commands',
   LIST_DIRECTORY: 'agent:list-directory',
-  LIST_AGENTS: 'agent:list-agents',
   FIND_LINE_NUMBER: 'agent:find-line-number',
 
   // Plugins

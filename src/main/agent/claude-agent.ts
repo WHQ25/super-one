@@ -2,102 +2,12 @@ import { existsSync, readdirSync, readFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
-import type { AccountInfo, AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SandboxInfo, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, PermissionMode, RewindFilesResult, SandboxInfo, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
-import { mapModelInfo } from './claude-models'
 import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
+import { discoverSkills, discoverProjectCommands, discoverProjectAgents } from './discover-resources'
 
-/** Scan skill directories and return a Set of skill names. */
-function discoverSkillNames(cwd: string): Set<string> {
-  const names = new Set<string>()
-
-  // 1. User + project skills
-  for (const dir of [join(homedir(), '.claude', 'skills'), join(cwd, '.claude', 'skills')]) {
-    if (!existsSync(dir)) continue
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (existsSync(join(dir, entry.name, 'SKILL.md'))) {
-        names.add(entry.name)
-      }
-    }
-  }
-
-  // 2. Plugin skills
-  const pluginsFile = join(homedir(), '.claude', 'plugins', 'installed_plugins.json')
-  if (existsSync(pluginsFile)) {
-    try {
-      const data = JSON.parse(readFileSync(pluginsFile, 'utf-8'))
-      const plugins: Record<string, Array<{ scope?: string; installPath?: string; projectPath?: string }>> = data.plugins ?? {}
-      for (const entries of Object.values(plugins)) {
-        for (const entry of entries) {
-          const { scope, installPath, projectPath } = entry
-          if (!installPath) continue
-          const include = scope === 'user' || ((scope === 'project' || scope === 'local') && projectPath === cwd)
-          if (!include) continue
-          const skillsDir = join(installPath, 'skills')
-          if (!existsSync(skillsDir)) continue
-          for (const s of readdirSync(skillsDir, { withFileTypes: true })) {
-            if (existsSync(join(skillsDir, s.name, 'SKILL.md'))) {
-              names.add(s.name)
-            }
-          }
-        }
-      }
-    } catch {}
-  }
-
-  return names
-}
-
-/** Read .md files from a directory and return AgentInfo entries. */
-function scanAgentDir(dir: string, source: AgentInfo['source'], namePrefix = ''): AgentInfo[] {
-  if (!existsSync(dir)) return []
-  const agents: AgentInfo[] = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-    const name = namePrefix + entry.name.replace(/\.md$/, '')
-    let description = ''
-    try {
-      const first = readFileSync(join(dir, entry.name), 'utf-8').split('\n')[0]
-      description = first.replace(/^#+\s*/, '').trim()
-    } catch {}
-    agents.push({ name, description, source })
-  }
-  return agents
-}
-
-/** Discover agents from user, project, and plugin sources. */
-function discoverAgents(cwd: string): AgentInfo[] {
-  const agents: AgentInfo[] = []
-
-  // 1. User agents: ~/.claude/agents/*.md
-  agents.push(...scanAgentDir(join(homedir(), '.claude', 'agents'), 'user'))
-
-  // 2. Project agents: {cwd}/.claude/agents/*.md
-  agents.push(...scanAgentDir(join(cwd, '.claude', 'agents'), 'project'))
-
-  // 3. Plugin agents
-  const pluginsFile = join(homedir(), '.claude', 'plugins', 'installed_plugins.json')
-  if (existsSync(pluginsFile)) {
-    try {
-      const data = JSON.parse(readFileSync(pluginsFile, 'utf-8'))
-      const plugins: Record<string, Array<{ scope?: string; installPath?: string; projectPath?: string }>> = data.plugins ?? {}
-      for (const [pluginKey, entries] of Object.entries(plugins)) {
-        // Extract the plugin name (part before @, e.g. "code-simplifier" from "code-simplifier@claude-plugins-official")
-        const pluginName = pluginKey.split('@')[0]
-        for (const entry of entries) {
-          const { scope, installPath, projectPath } = entry
-          if (!installPath) continue
-          const include = scope === 'user' || ((scope === 'project' || scope === 'local') && projectPath === cwd)
-          if (!include) continue
-          agents.push(...scanAgentDir(join(installPath, 'agents'), 'plugin', `${pluginName}:`))
-        }
-      }
-    } catch {}
-  }
-
-  return agents
-}
 
 /** Read sandbox settings from Claude Code settings files (local > project > user). */
 function readSandboxInfo(cwd: string): SandboxInfo {
@@ -145,12 +55,7 @@ export class ClaudeAgent {
   private turnResolve: (() => void) | null = null
 
   private ready = false
-  private cachedModels: ModelOption[] = []
-  private cachedSlashCommands: SlashCommandInfo[] | null = null
-  private cachedAccount: AccountInfo | null = null
   private currentPermissionMode: PermissionMode = 'default'
-  private cachedAgents: AgentInfo[] = []
-  private initReady = false // true after initializationResult() resolves
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
   private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
@@ -165,8 +70,6 @@ export class ClaudeAgent {
     this.ready = true
 
     // Cache agents at init time
-    this.cachedAgents = discoverAgents(config.cwd)
-
     // Eagerly create session — triggers system init, makes slash commands/models/MCP available
     this.createSession(resumeSessionId)
   }
@@ -196,38 +99,28 @@ export class ClaudeAgent {
       () => this.interrupted,
       (id) => {
         this.sessionId = id
-        // If initializationResult() already resolved, emit session_init now
-        if (this.initReady) this.emitSessionInit()
+        this.emitSessionInit()
       },
     )
 
     this.sessionQuery = handle.query
     this.iterationDone = handle.iterationDone
 
-    // Eagerly fetch init result via control channel and cache everything
-    handle.query.initializationResult().then((init) => {
-      const skillNames = discoverSkillNames(this.config!.cwd)
-
-      this.cachedModels = init.models.map(mapModelInfo)
-      this.cachedAccount = {
-        email: init.account.email,
-        organization: init.account.organization,
-        subscriptionType: init.account.subscriptionType,
-      }
-      this.cachedSlashCommands = init.commands.map((c) => ({
-        name: c.name,
-        description: c.description,
-        argumentHint: c.argumentHint,
-        isSkill: skillNames.has(c.name),
-      }))
-
-      this.initReady = true
-
-      // If sessionId already arrived via iterator, emit session_init now
-      if (this.sessionId) this.emitSessionInit()
-
-      this.emit({ type: 'init_ready', models: this.cachedModels, slashCommands: this.cachedSlashCommands, cwd: this.config!.cwd, homedir: homedir(), sandboxInfo: readSandboxInfo(this.config!.cwd) })
-    }).catch(() => {})
+    // Emit project-level init_ready immediately (all data comes from filesystem reads).
+    // Models, account, and base slash commands are already global (from connecting page).
+    // Only project-level data is needed: skills, projectCommands, cwd, sandboxInfo.
+    const skills = discoverSkills(this.config!.cwd)
+    const projectCommands = discoverProjectCommands(this.config!.cwd)
+    const projectAgents = discoverProjectAgents(this.config!.cwd)
+    this.emit({
+      type: 'init_ready',
+      skills,
+      projectCommands,
+      projectAgents,
+      cwd: this.config!.cwd,
+      homedir: homedir(),
+      sandboxInfo: readSandboxInfo(this.config!.cwd),
+    })
   }
 
   async sendMessage(request: SendMessageRequest): Promise<void> {
@@ -379,17 +272,6 @@ export class ClaudeAgent {
     }
   }
 
-  async getAccountInfo(): Promise<AccountInfo> {
-    return this.cachedAccount ?? {}
-  }
-
-  async getSlashCommands(): Promise<SlashCommandInfo[]> {
-    return this.cachedSlashCommands ?? []
-  }
-
-  getAgents(): AgentInfo[] {
-    return this.cachedAgents
-  }
 
   listDirectory(relativePath: string): ListDirEntry[] {
     if (!this.config) return []
@@ -466,10 +348,7 @@ export class ClaudeAgent {
     this.sessionAbort = null
     this.iterationDone = null
     this.sessionId = ''
-    this.initReady = false
     this.currentMessageId = ''
-    this.cachedSlashCommands = null
-    this.cachedAccount = null
   }
 
   async dispose(): Promise<void> {
@@ -489,25 +368,20 @@ export class ClaudeAgent {
     this.ready = false
     this.config = null
     this.onEvent = null
-    this.cachedModels = []
   }
 
-  async getAvailableModels(): Promise<ModelOption[]> {
-    return this.cachedModels
-  }
-
-  /** Emit session_init once both sessionId and init data are available. */
+  /** Emit session_init once sessionId is available. */
   private emitSessionInit(): void {
-    if (!this.sessionId || !this.cachedSlashCommands) return
+    if (!this.sessionId) return
     this.emit({
       type: 'session_init',
       session: {
         sessionId: this.sessionId,
-        model: this.cachedModels[0]?.id ?? '',
+        model: '',
         tools: [],
         mcpServers: [],
         permissionMode: this.currentPermissionMode,
-        slashCommands: this.cachedSlashCommands.map((c) => c.name),
+        slashCommands: [],
         skills: [],
         claudeCodeVersion: '',
         cwd: this.config!.cwd,

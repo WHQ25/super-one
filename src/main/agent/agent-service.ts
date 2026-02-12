@@ -145,30 +145,12 @@ export class AgentService {
       return this.getAgent(projectPath).getMcpServerStatus()
     })
 
-    ipcMain.handle(AgentIpcChannels.SLASH_COMMANDS, async (_event, projectPath: string) => {
-      return this.getAgent(projectPath).getSlashCommands()
-    })
-
     ipcMain.handle(AgentIpcChannels.LIST_DIRECTORY, async (_event, projectPath: string, relativePath: string) => {
       return this.getAgent(projectPath).listDirectory(relativePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.LIST_AGENTS, async (_event, projectPath: string) => {
-      return this.getAgent(projectPath).getAgents()
-    })
-
     ipcMain.handle(AgentIpcChannels.FIND_LINE_NUMBER, async (_event, projectPath: string, filePath: string, text: string) => {
       return this.getAgent(projectPath).findLineNumber(filePath, text)
-    })
-
-    // --- Global handlers (no projectPath) ---
-
-    ipcMain.handle(AgentIpcChannels.AVAILABLE_MODELS, async (_event, projectPath: string) => {
-      return this.getAgent(projectPath).getAvailableModels()
-    })
-
-    ipcMain.handle(AgentIpcChannels.ACCOUNT_INFO, async (_event, projectPath: string) => {
-      return this.getAgent(projectPath).getAccountInfo()
     })
 
     // --- Plugins (session-scoped — need cwd) ---
@@ -398,7 +380,6 @@ export class AgentService {
 
     ipcMain.removeHandler(AgentIpcChannels.SEND_MESSAGE)
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
-    ipcMain.removeHandler(AgentIpcChannels.AVAILABLE_MODELS)
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
     ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)
     ipcMain.removeHandler(AgentIpcChannels.ANSWER_QUESTION)
@@ -408,10 +389,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.REWIND_FILES)
     ipcMain.removeHandler(AgentIpcChannels.GET_SESSION_ID)
     ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_STATUS)
-    ipcMain.removeHandler(AgentIpcChannels.ACCOUNT_INFO)
-    ipcMain.removeHandler(AgentIpcChannels.SLASH_COMMANDS)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
-    ipcMain.removeHandler(AgentIpcChannels.LIST_AGENTS)
     ipcMain.removeHandler(AgentIpcChannels.FIND_LINE_NUMBER)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ)

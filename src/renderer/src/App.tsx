@@ -72,7 +72,7 @@ function App(): React.JSX.Element {
         </div>
         {view === 'startup' && <StartupPage />}
         {view === 'setup' && <SetupPage />}
-        {view === 'settings' && <SettingsLayout />}
+{view === 'settings' && <SettingsLayout />}
       </div>
     )
   }

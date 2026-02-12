@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 
@@ -47,6 +47,8 @@ export interface SessionState {
   planApprovalOutcome: { approved: boolean; feedback?: string } | null
 
   slashCommands: SlashCommandInfo[]
+  _projectSkills: SlashCommandInfo[]
+  _projectCommands: SlashCommandInfo[]
   agents: AgentInfo[]
   subagentTokens: Record<string, { input: number; output: number }>
 
@@ -95,6 +97,8 @@ export function createDefaultSessionState(): SessionState {
     pendingPlanApproval: null,
     planApprovalOutcome: null,
     slashCommands: [],
+    _projectSkills: [],
+    _projectCommands: [],
     agents: [],
     subagentTokens: {},
     cwd: '',
@@ -128,6 +132,14 @@ interface ChatStore {
   isOpen: boolean
   corner: Corner
   availableModels: ModelOption[]
+  account: AccountInfo
+  globalSlashCommands: SlashCommandInfo[]
+  userSkills: SlashCommandInfo[]
+  userCommands: SlashCommandInfo[]
+  userAgents: AgentInfo[]
+
+  // Global resource setter
+  setGlobalResources: (models: ModelOption[], account: AccountInfo, slashCommands: SlashCommandInfo[], userSkills: SlashCommandInfo[], userCommands: SlashCommandInfo[], userAgents: AgentInfo[]) => void
 
   // Event handling
   handleAgentEvent: (event: AgentEvent) => void
@@ -152,7 +164,6 @@ interface ChatStore {
 
   // Model actions
   setSelectedModel: (model: string) => void
-  fetchModels: () => Promise<void>
 
   // Attachment actions
   addAttachment: (attachment: ImageAttachment) => void
@@ -172,14 +183,10 @@ interface ChatStore {
   respondToPlanApproval: (requestId: string, approved: boolean, feedback?: string) => void
 
   // Slash command actions
-  fetchSlashCommands: () => Promise<void>
   dismissSlashCommandOutput: () => void
 
   // Todo
   toggleTodos: () => void
-
-  // Agent actions (for @ mention)
-  fetchAgents: () => Promise<void>
 
   // Mention chips
   addMention: (mention: Mention) => void
@@ -405,13 +412,13 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
         }),
       }
 
-    case 'init_ready':
+    case 'init_ready': {
       return {
-        slashCommands: event.slashCommands,
         cwd: event.cwd,
         homedir: event.homedir,
         sandboxInfo: event.sandboxInfo,
       }
+    }
 
     case 'compact_boundary':
       return {
@@ -514,6 +521,23 @@ function _saveSessionSnapshot(projectPath: string, session: SessionState): void 
     .catch(() => { /* best-effort */ })
 }
 
+// --- Helpers ---
+
+function buildSlashCommands(
+  globalSlashCommands: SlashCommandInfo[],
+  userSkills: SlashCommandInfo[],
+  userCommands: SlashCommandInfo[],
+  projectSkills: SlashCommandInfo[],
+  projectCommands: SlashCommandInfo[],
+): SlashCommandInfo[] {
+  const skillSet = new Set([...userSkills, ...projectSkills].map((sk) => sk.name))
+  const tagged = globalSlashCommands.map((c) => ({ ...c, isSkill: skillSet.has(c.name) }))
+  const existing = new Set(tagged.map((c) => c.name))
+  const extra = [...userSkills, ...userCommands, ...projectSkills, ...projectCommands]
+    .filter((c) => !existing.has(c.name))
+  return [...tagged, ...extra]
+}
+
 // --- Store implementation ---
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -522,6 +546,51 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isOpen: false,
   corner: 'br',
   availableModels: [],
+  account: {},
+  globalSlashCommands: [],
+  userSkills: [],
+  userCommands: [],
+  userAgents: [],
+
+  setGlobalResources: (models, account, slashCommands, userSkills, userCommands, userAgents) => {
+    set((s) => {
+      const updates: Partial<ChatStore> = {
+        availableModels: models,
+        account,
+        globalSlashCommands: slashCommands,
+        userSkills,
+        userCommands,
+        userAgents,
+      }
+
+      // Rebuild per-session derived data (selectedModel + slashCommands)
+      const sessions = { ...s.projectSessions }
+      let changed = false
+      for (const [path, session] of Object.entries(sessions)) {
+        let sessionChanged = false
+        const patched = { ...session }
+
+        // Auto-select first model if unset
+        if (!patched.selectedModel && models.length > 0) {
+          patched.selectedModel = models[0].id
+          sessionChanged = true
+        }
+
+        // Rebuild slashCommands if session has received init_ready
+        if (patched._projectSkills.length > 0 || patched._projectCommands.length > 0 || patched.session) {
+          patched.slashCommands = buildSlashCommands(slashCommands, userSkills, userCommands, patched._projectSkills, patched._projectCommands)
+          sessionChanged = true
+        }
+
+        if (sessionChanged) {
+          sessions[path] = patched
+          changed = true
+        }
+      }
+      if (changed) updates.projectSessions = sessions
+      return updates
+    })
+  },
 
   handleAgentEvent: (event: AgentEvent) => {
     const projectPath = event.projectPath
@@ -622,27 +691,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }
 
-      // Handle init_ready: update global availableModels + selectedModel
+      // Handle init_ready: store project-level data, rebuild slashCommands, set agents + selectedModel
       if (event.type === 'init_ready') {
-        result.availableModels = event.models
-        if (!updatedSession.selectedModel && event.models[0]) {
-          updatedSession.selectedModel = event.models[0].id
+        updatedSession._projectSkills = event.skills
+        updatedSession._projectCommands = event.projectCommands
+        updatedSession.slashCommands = buildSlashCommands(
+          s.globalSlashCommands, s.userSkills, s.userCommands,
+          event.skills, event.projectCommands,
+        )
+        updatedSession.agents = [...s.userAgents, ...event.projectAgents]
+
+        const globalModels = s.availableModels
+        if (!updatedSession.selectedModel && globalModels[0]) {
+          updatedSession.selectedModel = globalModels[0].id
         }
       }
 
-      // On session_init, create session in DB and trigger resource fetches
+      // On session_init, create session in DB
       if (event.type === 'session_init' && event.session) {
         const snapshot = updatedSession
         setTimeout(() => _saveSessionSnapshot(projectPath, snapshot), 0)
-        // Models are global (account-level) — fetch once regardless of active project
-        setTimeout(() => get().fetchModels(), 0)
-        // Slash commands and agents are per-project — only fetch for the active project
-        if (projectPath === s.activeProject) {
-          setTimeout(() => {
-            get().fetchSlashCommands()
-            get().fetchAgents()
-          }, 0)
-        }
       }
 
       // Auto-save on every message complete/interrupted/error — capture snapshot immediately
@@ -674,13 +742,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return updates
     })
 
-    // Slash commands and agents are per-project (folder-level).
-    // Always re-fetch when switching to a project whose agent is running.
-    const session = get().projectSessions[projectPath]
-    if (session?.session) {
-      get().fetchSlashCommands()
-      get().fetchAgents()
-    }
   },
 
   ensureSession: (projectPath: string) => {
@@ -689,7 +750,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return {
         projectSessions: {
           ...s.projectSessions,
-          [projectPath]: createDefaultSessionState(),
+          [projectPath]: { ...createDefaultSessionState(), agents: s.userAgents },
         },
       }
     })
@@ -787,7 +848,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messages: [], session: null, totalCostUsd: 0, contextTokens: 0,
       status: 'idle', pendingPermission: null, pendingQuestion: null,
       pendingPlanApproval: null, planApprovalOutcome: null,
-      slashCommands: [], mentions: [], subagentTokens: {},
+      mentions: [], subagentTokens: {},
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
       _historySessionId: null,
     })))
@@ -811,25 +872,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateSession(s, activeProject, () => ({ selectedModel: model })))
   },
 
-  fetchModels: async () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    try {
-      const models = await window.agent.getAvailableModels(activeProject)
-      if (models.length > 0) {
-        set((s) => ({
-          availableModels: models,
-          ...updateSession(s, activeProject, (sess) => ({
-            selectedModel: sess.selectedModel || models[0].id,
-          })),
-        }))
-      } else {
-        setTimeout(() => get().fetchModels(), 2000)
-      }
-    } catch {
-      setTimeout(() => get().fetchModels(), 2000)
-    }
-  },
 
   addAttachment: (attachment) => {
     const { activeProject } = get()
@@ -900,20 +942,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     get().setPermissionMode(next)
   },
 
-  fetchSlashCommands: async () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    try {
-      const cmds = await window.agent.getSlashCommands(activeProject)
-      if (cmds.length > 0) {
-        set((s) => updateSession(s, activeProject, () => ({ slashCommands: cmds })))
-      } else {
-        setTimeout(() => get().fetchSlashCommands(), 2000)
-      }
-    } catch {
-      setTimeout(() => get().fetchSlashCommands(), 2000)
-    }
-  },
 
   dismissSlashCommandOutput: () => {
     const { activeProject } = get()
@@ -930,16 +958,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }))
   },
 
-  fetchAgents: async () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    try {
-      const agents = await window.agent.listAgents(activeProject)
-      set((s) => updateSession(s, activeProject, () => ({ agents })))
-    } catch {
-      setTimeout(() => get().fetchAgents(), 2000)
-    }
-  },
 
   addMention: (mention) => {
     const { activeProject } = get()
@@ -1079,7 +1097,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         totalCostUsd: savedCost, contextTokens: savedTokens,
         status: 'idle', pendingPermission: null, pendingQuestion: null,
         draftText: '', attachments: [], mentions: [],
-        slashCommands: [], showHistory: false, _historySessionId: sessionId,
+        showHistory: false, _historySessionId: sessionId,
       })))
     } else {
       // Idle → direct swap
@@ -1088,7 +1106,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         totalCostUsd: savedCost, contextTokens: savedTokens,
         status: 'idle', pendingPermission: null, pendingQuestion: null,
         draftText: '', attachments: [], mentions: [],
-        slashCommands: [], showHistory: false, _historySessionId: sessionId,
+        showHistory: false, _historySessionId: sessionId,
       })))
     }
 

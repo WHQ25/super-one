@@ -9,9 +9,6 @@ const agentAPI = {
   interrupt: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, projectPath),
 
-  getAvailableModels: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.AVAILABLE_MODELS, projectPath),
-
   respondToPermission: (projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, projectPath, requestId, allow, alwaysAllow, reason),
 
@@ -45,17 +42,8 @@ const agentAPI = {
   getMcpServerStatus: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_SERVER_STATUS, projectPath),
 
-  getAccountInfo: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ACCOUNT_INFO, projectPath),
-
-  getSlashCommands: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SLASH_COMMANDS, projectPath),
-
   listDirectory: (projectPath: string, relativePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.LIST_DIRECTORY, projectPath, relativePath),
-
-  listAgents: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.LIST_AGENTS, projectPath),
 
   findLineNumber: (projectPath: string, filePath: string, text: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FIND_LINE_NUMBER, projectPath, filePath, text),
@@ -72,6 +60,12 @@ const agentAPI = {
 }
 
 const appAPI = {
+  connectClaude: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CLAUDE),
+
+  getStartupData: () =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_STARTUP_DATA),
+
   selectFolder: () =>
     ipcRenderer.invoke(AgentIpcChannels.SELECT_FOLDER),
 

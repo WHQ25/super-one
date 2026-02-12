@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
-import { Folder } from 'lucide-react'
+import { Bot, Folder } from 'lucide-react'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { cn } from '@/lib/utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
@@ -207,13 +207,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                         : 'text-foreground hover:bg-muted/50'
                     )}
                   >
-                    <span className="font-medium text-purple-400 truncate">@{agent.name}</span>
+                    <Bot className="size-3.5 shrink-0 text-purple-400" />
+                    <span className="shrink-0 font-medium text-purple-400">{agent.name}</span>
                     <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
-                      agent
+                      {agent.model || 'inherit'}
                     </span>
-                    {agent.description && (
-                      <span className="text-muted-foreground truncate">{agent.description}</span>
-                    )}
                   </button>
                 )
               })}

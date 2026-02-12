@@ -134,6 +134,7 @@ export class ClaudeAgent {
   // Session state (lives until resetSession or dispose)
   private bridge: MessageBridge | null = null
   private sessionQuery: Query | null = null
+  private sessionAbort: AbortController | null = null
   private iterationDone: Promise<void> | null = null
   private sessionId = ''
 
@@ -175,6 +176,7 @@ export class ClaudeAgent {
     if (this.bridge) return
 
     this.bridge = new MessageBridge()
+    this.sessionAbort = new AbortController()
     const { canUseTool, trackPlanFile } = createCanUseTool(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, (e) => this.emit(e))
 
     const handle = createSessionQuery(
@@ -186,6 +188,7 @@ export class ClaudeAgent {
         canUseTool,
         trackPlanFile,
         resume: resumeSessionId,
+        abortController: this.sessionAbort,
       },
       (e) => this.emit(e),
       () => this.currentMessageId,
@@ -444,6 +447,7 @@ export class ClaudeAgent {
     this.turnResolve?.()
     this.turnResolve = null
 
+    this.sessionAbort?.abort()
     if (this.sessionQuery) {
       this.sessionQuery.close()
     }
@@ -459,6 +463,7 @@ export class ClaudeAgent {
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
     this.bridge = null
     this.sessionQuery = null
+    this.sessionAbort = null
     this.iterationDone = null
     this.sessionId = ''
     this.initReady = false
@@ -468,7 +473,19 @@ export class ClaudeAgent {
   }
 
   async dispose(): Promise<void> {
-    await this.resetSession()
+    // Force-close without waiting for iteration loop (unlike resetSession which
+    // awaits iterationDone to ensure clean state for a new session).
+    this.turnResolve?.()
+    this.turnResolve = null
+    this.sessionAbort?.abort()
+    if (this.bridge) {
+      this.bridge.close()
+    }
+    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
+    this.bridge = null
+    this.sessionQuery = null
+    this.sessionAbort = null
+    this.iterationDone = null
     this.ready = false
     this.config = null
     this.onEvent = null

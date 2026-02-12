@@ -9,6 +9,7 @@ export interface SessionQueryOptions {
   canUseTool: CanUseTool
   trackPlanFile?: (filePath: string) => void
   resume?: string
+  abortController?: AbortController
 }
 
 export interface SessionQueryHandle {
@@ -38,6 +39,7 @@ export function createSessionQuery(
       enableFileCheckpointing: true,
       settingSources: ['user', 'project', 'local'],
       resume: options.resume,
+      abortController: options.abortController,
     },
   })
 

@@ -630,21 +630,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      // On session_init, create session in DB, save any pending messages, and trigger resource fetches
+      // On session_init, create session in DB and trigger resource fetches
       if (event.type === 'session_init' && event.session) {
         const snapshot = updatedSession
         setTimeout(() => _saveSessionSnapshot(projectPath, snapshot), 0)
+        // Models are global (account-level) — fetch once regardless of active project
+        setTimeout(() => get().fetchModels(), 0)
+        // Slash commands and agents are per-project — only fetch for the active project
         if (projectPath === s.activeProject) {
           setTimeout(() => {
-            get().fetchModels()
             get().fetchSlashCommands()
+            get().fetchAgents()
           }, 0)
         }
-      }
-
-      // On init_ready, fetch agents
-      if (event.type === 'init_ready' && projectPath === s.activeProject) {
-        setTimeout(() => get().fetchAgents(), 0)
       }
 
       // Auto-save on every message complete/interrupted/error — capture snapshot immediately
@@ -675,6 +673,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       return updates
     })
+
+    // Slash commands and agents are per-project (folder-level).
+    // Always re-fetch when switching to a project whose agent is running.
+    const session = get().projectSessions[projectPath]
+    if (session?.session) {
+      get().fetchSlashCommands()
+      get().fetchAgents()
+    }
   },
 
   ensureSession: (projectPath: string) => {
@@ -696,11 +702,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const session = getSession(get())
     const { selectedModel, attachments, mentions } = session
 
-    const mentionPrefix = mentions.map((m) => `@${m.value}`).join(' ')
-    const trimmed = content.trim()
-    const finalContent = mentionPrefix
-      ? trimmed ? `${mentionPrefix} ${trimmed}` : mentionPrefix
-      : trimmed
+    const finalContent = content.trim()
 
     const slashMatch = finalContent.match(/^\/(\S+)/)
     set((s) => updateSession(s, activeProject, () => ({ _pendingSlashCommand: slashMatch ? slashMatch[1] : '' })))

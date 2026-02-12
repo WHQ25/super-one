@@ -91,8 +91,11 @@ export class AgentService {
     this.bgAgents.delete(sessionId)
   }
 
-  setup(mainWindow: BrowserWindow): void {
+  setMainWindow(mainWindow: BrowserWindow): void {
     this.mainWindow = mainWindow
+  }
+
+  setup(): void {
 
     // --- Session-scoped handlers (projectPath as first arg) ---
 
@@ -368,6 +371,16 @@ export class AgentService {
         this.bgAgents.delete(sid)
       }
     }
+  }
+
+  hasRunningSessions(): boolean {
+    for (const [, agent] of this.agents) {
+      if (agent.isStreaming()) return true
+    }
+    for (const [, bg] of this.bgAgents) {
+      if (bg.agent.isStreaming()) return true
+    }
+    return false
   }
 
   async dispose(): Promise<void> {

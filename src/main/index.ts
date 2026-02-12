@@ -9,9 +9,15 @@ import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-
 import { getDb, closeDb } from './database'
 
 const agentService = new AgentService()
+let mainWindow: BrowserWindow | null = null
+
+function getMainWindow(): BrowserWindow {
+  if (!mainWindow) throw new Error('Main window not created yet')
+  return mainWindow
+}
 
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 1024,
@@ -29,12 +35,36 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // Update agentService's window reference for event forwarding
+  agentService.setMainWindow(mainWindow)
+
+  // Fullscreen state (window-specific, re-binds per window)
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow?.webContents.send('fullscreen-changed', true)
+  })
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow?.webContents.send('fullscreen-changed', false)
+  })
+
+  if (is.dev) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  }
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  } else {
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+/** Register all IPC handlers once at app startup. */
+function registerIpcHandlers(): void {
   // Setup agent IPC handlers (does NOT auto-initialize)
-  agentService.setup(mainWindow)
+  agentService.setup()
 
   // App-level IPC handlers
   ipcMain.handle(AgentIpcChannels.SELECT_FOLDER, async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const result = await dialog.showOpenDialog(getMainWindow(), {
       properties: ['openDirectory'],
     })
     return result.canceled ? null : result.filePaths[0]
@@ -86,6 +116,7 @@ function createWindow(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.SETUP_INSTALL_CLAUDE, () => {
+    const win = getMainWindow()
     const isWin = process.platform === 'win32'
     const testCmd = "printf '\\e[31mRed\\e[0m \\e[32mGreen\\e[0m \\e[33mYellow\\e[0m \\e[34mBlue\\e[0m \\e[35mPurple\\e[0m \\e[36mCyan\\e[0m \\e[1;32mBold Green\\e[0m\\n\\e[90mDim\\e[0m \\e[91mBright Red\\e[0m \\e[92mBright Green\\e[0m \\e[93mBright Yellow\\e[0m\\n'"
     const installCmd = isWin
@@ -103,56 +134,40 @@ function createWindow(): void {
       : spawn('bash', ['-c', installCmd], { env: colorEnv })
 
     child.stdout.on('data', (data: Buffer) => {
-      mainWindow.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+      win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_output',
         data: data.toString(),
       })
     })
 
     child.stderr.on('data', (data: Buffer) => {
-      mainWindow.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+      win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_output',
         data: data.toString(),
       })
     })
 
     child.on('close', (code) => {
-      mainWindow.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+      win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_complete',
         code: code ?? 1,
       })
     })
 
     child.on('error', (err) => {
-      mainWindow.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+      win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_error',
         error: err.message,
       })
     })
   })
 
-  // Fullscreen state
-  ipcMain.handle('get-fullscreen', () => mainWindow.isFullScreen())
-  mainWindow.on('enter-full-screen', () => {
-    mainWindow.webContents.send('fullscreen-changed', true)
-  })
-  mainWindow.on('leave-full-screen', () => {
-    mainWindow.webContents.send('fullscreen-changed', false)
-  })
-
-  if (is.dev) {
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
-  }
-
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  ipcMain.handle('get-fullscreen', () => getMainWindow().isFullScreen())
 }
 
 app.whenReady().then(() => {
   getDb() // Initialize database
+  registerIpcHandlers()
   createWindow()
 
   app.on('activate', () => {
@@ -169,24 +184,44 @@ app.on('window-all-closed', () => {
 })
 
 let quitting = false
+
+function performQuit(): void {
+  quitting = true
+  agentService
+    .dispose()
+    .catch(() => {})
+    .finally(() => {
+      closeDb()
+      // Give SDK child processes a moment to fully terminate before quitting.
+      // abort() signals the SDK to stop, but the async iterator needs time to
+      // detect the child process exit and release its handles.
+      setTimeout(() => app.quit(), 500)
+    })
+}
+
 app.on('before-quit', (e) => {
   if (quitting) return
   e.preventDefault()
-  quitting = true
 
-  ipcMain.removeHandler(AgentIpcChannels.SELECT_FOLDER)
-  ipcMain.removeHandler(AgentIpcChannels.GET_RECENT_FOLDERS)
-  ipcMain.removeHandler(AgentIpcChannels.ADD_RECENT_FOLDER)
-  ipcMain.removeHandler(AgentIpcChannels.REMOVE_RECENT_FOLDER)
-  ipcMain.removeHandler(AgentIpcChannels.OPEN_FOLDER)
-  ipcMain.removeHandler(AgentIpcChannels.OPEN_TMP_FOLDER)
-  ipcMain.removeHandler(AgentIpcChannels.CLOSE_PROJECT)
-  ipcMain.removeHandler(AgentIpcChannels.SETUP_CHECK_CLAUDE)
-  ipcMain.removeHandler(AgentIpcChannels.SETUP_INSTALL_CLAUDE)
+  if (!agentService.hasRunningSessions()) {
+    performQuit()
+    return
+  }
 
-  const timeout = new Promise<void>((r) => setTimeout(r, 5000))
-  Promise.race([agentService.dispose(), timeout]).finally(() => {
-    closeDb()
-    app.quit()
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  if (!win) {
+    performQuit()
+    return
+  }
+
+  dialog.showMessageBox(win, {
+    type: 'question',
+    buttons: ['Quit', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    message: 'Quit SuperOne?',
+    detail: 'Running sessions will be stopped.',
+  }).then(({ response }) => {
+    if (response === 0) performQuit()
   })
 })

@@ -286,3 +286,24 @@ body {
     margin-left: 0.75rem;
   }
 }
+
+/* --- TipTap editor --- */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--muted-foreground);
+  pointer-events: none;
+  height: 0;
+}
+
+.tiptap {
+  outline: none;
+}
+
+.tiptap p {
+  margin: 0;
+}
+
+.mention-chip-wrapper {
+  display: inline;
+}

@@ -3,7 +3,7 @@ import { useHasRealProject } from '@/stores/app'
 import { ContextUsage } from '@/components/chat/ContextUsage'
 import { PermissionModeSelector } from '@/components/chat/PermissionModeSelector'
 import { ProjectSelector } from './ProjectSelector'
-import { PanelBottom, PanelRight } from 'lucide-react'
+import { PanelBottom, PanelRight, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface StatusBarProps {
@@ -20,10 +20,11 @@ export function StatusBar({
   onToggleRightSidebar,
 }: StatusBarProps) {
   const status = useActiveSession((s) => s.status)
+  const sandboxInfo = useActiveSession((s) => s.sandboxInfo)
   const hasRealProject = useHasRealProject()
 
   return (
-    <div className="flex h-6 shrink-0 items-center gap-2 border-t border-border bg-background px-2 text-[11px] text-muted-foreground">
+    <div className="flex h-6 shrink-0 items-center gap-2 border-t border-border px-2 text-[11px] text-muted-foreground">
       {/* Panel toggle buttons */}
       <div className="flex items-center gap-0.5">
         <button
@@ -57,6 +58,17 @@ export function StatusBar({
       <ContextUsage />
 
       <div className="h-3 w-px bg-border" />
+
+      {/* Sandbox status */}
+      {sandboxInfo.enabled && (
+        <>
+          <div className="flex items-center gap-1 text-emerald-400" title={sandboxInfo.autoAllowBash ? 'Sandbox enabled, Bash auto-allowed' : 'Sandbox enabled'}>
+            <ShieldCheck className="size-3" />
+            <span>Sandbox{sandboxInfo.autoAllowBash ? ' (Auto)' : ''}</span>
+          </div>
+          <div className="h-3 w-px bg-border" />
+        </>
+      )}
 
       {/* Permission mode */}
       <PermissionModeSelector />

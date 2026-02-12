@@ -5,7 +5,7 @@ import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent } from '../../shared/agent-types'
 
 export interface PendingPermission {
-  resolve: (result: { allow: boolean; alwaysAllow?: boolean }) => void
+  resolve: (result: { allow: boolean; alwaysAllow?: boolean; reason?: string }) => void
   suggestions?: PermissionUpdate[]
   toolUseID: string
 }
@@ -65,6 +65,10 @@ export function createCanUseTool(
 
     const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
+    if (context.suggestions?.length) {
+      console.log('[canUseTool] suggestions:', JSON.stringify(context.suggestions, null, 2))
+    }
+
     emit({
       type: 'permission_request',
       request: {
@@ -74,10 +78,11 @@ export function createCanUseTool(
         decisionReason: context.decisionReason,
         blockedPath: context.blockedPath,
         allowAlwaysAllow: (context.suggestions?.length ?? 0) > 0,
+        suggestions: context.suggestions as Array<Record<string, unknown>> | undefined,
       },
     })
 
-    const result = await new Promise<{ allow: boolean; alwaysAllow?: boolean }>((resolve) => {
+    const result = await new Promise<{ allow: boolean; alwaysAllow?: boolean; reason?: string }>((resolve) => {
       // If already aborted before prompting, deny immediately
       if (context.signal.aborted) {
         resolve({ allow: false })
@@ -106,7 +111,8 @@ export function createCanUseTool(
         toolUseID,
       }
     }
-    return { behavior: 'deny' as const, message: 'User denied permission', toolUseID }
+    const denyMsg = result.reason || 'User denied permission'
+    return { behavior: 'deny' as const, message: `[denied] ${denyMsg}`, toolUseID }
   }
 
   return { canUseTool, trackPlanFile }
@@ -221,12 +227,13 @@ export function respondToPermission(
   pendingPermissions: Map<string, PendingPermission>,
   requestId: string,
   allow: boolean,
-  alwaysAllow?: boolean
+  alwaysAllow?: boolean,
+  reason?: string
 ): void {
   const pending = pendingPermissions.get(requestId)
   if (pending) {
     pendingPermissions.delete(requestId)
-    pending.resolve({ allow, alwaysAllow })
+    pending.resolve({ allow, alwaysAllow, reason })
   }
 }
 

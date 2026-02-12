@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Loader2, ChevronRight, PenLine, Check, X } from 'lucide-react'
+import { Loader2, ChevronRight, PenLine, Check, X, Ban } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
@@ -23,6 +23,30 @@ interface ToolBlockProps {
 }
 
 const DIFF_TOOLS = new Set(['Edit', 'Write'])
+
+/** Compute line-level additions/removals for Edit/Write tools. */
+function computeLineDelta(toolName: string, params: Record<string, unknown>): { added: number; removed: number } | null {
+  if (toolName === 'Write') {
+    const content = String(params.content ?? '')
+    if (!content) return null
+    const added = content.split('\n').length
+    return { added, removed: 0 }
+  }
+  if (toolName === 'Edit') {
+    const oldStr = String(params.old_string ?? '')
+    const newStr = String(params.new_string ?? '')
+    if (!oldStr && !newStr) return null
+    const changes = diffLines(oldStr, newStr)
+    let added = 0, removed = 0
+    for (const c of changes) {
+      const count = c.value.replace(/\n$/, '').split('\n').length
+      if (c.added) added += count
+      else if (c.removed) removed += count
+    }
+    return { added, removed }
+  }
+  return null
+}
 
 /** Try to format a string as prettified JSON. Returns null if not valid JSON. */
 function tryPrettifyJson(text: string): string | null {
@@ -74,9 +98,13 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
     return <ExitPlanModeBlock />
   }
 
-  const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && Object.keys(params).length > 0
-  const hasResult = !!result && !isStreaming && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
-  const hasQA = toolName === 'AskUserQuestion' && !!result && !isStreaming
+  const isDenied = !!result && result.startsWith('[denied] ')
+  const cleanResult = isDenied ? result.slice('[denied] '.length) : result
+
+  const lineDelta = useMemo(() => (!isStreaming && !isDenied) ? computeLineDelta(toolName, params) : null, [toolName, params, isStreaming, isDenied])
+  const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && Object.keys(params).length > 0 && !isDenied
+  const hasResult = !!cleanResult && !isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
+  const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming
   const expandable = hasDiff || hasResult || hasQA
   const [expanded, setExpanded] = useState(false)
 
@@ -92,7 +120,8 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
   return (
     <div
       className={cn(
-        'tool-node my-0.5 rounded bg-muted/50 transition-colors',
+        'tool-node my-0.5 rounded transition-colors',
+        isDenied ? 'bg-red-500/10' : 'bg-muted/50',
         expandable && 'cursor-pointer hover:bg-muted/70'
       )}
     >
@@ -102,14 +131,31 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
       >
         {isStreaming ? (
           <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
+        ) : isDenied ? (
+          <Ban className="size-3 shrink-0 text-red-400" />
         ) : isMcp && mcpIconSrc ? (
           <img src={mcpIconSrc} alt={mcpInfo.serverName} className="size-3.5 shrink-0 rounded-sm object-cover" />
         ) : (
           <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className="font-medium text-foreground">{displayName}</span>
-        {summary && (
+        <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground')}>{displayName}</span>
+        {isDenied ? (
+          <>
+            {summary && <span className="min-w-0 truncate text-muted-foreground">{summary}</span>}
+            <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>
+            {cleanResult !== 'User denied permission' && (
+              <span className="shrink-0 text-red-400/70">{cleanResult}</span>
+            )}
+          </>
+        ) : summary ? (
           <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
+        ) : null}
+        {lineDelta && (
+          <span className="shrink-0 font-mono text-[11px]">
+            {lineDelta.added > 0 && <span className="text-green-400">+{lineDelta.added}</span>}
+            {lineDelta.added > 0 && lineDelta.removed > 0 && <span className="text-muted-foreground/50"> </span>}
+            {lineDelta.removed > 0 && <span className="text-red-400">-{lineDelta.removed}</span>}
+          </span>
         )}
         {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
           <span className="ml-auto shrink-0 text-muted-foreground">{Math.round(elapsedSeconds)}s</span>
@@ -141,10 +187,10 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
               {hasResult && !hasDiff && (
                 <div>
                   {toolName === 'Bash' && <div className="mb-0.5 text-[11px] font-medium text-muted-foreground">Output</div>}
-                  {isMcp ? <PrettyJSONCodeBlock text={result!} /> : <ToolResult text={result!} />}
+                  {isMcp ? <PrettyJSONCodeBlock text={cleanResult!} /> : <ToolResult text={cleanResult!} />}
                 </div>
               )}
-              {hasQA && <QAResult text={result!} />}
+              {hasQA && <QAResult text={cleanResult!} />}
             </div>
           </div>
         </div>

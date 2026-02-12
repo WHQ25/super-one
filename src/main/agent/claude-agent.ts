@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
-import type { AccountInfo, AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, ModelOption, PermissionMode, RewindFilesResult, SandboxInfo, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
 import { mapModelInfo } from './claude-models'
 import { MessageBridge } from './message-bridge'
@@ -97,6 +97,27 @@ function discoverAgents(cwd: string): AgentInfo[] {
   }
 
   return agents
+}
+
+/** Read sandbox settings from Claude Code settings files (local > project > user). */
+function readSandboxInfo(cwd: string): SandboxInfo {
+  const sources = [
+    join(cwd, '.claude', 'settings.local.json'),
+    join(cwd, '.claude', 'settings.json'),
+    join(homedir(), '.claude', 'settings.json'),
+  ]
+  for (const path of sources) {
+    try {
+      const data = JSON.parse(readFileSync(path, 'utf-8'))
+      if (data.sandbox && typeof data.sandbox === 'object') {
+        return {
+          enabled: data.sandbox.enabled === true,
+          autoAllowBash: data.sandbox.autoAllowBashIfSandboxed === true,
+        }
+      }
+    } catch { /* file doesn't exist or is invalid */ }
+  }
+  return { enabled: false, autoAllowBash: false }
 }
 
 const EXCLUDED_DIRS = new Set(['.', 'node_modules', 'dist', 'build', '__pycache__'])
@@ -202,7 +223,7 @@ export class ClaudeAgent {
       // If sessionId already arrived via iterator, emit session_init now
       if (this.sessionId) this.emitSessionInit()
 
-      this.emit({ type: 'init_ready', models: this.cachedModels, slashCommands: this.cachedSlashCommands, cwd: this.config!.cwd, homedir: homedir() })
+      this.emit({ type: 'init_ready', models: this.cachedModels, slashCommands: this.cachedSlashCommands, cwd: this.config!.cwd, homedir: homedir(), sandboxInfo: readSandboxInfo(this.config!.cwd) })
     }).catch(() => {})
   }
 
@@ -248,8 +269,8 @@ export class ClaudeAgent {
     await turnDone
   }
 
-  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean): void {
-    respondToPermission(this.pendingPermissions, requestId, allow, alwaysAllow)
+  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string): void {
+    respondToPermission(this.pendingPermissions, requestId, allow, alwaysAllow, reason)
   }
 
   respondToQuestion(requestId: string, answers: Record<string, string>): void {

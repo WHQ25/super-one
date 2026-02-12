@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2 } from 'lucide-react'
+import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -14,9 +14,21 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { cn } from '@/lib/utils'
-import type { SessionHistoryEntry } from '../../../shared/agent-types'
+import type { SessionHistoryEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
 
 type SortMode = 'recent' | 'added'
+
+/** Extract a short pending-reason string from the pending request objects. */
+function getPendingReason(
+  permission: PermissionRequest | null | undefined,
+  question: AskUserQuestionRequest | null | undefined,
+  planApproval: PlanApprovalRequest | null | undefined,
+): string | null {
+  if (permission) return `Allow ${permission.toolName}?`
+  if (question) return question.questions[0]?.question ?? 'Waiting for input'
+  if (planApproval) return 'Review plan'
+  return null
+}
 
 const MAX_SESSIONS = 5
 
@@ -100,7 +112,7 @@ export function AppSidebar() {
   }, [recentFolders, sortMode])
 
   return (
-    <div className="flex w-64 shrink-0 flex-col border-r border-border bg-background">
+    <div className="flex w-64 shrink-0 flex-col bg-sidebar">
       {/* Header — drag region with traffic lights spacer + toggle */}
       <div
         className={cn('flex h-11 shrink-0 items-center pt-[2px]', isFullscreen ? 'pl-2' : 'pl-[18px]')}
@@ -126,7 +138,7 @@ export function AppSidebar() {
       </div>
 
       {/* Projects header */}
-      <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+      <div className="flex items-center justify-between px-3 py-1.5">
         <span className="text-xs font-medium text-muted-foreground">Projects</span>
         <div className="flex items-center gap-0.5">
           <Button
@@ -257,27 +269,35 @@ export function AppSidebar() {
                             const isRunning = isForeground
                               ? projectSession?.status === 'streaming'
                               : bgEntry?.status === 'streaming'
-                            const isPending = isForeground
-                              ? !!projectSession?.pendingPermission || !!projectSession?.pendingQuestion || !!projectSession?.pendingPlanApproval
-                              : !!bgEntry?.pendingPermission || !!bgEntry?.pendingQuestion || !!bgEntry?.pendingPlanApproval
+                            const pendingReason = isForeground
+                              ? getPendingReason(projectSession?.pendingPermission, projectSession?.pendingQuestion, projectSession?.pendingPlanApproval)
+                              : getPendingReason(bgEntry?.pendingPermission, bgEntry?.pendingQuestion, bgEntry?.pendingPlanApproval)
                             return (
-                              <div
-                                key={session.sessionId}
-                                onClick={() => handleResumeSession(folder.path, session.sessionId)}
-                                className={cn(
-                                  'flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
-                                  isPending
-                                    ? 'bg-orange-500 text-white'
-                                    : isActive && isForeground
+                              <div key={session.sessionId}>
+                                <div
+                                  onClick={() => handleResumeSession(folder.path, session.sessionId)}
+                                  className={cn(
+                                    'flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
+                                    isActive && isForeground
                                       ? 'bg-accent'
                                       : 'hover:bg-muted'
+                                  )}
+                                >
+                                  {isRunning
+                                    ? <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+                                    : <MessageSquare className="size-3 shrink-0 text-muted-foreground" />
+                                  }
+                                  <span className="min-w-0 truncate text-[13px]">{session.title}</span>
+                                </div>
+                                {pendingReason && (
+                                  <div
+                                    onClick={() => handleResumeSession(folder.path, session.sessionId)}
+                                    className="ml-5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1"
+                                  >
+                                    <Bot className="size-3 shrink-0 text-green-400" />
+                                    <span className="min-w-0 truncate text-[11px] text-green-400">{pendingReason}</span>
+                                  </div>
                                 )}
-                              >
-                                {isRunning
-                                  ? <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
-                                  : <MessageSquare className={cn('size-3 shrink-0', isPending ? 'text-white/70' : 'text-muted-foreground')} />
-                                }
-                                <span className="min-w-0 truncate text-xs">{session.title}</span>
                               </div>
                             )
                           })
@@ -293,7 +313,7 @@ export function AppSidebar() {
       </div>
 
       {/* Footer — settings, theme */}
-      <div className="flex items-center gap-1 border-t border-border px-3 py-2">
+      <div className="flex items-center gap-1 px-3 py-2">
         <button
           onClick={() => navigateTo('settings')}
           className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

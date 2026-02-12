@@ -61,9 +61,6 @@ export function ProjectSelector({ compact, mode = 'open' }: ProjectSelectorProps
               <span className="size-4 shrink-0" />
             )}
             <span className="truncate">{folder.path.split('/').pop()}</span>
-            <span className="ml-auto truncate text-xs text-muted-foreground">
-              {folder.path.replace(/^\/Users\/[^/]+/, '~')}
-            </span>
           </DropdownMenuItem>
         ))}
         {recentFolders.length > 0 && <DropdownMenuSeparator />}

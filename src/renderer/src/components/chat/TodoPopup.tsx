@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 import { ListTodo, Circle, Loader2, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -8,6 +9,7 @@ export function TodoPopup() {
   const showTodos = useActiveSession((s) => s.showTodos)
   const toggleTodos = useChatStore((s) => s.toggleTodos)
   const activeRef = useRef<HTMLDivElement>(null)
+  const isCoding = useAppStore((s) => s.layoutMode) === 'coding'
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -46,7 +48,7 @@ export function TodoPopup() {
           useChatStore.setState({
             projectSessions: {
               ...s.projectSessions,
-              [activeProject]: { ...session, todos: {}, _nextTodoId: 1, showTodos: false },
+              [activeProject]: { ...session, todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false },
             },
           })
         }
@@ -58,20 +60,20 @@ export function TodoPopup() {
   if (todoList.length === 0) return null
 
   const completed = todoList.filter((t) => t.status === 'completed').length
-  const hasActive = todoList.some((t) => t.status === 'in_progress')
 
   return (
-    <div className="flex shrink-0 flex-col overflow-hidden border-t border-border bg-card">
+    <div className={cn(
+      'flex shrink-0 flex-col overflow-hidden',
+      isCoding
+        ? 'mx-3 mb-1 rounded-lg border border-border'
+        : 'border-t border-border'
+    )}>
       {/* Header — always visible */}
       <div
         className="flex shrink-0 cursor-pointer items-center gap-1.5 px-3 py-1.5 hover:bg-muted/30"
         onClick={toggleTodos}
       >
-        {!showTodos && hasActive ? (
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-        ) : (
-          <ListTodo className="size-3.5 shrink-0 text-muted-foreground" />
-        )}
+        <ListTodo className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="text-xs font-medium text-muted-foreground">
           Todos ({completed}/{todoList.length})
         </span>

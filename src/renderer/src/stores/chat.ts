@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem } from '../../../shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 
@@ -19,7 +19,7 @@ interface BgSessionState {
   session: SessionInfo | null
   totalCostUsd: number
   contextTokens: number
-  subagentTokens: Record<string, number>
+  subagentTokens: Record<string, { input: number; output: number }>
   todos: Record<string, TodoItem>
   _nextTodoId: number
   permissionMode: PermissionMode
@@ -48,25 +48,31 @@ export interface SessionState {
 
   slashCommands: SlashCommandInfo[]
   agents: AgentInfo[]
-  subagentTokens: Record<string, number>
+  subagentTokens: Record<string, { input: number; output: number }>
 
   cwd: string
   homedir: string
+  sandboxInfo: SandboxInfo
 
   slashCommandOutput: { command: string; content: string } | null
   _pendingSlashCommand: string
 
   todos: Record<string, TodoItem>
   showTodos: boolean
+  _todosUserDismissed: boolean
   _nextTodoId: number
 
   sessions: SessionHistoryEntry[]
   showHistory: boolean
   _historySessionId: string | null
 
+  // Token usage for the current streaming message
+  streamingTokens: { input: number; output: number }
+
   // Background activity indicators
   hasUnseenActivity: boolean
   hasPendingInteraction: boolean
+  isCompacting: boolean
 
   // Background sessions (streaming in background while user views another session)
   _bgSessions: Record<string, BgSessionState>
@@ -93,16 +99,20 @@ export function createDefaultSessionState(): SessionState {
     subagentTokens: {},
     cwd: '',
     homedir: '',
+    sandboxInfo: { enabled: false, autoAllowBash: false },
     slashCommandOutput: null,
     _pendingSlashCommand: '',
     todos: {},
     showTodos: false,
+    _todosUserDismissed: false,
     _nextTodoId: 1,
     sessions: [],
     showHistory: false,
     _historySessionId: null,
+    streamingTokens: { input: 0, output: 0 },
     hasUnseenActivity: false,
     hasPendingInteraction: false,
+    isCompacting: false,
     _bgSessions: {},
   }
 }
@@ -150,7 +160,7 @@ interface ChatStore {
   clearAttachments: () => void
 
   // Permission actions
-  respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean) => void
+  respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   cyclePermissionMode: () => void
 
@@ -253,12 +263,12 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
                     activeForm: t.activeForm,
                   }
                 }
-                extraUpdates = { todos: newTodos, _nextTodoId: input.todos.length + 1, showTodos: true }
+                extraUpdates = { todos: newTodos, _nextTodoId: input.todos.length + 1, ...(!session._todosUserDismissed && { showTodos: true }) }
               } else if (tn === 'TaskCreate') {
                 const id = String(session._nextTodoId)
                 extraUpdates = {
                   _nextTodoId: session._nextTodoId + 1,
-                  showTodos: true,
+                  showTodos: !session._todosUserDismissed,
                   todos: {
                     ...session.todos,
                     [id]: {
@@ -278,7 +288,7 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
                     extraUpdates = { todos: rest }
                   } else {
                     extraUpdates = {
-                      showTodos: true,
+                      ...(!session._todosUserDismissed && { showTodos: true }),
                       todos: {
                         ...session.todos,
                         [input.taskId]: {
@@ -307,13 +317,15 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
 
     case 'message_complete': {
       const newCost = session.totalCostUsd + (event.metadata?.costUsd ?? 0)
+      const ft = session.streamingTokens
+      const consumedTokens = (ft.input > 0 || ft.output > 0) ? { input: ft.input, output: ft.output } : undefined
       return {
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           return {
             ...msg,
             status: 'complete' as const,
-            metadata: event.metadata ? { ...msg.metadata, ...event.metadata } : msg.metadata,
+            metadata: { ...msg.metadata, ...event.metadata, consumedTokens },
           }
         }),
         totalCostUsd: newCost,
@@ -323,6 +335,7 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
           const total = u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens
           return total > 0 ? total : session.contextTokens
         })(),
+        streamingTokens: { input: 0, output: 0 },
       }
     }
 
@@ -370,20 +383,11 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
       return { pendingPlanApproval: event.request, hasPendingInteraction: true }
 
     case 'tool_input_delta':
-      return {
-        messages: session.messages.map((msg) => {
-          if (msg.id !== event.messageId) return msg
-          return {
-            ...msg,
-            content: msg.content.map((block) => {
-              if (block.type === 'tool_use' && block.toolUseId === event.toolUseId) {
-                return { ...block, input: block.input + event.partialJson }
-              }
-              return block
-            }),
-          }
-        }),
-      }
+      // Skip state updates for streaming input deltas — the complete input arrives
+      // via the 'result' event (content_delta with full tool_use block) which replaces
+      // the streaming block entirely via applyDelta dedup. Updating state on every
+      // delta caused massive re-render overhead for large-input tools (Write/Edit).
+      return {}
 
     case 'tool_progress':
       return {
@@ -406,17 +410,19 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
         slashCommands: event.slashCommands,
         cwd: event.cwd,
         homedir: event.homedir,
+        sandboxInfo: event.sandboxInfo,
       }
 
     case 'compact_boundary':
       return {
+        isCompacting: false,
         messages: [
           ...session.messages,
           {
             id: `compact_${Date.now()}`,
             role: 'assistant' as const,
             status: 'complete' as const,
-            content: [{ type: 'text' as const, text: `--- Context compacted (${event.trigger}) ---` }],
+            content: [{ type: 'text' as const, text: `__compact__:${event.trigger}:${event.preTokens}` }],
             createdAt: new Date().toISOString(),
             providerId: 'system',
           },
@@ -427,9 +433,12 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
       return {
         subagentTokens: {
           ...session.subagentTokens,
-          [event.parentToolUseId]: event.inputTokens + event.outputTokens,
+          [event.parentToolUseId]: { input: event.inputTokens, output: event.outputTokens },
         },
       }
+
+    case 'message_usage':
+      return { streamingTokens: { input: event.inputTokens, output: event.outputTokens } }
 
     case 'slash_command_output': {
       const filtered = session.messages.filter((m) => m.id !== event.messageId)
@@ -442,11 +451,13 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
       }
     }
 
+    case 'status_indicator':
+      return { isCompacting: event.indicator === 'compacting' }
+
     case 'hook_started':
     case 'hook_complete':
     case 'task_notification':
     case 'auth_status':
-    case 'status_indicator':
       return {}
   }
 }
@@ -740,7 +751,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messages: [], session: null, totalCostUsd: 0, contextTokens: 0,
       pendingPermission: null, pendingQuestion: null, pendingPlanApproval: null,
       planApprovalOutcome: null, mentions: [], subagentTokens: {},
-      todos: {}, _nextTodoId: 1, showTodos: false,
+      todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
     })))
   },
 
@@ -775,7 +786,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       status: 'idle', pendingPermission: null, pendingQuestion: null,
       pendingPlanApproval: null, planApprovalOutcome: null,
       slashCommands: [], mentions: [], subagentTokens: {},
-      todos: {}, _nextTodoId: 1, showTodos: false,
+      todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
       _historySessionId: null,
     })))
   },
@@ -840,10 +851,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateSession(s, activeProject, () => ({ attachments: [] })))
   },
 
-  respondToPermission: (requestId, allow, alwaysAllow) => {
+  respondToPermission: (requestId, allow, alwaysAllow, reason) => {
     const { activeProject } = get()
     if (!activeProject) return
-    window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow)
+    window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason)
     set((s) => updateSession(s, activeProject, () => ({ pendingPermission: null, hasPendingInteraction: false })))
   },
 
@@ -911,7 +922,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   toggleTodos: () => {
     const { activeProject } = get()
     if (!activeProject) return
-    set((s) => updateSession(s, activeProject, (sess) => ({ showTodos: !sess.showTodos })))
+    set((s) => updateSession(s, activeProject, (sess) => {
+      const willShow = !sess.showTodos
+      return { showTodos: willShow, _todosUserDismissed: willShow ? false : true }
+    }))
   },
 
   fetchAgents: async () => {

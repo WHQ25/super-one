@@ -21,7 +21,7 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
     : null
 
   return (
-    <div className="tool-node my-1">
+    <div className="tool-group my-1">
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70"
@@ -33,11 +33,11 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
           <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
         )}
         <span className="text-foreground">{summary}</span>
-        <span className="ml-auto shrink-0 text-muted-foreground">{toolUses.length} calls</span>
+        <span className="ml-auto shrink-0 text-muted-foreground">{toolUses.length} tool use</span>
       </button>
 
       {expanded && (
-        <div className="ml-2 mt-0.5 border-l border-border pl-2">
+        <div className="mt-0.5 space-y-0.5 pl-2">
           {blocks.map((block, i) => {
             if (block.type === 'tool_use') {
               return (

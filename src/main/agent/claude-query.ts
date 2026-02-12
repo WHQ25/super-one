@@ -86,8 +86,13 @@ async function iterateMessages(
   // Track the last assistant message's usage (= current context window snapshot)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let lastAssistantUsage: any = null
-  // Track cumulative token usage per subagent (parent_tool_use_id)
-  const subagentUsage = new Map<string, { input: number; output: number }>()
+  // Per-step dedup: track processed step IDs (SDK message IDs) and accumulate tokens
+  const processedStepIds = new Set<string>()
+  let messageInputTokens = 0
+  let messageOutputTokens = 0
+  let lastTrackedMessageId = ''
+  // Subagent token accumulation per parent_tool_use_id
+  const subagentTracking = new Map<string, { stepIds: Set<string>; input: number; output: number }>()
 
   try {
     for await (const msg of q) {
@@ -203,19 +208,55 @@ async function iterateMessages(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const assistantParent = (msg as any).parent_tool_use_id ?? null
 
-          // Track subagent token usage
-          if (assistantParent && msg.message?.usage) {
+          // Track top-level message usage (per-step accumulation, deduped by SDK message ID)
+          if (!assistantParent && msg.message?.usage) {
+            // Reset accumulators when a new front-end message starts
+            if (messageId !== lastTrackedMessageId) {
+              lastTrackedMessageId = messageId
+              processedStepIds.clear()
+              messageInputTokens = 0
+              messageOutputTokens = 0
+            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const stepId = (msg.message as any)?.id ?? ''
             const u = msg.message.usage
-            const prev = subagentUsage.get(assistantParent) ?? { input: 0, output: 0 }
-            prev.input += u.input_tokens ?? 0
-            prev.output += u.output_tokens ?? 0
-            subagentUsage.set(assistantParent, prev)
+            const stepInput = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+            const isDupe = stepId && processedStepIds.has(stepId)
+            if (!isDupe) {
+              if (stepId) processedStepIds.add(stepId)
+              messageInputTokens += stepInput
+              // output_tokens from assistant messages are incomplete (partial emit);
+              // accurate output comes from message_delta stream events below.
+            }
+            emit({
+              type: 'message_usage',
+              messageId,
+              inputTokens: messageInputTokens,
+              outputTokens: messageOutputTokens,
+            })
+          }
+
+          // Track subagent token usage (per-step accumulation, deduped by SDK message ID)
+          if (assistantParent && msg.message?.usage) {
+            if (!subagentTracking.has(assistantParent)) {
+              subagentTracking.set(assistantParent, { stepIds: new Set(), input: 0, output: 0 })
+            }
+            const tracker = subagentTracking.get(assistantParent)!
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const stepId = (msg.message as any)?.id ?? ''
+            const u = msg.message.usage
+            const stepInput = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+            const isDupe = stepId && tracker.stepIds.has(stepId)
+            if (!isDupe) {
+              if (stepId) tracker.stepIds.add(stepId)
+              tracker.input += stepInput
+            }
             emit({
               type: 'subagent_usage',
               messageId,
               parentToolUseId: assistantParent,
-              inputTokens: prev.input,
-              outputTokens: prev.output,
+              inputTokens: tracker.input,
+              outputTokens: tracker.output,
             })
           }
 
@@ -310,6 +351,28 @@ async function iterateMessages(
             }
           } else if (event.type === 'content_block_stop') {
             activeToolBlocks.delete(event.index)
+          } else if (event.type === 'message_delta' && event.usage?.output_tokens) {
+            // message_delta fires at end of streaming with final output_tokens for this step
+            const finalOutput = event.usage.output_tokens as number
+            if (!streamParent) {
+              messageOutputTokens += finalOutput
+              emit({
+                type: 'message_usage',
+                messageId,
+                inputTokens: messageInputTokens,
+                outputTokens: messageOutputTokens,
+              })
+            } else if (subagentTracking.has(streamParent)) {
+              const tracker = subagentTracking.get(streamParent)!
+              tracker.output += finalOutput
+              emit({
+                type: 'subagent_usage',
+                messageId,
+                parentToolUseId: streamParent,
+                inputTokens: tracker.input,
+                outputTokens: tracker.output,
+              })
+            }
           }
           break
         }

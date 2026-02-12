@@ -31,7 +31,7 @@ export function CodingLayout() {
         {/* Center area */}
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Chat content */}
-          <div className={cn('@container flex min-h-0 flex-1 flex-col bg-card px-6')}>
+          <div className={cn('@container flex min-h-0 flex-1 flex-col bg-card')}>
             <ChatContent scrollViewportRef={scrollViewportRef} externalHistory />
           </div>
 

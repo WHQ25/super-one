@@ -6,7 +6,7 @@ interface AgentAPI {
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
   interrupt(projectPath: string): Promise<void>
   getAvailableModels(projectPath: string): Promise<ModelOption[]>
-  respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean): Promise<void>
+  respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string): Promise<void>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
   answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>): Promise<void>
   dismissQuestion(projectPath: string, requestId: string): Promise<void>

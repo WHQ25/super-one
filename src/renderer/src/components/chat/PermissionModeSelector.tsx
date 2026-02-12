@@ -1,4 +1,4 @@
-import { Shield, ShieldCheck, ShieldOff, PenLine } from 'lucide-react'
+import { Shield, FastForward, ShieldOff, PenLine } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useState } from 'react'
@@ -20,9 +20,9 @@ const modes: { id: PermissionMode; label: string; description: string; icon: Rea
     id: 'acceptEdits',
     label: 'Accept Edits',
     description: 'Auto-accept file edit operations',
-    icon: <ShieldCheck className="size-3" />,
-    color: 'text-amber-400',
-    hoverColor: 'hover:text-amber-300',
+    icon: <FastForward className="size-3" />,
+    color: 'text-purple-400',
+    hoverColor: 'hover:text-purple-300',
   },
   {
     id: 'plan',

@@ -56,6 +56,7 @@ export interface MessageMetadata {
   usage?: UsageInfo
   modelUsage?: Record<string, ModelUsageInfo>
   stopReason?: string | null
+  consumedTokens?: { input: number; output: number }
 }
 
 // --- Todo items (derived from TaskCreate/TaskUpdate tool calls) ---
@@ -89,6 +90,7 @@ export interface PermissionRequest {
   decisionReason?: string
   blockedPath?: string
   allowAlwaysAllow: boolean
+  suggestions?: Array<Record<string, unknown>>
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
@@ -178,6 +180,13 @@ export interface HookEvent {
   outcome?: 'success' | 'error' | 'cancelled'
 }
 
+// --- Sandbox info ---
+
+export interface SandboxInfo {
+  enabled: boolean
+  autoAllowBash: boolean
+}
+
 // --- Main → Renderer push events ---
 
 export type AgentEventBase =
@@ -202,7 +211,8 @@ export type AgentEventBase =
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
-  | { type: 'init_ready'; models: ModelOption[]; slashCommands: SlashCommandInfo[]; cwd: string; homedir: string }
+  | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number }
+  | { type: 'init_ready'; models: ModelOption[]; slashCommands: SlashCommandInfo[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
 

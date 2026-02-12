@@ -56,7 +56,7 @@
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
+  --border: oklch(0.269 0 0);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
@@ -64,7 +64,7 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
+  --sidebar: oklch(0.305 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -116,6 +116,12 @@
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+*,
+::before,
+::after {
+  border-color: var(--color-border);
 }
 
 body {
@@ -244,6 +250,12 @@ body {
   margin: 0.3em 0;
 }
 
+/* --- Content visibility: skip rendering for off-screen messages --- */
+.chat-message-wrapper {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
+}
+
 /* --- Wide panel: extra spacing and tool call timeline --- */
 @container (min-width: 512px) {
   .chat-md {
@@ -256,7 +268,8 @@ body {
     border-radius: 0;
   }
 
-  .subagent-container .tool-node {
+  .subagent-container .tool-node,
+  .tool-group .tool-node {
     margin-left: 0;
     border-left: none;
     border-radius: var(--radius-sm);

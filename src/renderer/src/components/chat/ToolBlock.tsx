@@ -4,12 +4,10 @@ import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
-import { createCodePlugin } from '@streamdown/code'
 import { ToolIcon } from './ToolIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { getToolDisplay, parseToolInput, parseMcpToolName } from './tool-display'
-
-const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
+import { codePlugin } from './chat-shared'
 
 /** Dev-only: comma-separated tool names to show raw debug UI. e.g. RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate */
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
@@ -40,8 +38,8 @@ function tryPrettifyJson(text: string): string | null {
 export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: ToolBlockProps) {
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
-  const params = parseToolInput(input)
-  const display = getToolDisplay(toolName, params, cwd, homedir)
+  const params = useMemo(() => parseToolInput(input), [input])
+  const display = useMemo(() => getToolDisplay(toolName, params, cwd, homedir), [toolName, params, cwd, homedir])
   const mcpInfo = parseMcpToolName(toolName)
   const isMcp = mcpInfo !== null
   const mcpMeta = useSettingsStore((s) => s.mcpMeta)
@@ -186,14 +184,15 @@ function ToolResult({ text }: { text: string }) {
 
 /** Prettified JSON code block with syntax highlighting and truncation. */
 function PrettyJSONCodeBlock({ text }: { text: string }) {
-  const prettified = tryPrettifyJson(text) ?? text
+  const jsonResult = useMemo(() => tryPrettifyJson(text), [text])
+  const prettified = jsonResult ?? text
+  const language = jsonResult ? 'json' : 'text'
   const lines = prettified.split('\n')
   const previewLines = 20
   const isLong = lines.length > previewLines
   const [showAll, setShowAll] = useState(false)
   const hiddenCount = lines.length - previewLines
   const visibleText = showAll || !isLong ? prettified : lines.slice(0, previewLines).join('\n')
-  const language = tryPrettifyJson(text) ? 'json' : 'text'
 
   return (
     <div className="-mx-2">
@@ -240,11 +239,53 @@ function QAResult({ text }: { text: string }) {
   )
 }
 
+/** Infer language from file extension for syntax highlighting. */
+function inferLanguage(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, string> = {
+    ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+    py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
+    json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
+    html: 'html', css: 'css', scss: 'scss', md: 'markdown',
+    sh: 'bash', bash: 'bash', sql: 'sql', swift: 'swift',
+    kt: 'kotlin', c: 'c', cpp: 'cpp', cs: 'csharp', php: 'php',
+  }
+  return map[ext] ?? 'text'
+}
+
+interface HLToken { content: string; style?: React.CSSProperties }
+
+/** Highlight code with codePlugin and return token arrays per line. */
+function useHighlightedTokens(code: string, language: string): HLToken[][] | null {
+  const [tokens, setTokens] = useState<HLToken[][] | null>(null)
+
+  useEffect(() => {
+    if (!code) { setTokens(null); return }
+    const lang = codePlugin.supportsLanguage(language as never) ? language : 'md'
+    const themes = codePlugin.getThemes()
+    const extract = (res: { tokens: Array<Array<{ content: string; color?: string; bgColor?: string; htmlStyle?: Record<string, string> }>> }): HLToken[][] =>
+      res.tokens.map((line) => line.map((t) => {
+        const s: React.CSSProperties = { ...(t.htmlStyle ?? {}) }
+        if (t.color) s.color = t.color
+        if (t.bgColor) s.backgroundColor = t.bgColor
+        return { content: t.content, style: Object.keys(s).length ? s : undefined }
+      }))
+    const result = codePlugin.highlight(
+      { code, language: lang as never, themes },
+      (res) => setTokens(extract(res)),
+    )
+    if (result) setTokens(extract(result))
+  }, [code, language])
+
+  return tokens
+}
+
 /** A single rendered line in the diff view. */
 interface DiffLine {
   kind: 'added' | 'removed' | 'unchanged'
   lineNum: number
   text: string
+  sourceIdx: number
 }
 
 /** Build unified diff lines with actual file line numbers. */
@@ -253,22 +294,23 @@ function buildDiffLines(oldStr: string, newStr: string, startLine: number): Diff
   const result: DiffLine[] = []
   let oldLine = startLine
   let newLine = startLine
+  let oldIdx = 0
+  let newIdx = 0
 
   for (const change of changes) {
     const lines = change.value.replace(/\n$/, '').split('\n')
     if (change.removed) {
       for (const text of lines) {
-        result.push({ kind: 'removed', lineNum: oldLine++, text })
+        result.push({ kind: 'removed', lineNum: oldLine++, text, sourceIdx: oldIdx++ })
       }
     } else if (change.added) {
       for (const text of lines) {
-        result.push({ kind: 'added', lineNum: newLine++, text })
+        result.push({ kind: 'added', lineNum: newLine++, text, sourceIdx: newIdx++ })
       }
     } else {
       for (const text of lines) {
-        result.push({ kind: 'unchanged', lineNum: newLine, text })
-        oldLine++
-        newLine++
+        result.push({ kind: 'unchanged', lineNum: newLine, text, sourceIdx: newIdx })
+        oldLine++; newLine++; oldIdx++; newIdx++
       }
     }
   }
@@ -286,22 +328,33 @@ const LINE_STYLE: Record<DiffLine['kind'], { bg: string; marker: string; markerC
   unchanged: { bg: '', marker: ' ', markerColor: 'text-transparent' },
 }
 
-/** Render a list of DiffLine entries. */
-function DiffView({ lines }: { lines: DiffLine[] }) {
+/** Render a list of DiffLine entries with optional syntax highlighting. */
+function DiffView({ lines, oldTokens, newTokens }: {
+  lines: DiffLine[]
+  oldTokens?: HLToken[][] | null
+  newTokens?: HLToken[][] | null
+}) {
   const maxLine = lines.reduce((m, l) => Math.max(m, l.lineNum), 0)
   const gw = gutterWidth(maxLine)
 
   return (
-    <div className="overflow-x-auto rounded bg-background/70 p-2 text-[11px] font-mono leading-relaxed text-foreground">
+    <div className="max-h-[300px] overflow-auto rounded bg-background/70 p-2 text-[11px] font-mono leading-relaxed text-foreground">
       {lines.map((line, i) => {
         const s = LINE_STYLE[line.kind]
+        const tokens = line.kind === 'removed'
+          ? oldTokens?.[line.sourceIdx]
+          : (newTokens ?? oldTokens)?.[line.sourceIdx]
         return (
-          <div key={i} className={s.bg}>
-            <span className="select-none text-muted-foreground/50 mr-2">
-              {String(line.lineNum).padStart(gw)}
+          <div key={i} className={cn('whitespace-pre', s.bg)}>
+            <span className="inline-block select-none text-right text-muted-foreground/50 mr-1" style={{ width: `${gw}ch` }}>
+              {line.lineNum}
             </span>
-            <span className={cn('select-none mr-1', s.markerColor)}>{s.marker}</span>
-            {line.text || ' '}
+            <span className={cn('inline-block w-[1ch] select-none text-center mr-1', s.markerColor)}>{s.marker}</span>
+            {tokens
+              ? tokens.map((t, j) => (
+                  <span key={j} style={t.style}>{t.content}</span>
+                ))
+              : (line.text || ' ')}
           </div>
         )
       })}
@@ -316,6 +369,9 @@ function EditDiff({ params }: { params: Record<string, unknown> }) {
   const filePath = String(params.file_path ?? '')
   const activeProject = useChatStore((s) => s.activeProject)
   const [startLine, setStartLine] = useState(1)
+  const language = inferLanguage(filePath)
+  const oldTokens = useHighlightedTokens(oldStr, language)
+  const newTokens = useHighlightedTokens(newStr, language)
 
   useEffect(() => {
     if (!filePath || !activeProject) return
@@ -342,33 +398,23 @@ function EditDiff({ params }: { params: Record<string, unknown> }) {
   )
 
   if (!oldStr && !newStr) return null
-  return <DiffView lines={lines} />
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} />
 }
 
-/** Content preview for Write tool (all lines are additions, starting at line 1). */
+/** Content preview for Write tool (all lines are additions). */
 function WriteDiff({ params }: { params: Record<string, unknown> }) {
   const content = String(params.content ?? '')
-  if (!content) return null
+  const filePath = String(params.file_path ?? '')
+  const language = inferLanguage(filePath)
+  const tokens = useHighlightedTokens(content, language)
 
-  const allLines = content.split('\n')
-  const MAX_LINES = 20
-  const truncated = allLines.length > MAX_LINES
-  const gw = gutterWidth(truncated ? allLines.length : MAX_LINES)
+  const lines = useMemo<DiffLine[]>(() => {
+    if (!content) return []
+    return content.split('\n').map((text, i) => ({ kind: 'added' as const, lineNum: i + 1, text, sourceIdx: i }))
+  }, [content])
 
-  const visibleLines: DiffLine[] = allLines
-    .slice(0, MAX_LINES)
-    .map((text, i) => ({ kind: 'added', lineNum: i + 1, text }))
-
-  return (
-    <div>
-      <DiffView lines={visibleLines} />
-      {truncated && (
-        <div className="mt-0.5 px-2 text-[11px] text-muted-foreground">
-          ... {allLines.length - MAX_LINES} more lines
-        </div>
-      )}
-    </div>
-  )
+  if (lines.length === 0) return null
+  return <DiffView lines={lines} newTokens={tokens} />
 }
 
 /** ExitPlanMode: shows pending / approved / rejected state. */

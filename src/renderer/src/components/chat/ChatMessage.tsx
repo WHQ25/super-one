@@ -1,22 +1,14 @@
 import type { ChatMessage as ChatMessageType, ContentBlock } from '../../../../shared/agent-types'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { cn } from '@/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown } from 'lucide-react'
 import { Streamdown } from 'streamdown'
-import { createCodePlugin } from '@streamdown/code'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { SubagentBlock } from './SubagentBlock'
-import { createStreamdownCodeComponent } from './CodeBlock'
 import { FileIcon } from '@/components/ui/FileIcon'
-
-const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
-const streamdownPlugins = { code: codePlugin }
-const streamdownControls = { table: false }
-
-const streamdownComponents = {
-  code: createStreamdownCodeComponent(codePlugin),
-}
+import { useActiveSession } from '@/stores/chat'
+import { streamdownPlugins, streamdownControls, streamdownComponents, formatTokens, useAnimatedTokens } from './chat-shared'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -257,11 +249,63 @@ function UserTextBlock({ text }: { text: string }) {
   )
 }
 
+/** Parse __compact__ marker text. Returns null if not a compact message. */
+function parseCompactMarker(message: ChatMessageType): { trigger: string; preTokens: number } | null {
+  if (message.providerId !== 'system') return null
+  const firstBlock = message.content[0]
+  if (!firstBlock || firstBlock.type !== 'text') return null
+  const match = firstBlock.text.match(/^__compact__:(manual|auto):(\d+)$/)
+  if (!match) return null
+  return { trigger: match[1], preTokens: parseInt(match[2], 10) }
+}
+
+/** Format token count for compact display. */
+function formatCompactTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
+  return String(tokens)
+}
+
+export function CompactIndicator({ trigger, preTokens }: { trigger: string; preTokens: number }) {
+  return (
+    <div className="my-0.5 flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-xs">
+      <Minimize2 className="size-3 shrink-0 text-amber-400" />
+      <span className="font-medium text-amber-400">Context compacted</span>
+      <span className="text-amber-400/60">{trigger === 'auto' ? 'auto' : 'manual'}</span>
+      {preTokens > 0 && <span className="text-amber-400/60">· {formatCompactTokens(preTokens)} tokens</span>}
+    </div>
+  )
+}
+
+export function CompactingIndicator() {
+  return (
+    <div className="my-0.5 flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-xs">
+      <Loader2 className="size-3 shrink-0 animate-spin text-amber-400" />
+      <span className="font-medium text-amber-400">Compacting context…</span>
+    </div>
+  )
+}
+
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming'
 
-  const grouped = isUser ? null : groupContent(message.content)
+  // Compact boundary messages — render as styled indicator
+  const compactInfo = parseCompactMarker(message)
+  if (compactInfo) {
+    return (
+      <div className="w-0 min-w-full flex justify-start">
+        <div className="w-full">
+          <CompactIndicator trigger={compactInfo.trigger} preTokens={compactInfo.preTokens} />
+        </div>
+      </div>
+    )
+  }
+
+  const grouped = useMemo(
+    () => isUser ? null : groupContent(message.content),
+    [isUser, message.content],
+  )
 
   return (
     <div className={cn('w-0 min-w-full flex', isUser ? 'justify-end' : 'justify-start')}>
@@ -322,8 +366,49 @@ export function ChatMessage({ message }: ChatMessageProps) {
   )
 }
 
+/** Single animated token value with ↑ or ↓ arrow. */
+function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 'down' }) {
+  const display = useAnimatedTokens(value)
+  const [flash, setFlash] = useState(false)
+  const prev = useRef(0)
+
+  useEffect(() => {
+    if (value > prev.current && prev.current > 0) {
+      setFlash(true)
+      // Match flash duration to the token animation duration
+      const delta = value - prev.current
+      const rate = value >= 1000 ? 1000 : 100
+      const duration = Math.max(100, (delta / rate) * 1000)
+      const t = setTimeout(() => setFlash(false), duration)
+      prev.current = value
+      return () => clearTimeout(t)
+    }
+    prev.current = value
+  }, [value])
+
+  if (display <= 0) return null
+
+  const isUp = direction === 'up'
+  const flashColor = isUp ? 'text-blue-400' : 'text-emerald-400'
+
+  return (
+    <span className={cn('inline-flex items-center gap-0.5 tabular-nums transition-colors duration-300', flash && flashColor)}>
+      {isUp
+        ? <ArrowUp className={cn('size-3 transition-transform duration-300', flash && 'scale-110')} />
+        : <ArrowDown className={cn('size-3 transition-transform duration-300', flash && 'scale-110')} />
+      }
+      <span>{formatTokens(display)}</span>
+    </span>
+  )
+}
+
+const ZERO_TOKENS = { input: 0, output: 0 }
+
 function DurationFooter({ message }: { message: ChatMessageType }) {
   const isStreaming = message.status === 'streaming'
+  // Only subscribe to streamingTokens when this message is actually streaming
+  // to avoid re-rendering all completed message footers on every token update.
+  const streamingTokens = useActiveSession((s) => isStreaming ? s.streamingTokens : ZERO_TOKENS)
   const startTimeRef = useRef(() => {
     if (message.createdAt) {
       const t = new Date(message.createdAt).getTime()
@@ -343,19 +428,34 @@ function DurationFooter({ message }: { message: ChatMessageType }) {
   }, [isStreaming])
 
   const durationMs = isStreaming ? elapsed : message.metadata?.durationMs
-  if (!durationMs) return null
-  if (isStreaming && durationMs < 1000) return null
-  if (!isStreaming && durationMs < 20000) return null
+  const ct = message.metadata?.consumedTokens
+  const tokenInput = isStreaming ? streamingTokens.input : (ct?.input ?? 0)
+  const tokenOutput = isStreaming ? streamingTokens.output : (ct?.output ?? 0)
+  const hasTokens = tokenInput > 0 || tokenOutput > 0
 
-  const seconds = Math.round(durationMs / 1000)
+  const showDuration = durationMs && (isStreaming ? durationMs >= 1000 : durationMs >= 20000)
+  if (!showDuration && !hasTokens) return null
+
+  const seconds = durationMs ? Math.round(durationMs / 1000) : 0
   const display = seconds < 60
     ? `${seconds}s`
     : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 
   return (
-    <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
-      <Clock className="size-3" />
-      <span>{display}</span>
+    <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      {showDuration && (
+        <>
+          <Clock className="size-3" />
+          <span>{display}</span>
+        </>
+      )}
+      {hasTokens && (
+        <>
+          {showDuration && <span>·</span>}
+          <AnimatedToken value={tokenInput} direction="up" />
+          <AnimatedToken value={tokenOutput} direction="down" />
+        </>
+      )}
     </div>
   )
 }

@@ -11,6 +11,7 @@ import { SettingsLayout } from '@/components/SettingsLayout'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useAppStore } from '@/stores/app'
+import { useActiveSession } from '@/stores/chat'
 import { cn } from '@/lib/utils'
 
 function useTheme() {
@@ -42,6 +43,16 @@ function App(): React.JSX.Element {
   }, [])
 
   const folderName = currentFolder?.split('/').pop() ?? null
+  const sessionTitle = useActiveSession((s) => {
+    if (s.messages.length === 0) return null
+    const firstUser = s.messages.find((m) => m.role === 'user')
+    if (!firstUser) return null
+    return firstUser.content
+      .filter((b) => b.type === 'text')
+      .map((b) => (b as { text: string }).text)
+      .join(' ')
+      .slice(0, 100) || null
+  })
 
   // Non-main views: keep simple titlebar layout
   if (view !== 'main') {
@@ -68,15 +79,15 @@ function App(): React.JSX.Element {
 
   // Main view: sidebar + content
   return (
-    <div className="flex h-screen bg-background text-foreground">
+    <div className="flex h-screen bg-sidebar text-foreground">
       {/* Sidebar — only in coding mode */}
       {layoutMode === 'coding' && showSidebar && <AppSidebar />}
 
-      {/* Main area */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* Main area — overlaps sidebar with rounded left edge */}
+      <div className={cn('flex min-w-0 flex-1 flex-col', layoutMode === 'coding' && showSidebar && 'rounded-l-xl bg-background overflow-hidden')}>
         {/* Main header — drag region */}
         <div
-          className={`flex h-11 shrink-0 items-center pt-[2px] ${isFullscreen ? 'pl-2' : 'pl-[18px]'}`}
+          className={`flex h-11 shrink-0 items-center bg-card pt-[2px] ${isFullscreen ? 'pl-2' : 'pl-[18px]'}`}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           {!isFullscreen && !(layoutMode === 'coding' && showSidebar) && <div className="w-[66px] shrink-0" />}
@@ -100,9 +111,9 @@ function App(): React.JSX.Element {
               </TooltipProvider>
             </>
           )}
-          {folderName && (
-            <span className="truncate text-xs text-muted-foreground">{folderName}</span>
-          )}
+          <span className="max-w-[200px] truncate text-xs text-muted-foreground">
+            {layoutMode === 'coding' ? (sessionTitle ?? 'New Session') : folderName}
+          </span>
 
           <div className="flex-1" />
 
@@ -138,7 +149,10 @@ function App(): React.JSX.Element {
 
         {/* Content */}
         {layoutMode === 'coding' ? (
-          <CodingLayout />
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
+            <CodingLayout />
+          </div>
         ) : (
           <>
             <div className="flex flex-1 items-center justify-center">

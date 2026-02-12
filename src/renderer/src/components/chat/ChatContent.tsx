@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { ChatInput } from './ChatInput'
-import { ChatMessage } from './ChatMessage'
+import { ChatMessage, CompactingIndicator } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -20,6 +20,7 @@ interface ChatContentProps {
 
 export function ChatContent({ scrollViewportRef, externalHistory = false }: ChatContentProps) {
   const messages = useActiveSession((s) => s.messages)
+  const isCompacting = useActiveSession((s) => s.isCompacting)
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
   const showHistory = useActiveSession((s) => s.showHistory)
   const historySessionId = useActiveSession((s) => s._historySessionId)
@@ -39,7 +40,7 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
   }, [])
 
   return (
-    <div ref={containerRef} className="relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col bg-card" style={zoom !== 1 ? { zoom } : undefined}>
+    <div ref={containerRef} className="relative flex min-h-0 w-full flex-1 flex-col bg-card" style={zoom !== 1 ? { zoom } : undefined}>
       {!externalHistory && showHistory ? (
         <SessionHistory />
       ) : pendingPlanApproval ? (
@@ -52,18 +53,23 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
               <ChatSuggestions />
             ) : (
               <ScrollArea key={historySessionId ?? 'default'} className="h-full animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
-                <div className="flex flex-col gap-1.5 p-3 @lg:gap-2.5 @lg:p-3.5 @2xl:gap-2.5 @2xl:p-4">
+                <div className="mx-auto flex max-w-3xl flex-col gap-1.5 p-3 @lg:gap-2.5 @lg:p-3.5 @2xl:gap-2.5 @2xl:p-4">
                   {messages.map((msg) => (
-                    <ChatMessage key={msg.id} message={msg} />
+                    <div key={msg.id} className="chat-message-wrapper">
+                      <ChatMessage message={msg} />
+                    </div>
                   ))}
+                  {isCompacting && <CompactingIndicator />}
                 </div>
               </ScrollArea>
             )}
           </div>
-          <PermissionPrompt />
-          <AskUserQuestionPrompt />
-          <TodoPopup />
-          <ChatInput />
+          <div className="mx-auto w-full max-w-3xl">
+            <PermissionPrompt />
+            <AskUserQuestionPrompt />
+            <TodoPopup />
+            <ChatInput />
+          </div>
         </>
       )}
     </div>

@@ -1,18 +1,14 @@
-import { useState, useEffect, useRef } from 'react'
-import { Bot, ChevronRight, Loader2, Check, BookOpen, Wrench } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { Bot, ChevronRight, Loader2, Check, BookOpen, Wrench, ArrowUp, ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
 import { parseToolInput } from './tool-display'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useActiveSession } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
-import { createCodePlugin } from '@streamdown/code'
-import { createStreamdownCodeComponent } from './CodeBlock'
 import type { ContentBlock } from '../../../../shared/agent-types'
+import { streamdownPlugins, streamdownControls, streamdownComponents, formatTokens, useAnimatedTokens } from './chat-shared'
 
-const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
-const streamdownPlugins = { code: codePlugin }
-const streamdownControls = { table: false }
-const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
+const ZERO_TOKENS = { input: 0, output: 0 }
 
 interface SubagentBlockProps {
   taskBlock: ContentBlock & { type: 'tool_use' }
@@ -41,11 +37,26 @@ function formatElapsed(seconds: number): string {
   return `${mins}m${secs}s`
 }
 
-/** Format token count to a compact string. */
-function formatTokens(total: number): string {
-  if (total >= 1_000_000) return `${(total / 1_000_000).toFixed(1)}M`
-  if (total >= 1_000) return `${(total / 1_000).toFixed(1)}k`
-  return String(total)
+function AnimatedSubagentTokens({ input, output }: { input: number; output: number }) {
+  const dInput = useAnimatedTokens(input)
+  const dOutput = useAnimatedTokens(output)
+  if (dInput <= 0 && dOutput <= 0) return null
+  return (
+    <>
+      {dInput > 0 && (
+        <span className="inline-flex items-center gap-0.5 tabular-nums">
+          <ArrowUp className="size-2.5" />
+          {formatTokens(dInput)}
+        </span>
+      )}
+      {dOutput > 0 && (
+        <span className="inline-flex items-center gap-0.5 tabular-nums">
+          <ArrowDown className="size-2.5" />
+          {formatTokens(dOutput)}
+        </span>
+      )}
+    </>
+  )
 }
 
 /** Build a toolUseId → summary map for correlating tool_result with tool_use. */
@@ -58,11 +69,12 @@ function buildToolResultMap(blocks: ContentBlock[]) {
 }
 
 export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming }: SubagentBlockProps) {
-  const totalTokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? 0)
+  const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
   const taskInput = parseTaskInput(taskBlock.input)
   const isRunning = !resultBlock && isStreaming
   const isComplete = !!resultBlock
-  const isFromHistory = useRef(isComplete && totalTokens === 0)
+  const hasTokens = tokens.input > 0 || tokens.output > 0
+  const isFromHistory = useRef(isComplete && !hasTokens)
   const [expanded, setExpanded] = useState(!isComplete)
 
   // Timer: count elapsed seconds while subagent is running.
@@ -91,10 +103,15 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
     }
   }, [isComplete])
 
-  const toolResultMap = buildToolResultMap(childBlocks)
+  const toolResultMap = useMemo(() => buildToolResultMap(childBlocks), [childBlocks])
   const resultText = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
-  const toolCallCount = childBlocks.filter((b) => b.type === 'tool_use').length
-  const filesReadCount = childBlocks.filter((b) => b.type === 'tool_use' && b.toolName === 'Read').length
+  const { toolCallCount, filesReadCount } = useMemo(() => {
+    let tools = 0, reads = 0
+    for (const b of childBlocks) {
+      if (b.type === 'tool_use') { tools++; if (b.toolName === 'Read') reads++ }
+    }
+    return { toolCallCount: tools, filesReadCount: reads }
+  }, [childBlocks])
 
   return (
     <div className="subagent-container my-1 overflow-hidden rounded border border-border/50 bg-muted/20">
@@ -140,36 +157,36 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
       )}
 
       {/* Footer — hidden for history-loaded subagents */}
-      {!isFromHistory.current && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+      {!isFromHistory.current && (isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
         {isRunning ? (
           <>
             <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
             <span>Running</span>
             {elapsed > 0 && <span className="tabular-nums">{formatElapsed(elapsed)}</span>}
           </>
-        ) : isComplete ? (
+        ) : (
           <>
             <Check className="size-3 shrink-0 text-green-400" />
             <span>Done{elapsed > 0 ? ` ${formatElapsed(elapsed)}` : ''}</span>
-            <span className="ml-auto flex items-center gap-1.5">
-              {filesReadCount > 0 && (
-                <span className="inline-flex items-center gap-0.5">
-                  <BookOpen className="size-3" />
-                  {filesReadCount}
-                </span>
-              )}
-              {filesReadCount > 0 && toolCallCount > 0 && <span>·</span>}
-              {toolCallCount > 0 && (
-                <span className="inline-flex items-center gap-0.5">
-                  <Wrench className="size-3" />
-                  {toolCallCount}
-                </span>
-              )}
-              {totalTokens > 0 && (filesReadCount > 0 || toolCallCount > 0) && <span>·</span>}
-              {totalTokens > 0 && <span>{formatTokens(totalTokens)} Tokens</span>}
-            </span>
           </>
-        ) : null}
+        )}
+        <span className="ml-auto flex items-center gap-1.5">
+          {filesReadCount > 0 && (
+            <span className="inline-flex items-center gap-0.5">
+              <BookOpen className="size-3" />
+              {filesReadCount}
+            </span>
+          )}
+          {filesReadCount > 0 && toolCallCount > 0 && <span>·</span>}
+          {toolCallCount > 0 && (
+            <span className="inline-flex items-center gap-0.5">
+              <Wrench className="size-3" />
+              {toolCallCount}
+            </span>
+          )}
+          {hasTokens && (filesReadCount > 0 || toolCallCount > 0) && <span>·</span>}
+          <AnimatedSubagentTokens input={tokens.input} output={tokens.output} />
+        </span>
       </div>}
     </div>
   )

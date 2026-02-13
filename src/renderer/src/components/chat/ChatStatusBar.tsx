@@ -42,9 +42,6 @@ function WorkDirIndicator() {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [branches, setBranches] = useState<string[]>([])
   const [search, setSearch] = useState('')
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [createBaseBranch, setCreateBaseBranch] = useState('')
-  const [createBranchName, setCreateBranchName] = useState('')
 
   useEffect(() => {
     if (!currentFolder) { setWorktreeInfo(null); return }
@@ -69,42 +66,11 @@ function WorkDirIndicator() {
     }
   }, [currentFolder])
 
-  const handleSelectWorktree = useCallback((branch: string) => {
+  const handleCreateFromBranch = useCallback((baseBranch: string) => {
     if (!currentFolder) return
     setPopoverOpen(false)
-    // Existing worktree — use the branch directly (no base needed)
-    useAppStore.getState().setPendingWorktree(currentFolder, branch, branch)
+    useAppStore.getState().setPendingWorktree(currentFolder, baseBranch)
   }, [currentFolder])
-
-  const handleClickBranch = useCallback((baseBranch: string) => {
-    setPopoverOpen(false)
-    setCreateBaseBranch(baseBranch)
-    setCreateBranchName('')
-    setCreateDialogOpen(true)
-  }, [])
-
-  const branchNameError = (() => {
-    const name = createBranchName.trim()
-    if (!name) return ''
-    if (branches.includes(name)) return 'Branch already exists'
-    if (/\s/.test(name)) return 'Cannot contain spaces'
-    if (/\.\./.test(name)) return 'Cannot contain ".."'
-    if (/[~^:?*\[\\]/.test(name)) return 'Contains invalid characters'
-    if (name.startsWith('-') || name.startsWith('.')) return 'Cannot start with "-" or "."'
-    if (name.endsWith('/') || name.endsWith('.') || name.endsWith('.lock')) return 'Invalid ending'
-    if (/\/\//.test(name)) return 'Cannot contain consecutive slashes'
-    return ''
-  })()
-
-  const canConfirm = createBranchName.trim().length > 0 && !branchNameError
-
-  const handleConfirmCreate = useCallback(() => {
-    if (!currentFolder || !canConfirm) return
-    useAppStore.getState().setPendingWorktree(currentFolder, createBranchName.trim(), createBaseBranch)
-    setCreateDialogOpen(false)
-    setCreateBranchName('')
-    setCreateBaseBranch('')
-  }, [currentFolder, createBranchName, createBaseBranch, canConfirm])
 
   const handleSwitchToLocal = useCallback(() => {
     if (!currentFolder) return
@@ -114,29 +80,26 @@ function WorkDirIndicator() {
 
   if (!worktreeInfo) return null
 
-  const isPending = !!wtState?.pendingBranch
+  const isPending = !!wtState?.pendingBaseBranch
   const isActive = !!wtState?.activePath
   const isInWorktree = isPending || isActive
-  const worktreeLabel = wtState?.pendingBranch ?? worktreeBranch ?? wtState?.activePath?.split('/').pop() ?? ''
 
   // Worktree already activated (message sent) — locked, no dropdown
   if (isActive) {
     return (
       <div className="flex items-center gap-1 rounded-lg px-2 py-1">
-        <span className="text-muted-foreground">Worktree:</span>
         <GitFork className="size-3" />
-        <span>{worktreeLabel}</span>
+        <span>Worktree</span>
       </div>
     )
   }
 
-  // Worktree session restored from history — locked indicator with branch
+  // Worktree session restored from history — locked indicator
   if (worktreeBranch && !isInWorktree) {
     return (
       <div className="flex items-center gap-1 rounded-lg px-2 py-1">
-        <span className="text-muted-foreground">Worktree:</span>
         <GitFork className="size-3" />
-        <span>{worktreeBranch}</span>
+        <span>Worktree</span>
       </div>
     )
   }
@@ -151,140 +114,101 @@ function WorkDirIndicator() {
     )
   }
 
-  const otherWorktrees = worktreeInfo.entries.filter((e) => !e.isMain)
-  const worktreeBranches = new Set(otherWorktrees.map((e) => e.branch))
+  const detachedWorktrees = worktreeInfo.entries.filter((e) => !e.isMain && !e.branch)
   const lowerSearch = search.toLowerCase()
-  // Branches without an existing worktree — potential base for new worktree
   const filteredBranches = branches.filter(
-    (b) => b.toLowerCase().includes(lowerSearch) && !worktreeBranches.has(b)
-  )
-  const filteredWorktrees = otherWorktrees.filter(
-    (e) => e.branch.toLowerCase().includes(lowerSearch)
+    (b) => b.toLowerCase().includes(lowerSearch)
   )
 
   return (
-    <>
-      <Popover open={popoverOpen} onOpenChange={openPopover}>
-        <PopoverTrigger asChild>
-          <button className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground">
-            {isPending ? (
+    <Popover open={popoverOpen} onOpenChange={openPopover}>
+      <PopoverTrigger asChild>
+        <button className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground">
+          {isPending ? (
+            <>
+              <span className="text-muted-foreground">Create worktree from:</span>
+              <GitBranch className="size-3" />
+              <span>{wtState?.pendingBaseBranch}</span>
+            </>
+          ) : (
+            <>
+              <Monitor className="size-3" />
+              <span>Local</span>
+            </>
+          )}
+          <ChevronDown className={`size-3 transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Search branches…"
+            value={search}
+            onValueChange={setSearch}
+          />
+          <CommandList>
+            {/* Local (main worktree) */}
+            <CommandGroup>
+              <CommandItem
+                onSelect={isInWorktree ? handleSwitchToLocal : undefined}
+                disabled={!isInWorktree}
+                className="gap-2 text-xs"
+              >
+                <Monitor className="size-3 shrink-0 text-muted-foreground" />
+                <span className="truncate">Local</span>
+                {!isInWorktree && <Check className="size-3 shrink-0 text-foreground" />}
+              </CommandItem>
+            </CommandGroup>
+
+            {/* Detached worktrees (read-only display) */}
+            {detachedWorktrees.length > 0 && (
               <>
-                <GitFork className="size-3" />
-                <span>{worktreeLabel}</span>
-              </>
-            ) : (
-              <>
-                <Monitor className="size-3" />
-                <span>Local</span>
+                <CommandSeparator />
+                <CommandGroup heading="Detached Worktrees">
+                  {detachedWorktrees.map((wt) => (
+                    <CommandItem
+                      key={wt.path}
+                      value={wt.path}
+                      disabled
+                      className="gap-2 text-xs opacity-60"
+                    >
+                      <GitFork className="size-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate font-mono">{wt.head.slice(0, 7)}</span>
+                      <span className="text-muted-foreground">(detached)</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
               </>
             )}
-            <ChevronDown className={`size-3 transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-72 p-0" align="start">
-          <Command shouldFilter={false}>
-            <CommandInput
-              placeholder="Search worktrees or branches…"
-              value={search}
-              onValueChange={setSearch}
-            />
-            <CommandList>
-              {/* Local (main worktree) */}
-              <CommandGroup>
-                <CommandItem
-                  onSelect={isInWorktree ? handleSwitchToLocal : undefined}
-                  disabled={!isInWorktree}
-                  className="gap-2 text-xs"
-                >
-                  <Monitor className="size-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate">Local</span>
-                  {!isInWorktree && <Check className="size-3 shrink-0 text-foreground" />}
-                </CommandItem>
-              </CommandGroup>
 
-              {/* Existing worktrees */}
-              {filteredWorktrees.length > 0 && (
-                <>
-                  <CommandSeparator />
-                  <CommandGroup heading="Worktrees">
-                    {filteredWorktrees.map((wt) => (
-                      <CommandItem
-                        key={wt.path}
-                        value={wt.path}
-                        onSelect={() => handleSelectWorktree(wt.branch)}
-                        className="gap-2 text-xs"
-                      >
-                        <GitFork className="size-3 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{wt.branch}</span>
-                        {wtState?.pendingBranch === wt.branch && <Check className="size-3 shrink-0 text-foreground" />}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </>
-              )}
-
-              {/* Create worktree from branch — only in Local mode */}
-              {!isInWorktree && filteredBranches.length > 0 && (
-                <>
-                  <CommandSeparator />
-                  <CommandGroup heading="Create Worktree from…">
-                    {filteredBranches.map((b) => (
-                      <CommandItem
-                        key={b}
-                        value={`__wt_create__${b}`}
-                        onSelect={() => handleClickBranch(b)}
-                        className="gap-2 text-xs"
-                      >
-                        <Plus className="size-3 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{b}</span>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </>
-              )}
-
-              {filteredWorktrees.length === 0 && filteredBranches.length === 0 && search.trim().length > 0 && (
-                <CommandEmpty>No matches</CommandEmpty>
-              )}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-
-      {/* Create worktree dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create Worktree</DialogTitle>
-            <DialogDescription>
-              Create a new branch from <strong>{createBaseBranch}</strong>. The worktree will be created when you send your next message.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2">
-            <label className="mb-1.5 block text-xs text-muted-foreground">New branch name</label>
-            <input
-              className={`flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 ${branchNameError ? 'border-destructive focus-visible:ring-destructive' : 'border-input focus-visible:ring-ring'}`}
-              value={createBranchName}
-              onChange={(e) => setCreateBranchName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && canConfirm) handleConfirmCreate() }}
-              placeholder="e.g. feature/my-branch"
-              autoFocus
-            />
-            {branchNameError && (
-              <p className="mt-1.5 text-xs text-destructive">{branchNameError}</p>
+            {/* Create worktree from branch — only in Local mode */}
+            {filteredBranches.length > 0 && (
+              <>
+                <CommandSeparator />
+                <CommandGroup heading="Create Worktree from…">
+                  {filteredBranches.map((b) => (
+                    <CommandItem
+                      key={b}
+                      value={`__wt_create__${b}`}
+                      onSelect={() => handleCreateFromBranch(b)}
+                      className="gap-2 text-xs"
+                    >
+                      <Plus className="size-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{b}</span>
+                      {wtState?.pendingBaseBranch === b && <Check className="size-3 shrink-0 text-foreground" />}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
             )}
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => setCreateDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleConfirmCreate} disabled={!canConfirm}>
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+
+            {filteredBranches.length === 0 && search.trim().length > 0 && (
+              <CommandEmpty>No matches</CommandEmpty>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -300,7 +224,7 @@ export function ChatStatusBar() {
 
   const worktreeBranch = useActiveSession((s) => s._worktreeBranch)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
-  const isInWorktree = !!(wtState?.pendingBranch || wtState?.activePath)
+  const isInWorktree = !!(wtState?.pendingBaseBranch || wtState?.activePath)
 
   useEffect(() => {
     if (!currentFolder) { setGitInfo(null); return }

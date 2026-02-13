@@ -7,8 +7,7 @@ type SettingsTab = 'agents' | 'skills' | 'mcp' | 'plugins'
 export type LayoutMode = 'canvas' | 'coding'
 
 interface WorktreeState {
-  pendingBranch: string | null      // New branch name for the worktree
-  pendingBaseBranch: string | null   // Base branch to create from
+  pendingBaseBranch: string | null   // Base branch to detach from
   activePath: string | null          // Worktree path currently active (agent cwd switched)
 }
 
@@ -52,7 +51,7 @@ interface AppState {
   switchToProject: (folderPath: string) => void
 
   // Worktree management
-  setPendingWorktree: (projectPath: string, branch: string, baseBranch: string) => void
+  setPendingWorktree: (projectPath: string, baseBranch: string) => void
   setActiveWorktree: (projectPath: string, path: string | null) => void
   clearWorktree: (projectPath: string) => Promise<void>
   getWorktreeState: (projectPath: string) => WorktreeState
@@ -82,7 +81,7 @@ async function refreshResourcesInBackground(): Promise<void> {
   }
 }
 
-const defaultWorktreeState: WorktreeState = { pendingBranch: null, pendingBaseBranch: null, activePath: null }
+const defaultWorktreeState: WorktreeState = { pendingBaseBranch: null, activePath: null }
 
 export const useAppStore = create<AppState>((set, get) => ({
   view: 'setup',
@@ -242,11 +241,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSettingsTab: (tab) => set({ settingsTab: tab }),
 
   // Worktree management
-  setPendingWorktree: (projectPath, branch, baseBranch) => {
+  setPendingWorktree: (projectPath, baseBranch) => {
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
-        [projectPath]: { pendingBranch: branch, pendingBaseBranch: baseBranch, activePath: s._worktrees[projectPath]?.activePath ?? null },
+        [projectPath]: { pendingBaseBranch: baseBranch, activePath: s._worktrees[projectPath]?.activePath ?? null },
       },
     }))
   },
@@ -255,7 +254,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
-        [projectPath]: { pendingBranch: null, pendingBaseBranch: null, activePath: path },
+        [projectPath]: { pendingBaseBranch: null, activePath: path },
       },
     }))
   },
@@ -272,7 +271,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
-        [projectPath]: { pendingBranch: null, pendingBaseBranch: null, activePath: null },
+        [projectPath]: { pendingBaseBranch: null, activePath: null },
       },
     }))
   },

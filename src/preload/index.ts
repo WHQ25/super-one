@@ -197,8 +197,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_CREATE_BRANCH, folderPath, branch),
   getWorktreeInfo: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_WORKTREE_INFO, folderPath),
-  activateWorktree: (folderPath: string, branch: string | null, baseBranch?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, folderPath, branch, baseBranch),
+  activateWorktree: (folderPath: string, baseBranch: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, folderPath, baseBranch),
 
   // Session history
   listSessions: (projectPath: string) =>

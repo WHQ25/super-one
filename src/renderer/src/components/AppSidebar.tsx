@@ -103,7 +103,7 @@ export function AppSidebar() {
   }, [recentFolders, sortMode])
 
   return (
-    <div className="flex h-full w-full shrink-0 flex-col bg-sidebar">
+    <div className="flex h-full w-full shrink-0 flex-col bg-sidebar text-sidebar-foreground">
       {/* Header — drag region with traffic lights spacer + toggle */}
       <div
         className={cn('flex h-11 shrink-0 items-center pt-[2px]', isFullscreen ? 'pl-2' : 'pl-[18px]')}
@@ -115,7 +115,7 @@ export function AppSidebar() {
             <TooltipTrigger asChild>
               <button
                 onClick={() => setShowSidebar(false)}
-                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="rounded-md p-1 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
               >
                 <PanelLeftDashed className="size-3.5" />
@@ -130,19 +130,19 @@ export function AppSidebar() {
 
       {/* Projects header */}
       <div className="flex items-center justify-between px-3 py-1.5">
-        <span className="text-xs font-medium text-muted-foreground">Projects</span>
+        <span className="text-xs font-medium text-sidebar-foreground/70">Projects</span>
         <div className="flex items-center gap-0.5">
           <Button
             size="icon-xs"
             variant="ghost"
             onClick={() => selectAndOpenFolder()}
-            className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
+            className="shrink-0 cursor-pointer text-sidebar-foreground/70 hover:text-sidebar-accent-foreground"
           >
             <Plus className="size-3.5" />
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="icon-xs" variant="ghost" className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground">
+              <Button size="icon-xs" variant="ghost" className="shrink-0 cursor-pointer text-sidebar-foreground/70 hover:text-sidebar-accent-foreground">
                 <ArrowDownUp className="size-3" />
               </Button>
             </DropdownMenuTrigger>
@@ -161,7 +161,7 @@ export function AppSidebar() {
       {/* Project list */}
       <div className="min-h-0 flex-1">
         {sortedFolders.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center p-4 text-xs text-muted-foreground">
+          <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
             No projects yet
           </div>
         ) : (
@@ -180,17 +180,17 @@ export function AppSidebar() {
                       onClick={() => toggleExpand(folder.path)}
                       className={cn(
                         'group flex h-9 cursor-pointer items-center justify-between overflow-hidden rounded-md px-2.5 transition-colors',
-                        'hover:bg-muted'
+                        'hover:bg-sidebar-accent'
                       )}
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <ChevronRight className={cn(
-                          'hidden size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:block',
+                          'hidden size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 group-hover:block',
                           isExpanded && 'rotate-90'
                         )} />
                         {isExpanded
-                          ? <FolderOpen className="size-4.5 shrink-0 text-muted-foreground group-hover:hidden" />
-                          : <Folder className="size-4.5 shrink-0 text-muted-foreground group-hover:hidden" />
+                          ? <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
+                          : <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
                         }
                         <TooltipProvider delayDuration={500}>
                           <Tooltip>
@@ -208,7 +208,7 @@ export function AppSidebar() {
                           <DropdownMenuTrigger asChild>
                             <button
                               onClick={(e) => e.stopPropagation()}
-                              className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                              className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
                             >
                               <MoreHorizontal className="size-4" />
                             </button>
@@ -236,7 +236,7 @@ export function AppSidebar() {
                                   e.stopPropagation()
                                   openFolder(folder.path).then(() => resetSession())
                                 }}
-                                className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                                className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
                               >
                                 <SquarePen className="size-4" />
                               </button>
@@ -251,7 +251,7 @@ export function AppSidebar() {
                     {isExpanded && (
                       <div className="flex flex-col py-0.5 pl-5">
                         {sessions.length === 0 ? (
-                          <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground">No sessions</div>
+                          <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">No sessions</div>
                         ) : (
                           sessions.slice(0, MAX_SESSIONS).map((session) => {
                             const fgSid = projectSession?._historySessionId ?? projectSession?.session?.sessionId
@@ -270,13 +270,13 @@ export function AppSidebar() {
                                   className={cn(
                                     'flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
                                     isActive && isForeground
-                                      ? 'bg-accent'
-                                      : 'hover:bg-muted'
+                                      ? 'bg-sidebar-accent'
+                                      : 'hover:bg-sidebar-accent'
                                   )}
                                 >
                                   {isRunning
-                                    ? <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
-                                    : <MessageSquare className="size-3 shrink-0 text-muted-foreground" />
+                                    ? <Loader2 className="size-3 shrink-0 animate-spin text-sidebar-foreground/70" />
+                                    : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
                                   }
                                   <span className="min-w-0 truncate text-[13px]">{session.title}</span>
                                 </div>
@@ -307,13 +307,13 @@ export function AppSidebar() {
       <div className="flex items-center gap-1 px-3 py-2">
         <button
           onClick={() => navigateTo('settings')}
-          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <Settings className="size-3.5" />
         </button>
         <button
           onClick={theme.toggle}
-          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           {theme.dark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
         </button>

@@ -378,7 +378,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       content: '',
       editorProps: {
         attributes: {
-          class: 'w-full min-h-[60px] max-h-[120px] overflow-y-auto text-[15px] leading-6 outline-none text-foreground',
+          class: 'w-full min-h-[36px] max-h-[120px] overflow-y-auto text-[15px] leading-6 outline-none text-foreground',
         },
         // Intercept keys BEFORE ProseMirror handles them
         handleKeyDown: (_view, event) => {

@@ -420,6 +420,12 @@ export interface SessionHistoryEntry {
   gitBranch?: string
   messageCount: number // Total user + assistant messages
   isWorktree?: boolean // true if session was created in a git worktree
+  isPinned?: boolean   // true if session is pinned by user
+}
+
+export interface PinnedSessionEntry extends SessionHistoryEntry {
+  folderPath: string
+  folderName: string
 }
 
 export interface LoadSessionMessagesResult {
@@ -535,4 +541,7 @@ export const AgentIpcChannels = {
   SESSIONS_CREATE: 'sessions:create',
   SESSIONS_SAVE_STATE: 'sessions:save-state',
   SESSIONS_LOAD_STATE: 'sessions:load-state',
+  SESSIONS_DELETE: 'sessions:delete',
+  SESSIONS_PIN: 'sessions:pin',
+  SESSIONS_LIST_PINNED: 'sessions:list-pinned',
 } as const

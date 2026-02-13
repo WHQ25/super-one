@@ -217,6 +217,12 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SAVE_STATE, claudeSessionId, data),
   loadSessionState: (claudeSessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_STATE, claudeSessionId),
+  deleteSession: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE, sessionId),
+  pinSession: (sessionId: string, pinned: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_PIN, sessionId, pinned),
+  listPinnedSessions: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_PINNED),
 }
 
 if (process.contextIsolated) {

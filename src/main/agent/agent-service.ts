@@ -14,7 +14,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState } from '../db-sessions'
+import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, deleteSession as dbDeleteSession, pinSession as dbPinSession, listPinnedSessions } from '../db-sessions'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
@@ -352,6 +352,18 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_STATE, (_event, claudeSessionId: string) => {
       return loadSessionState(claudeSessionId)
     })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, (_event, claudeSessionId: string) => {
+      dbDeleteSession(claudeSessionId)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_PIN, (_event, claudeSessionId: string, pinned: boolean) => {
+      dbPinSession(claudeSessionId, pinned)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_LIST_PINNED, () => {
+      return listPinnedSessions()
+    })
   }
 
   /** Dispose the current agent for projectPath and recreate it with a new cwd.
@@ -459,5 +471,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_CREATE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_SAVE_STATE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_STATE)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_PIN)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)
   }
 }

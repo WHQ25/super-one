@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ChatMessage, ConnectResult, GitInfo, GitResult, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, PermissionMode, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, ConnectResult, GitInfo, GitResult, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -89,6 +89,9 @@ interface AppAPI {
   createSession(projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string): Promise<void>
   saveSessionState(claudeSessionId: string, data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string }): Promise<void>
   loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null } | null>
+  deleteSession(sessionId: string): Promise<void>
+  pinSession(sessionId: string, pinned: boolean): Promise<void>
+  listPinnedSessions(): Promise<PinnedSessionEntry[]>
 }
 
 declare global {

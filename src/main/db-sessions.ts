@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
-import type { ChatMessage, SessionHistoryEntry } from '../shared/agent-types'
+import type { ChatMessage, SessionHistoryEntry, PinnedSessionEntry } from '../shared/agent-types'
 
 interface DbSession {
   id: string
@@ -32,7 +32,7 @@ export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[]
 
   const db = getDb()
   const rows = db.prepare(`
-    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree,
+    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree, s.is_pinned,
            COALESCE(
              (SELECT MAX(m.created_at) FROM chat_messages m
               WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
@@ -41,7 +41,7 @@ export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[]
     FROM sessions s
     WHERE s.project_id = ?
     ORDER BY last_user_msg_at DESC
-  `).all(projectId) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null }>
+  `).all(projectId) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null }>
 
   return rows.map((r) => ({
     sessionId: r.claude_session_id ?? r.id,
@@ -49,6 +49,7 @@ export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[]
     lastActiveAt: r.last_user_msg_at,
     messageCount: 0,
     ...(r.is_worktree ? { isWorktree: true } : {}),
+    ...(r.is_pinned ? { isPinned: true } : {}),
   }))
 }
 
@@ -173,4 +174,45 @@ export function loadSessionState(
     isWorktree: !!(session.is_worktree),
     gitBranch: session.git_branch ?? null,
   }
+}
+
+/** Delete a session and its messages (cascade). */
+export function deleteSession(claudeSessionId: string): void {
+  const db = getDb()
+  db.prepare('DELETE FROM sessions WHERE claude_session_id = ?').run(claudeSessionId)
+}
+
+/** Pin or unpin a session. */
+export function pinSession(claudeSessionId: string, pinned: boolean): void {
+  const db = getDb()
+  db.prepare('UPDATE sessions SET is_pinned = ? WHERE claude_session_id = ?').run(pinned ? 1 : 0, claudeSessionId)
+}
+
+/** List all pinned sessions across all projects. */
+export function listPinnedSessions(): PinnedSessionEntry[] {
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree,
+           p.path AS folder_path, p.name AS folder_name,
+           COALESCE(
+             (SELECT MAX(m.created_at) FROM chat_messages m
+              WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
+             s.created_at
+           ) AS last_user_msg_at
+    FROM sessions s
+    JOIN projects p ON p.id = s.project_id
+    WHERE s.is_pinned = 1
+    ORDER BY last_user_msg_at DESC
+  `).all() as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; folder_path: string; folder_name: string }>
+
+  return rows.map((r) => ({
+    sessionId: r.claude_session_id ?? r.id,
+    title: r.title ?? 'Untitled',
+    lastActiveAt: r.last_user_msg_at,
+    messageCount: 0,
+    ...(r.is_worktree ? { isWorktree: true } : {}),
+    isPinned: true,
+    folderPath: r.folder_path,
+    folderName: r.folder_name,
+  }))
 }

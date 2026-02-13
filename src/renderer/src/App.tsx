@@ -48,6 +48,7 @@ function App(): React.JSX.Element {
 
     outer.style.transition = 'none'
     document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
 
     const onMove = (ev: MouseEvent) => {
       const maxW = window.innerWidth * 0.3
@@ -60,6 +61,7 @@ function App(): React.JSX.Element {
       const finalW = Math.min(maxW, Math.max(MIN_SIDEBAR, startW + ev.clientX - startX))
       outer.style.transition = ''
       document.body.style.cursor = ''
+      document.body.style.userSelect = ''
       setSidebarWidth(finalW)
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)

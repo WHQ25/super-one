@@ -289,7 +289,9 @@ export class AgentService {
       return listSessionsForFolder(folderPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string) => {
+    ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string) => {
+      const effectiveCwd = worktreeCwd ?? projectPath
+
       // Case 1: Target is in background (same git project) — activate it directly
       if (this.hasBgSession(projectPath, sessionId)) {
         await this.activateSession(projectPath, sessionId)
@@ -301,13 +303,22 @@ export class AgentService {
       if (current && current.isStreaming()) {
         await this.parkSession(projectPath)
         const agent = new ClaudeAgent()
-        await agent.initialize({ cwd: projectPath }, this.createEventEmitter(projectPath), sessionId)
+        await agent.initialize({ cwd: effectiveCwd }, this.createEventEmitter(projectPath), sessionId)
         this.agents.set(projectPath, agent)
         return
       }
 
-      // Case 3: Current idle — resume on existing agent (original behavior)
-      await this.getAgent(projectPath).resumeSession(sessionId)
+      // Case 3: Current idle — resume on existing agent
+      if (worktreeCwd) {
+        // cwd change requires a new agent (can't change cwd of existing process)
+        const existing = this.agents.get(projectPath)
+        if (existing) await existing.dispose()
+        const agent = new ClaudeAgent()
+        await agent.initialize({ cwd: worktreeCwd }, this.createEventEmitter(projectPath), sessionId)
+        this.agents.set(projectPath, agent)
+      } else {
+        await this.getAgent(projectPath).resumeSession(sessionId)
+      }
     })
 
     ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
@@ -330,8 +341,8 @@ export class AgentService {
       dbRenameSession(sessionId, title)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_CREATE, (_event, projectPath: string, claudeSessionId: string, isWorktree?: boolean) => {
-      try { createSession(projectPath, claudeSessionId, undefined, isWorktree) } catch { /* ignore duplicate */ }
+    ipcMain.handle(AgentIpcChannels.SESSIONS_CREATE, (_event, projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string) => {
+      try { createSession(projectPath, claudeSessionId, undefined, isWorktree, gitBranch) } catch { /* ignore duplicate */ }
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_SAVE_STATE, (_event, claudeSessionId: string, data: { messages: unknown[]; totalCostUsd: number; contextTokens: number; title?: string }) => {

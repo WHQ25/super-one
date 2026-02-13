@@ -405,6 +405,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         handleDrop: () => true,
       },
       onUpdate: ({ editor: ed }) => {
+        isEditorUpdateRef.current = true
         const plainText = ed.getText()
         setTextRef.current(plainText)
         setSlashIndex(-1)
@@ -450,6 +451,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       },
     })
     editorRef.current = editor
+
+    // Sync external draftText changes (e.g. from "Commit First" button) into the editor
+    const isEditorUpdateRef = useRef(false)
+    useEffect(() => {
+      if (isEditorUpdateRef.current) {
+        isEditorUpdateRef.current = false
+        return
+      }
+      if (editor && text !== editor.getText()) {
+        editor.commands.setContent(text ? `<p>${text}</p>` : '')
+        editor.commands.focus('end')
+      }
+    }, [text, editor])
 
     // Auto-focus when panel opens
     useEffect(() => {

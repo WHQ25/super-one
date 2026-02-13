@@ -156,8 +156,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   removeRecentFolder: async (folderPath: string) => {
+    // Dispose agent and clean up DB (cascade deletes sessions + messages)
+    await window.app.closeProject(folderPath).catch(() => {})
     const updated = await window.app.removeRecentFolder(folderPath)
-    set({ recentFolders: updated })
+    // Clean up in-memory worktree state
+    set((s) => {
+      const { [folderPath]: _, ..._worktrees } = s._worktrees
+      return {
+        recentFolders: updated,
+        _worktrees,
+        // If the removed project was the active one, clear it
+        ...(s.currentFolder === folderPath ? { currentFolder: null } : {}),
+      }
+    })
+    // Clean up chat store in-memory session state
+    const { useChatStore } = await import('./chat')
+    useChatStore.setState((s) => {
+      const { [folderPath]: _, ...projectSessions } = s.projectSessions
+      return {
+        projectSessions,
+        ...(s.activeProject === folderPath ? { activeProject: null } : {}),
+      }
+    })
   },
 
   startInstall: async () => {

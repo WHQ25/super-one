@@ -27,6 +27,7 @@ interface BgSessionState {
   pendingPermission: PermissionRequest | null
   pendingQuestion: AskUserQuestionRequest | null
   pendingPlanApproval: PlanApprovalRequest | null
+  _worktreeBranch?: string | null
 }
 
 export interface SessionState {
@@ -77,6 +78,9 @@ export interface SessionState {
   hasPendingInteraction: boolean
   isCompacting: boolean
 
+  // Worktree branch name (non-null when session was created in a git worktree)
+  _worktreeBranch: string | null
+
   // Background sessions (streaming in background while user views another session)
   _bgSessions: Record<string, BgSessionState>
 }
@@ -114,6 +118,7 @@ export function createDefaultSessionState(): SessionState {
     sessions: [],
     showHistory: false,
     _historySessionId: null,
+    _worktreeBranch: null,
     streamingTokens: { input: 0, output: 0 },
     hasUnseenActivity: false,
     hasPendingInteraction: false,
@@ -488,8 +493,15 @@ function _extractTitle(messages: ChatMessage[]): string | undefined {
     .slice(0, 100) || undefined
 }
 
-function _isWorktreeSession(projectPath: string): boolean {
-  return useAppStore.getState().getWorktreeState(projectPath).activePath !== null
+function _getWorktreeBranch(projectPath: string, session: SessionState): string | undefined {
+  // Prefer the branch stored in session state (set during worktree activation or DB restore)
+  if (session._worktreeBranch) return session._worktreeBranch
+  // Fallback: use pendingBranch from app store (real branch name, not sanitized)
+  const wt = useAppStore.getState().getWorktreeState(projectPath)
+  if (wt.pendingBranch) return wt.pendingBranch
+  // Never derive from activePath as it contains sanitized directory name (test-feat-worktree)
+  // instead of the real branch name (test/feat/worktree)
+  return undefined
 }
 
 /** Save session state to DB. Reads current store state — safe for synchronous call sites. */
@@ -500,8 +512,8 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   const sessionId = _getEffectiveSessionId(session)
   if (!sessionId) return
 
-  const isWorktree = _isWorktreeSession(projectPath)
-  window.app.createSession(projectPath, sessionId, isWorktree || undefined)
+  const branch = _getWorktreeBranch(projectPath, session)
+  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch)
     .catch(() => { /* ignore duplicate */ })
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
@@ -517,8 +529,8 @@ function _saveSessionSnapshot(projectPath: string, session: SessionState): void 
   const sessionId = _getEffectiveSessionId(session)
   if (!sessionId || session.messages.length === 0) return
 
-  const isWorktree = _isWorktreeSession(projectPath)
-  window.app.createSession(projectPath, sessionId, isWorktree || undefined)
+  const branch = _getWorktreeBranch(projectPath, session)
+  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch)
     .catch(() => { /* ignore duplicate */ })
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
@@ -772,7 +784,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { useAppStore } = await import('./app')
     const wtState = useAppStore.getState().getWorktreeState(activeProject)
     if (wtState.pendingBranch) {
-      const result = await window.app.activateWorktree(activeProject, wtState.pendingBranch, wtState.pendingBaseBranch ?? undefined)
+      const branchName = wtState.pendingBranch
+      const result = await window.app.activateWorktree(activeProject, branchName, wtState.pendingBaseBranch ?? undefined)
       if (!result.ok) {
         console.error('[sendMessage] Failed to activate worktree:', result.error)
         return
@@ -785,6 +798,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         contextTokens: 0,
         session: null,
         _historySessionId: null,
+        _worktreeBranch: branchName,
         todos: {},
         _nextTodoId: 1,
         showTodos: false,
@@ -901,7 +915,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       pendingPlanApproval: null, planApprovalOutcome: null,
       mentions: [], subagentTokens: {},
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
-      _historySessionId: null,
+      _historySessionId: null, _worktreeBranch: null,
     })))
   },
 
@@ -1078,6 +1092,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           permissionMode: session.permissionMode,
           pendingPermission: session.pendingPermission, pendingQuestion: session.pendingQuestion,
           pendingPlanApproval: session.pendingPlanApproval,
+          _worktreeBranch: session._worktreeBranch || undefined,
         }
       } else {
         _saveSessionState(get, activeProject)
@@ -1090,6 +1105,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         permissionMode: bg.permissionMode,
         pendingPermission: bg.pendingPermission, pendingQuestion: bg.pendingQuestion,
         pendingPlanApproval: bg.pendingPlanApproval,
+        _worktreeBranch: bg._worktreeBranch ?? null,
         draftText: '', attachments: [], mentions: [],
         _historySessionId: sessionId, _bgSessions: newBg, showHistory: false,
       })))
@@ -1114,12 +1130,36 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     let savedMessages: ChatMessage[] = []
     let savedCost = 0
     let savedTokens = 0
+    let savedWorktreeBranch: string | null = null
+    let savedWorktreePath: string | undefined
     try {
       const saved = await window.app.loadSessionState(sessionId)
       if (saved) {
         savedMessages = saved.messages
         savedCost = saved.totalCostUsd
         savedTokens = saved.contextTokens
+        savedWorktreeBranch = saved.gitBranch
+
+        // If this session was in a worktree, resolve the real branch name and worktree path
+        // (git_branch may have been saved as sanitized directory name like "test-feat-worktree"
+        // instead of real branch name like "test/feat/worktree")
+        if (savedWorktreeBranch) {
+          try {
+            const wtInfo = await window.app.getWorktreeInfo(activeProject)
+            if (wtInfo) {
+              const entry = wtInfo.entries.find((e) =>
+                e.branch === savedWorktreeBranch ||
+                e.path.endsWith('/' + savedWorktreeBranch)
+              )
+              if (entry) {
+                savedWorktreeBranch = entry.branch
+                savedWorktreePath = entry.path
+              }
+            }
+          } catch {
+            // Use the saved value if lookup fails
+          }
+        }
       }
     } catch {
       // History loading is best-effort
@@ -1142,10 +1182,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             permissionMode: sess.permissionMode,
             pendingPermission: sess.pendingPermission, pendingQuestion: sess.pendingQuestion,
             pendingPlanApproval: sess.pendingPlanApproval,
+            _worktreeBranch: sess._worktreeBranch || undefined,
           },
         },
         messages: savedMessages, session: null,
         totalCostUsd: savedCost, contextTokens: savedTokens,
+        _worktreeBranch: savedWorktreeBranch,
         status: 'idle', pendingPermission: null, pendingQuestion: null,
         draftText: '', attachments: [], mentions: [],
         showHistory: false, _historySessionId: sessionId,
@@ -1155,14 +1197,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set((s) => updateSession(s, activeProject, () => ({
         messages: savedMessages, session: null,
         totalCostUsd: savedCost, contextTokens: savedTokens,
+        _worktreeBranch: savedWorktreeBranch,
         status: 'idle', pendingPermission: null, pendingQuestion: null,
         draftText: '', attachments: [], mentions: [],
         showHistory: false, _historySessionId: sessionId,
       })))
     }
 
-    // Main process handles park + resume
-    await window.app.resumeSession(activeProject, sessionId)
+    // Main process handles park + resume (pass worktree cwd so agent starts in correct directory)
+    await window.app.resumeSession(activeProject, sessionId, savedWorktreePath)
+
+    // Restore app store worktree state so the UI shows "Worktree:" prefix
+    if (savedWorktreePath) {
+      useAppStore.getState().setActiveWorktree(activeProject, savedWorktreePath)
+    }
   },
 }))
 

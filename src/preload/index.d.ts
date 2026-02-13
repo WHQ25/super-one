@@ -83,12 +83,12 @@ interface AppAPI {
   // Session history
   listSessions(projectPath: string): Promise<SessionHistoryEntry[]>
   listSessionsForFolder(folderPath: string): Promise<SessionHistoryEntry[]>
-  resumeSession(projectPath: string, sessionId: string): Promise<void>
+  resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string): Promise<void>
   loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
   renameSession(sessionId: string, title: string): Promise<void>
-  createSession(projectPath: string, claudeSessionId: string, isWorktree?: boolean): Promise<void>
+  createSession(projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string): Promise<void>
   saveSessionState(claudeSessionId: string, data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string }): Promise<void>
-  loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number } | null>
+  loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null } | null>
 }
 
 declare global {

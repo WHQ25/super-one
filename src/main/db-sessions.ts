@@ -53,7 +53,7 @@ export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[]
 }
 
 /** Create a new session record in DB */
-export function createSession(folderPath: string, claudeSessionId: string, title?: string, isWorktree?: boolean): string {
+export function createSession(folderPath: string, claudeSessionId: string, title?: string, isWorktree?: boolean, gitBranch?: string): string {
   const projectId = getProjectId(folderPath)
   if (!projectId) throw new Error(`Project not found for path: ${folderPath}`)
 
@@ -62,10 +62,11 @@ export function createSession(folderPath: string, claudeSessionId: string, title
   const now = new Date().toISOString()
 
   db.prepare(`
-    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at, is_worktree)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(claude_session_id) DO NOTHING
-  `).run(id, projectId, claudeSessionId, title ?? null, now, isWorktree ? 1 : 0)
+    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at, is_worktree, git_branch)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(claude_session_id) DO UPDATE SET
+      git_branch = COALESCE(excluded.git_branch, git_branch)
+  `).run(id, projectId, claudeSessionId, title ?? null, now, isWorktree ? 1 : 0, gitBranch ?? null)
 
   return id
 }
@@ -137,12 +138,12 @@ export function saveSessionState(
 /** Load session state from DB */
 export function loadSessionState(
   claudeSessionId: string,
-): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number } | null {
+): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null } | null {
   const db = getDb()
 
   const session = db.prepare(`
-    SELECT total_cost_usd, context_tokens FROM sessions WHERE claude_session_id = ?
-  `).get(claudeSessionId) as DbSession | undefined
+    SELECT total_cost_usd, context_tokens, is_worktree, git_branch FROM sessions WHERE claude_session_id = ?
+  `).get(claudeSessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null }) | undefined
 
   if (!session) return null
 
@@ -169,5 +170,7 @@ export function loadSessionState(
     messages,
     totalCostUsd: session.total_cost_usd ?? 0,
     contextTokens: session.context_tokens ?? 0,
+    isWorktree: !!(session.is_worktree),
+    gitBranch: session.git_branch ?? null,
   }
 }

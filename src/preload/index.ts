@@ -205,14 +205,14 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST, projectPath),
   listSessionsForFolder: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER, folderPath),
-  resumeSession: (projectPath: string, sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RESUME, projectPath, sessionId),
+  resumeSession: (projectPath: string, sessionId: string, worktreeCwd?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RESUME, projectPath, sessionId, worktreeCwd),
   loadSessionMessages: (projectPath: string, sessionId: string, limit: number, cursor?: number) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, projectPath, sessionId, limit, cursor),
   renameSession: (sessionId: string, title: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RENAME, sessionId, title),
-  createSession: (projectPath: string, claudeSessionId: string, isWorktree?: boolean) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_CREATE, projectPath, claudeSessionId, isWorktree),
+  createSession: (projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_CREATE, projectPath, claudeSessionId, isWorktree, gitBranch),
   saveSessionState: (claudeSessionId: string, data: { messages: unknown[]; totalCostUsd: number; contextTokens: number; title?: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SAVE_STATE, claudeSessionId, data),
   loadSessionState: (claudeSessionId: string) =>

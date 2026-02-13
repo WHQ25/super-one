@@ -88,6 +88,7 @@ src/renderer/src/components/
 | `lucide-react` | Icons |
 | `@tiptap/react` | Rich text editor for chat input |
 | `streamdown` | Markdown rendering in chat messages |
+| `motion` | Animations (import from `motion/react`) |
 | `better-sqlite3` | Session & message persistence (WAL mode) |
 
 ### Persistence (SQLite)
@@ -136,3 +137,4 @@ RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate bun run dev
 - **Window style**: macOS hiddenInset titlebar with traffic lights at (16, 16)
 - **Commit messages**: `<type>(<scope>): <description>` (e.g. `feat(mcp): add document tools`)
 - **Sidebar styling**: Use sidebar-specific color tokens (`bg-sidebar`, `text-sidebar-foreground`, `bg-sidebar-accent`, `text-sidebar-accent-foreground`, `border-sidebar-border`, etc.) instead of generic tokens (`bg-muted`, `text-muted-foreground`, etc.) for all elements inside the sidebar
+- **Animations**: Use `motion` library (`import from 'motion/react'`) for UI animations (expand/collapse, enter/exit, layout transitions). Prefer `AnimatePresence` + `motion.div` over CSS transitions for dynamic mount/unmount animations

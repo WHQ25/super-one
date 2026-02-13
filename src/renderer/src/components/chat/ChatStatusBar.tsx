@@ -36,6 +36,7 @@ function WorkDirIndicator() {
   const worktrees = useAppStore((s) => s._worktrees)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
   const hasMessages = useActiveSession((s) => s.messages.length > 0)
+  const worktreeBranch = useActiveSession((s) => s._worktreeBranch)
 
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -116,7 +117,7 @@ function WorkDirIndicator() {
   const isPending = !!wtState?.pendingBranch
   const isActive = !!wtState?.activePath
   const isInWorktree = isPending || isActive
-  const worktreeLabel = wtState?.pendingBranch ?? wtState?.activePath?.split('/').pop() ?? ''
+  const worktreeLabel = wtState?.pendingBranch ?? worktreeBranch ?? wtState?.activePath?.split('/').pop() ?? ''
 
   // Worktree already activated (message sent) — locked, no dropdown
   if (isActive) {
@@ -125,6 +126,17 @@ function WorkDirIndicator() {
         <span className="text-muted-foreground">Worktree:</span>
         <GitFork className="size-3" />
         <span>{worktreeLabel}</span>
+      </div>
+    )
+  }
+
+  // Worktree session restored from history — locked indicator with branch
+  if (worktreeBranch && !isInWorktree) {
+    return (
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1">
+        <span className="text-muted-foreground">Worktree:</span>
+        <GitFork className="size-3" />
+        <span>{worktreeBranch}</span>
       </div>
     )
   }
@@ -140,10 +152,11 @@ function WorkDirIndicator() {
   }
 
   const otherWorktrees = worktreeInfo.entries.filter((e) => !e.isMain)
+  const worktreeBranches = new Set(otherWorktrees.map((e) => e.branch))
   const lowerSearch = search.toLowerCase()
-  // All branches as potential base for new worktree
+  // Branches without an existing worktree — potential base for new worktree
   const filteredBranches = branches.filter(
-    (b) => b.toLowerCase().includes(lowerSearch)
+    (b) => b.toLowerCase().includes(lowerSearch) && !worktreeBranches.has(b)
   )
   const filteredWorktrees = otherWorktrees.filter(
     (e) => e.branch.toLowerCase().includes(lowerSearch)
@@ -285,6 +298,7 @@ export function ChatStatusBar() {
   const [search, setSearch] = useState('')
   const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
 
+  const worktreeBranch = useActiveSession((s) => s._worktreeBranch)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
   const isInWorktree = !!(wtState?.pendingBranch || wtState?.activePath)
 
@@ -358,7 +372,7 @@ export function ChatStatusBar() {
         {gitInfo && <WorkDirIndicator />}
 
         {/* Git branch switcher — hidden when in worktree */}
-        {gitInfo && !isInWorktree && (
+        {gitInfo && !isInWorktree && !worktreeBranch && (
           <>
             <div className="h-3 w-px bg-border" />
             <Popover open={popoverOpen} onOpenChange={openPopover}>

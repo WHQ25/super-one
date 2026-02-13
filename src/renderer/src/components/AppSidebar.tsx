@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -67,10 +68,11 @@ export function AppSidebar() {
     }
   }, [])
 
-  // Auto-expand current project and refresh session list when a new session is created
+  // Auto-expand current project and refresh session list when a new session starts streaming
+  const currentStatus = currentFolder ? projectSessions[currentFolder]?.status : undefined
   const currentSessionId = currentFolder ? projectSessions[currentFolder]?.session?.sessionId : undefined
   useEffect(() => {
-    if (!currentFolder || !currentSessionId) return
+    if (!currentFolder) return
     // Expand the folder if not already expanded
     setExpandedFolders((prev) => {
       if (prev.has(currentFolder)) return prev
@@ -78,12 +80,12 @@ export function AppSidebar() {
       next.add(currentFolder)
       return next
     })
-    // Refresh session list
+    // Refresh session list for the current folder (covers initial load, new session, and resume)
     window.app.listSessionsForFolder(currentFolder).then((sessions) => {
       setFolderSessions((prev) => ({ ...prev, [currentFolder]: sessions }))
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFolder, currentSessionId])
+  }, [currentFolder, currentStatus, currentSessionId])
 
   const handleResumeSession = useCallback(async (folderPath: string, sessionId: string) => {
     const ps = projectSessions[folderPath]
@@ -248,55 +250,66 @@ export function AppSidebar() {
                     </div>
 
                     {/* Sessions list */}
-                    {isExpanded && (
-                      <div className="flex flex-col py-0.5 pl-5">
-                        {sessions.length === 0 ? (
-                          <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">No sessions</div>
-                        ) : (
-                          sessions.slice(0, MAX_SESSIONS).map((session) => {
-                            const fgSid = projectSession?._historySessionId ?? projectSession?.session?.sessionId
-                            const isForeground = fgSid === session.sessionId
-                            const bgEntry = projectSession?._bgSessions?.[session.sessionId]
-                            const isRunning = isForeground
-                              ? projectSession?.status === 'streaming'
-                              : bgEntry?.status === 'streaming'
-                            const pendingReason = isForeground
-                              ? getPendingReason(projectSession?.pendingPermission, projectSession?.pendingQuestion, projectSession?.pendingPlanApproval)
-                              : getPendingReason(bgEntry?.pendingPermission, bgEntry?.pendingQuestion, bgEntry?.pendingPlanApproval)
-                            return (
-                              <div key={session.sessionId}>
-                                <div
-                                  onClick={() => handleResumeSession(folder.path, session.sessionId)}
-                                  className={cn(
-                                    'flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
-                                    isActive && isForeground
-                                      ? 'bg-sidebar-accent'
-                                      : 'hover:bg-sidebar-accent'
-                                  )}
-                                >
-                                  {isRunning
-                                    ? <Loader2 className="size-3 shrink-0 animate-spin text-sidebar-foreground/70" />
-                                    : session.isWorktree
-                                      ? <GitFork className="size-3 shrink-0 text-sidebar-foreground/70" />
-                                      : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
-                                  }
-                                  <span className="min-w-0 truncate text-[13px]">{session.title}</span>
-                                </div>
-                                {pendingReason && (
-                                  <div
-                                    onClick={() => handleResumeSession(folder.path, session.sessionId)}
-                                    className="ml-5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1"
-                                  >
-                                    <Bot className="size-3 shrink-0 text-green-400" />
-                                    <span className="min-w-0 truncate text-[11px] text-green-400">{pendingReason}</span>
+                    <AnimatePresence initial={false}>
+                      {isExpanded && (
+                        <motion.div
+                          key="sessions"
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          className="overflow-hidden"
+                        >
+                          <div className="flex flex-col py-0.5 pl-5">
+                            {sessions.length === 0 ? (
+                              <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">No sessions</div>
+                            ) : (
+                              sessions.slice(0, MAX_SESSIONS).map((session) => {
+                                const fgSid = projectSession?._historySessionId ?? projectSession?.session?.sessionId
+                                const isForeground = fgSid === session.sessionId
+                                const bgEntry = projectSession?._bgSessions?.[session.sessionId]
+                                const isRunning = isForeground
+                                  ? projectSession?.status === 'streaming'
+                                  : bgEntry?.status === 'streaming'
+                                const pendingReason = isForeground
+                                  ? getPendingReason(projectSession?.pendingPermission, projectSession?.pendingQuestion, projectSession?.pendingPlanApproval)
+                                  : getPendingReason(bgEntry?.pendingPermission, bgEntry?.pendingQuestion, bgEntry?.pendingPlanApproval)
+                                return (
+                                  <div key={session.sessionId}>
+                                    <div
+                                      onClick={() => handleResumeSession(folder.path, session.sessionId)}
+                                      className={cn(
+                                        'flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
+                                        isActive && isForeground
+                                          ? 'bg-sidebar-accent'
+                                          : 'hover:bg-sidebar-accent'
+                                      )}
+                                    >
+                                      {isRunning
+                                        ? <Loader2 className="size-3 shrink-0 animate-spin text-sidebar-foreground/70" />
+                                        : session.isWorktree
+                                          ? <GitFork className="size-3 shrink-0 text-sidebar-foreground/70" />
+                                          : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
+                                      }
+                                      <span className="min-w-0 truncate text-[13px]">{session.title}</span>
+                                    </div>
+                                    {pendingReason && (
+                                      <div
+                                        onClick={() => handleResumeSession(folder.path, session.sessionId)}
+                                        className="ml-5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1"
+                                      >
+                                        <Bot className="size-3 shrink-0 text-green-400" />
+                                        <span className="min-w-0 truncate text-[11px] text-green-400">{pendingReason}</span>
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            )
-                          })
-                        )}
-                      </div>
-                    )}
+                                )
+                              })
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 )
               })}

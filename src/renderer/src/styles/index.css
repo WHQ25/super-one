@@ -231,7 +231,7 @@ body {
 .chat-md [data-streamdown="table"] {
   border-collapse: collapse;
   white-space: nowrap;
-  width: max-content;
+  min-width: 100%;
   font-size: 12px;
 }
 .chat-md [data-streamdown="table-header-cell"],

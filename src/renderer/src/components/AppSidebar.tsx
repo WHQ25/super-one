@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork } from 'lucide-react'
+import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -11,12 +11,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
-import type { SessionHistoryEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
+import type { SessionHistoryEntry, PinnedSessionEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
 
 type SortMode = 'recent' | 'added'
 
@@ -48,6 +56,12 @@ export function AppSidebar() {
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
+  const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
+  const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
+  const [copiedCmd, setCopiedCmd] = useState<'cd' | 'resume' | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<{ name: string; path: string } | null>(null)
+  const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   const toggleExpand = useCallback(async (folderPath: string) => {
     let willExpand = false
@@ -67,6 +81,19 @@ export function AppSidebar() {
       setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
     }
   }, [])
+
+  const refreshPinned = useCallback(() => {
+    window.app.listPinnedSessions().then(setPinnedSessions)
+  }, [])
+
+  const refreshFolderSessions = useCallback((folderPath: string) => {
+    window.app.listSessionsForFolder(folderPath).then((sessions) => {
+      setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
+    })
+  }, [])
+
+  // Load pinned sessions on mount
+  useEffect(() => { refreshPinned() }, [refreshPinned])
 
   // Auto-expand current project and refresh session list when a new session starts streaming
   const currentStatus = currentFolder ? projectSessions[currentFolder]?.status : undefined
@@ -96,6 +123,28 @@ export function AppSidebar() {
     await resumeSession(sessionId)
   }, [openFolder, resumeSession, currentFolder, projectSessions])
 
+  const handlePinSession = useCallback(async (sessionId: string, pinned: boolean, folderPath: string) => {
+    await window.app.pinSession(sessionId, pinned)
+    refreshPinned()
+    refreshFolderSessions(folderPath)
+  }, [refreshPinned, refreshFolderSessions])
+
+  const handleDeleteSession = useCallback(async () => {
+    if (!deleteTarget) return
+    await window.app.deleteSession(deleteTarget.sessionId)
+    refreshFolderSessions(deleteTarget.folderPath)
+    refreshPinned()
+    setDeleteTarget(null)
+  }, [deleteTarget, refreshFolderSessions, refreshPinned])
+
+  const handleRenameSession = useCallback(async () => {
+    if (!renameTarget || !renameValue.trim()) return
+    await window.app.renameSession(renameTarget.sessionId, renameValue.trim())
+    refreshFolderSessions(renameTarget.folderPath)
+    refreshPinned()
+    setRenameTarget(null)
+  }, [renameTarget, renameValue, refreshFolderSessions, refreshPinned])
+
   const sortedFolders = useMemo(() => {
     const folders = [...recentFolders]
     if (sortMode === 'added') {
@@ -105,7 +154,7 @@ export function AppSidebar() {
   }, [recentFolders, sortMode])
 
   return (
-    <div className="flex h-full w-full shrink-0 flex-col bg-sidebar text-sidebar-foreground">
+    <div className="flex h-full w-full shrink-0 select-none flex-col bg-sidebar text-sidebar-foreground">
       {/* Header — drag region with traffic lights spacer + toggle */}
       <div
         className={cn('flex h-11 shrink-0 items-center pt-[2px]', isFullscreen ? 'pl-2' : 'pl-[18px]')}
@@ -129,6 +178,40 @@ export function AppSidebar() {
           </Tooltip>
         </TooltipProvider>
       </div>
+
+      {/* Pinned sessions */}
+      {pinnedSessions.length > 0 && (
+        <div className="flex flex-col px-1.5 pb-1">
+          <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">Pinned</span>
+          {pinnedSessions.map((s) => (
+            <div
+              key={s.sessionId}
+              onClick={() => handleResumeSession(s.folderPath, s.sessionId)}
+              className="group/pin flex cursor-pointer items-center justify-between overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                {s.isWorktree
+                  ? <GitFork className="size-3 shrink-0 text-sidebar-foreground/70" />
+                  : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
+                }
+                <div className="flex min-w-0 flex-col">
+                  <span className="min-w-0 truncate text-[13px]">{s.title}</span>
+                  <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
+                </div>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handlePinSession(s.sessionId, false, s.folderPath)
+                }}
+                className="shrink-0 rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-colors hover:text-sidebar-accent-foreground group-hover/pin:opacity-100"
+              >
+                <Pin className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Projects header */}
       <div className="flex items-center justify-between px-3 py-1.5">
@@ -220,8 +303,7 @@ export function AppSidebar() {
                               variant="destructive"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                removeRecentFolder(folder.path)
-                                setExpandedFolders((prev) => { const next = new Set(prev); next.delete(folder.path); return next })
+                                setRemoveTarget({ name: folder.name, path: folder.path })
                               }}
                               className="text-xs"
                             >
@@ -279,19 +361,65 @@ export function AppSidebar() {
                                     <div
                                       onClick={() => handleResumeSession(folder.path, session.sessionId)}
                                       className={cn(
-                                        'flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
+                                        'group/session flex cursor-pointer items-center justify-between gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
                                         isActive && isForeground
                                           ? 'bg-sidebar-accent'
                                           : 'hover:bg-sidebar-accent'
                                       )}
                                     >
-                                      {isRunning
-                                        ? <Loader2 className="size-3 shrink-0 animate-spin text-sidebar-foreground/70" />
-                                        : session.isWorktree
-                                          ? <GitFork className="size-3 shrink-0 text-sidebar-foreground/70" />
-                                          : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
-                                      }
-                                      <span className="min-w-0 truncate text-[13px]">{session.title}</span>
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        {isRunning
+                                          ? <Loader2 className="size-3 shrink-0 animate-spin text-sidebar-foreground/70" />
+                                          : session.isWorktree
+                                            ? <GitFork className="size-3 shrink-0 text-sidebar-foreground/70" />
+                                            : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
+                                        }
+                                        <span className="min-w-0 truncate text-[13px]">{session.title}</span>
+                                      </div>
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <button
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="shrink-0 rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-colors hover:text-sidebar-accent-foreground group-hover/session:opacity-100"
+                                          >
+                                            <MoreHorizontal className="size-3.5" />
+                                          </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="start" side="right" className="w-36">
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handlePinSession(session.sessionId, !session.isPinned, folder.path)
+                                            }}
+                                            className="text-xs"
+                                          >
+                                            <Pin className="size-3.5" />
+                                            {session.isPinned ? 'Unpin' : 'Pin'}
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              setRenameTarget({ sessionId: session.sessionId, title: session.title, folderPath: folder.path })
+                                              setRenameValue(session.title)
+                                            }}
+                                            className="text-xs"
+                                          >
+                                            <Pencil className="size-3.5" />
+                                            Rename
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            variant="destructive"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              setDeleteTarget({ sessionId: session.sessionId, title: session.title, folderPath: folder.path })
+                                            }}
+                                            className="text-xs"
+                                          >
+                                            <Trash2 className="size-3.5" />
+                                            Delete
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
                                     {pendingReason && (
                                       <div
@@ -333,6 +461,87 @@ export function AppSidebar() {
           {theme.dark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
         </button>
       </div>
+
+      {/* Delete session confirmation dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setCopiedCmd(null) } }}>
+        <DialogContent showCloseButton={false} className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Session?</DialogTitle>
+            <DialogDescription asChild>
+              <div>
+                <span className="font-medium text-foreground">{deleteTarget?.title}</span> will be removed from SuperOne. You can still access it via Claude Code CLI:
+                <div className="mt-2 flex flex-col gap-1">
+                  {([
+                    ['cd', `cd ${deleteTarget?.folderPath}`],
+                    ['resume', `claude --resume ${deleteTarget?.sessionId}`],
+                  ] as const).map(([key, cmd]) => (
+                    <code
+                      key={key}
+                      onClick={() => {
+                        navigator.clipboard.writeText(cmd)
+                        setCopiedCmd(key)
+                        setTimeout(() => setCopiedCmd((v) => v === key ? null : v), 2000)
+                      }}
+                      className="flex cursor-pointer items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted/80"
+                    >
+                      <span className="min-w-0 truncate">{cmd}</span>
+                      {copiedCmd === key
+                        ? <Check className="size-3.5 shrink-0 text-green-500" />
+                        : <Copy className="size-3.5 shrink-0 text-muted-foreground" />
+                      }
+                    </code>
+                  ))}
+                </div>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteSession}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove project confirmation dialog */}
+      <Dialog open={!!removeTarget} onOpenChange={(open) => { if (!open) setRemoveTarget(null) }}>
+        <DialogContent showCloseButton={false} className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Remove Project?</DialogTitle>
+            <DialogDescription>
+              <span className="font-medium text-foreground">{removeTarget?.name}</span> and all its chat sessions will be removed from SuperOne. Sessions in Claude Code CLI will not be affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => {
+              if (!removeTarget) return
+              removeRecentFolder(removeTarget.path)
+              setExpandedFolders((prev) => { const next = new Set(prev); next.delete(removeTarget.path); return next })
+              setRemoveTarget(null)
+            }}>Remove</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename session dialog */}
+      <Dialog open={!!renameTarget} onOpenChange={(open) => { if (!open) setRenameTarget(null) }}>
+        <DialogContent showCloseButton={false} className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename Session</DialogTitle>
+          </DialogHeader>
+          <input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleRenameSession() }}
+            autoFocus
+            className="w-full rounded-md border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameTarget(null)}>Cancel</Button>
+            <Button onClick={handleRenameSession} disabled={!renameValue.trim()}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

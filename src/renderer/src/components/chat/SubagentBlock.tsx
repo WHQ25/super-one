@@ -74,7 +74,6 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   const isRunning = !resultBlock && isStreaming
   const isComplete = !!resultBlock
   const hasTokens = tokens.input > 0 || tokens.output > 0
-  const isFromHistory = useRef(isComplete && !hasTokens)
   const [expanded, setExpanded] = useState(!isComplete)
 
   // Timer: count elapsed seconds while subagent is running.
@@ -117,14 +116,12 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
     <div className="subagent-container my-1 overflow-hidden rounded border border-border/50 bg-muted/20">
       {/* Header: Bot icon + subagent_type + description */}
       <button
-        onClick={isFromHistory.current ? undefined : () => setExpanded((e) => !e)}
-        className={cn('flex w-full items-start gap-2 px-2.5 py-2 text-xs transition-colors', !isFromHistory.current && 'hover:bg-muted/40')}
+        onClick={() => setExpanded((e) => !e)}
+        className="flex w-full items-start gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"
       >
-        {!isFromHistory.current && (
-          <ChevronRight
-            className={cn('mt-0.5 size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')}
-          />
-        )}
+        <ChevronRight
+          className={cn('mt-0.5 size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')}
+        />
         <Bot className="mt-0.5 size-3.5 shrink-0 text-purple-400" />
         {taskInput.subagentType && (
           <span className="mt-px shrink-0 rounded bg-purple-900/40 px-1 py-px text-[10px] text-purple-300">
@@ -136,8 +133,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         )}
       </button>
 
-      {/* Content — hidden for history-loaded subagents */}
-      {!isFromHistory.current && expanded && (
+      {expanded && (
         <div className="border-t border-border/30">
           {/* Input: prompt preview */}
           {taskInput.prompt && <PromptPreview prompt={taskInput.prompt} model={taskInput.model} />}
@@ -156,8 +152,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         </div>
       )}
 
-      {/* Footer — hidden for history-loaded subagents */}
-      {!isFromHistory.current && (isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+      {(isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
         {isRunning ? (
           <>
             <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />

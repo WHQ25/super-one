@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo } from '../../../shared/agent-types'
+import type { AgentInfo, MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo } from '../../../shared/agent-types'
 import { useAppStore } from './app'
 
 /** Get the active project path. Returns empty string if none active. */
@@ -8,6 +8,14 @@ function getProjectPath(): string {
 }
 
 interface SettingsState {
+  // Agents
+  agents: (AgentInfo & { scope: 'user' | 'project' })[]
+  agentContent: string | null
+  agentContentName: string | null
+  fetchAgents: () => Promise<void>
+  readAgentFile: (name: string) => Promise<void>
+  clearAgentDetail: () => void
+
   // Skills
   skills: SkillInfo[]
   skillDetail: SkillDetail | null
@@ -52,6 +60,24 @@ interface SettingsState {
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
+  agents: [],
+  agentContent: null,
+  agentContentName: null,
+
+  fetchAgents: async () => {
+    const pp = getProjectPath()
+    const agents = await window.app.listAgents(pp)
+    set({ agents })
+  },
+
+  readAgentFile: async (name) => {
+    const pp = getProjectPath()
+    const content = await window.app.readAgentFile(pp, name)
+    set({ agentContent: content, agentContentName: name })
+  },
+
+  clearAgentDetail: () => set({ agentContent: null, agentContentName: null }),
+
   skills: [],
   skillDetail: null,
   skillFileContent: null,

@@ -19,6 +19,7 @@ import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from 
 import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
 import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill } from '../skills-service'
+import { discoverAllAgents, readAgentFile } from './discover-resources'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
 import { backupMcpServers, listLibrary, deleteLibraryEntry } from '../mcp-library-service'
 
@@ -213,6 +214,16 @@ export class AgentService {
       deleteSkill(name, scope, projectPath)
     })
 
+    // --- Agents (read-only) ---
+
+    ipcMain.handle(AgentIpcChannels.AGENTS_LIST, (_event, projectPath: string) => {
+      return discoverAllAgents(projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.AGENTS_READ_FILE, (_event, projectPath: string, name: string) => {
+      return readAgentFile(projectPath, name)
+    })
+
     // --- MCP config (session-scoped) ---
 
     ipcMain.handle(AgentIpcChannels.MCP_LIST_CONFIG, (_event, projectPath: string) => {
@@ -404,6 +415,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_INSTALL)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_DELETE)
+    ipcMain.removeHandler(AgentIpcChannels.AGENTS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.AGENTS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.MCP_SAVE_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_CONFIG)

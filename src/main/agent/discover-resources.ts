@@ -247,6 +247,54 @@ export function discoverProjectAgents(cwd: string): AgentInfo[] {
   return agents
 }
 
+/** Discover all agents (user + project), deduped by name, with scope tag. */
+export function discoverAllAgents(cwd: string): (AgentInfo & { scope: 'user' | 'project' })[] {
+  const seen = new Set<string>()
+  const result: (AgentInfo & { scope: 'user' | 'project' })[] = []
+  // Project agents first (higher priority in UI)
+  for (const a of discoverProjectAgents(cwd)) {
+    if (seen.has(a.name)) continue
+    seen.add(a.name)
+    result.push({ ...a, scope: 'project' })
+  }
+  for (const a of discoverUserAgents()) {
+    if (seen.has(a.name)) continue
+    seen.add(a.name)
+    result.push({ ...a, scope: 'user' })
+  }
+  return result
+}
+
+/** Read the .md content of an agent by name. Checks project → user → plugins. */
+export function readAgentFile(cwd: string, name: string): string | null {
+  // Strip plugin prefix for path resolution
+  const baseName = name.includes(':') ? name.split(':').pop()! : name
+
+  // 1. Project-level
+  const projectPath = join(cwd, '.claude', 'agents', `${baseName}.md`)
+  if (existsSync(projectPath)) return safeRead(projectPath) || null
+
+  // 2. User-level
+  const userPath = join(homedir(), '.claude', 'agents', `${baseName}.md`)
+  if (existsSync(userPath)) return safeRead(userPath) || null
+
+  // 3. Plugin agents (search by full name including prefix)
+  const plugins = readPlugins()
+  for (const [pluginKey, entries] of Object.entries(plugins)) {
+    const pluginName = pluginKey.split('@')[0]
+    for (const entry of entries) {
+      if (!entry.installPath) continue
+      // Match: "pluginName:baseName" or just baseName in plugin dir
+      const prefix = `${pluginName}:`
+      const agentBaseName = name.startsWith(prefix) ? name.slice(prefix.length) : baseName
+      const pluginAgentPath = join(entry.installPath, 'agents', `${agentBaseName}.md`)
+      if (existsSync(pluginAgentPath)) return safeRead(pluginAgentPath) || null
+    }
+  }
+
+  return null
+}
+
 /** Discover project-level slash commands ({cwd}/.claude/commands + project-scoped plugin commands). */
 export function discoverProjectCommands(cwd: string): SlashCommandInfo[] {
   const commands: SlashCommandInfo[] = []

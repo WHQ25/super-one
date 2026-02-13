@@ -8,7 +8,14 @@ import { ToolGroup } from './ToolGroup'
 import { SubagentBlock } from './SubagentBlock'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { useActiveSession } from '@/stores/chat'
-import { streamdownPlugins, streamdownControls, streamdownComponents, formatTokens, useAnimatedTokens } from './chat-shared'
+import {
+  streamdownPlugins,
+  streamdownControls,
+  streamdownComponents,
+  formatTokens,
+  useAnimatedTokens,
+  getTokenAnimationDurationMs,
+} from './chat-shared'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -416,9 +423,7 @@ function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 
     if (value > prev.current && prev.current > 0) {
       setFlash(true)
       // Match flash duration to the token animation duration
-      const delta = value - prev.current
-      const rate = value >= 1000 ? 1000 : 100
-      const duration = Math.max(100, (delta / rate) * 1000)
+      const duration = getTokenAnimationDurationMs(prev.current, value)
       const t = setTimeout(() => setFlash(false), duration)
       prev.current = value
       return () => clearTimeout(t)

@@ -71,6 +71,7 @@ function buildToolResultMap(blocks: ContentBlock[]) {
 export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming }: SubagentBlockProps) {
   const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
   const taskInput = parseTaskInput(taskBlock.input)
+  const showSpawningPlaceholder = !taskInput.subagentType && !taskInput.description
   const isRunning = !resultBlock && isStreaming
   const isComplete = !!resultBlock
   const hasTokens = tokens.input > 0 || tokens.output > 0
@@ -130,6 +131,9 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         )}
         {taskInput.description && (
           <span className="min-w-0 text-left text-muted-foreground">{taskInput.description}</span>
+        )}
+        {showSpawningPlaceholder && (
+          <span className="min-w-0 text-left text-muted-foreground">Spawning subagent...</span>
         )}
       </button>
 

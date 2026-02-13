@@ -1,11 +1,14 @@
 import { useEffect } from 'react'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 
 export function useChatKeyboardShortcuts() {
   // Shift+Tab cycles permission mode
   const cyclePermissionMode = useChatStore((s) => s.cyclePermissionMode)
+  const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
+      // Plan review uses Tab for feedback focus; avoid intercepting Shift+Tab here.
+      if (pendingPlanApproval) return
       if (e.key === 'Tab' && e.shiftKey) {
         e.preventDefault()
         cyclePermissionMode()
@@ -13,7 +16,7 @@ export function useChatKeyboardShortcuts() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [cyclePermissionMode])
+  }, [cyclePermissionMode, pendingPlanApproval])
 
   // Ctrl+T toggles todo list popup
   const toggleTodos = useChatStore((s) => s.toggleTodos)

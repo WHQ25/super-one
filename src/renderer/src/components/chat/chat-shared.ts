@@ -16,10 +16,20 @@ export const streamdownComponents: Record<string, ReturnType<typeof createStream
   code: createStreamdownCodeComponent(codePlugin),
 }
 
+const TOKEN_ANIMATION_MIN_DURATION_MS = 300
+
 /** Format token count: plain number if < 1k, otherwise k with 1 decimal. */
 export function formatTokens(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
   return String(n)
+}
+
+/** Duration for token animations, with a minimum to avoid abrupt jumps. */
+export function getTokenAnimationDurationMs(from: number, to: number): number {
+  const delta = Math.abs(to - from)
+  // < 1000: 100 tokens/s; >= 1000: 10 display-steps/s × 100 = 1000 tokens/s
+  const rate = to >= 1000 ? 1000 : 100
+  return Math.max(TOKEN_ANIMATION_MIN_DURATION_MS, (delta / rate) * 1000)
 }
 
 /** Animate a number ticking up: < 1k by 1 (100/s), >= 1k by 0.1k (10 updates/s). */
@@ -34,10 +44,7 @@ export function useAnimatedTokens(target: number): number {
     ref.current.start = performance.now()
     ref.current.lastSet = 0
 
-    const delta = Math.abs(ref.current.to - ref.current.from)
-    // < 1000: 100 tokens/s; >= 1000: 10 display-steps/s × 100 = 1000 tokens/s
-    const rate = ref.current.to >= 1000 ? 1000 : 100
-    const duration = Math.max(100, (delta / rate) * 1000)
+    const duration = getTokenAnimationDurationMs(ref.current.from, ref.current.to)
     // Throttle setState: < 1000 → 100 calls/s (10ms), >= 1000 → 30 calls/s (~33ms)
     const minInterval = ref.current.to >= 1000 ? 33 : 10
 

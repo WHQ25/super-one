@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
@@ -16,38 +16,76 @@ export function PlanApprovalPrompt() {
   const respond = useChatStore((s) => s.respondToPlanApproval)
   const [feedback, setFeedback] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
+  const requestId = pending?.requestId
+  const planContent = pending?.planContent ?? ''
+  const planFilePath = pending?.planFilePath ?? ''
+  const allowedPrompts = pending?.allowedPrompts ?? []
+  const fileName = planFilePath.split('/').pop() ?? ''
 
-  // Tab to focus the visible feedback input
+  const handleApprove = useCallback(() => {
+    if (!requestId) return
+    respond(requestId, true)
+  }, [requestId, respond])
+
+  const handleReject = useCallback(() => {
+    if (!requestId) return
+    respond(requestId, false, feedback.trim() || undefined)
+  }, [feedback, requestId, respond])
+
+  const focusVisibleFeedbackInput = useCallback(() => {
+    // Focus the visible input (desktop and narrow layouts both render one).
+    const inputs = containerRef.current?.querySelectorAll<HTMLInputElement>('input[data-feedback]')
+    for (const input of inputs ?? []) {
+      if (input.offsetParent !== null) {
+        input.focus()
+        return
+      }
+    }
+  }, [])
+
   useEffect(() => {
+    if (!requestId) return
+
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const active = document.activeElement
-        if (active?.tagName === 'INPUT' && containerRef.current?.contains(active)) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+
+      const active = document.activeElement
+      const isFeedbackInputFocused =
+        active instanceof HTMLInputElement &&
+        active.dataset.feedback !== undefined &&
+        containerRef.current?.contains(active)
+
+      // Esc: reject immediately
+      if (e.key === 'Escape') {
         e.preventDefault()
-        // Focus the visible input (the one not inside a hidden parent)
-        const inputs = containerRef.current?.querySelectorAll<HTMLInputElement>('input[data-feedback]')
-        for (const input of inputs ?? []) {
-          if (input.offsetParent !== null) { input.focus(); break }
+        handleReject()
+        return
+      }
+
+      // Tab: jump to feedback input
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        focusVisibleFeedbackInput()
+        return
+      }
+
+      // Enter:
+      // - in feedback input -> reject + submit
+      // - otherwise -> approve
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        if (isFeedbackInputFocused) {
+          handleReject()
+          return
         }
+        handleApprove()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [focusVisibleFeedbackInput, handleApprove, handleReject, requestId])
 
   if (!pending) return null
-
-  const { requestId, planContent, planFilePath, allowedPrompts } = pending
-
-  const fileName = planFilePath.split('/').pop() ?? ''
-
-  function handleApprove() {
-    respond(requestId, true)
-  }
-
-  function handleReject() {
-    respond(requestId, false, feedback.trim() || undefined)
-  }
 
   return (
     <>

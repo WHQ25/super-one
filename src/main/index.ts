@@ -178,30 +178,33 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.GIT_WORKTREE_INFO, async (_event, folderPath: string) => {
     try {
       const raw = await gitRun(folderPath, ['worktree', 'list', '--porcelain'])
-      const entries: { path: string; branch: string; isMain: boolean; isCurrent: boolean }[] = []
+      const entries: { path: string; branch: string; head: string; isMain: boolean; isCurrent: boolean }[] = []
       let first = true
       for (const block of raw.split('\n\n').filter(Boolean)) {
         const lines = block.split('\n')
         const pathLine = lines.find((l) => l.startsWith('worktree '))
         const branchLine = lines.find((l) => l.startsWith('branch '))
+        const headLine = lines.find((l) => l.startsWith('HEAD '))
         if (!pathLine) continue
         const wtPath = pathLine.slice('worktree '.length)
-        const branch = branchLine ? branchLine.slice('branch refs/heads/'.length) : 'detached'
-        entries.push({ path: wtPath, branch, isMain: first, isCurrent: wtPath === folderPath })
+        const head = headLine ? headLine.slice('HEAD '.length) : ''
+        const branch = branchLine ? branchLine.slice('branch refs/heads/'.length) : ''
+        entries.push({ path: wtPath, branch, head, isMain: first, isCurrent: wtPath === folderPath })
         first = false
       }
       const mainEntry = entries.find((e) => e.isMain)
       const isWorktree = mainEntry ? mainEntry.path !== folderPath : false
-      const currentBranch = entries.find((e) => e.isCurrent)?.branch ?? ''
+      const current = entries.find((e) => e.isCurrent)
+      const currentBranch = current?.branch || (current?.head ? current.head.slice(0, 7) : '')
       return { isWorktree, currentBranch, entries }
     } catch {
       return null
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, async (_event, folderPath: string, branch: string | null, baseBranch?: string) => {
+  ipcMain.handle(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, async (_event, folderPath: string, baseBranch: string | null) => {
     try {
-      if (branch === null) {
+      if (baseBranch === null) {
         // Switch back to the main project directory
         await agentService.switchCwd(folderPath, folderPath)
         return { ok: true as const, path: folderPath }
@@ -211,19 +214,15 @@ function registerIpcHandlers(): void {
       // repoRoot is e.g. /path/to/repo/.git — strip .git to get repo dir
       const mainDir = repoRoot.endsWith('/.git') ? dirname(repoRoot) : repoRoot
       const repoName = basename(mainDir)
-      const sanitizedBranch = branch.replace(/\//g, '-')
+      // Use short commit hash as directory name
+      const commitHash = (await gitRun(folderPath, ['rev-parse', baseBranch])).trim()
+      const shortHash = commitHash.slice(0, 7)
       const wtDir = join(homedir(), '.worktrees', repoName)
-      const wtPath = join(wtDir, sanitizedBranch)
-      // Create worktree if it doesn't exist yet
+      const wtPath = join(wtDir, shortHash)
+      // Create detached HEAD worktree if it doesn't exist yet
       if (!existsSync(wtPath)) {
         if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
-        if (baseBranch) {
-          // Create new branch from base: git worktree add <path> -b <new-branch> <base>
-          await gitRun(folderPath, ['worktree', 'add', wtPath, '-b', branch, baseBranch])
-        } else {
-          // Checkout existing branch
-          await gitRun(folderPath, ['worktree', 'add', wtPath, branch])
-        }
+        await gitRun(folderPath, ['worktree', 'add', '--detach', wtPath, baseBranch])
       }
       // Switch the agent's cwd to the worktree path
       await agentService.switchCwd(folderPath, wtPath)

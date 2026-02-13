@@ -496,11 +496,9 @@ function _extractTitle(messages: ChatMessage[]): string | undefined {
 function _getWorktreeBranch(projectPath: string, session: SessionState): string | undefined {
   // Prefer the branch stored in session state (set during worktree activation or DB restore)
   if (session._worktreeBranch) return session._worktreeBranch
-  // Fallback: use pendingBranch from app store (real branch name, not sanitized)
+  // Fallback: use pendingBaseBranch from app store
   const wt = useAppStore.getState().getWorktreeState(projectPath)
-  if (wt.pendingBranch) return wt.pendingBranch
-  // Never derive from activePath as it contains sanitized directory name (test-feat-worktree)
-  // instead of the real branch name (test/feat/worktree)
+  if (wt.pendingBaseBranch) return wt.pendingBaseBranch
   return undefined
 }
 
@@ -783,9 +781,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Activate pending worktree before sending (lazy creation)
     const { useAppStore } = await import('./app')
     const wtState = useAppStore.getState().getWorktreeState(activeProject)
-    if (wtState.pendingBranch) {
-      const branchName = wtState.pendingBranch
-      const result = await window.app.activateWorktree(activeProject, branchName, wtState.pendingBaseBranch ?? undefined)
+    if (wtState.pendingBaseBranch) {
+      const baseBranch = wtState.pendingBaseBranch
+      const result = await window.app.activateWorktree(activeProject, baseBranch)
       if (!result.ok) {
         console.error('[sendMessage] Failed to activate worktree:', result.error)
         return
@@ -798,7 +796,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         contextTokens: 0,
         session: null,
         _historySessionId: null,
-        _worktreeBranch: branchName,
+        _worktreeBranch: baseBranch,
         todos: {},
         _nextTodoId: 1,
         showTodos: false,
@@ -1140,19 +1138,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         savedTokens = saved.contextTokens
         savedWorktreeBranch = saved.gitBranch
 
-        // If this session was in a worktree, resolve the real branch name and worktree path
-        // (git_branch may have been saved as sanitized directory name like "test-feat-worktree"
-        // instead of real branch name like "test/feat/worktree")
+        // If this session was in a worktree, try to find the worktree path
+        // (worktrees are detached HEAD, so we match by checking if any non-main entry still exists)
         if (savedWorktreeBranch) {
           try {
             const wtInfo = await window.app.getWorktreeInfo(activeProject)
             if (wtInfo) {
+              // Try matching by branch name first, then by path suffix
               const entry = wtInfo.entries.find((e) =>
-                e.branch === savedWorktreeBranch ||
-                e.path.endsWith('/' + savedWorktreeBranch)
+                !e.isMain && (e.branch === savedWorktreeBranch || e.path.endsWith('/' + savedWorktreeBranch))
               )
               if (entry) {
-                savedWorktreeBranch = entry.branch
                 savedWorktreePath = entry.path
               }
             }

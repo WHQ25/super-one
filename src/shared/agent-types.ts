@@ -204,6 +204,7 @@ export type GitResult = { ok: true } | { ok: false; error: string }
 export interface WorktreeEntry {
   path: string
   branch: string
+  head: string
   isMain: boolean
   isCurrent: boolean
 }

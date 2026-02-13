@@ -12,6 +12,8 @@ SuperOne is an meta desktop app built with Electron. It can be a IDE, it also pr
 bun run dev              # Start Electron app with hot reload
 bun run build            # Production build
 bun run preview          # Preview production build
+bun run test             # Run all tests once
+bun run test:watch       # Run tests in watch mode
 bun run typecheck        # Full type check (main + renderer)
 bun run typecheck:node   # Type check main/preload only
 bun run typecheck:web    # Type check renderer only
@@ -129,6 +131,31 @@ RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate bun run dev
 - Comma-separated list of tool names (case-insensitive, partial match)
 - Only works in development mode (`import.meta.env.DEV`)
 - Matching tool blocks render a debug view with prettified JSON input and raw output instead of the normal UI
+
+## Testing (TDD)
+
+Follow **Test-Driven Development** — write tests before implementation.
+
+### TDD Workflow
+
+1. **Red**: Write a failing test that describes the desired behavior
+2. **Green**: Write the minimum code to make the test pass
+3. **Refactor**: Clean up the code while keeping tests green
+
+### Setup
+
+- **Framework**: Vitest with globals enabled
+- **Environment**: `node` by default, `jsdom` for `.test.tsx` files (auto-matched)
+- **Setup file**: `vitest.setup.ts` (imports `@testing-library/jest-dom/vitest`)
+- **Co-location**: Test files live next to source files as `*.test.ts` / `*.test.tsx`
+
+### Rules
+
+- **Tests first**: For new features and bug fixes, write the test before writing the implementation. For bug fixes, the test should reproduce the bug (fail), then the fix makes it pass.
+- **Run tests after changes**: Always run `bun run test` after implementing to verify all tests pass.
+- **Scope**: Test pure logic, utilities, store actions, and IPC handlers. Do not test trivial UI wiring or third-party library internals.
+- **Naming**: Use descriptive `describe` / `it` blocks: `describe('functionName', () => { it('should return X when given Y', ...) })`.
+- **No mocking by default**: Prefer testing real logic. Only mock external boundaries (IPC, filesystem, network).
 
 ## Conventions
 

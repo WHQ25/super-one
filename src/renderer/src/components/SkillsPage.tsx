@@ -1,161 +1,15 @@
-import { useEffect, useCallback, useState, useRef } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { ChevronDown, ChevronRight, Folder, FolderOpen, PanelLeftClose, PanelLeftOpen, Code, BookOpen, Puzzle } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { motion, LayoutGroup } from 'motion/react'
 import { FileIcon } from '@/components/ui/FileIcon'
-import { Streamdown } from 'streamdown'
-import { createCodePlugin } from '@streamdown/code'
-import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
 import { Button } from '@/components/ui/button'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
+import { FileContentView, MarkdownView, inferLanguage } from './MarkdownPreview'
 import type { SkillFileEntry, SkillInfo } from '../../../shared/agent-types'
 
-const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
-const streamdownPlugins = { code: codePlugin }
-const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
-
-interface TokenLine {
-  tokens: Array<{ content: string; color?: string; htmlStyle?: Record<string, string> }>
-}
-
-function FileContentView({ code, language }: { code: string; language: string }) {
-  const [lines, setLines] = useState<TokenLine[] | null>(null)
-  const [fg, setFg] = useState<string | undefined>(undefined)
-  const prevKey = useRef('')
-
-  useEffect(() => {
-    const themes = codePlugin.getThemes()
-    const lang = language.trim().toLowerCase() || 'md'
-    const key = `${lang}:${themes.join(',')}:${code.length}`
-    if (key === prevKey.current) return
-    prevKey.current = key
-
-    if (!codePlugin.supportsLanguage(lang as never)) {
-      setLines(null)
-      return
-    }
-
-    const apply = (res: { fg?: string; tokens: Array<Array<{ content: string; color?: string; htmlStyle?: Record<string, string> }>> }) => {
-      setFg(res.fg)
-      setLines(res.tokens.map((line) => ({ tokens: line.map((t) => ({ content: t.content, color: t.color, htmlStyle: t.htmlStyle })) })))
-    }
-
-    const result = codePlugin.highlight({ code, language: lang as never, themes }, (res) => apply(res))
-    if (result) apply(result)
-  }, [code, language])
-
-  return (
-    <pre className="whitespace-pre-wrap break-words overflow-x-hidden px-1 text-xs leading-relaxed" style={{ color: fg }}>
-      <code>
-        {lines
-          ? lines.map((line, i) => (
-              <span key={i}>
-                {line.tokens.map((t, j) => (
-                  <span key={j} style={t.color || t.htmlStyle ? { color: t.color, ...(t.htmlStyle ?? {}) } as React.CSSProperties : undefined}>
-                    {t.content}
-                  </span>
-                ))}
-                {i < lines.length - 1 && '\n'}
-              </span>
-            ))
-          : code}
-      </code>
-    </pre>
-  )
-}
-
-type FrontmatterValue = string | { [key: string]: FrontmatterValue }
-
-function parseFrontmatter(content: string): { meta: Record<string, FrontmatterValue> | null; body: string } {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/)
-  if (!match) return { meta: null, body: content }
-
-  const lines = match[1].split('\n')
-  const root: Record<string, FrontmatterValue> = {}
-  let currentKey: string | null = null
-
-  for (const line of lines) {
-    if (!line.trim()) continue
-    const indent = line.search(/\S/)
-    const idx = line.indexOf(':')
-    if (idx <= 0) continue
-    const key = line.slice(0, idx).trim()
-    const value = line.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '')
-
-    if (indent === 0) {
-      currentKey = key
-      root[key] = value || {}
-    } else if (currentKey && indent > 0) {
-      const parent = root[currentKey]
-      if (typeof parent === 'object') {
-        parent[key] = value
-      }
-    }
-  }
-
-  const meta = Object.keys(root).length > 0 ? root : null
-  return { meta, body: match[2] }
-}
-
-function FrontmatterTable({ meta, nested }: { meta: Record<string, FrontmatterValue>; nested?: boolean }) {
-  return (
-    <table className={`w-full border-collapse border border-border text-xs ${nested ? '' : 'mb-3 rounded-md'}`}>
-      <tbody>
-        {Object.entries(meta).map(([key, value]) => (
-          <tr key={key} className="border-b border-border last:border-b-0">
-            <td className="whitespace-nowrap bg-muted/50 px-3 py-1.5 align-top font-medium text-muted-foreground">{key}</td>
-            <td className="px-3 py-1.5 text-foreground">
-              {typeof value === 'object' ? <FrontmatterTable meta={value} nested /> : value}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-function MarkdownView({ content }: { content: string }) {
-  const { meta, body } = parseFrontmatter(content)
-  return (
-    <div className="px-1">
-      {meta && <FrontmatterTable meta={meta} />}
-      <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
-        <Streamdown plugins={streamdownPlugins} components={streamdownComponents}>
-          {body}
-        </Streamdown>
-      </div>
-    </div>
-  )
-}
-
-const EXT_LANG_MAP: Record<string, string> = {
-  ts: 'typescript',
-  tsx: 'tsx',
-  js: 'javascript',
-  jsx: 'jsx',
-  json: 'json',
-  md: 'markdown',
-  sh: 'bash',
-  bash: 'bash',
-  zsh: 'bash',
-  py: 'python',
-  yaml: 'yaml',
-  yml: 'yaml',
-  toml: 'toml',
-  css: 'css',
-  html: 'html',
-  xml: 'xml',
-  sql: 'sql',
-  rs: 'rust',
-  go: 'go',
-  rb: 'ruby',
-}
-
-function inferLanguage(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-  return EXT_LANG_MAP[ext] ?? 'text'
-}
+const layoutTransition = { duration: 0.35, ease: [0.25, 0.1, 0.25, 1] as const }
 
 function buildPath(prefix: string, name: string): string {
   return prefix ? `${prefix}/${name}` : name
@@ -195,19 +49,24 @@ function FileTreeNode({
           )}
           <span className="truncate">{entry.name}</span>
         </button>
-        {open && entry.children && (
-          <div>
-            {entry.children.map((child) => (
-              <FileTreeNode
-                key={child.name}
-                entry={child}
-                depth={depth + 1}
-                pathPrefix={fullPath}
-                skillName={skillName}
-                selectedPath={selectedPath}
-                onSelect={onSelect}
-              />
-            ))}
+        {entry.children && (
+          <div
+            className="grid transition-[grid-template-rows] duration-200 ease-in-out"
+            style={{ gridTemplateRows: open ? '1fr' : '0fr' }}
+          >
+            <div className="overflow-hidden">
+              {entry.children.map((child) => (
+                <FileTreeNode
+                  key={child.name}
+                  entry={child}
+                  depth={depth + 1}
+                  pathPrefix={fullPath}
+                  skillName={skillName}
+                  selectedPath={selectedPath}
+                  onSelect={onSelect}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -264,11 +123,20 @@ function isMarkdown(filePath: string): boolean {
   return /\.md$/i.test(filePath)
 }
 
-function SkillCard({ skill }: { skill: SkillInfo }) {
+function SkillCard({ skill, layoutId }: { skill: SkillInfo; layoutId: string }) {
   const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, clearSkillDetail } = useSettingsStore()
   const isExpanded = skillDetail?.name === skill.name
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mdRawView, setMdRawView] = useState(false)
+  const [contentReady, setContentReady] = useState(false)
+
+  useEffect(() => {
+    if (isExpanded) {
+      const timer = setTimeout(() => setContentReady(true), 350)
+      return () => clearTimeout(timer)
+    }
+    setContentReady(false)
+  }, [isExpanded])
 
   const handleToggle = () => {
     if (isExpanded) {
@@ -288,7 +156,13 @@ function SkillCard({ skill }: { skill: SkillInfo }) {
   )
 
   return (
-    <div className={cn('rounded-lg border border-border bg-card', isExpanded && 'col-span-full')}>
+    <motion.div
+      layout
+      layoutId={layoutId}
+      transition={{ layout: layoutTransition }}
+      style={{ borderRadius: 8 }}
+      className="border border-border bg-card"
+    >
       <div
         role="button"
         onClick={handleToggle}
@@ -303,74 +177,112 @@ function SkillCard({ skill }: { skill: SkillInfo }) {
         )}
       </div>
 
-      {isExpanded && skillDetail && (
-        <div className="flex border-t border-border" style={{ height: 320 }}>
-          {/* Left: File tree */}
-          {sidebarOpen && (
-            <div className="w-[200px] shrink-0 overflow-y-auto border-r border-border p-2">
-              <FileTree
-                entries={skillDetail.files}
-                skillName={skill.name}
-                selectedPath={skillFilePath}
-                onSelect={handleFileSelect}
-              />
-            </div>
-          )}
-          {/* Right: Code preview */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex items-center gap-1.5 shrink-0 border-b border-border px-2 py-1">
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+      {isExpanded && (
+        <div className="border-t border-border" style={{ height: 320 }}>
+          {contentReady && skillDetail ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2 }}
+              className="flex h-full"
+            >
+              {/* Left: File tree */}
+              <div
+                className="shrink-0 overflow-hidden border-r border-border transition-[width] duration-300 ease-in-out"
+                style={{ width: sidebarOpen ? 200 : 0 }}
               >
-                {sidebarOpen ? <PanelLeftClose className="size-3.5" /> : <PanelLeftOpen className="size-3.5" />}
-              </button>
-              {skillFilePath && (
-                <span className="flex-1 text-[11px] text-muted-foreground truncate">{skillFilePath}</span>
-              )}
-              {skillFilePath && isMarkdown(skillFilePath) && (
-                <button
-                  onClick={() => setMdRawView(!mdRawView)}
-                  className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
-                  title={mdRawView ? 'Preview' : 'Source'}
-                >
-                  {mdRawView ? <BookOpen className="size-3.5" /> : <Code className="size-3.5" />}
-                </button>
-              )}
-            </div>
-            <div className="flex-1 overflow-auto p-2">
-              {skillFileContent != null && skillFilePath ? (
-                isMarkdown(skillFilePath) && !mdRawView ? (
-                  <MarkdownView content={skillFileContent} />
-                ) : (
-                  <FileContentView
-                    code={skillFileContent}
-                    language={inferLanguage(skillFilePath)}
+                <div className="w-[200px] overflow-y-auto p-2 h-full">
+                  <FileTree
+                    entries={skillDetail.files}
+                    skillName={skill.name}
+                    selectedPath={skillFilePath}
+                    onSelect={handleFileSelect}
                   />
-                )
-              ) : (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                  Select a file to preview
                 </div>
-              )}
+              </div>
+              {/* Right: Code preview */}
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="flex items-center gap-1.5 shrink-0 border-b border-border px-2 py-1">
+                  <button
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+                  >
+                    {sidebarOpen ? <PanelLeftClose className="size-3.5" /> : <PanelLeftOpen className="size-3.5" />}
+                  </button>
+                  {skillFilePath && (
+                    <span className="flex-1 text-[11px] text-muted-foreground truncate">{skillFilePath}</span>
+                  )}
+                  {skillFilePath && isMarkdown(skillFilePath) && (
+                    <button
+                      onClick={() => setMdRawView(!mdRawView)}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+                      title={mdRawView ? 'Preview' : 'Source'}
+                    >
+                      {mdRawView ? <BookOpen className="size-3.5" /> : <Code className="size-3.5" />}
+                    </button>
+                  )}
+                </div>
+                <div className="flex-1 overflow-auto p-2">
+                  {skillFileContent != null && skillFilePath ? (
+                    isMarkdown(skillFilePath) && !mdRawView ? (
+                      <MarkdownView content={skillFileContent} />
+                    ) : (
+                      <FileContentView
+                        code={skillFileContent}
+                        language={inferLanguage(skillFilePath)}
+                      />
+                    )
+                ) : (
+                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                    Select a file to preview
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          </motion.div>
+          ) : null}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
 
 function SkillSection({ title, skills }: { title: string; skills: SkillInfo[] }) {
+  const skillDetail = useSettingsStore((s) => s.skillDetail)
   if (skills.length === 0) return null
+
+  const expandedIdx = skills.findIndex((s) => s.name === skillDetail?.name)
+  const cardKey = (s: SkillInfo) => `skill-${s.scope}:${s.name}`
+
+  const hasExpanded = expandedIdx !== -1
+  const hasOrphan = hasExpanded && expandedIdx % 2 !== 0
+  const before = hasExpanded
+    ? skills.slice(0, hasOrphan ? expandedIdx - 1 : expandedIdx)
+    : skills
+  const orphan = hasOrphan ? [skills[expandedIdx - 1]] : []
+  const after = hasExpanded ? [...orphan, ...skills.slice(expandedIdx + 1)] : []
+  const expanded = hasExpanded ? skills[expandedIdx] : null
+
   return (
     <div>
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
-      <div className="grid grid-cols-2 gap-3">
-        {skills.map((skill) => (
-          <SkillCard key={`${skill.scope}:${skill.name}`} skill={skill} />
-        ))}
-      </div>
+      <LayoutGroup id={`skills-${title}`}>
+        <div className="space-y-3">
+          {before.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              {before.map((s) => <SkillCard key={cardKey(s)} layoutId={cardKey(s)} skill={s} />)}
+            </div>
+          )}
+          {expanded && (
+            <SkillCard key={cardKey(expanded)} layoutId={cardKey(expanded)} skill={expanded} />
+          )}
+          {after.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              {after.map((s) => <SkillCard key={cardKey(s)} layoutId={cardKey(s)} skill={s} />)}
+            </div>
+          )}
+        </div>
+      </LayoutGroup>
     </div>
   )
 }

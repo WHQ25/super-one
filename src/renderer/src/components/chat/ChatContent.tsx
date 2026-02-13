@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { ChatInput } from './ChatInput'
+import { ChatStatusBar } from './ChatStatusBar'
 import { ChatMessage, CompactingIndicator } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
@@ -69,6 +70,7 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
             <AskUserQuestionPrompt />
             <TodoPopup />
             <ChatInput />
+            {externalHistory && <ChatStatusBar />}
           </div>
         </>
       )}

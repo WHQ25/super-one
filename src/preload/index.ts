@@ -123,6 +123,12 @@ const appAPI = {
   updateMarketplace: (name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE, name),
 
+  // Agents
+  listAgents: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.AGENTS_LIST, projectPath),
+  readAgentFile: (projectPath: string, name: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.AGENTS_READ_FILE, projectPath, name),
+
   // Skills
   listSkills: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_LIST, projectPath),
@@ -179,6 +185,14 @@ const appAPI = {
       ipcRenderer.removeListener('fullscreen-changed', handler)
     }
   },
+
+  // Git
+  getGitInfo: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_INFO, folderPath),
+  getGitBranches: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_LIST_BRANCHES, folderPath),
+  switchGitBranch: (folderPath: string, branch: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_SWITCH_BRANCH, folderPath, branch),
 
   // Session history
   listSessions: (projectPath: string) =>

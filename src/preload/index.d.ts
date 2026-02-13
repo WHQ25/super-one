@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, ChatMessage, ConnectResult, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, PermissionMode, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, ConnectResult, GitInfo, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, PermissionMode, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -45,6 +45,10 @@ interface AppAPI {
   updatePlugins(projectPath: string, updates: Array<{ key: string; scope: ResourceScope }>): Promise<void>
   updateMarketplace(name: string): Promise<void>
 
+  // Agents
+  listAgents(projectPath: string): Promise<(AgentInfo & { scope: 'user' | 'project' })[]>
+  readAgentFile(projectPath: string, name: string): Promise<string | null>
+
   // Skills
   listSkills(projectPath: string): Promise<SkillInfo[]>
   readSkill(projectPath: string, name: string): Promise<SkillDetail | null>
@@ -67,6 +71,11 @@ interface AppAPI {
   // Window state
   getFullscreen(): Promise<boolean>
   onFullscreenChanged(callback: (isFullscreen: boolean) => void): () => void
+
+  // Git
+  getGitInfo(folderPath: string): Promise<GitInfo | null>
+  getGitBranches(folderPath: string): Promise<string[]>
+  switchGitBranch(folderPath: string, branch: string): Promise<boolean>
 
   // Session history
   listSessions(projectPath: string): Promise<SessionHistoryEntry[]>

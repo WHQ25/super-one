@@ -347,7 +347,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           className={cn(
             'min-w-0 text-sm',
             isUser
-              ? 'rounded-xl bg-[#007AFF] text-white dark:bg-[#3A3A3C] dark:text-foreground px-3 py-2'
+              ? 'rounded-xl bg-primary text-primary-foreground px-3 py-2'
               : 'w-full text-foreground'
           )}
         >

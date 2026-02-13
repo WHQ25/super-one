@@ -188,6 +188,10 @@ export interface SandboxInfo {
   autoAllowBash: boolean
 }
 
+export interface GitInfo {
+  branch: string
+}
+
 // --- Main → Renderer push events ---
 
 export type AgentEventBase =
@@ -482,6 +486,15 @@ export const AgentIpcChannels = {
   // MCP library
   MCP_LIST_LIBRARY: 'mcp:list-library',
   MCP_DELETE_LIBRARY_ENTRY: 'mcp:delete-library-entry',
+
+  // Agents
+  AGENTS_LIST: 'agents:list',
+  AGENTS_READ_FILE: 'agents:read-file',
+
+  // Git
+  GIT_INFO: 'app:git-info',
+  GIT_LIST_BRANCHES: 'app:git-list-branches',
+  GIT_SWITCH_BRANCH: 'app:git-switch-branch',
 
   // Concurrent session management
   PARK_SESSION: 'agent:park-session',

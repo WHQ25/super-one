@@ -3,7 +3,7 @@ import type { RecentFolder, SetupEvent } from '../../../shared/agent-types'
 
 type AppView = 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
-type SettingsTab = 'skills' | 'mcp' | 'plugins'
+type SettingsTab = 'agents' | 'skills' | 'mcp' | 'plugins'
 export type LayoutMode = 'canvas' | 'coding'
 
 interface AppState {
@@ -24,6 +24,8 @@ interface AppState {
   setLayoutMode: (mode: LayoutMode) => void
   showSidebar: boolean
   setShowSidebar: (show: boolean) => void
+  sidebarWidth: number
+  setSidebarWidth: (width: number) => void
 
   fetchRecentFolders: () => Promise<void>
   selectAndOpenFolder: () => Promise<void>
@@ -87,6 +89,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   showSidebar: true,
   setShowSidebar: (show) => set({ showSidebar: show }),
+  sidebarWidth: 256,
+  setSidebarWidth: (width) => set({ sidebarWidth: width }),
 
   fetchRecentFolders: async () => {
     const folders = await window.app.getRecentFolders()

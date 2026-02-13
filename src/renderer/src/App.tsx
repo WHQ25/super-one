@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { Sun, Moon, PanelLeft, Code, Paintbrush } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -10,24 +10,15 @@ import { SetupPage } from '@/components/SetupPage'
 import { SettingsLayout } from '@/components/SettingsLayout'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useFullscreen } from '@/hooks/useFullscreen'
+import { useTheme } from '@/hooks/useTheme'
 import { useAppStore } from '@/stores/app'
 import { useActiveSession } from '@/stores/chat'
 import { cn } from '@/lib/utils'
 
-function useTheme() {
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
-  }, [dark])
-
-  return { dark, toggle: () => setDark((d) => !d) }
-}
-
 function App(): React.JSX.Element {
   useAgentEvents()
   const theme = useTheme()
-  const { view, currentFolder, showSidebar, setShowSidebar, layoutMode, setLayoutMode } = useAppStore()
+  const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, layoutMode, setLayoutMode } = useAppStore()
   const isFullscreen = useFullscreen()
 
   // ⌘B keyboard shortcut to toggle sidebar
@@ -41,6 +32,41 @@ function App(): React.JSX.Element {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  // Sidebar resize — manipulate DOM directly for smooth dragging
+  const MIN_SIDEBAR = 200
+  const sidebarRef = useRef<HTMLDivElement>(null)
+  const sidebarInnerRef = useRef<HTMLDivElement>(null)
+
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = useAppStore.getState().sidebarWidth
+    const outer = sidebarRef.current
+    const inner = sidebarInnerRef.current
+    if (!outer || !inner) return
+
+    outer.style.transition = 'none'
+    document.body.style.cursor = 'col-resize'
+
+    const onMove = (ev: MouseEvent) => {
+      const maxW = window.innerWidth * 0.3
+      const newW = Math.min(maxW, Math.max(MIN_SIDEBAR, startW + ev.clientX - startX))
+      outer.style.width = `${newW}px`
+      inner.style.width = `${newW}px`
+    }
+    const onUp = (ev: MouseEvent) => {
+      const maxW = window.innerWidth * 0.3
+      const finalW = Math.min(maxW, Math.max(MIN_SIDEBAR, startW + ev.clientX - startX))
+      outer.style.transition = ''
+      document.body.style.cursor = ''
+      setSidebarWidth(finalW)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [setSidebarWidth])
 
   const folderName = currentFolder?.split('/').pop() ?? null
   const sessionTitle = useActiveSession((s) => {
@@ -80,11 +106,29 @@ function App(): React.JSX.Element {
   // Main view: sidebar + content
   return (
     <div className="flex h-screen bg-sidebar text-foreground">
-      {/* Sidebar — only in coding mode */}
-      {layoutMode === 'coding' && showSidebar && <AppSidebar />}
+      {/* Sidebar — only in coding mode, animated width */}
+      {layoutMode === 'coding' && (
+        <div
+          ref={sidebarRef}
+          className="relative shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
+          style={{ width: showSidebar ? sidebarWidth : 0 }}
+        >
+          <div ref={sidebarInnerRef} className="h-full" style={{ width: sidebarWidth }}>
+            <AppSidebar />
+          </div>
+          {showSidebar && (
+            <div
+              onMouseDown={onResizeStart}
+              className="group absolute inset-y-0 -right-1 w-2 cursor-col-resize"
+            >
+              <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main area — overlaps sidebar with rounded left edge */}
-      <div className={cn('flex min-w-0 flex-1 flex-col', layoutMode === 'coding' && showSidebar && 'rounded-l-xl bg-background overflow-hidden')}>
+      <div className={cn('flex min-w-0 flex-1 flex-col transition-[border-radius] duration-300', layoutMode === 'coding' && showSidebar && 'rounded-l-xl bg-background overflow-hidden')}>
         {/* Main header — drag region */}
         <div
           className={`flex h-11 shrink-0 items-center bg-card pt-[2px] ${isFullscreen ? 'pl-2' : 'pl-[18px]'}`}

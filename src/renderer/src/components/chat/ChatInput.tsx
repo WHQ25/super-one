@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ArrowUp, Square, ChevronDown, Paperclip, X, Loader2 } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
-import { PermissionModeSelector } from './PermissionModeSelector'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
 import { useAppStore } from '@/stores/app'
@@ -379,7 +378,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       content: '',
       editorProps: {
         attributes: {
-          class: 'w-full min-h-[60px] max-h-[120px] overflow-y-auto text-sm leading-5 outline-none text-foreground',
+          class: 'w-full min-h-[60px] max-h-[120px] overflow-y-auto text-[15px] leading-6 outline-none text-foreground',
         },
         // Intercept keys BEFORE ProseMirror handles them
         handleKeyDown: (_view, event) => {
@@ -500,7 +499,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         className={cn(
           'relative',
           isCoding
-            ? 'mx-3 mb-3 rounded-xl border border-border px-4 py-3'
+            ? 'mx-3 mb-1 rounded-xl border border-border px-4 py-3'
             : 'border-t border-border px-3 py-2',
           isDragging && 'ring-2 ring-blue-500/50'
         )}
@@ -597,18 +596,36 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           <EditorContent editor={editor} />
         </div>
 
-        <div className="mt-1 flex items-center justify-between">
-          <div className="flex items-center gap-1">
+        <div className="mt-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {/* Image upload */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Paperclip className="size-3.5" />
+            </Button>
+
             {/* Model selector */}
             <Popover open={modelOpen} onOpenChange={setModelOpen}>
               <PopoverTrigger asChild>
-                <button className="flex items-center gap-0.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+                <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                   {currentModelName ? (
                     <span className="max-w-[140px] truncate">{currentModelName}</span>
                   ) : (
                     <Loader2 className="size-3 animate-spin" />
                   )}
-                  <ChevronDown className="size-3" />
+                  <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
                 </button>
               </PopoverTrigger>
               <PopoverContent
@@ -642,29 +659,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 )}
               </PopoverContent>
             </Popover>
-
-            {/* Permission mode */}
-            <PermissionModeSelector />
-
-            <div className="mx-0.5 h-3 w-px bg-border" />
-
-            {/* Image upload */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              onClick={() => fileInputRef.current?.click()}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Paperclip className="size-3" />
-            </Button>
           </div>
 
           <div className="flex items-center gap-1.5">

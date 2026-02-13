@@ -107,6 +107,41 @@ function registerIpcHandlers(): void {
     await agentService.closeProject(folderPath)
   })
 
+  const gitRun = (folderPath: string, args: string[]) =>
+    new Promise<string>((resolve, reject) => {
+      execFile('git', args, { cwd: folderPath }, (err, stdout) => {
+        if (err) reject(err)
+        else resolve(stdout.trim())
+      })
+    })
+
+  ipcMain.handle(AgentIpcChannels.GIT_INFO, async (_event, folderPath: string) => {
+    try {
+      const branch = await gitRun(folderPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
+      return { branch }
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_LIST_BRANCHES, async (_event, folderPath: string) => {
+    try {
+      const raw = await gitRun(folderPath, ['branch', '--format=%(refname:short)'])
+      return raw.split('\n').filter(Boolean)
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_SWITCH_BRANCH, async (_event, folderPath: string, branch: string) => {
+    try {
+      await gitRun(folderPath, ['checkout', branch])
+      return true
+    } catch {
+      return false
+    }
+  })
+
   const testInstall = process.env.TEST_INSTALL_CLAUDE === '1'
 
   ipcMain.handle(AgentIpcChannels.SETUP_CHECK_CLAUDE, () => {

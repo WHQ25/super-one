@@ -13,6 +13,7 @@ import {
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useFullscreen } from '@/hooks/useFullscreen'
+import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
 import type { SessionHistoryEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
 
@@ -31,16 +32,6 @@ function getPendingReason(
 }
 
 const MAX_SESSIONS = 5
-
-function useTheme() {
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
-  }, [dark])
-
-  return { dark, toggle: () => setDark((d) => !d) }
-}
 
 export function AppSidebar() {
   const theme = useTheme()
@@ -112,7 +103,7 @@ export function AppSidebar() {
   }, [recentFolders, sortMode])
 
   return (
-    <div className="flex w-64 shrink-0 flex-col bg-sidebar">
+    <div className="flex h-full w-full shrink-0 flex-col bg-sidebar">
       {/* Header — drag region with traffic lights spacer + toggle */}
       <div
         className={cn('flex h-11 shrink-0 items-center pt-[2px]', isFullscreen ? 'pl-2' : 'pl-[18px]')}

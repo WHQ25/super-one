@@ -193,6 +193,12 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_LIST_BRANCHES, folderPath),
   switchGitBranch: (folderPath: string, branch: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_SWITCH_BRANCH, folderPath, branch),
+  createBranch: (folderPath: string, branch: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_CREATE_BRANCH, folderPath, branch),
+  getWorktreeInfo: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_WORKTREE_INFO, folderPath),
+  activateWorktree: (folderPath: string, branch: string | null, baseBranch?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, folderPath, branch, baseBranch),
 
   // Session history
   listSessions: (projectPath: string) =>
@@ -205,8 +211,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, projectPath, sessionId, limit, cursor),
   renameSession: (sessionId: string, title: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RENAME, sessionId, title),
-  createSession: (projectPath: string, claudeSessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_CREATE, projectPath, claudeSessionId),
+  createSession: (projectPath: string, claudeSessionId: string, isWorktree?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_CREATE, projectPath, claudeSessionId, isWorktree),
   saveSessionState: (claudeSessionId: string, data: { messages: unknown[]; totalCostUsd: number; contextTokens: number; title?: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SAVE_STATE, claudeSessionId, data),
   loadSessionState: (claudeSessionId: string) =>

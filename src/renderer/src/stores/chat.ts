@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useAppStore } from './app'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
@@ -157,6 +158,7 @@ interface ChatStore {
   setCorner: (corner: Corner) => void
   clearMessages: () => void
   resetSession: () => Promise<void>
+  resetSessionForWorktreeSwitch: (projectPath: string) => void
   rewindFiles: (userMessageId: string) => Promise<RewindFilesResult>
 
   // Draft text
@@ -486,6 +488,10 @@ function _extractTitle(messages: ChatMessage[]): string | undefined {
     .slice(0, 100) || undefined
 }
 
+function _isWorktreeSession(projectPath: string): boolean {
+  return useAppStore.getState().getWorktreeState(projectPath).activePath !== null
+}
+
 /** Save session state to DB. Reads current store state — safe for synchronous call sites. */
 function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   const session = get().projectSessions[projectPath]
@@ -494,7 +500,8 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   const sessionId = _getEffectiveSessionId(session)
   if (!sessionId) return
 
-  window.app.createSession(projectPath, sessionId)
+  const isWorktree = _isWorktreeSession(projectPath)
+  window.app.createSession(projectPath, sessionId, isWorktree || undefined)
     .catch(() => { /* ignore duplicate */ })
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
@@ -510,7 +517,8 @@ function _saveSessionSnapshot(projectPath: string, session: SessionState): void 
   const sessionId = _getEffectiveSessionId(session)
   if (!sessionId || session.messages.length === 0) return
 
-  window.app.createSession(projectPath, sessionId)
+  const isWorktree = _isWorktreeSession(projectPath)
+  window.app.createSession(projectPath, sessionId, isWorktree || undefined)
     .catch(() => { /* ignore duplicate */ })
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
@@ -760,6 +768,31 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
 
+    // Activate pending worktree before sending (lazy creation)
+    const { useAppStore } = await import('./app')
+    const wtState = useAppStore.getState().getWorktreeState(activeProject)
+    if (wtState.pendingBranch) {
+      const result = await window.app.activateWorktree(activeProject, wtState.pendingBranch, wtState.pendingBaseBranch ?? undefined)
+      if (!result.ok) {
+        console.error('[sendMessage] Failed to activate worktree:', result.error)
+        return
+      }
+      useAppStore.getState().setActiveWorktree(activeProject, result.path)
+      // Reset session state — new worktree session starts fresh
+      set((s) => updateSession(s, activeProject, () => ({
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        session: null,
+        _historySessionId: null,
+        todos: {},
+        _nextTodoId: 1,
+        showTodos: false,
+        _todosUserDismissed: false,
+        subagentTokens: {},
+      })))
+    }
+
     const session = getSession(get())
     const { selectedModel, attachments, mentions } = session
 
@@ -818,6 +851,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })))
   },
 
+  resetSessionForWorktreeSwitch: (projectPath: string) => {
+    set((s) => updateSession(s, projectPath, () => ({
+      messages: [],
+      session: null,
+      _historySessionId: null,
+      totalCostUsd: 0,
+      contextTokens: 0,
+      todos: {},
+      _nextTodoId: 1,
+      showTodos: false,
+      _todosUserDismissed: false,
+      subagentTokens: {},
+    })))
+  },
+
   resetSession: async () => {
     const { activeProject } = get()
     if (!activeProject) return
@@ -843,6 +891,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } else {
       await window.agent.resetSession(activeProject)
     }
+
+    // If currently in a worktree, switch agent cwd back to main project
+    await useAppStore.getState().clearWorktree(activeProject)
 
     set((s) => updateSession(s, activeProject, () => ({
       messages: [], session: null, totalCostUsd: 0, contextTokens: 0,

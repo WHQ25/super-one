@@ -330,8 +330,8 @@ export class AgentService {
       dbRenameSession(sessionId, title)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_CREATE, (_event, projectPath: string, claudeSessionId: string) => {
-      try { createSession(projectPath, claudeSessionId) } catch { /* ignore duplicate */ }
+    ipcMain.handle(AgentIpcChannels.SESSIONS_CREATE, (_event, projectPath: string, claudeSessionId: string, isWorktree?: boolean) => {
+      try { createSession(projectPath, claudeSessionId, undefined, isWorktree) } catch { /* ignore duplicate */ }
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_SAVE_STATE, (_event, claudeSessionId: string, data: { messages: unknown[]; totalCostUsd: number; contextTokens: number; title?: string }) => {
@@ -341,6 +341,19 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_STATE, (_event, claudeSessionId: string) => {
       return loadSessionState(claudeSessionId)
     })
+  }
+
+  /** Dispose the current agent for projectPath and recreate it with a new cwd.
+   *  The agent is still keyed by projectPath, and events are tagged with projectPath. */
+  async switchCwd(projectPath: string, newCwd: string): Promise<void> {
+    const existing = this.agents.get(projectPath)
+    if (existing) {
+      await existing.dispose()
+      this.agents.delete(projectPath)
+    }
+    const agent = new ClaudeAgent()
+    await agent.initialize({ cwd: newCwd }, this.createEventEmitter(projectPath))
+    this.agents.set(projectPath, agent)
   }
 
   async openFolder(cwd: string): Promise<void> {

@@ -32,7 +32,7 @@ export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[]
 
   const db = getDb()
   const rows = db.prepare(`
-    SELECT s.id, s.claude_session_id, s.title, s.created_at,
+    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree,
            COALESCE(
              (SELECT MAX(m.created_at) FROM chat_messages m
               WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
@@ -41,18 +41,19 @@ export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[]
     FROM sessions s
     WHERE s.project_id = ?
     ORDER BY last_user_msg_at DESC
-  `).all(projectId) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string }>
+  `).all(projectId) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null }>
 
   return rows.map((r) => ({
     sessionId: r.claude_session_id ?? r.id,
     title: r.title ?? 'Untitled',
     lastActiveAt: r.last_user_msg_at,
     messageCount: 0,
+    ...(r.is_worktree ? { isWorktree: true } : {}),
   }))
 }
 
 /** Create a new session record in DB */
-export function createSession(folderPath: string, claudeSessionId: string, title?: string): string {
+export function createSession(folderPath: string, claudeSessionId: string, title?: string, isWorktree?: boolean): string {
   const projectId = getProjectId(folderPath)
   if (!projectId) throw new Error(`Project not found for path: ${folderPath}`)
 
@@ -61,10 +62,10 @@ export function createSession(folderPath: string, claudeSessionId: string, title
   const now = new Date().toISOString()
 
   db.prepare(`
-    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at, is_worktree)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(claude_session_id) DO NOTHING
-  `).run(id, projectId, claudeSessionId, title ?? null, now)
+  `).run(id, projectId, claudeSessionId, title ?? null, now, isWorktree ? 1 : 0)
 
   return id
 }

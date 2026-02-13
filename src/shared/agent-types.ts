@@ -188,8 +188,30 @@ export interface SandboxInfo {
   autoAllowBash: boolean
 }
 
+export interface GitDirtyStatus {
+  files: number
+  insertions: number
+  deletions: number
+}
+
 export interface GitInfo {
   branch: string
+  dirty?: GitDirtyStatus
+}
+
+export type GitResult = { ok: true } | { ok: false; error: string }
+
+export interface WorktreeEntry {
+  path: string
+  branch: string
+  isMain: boolean
+  isCurrent: boolean
+}
+
+export interface WorktreeInfo {
+  isWorktree: boolean
+  currentBranch: string
+  entries: WorktreeEntry[]
 }
 
 // --- Main → Renderer push events ---
@@ -397,6 +419,7 @@ export interface SessionHistoryEntry {
   lastActiveAt: string // File modification time
   gitBranch?: string
   messageCount: number // Total user + assistant messages
+  isWorktree?: boolean // true if session was created in a git worktree
 }
 
 export interface LoadSessionMessagesResult {
@@ -495,6 +518,9 @@ export const AgentIpcChannels = {
   GIT_INFO: 'app:git-info',
   GIT_LIST_BRANCHES: 'app:git-list-branches',
   GIT_SWITCH_BRANCH: 'app:git-switch-branch',
+  GIT_CREATE_BRANCH: 'app:git-create-branch',
+  GIT_WORKTREE_INFO: 'app:git-worktree-info',
+  GIT_ACTIVATE_WORKTREE: 'app:git-activate-worktree',
 
   // Concurrent session management
   PARK_SESSION: 'agent:park-session',

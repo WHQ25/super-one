@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot } from 'lucide-react'
+import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -276,7 +276,9 @@ export function AppSidebar() {
                                 >
                                   {isRunning
                                     ? <Loader2 className="size-3 shrink-0 animate-spin text-sidebar-foreground/70" />
-                                    : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
+                                    : session.isWorktree
+                                      ? <GitFork className="size-3 shrink-0 text-sidebar-foreground/70" />
+                                      : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
                                   }
                                   <span className="min-w-0 truncate text-[13px]">{session.title}</span>
                                 </div>

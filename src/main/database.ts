@@ -60,6 +60,12 @@ function migrate(db: Database.Database): void {
   // Drop legacy init_cache table if it exists (data now fetched at app startup via connect-claude)
   db.exec('DROP TABLE IF EXISTS init_cache')
 
+  // Add is_worktree column to sessions if missing
+  const cols = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
+  if (!cols.some((c) => c.name === 'is_worktree')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN is_worktree INTEGER DEFAULT 0')
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS global_resource_cache (
       id INTEGER PRIMARY KEY CHECK (id = 1),

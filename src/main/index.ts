@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { join } from 'path'
+import { join, dirname, basename, resolve } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { execFile, spawn } from 'child_process'
@@ -118,7 +118,25 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.GIT_INFO, async (_event, folderPath: string) => {
     try {
       const branch = await gitRun(folderPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
-      return { branch }
+      const status = await gitRun(folderPath, ['status', '--porcelain'])
+      const files = status ? status.split('\n').filter(Boolean).length : 0
+      let insertions = 0
+      let deletions = 0
+      if (files > 0) {
+        try {
+          const shortstat = await gitRun(folderPath, ['diff', 'HEAD', '--shortstat'])
+          const insMatch = shortstat.match(/(\d+) insertion/)
+          const delMatch = shortstat.match(/(\d+) deletion/)
+          if (insMatch) insertions = parseInt(insMatch[1])
+          if (delMatch) deletions = parseInt(delMatch[1])
+        } catch {
+          /* no HEAD yet or no tracked changes */
+        }
+      }
+      return {
+        branch,
+        ...(files > 0 ? { dirty: { files, insertions, deletions } } : {}),
+      }
     } catch {
       return null
     }
@@ -133,12 +151,85 @@ function registerIpcHandlers(): void {
     }
   })
 
+  const gitErrorMessage = (err: unknown): string => {
+    const stderr = (err as { stderr?: string })?.stderr?.trim()
+    if (stderr) return stderr
+    return (err as Error)?.message ?? 'Unknown git error'
+  }
+
   ipcMain.handle(AgentIpcChannels.GIT_SWITCH_BRANCH, async (_event, folderPath: string, branch: string) => {
     try {
       await gitRun(folderPath, ['checkout', branch])
-      return true
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: gitErrorMessage(err) }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_CREATE_BRANCH, async (_event, folderPath: string, branch: string) => {
+    try {
+      await gitRun(folderPath, ['checkout', '-b', branch])
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: gitErrorMessage(err) }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_WORKTREE_INFO, async (_event, folderPath: string) => {
+    try {
+      const raw = await gitRun(folderPath, ['worktree', 'list', '--porcelain'])
+      const entries: { path: string; branch: string; isMain: boolean; isCurrent: boolean }[] = []
+      let first = true
+      for (const block of raw.split('\n\n').filter(Boolean)) {
+        const lines = block.split('\n')
+        const pathLine = lines.find((l) => l.startsWith('worktree '))
+        const branchLine = lines.find((l) => l.startsWith('branch '))
+        if (!pathLine) continue
+        const wtPath = pathLine.slice('worktree '.length)
+        const branch = branchLine ? branchLine.slice('branch refs/heads/'.length) : 'detached'
+        entries.push({ path: wtPath, branch, isMain: first, isCurrent: wtPath === folderPath })
+        first = false
+      }
+      const mainEntry = entries.find((e) => e.isMain)
+      const isWorktree = mainEntry ? mainEntry.path !== folderPath : false
+      const currentBranch = entries.find((e) => e.isCurrent)?.branch ?? ''
+      return { isWorktree, currentBranch, entries }
     } catch {
-      return false
+      return null
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, async (_event, folderPath: string, branch: string | null, baseBranch?: string) => {
+    try {
+      if (branch === null) {
+        // Switch back to the main project directory
+        await agentService.switchCwd(folderPath, folderPath)
+        return { ok: true as const, path: folderPath }
+      }
+      // Resolve repo name for the worktree directory
+      const repoRoot = resolve(folderPath, await gitRun(folderPath, ['rev-parse', '--git-common-dir']))
+      // repoRoot is e.g. /path/to/repo/.git — strip .git to get repo dir
+      const mainDir = repoRoot.endsWith('/.git') ? dirname(repoRoot) : repoRoot
+      const repoName = basename(mainDir)
+      const sanitizedBranch = branch.replace(/\//g, '-')
+      const wtDir = join(homedir(), '.worktrees', repoName)
+      const wtPath = join(wtDir, sanitizedBranch)
+      // Create worktree if it doesn't exist yet
+      if (!existsSync(wtPath)) {
+        if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
+        if (baseBranch) {
+          // Create new branch from base: git worktree add <path> -b <new-branch> <base>
+          await gitRun(folderPath, ['worktree', 'add', wtPath, '-b', branch, baseBranch])
+        } else {
+          // Checkout existing branch
+          await gitRun(folderPath, ['worktree', 'add', wtPath, branch])
+        }
+      }
+      // Switch the agent's cwd to the worktree path
+      await agentService.switchCwd(folderPath, wtPath)
+      return { ok: true as const, path: wtPath }
+    } catch (err) {
+      return { ok: false as const, error: gitErrorMessage(err) }
     }
   })
 

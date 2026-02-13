@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ChatMessage, ConnectResult, GitInfo, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, PermissionMode, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, ConnectResult, GitInfo, GitResult, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, PermissionMode, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -75,7 +75,10 @@ interface AppAPI {
   // Git
   getGitInfo(folderPath: string): Promise<GitInfo | null>
   getGitBranches(folderPath: string): Promise<string[]>
-  switchGitBranch(folderPath: string, branch: string): Promise<boolean>
+  switchGitBranch(folderPath: string, branch: string): Promise<GitResult>
+  createBranch(folderPath: string, branch: string): Promise<GitResult>
+  getWorktreeInfo(folderPath: string): Promise<WorktreeInfo | null>
+  activateWorktree(folderPath: string, branch: string | null, baseBranch?: string): Promise<{ ok: true; path: string } | { ok: false; error: string }>
 
   // Session history
   listSessions(projectPath: string): Promise<SessionHistoryEntry[]>
@@ -83,7 +86,7 @@ interface AppAPI {
   resumeSession(projectPath: string, sessionId: string): Promise<void>
   loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
   renameSession(sessionId: string, title: string): Promise<void>
-  createSession(projectPath: string, claudeSessionId: string): Promise<void>
+  createSession(projectPath: string, claudeSessionId: string, isWorktree?: boolean): Promise<void>
   saveSessionState(claudeSessionId: string, data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string }): Promise<void>
   loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number } | null>
 }

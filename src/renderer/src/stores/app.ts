@@ -6,11 +6,20 @@ type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type SettingsTab = 'agents' | 'skills' | 'mcp' | 'plugins'
 export type LayoutMode = 'canvas' | 'coding'
 
+interface WorktreeState {
+  pendingBranch: string | null      // New branch name for the worktree
+  pendingBaseBranch: string | null   // Base branch to create from
+  activePath: string | null          // Worktree path currently active (agent cwd switched)
+}
+
 interface AppState {
   view: AppView
   currentFolder: string | null
   tmpFolder: string | null
   recentFolders: RecentFolder[]
+
+  // Per-project worktree state
+  _worktrees: Record<string, WorktreeState>
 
   // Setup
   installStatus: InstallStatus
@@ -41,6 +50,12 @@ interface AppState {
 
   // Multi-session: switch to a project that already has an agent
   switchToProject: (folderPath: string) => void
+
+  // Worktree management
+  setPendingWorktree: (projectPath: string, branch: string, baseBranch: string) => void
+  setActiveWorktree: (projectPath: string, path: string | null) => void
+  clearWorktree: (projectPath: string) => Promise<void>
+  getWorktreeState: (projectPath: string) => WorktreeState
 }
 
 async function openFolderDirect(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<void> {
@@ -67,11 +82,14 @@ async function refreshResourcesInBackground(): Promise<void> {
   }
 }
 
+const defaultWorktreeState: WorktreeState = { pendingBranch: null, pendingBaseBranch: null, activePath: null }
+
 export const useAppStore = create<AppState>((set, get) => ({
   view: 'setup',
   currentFolder: null,
   tmpFolder: null,
   recentFolders: [],
+  _worktrees: {},
   installStatus: 'idle',
   installOutput: '',
   settingsTab: 'skills',
@@ -202,6 +220,46 @@ export const useAppStore = create<AppState>((set, get) => ({
   navigateTo: (view) => set({ view }),
 
   setSettingsTab: (tab) => set({ settingsTab: tab }),
+
+  // Worktree management
+  setPendingWorktree: (projectPath, branch, baseBranch) => {
+    set((s) => ({
+      _worktrees: {
+        ...s._worktrees,
+        [projectPath]: { pendingBranch: branch, pendingBaseBranch: baseBranch, activePath: s._worktrees[projectPath]?.activePath ?? null },
+      },
+    }))
+  },
+
+  setActiveWorktree: (projectPath, path) => {
+    set((s) => ({
+      _worktrees: {
+        ...s._worktrees,
+        [projectPath]: { pendingBranch: null, pendingBaseBranch: null, activePath: path },
+      },
+    }))
+  },
+
+  clearWorktree: async (projectPath) => {
+    const wt = get()._worktrees[projectPath]
+    if (wt?.activePath) {
+      // Agent cwd was switched — switch back to project root
+      await window.app.activateWorktree(projectPath, null)
+      // Reset chat session state for the new agent
+      const { useChatStore } = await import('./chat')
+      useChatStore.getState().resetSessionForWorktreeSwitch(projectPath)
+    }
+    set((s) => ({
+      _worktrees: {
+        ...s._worktrees,
+        [projectPath]: { pendingBranch: null, pendingBaseBranch: null, activePath: null },
+      },
+    }))
+  },
+
+  getWorktreeState: (projectPath) => {
+    return get()._worktrees[projectPath] ?? defaultWorktreeState
+  },
 }))
 
 /** Whether a real project (not tmp) is open */

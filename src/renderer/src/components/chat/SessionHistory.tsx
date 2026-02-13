@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, Pencil, Search, X } from 'lucide-react'
+import { ArrowLeft, GitFork, Pencil, Search, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SessionHistoryEntry } from '../../../../shared/agent-types'
 
@@ -126,6 +126,7 @@ export function SessionHistory({ showBackButton = true }: SessionHistoryProps) {
                     />
                   ) : (
                     <div className="flex items-center gap-1 overflow-hidden">
+                      {entry.isWorktree && <GitFork className="size-3 shrink-0 text-muted-foreground" />}
                       <div className="min-w-0 flex-1 truncate text-xs font-medium">{entry.title}</div>
                       <button
                         onClick={(e) => startEditing(entry, e)}

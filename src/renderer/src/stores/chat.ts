@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexThreadItem, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
@@ -67,7 +67,7 @@ export interface SessionState {
   homedir: string
   sandboxInfo: SandboxInfo
 
-  slashCommandOutput: { command: string; content: string } | null
+  slashCommandOutput: { command: string; content: string; mode?: 'overlay' | 'popup' } | null
   _pendingSlashCommand: string
 
   todos: Record<string, TodoItem>
@@ -650,15 +650,31 @@ type CodexCommand =
   | { kind: 'auth-status' }
   | { kind: 'auth-set'; mode: CodexAuthMode; apiKey?: string }
   | { kind: 'run'; prompt: string }
+  | { kind: 'review'; target: CodexReviewTarget }
+  | { kind: 'compact' }
 
 function parseCodexCommand(input: string): CodexCommand | null {
-  if (!input.startsWith('/codex')) return null
+  if (!input.startsWith('/')) return null
 
-  const body = input.slice('/codex'.length).trim()
-  if (!body || body === 'help') return { kind: 'help' }
+  const body = input.slice(1).trim()
+  if (!body) return null
+
+  if (body === 'help') return { kind: 'help' }
   if (body === 'reset') return { kind: 'reset' }
+  if (body === 'compact') return { kind: 'compact' }
 
-  if (body.startsWith('auth')) {
+  if (body === 'review' || body.startsWith('review ')) {
+    const reviewBody = body.slice('review'.length).trim()
+    if (reviewBody.startsWith('branch')) return { kind: 'review', target: { type: 'baseBranch' } }
+    if (reviewBody.startsWith('commit')) {
+      const sha = reviewBody.slice('commit'.length).trim()
+      if (!sha) return { kind: 'help' }
+      return { kind: 'review', target: { type: 'commit', sha } }
+    }
+    return { kind: 'review', target: { type: 'uncommittedChanges' } }
+  }
+
+  if (body === 'auth' || body.startsWith('auth ')) {
     const authBody = body.slice('auth'.length).trim()
     if (!authBody) return { kind: 'auth-status' }
     if (authBody === 'auto') return { kind: 'auth-set', mode: 'auto' }
@@ -670,24 +686,26 @@ function parseCodexCommand(input: string): CodexCommand | null {
     return { kind: 'help' }
   }
 
-  return { kind: 'run', prompt: body }
+  return null
 }
 
 function getCodexHelpText(): string {
   return [
     'Codex commands:',
     '',
-    '1) /codex <prompt>',
-    '2) /codex reset',
-    '3) /codex auth',
-    '4) /codex auth auto',
-    '5) /codex auth chatgpt',
-    '6) /codex auth apikey <CODEX_API_KEY>',
+    '/reset — reset thread',
+    '/auth — show auth status',
+    '/auth auto — prefer API key, fallback to ChatGPT login',
+    '/auth chatgpt — force ChatGPT login mode',
+    '/auth apikey <KEY> — force API key mode',
+    '/review — review uncommitted changes',
+    '/review branch — review diff against base branch',
+    '/review commit <sha> — review a specific commit',
+    '/compact — compact thread context',
     '',
     'Notes:',
-    '- `auto`: prefer API key (session key or env `CODEX_API_KEY`), otherwise use ChatGPT login',
-    '- `chatgpt`: force ChatGPT login mode',
-    '- `apikey`: force API key mode',
+    '- Type a message directly to send it as a prompt',
+    '- During a running turn, new messages are sent as steered input (no need to wait)',
   ].join('\n')
 }
 
@@ -991,7 +1009,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const finalContent = content.trim()
     const codexCommand = parseCodexCommand(finalContent)
-    const requestedProvider: ChatProvider = preferredProvider === 'codex' || !!codexCommand ? 'codex' : 'claude'
+    const requestedProvider: ChatProvider = preferredProvider === 'codex' ? 'codex' : 'claude'
     const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
     const resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
       ? (codexCommand ?? { kind: 'run', prompt: finalContent })
@@ -1012,6 +1030,39 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const slashMatch = finalContent.match(/^\/(\S+)/)
     set((s) => updateSession(s, activeProject, () => ({ _pendingSlashCommand: slashMatch ? slashMatch[1] : '' })))
+
+    // Utility codex commands → popup overlay (no chat messages)
+    if (resolvedCodexCommand) {
+      const utilityKind = resolvedCodexCommand.kind
+      if (utilityKind === 'help' || utilityKind === 'reset' || utilityKind === 'auth-status' || utilityKind === 'auth-set') {
+        set((s) => updateSession(s, activeProject, () => ({ _pendingSlashCommand: '' })))
+        let popupContent: string
+        try {
+          if (utilityKind === 'help') {
+            popupContent = getCodexHelpText()
+          } else if (utilityKind === 'reset') {
+            await window.app.codexReset(activeProject)
+            popupContent = 'Codex thread has been reset.'
+          } else if (utilityKind === 'auth-status') {
+            const status = await window.app.codexGetAuthStatus(activeProject)
+            popupContent = formatCodexAuthStatus(status)
+          } else {
+            const status = await window.app.codexSetAuth(activeProject, {
+              mode: resolvedCodexCommand.mode,
+              apiKey: resolvedCodexCommand.apiKey,
+            })
+            popupContent = `Auth mode updated.\n\n${formatCodexAuthStatus(status)}`
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error)
+          popupContent = `Error: ${msg}`
+        }
+        set((s) => updateSession(s, activeProject, () => ({
+          slashCommandOutput: { command: utilityKind === 'help' ? 'help' : utilityKind, content: popupContent, mode: 'popup' },
+        })))
+        return
+      }
+    }
 
     const userContent: ContentBlock[] = [
       ...attachments.map((img) => ({ type: 'image' as const, name: img.name })),
@@ -1064,97 +1115,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         })))
       }
 
-      if (resolvedCodexCommand.kind === 'help') {
-        appendAssistant({
-          id: assistantId,
-          role: 'assistant',
-          status: 'complete',
-          content: [{ type: 'text', text: getCodexHelpText() }],
-          createdAt: new Date().toISOString(),
-          providerId: 'codex',
-        })
-        _saveSessionState(get, activeProject)
-        return
-      }
-
-      if (resolvedCodexCommand.kind === 'reset') {
+      // Steer: if streaming and command is 'run', send as steer input instead of starting a new run
+      if (session.status === 'streaming' && resolvedCodexCommand.kind === 'run') {
         try {
-          await window.app.codexReset(activeProject)
-          appendAssistant({
-            id: assistantId,
-            role: 'assistant',
-            status: 'complete',
-            content: [{ type: 'text', text: 'Codex thread has been reset.' }],
-            createdAt: new Date().toISOString(),
-            providerId: 'codex',
-          })
+          await window.app.codexSteer(activeProject, resolvedCodexCommand.prompt)
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          appendAssistant({
-            id: assistantId,
-            role: 'assistant',
-            status: 'error',
-            content: [{ type: 'text', text: `Failed to reset Codex thread: ${message}` }],
-            createdAt: new Date().toISOString(),
-            providerId: 'codex',
-          })
+          console.warn('[sendMessage] Codex steer failed:', error)
         }
-        _saveSessionState(get, activeProject)
-        return
-      }
-
-      if (resolvedCodexCommand.kind === 'auth-status') {
-        try {
-          const status = await window.app.codexGetAuthStatus(activeProject)
-          appendAssistant({
-            id: assistantId,
-            role: 'assistant',
-            status: 'complete',
-            content: [{ type: 'text', text: formatCodexAuthStatus(status) }],
-            createdAt: new Date().toISOString(),
-            providerId: 'codex',
-          })
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          appendAssistant({
-            id: assistantId,
-            role: 'assistant',
-            status: 'error',
-            content: [{ type: 'text', text: `Failed to read Codex auth status: ${message}` }],
-            createdAt: new Date().toISOString(),
-            providerId: 'codex',
-          })
-        }
-        _saveSessionState(get, activeProject)
-        return
-      }
-
-      if (resolvedCodexCommand.kind === 'auth-set') {
-        try {
-          const status = await window.app.codexSetAuth(activeProject, {
-            mode: resolvedCodexCommand.mode,
-            apiKey: resolvedCodexCommand.apiKey,
-          })
-          appendAssistant({
-            id: assistantId,
-            role: 'assistant',
-            status: 'complete',
-            content: [{ type: 'text', text: `Codex auth mode updated.\n\n${formatCodexAuthStatus(status)}` }],
-            createdAt: new Date().toISOString(),
-            providerId: 'codex',
-          })
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          appendAssistant({
-            id: assistantId,
-            role: 'assistant',
-            status: 'error',
-            content: [{ type: 'text', text: `Failed to set Codex auth mode: ${message}` }],
-            createdAt: new Date().toISOString(),
-            providerId: 'codex',
-          })
-        }
-        _saveSessionState(get, activeProject)
         return
       }
 
@@ -1170,17 +1137,44 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       try {
         const runStart = Date.now()
-        const result = await window.app.codexRun(
-          activeProject,
-          resolvedCodexCommand.prompt,
-          selectedCodexModel || undefined,
-          selectedCodexReasoningEffort,
-          selectedCodexPermissionPreset,
-          codexThreadId,
-          assistantId,
-          attachments.length > 0 ? attachments : undefined,
+        let result: Awaited<ReturnType<typeof window.app.codexRun>>
+
+        if (resolvedCodexCommand.kind === 'review') {
+          result = await window.app.codexReview(
+            activeProject,
+            resolvedCodexCommand.target,
+            selectedCodexModel || undefined,
+            selectedCodexReasoningEffort,
+            selectedCodexPermissionPreset,
+            codexThreadId,
+            assistantId,
+          )
+        } else if (resolvedCodexCommand.kind === 'compact') {
+          result = await window.app.codexCompact(
+            activeProject,
+            selectedCodexModel || undefined,
+            selectedCodexPermissionPreset,
+            codexThreadId,
+            assistantId,
+          )
+        } else {
+          result = await window.app.codexRun(
+            activeProject,
+            resolvedCodexCommand.prompt,
+            selectedCodexModel || undefined,
+            selectedCodexReasoningEffort,
+            selectedCodexPermissionPreset,
+            codexThreadId,
+            assistantId,
+            attachments.length > 0 ? attachments : undefined,
+          )
+        }
+
+        const text = result.finalResponse?.trim() || (
+          resolvedCodexCommand.kind === 'compact'
+            ? 'Context compacted.'
+            : 'Codex completed without returning text.'
         )
-        const text = result.finalResponse?.trim() || 'Codex completed without returning text.'
         const renderedItems = pruneTransientCodexItems(result.items)
         updateAssistant('complete', text, result.usage ? {
           durationMs: Date.now() - runStart,

@@ -107,6 +107,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const removeMention = useChatStore((s) => s.removeMention)
     const agents = useActiveSession((s) => s.agents)
     const permissionMode = useActiveSession((s) => s.permissionMode)
+    const commandPopup = useActiveSession((s) => s.slashCommandOutput?.mode === 'popup' ? s.slashCommandOutput : null)
+    const dismissCommandPopup = useChatStore((s) => s.dismissSlashCommandOutput)
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const [slashDismissed, setSlashDismissed] = useState(false)
@@ -147,17 +149,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     }, [slashIndex])
 
     const isStreaming = status === 'streaming'
-    const canSend = (text.trim().length > 0 || attachments.length > 0 || mentions.length > 0) && !isStreaming
     const activeProviderForResources = sessionProvider ?? preferredProvider
+    const canSend = (text.trim().length > 0 || attachments.length > 0 || mentions.length > 0) && (!isStreaming || activeProviderForResources === 'codex')
     const showAgentMentions = activeProviderForResources === 'claude'
 
     const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
-      { name: 'codex', description: 'Run prompt with Codex', argumentHint: '<prompt>', isSkill: false },
-      { name: 'codex reset', description: 'Reset Codex thread for current project', argumentHint: '', isSkill: false },
-      { name: 'codex auth', description: 'Show Codex auth status', argumentHint: '', isSkill: false },
-      { name: 'codex auth auto', description: 'Auto auth mode (prefer API key)', argumentHint: '', isSkill: false },
-      { name: 'codex auth chatgpt', description: 'Use ChatGPT sign-in mode', argumentHint: '', isSkill: false },
-      { name: 'codex auth apikey', description: 'Use API key mode', argumentHint: '<CODEX_API_KEY>', isSkill: false },
+      { name: 'help', description: 'Show available commands', argumentHint: '', isSkill: false },
+      { name: 'reset', description: 'Reset Codex thread', argumentHint: '', isSkill: false },
+      { name: 'auth', description: 'Show auth status', argumentHint: '', isSkill: false },
+      { name: 'auth auto', description: 'Auto auth mode (prefer API key)', argumentHint: '', isSkill: false },
+      { name: 'auth chatgpt', description: 'Use ChatGPT sign-in mode', argumentHint: '', isSkill: false },
+      { name: 'auth apikey', description: 'Use API key mode', argumentHint: '<CODEX_API_KEY>', isSkill: false },
+      { name: 'review', description: 'Review uncommitted changes', argumentHint: '', isSkill: false },
+      { name: 'review branch', description: 'Review diff against base branch', argumentHint: '', isSkill: false },
+      { name: 'review commit', description: 'Review a specific commit', argumentHint: '<sha>', isSkill: false },
+      { name: 'compact', description: 'Compact thread context', argumentHint: '', isSkill: false },
     ]), [])
 
     const activeSlashCommands = preferredProvider === 'codex' ? codexSlashCommands : slashCommands
@@ -166,7 +172,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const HIDDEN_COMMANDS = new Set(['keybindings-help', 'debug'])
     const matchingCommands = useMemo(() => {
       if (preferredProvider === 'codex') {
-        if (!text.startsWith('/codex')) return []
+        if (!text.startsWith('/')) return []
         const query = text.slice(1).toLowerCase()
         return activeSlashCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(query))
       }
@@ -272,6 +278,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         const isComposing = 'nativeEvent' in e ? e.nativeEvent.isComposing : e.isComposing
         if (isComposing) return false
 
+        // Escape → dismiss command output popup
+        if (e.key === 'Escape' && commandPopup) {
+          dismissCommandPopup()
+          return true
+        }
+
         // Shift+Enter in collapsed mode → expand the panel
         if (e.key === 'Enter' && e.shiftKey && !isOpen) {
           e.preventDefault()
@@ -357,7 +369,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         return false
       },
-      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment]
+      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup]
     )
 
     // Keep ref in sync for ProseMirror's handleKeyDown (avoids stale closure)
@@ -701,6 +713,27 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   )}
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Command output popup */}
+        {commandPopup && (
+          <div className={cn(
+            'absolute bottom-full left-0 right-0 z-10 flex max-h-64 flex-col overflow-hidden border border-border bg-card',
+            isCoding ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg'
+          )}>
+            <div className="flex items-center justify-between px-3 py-1.5">
+              <span className="text-[11px] font-medium text-muted-foreground">/{commandPopup.command}</span>
+              <button
+                onMouseDown={(e) => { e.preventDefault(); dismissCommandPopup() }}
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-3 py-2">
+              <pre className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{commandPopup.content}</pre>
             </div>
           </div>
         )}

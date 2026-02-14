@@ -13,11 +13,13 @@ import type {
   CodexAuthMode,
   CodexAuthStatus,
   CodexCommandExecutionStatus,
+  CodexCompactRequest,
   CodexMcpToolCallStatus,
   CodexPatchApplyStatus,
   CodexPatchChangeKind,
   CodexPermissionPreset,
   CodexReasoningEffort,
+  CodexReviewRequest,
   CodexSandboxMode,
   CodexThreadItem,
   CodexUsageInfo,
@@ -40,6 +42,8 @@ interface CodexSession {
   runningController: AbortController | null
   modelCache: { fetchedAt: number; models: ModelOption[] } | null
   pendingApprovals: Map<string, PendingCodexApproval>
+  activeTurnId: string | null
+  steerFn: ((input: string) => Promise<void>) | null
 }
 
 interface CodexRunStreamCallbacks {
@@ -412,6 +416,19 @@ function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadItem): C
       }
     }
 
+    case 'enteredReviewMode': {
+      const text = readString(rec.text) ?? ''
+      return { id, type: 'review', phase: 'entered', text }
+    }
+
+    case 'exitedReviewMode': {
+      const text = readString(rec.text) ?? ''
+      return { id, type: 'review', phase: 'exited', text }
+    }
+
+    case 'contextCompaction':
+      return { id, type: 'compaction' }
+
     default:
       return null
   }
@@ -597,6 +614,8 @@ export class CodexExperimentService {
       runningController: null,
       modelCache: null,
       pendingApprovals: new Map<string, PendingCodexApproval>(),
+      activeTurnId: null,
+      steerFn: null,
     }
   }
 
@@ -947,6 +966,272 @@ export class CodexExperimentService {
     return models
   }
 
+  private async resolveThread(
+    connection: AppServerConnection,
+    session: CodexSession,
+    projectPath: string,
+    permissionProfile: ReturnType<typeof resolvePermissionProfile>,
+  ): Promise<string> {
+    const threadConfig = this.buildThreadConfig(permissionProfile)
+
+    const threadResult = session.threadId
+      ? await connection.request(
+          'thread/resume',
+          compactRecord({
+            threadId: session.threadId,
+            model: session.model,
+            cwd: projectPath,
+            approvalPolicy: permissionProfile.approvalPolicy,
+            sandbox: permissionProfile.sandboxMode,
+            config: threadConfig,
+            persistExtendedHistory: true,
+          }),
+        )
+      : await connection.request(
+          'thread/start',
+          compactRecord({
+            model: session.model,
+            cwd: projectPath,
+            approvalPolicy: permissionProfile.approvalPolicy,
+            sandbox: permissionProfile.sandboxMode,
+            config: threadConfig,
+            experimentalRawEvents: false,
+            persistExtendedHistory: true,
+          }),
+        )
+
+    const thread = asRecord(threadResult.thread)
+    const resolvedThreadId = readString(thread?.id)
+    if (!resolvedThreadId) {
+      throw new Error('Failed to resolve Codex thread id')
+    }
+
+    session.threadId = resolvedThreadId
+    return resolvedThreadId
+  }
+
+  private async streamTurnEvents(
+    connection: AppServerConnection,
+    session: CodexSession,
+    activeTurnId: string | null,
+    controller: AbortController,
+    callbacks?: CodexRunStreamCallbacks,
+  ): Promise<{ threadId: string | null; usage: CodexUsageInfo | null; items: CodexThreadItem[] }> {
+    let threadStartedEmitted = false
+    const emitThreadStarted = (threadId: string) => {
+      if (threadStartedEmitted) return
+      threadStartedEmitted = true
+      callbacks?.onThreadStarted?.(threadId)
+    }
+
+    if (session.threadId) emitThreadStarted(session.threadId)
+
+    const itemOrder: string[] = []
+    const itemMap = new Map<string, CodexThreadItem>()
+    let usage: CodexUsageInfo | null = null
+    let turnCompleted = false
+
+    const handleServerRequest = async (notification: AppServerNotification): Promise<boolean> => {
+      if (notification.requestIdRaw === undefined) return false
+
+      const permissionRequest = mapApprovalRequest(notification)
+      if (permissionRequest) {
+        if (controller.signal.aborted) {
+          await connection.respond(notification.requestIdRaw, { decision: 'decline' })
+          return true
+        }
+        if (!callbacks?.onPermissionRequest) {
+          await connection.respond(notification.requestIdRaw, { decision: 'decline' })
+          return true
+        }
+        try {
+          const decisionPromise = new Promise<CodexApprovalDecision>((resolve, reject) => {
+            session.pendingApprovals.set(permissionRequest.requestId, { resolve, reject })
+          })
+          callbacks?.onPermissionRequest?.(permissionRequest)
+          const decision = await decisionPromise
+          await connection.respond(notification.requestIdRaw, { decision })
+          return true
+        } finally {
+          session.pendingApprovals.delete(permissionRequest.requestId)
+        }
+      }
+
+      await connection.respond(notification.requestIdRaw, {})
+      return true
+    }
+
+    const isRelevantTurn = (params: Record<string, unknown>): boolean => {
+      if (!activeTurnId) return true
+      const turnId = readString(params.turnId) ?? readString(asRecord(params.turn)?.id)
+      return !turnId || turnId === activeTurnId
+    }
+
+    while (!turnCompleted) {
+      const notification = await connection.nextNotification()
+      const { method, params } = notification
+
+      if (await handleServerRequest(notification)) {
+        continue
+      }
+
+      if (method === 'thread/started') {
+        const startedThreadId = readString(asRecord(params.thread)?.id)
+        if (startedThreadId) {
+          session.threadId = startedThreadId
+          emitThreadStarted(startedThreadId)
+        }
+        continue
+      }
+
+      if (!isRelevantTurn(params)) {
+        continue
+      }
+
+      switch (method) {
+        case 'item/started':
+        case 'item/completed': {
+          const rawItem = asRecord(params.item)
+          if (!rawItem) break
+
+          const itemId = readString(rawItem.id)
+          const previous = itemId ? itemMap.get(itemId) : undefined
+          const mapped = mapThreadItemFromAppServer(rawItem, previous)
+          if (!mapped) break
+
+          upsertItem(itemOrder, itemMap, mapped)
+          callbacks?.onItemDelta?.(method === 'item/started' ? 'started' : 'completed', mapped)
+          break
+        }
+
+        case 'item/agentMessage/delta': {
+          const itemId = readString(params.itemId)
+          const delta = readString(params.delta) ?? ''
+          if (!itemId) break
+
+          const previous = itemMap.get(itemId)
+          const previousText = previous?.type === 'agent_message' ? previous.text : ''
+          const updated: CodexThreadItem = {
+            id: itemId,
+            type: 'agent_message',
+            text: `${previousText}${delta}`,
+          }
+          upsertItem(itemOrder, itemMap, updated)
+          callbacks?.onItemDelta?.('updated', updated)
+          break
+        }
+
+        case 'item/reasoning/summaryTextDelta':
+        case 'item/reasoning/textDelta': {
+          const itemId = readString(params.itemId)
+          const delta = readString(params.delta) ?? ''
+          if (!itemId) break
+
+          const previous = itemMap.get(itemId)
+          const previousText = previous?.type === 'reasoning' ? previous.text : ''
+          const updated: CodexThreadItem = {
+            id: itemId,
+            type: 'reasoning',
+            text: `${previousText}${delta}`,
+          }
+          upsertItem(itemOrder, itemMap, updated)
+          callbacks?.onItemDelta?.('updated', updated)
+          break
+        }
+
+        case 'item/commandExecution/outputDelta': {
+          const itemId = readString(params.itemId)
+          const delta = readString(params.delta) ?? ''
+          if (!itemId) break
+
+          const previous = itemMap.get(itemId)
+          const previousCommand = previous?.type === 'command_execution' ? previous : null
+          const updated: CodexThreadItem = {
+            id: itemId,
+            type: 'command_execution',
+            command: previousCommand?.command ?? '',
+            aggregatedOutput: `${previousCommand?.aggregatedOutput ?? ''}${delta}`,
+            ...(previousCommand?.exitCode !== undefined ? { exitCode: previousCommand.exitCode } : {}),
+            status: previousCommand?.status ?? 'in_progress',
+          }
+          upsertItem(itemOrder, itemMap, updated)
+          callbacks?.onItemDelta?.('updated', updated)
+          break
+        }
+
+        case 'turn/plan/updated': {
+          const plan = Array.isArray(params.plan) ? params.plan : []
+          if (plan.length === 0) break
+
+          const todoId = activeTurnId ? `todo_${activeTurnId}` : 'todo_current'
+          const todoItems = plan
+            .map((entry) => {
+              const step = asRecord(entry)
+              const text = readString(step?.step)
+              if (!text) return null
+              return {
+                text,
+                completed: readString(step?.status) === 'completed',
+              }
+            })
+            .filter((entry): entry is { text: string; completed: boolean } => entry !== null)
+
+          if (todoItems.length === 0) break
+
+          const updated: CodexThreadItem = {
+            id: todoId,
+            type: 'todo_list',
+            items: todoItems,
+          }
+          upsertItem(itemOrder, itemMap, updated)
+          callbacks?.onItemDelta?.('updated', updated)
+          break
+        }
+
+        case 'thread/tokenUsage/updated': {
+          const nextUsage = mapUsageFromTokenUsage(params.tokenUsage ?? params)
+          if (nextUsage) {
+            usage = nextUsage
+            callbacks?.onUsageDelta?.(nextUsage)
+          }
+          break
+        }
+
+        case 'error': {
+          const willRetry = readBoolean(params.willRetry) ?? false
+          if (willRetry) break
+          throw new Error(extractTurnErrorMessage(params))
+        }
+
+        case 'turn/completed': {
+          const completedTurn = asRecord(params.turn)
+          const status = readString(completedTurn?.status) ?? 'completed'
+          if (status === 'failed') {
+            throw new Error(extractTurnErrorMessage(completedTurn?.error ?? params))
+          }
+          if (status === 'interrupted') {
+            throw new Error('Codex run interrupted')
+          }
+          turnCompleted = true
+          break
+        }
+
+        default:
+          break
+      }
+    }
+
+    const items = itemOrder
+      .map((id) => itemMap.get(id))
+      .filter((item): item is CodexThreadItem => Boolean(item))
+
+    return {
+      threadId: session.threadId,
+      usage,
+      items,
+    }
+  }
+
   async run(
     projectPath: string,
     request: CodexRunRequest,
@@ -977,49 +1262,7 @@ export class CodexExperimentService {
       const permissionProfile = resolvePermissionProfile(session.permissionPreset)
 
       const streamed = await this.withAppServerConnection(session, controller.signal, async (connection) => {
-        const threadConfig = this.buildThreadConfig(permissionProfile)
-
-        const threadResult = session.threadId
-          ? await connection.request(
-              'thread/resume',
-              compactRecord({
-                threadId: session.threadId,
-                model: session.model,
-                cwd: projectPath,
-                approvalPolicy: permissionProfile.approvalPolicy,
-                sandbox: permissionProfile.sandboxMode,
-                config: threadConfig,
-                persistExtendedHistory: true,
-              }),
-            )
-          : await connection.request(
-              'thread/start',
-              compactRecord({
-                model: session.model,
-                cwd: projectPath,
-                approvalPolicy: permissionProfile.approvalPolicy,
-                sandbox: permissionProfile.sandboxMode,
-                config: threadConfig,
-                experimentalRawEvents: false,
-                persistExtendedHistory: true,
-              }),
-            )
-
-        const thread = asRecord(threadResult.thread)
-        const resolvedThreadId = readString(thread?.id)
-        if (!resolvedThreadId) {
-          throw new Error('Failed to resolve Codex thread id')
-        }
-
-        session.threadId = resolvedThreadId
-        let threadStartedEmitted = false
-        const emitThreadStarted = (threadId: string) => {
-          if (threadStartedEmitted) return
-          threadStartedEmitted = true
-          callbacks?.onThreadStarted?.(threadId)
-        }
-
-        emitThreadStarted(resolvedThreadId)
+        const resolvedThreadId = await this.resolveThread(connection, session, projectPath, permissionProfile)
 
         const turnStartResult = await connection.request(
           'turn/start',
@@ -1043,209 +1286,23 @@ export class CodexExperimentService {
         const turn = asRecord(turnStartResult.turn)
         const activeTurnId = readString(turn?.id)
 
-        const itemOrder: string[] = []
-        const itemMap = new Map<string, CodexThreadItem>()
-        let usage: CodexUsageInfo | null = null
-        let turnCompleted = false
-
-        const handleServerRequest = async (notification: AppServerNotification): Promise<boolean> => {
-          if (notification.requestIdRaw === undefined) return false
-
-          const permissionRequest = mapApprovalRequest(notification)
-          if (permissionRequest) {
-            if (controller.signal.aborted) {
-              await connection.respond(notification.requestIdRaw, { decision: 'decline' })
-              return true
-            }
-            if (!callbacks?.onPermissionRequest) {
-              await connection.respond(notification.requestIdRaw, { decision: 'decline' })
-              return true
-            }
-            try {
-              const decisionPromise = new Promise<CodexApprovalDecision>((resolve, reject) => {
-                session.pendingApprovals.set(permissionRequest.requestId, { resolve, reject })
-              })
-              callbacks?.onPermissionRequest?.(permissionRequest)
-              const decision = await decisionPromise
-              await connection.respond(notification.requestIdRaw, { decision })
-              return true
-            } finally {
-              session.pendingApprovals.delete(permissionRequest.requestId)
-            }
-          }
-
-          await connection.respond(notification.requestIdRaw, {})
-          return true
+        // Set up steer capability while turn is active
+        session.activeTurnId = activeTurnId
+        let steerSeq = 9000
+        session.steerFn = async (text: string) => {
+          steerSeq += 1
+          await connection.request('turn/steer', {
+            threadId: resolvedThreadId,
+            input: [{ type: 'text', text }],
+            expectedTurnId: activeTurnId,
+          })
         }
 
-        const isRelevantTurn = (params: Record<string, unknown>): boolean => {
-          if (!activeTurnId) return true
-          const turnId = readString(params.turnId) ?? readString(asRecord(params.turn)?.id)
-          return !turnId || turnId === activeTurnId
-        }
-
-        while (!turnCompleted) {
-          const notification = await connection.nextNotification()
-          const { method, params } = notification
-
-          if (await handleServerRequest(notification)) {
-            continue
-          }
-
-          if (method === 'thread/started') {
-            const startedThreadId = readString(asRecord(params.thread)?.id)
-            if (startedThreadId) {
-              session.threadId = startedThreadId
-              emitThreadStarted(startedThreadId)
-            }
-            continue
-          }
-
-          if (!isRelevantTurn(params)) {
-            continue
-          }
-
-          switch (method) {
-            case 'item/started':
-            case 'item/completed': {
-              const rawItem = asRecord(params.item)
-              if (!rawItem) break
-
-              const itemId = readString(rawItem.id)
-              const previous = itemId ? itemMap.get(itemId) : undefined
-              const mapped = mapThreadItemFromAppServer(rawItem, previous)
-              if (!mapped) break
-
-              upsertItem(itemOrder, itemMap, mapped)
-              callbacks?.onItemDelta?.(method === 'item/started' ? 'started' : 'completed', mapped)
-              break
-            }
-
-            case 'item/agentMessage/delta': {
-              const itemId = readString(params.itemId)
-              const delta = readString(params.delta) ?? ''
-              if (!itemId) break
-
-              const previous = itemMap.get(itemId)
-              const previousText = previous?.type === 'agent_message' ? previous.text : ''
-              const updated: CodexThreadItem = {
-                id: itemId,
-                type: 'agent_message',
-                text: `${previousText}${delta}`,
-              }
-              upsertItem(itemOrder, itemMap, updated)
-              callbacks?.onItemDelta?.('updated', updated)
-              break
-            }
-
-            case 'item/reasoning/summaryTextDelta':
-            case 'item/reasoning/textDelta': {
-              const itemId = readString(params.itemId)
-              const delta = readString(params.delta) ?? ''
-              if (!itemId) break
-
-              const previous = itemMap.get(itemId)
-              const previousText = previous?.type === 'reasoning' ? previous.text : ''
-              const updated: CodexThreadItem = {
-                id: itemId,
-                type: 'reasoning',
-                text: `${previousText}${delta}`,
-              }
-              upsertItem(itemOrder, itemMap, updated)
-              callbacks?.onItemDelta?.('updated', updated)
-              break
-            }
-
-            case 'item/commandExecution/outputDelta': {
-              const itemId = readString(params.itemId)
-              const delta = readString(params.delta) ?? ''
-              if (!itemId) break
-
-              const previous = itemMap.get(itemId)
-              const previousCommand = previous?.type === 'command_execution' ? previous : null
-              const updated: CodexThreadItem = {
-                id: itemId,
-                type: 'command_execution',
-                command: previousCommand?.command ?? '',
-                aggregatedOutput: `${previousCommand?.aggregatedOutput ?? ''}${delta}`,
-                ...(previousCommand?.exitCode !== undefined ? { exitCode: previousCommand.exitCode } : {}),
-                status: previousCommand?.status ?? 'in_progress',
-              }
-              upsertItem(itemOrder, itemMap, updated)
-              callbacks?.onItemDelta?.('updated', updated)
-              break
-            }
-
-            case 'turn/plan/updated': {
-              const plan = Array.isArray(params.plan) ? params.plan : []
-              if (plan.length === 0) break
-
-              const todoId = activeTurnId ? `todo_${activeTurnId}` : 'todo_current'
-              const todoItems = plan
-                .map((entry) => {
-                  const step = asRecord(entry)
-                  const text = readString(step?.step)
-                  if (!text) return null
-                  return {
-                    text,
-                    completed: readString(step?.status) === 'completed',
-                  }
-                })
-                .filter((entry): entry is { text: string; completed: boolean } => entry !== null)
-
-              if (todoItems.length === 0) break
-
-              const updated: CodexThreadItem = {
-                id: todoId,
-                type: 'todo_list',
-                items: todoItems,
-              }
-              upsertItem(itemOrder, itemMap, updated)
-              callbacks?.onItemDelta?.('updated', updated)
-              break
-            }
-
-            case 'thread/tokenUsage/updated': {
-              const nextUsage = mapUsageFromTokenUsage(params.tokenUsage ?? params)
-              if (nextUsage) {
-                usage = nextUsage
-                callbacks?.onUsageDelta?.(nextUsage)
-              }
-              break
-            }
-
-            case 'error': {
-              const willRetry = readBoolean(params.willRetry) ?? false
-              if (willRetry) break
-              throw new Error(extractTurnErrorMessage(params))
-            }
-
-            case 'turn/completed': {
-              const completedTurn = asRecord(params.turn)
-              const status = readString(completedTurn?.status) ?? 'completed'
-              if (status === 'failed') {
-                throw new Error(extractTurnErrorMessage(completedTurn?.error ?? params))
-              }
-              if (status === 'interrupted') {
-                throw new Error('Codex run interrupted')
-              }
-              turnCompleted = true
-              break
-            }
-
-            default:
-              break
-          }
-        }
-
-        const items = itemOrder
-          .map((id) => itemMap.get(id))
-          .filter((item): item is CodexThreadItem => Boolean(item))
-
-        return {
-          threadId: session.threadId,
-          usage,
-          items,
+        try {
+          return await this.streamTurnEvents(connection, session, activeTurnId, controller, callbacks)
+        } finally {
+          session.activeTurnId = null
+          session.steerFn = null
         }
       })
 
@@ -1263,6 +1320,116 @@ export class CodexExperimentService {
     } finally {
       this.rejectPendingApprovals(session, 'Codex run interrupted')
       cleanupPersistedImageAttachments(persistedImagePaths)
+      if (session.runningController === controller) {
+        session.runningController = null
+      }
+    }
+  }
+
+  async steer(projectPath: string, input: string): Promise<void> {
+    const session = this.sessions.get(projectPath)
+    if (!session?.steerFn) {
+      throw new Error('No active Codex turn to steer')
+    }
+    await session.steerFn(input)
+  }
+
+  async review(
+    projectPath: string,
+    request: CodexReviewRequest,
+    callbacks?: CodexRunStreamCallbacks,
+  ): Promise<CodexRunResult> {
+    const session = this.ensureSession(
+      projectPath,
+      request.model,
+      request.threadId,
+      undefined,
+      request.permissionPreset,
+    )
+    if (session.runningController) {
+      throw new Error('Codex is already running for this project')
+    }
+
+    const controller = new AbortController()
+    session.runningController = controller
+
+    try {
+      const permissionProfile = resolvePermissionProfile(session.permissionPreset)
+
+      const streamed = await this.withAppServerConnection(session, controller.signal, async (connection) => {
+        const resolvedThreadId = await this.resolveThread(connection, session, projectPath, permissionProfile)
+
+        await connection.request('review/start', compactRecord({
+          threadId: resolvedThreadId,
+          delivery: 'inline',
+          target: request.target,
+        }))
+
+        return this.streamTurnEvents(connection, session, null, controller, callbacks)
+      })
+
+      return {
+        threadId: streamed.threadId,
+        finalResponse: deriveFinalResponse(streamed.items),
+        usage: streamed.usage,
+        items: streamed.items,
+      }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error('Codex run interrupted')
+      }
+      throw error
+    } finally {
+      this.rejectPendingApprovals(session, 'Codex run interrupted')
+      if (session.runningController === controller) {
+        session.runningController = null
+      }
+    }
+  }
+
+  async compact(
+    projectPath: string,
+    request: CodexCompactRequest,
+    callbacks?: CodexRunStreamCallbacks,
+  ): Promise<CodexRunResult> {
+    const session = this.ensureSession(
+      projectPath,
+      request.model,
+      request.threadId,
+      undefined,
+      request.permissionPreset,
+    )
+    if (session.runningController) {
+      throw new Error('Codex is already running for this project')
+    }
+
+    const controller = new AbortController()
+    session.runningController = controller
+
+    try {
+      const permissionProfile = resolvePermissionProfile(session.permissionPreset)
+
+      const streamed = await this.withAppServerConnection(session, controller.signal, async (connection) => {
+        const resolvedThreadId = await this.resolveThread(connection, session, projectPath, permissionProfile)
+
+        await connection.request('thread/compact/start', { threadId: resolvedThreadId })
+
+        return this.streamTurnEvents(connection, session, null, controller, callbacks)
+      })
+
+      return {
+        threadId: streamed.threadId,
+        finalResponse: deriveFinalResponse(streamed.items),
+        usage: streamed.usage,
+        items: streamed.items,
+      }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error('Codex run interrupted')
+      }
+      throw error
+    } finally {
+      this.rejectPendingApprovals(session, 'Codex run interrupted')
       if (session.runningController === controller) {
         session.runningController = null
       }

@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexRunResult, CodexSetAuthRequest, ConnectResult, GitInfo, GitResult, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, GitInfo, GitResult, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -34,6 +34,9 @@ interface AppAPI {
   checkClaude(): Promise<boolean>
   installClaude(): Promise<void>
   codexRun(projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, images?: ImageAttachment[]): Promise<CodexRunResult>
+  codexSteer(projectPath: string, input: string): Promise<void>
+  codexReview(projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string): Promise<CodexRunResult>
+  codexCompact(projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string): Promise<CodexRunResult>
   codexListModels(projectPath: string): Promise<ModelOption[]>
   codexReset(projectPath: string): Promise<void>
   codexInterrupt(projectPath: string): Promise<boolean>
@@ -62,6 +65,14 @@ interface AppAPI {
   readSkillFile(projectPath: string, skillName: string, relativePath: string): Promise<string | null>
   installSkill(sourcePath: string): Promise<SkillInfo>
   deleteSkill(projectPath: string, name: string, scope: ResourceScope): Promise<void>
+
+  // Codex Skills
+  codexListSkills(projectPath: string): Promise<SkillInfo[]>
+  codexReadSkill(projectPath: string, name: string): Promise<SkillDetail | null>
+  codexReadSkillFile(projectPath: string, skillName: string, relativePath: string): Promise<string | null>
+
+  // Codex MCP config
+  codexListMcpConfigs(projectPath: string): Promise<McpServerConfig[]>
 
   // MCP config
   listMcpConfigs(projectPath: string): Promise<McpServerConfig[]>

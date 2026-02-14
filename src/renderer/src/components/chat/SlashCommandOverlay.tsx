@@ -51,7 +51,7 @@ export function SlashCommandOverlay() {
     })
   }, [output])
 
-  if (!output) return null
+  if (!output || output.mode === 'popup') return null
 
   const title = output.command ? `/${output.command}` : 'Command Output'
 

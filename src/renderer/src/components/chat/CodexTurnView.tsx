@@ -282,6 +282,26 @@ function renderItem(
           <div className="text-[11px] leading-relaxed text-red-200">{item.message}</div>
         </div>
       )
+
+    case 'review':
+      return item.phase === 'entered' ? (
+        <div key={`${item.id}-${index}`} className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          <span>Reviewing...</span>
+        </div>
+      ) : (
+        <div key={`${item.id}-${index}`} className="my-0.5">
+          <CopyableMarkdown text={item.text} isStreaming={isStreaming} />
+        </div>
+      )
+
+    case 'compaction':
+      return (
+        <div key={`${item.id}-${index}`} className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Check className="size-3.5 text-green-400" />
+          <span>Context compacted</span>
+        </div>
+      )
   }
 }
 

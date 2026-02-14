@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type CodexPermissionPreset, type CodexReasoningEffort } from '../shared/agent-types'
+import { AgentIpcChannels, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget } from '../shared/agent-types'
 
 const agentAPI = {
   sendMessage: (projectPath: string, request: { content: string; model?: string; images?: { mimeType: string; base64: string; name: string }[] }) =>
@@ -140,6 +140,45 @@ const appAPI = {
       reason,
     ),
 
+  codexSteer: (projectPath: string, input: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, projectPath, input),
+
+  codexReview: (
+    projectPath: string,
+    target: CodexReviewTarget,
+    model?: string,
+    reasoningEffort?: CodexReasoningEffort,
+    permissionPreset?: CodexPermissionPreset,
+    threadId?: string,
+    messageId?: string,
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.CODEX_REVIEW,
+      projectPath,
+      target,
+      model,
+      reasoningEffort,
+      permissionPreset,
+      threadId,
+      messageId,
+    ),
+
+  codexCompact: (
+    projectPath: string,
+    model?: string,
+    permissionPreset?: CodexPermissionPreset,
+    threadId?: string,
+    messageId?: string,
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.CODEX_COMPACT,
+      projectPath,
+      model,
+      permissionPreset,
+      threadId,
+      messageId,
+    ),
+
   codexGetAuthStatus: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_AUTH_STATUS, projectPath),
 
@@ -196,6 +235,18 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_INSTALL, sourcePath),
   deleteSkill: (projectPath: string, name: string, scope: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_DELETE, projectPath, name, scope),
+
+  // Codex Skills
+  codexListSkills: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_LIST, projectPath),
+  codexReadSkill: (projectPath: string, name: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_READ, projectPath, name),
+  codexReadSkillFile: (projectPath: string, skillName: string, relativePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_READ_FILE, projectPath, skillName, relativePath),
+
+  // Codex MCP config
+  codexListMcpConfigs: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_LIST_CONFIG, projectPath),
 
   // MCP config
   listMcpConfigs: (projectPath: string) =>

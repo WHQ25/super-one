@@ -10,6 +10,7 @@ import {
   AgentIpcChannels,
   type CodexPermissionPreset,
   type CodexReasoningEffort,
+  type CodexReviewTarget,
   type AgentEvent,
   type CodexThreadItem,
   type CodexUsageInfo,
@@ -216,6 +217,124 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.CODEX_SET_AUTH, (_event, projectPath: string, request: CodexSetAuthRequest) => {
     return codexService.setAuth(projectPath, request)
   })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_STEER, (_event, projectPath: string, input: string) => {
+    return codexService.steer(projectPath, input)
+  })
+
+  ipcMain.handle(
+    AgentIpcChannels.CODEX_REVIEW,
+    async (
+      _event,
+      projectPath: string,
+      target: CodexReviewTarget,
+      model?: string,
+      reasoningEffort?: CodexReasoningEffort,
+      permissionPreset?: CodexPermissionPreset,
+      threadId?: string,
+      messageId?: string,
+    ) => {
+      const runCallbacks = messageId
+        ? {
+            onThreadStarted: (resolvedThreadId: string) => {
+              emitAgentEvent({
+                type: 'codex_thread_started',
+                messageId,
+                threadId: resolvedThreadId,
+                projectPath,
+              })
+            },
+            onItemDelta: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
+              emitAgentEvent({
+                type: 'codex_item_delta',
+                messageId,
+                phase,
+                item,
+                projectPath,
+              })
+            },
+            onUsageDelta: (usage: CodexUsageInfo) => {
+              emitAgentEvent({
+                type: 'message_usage',
+                messageId,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                projectPath,
+              })
+            },
+            onPermissionRequest: (request: PermissionRequest) => {
+              emitAgentEvent({
+                type: 'permission_request',
+                request,
+                projectPath,
+              })
+            },
+          }
+        : undefined
+
+      return codexService.review(
+        projectPath,
+        { target, model, reasoningEffort, permissionPreset, threadId, messageId },
+        runCallbacks,
+      )
+    },
+  )
+
+  ipcMain.handle(
+    AgentIpcChannels.CODEX_COMPACT,
+    async (
+      _event,
+      projectPath: string,
+      model?: string,
+      permissionPreset?: CodexPermissionPreset,
+      threadId?: string,
+      messageId?: string,
+    ) => {
+      const runCallbacks = messageId
+        ? {
+            onThreadStarted: (resolvedThreadId: string) => {
+              emitAgentEvent({
+                type: 'codex_thread_started',
+                messageId,
+                threadId: resolvedThreadId,
+                projectPath,
+              })
+            },
+            onItemDelta: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
+              emitAgentEvent({
+                type: 'codex_item_delta',
+                messageId,
+                phase,
+                item,
+                projectPath,
+              })
+            },
+            onUsageDelta: (usage: CodexUsageInfo) => {
+              emitAgentEvent({
+                type: 'message_usage',
+                messageId,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                projectPath,
+              })
+            },
+            onPermissionRequest: (request: PermissionRequest) => {
+              emitAgentEvent({
+                type: 'permission_request',
+                request,
+                projectPath,
+              })
+            },
+          }
+        : undefined
+
+      return codexService.compact(
+        projectPath,
+        { model, permissionPreset, threadId, messageId },
+        runCallbacks,
+      )
+    },
+  )
 
   const gitRun = (folderPath: string, args: string[]) =>
     new Promise<string>((resolve, reject) => {

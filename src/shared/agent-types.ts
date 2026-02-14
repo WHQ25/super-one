@@ -131,6 +131,18 @@ export interface CodexErrorItem {
   message: string
 }
 
+export interface CodexReviewItem {
+  id: string
+  type: 'review'
+  phase: 'entered' | 'exited'
+  text: string
+}
+
+export interface CodexCompactionItem {
+  id: string
+  type: 'compaction'
+}
+
 export type CodexThreadItem =
   | CodexAgentMessageItem
   | CodexReasoningItem
@@ -140,6 +152,8 @@ export type CodexThreadItem =
   | CodexWebSearchItem
   | CodexTodoListItem
   | CodexErrorItem
+  | CodexReviewItem
+  | CodexCompactionItem
 
 export interface CodexTurnInfo {
   threadId: string | null
@@ -398,6 +412,10 @@ export interface RecentFolder {
 
 export type ResourceScope = 'user' | 'project'
 
+// --- Settings provider ---
+
+export type SettingsProvider = 'claude' | 'codex'
+
 // --- Plugins ---
 
 export interface PluginManifest {
@@ -622,6 +640,27 @@ export interface CodexRunResult {
   items: CodexThreadItem[]
 }
 
+export type CodexReviewTarget =
+  | { type: 'uncommittedChanges' }
+  | { type: 'baseBranch' }
+  | { type: 'commit'; sha: string; title?: string }
+
+export interface CodexReviewRequest {
+  target: CodexReviewTarget
+  model?: string
+  reasoningEffort?: CodexReasoningEffort
+  permissionPreset?: CodexPermissionPreset
+  threadId?: string
+  messageId?: string
+}
+
+export interface CodexCompactRequest {
+  model?: string
+  permissionPreset?: CodexPermissionPreset
+  threadId?: string
+  messageId?: string
+}
+
 // --- IPC channel constants ---
 
 export const AgentIpcChannels = {
@@ -643,6 +682,9 @@ export const AgentIpcChannels = {
   CODEX_RESET: 'codex:reset',
   CODEX_INTERRUPT: 'codex:interrupt',
   CODEX_PERMISSION_RESPONSE: 'codex:permission-response',
+  CODEX_STEER: 'codex:steer',
+  CODEX_REVIEW: 'codex:review',
+  CODEX_COMPACT: 'codex:compact',
   CODEX_GET_AUTH_STATUS: 'codex:get-auth-status',
   CODEX_SET_AUTH: 'codex:set-auth',
 
@@ -678,6 +720,14 @@ export const AgentIpcChannels = {
   SKILLS_READ_FILE: 'skills:read-file',
   SKILLS_INSTALL: 'skills:install',
   SKILLS_DELETE: 'skills:delete',
+
+  // Codex skills
+  CODEX_SKILLS_LIST: 'codex:skills-list',
+  CODEX_SKILLS_READ: 'codex:skills-read',
+  CODEX_SKILLS_READ_FILE: 'codex:skills-read-file',
+
+  // Codex MCP config
+  CODEX_MCP_LIST_CONFIG: 'codex:mcp-list-config',
 
   // MCP config
   MCP_LIST_CONFIG: 'mcp:list-config',

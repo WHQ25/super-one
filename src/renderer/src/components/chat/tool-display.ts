@@ -47,6 +47,11 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       return { icon: 'file-text', summary: sp(String(input.file_path ?? '')) }
     case 'Edit':
       return { icon: 'file-edit', summary: sp(String(input.file_path ?? '')) }
+    case 'FileChange': {
+      const filePath = sp(String(input.file_path ?? ''))
+      const kind = String(input.kind ?? '')
+      return { icon: 'file-edit', summary: [filePath, kind].filter(Boolean).join(' · ') }
+    }
     case 'Write':
     case 'NotebookEdit':
       return { icon: 'file-plus', summary: sp(String(input.file_path ?? input.notebook_path ?? '')) }
@@ -68,6 +73,11 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       return { icon: 'bot', summary: String(input.name ?? input.subagent_type ?? input.description ?? '') }
     case 'TaskOutput':
       return { icon: 'clipboard-list', summary: String(input.task_id ?? '') }
+    case 'TodoList': {
+      const total = Number(input.total ?? 0)
+      const completed = Number(input.completed ?? 0)
+      return { icon: 'clipboard-list', summary: total > 0 ? `${completed}/${total} completed` : '' }
+    }
     case 'EnterPlanMode':
       return { icon: 'wrench', summary: 'Entered plan mode' }
     case 'ExitPlanMode':

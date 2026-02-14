@@ -22,14 +22,55 @@ interface ToolBlockProps {
   result?: string
 }
 
-const DIFF_TOOLS = new Set(['Edit', 'Write'])
+const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
 
-/** Compute line-level additions/removals for Edit/Write tools. */
+function splitContentLines(text: string): string[] {
+  if (!text) return []
+  return text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
+}
+
+function countContentLines(text: string): number {
+  return splitContentLines(text).length
+}
+
+function countUnifiedDiffDelta(diff: string): { added: number; removed: number } | null {
+  if (!diff) return null
+  const lines = diff.replace(/\r\n/g, '\n').split('\n')
+  let inHunk = false
+  let added = 0
+  let removed = 0
+
+  for (const line of lines) {
+    if (line.startsWith('@@')) {
+      inHunk = true
+      continue
+    }
+    if (!inHunk || line.startsWith('\\')) continue
+    if (line.startsWith('+')) added++
+    else if (line.startsWith('-')) removed++
+  }
+
+  return added > 0 || removed > 0 ? { added, removed } : null
+}
+
+function countPrefixedDiffDelta(diff: string): { added: number; removed: number } | null {
+  if (!diff) return null
+  const lines = diff.replace(/\r\n/g, '\n').split('\n')
+  let added = 0
+  let removed = 0
+  for (const line of lines) {
+    if (line.startsWith('+') && !line.startsWith('+++')) added++
+    else if (line.startsWith('-') && !line.startsWith('---')) removed++
+  }
+  return added > 0 || removed > 0 ? { added, removed } : null
+}
+
+/** Compute line-level additions/removals for diff-capable tools. */
 function computeLineDelta(toolName: string, params: Record<string, unknown>): { added: number; removed: number } | null {
   if (toolName === 'Write') {
     const content = String(params.content ?? '')
     if (!content) return null
-    const added = content.split('\n').length
+    const added = countContentLines(content)
     return { added, removed: 0 }
   }
   if (toolName === 'Edit') {
@@ -44,6 +85,14 @@ function computeLineDelta(toolName: string, params: Record<string, unknown>): { 
       else if (c.removed) removed += count
     }
     return { added, removed }
+  }
+  if (toolName === 'FileChange') {
+    const kind = String(params.kind ?? '')
+    const diff = String(params.diff ?? '')
+    if (!diff) return null
+    if (kind === 'add') return { added: countContentLines(diff), removed: 0 }
+    if (kind === 'delete') return { added: 0, removed: countContentLines(diff) }
+    return countUnifiedDiffDelta(diff) ?? countPrefixedDiffDelta(diff)
   }
   return null
 }
@@ -102,7 +151,11 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
   const cleanResult = isDenied ? result.slice('[denied] '.length) : result
 
   const lineDelta = useMemo(() => (!isStreaming && !isDenied) ? computeLineDelta(toolName, params) : null, [toolName, params, isStreaming, isDenied])
-  const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && Object.keys(params).length > 0 && !isDenied
+  const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && !isDenied && (
+    toolName === 'FileChange'
+      ? String(params.diff ?? '').length > 0
+      : Object.keys(params).length > 0
+  )
   const hasResult = !!cleanResult && !isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming
   const expandable = hasDiff || hasResult || hasQA
@@ -183,7 +236,8 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
               )}
               {toolName === 'Edit' && <EditDiff params={params} />}
               {toolName === 'Write' && <WriteDiff params={params} />}
-              {hasResult && !hasDiff && (
+              {toolName === 'FileChange' && <FileChangeDiff params={params} />}
+              {hasResult && (!hasDiff || toolName === 'FileChange') && (
                 <div>
                   {toolName === 'Bash' && <div className="mb-0.5 text-[11px] font-medium text-muted-foreground">Output</div>}
                   {isMcp ? <PrettyJSONCodeBlock text={cleanResult!} /> : <ToolResult text={cleanResult!} />}
@@ -362,6 +416,103 @@ function buildDiffLines(oldStr: string, newStr: string, startLine: number): Diff
   return result
 }
 
+function buildUnifiedFileChangeDiffLines(unifiedDiff: string): DiffLine[] {
+  const rows = splitContentLines(unifiedDiff)
+  const result: DiffLine[] = []
+  let oldLine = 1
+  let newLine = 1
+  let oldIdx = 0
+  let newIdx = 0
+  let inHunk = false
+
+  for (const row of rows) {
+    if (row.startsWith('@@')) {
+      const match = row.match(/^@@\s*-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s*@@/)
+      if (match) {
+        oldLine = Number(match[1])
+        newLine = Number(match[2])
+      }
+      inHunk = true
+      continue
+    }
+
+    if (!inHunk || row.startsWith('\\')) continue
+
+    if (row.startsWith('+')) {
+      result.push({ kind: 'added', lineNum: newLine++, text: row.slice(1), sourceIdx: newIdx++ })
+      continue
+    }
+    if (row.startsWith('-')) {
+      result.push({ kind: 'removed', lineNum: oldLine++, text: row.slice(1), sourceIdx: oldIdx++ })
+      continue
+    }
+
+    const text = row.startsWith(' ') ? row.slice(1) : row
+    result.push({ kind: 'unchanged', lineNum: newLine, text, sourceIdx: newIdx })
+    oldLine++
+    newLine++
+    oldIdx++
+    newIdx++
+  }
+
+  return result
+}
+
+function buildFileChangeDiffLines(kind: string, diffText: string): DiffLine[] {
+  const rows = splitContentLines(diffText)
+  if (rows.length === 0) return []
+
+  if (kind === 'add') {
+    return rows.map((text, i) => ({ kind: 'added' as const, lineNum: i + 1, text, sourceIdx: i }))
+  }
+  if (kind === 'delete') {
+    return rows.map((text, i) => ({ kind: 'removed' as const, lineNum: i + 1, text, sourceIdx: i }))
+  }
+
+  const unified = buildUnifiedFileChangeDiffLines(diffText)
+  if (unified.length > 0) return unified
+
+  const result: DiffLine[] = []
+  let oldLine = 1
+  let newLine = 1
+  let oldIdx = 0
+  let newIdx = 0
+
+  for (const row of rows) {
+    if (row.startsWith('+') && !row.startsWith('+++')) {
+      result.push({ kind: 'added', lineNum: newLine++, text: row.slice(1), sourceIdx: newIdx++ })
+      continue
+    }
+    if (row.startsWith('-') && !row.startsWith('---')) {
+      result.push({ kind: 'removed', lineNum: oldLine++, text: row.slice(1), sourceIdx: oldIdx++ })
+      continue
+    }
+    const text = row.startsWith(' ') ? row.slice(1) : row
+    result.push({ kind: 'unchanged', lineNum: newLine, text, sourceIdx: newIdx })
+    oldLine++
+    newLine++
+    oldIdx++
+    newIdx++
+  }
+
+  return result
+}
+
+function buildDiffSourceText(lines: DiffLine[]): { oldText: string; newText: string } {
+  const oldParts: string[] = []
+  const newParts: string[] = []
+
+  for (const line of lines) {
+    if (line.kind !== 'added') oldParts.push(line.text)
+    if (line.kind !== 'removed') newParts.push(line.text)
+  }
+
+  return {
+    oldText: oldParts.join('\n'),
+    newText: newParts.join('\n'),
+  }
+}
+
 /** Line number gutter width based on max line number. */
 function gutterWidth(maxLine: number): number {
   return Math.max(2, String(maxLine).length)
@@ -460,6 +611,20 @@ function WriteDiff({ params }: { params: Record<string, unknown> }) {
 
   if (lines.length === 0) return null
   return <DiffView lines={lines} newTokens={tokens} />
+}
+
+function FileChangeDiff({ params }: { params: Record<string, unknown> }) {
+  const diff = String(params.diff ?? '')
+  const kind = String(params.kind ?? '')
+  const filePath = String(params.file_path ?? '')
+  const language = inferLanguage(filePath)
+  const lines = useMemo(() => buildFileChangeDiffLines(kind, diff), [kind, diff])
+  const { oldText, newText } = useMemo(() => buildDiffSourceText(lines), [lines])
+  const oldTokens = useHighlightedTokens(oldText, language)
+  const newTokens = useHighlightedTokens(newText, language)
+
+  if (!diff || lines.length === 0) return null
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} />
 }
 
 /** ExitPlanMode: shows pending / approved / rejected state. */

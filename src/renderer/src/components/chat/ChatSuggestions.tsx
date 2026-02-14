@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAppStore, useHasRealProject } from '@/stores/app'
+import { useActiveSession, useChatStore, type ChatProvider } from '@/stores/chat'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import {
   DropdownMenu,
@@ -8,8 +9,41 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, ChevronDown } from 'lucide-react'
+import { ChevronDown, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+function ProviderSelector() {
+  const preferredProvider = useActiveSession((s) => s.preferredProvider)
+  const setPreferredProvider = useChatStore((s) => s.setPreferredProvider)
+
+  const options: Array<{ value: ChatProvider; label: string }> = [
+    { value: 'claude', label: 'Claude Code' },
+    { value: 'codex', label: 'Codex' },
+  ]
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">Agent</p>
+      <div className="inline-flex rounded-lg border border-border bg-muted/40 p-1">
+        {options.map((option) => {
+          const active = preferredProvider === option.value
+          return (
+            <button
+              key={option.value}
+              onClick={() => setPreferredProvider(option.value)}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors',
+                active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <span>{option.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export function ChatSuggestions() {
   const layoutMode = useAppStore((s) => s.layoutMode)
@@ -27,6 +61,7 @@ export function ChatSuggestions() {
     const hasRecent = recentFolders.length > 0
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+        <ProviderSelector />
         <p className="text-sm text-muted-foreground">Open a project to get started</p>
         {hasRecent ? (
           <DropdownMenu onOpenChange={setAddOpen}>
@@ -65,7 +100,8 @@ export function ChatSuggestions() {
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center px-4">
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+      <ProviderSelector />
       {isCoding && <ProjectSelector />}
     </div>
   )

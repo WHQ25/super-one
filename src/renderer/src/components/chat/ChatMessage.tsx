@@ -6,6 +6,7 @@ import { Streamdown } from 'streamdown'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { SubagentBlock } from './SubagentBlock'
+import { CodexTurnView } from './CodexTurnView'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { useActiveSession } from '@/stores/chat'
 import {
@@ -326,6 +327,23 @@ export function CompactingIndicator() {
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming'
+  const isCodexMessage = !isUser && message.providerId === 'codex'
+  const assistantCopyText = !isUser
+    ? (() => {
+        if (isCodexMessage) {
+          const codexText = message.metadata?.codex?.items
+            ?.filter((item) => item.type === 'agent_message')
+            .map((item) => item.text)
+            .join('\n\n')
+            .trim()
+          if (codexText) return codexText
+        }
+        return message.content
+          .filter((b) => b.type === 'text')
+          .map((b) => (b.type === 'text' ? b.text : ''))
+          .join('\n')
+      })()
+    : undefined
 
   // Compact boundary messages — render as styled indicator
   const compactInfo = parseCompactMarker(message)
@@ -340,8 +358,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
   }
 
   const grouped = useMemo(
-    () => isUser ? null : groupContent(message.content),
-    [isUser, message.content],
+    () => (isUser || isCodexMessage) ? null : groupContent(message.content),
+    [isUser, isCodexMessage, message.content],
   )
 
   const userText = isUser
@@ -364,6 +382,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
                   block.type === 'text' ? <UserTextBlock key={i} text={block.text} /> : renderBlock(block, i, false)
                 )}
               </>
+          : isCodexMessage
+            ? <CodexTurnView message={message} isStreaming={isStreaming} />
           : grouped!.segments.map((seg) => {
               if (seg.kind === 'subagent') {
                 return (
@@ -394,16 +414,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
               )
             })
         }
-        {isStreaming && message.content.length === 0 && (
+        {isStreaming && !isCodexMessage && message.content.length === 0 && (
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
         )}
         {message.status === 'interrupted' && (
-          <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="mt-1 flex items-center gap-1 text-xs text-destructive">
             <OctagonX className="size-3" />
             <span>Response interrupted</span>
           </div>
         )}
-        {!isUser && <DurationFooter message={message} copyText={message.content.filter((b) => b.type === 'text').map((b) => b.type === 'text' ? b.text : '').join('\n')} />}
+        {!isUser && <DurationFooter message={message} copyText={assistantCopyText} />}
       </div>
       {isUser && userText.length > 0 && (
         <CopyButton text={userText} className="relative mt-1 opacity-0 group-hover/copy:opacity-100" />
@@ -474,8 +494,9 @@ function DurationFooter({ message, copyText }: { message: ChatMessageType; copyT
 
   const durationMs = isStreaming ? elapsed : message.metadata?.durationMs
   const ct = message.metadata?.consumedTokens
-  const tokenInput = isStreaming ? streamingTokens.input : (ct?.input ?? 0)
-  const tokenOutput = isStreaming ? streamingTokens.output : (ct?.output ?? 0)
+  const codexUsage = message.metadata?.codex?.usage
+  const tokenInput = isStreaming ? streamingTokens.input : (ct?.input ?? codexUsage?.inputTokens ?? 0)
+  const tokenOutput = isStreaming ? streamingTokens.output : (ct?.output ?? codexUsage?.outputTokens ?? 0)
   const hasTokens = tokenInput > 0 || tokenOutput > 0
 
   const showDuration = durationMs && (isStreaming ? durationMs >= 1000 : durationMs >= 20000)

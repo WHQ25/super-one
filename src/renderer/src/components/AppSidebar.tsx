@@ -25,6 +25,7 @@ import { useFullscreen } from '@/hooks/useFullscreen'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
 import type { SessionHistoryEntry, PinnedSessionEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
+import { getDeleteSessionRecovery } from './session-delete-helpers'
 
 type SortMode = 'recent' | 'added'
 
@@ -57,7 +58,7 @@ export function AppSidebar() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
-  const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; title: string; folderPath: string; provider: 'claude' | 'codex' } | null>(null)
   const [copiedCmd, setCopiedCmd] = useState<'cd' | 'resume' | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ name: string; path: string } | null>(null)
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
@@ -136,6 +137,8 @@ export function AppSidebar() {
     refreshPinned()
     setDeleteTarget(null)
   }, [deleteTarget, refreshFolderSessions, refreshPinned])
+
+  const deleteTargetCli = getDeleteSessionRecovery(deleteTarget?.provider ?? 'claude', deleteTarget?.sessionId ?? '')
 
   const handleRenameSession = useCallback(async () => {
     if (!renameTarget || !renameValue.trim()) return
@@ -411,7 +414,12 @@ export function AppSidebar() {
                                             variant="destructive"
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              setDeleteTarget({ sessionId: session.sessionId, title: session.title, folderPath: folder.path })
+                                              setDeleteTarget({
+                                                sessionId: session.sessionId,
+                                                title: session.title,
+                                                folderPath: folder.path,
+                                                provider: session.provider ?? 'claude',
+                                              })
                                             }}
                                             className="text-xs"
                                           >
@@ -469,11 +477,11 @@ export function AppSidebar() {
             <DialogTitle>Delete Session?</DialogTitle>
             <DialogDescription asChild>
               <div>
-                <span className="font-medium text-foreground">{deleteTarget?.title}</span> will be removed from SuperOne. You can still access it via Claude Code CLI:
+                <span className="font-medium text-foreground">{deleteTarget?.title}</span> will be removed from SuperOne. You can still access it via {deleteTargetCli.cliName}:
                 <div className="mt-2 flex flex-col gap-1">
                   {([
                     ['cd', `cd ${deleteTarget?.folderPath}`],
-                    ['resume', `claude --resume ${deleteTarget?.sessionId}`],
+                    ['resume', deleteTargetCli.resumeCommand],
                   ] as const).map(([key, cmd]) => (
                     <code
                       key={key}

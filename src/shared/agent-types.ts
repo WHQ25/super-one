@@ -48,6 +48,105 @@ export interface ModelUsageInfo {
   costUSD: number
 }
 
+export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+
+export interface ReasoningEffortOption {
+  value: CodexReasoningEffort
+  description: string
+}
+
+// --- Codex turn items (for Codex-native UI) ---
+
+export type CodexCommandExecutionStatus = 'in_progress' | 'completed' | 'failed'
+export type CodexPatchApplyStatus = 'completed' | 'failed'
+export type CodexMcpToolCallStatus = 'in_progress' | 'completed' | 'failed'
+export type CodexPatchChangeKind = 'add' | 'delete' | 'update'
+
+export interface CodexUsageInfo {
+  inputTokens: number
+  outputTokens: number
+  cachedInputTokens: number
+}
+
+export interface CodexAgentMessageItem {
+  id: string
+  type: 'agent_message'
+  text: string
+}
+
+export interface CodexReasoningItem {
+  id: string
+  type: 'reasoning'
+  text: string
+}
+
+export interface CodexCommandExecutionItem {
+  id: string
+  type: 'command_execution'
+  command: string
+  aggregatedOutput: string
+  exitCode?: number
+  status: CodexCommandExecutionStatus
+}
+
+export interface CodexFileUpdateChange {
+  path: string
+  kind: CodexPatchChangeKind
+  diff?: string
+}
+
+export interface CodexFileChangeItem {
+  id: string
+  type: 'file_change'
+  changes: CodexFileUpdateChange[]
+  status: CodexPatchApplyStatus
+}
+
+export interface CodexMcpToolCallItem {
+  id: string
+  type: 'mcp_tool_call'
+  server: string
+  tool: string
+  arguments: unknown
+  result?: { content: unknown[]; structuredContent: unknown }
+  error?: { message: string }
+  status: CodexMcpToolCallStatus
+}
+
+export interface CodexWebSearchItem {
+  id: string
+  type: 'web_search'
+  query: string
+}
+
+export interface CodexTodoListItem {
+  id: string
+  type: 'todo_list'
+  items: Array<{ text: string; completed: boolean }>
+}
+
+export interface CodexErrorItem {
+  id: string
+  type: 'error'
+  message: string
+}
+
+export type CodexThreadItem =
+  | CodexAgentMessageItem
+  | CodexReasoningItem
+  | CodexCommandExecutionItem
+  | CodexFileChangeItem
+  | CodexMcpToolCallItem
+  | CodexWebSearchItem
+  | CodexTodoListItem
+  | CodexErrorItem
+
+export interface CodexTurnInfo {
+  threadId: string | null
+  usage: CodexUsageInfo | null
+  items: CodexThreadItem[]
+}
+
 export interface MessageMetadata {
   model?: string
   costUsd?: number
@@ -57,6 +156,7 @@ export interface MessageMetadata {
   modelUsage?: Record<string, ModelUsageInfo>
   stopReason?: string | null
   consumedTokens?: { input: number; output: number }
+  codex?: CodexTurnInfo
 }
 
 // --- Todo items (derived from TaskCreate/TaskUpdate tool calls) ---
@@ -240,6 +340,8 @@ export type AgentEventBase =
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
   | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number }
+  | { type: 'codex_thread_started'; messageId: string; threadId: string }
+  | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
@@ -260,6 +362,9 @@ export interface ModelOption {
   id: string
   name: string
   description: string
+  isDefault?: boolean
+  supportedReasoningEfforts?: ReasoningEffortOption[]
+  defaultReasoningEffort?: CodexReasoningEffort
 }
 
 // --- File rewind ---
@@ -418,6 +523,7 @@ export interface SessionHistoryEntry {
   sessionId: string
   title: string        // First user message, truncated
   lastActiveAt: string // File modification time
+  provider?: 'claude' | 'codex'
   gitBranch?: string
   messageCount: number // Total user + assistant messages
   isWorktree?: boolean // true if session was created in a git worktree
@@ -455,6 +561,67 @@ export interface StartupData {
   userAgents: AgentInfo[]
 }
 
+// --- Codex experimental integration ---
+
+export type CodexAuthMode = 'auto' | 'chatgpt' | 'apiKey'
+export type CodexApprovalMode = 'never' | 'on-request' | 'on-failure' | 'untrusted'
+export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
+export type CodexPermissionPreset = 'default' | 'full-access'
+
+export interface CodexPermissionProfile {
+  approvalPolicy: CodexApprovalMode
+  sandboxMode: CodexSandboxMode
+  networkAccessEnabled: boolean
+}
+
+export const CODEX_PERMISSION_PRESETS: Record<CodexPermissionPreset, CodexPermissionProfile> = {
+  // Matches Codex CLI "Default" preset (approval-presets id: auto).
+  default: {
+    approvalPolicy: 'on-request',
+    sandboxMode: 'workspace-write',
+    networkAccessEnabled: false,
+  },
+  // Matches Codex CLI "Full Access" preset (approval-presets id: full-access).
+  'full-access': {
+    approvalPolicy: 'never',
+    sandboxMode: 'danger-full-access',
+    networkAccessEnabled: true,
+  },
+}
+export const DEFAULT_CODEX_PERMISSION_PRESET: CodexPermissionPreset = 'default'
+export const DEFAULT_CODEX_PERMISSION_PROFILE: CodexPermissionProfile =
+  CODEX_PERMISSION_PRESETS[DEFAULT_CODEX_PERMISSION_PRESET]
+
+export interface CodexAuthStatus {
+  mode: CodexAuthMode
+  resolvedMode: 'chatgpt' | 'apiKey'
+  hasEnvApiKey: boolean
+  hasSessionApiKey: boolean
+  isRunning: boolean
+}
+
+export interface CodexSetAuthRequest {
+  mode: CodexAuthMode
+  apiKey?: string
+}
+
+export interface CodexRunRequest {
+  prompt: string
+  model?: string
+  reasoningEffort?: CodexReasoningEffort
+  permissionPreset?: CodexPermissionPreset
+  images?: ImageAttachment[]
+  threadId?: string
+  messageId?: string
+}
+
+export interface CodexRunResult {
+  threadId: string | null
+  finalResponse: string
+  usage: CodexUsageInfo | null
+  items: CodexThreadItem[]
+}
+
 // --- IPC channel constants ---
 
 export const AgentIpcChannels = {
@@ -471,6 +638,13 @@ export const AgentIpcChannels = {
   SETUP_CHECK_CLAUDE: 'app:setup-check-claude',
   SETUP_INSTALL_CLAUDE: 'app:setup-install-claude',
   SETUP_EVENT: 'app:setup-event',
+  CODEX_RUN: 'codex:run',
+  CODEX_LIST_MODELS: 'codex:list-models',
+  CODEX_RESET: 'codex:reset',
+  CODEX_INTERRUPT: 'codex:interrupt',
+  CODEX_PERMISSION_RESPONSE: 'codex:permission-response',
+  CODEX_GET_AUTH_STATUS: 'codex:get-auth-status',
+  CODEX_SET_AUTH: 'codex:set-auth',
 
   // Agent channels
   SEND_MESSAGE: 'agent:send-message',

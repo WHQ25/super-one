@@ -37,16 +37,26 @@ export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[]
              (SELECT MAX(m.created_at) FROM chat_messages m
               WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
              s.created_at
-           ) AS last_user_msg_at
+           ) AS last_user_msg_at,
+           CASE
+             WHEN s.claude_session_id LIKE 'codex_local_%' THEN 'codex'
+             WHEN EXISTS (
+               SELECT 1 FROM chat_messages m2
+               WHERE m2.claude_session_id = s.claude_session_id
+                 AND m2.provider_id = 'codex'
+             ) THEN 'codex'
+             ELSE 'claude'
+           END AS provider
     FROM sessions s
     WHERE s.project_id = ?
     ORDER BY last_user_msg_at DESC
-  `).all(projectId) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null }>
+  `).all(projectId) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; provider: 'claude' | 'codex' }>
 
   return rows.map((r) => ({
     sessionId: r.claude_session_id ?? r.id,
     title: r.title ?? 'Untitled',
     lastActiveAt: r.last_user_msg_at,
+    provider: r.provider,
     messageCount: 0,
     ...(r.is_worktree ? { isWorktree: true } : {}),
     ...(r.is_pinned ? { isPinned: true } : {}),
@@ -198,17 +208,27 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
              (SELECT MAX(m.created_at) FROM chat_messages m
               WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
              s.created_at
-           ) AS last_user_msg_at
+           ) AS last_user_msg_at,
+           CASE
+             WHEN s.claude_session_id LIKE 'codex_local_%' THEN 'codex'
+             WHEN EXISTS (
+               SELECT 1 FROM chat_messages m2
+               WHERE m2.claude_session_id = s.claude_session_id
+                 AND m2.provider_id = 'codex'
+             ) THEN 'codex'
+             ELSE 'claude'
+           END AS provider
     FROM sessions s
     JOIN projects p ON p.id = s.project_id
     WHERE s.is_pinned = 1
     ORDER BY last_user_msg_at DESC
-  `).all() as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; folder_path: string; folder_name: string }>
+  `).all() as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; folder_path: string; folder_name: string; provider: 'claude' | 'codex' }>
 
   return rows.map((r) => ({
     sessionId: r.claude_session_id ?? r.id,
     title: r.title ?? 'Untitled',
     lastActiveAt: r.last_user_msg_at,
+    provider: r.provider,
     messageCount: 0,
     ...(r.is_worktree ? { isWorktree: true } : {}),
     isPinned: true,

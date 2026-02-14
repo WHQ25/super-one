@@ -6,18 +6,41 @@ import { execFile, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { AgentService } from './agent/agent-service'
-import { AgentIpcChannels, type ConnectResult, type StartupData } from '../shared/agent-types'
+import {
+  AgentIpcChannels,
+  type CodexPermissionPreset,
+  type CodexReasoningEffort,
+  type AgentEvent,
+  type CodexThreadItem,
+  type CodexUsageInfo,
+  type CodexSetAuthRequest,
+  type PermissionRequest,
+  type ImageAttachment,
+  type ConnectResult,
+  type StartupData,
+} from '../shared/agent-types'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
 import { getDb, closeDb, getCachedResources, setCachedResources } from './database'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
+import { CodexExperimentService } from './codex/codex-experiment-service'
+
+// Isolate userData when running parallel instances (e.g. git worktrees)
+if (process.env.SUPERONE_INSTANCE) {
+  app.setPath('userData', join(app.getPath('userData'), `instance-${process.env.SUPERONE_INSTANCE}`))
+}
 
 const agentService = new AgentService()
+const codexService = new CodexExperimentService()
 let mainWindow: BrowserWindow | null = null
 
 function getMainWindow(): BrowserWindow {
   if (!mainWindow) throw new Error('Main window not created yet')
   return mainWindow
+}
+
+function emitAgentEvent(event: AgentEvent): void {
+  mainWindow?.webContents.send(AgentIpcChannels.EVENT, event)
 }
 
 function createWindow(): void {
@@ -105,6 +128,93 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CLOSE_PROJECT, async (_event, folderPath: string) => {
     await agentService.closeProject(folderPath)
+    codexService.closeProject(folderPath)
+  })
+
+  ipcMain.handle(
+    AgentIpcChannels.CODEX_RUN,
+    async (
+      _event,
+      projectPath: string,
+      prompt: string,
+      model?: string,
+      reasoningEffort?: CodexReasoningEffort,
+      permissionPreset?: CodexPermissionPreset,
+      threadId?: string,
+      messageId?: string,
+      images?: ImageAttachment[],
+    ) => {
+      const runCallbacks = messageId
+        ? {
+            onThreadStarted: (resolvedThreadId: string) => {
+              emitAgentEvent({
+                type: 'codex_thread_started',
+                messageId,
+                threadId: resolvedThreadId,
+                projectPath,
+              })
+            },
+            onItemDelta: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
+              emitAgentEvent({
+                type: 'codex_item_delta',
+                messageId,
+                phase,
+                item,
+                projectPath,
+              })
+            },
+            onUsageDelta: (usage: CodexUsageInfo) => {
+              emitAgentEvent({
+                type: 'message_usage',
+                messageId,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                projectPath,
+              })
+            },
+            onPermissionRequest: (request: PermissionRequest) => {
+              emitAgentEvent({
+                type: 'permission_request',
+                request,
+                projectPath,
+              })
+            },
+          }
+        : undefined
+
+      return codexService.run(
+        projectPath,
+        { prompt, model, reasoningEffort, permissionPreset, threadId, messageId, images },
+        runCallbacks,
+      )
+    },
+  )
+
+  ipcMain.handle(AgentIpcChannels.CODEX_LIST_MODELS, (_event, projectPath: string) => {
+    return codexService.listModels(projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_RESET, (_event, projectPath: string) => {
+    codexService.reset(projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_INTERRUPT, (_event, projectPath: string) => {
+    return codexService.interrupt(projectPath)
+  })
+
+  ipcMain.handle(
+    AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
+    (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) => {
+      return codexService.respondToPermission(projectPath, requestId, allow, alwaysAllow, reason)
+    },
+  )
+
+  ipcMain.handle(AgentIpcChannels.CODEX_GET_AUTH_STATUS, (_event, projectPath: string) => {
+    return codexService.getAuthStatus(projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_SET_AUTH, (_event, projectPath: string, request: CodexSetAuthRequest) => {
+    return codexService.setAuth(projectPath, request)
   })
 
   const gitRun = (folderPath: string, args: string[]) =>
@@ -371,6 +481,7 @@ function performQuit(): void {
     .dispose()
     .catch(() => {})
     .finally(() => {
+      codexService.dispose()
       closeDb()
       // Give SDK child processes a moment to fully terminate before quitting.
       // abort() signals the SDK to stop, but the async iterator needs time to

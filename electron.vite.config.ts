@@ -15,6 +15,10 @@ export default defineConfig({
     }
   },
   renderer: {
+    server: {
+      port: parseInt(process.env.VITE_PORT || '5173'),
+      strictPort: true
+    },
     resolve: {
       alias: {
         '@': resolve('src/renderer/src')

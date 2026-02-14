@@ -290,6 +290,23 @@ body {
   }
 }
 
+/* Codex turn text should align tighter (no large top offset). */
+.codex-turn .chat-md {
+  margin-top: 0;
+}
+
+@container (min-width: 512px) {
+  .codex-turn .chat-md {
+    margin-top: 0;
+  }
+}
+
+@container (min-width: 672px) {
+  .codex-turn .chat-md {
+    margin-top: 0;
+  }
+}
+
 /* --- TipTap editor --- */
 .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);

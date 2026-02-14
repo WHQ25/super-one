@@ -20,6 +20,7 @@ interface MentionPopupProps {
   onSelect: (value: string, action: 'navigate' | 'select') => void
   onSetSelectedIndex: (index: number) => void
   onClose: () => void
+  showAgents?: boolean
   rounded?: boolean
 }
 
@@ -28,7 +29,7 @@ type FlatItem =
   | { kind: 'agent'; agent: AgentInfo }
 
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
-  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onClose, rounded }, ref) {
+  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onClose, showAgents = true, rounded }, ref) {
     const activeProject = useChatStore((s) => s.activeProject)
     const agents = useActiveSession((s) => s.agents)
     const [dirEntries, setDirEntries] = useState<ListDirEntry[]>([])
@@ -58,7 +59,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       : dirEntries
 
     // Filter agents (only when not navigating into a subdirectory)
-    const filteredAgents = dirPath
+    const filteredAgents = !showAgents
+      ? []
+      : dirPath
       ? [] // Inside a subdirectory — don't show agents
       : filter
         ? agents.filter((a) => a.name.toLowerCase().includes(filter.toLowerCase()))

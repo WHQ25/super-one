@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { GitBranch, ChevronDown, ShieldCheck, Check, Circle, Plus, Monitor, GitFork } from 'lucide-react'
+import { GitBranch, ChevronDown, ShieldCheck, Check, Circle, Plus, Monitor, GitFork, ShieldOff, AlertTriangle } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Command,
@@ -22,13 +22,93 @@ import { Button } from '@/components/ui/button'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { PermissionModeSelector } from './PermissionModeSelector'
-import type { GitInfo, WorktreeInfo } from '../../../../shared/agent-types'
+import {
+  DEFAULT_CODEX_PERMISSION_PRESET,
+  type CodexPermissionPreset,
+  type GitInfo,
+  type WorktreeInfo,
+} from '../../../../shared/agent-types'
 
 const fmt = (n: number) => n.toLocaleString()
 
 interface FailedCheckout {
   branch: string
   error: string
+}
+
+function CodexPermissionSummary() {
+  const [open, setOpen] = useState(false)
+  const selectedPreset = useActiveSession((s) => s.selectedCodexPermissionPreset)
+  const setSelectedPreset = useChatStore((s) => s.setSelectedCodexPermissionPreset)
+  const preset: CodexPermissionPreset = selectedPreset || DEFAULT_CODEX_PERMISSION_PRESET
+  const presetLabel = preset === 'full-access' ? 'Full Access' : 'Default'
+
+  const modeIcon = preset === 'full-access'
+    ? <ShieldOff className="size-3" />
+    : <ShieldCheck className="size-3" />
+
+  const options: Array<{
+    id: CodexPermissionPreset
+    label: string
+    icon: React.ReactNode
+    toneClass: string
+  }> = [
+    {
+      id: 'default',
+      label: 'Default',
+      icon: <ShieldCheck className="size-3.5" />,
+      toneClass: 'text-foreground',
+    },
+    {
+      id: 'full-access',
+      label: 'Full Access',
+      icon: <AlertTriangle className="size-3.5" />,
+      toneClass: 'text-amber-500',
+    },
+  ]
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={`inline-flex items-center gap-1 text-[11px] transition-colors ${
+            preset === 'full-access'
+              ? 'text-amber-500 hover:text-amber-400'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {modeIcon}
+          <span>{presetLabel}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" className="w-64 border-border bg-card p-2">
+        <div className="space-y-1 text-xs">
+          {options.map((option) => (
+            <button
+              key={option.id}
+              onClick={() => {
+                setSelectedPreset(option.id)
+                setOpen(false)
+              }}
+              className={`w-full rounded px-2 py-1.5 text-left transition-colors ${
+                option.id === preset
+                  ? 'bg-muted text-foreground'
+                  : 'text-foreground hover:bg-muted/50'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className={`inline-flex items-center gap-1.5 font-medium ${option.toneClass}`}>
+                  {option.icon}
+                  {option.label}
+                </span>
+                {option.id === preset && <Check className="size-3.5 shrink-0" />}
+              </div>
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 function WorkDirIndicator() {
@@ -216,6 +296,7 @@ export function ChatStatusBar() {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const worktrees = useAppStore((s) => s._worktrees)
   const sandboxInfo = useActiveSession((s) => s.sandboxInfo)
+  const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [branches, setBranches] = useState<string[]>([])
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -388,7 +469,7 @@ export function ChatStatusBar() {
         )}
 
         {/* Sandbox status */}
-        {sandboxInfo.enabled && (
+        {preferredProvider === 'claude' && sandboxInfo.enabled && (
           <>
             <div className="h-3 w-px bg-border" />
             <div
@@ -403,8 +484,12 @@ export function ChatStatusBar() {
 
         <div className="h-3 w-px bg-border" />
 
-        {/* Permission mode */}
-        <PermissionModeSelector />
+        {/* Provider-specific mode controls */}
+        {preferredProvider === 'claude' ? (
+          <PermissionModeSelector />
+        ) : (
+          <CodexPermissionSummary />
+        )}
       </div>
 
       {/* Checkout failed dialog */}

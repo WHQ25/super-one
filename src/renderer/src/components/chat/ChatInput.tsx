@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ArrowUp, Square, ChevronDown, Paperclip, X, Loader2 } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, Paperclip, X, Loader2, Check } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
@@ -14,6 +14,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { MentionNode } from './mention-node'
 import { SlashDecoration } from './slash-decoration'
 import type { MentionNodeAttrs } from './mention-node'
+import type { SlashCommandInfo } from '../../../../shared/agent-types'
 
 export interface ChatInputHandle {
   send: () => void
@@ -23,25 +24,84 @@ interface ChatInputProps {
   compact?: boolean
 }
 
+function formatCodexModelLabel(raw: string): string {
+  const normalized = raw.trim().split('/').pop()?.trim() ?? raw.trim()
+  if (!normalized) return raw
+  const tokens = normalized
+    .replace(/_/g, '-')
+    .split(/[-\s]+/)
+    .filter(Boolean)
+  if (tokens.length === 0) return normalized
+  return tokens.map((token) => {
+    const lower = token.toLowerCase()
+    if (lower === 'gpt') return 'GPT'
+    if (/^\d+(\.\d+)*$/.test(token)) return token
+    return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`
+  }).join('-')
+}
+
+function formatReasoningEffortLabel(value: string): string {
+  switch (value) {
+    case 'minimal':
+      return 'Minimal'
+    case 'low':
+      return 'Low'
+    case 'medium':
+      return 'Medium'
+    case 'high':
+      return 'High'
+    case 'xhigh':
+      return 'Extra High'
+    default:
+      return value
+  }
+}
+
+function normalizeFilePath(path: string): string {
+  return path.replace(/\\/g, '/')
+}
+
+function toMentionPath(filePath: string, projectPath?: string | null): string {
+  const normalizedFilePath = normalizeFilePath(filePath)
+  const normalizedProjectPath = projectPath ? normalizeFilePath(projectPath).replace(/\/+$/, '') : ''
+  if (!normalizedProjectPath) return normalizedFilePath
+  if (normalizedFilePath === normalizedProjectPath) return '.'
+  if (normalizedFilePath.startsWith(`${normalizedProjectPath}/`)) {
+    return normalizedFilePath.slice(normalizedProjectPath.length + 1)
+  }
+  return normalizedFilePath
+}
+
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   function ChatInput({ compact }, ref) {
     const text = useActiveSession((s) => s.draftText)
     const setText = useChatStore((s) => s.setDraftText)
     const [modelOpen, setModelOpen] = useState(false)
+    const [effortOpen, setEffortOpen] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const sendMessage = useChatStore((s) => s.sendMessage)
+    const activeProject = useChatStore((s) => s.activeProject)
     const interrupt = useChatStore((s) => s.interrupt)
     const isOpen = useChatStore((s) => s.isOpen)
     const toggleOpen = useChatStore((s) => s.toggleOpen)
     const status = useActiveSession((s) => s.status)
     const selectedModel = useActiveSession((s) => s.selectedModel)
+    const selectedCodexModel = useActiveSession((s) => s.selectedCodexModel)
+    const selectedCodexReasoningEffort = useActiveSession((s) => s.selectedCodexReasoningEffort)
     const availableModels = useChatStore((s) => s.availableModels)
+    const codexModels = useActiveSession((s) => s.codexModels)
+    const codexModelsLoading = useActiveSession((s) => s.codexModelsLoading)
     const setSelectedModel = useChatStore((s) => s.setSelectedModel)
+    const setSelectedCodexModel = useChatStore((s) => s.setSelectedCodexModel)
+    const setSelectedCodexReasoningEffort = useChatStore((s) => s.setSelectedCodexReasoningEffort)
+    const refreshCodexModels = useChatStore((s) => s.refreshCodexModels)
     const attachments = useActiveSession((s) => s.attachments)
     const addAttachment = useChatStore((s) => s.addAttachment)
     const removeAttachment = useChatStore((s) => s.removeAttachment)
     const slashCommands = useActiveSession((s) => s.slashCommands)
+    const preferredProvider = useActiveSession((s) => s.preferredProvider)
+    const sessionProvider = useActiveSession((s) => s.sessionProvider)
     const mentions = useActiveSession((s) => s.mentions)
     const addMention = useChatStore((s) => s.addMention)
     const removeMention = useChatStore((s) => s.removeMention)
@@ -72,7 +132,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     mentionsRef.current = mentions
     const removeMentionRef = useRef(removeMention)
     removeMentionRef.current = removeMention
-    const processImageFilesRef = useRef<(files: FileList | File[]) => void>(() => {})
+    const processSelectedFilesRef = useRef<(files: FileList | File[]) => void>(() => {})
     const setTextRef = useRef(setText)
     setTextRef.current = setText
     const matchingCommandsRef = useRef<typeof matchingCommands>([])
@@ -88,16 +148,34 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const isStreaming = status === 'streaming'
     const canSend = (text.trim().length > 0 || attachments.length > 0 || mentions.length > 0) && !isStreaming
+    const activeProviderForResources = sessionProvider ?? preferredProvider
+    const showAgentMentions = activeProviderForResources === 'claude'
+
+    const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
+      { name: 'codex', description: 'Run prompt with Codex', argumentHint: '<prompt>', isSkill: false },
+      { name: 'codex reset', description: 'Reset Codex thread for current project', argumentHint: '', isSkill: false },
+      { name: 'codex auth', description: 'Show Codex auth status', argumentHint: '', isSkill: false },
+      { name: 'codex auth auto', description: 'Auto auth mode (prefer API key)', argumentHint: '', isSkill: false },
+      { name: 'codex auth chatgpt', description: 'Use ChatGPT sign-in mode', argumentHint: '', isSkill: false },
+      { name: 'codex auth apikey', description: 'Use API key mode', argumentHint: '<CODEX_API_KEY>', isSkill: false },
+    ]), [])
+
+    const activeSlashCommands = preferredProvider === 'codex' ? codexSlashCommands : slashCommands
 
     // Filter slash commands based on current input
     const HIDDEN_COMMANDS = new Set(['keybindings-help', 'debug'])
     const matchingCommands = useMemo(() => {
+      if (preferredProvider === 'codex') {
+        if (!text.startsWith('/codex')) return []
+        const query = text.slice(1).toLowerCase()
+        return activeSlashCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(query))
+      }
       if (!text.startsWith('/') || text.includes(' ')) return []
       const query = text.slice(1).toLowerCase()
-      return slashCommands.filter(
+      return activeSlashCommands.filter(
         (cmd) => cmd.name.toLowerCase().startsWith(query) && !HIDDEN_COMMANDS.has(cmd.name)
       )
-    }, [text, slashCommands])
+    }, [preferredProvider, text, activeSlashCommands])
     matchingCommandsRef.current = matchingCommands
     slashDismissedRef.current = slashDismissed
 
@@ -135,7 +213,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         }
 
         // Determine mention kind
-        const isAgent = agents.some((a) => a.name === value)
+        const isAgent = showAgentMentions && agents.some((a) => a.name === value)
         const kind: MentionKind = isAgent ? 'agent' : value.endsWith('/') ? 'directory' : 'file'
         const displayName = value.split('/').filter(Boolean).pop() || value
 
@@ -155,7 +233,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         setMentionIndex(0)
         mentionInfoRef.current = null
       },
-      [agents, addMention]
+      [agents, addMention, showAgentMentions]
     )
 
     const handleSend = useCallback(() => {
@@ -285,31 +363,62 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     // Keep ref in sync for ProseMirror's handleKeyDown (avoids stale closure)
     handleKeyDownRef.current = handleKeyDownCore
 
-    const processImageFiles = useCallback(
+    const insertFileMention = useCallback(
+      (rawPath: string) => {
+        const mentionValue = toMentionPath(rawPath, activeProject)
+        const displayName = mentionValue.split('/').filter(Boolean).pop() || mentionValue
+        addMention({ kind: 'file', value: mentionValue, displayName })
+
+        const ed = editorRef.current
+        if (ed) {
+          const cursor = ed.state.selection.from
+          ed.chain()
+            .focus()
+            .insertContentAt(cursor, [
+              { type: 'mention', attrs: { kind: 'file', value: mentionValue, displayName } },
+              { type: 'text', text: ' ' },
+            ])
+            .run()
+          return
+        }
+
+        const suffix = text.length > 0 && !text.endsWith(' ') ? ' ' : ''
+        setText(`${text}${suffix}@${mentionValue} `)
+      },
+      [activeProject, addMention, setText, text]
+    )
+
+    const processSelectedFiles = useCallback(
       (files: FileList | File[]) => {
         for (const file of Array.from(files)) {
-          if (!file.type.startsWith('image/')) continue
-          const reader = new FileReader()
-          reader.onload = () => {
-            const result = reader.result as string
-            const base64 = result.split(',')[1]
-            if (base64) {
-              addAttachment({ mimeType: file.type, base64, name: file.name })
+          if (file.type.startsWith('image/')) {
+            const reader = new FileReader()
+            reader.onload = () => {
+              const result = reader.result as string
+              const base64 = result.split(',')[1]
+              if (base64) {
+                addAttachment({ mimeType: file.type, base64, name: file.name })
+              }
             }
+            reader.readAsDataURL(file)
+            continue
           }
-          reader.readAsDataURL(file)
+
+          const filePath = (file as File & { path?: string }).path
+          if (!filePath) continue
+          insertFileMention(filePath)
         }
       },
-      [addAttachment]
+      [addAttachment, insertFileMention]
     )
-    processImageFilesRef.current = processImageFiles
+    processSelectedFilesRef.current = processSelectedFiles
 
     const handleFileSelect = useCallback(
       (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) processImageFiles(e.target.files)
+        if (e.target.files) processSelectedFiles(e.target.files)
         e.target.value = ''
       },
-      [processImageFiles]
+      [processSelectedFiles]
     )
 
     const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -342,16 +451,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         dragCounterRef.current = 0
         setIsDragging(false)
         if (e.dataTransfer.files.length > 0) {
-          processImageFiles(e.dataTransfer.files)
+          processSelectedFiles(e.dataTransfer.files)
         }
       },
-      [processImageFiles]
+      [processSelectedFiles]
     )
 
     // --- TipTap editor ---
     const placeholderText = mentions.length > 0
       ? 'Add instructions...'
-      : permissionMode === 'plan'
+      : preferredProvider === 'codex'
+        ? 'Ask Codex...'
+        : permissionMode === 'plan'
         ? 'Plan mode — describe your intent...'
         : 'Ask anything, @ to add files, / for commands'
 
@@ -373,7 +484,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         }),
         Placeholder.configure({ placeholder: placeholderText }),
         MentionNode,
-        SlashDecoration.configure({ slashCommands }),
+        SlashDecoration.configure({ slashCommands: activeSlashCommands }),
       ],
       content: '',
       editorProps: {
@@ -396,7 +507,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
           if (imageFiles.length > 0) {
             event.preventDefault()
-            processImageFilesRef.current(imageFiles)
+            processSelectedFilesRef.current(imageFiles)
             return true
           }
           return false
@@ -476,14 +587,36 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     useEffect(() => {
       if (editor) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(editor.storage as any).slashDecoration.slashCommands = slashCommands
+        ;(editor.storage as any).slashDecoration.slashCommands = activeSlashCommands
         // Force decoration recalculation by dispatching an empty transaction
         editor.view.dispatch(editor.state.tr)
       }
-    }, [slashCommands, editor])
+    }, [activeSlashCommands, editor])
 
     const currentModelName =
       (availableModels.find((m) => m.id === selectedModel)?.name ?? selectedModel) || null
+    const selectedCodexModelOption = codexModels.find((m) => m.id === selectedCodexModel)
+    const currentCodexModelName =
+      (selectedCodexModelOption
+        ? formatCodexModelLabel(selectedCodexModelOption.id || selectedCodexModelOption.name)
+        : selectedCodexModel
+        ? formatCodexModelLabel(selectedCodexModel)
+        : null)
+    const codexReasoningEfforts = selectedCodexModelOption?.supportedReasoningEfforts ?? []
+    const currentCodexReasoningEffort =
+      selectedCodexReasoningEffort
+      ?? selectedCodexModelOption?.defaultReasoningEffort
+      ?? codexReasoningEfforts[0]?.value
+      ?? null
+    const currentCodexReasoningEffortLabel = currentCodexReasoningEffort
+      ? formatReasoningEffortLabel(currentCodexReasoningEffort)
+      : null
+
+    useEffect(() => {
+      if (preferredProvider !== 'codex') return
+      if (codexModelsLoading || codexModels.length > 0) return
+      void refreshCodexModels()
+    }, [preferredProvider, codexModelsLoading, codexModels.length, refreshCodexModels])
 
     if (compact) {
       return (
@@ -500,7 +633,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             }
           }}
           onKeyDown={handleKeyDownCore}
-          placeholder={permissionMode === 'plan' ? 'Plan mode — describe your intent...' : 'Ask anything...'}
+          placeholder={preferredProvider === 'codex'
+            ? 'Ask Codex...'
+            : permissionMode === 'plan'
+              ? 'Plan mode — describe your intent...'
+              : 'Ask anything...'}
           className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none"
         />
       )
@@ -577,6 +714,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             onSelect={handleMentionSelect}
             onSetSelectedIndex={setMentionIndex}
             onClose={() => { setMentionActive(false); setMentionIndex(0); mentionInfoRef.current = null }}
+            showAgents={showAgentMentions}
             rounded={isCoding}
           />
         )}
@@ -612,11 +750,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         <div className="mt-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {/* Image upload */}
+            {/* Attachment upload */}
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="*/*"
               multiple
               onChange={handleFileSelect}
               className="hidden"
@@ -630,49 +768,145 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               <Paperclip className="size-3.5" />
             </Button>
 
-            {/* Model selector */}
-            <Popover open={modelOpen} onOpenChange={setModelOpen}>
-              <PopoverTrigger asChild>
-                <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                  {currentModelName ? (
-                    <span className="max-w-[140px] truncate">{currentModelName}</span>
-                  ) : (
-                    <Loader2 className="size-3 animate-spin" />
-                  )}
-                  <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                side="top"
-                className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1"
-              >
-                {availableModels.map((model) => (
-                  <button
-                    key={model.id}
-                    onClick={() => {
-                      setSelectedModel(model.id)
-                      setModelOpen(false)
-                    }}
-                    className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                      model.id === selectedModel
-                        ? 'bg-muted text-foreground'
-                        : 'text-foreground hover:bg-muted/50'
-                    }`}
-                  >
-                    <div className="font-medium">{model.name}</div>
-                    {model.description && (
-                      <div className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">
-                        {model.description}
-                      </div>
+            {/* Provider / model selector */}
+            {preferredProvider === 'claude' ? (
+              <Popover open={modelOpen} onOpenChange={setModelOpen}>
+                <PopoverTrigger asChild>
+                  <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                    {currentModelName ? (
+                      <span className="max-w-[140px] truncate">{currentModelName}</span>
+                    ) : (
+                      <Loader2 className="size-3 animate-spin" />
                     )}
+                    <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
                   </button>
-                ))}
-                {availableModels.length === 0 && (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading models...</div>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  side="top"
+                  className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1"
+                >
+                  {availableModels.map((model) => (
+                    <button
+                      key={model.id}
+                      onClick={() => {
+                        setSelectedModel(model.id)
+                        setModelOpen(false)
+                      }}
+                      className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                        model.id === selectedModel
+                          ? 'bg-muted text-foreground'
+                          : 'text-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      <div className="font-medium">{model.name}</div>
+                      {model.description && (
+                        <div className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">
+                          {model.description}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                  {availableModels.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading models...</div>
+                  )}
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <div className="flex items-center gap-1">
+                <Popover
+                  open={modelOpen}
+                  onOpenChange={(open) => {
+                    setModelOpen(open)
+                    if (open) void refreshCodexModels()
+                  }}
+                >
+                  <PopoverTrigger asChild>
+                    <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                      {currentCodexModelName ? (
+                        <span className="max-w-[140px] truncate">{currentCodexModelName}</span>
+                      ) : codexModelsLoading ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <span>Codex model</span>
+                      )}
+                      <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    side="top"
+                    className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1"
+                  >
+                    {codexModels.map((model) => (
+                      <button
+                        key={model.id}
+                        onClick={() => {
+                          setSelectedCodexModel(model.id)
+                          setModelOpen(false)
+                        }}
+                        className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                          model.id === selectedCodexModel
+                            ? 'bg-muted text-foreground'
+                            : 'text-foreground hover:bg-muted/50'
+                        }`}
+                      >
+                        <div className="font-medium">
+                          {formatCodexModelLabel(model.id || model.name)}
+                        </div>
+                        {model.id === selectedCodexModel && (
+                          <Check className="size-3.5 shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                    {codexModelsLoading && (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading Codex models...</div>
+                    )}
+                    {!codexModelsLoading && codexModels.length === 0 && (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">Use default model (auto)</div>
+                    )}
+                  </PopoverContent>
+                </Popover>
+
+                {codexReasoningEfforts.length > 0 && (
+                  <Popover open={effortOpen} onOpenChange={setEffortOpen}>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                        <span className="max-w-[120px] truncate">
+                          {currentCodexReasoningEffortLabel ?? formatReasoningEffortLabel(codexReasoningEfforts[0].value)}
+                        </span>
+                        <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      side="top"
+                      className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1"
+                    >
+                      {codexReasoningEfforts.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => {
+                            setSelectedCodexReasoningEffort(option.value)
+                            setEffortOpen(false)
+                          }}
+                          className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                            option.value === currentCodexReasoningEffort
+                              ? 'bg-muted text-foreground'
+                              : 'text-foreground hover:bg-muted/50'
+                          }`}
+                        >
+                          <div className="font-medium">{formatReasoningEffortLabel(option.value)}</div>
+                          {option.value === currentCodexReasoningEffort && (
+                            <Check className="size-3.5 shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
                 )}
-              </PopoverContent>
-            </Popover>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -709,7 +943,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         {/* Drag overlay */}
         {isDragging && (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-blue-500 bg-blue-500/10">
-            <span className="text-xs font-medium text-blue-400">Drop to add image</span>
+            <span className="text-xs font-medium text-blue-400">Drop to attach files</span>
           </div>
         )}
       </div>

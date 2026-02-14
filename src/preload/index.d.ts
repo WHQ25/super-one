@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ChatMessage, ConnectResult, GitInfo, GitResult, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexRunResult, CodexSetAuthRequest, ConnectResult, GitInfo, GitResult, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -33,6 +33,13 @@ interface AppAPI {
   closeProject(folderPath: string): Promise<void>
   checkClaude(): Promise<boolean>
   installClaude(): Promise<void>
+  codexRun(projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, images?: ImageAttachment[]): Promise<CodexRunResult>
+  codexListModels(projectPath: string): Promise<ModelOption[]>
+  codexReset(projectPath: string): Promise<void>
+  codexInterrupt(projectPath: string): Promise<boolean>
+  codexRespondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string): Promise<boolean>
+  codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>
+  codexSetAuth(projectPath: string, request: CodexSetAuthRequest): Promise<CodexAuthStatus>
   onSetupEvent(callback: (event: SetupEvent) => void): () => void
 
   // Plugins

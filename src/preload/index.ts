@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels } from '../shared/agent-types'
+import { AgentIpcChannels, type CodexPermissionPreset, type CodexReasoningEffort } from '../shared/agent-types'
 
 const agentAPI = {
   sendMessage: (projectPath: string, request: { content: string; model?: string; images?: { mimeType: string; base64: string; name: string }[] }) =>
@@ -92,6 +92,62 @@ const appAPI = {
 
   installClaude: () =>
     ipcRenderer.invoke(AgentIpcChannels.SETUP_INSTALL_CLAUDE),
+
+  codexRun: (
+    projectPath: string,
+    prompt: string,
+    model?: string,
+    reasoningEffort?: CodexReasoningEffort,
+    permissionPreset?: CodexPermissionPreset,
+    threadId?: string,
+    messageId?: string,
+    images?: { mimeType: string; base64: string; name: string }[],
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.CODEX_RUN,
+      projectPath,
+      prompt,
+      model,
+      reasoningEffort,
+      permissionPreset,
+      threadId,
+      messageId,
+      images,
+    ),
+
+  codexListModels: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_LIST_MODELS, projectPath),
+
+  codexReset: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_RESET, projectPath),
+
+  codexInterrupt: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_INTERRUPT, projectPath),
+
+  codexRespondToPermission: (
+    projectPath: string,
+    requestId: string,
+    allow: boolean,
+    alwaysAllow?: boolean,
+    reason?: string,
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
+      projectPath,
+      requestId,
+      allow,
+      alwaysAllow,
+      reason,
+    ),
+
+  codexGetAuthStatus: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_AUTH_STATUS, projectPath),
+
+  codexSetAuth: (
+    projectPath: string,
+    request: { mode: 'auto' | 'chatgpt' | 'apiKey'; apiKey?: string }
+  ) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_SET_AUTH, projectPath, request),
 
   onSetupEvent: (callback: (event: unknown) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: unknown): void => {

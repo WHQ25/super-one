@@ -1,5 +1,5 @@
 import { useAppStore } from '@/stores/app'
-import { Check, ChevronDown, FolderOpen, Plus } from 'lucide-react'
+import { Check, ChevronDown, Folder, FolderOpen, Plus } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,9 +13,11 @@ interface ProjectSelectorProps {
   compact?: boolean
   /** open: switch and initialize agent; switch: only switch settings context */
   mode?: 'open' | 'switch'
+  /** Dropdown menu alignment */
+  align?: 'start' | 'center' | 'end'
 }
 
-export function ProjectSelector({ compact, mode = 'open' }: ProjectSelectorProps) {
+export function ProjectSelector({ compact, mode = 'open', align = 'start' }: ProjectSelectorProps) {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
   const openFolder = useAppStore((s) => s.openFolder)
@@ -42,7 +44,7 @@ export function ProjectSelector({ compact, mode = 'open' }: ProjectSelectorProps
           </button>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent align={align} className="w-64">
         {recentFolders.map((folder) => (
           <DropdownMenuItem
             key={folder.path}
@@ -53,14 +55,15 @@ export function ProjectSelector({ compact, mode = 'open' }: ProjectSelectorProps
                 void openFolder(folder.path)
               }
             }}
-            className="gap-2"
+            className="flex items-center justify-between"
           >
-            {folder.path === currentFolder ? (
-              <Check className="size-4 shrink-0" />
-            ) : (
-              <span className="size-4 shrink-0" />
+            <div className="flex items-center gap-2 truncate">
+              <Folder className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">{folder.path.split('/').pop()}</span>
+            </div>
+            {folder.path === currentFolder && (
+              <Check className="size-4 shrink-0 text-muted-foreground" />
             )}
-            <span className="truncate">{folder.path.split('/').pop()}</span>
           </DropdownMenuItem>
         ))}
         {recentFolders.length > 0 && <DropdownMenuSeparator />}

@@ -102,7 +102,7 @@ export function ChatSuggestions() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
       <ProviderSelector />
-      {isCoding && <ProjectSelector />}
+      {isCoding && <ProjectSelector align="center" />}
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { execFileSync } from 'child_process'
 import { resolve } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, type ClaudeAgentConfig } from './claude-agent'
-import { AgentIpcChannels, type AgentEvent, type PermissionMode, type ResourceScope, type SendMessageRequest } from '../../shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type PermissionMode, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -117,6 +117,10 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
       await this.getAgent(projectPath).setPermissionMode(mode)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, (_event, projectPath: string, mode: SandboxMode) => {
+      return this.getAgent(projectPath).setSandboxMode(mode)
     })
 
     ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>) => {
@@ -450,6 +454,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
     ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)
+    ipcMain.removeHandler(AgentIpcChannels.SET_SANDBOX_MODE)
     ipcMain.removeHandler(AgentIpcChannels.ANSWER_QUESTION)
     ipcMain.removeHandler(AgentIpcChannels.DISMISS_QUESTION)
     ipcMain.removeHandler(AgentIpcChannels.RESPOND_PLAN_APPROVAL)

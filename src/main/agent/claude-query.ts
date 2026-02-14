@@ -1,11 +1,12 @@
 import { query, type CanUseTool, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentEvent, MessageMetadata, PermissionMode, SendMessageRequest } from '../../shared/agent-types'
+import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMessageRequest } from '../../shared/agent-types'
 import type { MessageBridge } from './message-bridge'
 
 export interface SessionQueryOptions {
   cwd: string
   model?: string
   permissionMode: PermissionMode
+  sandboxInfo?: SandboxInfo
   canUseTool: CanUseTool
   trackPlanFile?: (filePath: string) => void
   resume?: string
@@ -36,6 +37,9 @@ export function createSessionQuery(
       permissionMode: options.permissionMode,
       allowDangerouslySkipPermissions: options.permissionMode === 'bypassPermissions',
       canUseTool: options.canUseTool,
+      sandbox: options.sandboxInfo?.enabled
+        ? { enabled: true, autoAllowBashIfSandboxed: options.sandboxInfo.autoAllowBash }
+        : undefined,
       enableFileCheckpointing: true,
       settingSources: ['user', 'project', 'local'],
       resume: options.resume,

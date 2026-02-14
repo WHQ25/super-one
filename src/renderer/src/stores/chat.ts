@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { buildSlashCommands, getCommandOutputMode } from './chat-helpers'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
@@ -126,7 +126,7 @@ export function createDefaultSessionState(): SessionState {
     subagentTokens: {},
     cwd: '',
     homedir: '',
-    sandboxInfo: { enabled: false, autoAllowBash: false },
+    sandboxInfo: { enabled: true, autoAllowBash: false },
     slashCommandOutput: null,
     _pendingSlashCommand: '',
     todos: {},
@@ -204,6 +204,7 @@ interface ChatStore {
   respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   cyclePermissionMode: () => void
+  setSandboxMode: (mode: SandboxMode) => Promise<void>
 
   // Question actions
   answerQuestion: (requestId: string, answers: Record<string, string>) => void
@@ -1446,6 +1447,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       hasPendingInteraction: false,
       ...(approved && { permissionMode: 'default' as PermissionMode }),
     })))
+  },
+
+  setSandboxMode: async (mode) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    const updated = await window.agent.setSandboxMode(activeProject, mode)
+    set((s) => updateSession(s, activeProject, () => ({ sandboxInfo: updated })))
   },
 
   cyclePermissionMode: () => {

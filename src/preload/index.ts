@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget } from '../shared/agent-types'
+import { AgentIpcChannels, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type SandboxMode } from '../shared/agent-types'
 
 const agentAPI = {
   sendMessage: (projectPath: string, request: { content: string; model?: string; images?: { mimeType: string; base64: string; name: string }[] }) =>
@@ -14,6 +14,9 @@ const agentAPI = {
 
   setPermissionMode: (projectPath: string, mode: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_PERMISSION_MODE, projectPath, mode),
+
+  setSandboxMode: (projectPath: string, mode: SandboxMode) =>
+    ipcRenderer.invoke(AgentIpcChannels.SET_SANDBOX_MODE, projectPath, mode),
 
   answerQuestion: (projectPath: string, requestId: string, answers: Record<string, string>) =>
     ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, projectPath, requestId, answers),

@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { PermissionModeSelector } from './PermissionModeSelector'
+import { SandboxModeSelector } from './SandboxModeSelector'
 import {
   DEFAULT_CODEX_PERMISSION_PRESET,
   type CodexPermissionPreset,
@@ -63,7 +64,7 @@ function CodexPermissionSummary() {
       id: 'full-access',
       label: 'Full Access',
       icon: <AlertTriangle className="size-3.5" />,
-      toneClass: 'text-amber-500',
+      toneClass: 'text-destructive',
     },
   ]
 
@@ -71,14 +72,15 @@ function CodexPermissionSummary() {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className={`inline-flex items-center gap-1 text-[11px] transition-colors ${
+          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${
             preset === 'full-access'
-              ? 'text-amber-500 hover:text-amber-400'
-              : 'text-muted-foreground hover:text-foreground'
+              ? 'text-destructive hover:bg-destructive/10'
+              : 'text-muted-foreground hover:bg-muted'
           }`}
         >
           {modeIcon}
           <span>{presetLabel}</span>
+          <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-64 border-border bg-card p-2">
@@ -295,7 +297,6 @@ function WorkDirIndicator() {
 export function ChatStatusBar() {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const worktrees = useAppStore((s) => s._worktrees)
-  const sandboxInfo = useActiveSession((s) => s.sandboxInfo)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [branches, setBranches] = useState<string[]>([])
@@ -468,20 +469,6 @@ export function ChatStatusBar() {
           </>
         )}
 
-        {/* Sandbox status */}
-        {preferredProvider === 'claude' && sandboxInfo.enabled && (
-          <>
-            <div className="h-3 w-px bg-border" />
-            <div
-              className="flex items-center gap-1 text-emerald-400"
-              title={sandboxInfo.autoAllowBash ? 'Sandbox enabled, Bash auto-allowed' : 'Sandbox enabled'}
-            >
-              <ShieldCheck className="size-3" />
-              <span>Sandbox{sandboxInfo.autoAllowBash ? ' (Auto)' : ''}</span>
-            </div>
-          </>
-        )}
-
         <div className="h-3 w-px bg-border" />
 
         {/* Provider-specific mode controls */}
@@ -490,6 +477,12 @@ export function ChatStatusBar() {
         ) : (
           <CodexPermissionSummary />
         )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Sandbox mode selector — right-aligned */}
+        {preferredProvider === 'claude' && <SandboxModeSelector />}
       </div>
 
       {/* Checkout failed dialog */}

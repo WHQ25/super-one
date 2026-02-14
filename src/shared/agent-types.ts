@@ -297,6 +297,8 @@ export interface HookEvent {
 
 // --- Sandbox info ---
 
+export type SandboxMode = 'off' | 'on' | 'auto'
+
 export interface SandboxInfo {
   enabled: boolean
   autoAllowBash: boolean
@@ -694,6 +696,7 @@ export const AgentIpcChannels = {
   EVENT: 'agent:event',
   PERMISSION_RESPONSE: 'agent:permission-response',
   SET_PERMISSION_MODE: 'agent:set-permission-mode',
+  SET_SANDBOX_MODE: 'agent:set-sandbox-mode',
   ANSWER_QUESTION: 'agent:answer-question',
   DISMISS_QUESTION: 'agent:dismiss-question',
   RESPOND_PLAN_APPROVAL: 'agent:respond-plan-approval',

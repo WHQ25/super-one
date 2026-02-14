@@ -72,13 +72,16 @@ export function SetupPage(): React.JSX.Element {
 
   // Auto-detect Claude on mount
   useEffect(() => {
+    let ignore = false
     window.app.checkClaude().then((hasClaude) => {
+      if (ignore) return
       if (hasClaude) {
         continueToMain()
       } else {
         setChecking(false)
       }
     })
+    return () => { ignore = true }
   }, [continueToMain])
 
   useEffect(() => {

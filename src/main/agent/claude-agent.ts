@@ -2,33 +2,14 @@ import { existsSync, readdirSync, readFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, PermissionMode, RewindFilesResult, SandboxInfo, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, PermissionMode, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
 import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
 import { discoverSkills, discoverProjectCommands, discoverProjectAgents } from './discover-resources'
 
 
-/** Read sandbox settings from Claude Code settings files (local > project > user). */
-function readSandboxInfo(cwd: string): SandboxInfo {
-  const sources = [
-    join(cwd, '.claude', 'settings.local.json'),
-    join(cwd, '.claude', 'settings.json'),
-    join(homedir(), '.claude', 'settings.json'),
-  ]
-  for (const path of sources) {
-    try {
-      const data = JSON.parse(readFileSync(path, 'utf-8'))
-      if (data.sandbox && typeof data.sandbox === 'object') {
-        return {
-          enabled: data.sandbox.enabled === true,
-          autoAllowBash: data.sandbox.autoAllowBashIfSandboxed === true,
-        }
-      }
-    } catch { /* file doesn't exist or is invalid */ }
-  }
-  return { enabled: false, autoAllowBash: false }
-}
+const DEFAULT_SANDBOX_INFO: SandboxInfo = { enabled: true, autoAllowBash: false }
 
 const EXCLUDED_DIRS = new Set(['.', 'node_modules', 'dist', 'build', '__pycache__'])
 
@@ -56,6 +37,7 @@ export class ClaudeAgent {
 
   private ready = false
   private currentPermissionMode: PermissionMode = 'default'
+  private currentSandboxInfo: SandboxInfo = DEFAULT_SANDBOX_INFO
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
   private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
@@ -88,6 +70,7 @@ export class ClaudeAgent {
         cwd: this.config!.cwd,
         model: this.config!.model,
         permissionMode: this.currentPermissionMode,
+        sandboxInfo: this.currentSandboxInfo,
         canUseTool,
         trackPlanFile,
         resume: resumeSessionId,
@@ -119,7 +102,7 @@ export class ClaudeAgent {
       projectAgents,
       cwd: this.config!.cwd,
       homedir: homedir(),
-      sandboxInfo: readSandboxInfo(this.config!.cwd),
+      sandboxInfo: this.currentSandboxInfo,
     })
   }
 
@@ -179,6 +162,14 @@ export class ClaudeAgent {
 
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void {
     respondToPlanApproval(this.pendingPlanApprovals, requestId, approved, feedback)
+  }
+
+  setSandboxMode(mode: SandboxMode): SandboxInfo {
+    this.currentSandboxInfo = {
+      enabled: mode !== 'off',
+      autoAllowBash: mode === 'auto',
+    }
+    return this.currentSandboxInfo
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {

@@ -1,4 +1,4 @@
-import { Shield, FastForward, ShieldOff, PenLine } from 'lucide-react'
+import { Shield, FastForward, ShieldOff, PenLine, ChevronDown } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useState } from 'react'
@@ -7,14 +7,14 @@ import type { PermissionMode } from '../../../../shared/agent-types'
 /** Ordered list of permission modes — used for cycling via Shift+Tab. */
 export const PERMISSION_MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions']
 
-const modes: { id: PermissionMode; label: string; description: string; icon: React.ReactNode; color: string; hoverColor: string }[] = [
+const modes: { id: PermissionMode; label: string; description: string; icon: React.ReactNode; color: string; hoverBg: string }[] = [
   {
     id: 'default',
     label: 'Normal',
     description: 'Prompts for dangerous operations',
     icon: <Shield className="size-3" />,
     color: 'text-muted-foreground',
-    hoverColor: 'hover:text-foreground',
+    hoverBg: 'hover:bg-muted',
   },
   {
     id: 'acceptEdits',
@@ -22,7 +22,7 @@ const modes: { id: PermissionMode; label: string; description: string; icon: Rea
     description: 'Auto-accept file edit operations',
     icon: <FastForward className="size-3" />,
     color: 'text-purple-400',
-    hoverColor: 'hover:text-purple-300',
+    hoverBg: 'hover:bg-purple-500/10',
   },
   {
     id: 'plan',
@@ -30,15 +30,15 @@ const modes: { id: PermissionMode; label: string; description: string; icon: Rea
     description: 'Planning only, no actual execution',
     icon: <PenLine className="size-3" />,
     color: 'text-blue-400',
-    hoverColor: 'hover:text-blue-300',
+    hoverBg: 'hover:bg-blue-500/10',
   },
   {
     id: 'bypassPermissions',
     label: 'Bypass',
     description: 'Bypass all permission checks',
     icon: <ShieldOff className="size-3" />,
-    color: 'text-red-400',
-    hoverColor: 'hover:text-red-300',
+    color: 'text-destructive',
+    hoverBg: 'hover:bg-destructive/10',
   },
 ]
 
@@ -52,9 +52,10 @@ export function PermissionModeSelector() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className={`flex items-center gap-1 text-[11px] transition-colors ${current.color} ${current.hoverColor}`}>
+        <button className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${current.color} ${current.hoverBg}`}>
           {current.icon}
           <span>{current.label}</span>
+          <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
         </button>
       </PopoverTrigger>
       <PopoverContent

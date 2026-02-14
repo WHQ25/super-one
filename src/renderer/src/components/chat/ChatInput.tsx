@@ -779,15 +779,27 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-3 py-2 space-y-3">
               {/* Project-level directories */}
               <div>
-                <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Project</div>
+                <div className="mb-1 flex items-center gap-1.5">
+                  <span className="text-sm font-medium text-muted-foreground">Project</span>
+                  <button
+                    onMouseDown={async (e) => {
+                      e.preventDefault()
+                      const folder = await window.app.selectFolder()
+                      if (folder) addDir(folder, 'project')
+                    }}
+                    className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <FolderPlus className="size-3.5" />
+                  </button>
+                </div>
                 {projectAdditionalDirs.length === 0 ? (
-                  <div className="text-xs text-muted-foreground/60 italic">No project directories</div>
+                  <div className="text-xs text-muted-foreground/60 italic">No additional directories</div>
                 ) : (
                   <div className="space-y-0.5">
                     {projectAdditionalDirs.map((dir) => (
                       <div key={dir} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50">
                         <span className="flex min-w-0 items-center gap-1.5">
-                          <Folder className="size-3 shrink-0 text-muted-foreground" />
+                          <Folder className="size-3.5 shrink-0 text-blue-500" />
                           <span className="truncate text-foreground">{dir}</span>
                         </span>
                         <button
@@ -803,15 +815,27 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               </div>
               {/* Session-level directories */}
               <div>
-                <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Session</div>
+                <div className="mb-1 flex items-center gap-1.5">
+                  <span className="text-sm font-medium text-muted-foreground">Session</span>
+                  <button
+                    onMouseDown={async (e) => {
+                      e.preventDefault()
+                      const folder = await window.app.selectFolder()
+                      if (folder) addDir(folder, 'session')
+                    }}
+                    className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <FolderPlus className="size-3.5" />
+                  </button>
+                </div>
                 {additionalDirs.length === 0 ? (
-                  <div className="text-xs text-muted-foreground/60 italic">No session directories</div>
+                  <div className="text-xs text-muted-foreground/60 italic">No additional directories</div>
                 ) : (
                   <div className="space-y-0.5">
                     {additionalDirs.map((dir) => (
                       <div key={dir} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50">
                         <span className="flex min-w-0 items-center gap-1.5">
-                          <Folder className="size-3 shrink-0 text-muted-foreground" />
+                          <Folder className="size-3.5 shrink-0 text-blue-500" />
                           <span className="truncate text-foreground">{dir}</span>
                         </span>
                         <button
@@ -825,20 +849,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   </div>
                 )}
               </div>
-            </div>
-            {/* Add Directory button */}
-            <div className="border-t border-border px-3 py-2">
-              <button
-                onMouseDown={async (e) => {
-                  e.preventDefault()
-                  const folder = await window.app.selectFolder()
-                  if (folder) addDir(folder, 'session')
-                }}
-                className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-              >
-                <FolderPlus className="size-3.5" />
-                Add Directory
-              </button>
             </div>
           </div>
         )}

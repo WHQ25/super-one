@@ -28,6 +28,11 @@ interface SettingsState {
   installSkill: (sourcePath: string) => Promise<void>
   deleteSkill: (name: string, scope: ResourceScope) => Promise<void>
 
+  // Codex Skills (reuses skills/skillDetail/skillFileContent/skillFilePath state)
+  fetchCodexSkills: () => Promise<void>
+  readCodexSkill: (name: string) => Promise<void>
+  readCodexSkillFile: (skillName: string, relativePath: string) => Promise<void>
+
   // MCP
   mcpConfigs: McpServerConfig[]
   mcpStatus: McpServerInfo[]
@@ -39,6 +44,10 @@ interface SettingsState {
   deleteMcpConfig: (name: string, scope: ResourceScope) => Promise<void>
   toggleMcpConfig: (name: string, disabled: boolean, scope: ResourceScope) => Promise<void>
   selectMcp: (name: string | null) => void
+
+  // Codex MCP config (separate field — read-only)
+  codexMcpConfigs: McpServerConfig[]
+  fetchCodexMcpConfigs: () => Promise<void>
 
   // MCP library
   mcpLibrary: McpLibraryEntry[]
@@ -86,6 +95,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   mcpStatus: [],
   mcpMeta: {},
   selectedMcpName: null,
+  codexMcpConfigs: [],
   mcpLibrary: [],
   plugins: [],
   pluginDetail: null,
@@ -123,6 +133,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await window.app.deleteSkill(pp, name, scope)
     set({ skillDetail: null, skillFileContent: null, skillFilePath: null })
     await get().fetchSkills()
+  },
+
+  // Codex Skills (reuse same state fields)
+  fetchCodexSkills: async () => {
+    const pp = getProjectPath()
+    const skills = await window.app.codexListSkills(pp)
+    set({ skills })
+  },
+
+  readCodexSkill: async (name) => {
+    const pp = getProjectPath()
+    const detail = await window.app.codexReadSkill(pp, name)
+    set({ skillDetail: detail })
+  },
+
+  readCodexSkillFile: async (skillName, relativePath) => {
+    const pp = getProjectPath()
+    const content = await window.app.codexReadSkillFile(pp, skillName, relativePath)
+    set({ skillFileContent: content, skillFilePath: relativePath })
   },
 
   fetchMcpConfigs: async () => {
@@ -177,6 +206,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   selectMcp: (name) => set({ selectedMcpName: name }),
+
+  // Codex MCP config (read-only, separate state)
+  fetchCodexMcpConfigs: async () => {
+    const pp = getProjectPath()
+    const codexMcpConfigs = await window.app.codexListMcpConfigs(pp)
+    set({ codexMcpConfigs })
+  },
 
   fetchMcpLibrary: async () => {
     try {

@@ -1,9 +1,11 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
+import { buildSlashCommands, getCommandOutputMode } from './chat-helpers'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
+export const DEFAULT_PROVIDER: ChatProvider = 'claude'
 
 export type MentionKind = 'file' | 'directory' | 'agent'
 export interface Mention {
@@ -425,7 +427,7 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
 
     case 'session_init':
       console.log('[applyEvent] session_init', { sessionId: event.session?.sessionId })
-      return { session: event.session, sessionProvider: session.sessionProvider ?? 'claude' }
+      return { session: event.session, sessionProvider: session.sessionProvider ?? DEFAULT_PROVIDER }
 
     case 'ask_user_question':
       return { pendingQuestion: event.request, hasPendingInteraction: true }
@@ -535,7 +537,7 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
       const lastUserIdx = filtered.findLastIndex((m) => m.role === 'user')
       if (lastUserIdx >= 0) filtered.splice(lastUserIdx, 1)
       return {
-        slashCommandOutput: { command: session._pendingSlashCommand, content: event.content },
+        slashCommandOutput: { command: session._pendingSlashCommand, content: event.content, mode: getCommandOutputMode(session._pendingSlashCommand) },
         _pendingSlashCommand: '',
         messages: filtered,
       }
@@ -565,10 +567,6 @@ function _createLocalCodexSessionId(): string {
   const ts = Date.now().toString(36)
   const rand = Math.random().toString(36).slice(2, 10)
   return `${CODEX_LOCAL_SESSION_PREFIX}${ts}_${rand}`
-}
-
-function _isLocalCodexSessionId(sessionId: string): boolean {
-  return sessionId.startsWith(CODEX_LOCAL_SESSION_PREFIX)
 }
 
 /** Extract a title from the first user message for DB storage. */
@@ -606,6 +604,7 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
       totalCostUsd: session.totalCostUsd,
       contextTokens: session.contextTokens,
       title: _extractTitle(session.messages),
+      provider: session.sessionProvider ?? undefined,
     }))
     .catch(() => { /* best-effort */ })
 }
@@ -623,26 +622,12 @@ function _saveSessionSnapshot(projectPath: string, session: SessionState): void 
       totalCostUsd: session.totalCostUsd,
       contextTokens: session.contextTokens,
       title: _extractTitle(session.messages),
+      provider: session.sessionProvider ?? undefined,
     }))
     .catch(() => { /* best-effort */ })
 }
 
 // --- Helpers ---
-
-function buildSlashCommands(
-  globalSlashCommands: SlashCommandInfo[],
-  userSkills: SlashCommandInfo[],
-  userCommands: SlashCommandInfo[],
-  projectSkills: SlashCommandInfo[],
-  projectCommands: SlashCommandInfo[],
-): SlashCommandInfo[] {
-  const skillSet = new Set([...userSkills, ...projectSkills].map((sk) => sk.name))
-  const tagged = globalSlashCommands.map((c) => ({ ...c, isSkill: skillSet.has(c.name) }))
-  const existing = new Set(tagged.map((c) => c.name))
-  const extra = [...userSkills, ...userCommands, ...projectSkills, ...projectCommands]
-    .filter((c) => !existing.has(c.name))
-  return [...tagged, ...extra]
-}
 
 type CodexCommand =
   | { kind: 'help' }
@@ -1058,7 +1043,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           popupContent = `Error: ${msg}`
         }
         set((s) => updateSession(s, activeProject, () => ({
-          slashCommandOutput: { command: utilityKind === 'help' ? 'help' : utilityKind, content: popupContent, mode: 'popup' },
+          slashCommandOutput: { command: utilityKind, content: popupContent, mode: getCommandOutputMode(utilityKind) },
         })))
         return
       }
@@ -1239,7 +1224,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     set((s) => updateSession(s, activeProject, () => ({
       messages: [], session: null, totalCostUsd: 0, contextTokens: 0,
-      sessionProvider: null,
+      sessionProvider: null, slashCommandOutput: null,
       pendingPermission: null, pendingQuestion: null, pendingPlanApproval: null,
       planApprovalOutcome: null, mentions: [], subagentTokens: {},
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
@@ -1389,7 +1374,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     const session = getSession(get())
     if (session.sessionProvider && session.messages.length > 0) return
-    set((s) => updateSession(s, activeProject, () => ({ preferredProvider: provider })))
+    set((s) => updateSession(s, activeProject, () => ({ preferredProvider: provider, slashCommandOutput: null })))
     if (provider === 'codex') {
       void get().refreshCodexModels()
     }
@@ -1537,8 +1522,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     const session = getSession(get())
-    const isCodexLocalSession = _isLocalCodexSessionId(sessionId)
-
     // Case A: Switch back to a session running in background
     if (session._bgSessions[sessionId]) {
       const bg = session._bgSessions[sessionId]
@@ -1563,8 +1546,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         _saveSessionState(get, activeProject)
       }
 
-      const restoredProvider: ChatProvider = bg.sessionProvider
-        ?? (isCodexLocalSession || bg.messages.some((m) => m.providerId === 'codex') ? 'codex' : 'claude')
+      const restoredProvider: ChatProvider = bg.sessionProvider ?? DEFAULT_PROVIDER
 
       set((s) => updateSession(s, activeProject, () => ({
         messages: bg.messages, status: bg.status, session: bg.session,
@@ -1606,6 +1588,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     let savedTokens = 0
     let savedWorktreeBranch: string | null = null
     let savedWorktreePath: string | undefined
+    let savedProvider: string | null = null
     try {
       const saved = await window.app.loadSessionState(sessionId)
       if (saved) {
@@ -1613,6 +1596,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         savedCost = saved.totalCostUsd
         savedTokens = saved.contextTokens
         savedWorktreeBranch = saved.gitBranch
+        savedProvider = saved.provider
 
         // If this session was in a worktree, try to find the worktree path
         // (worktrees are detached HEAD, so we match by checking if any non-main entry still exists)
@@ -1637,9 +1621,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // History loading is best-effort
     }
 
-    const restoredProvider: ChatProvider = isCodexLocalSession || savedMessages.some((m) => m.providerId === 'codex')
-      ? 'codex'
-      : 'claude'
+    const restoredProvider: ChatProvider = (savedProvider as ChatProvider) ?? DEFAULT_PROVIDER
 
     // Re-read latest session state (may have changed during async operations above)
     const freshSession = getSession(get())

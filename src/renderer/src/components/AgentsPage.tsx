@@ -125,7 +125,7 @@ export function AgentsPage() {
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Agents</h2>
+          <h2 className="text-lg font-semibold">Subagents</h2>
           <p className="text-sm text-muted-foreground">Browse custom agent definitions</p>
         </div>
         <ProjectSelector mode="switch" />

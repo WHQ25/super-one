@@ -136,7 +136,14 @@ export function AppSidebar() {
     refreshFolderSessions(deleteTarget.folderPath)
     refreshPinned()
     setDeleteTarget(null)
-  }, [deleteTarget, refreshFolderSessions, refreshPinned])
+
+    // If deleting the currently active session, reset to new session state
+    const current = projectSessions[deleteTarget.folderPath]
+    const currentId = current?._historySessionId ?? current?.session?.sessionId
+    if (currentId === deleteTarget.sessionId) {
+      resetSession()
+    }
+  }, [deleteTarget, refreshFolderSessions, refreshPinned, projectSessions, resetSession])
 
   const deleteTargetCli = getDeleteSessionRecovery(deleteTarget?.provider ?? 'claude', deleteTarget?.sessionId ?? '')
 

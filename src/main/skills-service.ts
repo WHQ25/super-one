@@ -3,7 +3,7 @@ import { homedir } from 'os'
 import { existsSync, readdirSync, readFileSync, statSync, cpSync, rmSync } from 'fs'
 import type { ResourceScope, SkillInfo, SkillDetail, SkillFileEntry } from '../shared/agent-types'
 
-interface SkillDir {
+export interface SkillDir {
   dir: string
   scope: ResourceScope
   namePrefix?: string
@@ -41,6 +41,13 @@ function getSkillDirs(cwd: string): SkillDir[] {
   return dirs
 }
 
+export function getCodexSkillDirs(cwd: string): SkillDir[] {
+  return [
+    { dir: join(homedir(), '.agents', 'skills'), scope: 'user' },
+    { dir: join(cwd, '.agents', 'skills'), scope: 'project' },
+  ]
+}
+
 function parseFrontmatter(filePath: string): { name: string; description: string } {
   try {
     const content = readFileSync(filePath, 'utf-8')
@@ -72,11 +79,13 @@ function parseFrontmatter(filePath: string): { name: string; description: string
   }
 }
 
-export function listSkills(cwd: string): SkillInfo[] {
+// --- Core functions that accept SkillDir[] ---
+
+export function listSkillsFromDirs(dirs: SkillDir[]): SkillInfo[] {
   const skills: SkillInfo[] = []
   const seen = new Set<string>()
 
-  for (const { dir, scope, namePrefix } of getSkillDirs(cwd)) {
+  for (const { dir, scope, namePrefix } of dirs) {
     if (!existsSync(dir)) continue
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
@@ -124,8 +133,8 @@ function scanDir(dirPath: string): SkillFileEntry[] {
   }
 }
 
-export function readSkillContent(cwd: string, name: string): SkillDetail | null {
-  for (const { dir, scope, namePrefix } of getSkillDirs(cwd)) {
+export function readSkillContentFromDirs(dirs: SkillDir[], name: string): SkillDetail | null {
+  for (const { dir, scope, namePrefix } of dirs) {
     // For plugin skills, strip the prefix to find the actual directory
     const dirName = namePrefix && name.startsWith(namePrefix) ? name.slice(namePrefix.length) : name
     const skillDir = join(dir, dirName)
@@ -146,8 +155,8 @@ export function readSkillContent(cwd: string, name: string): SkillDetail | null 
   return null
 }
 
-export function readSkillFile(cwd: string, skillName: string, relativePath: string): string | null {
-  for (const { dir, namePrefix } of getSkillDirs(cwd)) {
+export function readSkillFileFromDirs(dirs: SkillDir[], skillName: string, relativePath: string): string | null {
+  for (const { dir, namePrefix } of dirs) {
     const dirName = namePrefix && skillName.startsWith(namePrefix) ? skillName.slice(namePrefix.length) : skillName
     const skillDir = join(dir, dirName)
     if (!existsSync(join(skillDir, 'SKILL.md'))) continue
@@ -166,6 +175,36 @@ export function readSkillFile(cwd: string, skillName: string, relativePath: stri
   }
   return null
 }
+
+// --- Claude Code wrappers (original API) ---
+
+export function listSkills(cwd: string): SkillInfo[] {
+  return listSkillsFromDirs(getSkillDirs(cwd))
+}
+
+export function readSkillContent(cwd: string, name: string): SkillDetail | null {
+  return readSkillContentFromDirs(getSkillDirs(cwd), name)
+}
+
+export function readSkillFile(cwd: string, skillName: string, relativePath: string): string | null {
+  return readSkillFileFromDirs(getSkillDirs(cwd), skillName, relativePath)
+}
+
+// --- Codex wrappers ---
+
+export function listCodexSkills(cwd: string): SkillInfo[] {
+  return listSkillsFromDirs(getCodexSkillDirs(cwd))
+}
+
+export function readCodexSkillContent(cwd: string, name: string): SkillDetail | null {
+  return readSkillContentFromDirs(getCodexSkillDirs(cwd), name)
+}
+
+export function readCodexSkillFile(cwd: string, skillName: string, relativePath: string): string | null {
+  return readSkillFileFromDirs(getCodexSkillDirs(cwd), skillName, relativePath)
+}
+
+// --- Install / Delete (Claude Code only) ---
 
 export function installSkill(sourcePath: string): SkillInfo {
   const name = sourcePath.split('/').pop()!

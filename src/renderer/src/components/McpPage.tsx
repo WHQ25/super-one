@@ -30,24 +30,28 @@ export function McpIcon({ name, meta, size = 'sm' }: { name: string; meta?: McpS
   )
 }
 
-function ServerCard({ config, status, meta }: { config: McpServerConfig; status?: McpServerInfo; meta?: McpServerMeta }) {
+function ServerCard({ config, status, meta, readOnly }: { config: McpServerConfig; status?: McpServerInfo; meta?: McpServerMeta; readOnly?: boolean }) {
   const { selectMcp, toggleMcpConfig, checkMcpServers } = useSettingsStore()
   const [reconnecting, setReconnecting] = useState(false)
-  const serverStatus = status?.status ?? (config.disabled ? 'disabled' : 'pending')
+  const serverStatus = status?.status ?? (config.disabled ? 'disabled' : readOnly ? 'connected' : 'pending')
   const isEnabled = !config.disabled
   const isConnected = serverStatus === 'connected'
   const isPending = serverStatus === 'pending' || reconnecting
   const isFailed = isEnabled && !isConnected && !isPending
   const toolCount = status?.toolCount ?? 0
 
-  const dotColor = isConnected ? 'bg-green-500' : isPending ? 'bg-yellow-500' : 'bg-red-500'
+  const dotColor = readOnly
+    ? (config.disabled ? 'bg-red-500' : 'bg-green-500')
+    : (isConnected ? 'bg-green-500' : isPending ? 'bg-yellow-500' : 'bg-red-500')
   const statusText = config.disabled
     ? 'disabled'
-    : isPending
-      ? 'connecting...'
-      : isFailed && status?.error
-        ? status.error
-        : `${toolCount} tool${toolCount !== 1 ? 's' : ''}`
+    : readOnly
+      ? config.type
+      : isPending
+        ? 'connecting...'
+        : isFailed && status?.error
+          ? status.error
+          : `${toolCount} tool${toolCount !== 1 ? 's' : ''}`
 
   const handleReconnect = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -61,9 +65,10 @@ function ServerCard({ config, status, meta }: { config: McpServerConfig; status?
 
   return (
     <div
-      onClick={() => selectMcp(config.name)}
+      onClick={() => !readOnly && selectMcp(config.name)}
       className={cn(
-        'flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-accent/50',
+        'flex items-center gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors',
+        !readOnly && 'cursor-pointer hover:bg-accent/50',
         config.disabled && 'opacity-50'
       )}
     >
@@ -71,7 +76,7 @@ function ServerCard({ config, status, meta }: { config: McpServerConfig; status?
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium truncate">{config.name}</p>
-          {isFailed && (
+          {!readOnly && isFailed && (
             <button
               onClick={handleReconnect}
               className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground transition-colors"
@@ -85,13 +90,17 @@ function ServerCard({ config, status, meta }: { config: McpServerConfig; status?
           <span className="text-xs text-muted-foreground">{statusText}</span>
         </div>
       </div>
-      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-        <Switch
-          checked={isEnabled}
-          onCheckedChange={(checked) => toggleMcpConfig(config.name, !checked, config.scope)}
-        />
-      </div>
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+      {!readOnly && (
+        <>
+          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+            <Switch
+              checked={isEnabled}
+              onCheckedChange={(checked) => toggleMcpConfig(config.name, !checked, config.scope)}
+            />
+          </div>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </>
+      )}
     </div>
   )
 }
@@ -523,14 +532,14 @@ function LibraryView({ onClose }: { onClose: () => void }) {
   )
 }
 
-function ServerSection({ title, configs, mcpStatus, mcpMeta }: { title: string; configs: McpServerConfig[]; mcpStatus: McpServerInfo[]; mcpMeta: Record<string, McpServerMeta> }) {
+function ServerSection({ title, configs, mcpStatus, mcpMeta, readOnly }: { title: string; configs: McpServerConfig[]; mcpStatus: McpServerInfo[]; mcpMeta: Record<string, McpServerMeta>; readOnly?: boolean }) {
   if (configs.length === 0) return null
   return (
     <div>
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
       <div className="grid grid-cols-2 gap-3">
         {configs.map((config) => (
-          <ServerCard key={config.name} config={config} status={mcpStatus.find((s) => s.name === config.name)} meta={mcpMeta[config.name]} />
+          <ServerCard key={config.name} config={config} status={mcpStatus.find((s) => s.name === config.name)} meta={mcpMeta[config.name]} readOnly={readOnly} />
         ))}
       </div>
     </div>
@@ -539,17 +548,23 @@ function ServerSection({ title, configs, mcpStatus, mcpMeta }: { title: string; 
 
 export function McpPage() {
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, selectMcp } = useSettingsStore()
+  const settingsProvider = useAppStore((s) => s.settingsProvider)
+  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, codexMcpConfigs, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchCodexMcpConfigs, selectMcp } = useSettingsStore()
   const [addView, setAddView] = useState<'none' | 'form' | 'library'>('none')
   const [refreshing, setRefreshing] = useState(false)
+  const isCodex = settingsProvider === 'codex'
 
   useEffect(() => {
     selectMcp(null)
     setAddView('none')
-    fetchMcpConfigs()
-    checkMcpServers()
-    fetchMcpLibrary()
-  }, [currentFolder, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, selectMcp])
+    if (isCodex) {
+      fetchCodexMcpConfigs()
+    } else {
+      fetchMcpConfigs()
+      checkMcpServers()
+      fetchMcpLibrary()
+    }
+  }, [currentFolder, isCodex, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchCodexMcpConfigs, selectMcp])
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -560,7 +575,39 @@ export function McpPage() {
     }
   }
 
-  // Detail page
+  // Codex: read-only view
+  if (isCodex) {
+    const userConfigs = codexMcpConfigs.filter((c) => c.scope === 'user')
+    const projectConfigs = codexMcpConfigs.filter((c) => c.scope === 'project')
+
+    return (
+      <div className="mx-auto max-w-4xl">
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">MCP Servers</h2>
+            <p className="text-sm text-muted-foreground">Codex MCP server configurations (read-only)</p>
+          </div>
+          <ProjectSelector mode="switch" />
+        </div>
+
+        {codexMcpConfigs.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border p-8 text-center">
+            <p className="text-sm text-muted-foreground">No MCP servers configured</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              User: ~/.codex/config.toml | Project: .codex/config.toml
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <ServerSection title="User" configs={userConfigs} mcpStatus={[]} mcpMeta={{}} readOnly />
+            <ServerSection title="Project" configs={projectConfigs} mcpStatus={[]} mcpMeta={{}} readOnly />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Claude: full view with detail page
   if (selectedMcpName) {
     const config = mcpConfigs.find((c) => c.name === selectedMcpName)
     const status = mcpStatus.find((s) => s.name === selectedMcpName)

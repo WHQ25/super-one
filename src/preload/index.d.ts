@@ -105,8 +105,8 @@ interface AppAPI {
   loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
   renameSession(sessionId: string, title: string): Promise<void>
   createSession(projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string): Promise<void>
-  saveSessionState(claudeSessionId: string, data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string }): Promise<void>
-  loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null } | null>
+  saveSessionState(claudeSessionId: string, data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string; provider?: string }): Promise<void>
+  loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; provider: string } | null>
   deleteSession(sessionId: string): Promise<void>
   pinSession(sessionId: string, pinned: boolean): Promise<void>
   listPinnedSessions(): Promise<PinnedSessionEntry[]>

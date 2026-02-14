@@ -35,7 +35,8 @@ function migrate(db: Database.Database): void {
       title TEXT,
       created_at TEXT NOT NULL,
       total_cost_usd REAL DEFAULT 0,
-      context_tokens INTEGER DEFAULT 0
+      context_tokens INTEGER DEFAULT 0,
+      provider TEXT DEFAULT 'claude'
     );
 
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
@@ -70,6 +71,9 @@ function migrate(db: Database.Database): void {
   }
   if (!cols.some((c) => c.name === 'is_pinned')) {
     db.exec('ALTER TABLE sessions ADD COLUMN is_pinned INTEGER DEFAULT 0')
+  }
+  if (!cols.some((c) => c.name === 'provider')) {
+    db.exec("ALTER TABLE sessions ADD COLUMN provider TEXT DEFAULT 'claude'")
   }
 
   db.exec(`

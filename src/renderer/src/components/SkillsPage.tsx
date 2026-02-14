@@ -123,12 +123,16 @@ function isMarkdown(filePath: string): boolean {
   return /\.md$/i.test(filePath)
 }
 
-function SkillCard({ skill, layoutId }: { skill: SkillInfo; layoutId: string }) {
-  const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, clearSkillDetail } = useSettingsStore()
+function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: string; readOnly?: boolean }) {
+  const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail } = useSettingsStore()
+  const settingsProvider = useAppStore((s) => s.settingsProvider)
   const isExpanded = skillDetail?.name === skill.name
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mdRawView, setMdRawView] = useState(false)
   const [contentReady, setContentReady] = useState(false)
+
+  const doReadSkill = settingsProvider === 'codex' ? readCodexSkill : readSkill
+  const doReadSkillFile = settingsProvider === 'codex' ? readCodexSkillFile : readSkillFile
 
   useEffect(() => {
     if (isExpanded) {
@@ -142,17 +146,17 @@ function SkillCard({ skill, layoutId }: { skill: SkillInfo; layoutId: string }) 
     if (isExpanded) {
       clearSkillDetail()
     } else {
-      readSkill(skill.name).then(() => {
-        readSkillFile(skill.name, 'SKILL.md')
+      doReadSkill(skill.name).then(() => {
+        doReadSkillFile(skill.name, 'SKILL.md')
       })
     }
   }
 
   const handleFileSelect = useCallback(
     (skillName: string, relativePath: string) => {
-      readSkillFile(skillName, relativePath)
+      doReadSkillFile(skillName, relativePath)
     },
-    [readSkillFile]
+    [doReadSkillFile]
   )
 
   return (
@@ -247,7 +251,7 @@ function SkillCard({ skill, layoutId }: { skill: SkillInfo; layoutId: string }) 
   )
 }
 
-function SkillSection({ title, skills }: { title: string; skills: SkillInfo[] }) {
+function SkillSection({ title, skills, readOnly }: { title: string; skills: SkillInfo[]; readOnly?: boolean }) {
   const skillDetail = useSettingsStore((s) => s.skillDetail)
   if (skills.length === 0) return null
 
@@ -270,15 +274,15 @@ function SkillSection({ title, skills }: { title: string; skills: SkillInfo[] })
         <div className="space-y-3">
           {before.length > 0 && (
             <div className="grid grid-cols-2 gap-3">
-              {before.map((s) => <SkillCard key={cardKey(s)} layoutId={cardKey(s)} skill={s} />)}
+              {before.map((s) => <SkillCard key={cardKey(s)} layoutId={cardKey(s)} skill={s} readOnly={readOnly} />)}
             </div>
           )}
           {expanded && (
-            <SkillCard key={cardKey(expanded)} layoutId={cardKey(expanded)} skill={expanded} />
+            <SkillCard key={cardKey(expanded)} layoutId={cardKey(expanded)} skill={expanded} readOnly={readOnly} />
           )}
           {after.length > 0 && (
             <div className="grid grid-cols-2 gap-3">
-              {after.map((s) => <SkillCard key={cardKey(s)} layoutId={cardKey(s)} skill={s} />)}
+              {after.map((s) => <SkillCard key={cardKey(s)} layoutId={cardKey(s)} skill={s} readOnly={readOnly} />)}
             </div>
           )}
         </div>
@@ -289,12 +293,18 @@ function SkillSection({ title, skills }: { title: string; skills: SkillInfo[] })
 
 export function SkillsPage() {
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const { skills, fetchSkills, installSkill, clearSkillDetail } = useSettingsStore()
+  const settingsProvider = useAppStore((s) => s.settingsProvider)
+  const { skills, fetchSkills, fetchCodexSkills, installSkill, clearSkillDetail } = useSettingsStore()
+  const isCodex = settingsProvider === 'codex'
 
   useEffect(() => {
     clearSkillDetail()
-    fetchSkills()
-  }, [currentFolder, clearSkillDetail, fetchSkills])
+    if (isCodex) {
+      fetchCodexSkills()
+    } else {
+      fetchSkills()
+    }
+  }, [currentFolder, isCodex, clearSkillDetail, fetchSkills, fetchCodexSkills])
 
   const handleInstall = async () => {
     const folderPath = await window.app.selectFolder()
@@ -306,33 +316,39 @@ export function SkillsPage() {
   const userSkills = skills.filter((s) => s.scope === 'user')
   const projectSkills = skills.filter((s) => s.scope === 'project')
 
+  const pathHints = isCodex
+    ? 'User: ~/.agents/skills/ | Project: .agents/skills/'
+    : 'User: ~/.claude/skills/ | Project: .claude/skills/'
+
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Skills</h2>
-          <p className="text-sm text-muted-foreground">Manage Claude Code skills</p>
+          <p className="text-sm text-muted-foreground">
+            {isCodex ? 'Manage Codex skills' : 'Manage Claude Code skills'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <ProjectSelector mode="switch" />
-          <Button size="sm" onClick={handleInstall}>
-            <FolderOpen className="size-4" />
-            Install Skill
-          </Button>
+          {!isCodex && (
+            <Button size="sm" onClick={handleInstall}>
+              <FolderOpen className="size-4" />
+              Install Skill
+            </Button>
+          )}
         </div>
       </div>
 
       {skills.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">No skills found</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            User: ~/.claude/skills/ | Project: .claude/skills/
-          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{pathHints}</p>
         </div>
       ) : (
         <div className="space-y-6">
-          <SkillSection title="User" skills={userSkills} />
-          <SkillSection title="Project" skills={projectSkills} />
+          <SkillSection title="User" skills={userSkills} readOnly={isCodex} />
+          <SkillSection title="Project" skills={projectSkills} readOnly={isCodex} />
         </div>
       )}
     </div>

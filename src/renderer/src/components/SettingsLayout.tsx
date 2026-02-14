@@ -6,18 +6,32 @@ import { SkillsPage } from './SkillsPage'
 import { McpPage } from './McpPage'
 import { PluginsPage } from './PluginsPage'
 import { cn } from '@/lib/utils'
+import type { SettingsProvider } from '../../../shared/agent-types'
 
-const tabs = [
-  { id: 'agents' as const, label: 'Agents', icon: Bot },
+const allTabs = [
+  { id: 'agents' as const, label: 'Subagents', icon: Bot },
   { id: 'skills' as const, label: 'Skills', icon: Puzzle },
   { id: 'mcp' as const, label: 'MCP Servers', icon: Server },
   { id: 'plugins' as const, label: 'Plugins', icon: Blocks },
 ]
 
+const codexTabs = new Set<string>(['skills', 'mcp'])
+
+const providers: { id: SettingsProvider; label: string }[] = [
+  { id: 'claude', label: 'Claude Code' },
+  { id: 'codex', label: 'Codex' },
+]
+
 export function SettingsLayout() {
   const settingsTab = useAppStore((s) => s.settingsTab)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
+  const settingsProvider = useAppStore((s) => s.settingsProvider)
+  const setSettingsProvider = useAppStore((s) => s.setSettingsProvider)
   const navigateTo = useAppStore((s) => s.navigateTo)
+
+  const visibleTabs = settingsProvider === 'codex'
+    ? allTabs.filter((t) => codexTabs.has(t.id))
+    : allTabs
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -33,8 +47,26 @@ export function SettingsLayout() {
           Back
         </Button>
 
+        {/* Provider toggle */}
+        <div className="mb-4 flex rounded-md bg-muted p-0.5">
+          {providers.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setSettingsProvider(p.id)}
+              className={cn(
+                'flex-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors',
+                settingsProvider === p.id
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
         <nav className="flex flex-col gap-1">
-          {tabs.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setSettingsTab(tab.id)}

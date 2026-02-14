@@ -25,6 +25,7 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
   const showHistory = useActiveSession((s) => s.showHistory)
   const historySessionId = useActiveSession((s) => s._historySessionId)
+  const hasActiveSession = useActiveSession((s) => !!s.session)
 
   // Auto-zoom based on own container width
   const containerRef = useRef<HTMLDivElement>(null)
@@ -50,7 +51,7 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
         <>
           <SlashCommandOverlay />
           <div className="flex-1 overflow-hidden">
-            {messages.length === 0 ? (
+            {messages.length === 0 && !hasActiveSession ? (
               <ChatSuggestions />
             ) : (
               <ScrollArea key={historySessionId ?? 'default'} className="h-full animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>

@@ -91,7 +91,7 @@ export function renameSession(claudeSessionId: string, title: string): void {
 /** Save full session state to DB: upsert messages into chat_messages, update session metadata */
 export function saveSessionState(
   claudeSessionId: string,
-  data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string },
+  data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string; provider?: string },
 ): void {
   const db = getDb()
 
@@ -107,13 +107,13 @@ export function saveSessionState(
   const updateSession = data.title
     ? db.prepare(`
         UPDATE sessions
-        SET total_cost_usd = ?, context_tokens = ?,
+        SET total_cost_usd = ?, context_tokens = ?, provider = ?,
             title = CASE WHEN title IS NULL OR title = '' THEN ? ELSE title END
         WHERE claude_session_id = ?
       `)
     : db.prepare(`
         UPDATE sessions
-        SET total_cost_usd = ?, context_tokens = ?
+        SET total_cost_usd = ?, context_tokens = ?, provider = ?
         WHERE claude_session_id = ?
       `)
 
@@ -136,10 +136,11 @@ export function saveSessionState(
       )
     }
 
+    const provider = data.provider ?? 'claude'
     if (data.title) {
-      updateSession.run(data.totalCostUsd, data.contextTokens, data.title, claudeSessionId)
+      updateSession.run(data.totalCostUsd, data.contextTokens, provider, data.title, claudeSessionId)
     } else {
-      updateSession.run(data.totalCostUsd, data.contextTokens, claudeSessionId)
+      updateSession.run(data.totalCostUsd, data.contextTokens, provider, claudeSessionId)
     }
   })
 
@@ -149,12 +150,12 @@ export function saveSessionState(
 /** Load session state from DB */
 export function loadSessionState(
   claudeSessionId: string,
-): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null } | null {
+): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; provider: string } | null {
   const db = getDb()
 
   const session = db.prepare(`
-    SELECT total_cost_usd, context_tokens, is_worktree, git_branch FROM sessions WHERE claude_session_id = ?
-  `).get(claudeSessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null }) | undefined
+    SELECT total_cost_usd, context_tokens, is_worktree, git_branch, provider FROM sessions WHERE claude_session_id = ?
+  `).get(claudeSessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; provider: string | null }) | undefined
 
   if (!session) return null
 
@@ -183,6 +184,7 @@ export function loadSessionState(
     contextTokens: session.context_tokens ?? 0,
     isWorktree: !!(session.is_worktree),
     gitBranch: session.git_branch ?? null,
+    provider: session.provider ?? 'claude',
   }
 }
 

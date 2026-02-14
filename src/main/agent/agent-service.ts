@@ -18,7 +18,8 @@ import { listSessionsForFolder, createSession, renameSession as dbRenameSession,
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
-import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill } from '../skills-service'
+import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, listCodexSkills, readCodexSkillContent, readCodexSkillFile } from '../skills-service'
+import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, readAgentFile } from './discover-resources'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
 import { backupMcpServers, listLibrary, deleteLibraryEntry } from '../mcp-library-service'
@@ -214,6 +215,26 @@ export class AgentService {
       deleteSkill(name, scope, projectPath)
     })
 
+    // --- Codex Skills (read-only) ---
+
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_LIST, (_event, projectPath: string) => {
+      return listCodexSkills(projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ, (_event, projectPath: string, name: string) => {
+      return readCodexSkillContent(projectPath, name)
+    })
+
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ_FILE, (_event, projectPath: string, skillName: string, relativePath: string) => {
+      return readCodexSkillFile(projectPath, skillName, relativePath)
+    })
+
+    // --- Codex MCP config (read-only) ---
+
+    ipcMain.handle(AgentIpcChannels.CODEX_MCP_LIST_CONFIG, (_event, projectPath: string) => {
+      return listCodexMcpConfigs(projectPath)
+    })
+
     // --- Agents (read-only) ---
 
     ipcMain.handle(AgentIpcChannels.AGENTS_LIST, (_event, projectPath: string) => {
@@ -345,7 +366,7 @@ export class AgentService {
       try { createSession(projectPath, claudeSessionId, undefined, isWorktree, gitBranch) } catch { /* ignore duplicate */ }
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_SAVE_STATE, (_event, claudeSessionId: string, data: { messages: unknown[]; totalCostUsd: number; contextTokens: number; title?: string }) => {
+    ipcMain.handle(AgentIpcChannels.SESSIONS_SAVE_STATE, (_event, claudeSessionId: string, data: { messages: unknown[]; totalCostUsd: number; contextTokens: number; title?: string; provider?: string }) => {
       saveSessionState(claudeSessionId, data as Parameters<typeof saveSessionState>[1])
     })
 
@@ -451,6 +472,10 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_INSTALL)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_DELETE)
+    ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_READ)
+    ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_READ_FILE)
+    ipcMain.removeHandler(AgentIpcChannels.CODEX_MCP_LIST_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.AGENTS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.AGENTS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_CONFIG)

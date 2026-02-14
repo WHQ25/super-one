@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { RecentFolder, SetupEvent } from '../../../shared/agent-types'
+import type { RecentFolder, SetupEvent, SettingsProvider } from '../../../shared/agent-types'
 
 type AppView = 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
@@ -25,7 +25,9 @@ interface AppState {
   installOutput: string
 
   // Settings
+  settingsProvider: SettingsProvider
   settingsTab: SettingsTab
+  setSettingsProvider: (provider: SettingsProvider) => void
 
   // Layout mode
   layoutMode: LayoutMode
@@ -91,6 +93,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   _worktrees: {},
   installStatus: 'idle',
   installOutput: '',
+  settingsProvider: 'claude',
   settingsTab: 'skills',
   layoutMode: 'coding',
   setLayoutMode: async (mode) => {
@@ -238,6 +241,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   navigateTo: (view) => set({ view }),
 
+  setSettingsProvider: (provider) => {
+    const currentTab = get().settingsTab
+    // Codex only supports 'skills' and 'mcp' tabs
+    const needsTabSwitch = provider === 'codex' && (currentTab === 'agents' || currentTab === 'plugins')
+    set({
+      settingsProvider: provider,
+      ...(needsTabSwitch ? { settingsTab: 'skills' } : {}),
+    })
+  },
   setSettingsTab: (tab) => set({ settingsTab: tab }),
 
   // Worktree management

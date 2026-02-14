@@ -107,7 +107,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const removeMention = useChatStore((s) => s.removeMention)
     const agents = useActiveSession((s) => s.agents)
     const permissionMode = useActiveSession((s) => s.permissionMode)
-    const commandPopup = useActiveSession((s) => s.slashCommandOutput?.mode === 'popup' ? s.slashCommandOutput : null)
+    const commandPopup = useActiveSession((s) =>
+      s.slashCommandOutput?.mode === 'popup' ? s.slashCommandOutput : null
+    )
     const dismissCommandPopup = useChatStore((s) => s.dismissSlashCommandOutput)
 
     const [slashIndex, setSlashIndex] = useState(-1)
@@ -166,12 +168,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       { name: 'compact', description: 'Compact thread context', argumentHint: '', isSkill: false },
     ]), [])
 
-    const activeSlashCommands = preferredProvider === 'codex' ? codexSlashCommands : slashCommands
+    const activeSlashCommands = activeProviderForResources === 'codex' ? codexSlashCommands : slashCommands
 
     // Filter slash commands based on current input
     const HIDDEN_COMMANDS = new Set(['keybindings-help', 'debug'])
     const matchingCommands = useMemo(() => {
-      if (preferredProvider === 'codex') {
+      if (activeProviderForResources === 'codex') {
         if (!text.startsWith('/')) return []
         const query = text.slice(1).toLowerCase()
         return activeSlashCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(query))
@@ -181,7 +183,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       return activeSlashCommands.filter(
         (cmd) => cmd.name.toLowerCase().startsWith(query) && !HIDDEN_COMMANDS.has(cmd.name)
       )
-    }, [preferredProvider, text, activeSlashCommands])
+    }, [activeProviderForResources, text, activeSlashCommands])
     matchingCommandsRef.current = matchingCommands
     slashDismissedRef.current = slashDismissed
 
@@ -472,7 +474,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     // --- TipTap editor ---
     const placeholderText = mentions.length > 0
       ? 'Add instructions...'
-      : preferredProvider === 'codex'
+      : activeProviderForResources === 'codex'
         ? 'Ask Codex...'
         : permissionMode === 'plan'
         ? 'Plan mode — describe your intent...'
@@ -625,10 +627,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       : null
 
     useEffect(() => {
-      if (preferredProvider !== 'codex') return
+      if (activeProviderForResources !== 'codex') return
       if (codexModelsLoading || codexModels.length > 0) return
       void refreshCodexModels()
-    }, [preferredProvider, codexModelsLoading, codexModels.length, refreshCodexModels])
+    }, [activeProviderForResources, codexModelsLoading, codexModels.length, refreshCodexModels])
 
     if (compact) {
       return (
@@ -645,7 +647,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             }
           }}
           onKeyDown={handleKeyDownCore}
-          placeholder={preferredProvider === 'codex'
+          placeholder={activeProviderForResources === 'codex'
             ? 'Ask Codex...'
             : permissionMode === 'plan'
               ? 'Plan mode — describe your intent...'
@@ -802,7 +804,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             </Button>
 
             {/* Provider / model selector */}
-            {preferredProvider === 'claude' ? (
+            {activeProviderForResources === 'claude' ? (
               <Popover open={modelOpen} onOpenChange={setModelOpen}>
                 <PopoverTrigger asChild>
                   <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">

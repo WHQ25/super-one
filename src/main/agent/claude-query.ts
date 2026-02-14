@@ -11,6 +11,7 @@ export interface SessionQueryOptions {
   trackPlanFile?: (filePath: string) => void
   resume?: string
   abortController?: AbortController
+  additionalDirectories?: string[]
 }
 
 export interface SessionQueryHandle {
@@ -44,6 +45,7 @@ export function createSessionQuery(
       settingSources: ['user', 'project', 'local'],
       resume: options.resume,
       abortController: options.abortController,
+      additionalDirectories: options.additionalDirectories,
     },
   })
 

@@ -3,7 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type SandboxMode } from '../shared/agent-types'
 
 const agentAPI = {
-  sendMessage: (projectPath: string, request: { content: string; model?: string; images?: { mimeType: string; base64: string; name: string }[] }) =>
+  sendMessage: (projectPath: string, request: { content: string; model?: string; images?: { mimeType: string; base64: string; name: string }[]; additionalDirs?: string[] }) =>
     ipcRenderer.invoke(AgentIpcChannels.SEND_MESSAGE, projectPath, request),
 
   interrupt: (projectPath: string) =>
@@ -50,6 +50,12 @@ const agentAPI = {
 
   findLineNumber: (projectPath: string, filePath: string, text: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FIND_LINE_NUMBER, projectPath, filePath, text),
+
+  readProjectAdditionalDirs: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, projectPath) as Promise<string[]>,
+
+  writeProjectAdditionalDirs: (projectPath: string, dirs: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.WRITE_PROJECT_ADDITIONAL_DIRS, projectPath, dirs),
 
   onAgentEvent: (callback: (event: unknown) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: unknown): void => {

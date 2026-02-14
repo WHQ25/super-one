@@ -94,6 +94,11 @@ export interface SessionState {
 
   // Background sessions (streaming in background while user views another session)
   _bgSessions: Record<string, BgSessionState>
+
+  // Additional working directories
+  additionalDirs: string[]          // Session-level extra directories
+  projectAdditionalDirs: string[]   // Project-level directories (from .claude/settings.json)
+  showDirManager: boolean           // Directory manager panel visibility
 }
 
 export function createDefaultSessionState(): SessionState {
@@ -142,6 +147,9 @@ export function createDefaultSessionState(): SessionState {
     hasPendingInteraction: false,
     isCompacting: false,
     _bgSessions: {},
+    additionalDirs: [],
+    projectAdditionalDirs: [],
+    showDirManager: false,
   }
 }
 
@@ -228,6 +236,11 @@ interface ChatStore {
   toggleHistory: () => void
   resumeSession: (sessionId: string) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
+
+  // Additional directories
+  addDir: (path: string, scope: 'session' | 'project') => void
+  removeDir: (path: string, scope: 'session' | 'project') => void
+  setShowDirManager: (show: boolean) => void
 }
 
 // --- Helper: get or create session state for a project ---
@@ -898,6 +911,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (!updatedSession.selectedModel && globalModels[0]) {
           updatedSession.selectedModel = globalModels[0].id
         }
+
+        // Load project-level additional directories
+        window.agent.readProjectAdditionalDirs(projectPath)
+          .then((dirs) => {
+            set((st) => updateSession(st, projectPath, () => ({ projectAdditionalDirs: dirs })))
+          })
+          .catch(() => { /* best-effort */ })
       }
 
       // On session_init, create session in DB
@@ -1200,10 +1220,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     _saveSessionState(get, activeProject)
+
+    // Merge project + session additional directories (deduplicated)
+    const mergedDirs = [...new Set([...session.projectAdditionalDirs, ...session.additionalDirs])]
+
     await window.agent.sendMessage(activeProject, {
       content: finalContent,
       model: selectedModel || undefined,
       images: attachments.length > 0 ? attachments : undefined,
+      additionalDirs: mergedDirs.length > 0 ? mergedDirs : undefined,
     })
   },
 
@@ -1684,6 +1709,40 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (savedWorktreePath) {
       useAppStore.getState().setActiveWorktree(activeProject, savedWorktreePath)
     }
+  },
+
+  addDir: (path, scope) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateSession(s, activeProject, (sess) => {
+      // Check for duplicates across both lists
+      if (sess.additionalDirs.includes(path) || sess.projectAdditionalDirs.includes(path)) return {}
+      if (scope === 'session') {
+        return { additionalDirs: [...sess.additionalDirs, path] }
+      }
+      const updated = [...sess.projectAdditionalDirs, path]
+      window.agent.writeProjectAdditionalDirs(activeProject, updated).catch(() => {})
+      return { projectAdditionalDirs: updated }
+    }))
+  },
+
+  removeDir: (path, scope) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateSession(s, activeProject, (sess) => {
+      if (scope === 'session') {
+        return { additionalDirs: sess.additionalDirs.filter((d) => d !== path) }
+      }
+      const updated = sess.projectAdditionalDirs.filter((d) => d !== path)
+      window.agent.writeProjectAdditionalDirs(activeProject, updated).catch(() => {})
+      return { projectAdditionalDirs: updated }
+    }))
+  },
+
+  setShowDirManager: (show) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateSession(s, activeProject, () => ({ showDirManager: show })))
   },
 }))
 

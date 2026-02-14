@@ -1,7 +1,7 @@
 import { execFileSync } from 'child_process'
 import { resolve } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
-import { ClaudeAgent, type ClaudeAgentConfig } from './claude-agent'
+import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, type ClaudeAgentConfig } from './claude-agent'
 import { AgentIpcChannels, type AgentEvent, type PermissionMode, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -157,6 +157,16 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.FIND_LINE_NUMBER, async (_event, projectPath: string, filePath: string, text: string) => {
       return this.getAgent(projectPath).findLineNumber(filePath, text)
+    })
+
+    // --- Additional directories ---
+
+    ipcMain.handle(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, (_event, projectPath: string) => {
+      return readProjectAdditionalDirs(projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.WRITE_PROJECT_ADDITIONAL_DIRS, (_event, projectPath: string, dirs: string[]) => {
+      writeProjectAdditionalDirs(projectPath, dirs)
     })
 
     // --- Plugins (session-scoped — need cwd) ---
@@ -464,6 +474,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_STATUS)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
     ipcMain.removeHandler(AgentIpcChannels.FIND_LINE_NUMBER)
+    ipcMain.removeHandler(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS)
+    ipcMain.removeHandler(AgentIpcChannels.WRITE_PROJECT_ADDITIONAL_DIRS)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ_FILE)

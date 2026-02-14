@@ -17,6 +17,7 @@ export const streamdownComponents: Record<string, ReturnType<typeof createStream
 }
 
 const TOKEN_ANIMATION_MIN_DURATION_MS = 300
+const TOKEN_ANIMATION_MAX_DURATION_MS = 5000
 
 /** Format token count: plain number if < 1k, otherwise k with 1 decimal. */
 export function formatTokens(n: number): string {
@@ -24,12 +25,13 @@ export function formatTokens(n: number): string {
   return String(n)
 }
 
-/** Duration for token animations, with a minimum to avoid abrupt jumps. */
+/** Duration for token animations, clamped to avoid excessively long ticking. */
 export function getTokenAnimationDurationMs(from: number, to: number): number {
   const delta = Math.abs(to - from)
   // < 1000: 100 tokens/s; >= 1000: 10 display-steps/s × 100 = 1000 tokens/s
   const rate = to >= 1000 ? 1000 : 100
-  return Math.max(TOKEN_ANIMATION_MIN_DURATION_MS, (delta / rate) * 1000)
+  const raw = (delta / rate) * 1000
+  return Math.min(TOKEN_ANIMATION_MAX_DURATION_MS, Math.max(TOKEN_ANIMATION_MIN_DURATION_MS, raw))
 }
 
 /** Animate a number ticking up: < 1k by 1 (100/s), >= 1k by 0.1k (10 updates/s). */

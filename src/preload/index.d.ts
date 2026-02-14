@@ -19,6 +19,8 @@ interface AgentAPI {
   getMcpServerStatus(projectPath: string): Promise<McpServerInfo[]>
   listDirectory(projectPath: string, relativePath: string): Promise<ListDirEntry[]>
   findLineNumber(projectPath: string, filePath: string, text: string): Promise<number | null>
+  readProjectAdditionalDirs(projectPath: string): Promise<string[]>
+  writeProjectAdditionalDirs(projectPath: string, dirs: string[]): Promise<void>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 

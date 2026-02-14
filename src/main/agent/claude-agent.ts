@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
@@ -10,6 +10,36 @@ import { discoverSkills, discoverProjectCommands, discoverProjectAgents } from '
 
 
 const DEFAULT_SANDBOX_INFO: SandboxInfo = { enabled: true, autoAllowBash: false }
+
+/** Read additionalDirectories from {cwd}/.claude/settings.json */
+export function readProjectAdditionalDirs(cwd: string): string[] {
+  try {
+    const settingsPath = join(cwd, '.claude', 'settings.json')
+    if (!existsSync(settingsPath)) return []
+    const data = JSON.parse(readFileSync(settingsPath, 'utf-8'))
+    if (Array.isArray(data.additionalDirectories)) {
+      return data.additionalDirectories.filter((d: unknown) => typeof d === 'string')
+    }
+    return []
+  } catch {
+    return []
+  }
+}
+
+/** Write additionalDirectories to {cwd}/.claude/settings.json (merges with existing data) */
+export function writeProjectAdditionalDirs(cwd: string, dirs: string[]): void {
+  const settingsPath = join(cwd, '.claude', 'settings.json')
+  let data: Record<string, unknown> = {}
+  try {
+    if (existsSync(settingsPath)) {
+      data = JSON.parse(readFileSync(settingsPath, 'utf-8'))
+    }
+  } catch { /* start fresh */ }
+  data.additionalDirectories = dirs
+
+  mkdirSync(join(cwd, '.claude'), { recursive: true })
+  writeFileSync(settingsPath, JSON.stringify(data, null, 2))
+}
 
 const EXCLUDED_DIRS = new Set(['.', 'node_modules', 'dist', 'build', '__pycache__'])
 
@@ -38,6 +68,7 @@ export class ClaudeAgent {
   private ready = false
   private currentPermissionMode: PermissionMode = 'default'
   private currentSandboxInfo: SandboxInfo = DEFAULT_SANDBOX_INFO
+  private additionalDirs: string[] = []
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
   private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
@@ -60,6 +91,14 @@ export class ClaudeAgent {
   private createSession(resumeSessionId?: string): void {
     if (this.bridge) return
 
+    // On first creation, read project-level additionalDirectories from settings.json
+    if (this.additionalDirs.length === 0) {
+      const projectDirs = readProjectAdditionalDirs(this.config!.cwd)
+      if (projectDirs.length > 0) {
+        this.additionalDirs = projectDirs
+      }
+    }
+
     this.bridge = new MessageBridge()
     this.sessionAbort = new AbortController()
     const { canUseTool, trackPlanFile } = createCanUseTool(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, (e) => this.emit(e))
@@ -75,6 +114,7 @@ export class ClaudeAgent {
         trackPlanFile,
         resume: resumeSessionId,
         abortController: this.sessionAbort,
+        additionalDirectories: this.additionalDirs.length > 0 ? this.additionalDirs : undefined,
       },
       (e) => this.emit(e),
       () => this.currentMessageId,
@@ -109,6 +149,18 @@ export class ClaudeAgent {
   async sendMessage(request: SendMessageRequest): Promise<void> {
     if (!this.config || !this.onEvent) {
       throw new Error('ClaudeAgent not initialized')
+    }
+
+    // If additionalDirs changed, refresh session to apply new directories
+    if (request.additionalDirs) {
+      const sorted = [...request.additionalDirs].sort()
+      const current = [...this.additionalDirs].sort()
+      if (JSON.stringify(sorted) !== JSON.stringify(current)) {
+        const prevSessionId = this.sessionId
+        await this.resetSession()
+        this.additionalDirs = request.additionalDirs
+        this.createSession(prevSessionId || undefined)
+      }
     }
 
     this.createSession()

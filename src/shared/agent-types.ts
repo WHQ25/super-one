@@ -370,6 +370,7 @@ export interface SendMessageRequest {
   content: string
   model?: string
   images?: ImageAttachment[]
+  additionalDirs?: string[]
 }
 
 // --- Model selection ---
@@ -772,4 +773,8 @@ export const AgentIpcChannels = {
   SESSIONS_DELETE: 'sessions:delete',
   SESSIONS_PIN: 'sessions:pin',
   SESSIONS_LIST_PINNED: 'sessions:list-pinned',
+
+  // Additional directories
+  READ_PROJECT_ADDITIONAL_DIRS: 'agent:read-project-additional-dirs',
+  WRITE_PROJECT_ADDITIONAL_DIRS: 'agent:write-project-additional-dirs',
 } as const

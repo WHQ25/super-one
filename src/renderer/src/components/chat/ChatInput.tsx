@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ArrowUp, Square, ChevronDown, Paperclip, X, Loader2, Check } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, Paperclip, X, Loader2, Check, FolderPlus, Folder } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
@@ -111,6 +111,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       s.slashCommandOutput?.mode === 'popup' ? s.slashCommandOutput : null
     )
     const dismissCommandPopup = useChatStore((s) => s.dismissSlashCommandOutput)
+    const showDirManager = useActiveSession((s) => s.showDirManager)
+    const setShowDirManager = useChatStore((s) => s.setShowDirManager)
+    const additionalDirs = useActiveSession((s) => s.additionalDirs)
+    const projectAdditionalDirs = useActiveSession((s) => s.projectAdditionalDirs)
+    const addDir = useChatStore((s) => s.addDir)
+    const removeDir = useChatStore((s) => s.removeDir)
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const [slashDismissed, setSlashDismissed] = useState(false)
@@ -191,6 +197,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const selectSlashCommand = useCallback(
       (name: string) => {
+        // Special handling for add-dir: show directory manager instead of inserting text
+        if (name === 'add-dir') {
+          const ed = editorRef.current
+          if (ed) {
+            ed.chain().focus().setContent('').run()
+          }
+          setText('')
+          setSlashIndex(-1)
+          setShowDirManager(true)
+          return
+        }
         const ed = editorRef.current
         if (ed) {
           ed.chain().focus().setContent(`/${name} `).run()
@@ -200,7 +217,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         setText(`/${name} `)
         setSlashIndex(-1)
       },
-      []
+      [setShowDirManager]
     )
 
     const handleMentionSelect = useCallback(
@@ -280,7 +297,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         const isComposing = 'nativeEvent' in e ? e.nativeEvent.isComposing : e.isComposing
         if (isComposing) return false
 
-        // Escape → dismiss command output popup
+        // Escape → dismiss dir manager or command output popup
+        if (e.key === 'Escape' && showDirManager) {
+          setShowDirManager(false)
+          return true
+        }
         if (e.key === 'Escape' && commandPopup) {
           dismissCommandPopup()
           return true
@@ -371,7 +392,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         return false
       },
-      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup]
+      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, showDirManager, setShowDirManager]
     )
 
     // Keep ref in sync for ProseMirror's handleKeyDown (avoids stale closure)
@@ -736,6 +757,88 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-3 py-2">
               <pre className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{commandPopup.content}</pre>
+            </div>
+          </div>
+        )}
+
+        {/* Directory manager panel */}
+        {showDirManager && (
+          <div className={cn(
+            'absolute bottom-full left-0 right-0 z-10 flex max-h-80 flex-col overflow-hidden border border-border bg-card',
+            isCoding ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg'
+          )}>
+            <div className="flex items-center justify-between px-3 py-1.5">
+              <span className="text-[11px] font-medium text-muted-foreground">/add-dir</span>
+              <button
+                onMouseDown={(e) => { e.preventDefault(); setShowDirManager(false) }}
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-3 py-2 space-y-3">
+              {/* Project-level directories */}
+              <div>
+                <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Project</div>
+                {projectAdditionalDirs.length === 0 ? (
+                  <div className="text-xs text-muted-foreground/60 italic">No project directories</div>
+                ) : (
+                  <div className="space-y-0.5">
+                    {projectAdditionalDirs.map((dir) => (
+                      <div key={dir} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <Folder className="size-3 shrink-0 text-muted-foreground" />
+                          <span className="truncate text-foreground">{dir}</span>
+                        </span>
+                        <button
+                          onMouseDown={(e) => { e.preventDefault(); removeDir(dir, 'project') }}
+                          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          <X className="size-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Session-level directories */}
+              <div>
+                <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Session</div>
+                {additionalDirs.length === 0 ? (
+                  <div className="text-xs text-muted-foreground/60 italic">No session directories</div>
+                ) : (
+                  <div className="space-y-0.5">
+                    {additionalDirs.map((dir) => (
+                      <div key={dir} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <Folder className="size-3 shrink-0 text-muted-foreground" />
+                          <span className="truncate text-foreground">{dir}</span>
+                        </span>
+                        <button
+                          onMouseDown={(e) => { e.preventDefault(); removeDir(dir, 'session') }}
+                          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          <X className="size-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* Add Directory button */}
+            <div className="border-t border-border px-3 py-2">
+              <button
+                onMouseDown={async (e) => {
+                  e.preventDefault()
+                  const folder = await window.app.selectFolder()
+                  if (folder) addDir(folder, 'session')
+                }}
+                className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+              >
+                <FolderPlus className="size-3.5" />
+                Add Directory
+              </button>
             </div>
           </div>
         )}

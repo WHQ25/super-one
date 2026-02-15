@@ -96,19 +96,10 @@ export function AppSidebar() {
   // Load pinned sessions on mount
   useEffect(() => { refreshPinned() }, [refreshPinned])
 
-  // Auto-expand current project and refresh session list when a new session starts streaming
   const currentStatus = currentFolder ? projectSessions[currentFolder]?.status : undefined
   const currentSessionId = currentFolder ? projectSessions[currentFolder]?.session?.sessionId : undefined
   useEffect(() => {
     if (!currentFolder) return
-    // Expand the folder if not already expanded
-    setExpandedFolders((prev) => {
-      if (prev.has(currentFolder)) return prev
-      const next = new Set(prev)
-      next.add(currentFolder)
-      return next
-    })
-    // Refresh session list for the current folder (covers initial load, new session, and resume)
     window.app.listSessionsForFolder(currentFolder).then((sessions) => {
       setFolderSessions((prev) => ({ ...prev, [currentFolder]: sessions }))
     })

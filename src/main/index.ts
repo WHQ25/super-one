@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join, dirname, basename, resolve } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { homedir } from 'os'
-import { execFile, spawn } from 'child_process'
+import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { AgentService } from './agent/agent-service'
@@ -115,8 +115,11 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.OPEN_FOLDER, async (_event, folderPath: string) => {
     if (!existsSync(folderPath)) return false
+    if (!existsSync(join(folderPath, '.git'))) {
+      execFileSync('git', ['init'], { cwd: folderPath })
+    }
     addRecentFolder(folderPath)
-    await agentService.openFolder(folderPath) // Additive: won't dispose existing agents
+    await agentService.openFolder(folderPath)
     return true
   })
 

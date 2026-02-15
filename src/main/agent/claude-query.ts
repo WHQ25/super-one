@@ -167,7 +167,6 @@ async function iterateMessages(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const sys = msg as any
           if (sys.subtype === 'init') {
-            console.log('[Fork Debug] system init received:', { session_id: sys.session_id })
             if (sys.session_id) onSessionId?.(sys.session_id)
           } else if (sys.subtype === 'hook_started') {
             emit({

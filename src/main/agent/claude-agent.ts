@@ -128,7 +128,6 @@ export class ClaudeAgent {
       () => this.currentStartTime,
       () => this.interrupted,
       (id) => {
-        console.log('[Fork Debug] onSessionId:', { id })
         const isNew = this.sessionId !== id
         this.sessionId = id
         if (isNew) this.emitSessionInit()

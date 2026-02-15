@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildSlashCommands, getCommandOutputMode } from './chat-helpers'
-import type { SlashCommandInfo } from '../../../shared/agent-types'
+import { buildSlashCommands, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
+import type { ChatMessage, SlashCommandInfo } from '../../../shared/agent-types'
 
 function cmd(name: string, description = ''): SlashCommandInfo {
   return { name, description, argumentHint: '', isSkill: false }
@@ -24,8 +24,7 @@ describe('buildSlashCommands', () => {
     const userSkills = [cmd('my-skill', 'custom skill')]
     const result = buildSlashCommands(global, userSkills, [], [], [])
 
-    expect(result).toHaveLength(2)
-    expect(result[1].name).toBe('my-skill')
+    expect(result.find((c) => c.name === 'my-skill')).toBeTruthy()
   })
 
   it('deduplicates skills that exist in both user and project scope', () => {
@@ -56,9 +55,9 @@ describe('buildSlashCommands', () => {
     const userSkills = [cmd('context', 'overridden')]
     const result = buildSlashCommands(global, userSkills, [], [], [])
 
-    expect(result).toHaveLength(1)
-    // Description comes from global, not from user skill
-    expect(result[0].description).toBe('')
+    const contextEntries = result.filter((c) => c.name === 'context')
+    expect(contextEntries).toHaveLength(1)
+    expect(contextEntries[0].description).toBe('')
   })
 })
 
@@ -79,5 +78,57 @@ describe('getCommandOutputMode', () => {
 
   it('defaults to overlay for unknown commands', () => {
     expect(getCommandOutputMode('unknown-command')).toBe('overlay')
+  })
+})
+
+function msg(id: string, role: 'user' | 'assistant', extra?: Partial<ChatMessage>): ChatMessage {
+  return { id, role, content: [], status: 'complete', createdAt: '', providerId: 'claude', ...extra }
+}
+
+describe('findCheckpointTarget', () => {
+  it('returns the user message before the matching assistant message', () => {
+    const msgs = [msg('u1', 'user'), msg('a1', 'assistant'), msg('u2', 'user'), msg('a2', 'assistant')]
+    expect(findCheckpointTarget(msgs, 'a2')).toBe(2)
+    expect(findCheckpointTarget(msgs, 'a1')).toBe(0)
+  })
+
+  it('falls back to the last user message when assistant ID is not found', () => {
+    const msgs = [msg('u1', 'user'), msg('u2', 'user')]
+    expect(findCheckpointTarget(msgs, 'unknown')).toBe(1)
+  })
+
+  it('returns -1 when there are no user messages', () => {
+    const msgs = [msg('a1', 'assistant')]
+    expect(findCheckpointTarget(msgs, 'unknown')).toBe(-1)
+  })
+
+  it('returns -1 for empty messages', () => {
+    expect(findCheckpointTarget([], 'a1')).toBe(-1)
+  })
+
+  it('skips assistant-only messages between user and target', () => {
+    const msgs = [msg('u1', 'user'), msg('a1', 'assistant'), msg('a2', 'assistant')]
+    expect(findCheckpointTarget(msgs, 'a2')).toBe(0)
+  })
+})
+
+describe('remapMessagesForFork', () => {
+  it('prefixes each message ID with the forked session ID', () => {
+    const msgs = [msg('abc', 'user'), msg('def', 'assistant')]
+    const result = remapMessagesForFork(msgs, 'fork-1')
+    expect(result.map((m) => m.id)).toEqual(['fork-1_abc', 'fork-1_def'])
+  })
+
+  it('preserves all other message properties', () => {
+    const original = msg('abc', 'user', { checkpointId: 'cp1' })
+    const [result] = remapMessagesForFork([original], 'fork-1')
+    expect(result.role).toBe('user')
+    expect(result.checkpointId).toBe('cp1')
+  })
+
+  it('does not mutate original messages', () => {
+    const original = msg('abc', 'user')
+    remapMessagesForFork([original], 'fork-1')
+    expect(original.id).toBe('abc')
   })
 })

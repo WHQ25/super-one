@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
-import { buildSlashCommands, getCommandOutputMode } from './chat-helpers'
+import { buildSlashCommands, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
@@ -565,29 +565,7 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
 
     case 'checkpoint_captured': {
       const msgs = [...session.messages]
-      let targetIdx = -1
-      // Find the assistant message that event.messageId refers to, then look back for the user message
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].id === event.messageId) {
-          // Search backward from this assistant message for the nearest user message
-          for (let j = i - 1; j >= 0; j--) {
-            if (msgs[j].role === 'user') {
-              targetIdx = j
-              break
-            }
-          }
-          break
-        }
-      }
-      // Fallback: if assistant message not found yet, use the last user message
-      if (targetIdx === -1) {
-        for (let i = msgs.length - 1; i >= 0; i--) {
-          if (msgs[i].role === 'user') {
-            targetIdx = i
-            break
-          }
-        }
-      }
+      const targetIdx = findCheckpointTarget(msgs, event.messageId)
       if (targetIdx === -1) return {}
       if (msgs[targetIdx].checkpointId) return {}
       msgs[targetIdx] = { ...msgs[targetIdx], checkpointId: event.checkpointId, resumePointId: event.resumePointId }
@@ -1376,7 +1354,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const truncated = idx >= 0 ? sess.messages.slice(0, idx) : sess.messages
         return {
           messages: result.forkedSessionId
-            ? truncated.map((m) => ({ ...m, id: `${result.forkedSessionId}_${m.id}` }))
+            ? remapMessagesForFork(truncated, result.forkedSessionId)
             : truncated,
           session: null,
           totalCostUsd: 0,
@@ -1404,7 +1382,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const truncated = idx >= 0 ? sess.messages.slice(0, idx) : sess.messages
         return {
           messages: result.forkedSessionId
-            ? truncated.map((m) => ({ ...m, id: `${result.forkedSessionId}_${m.id}` }))
+            ? remapMessagesForFork(truncated, result.forkedSessionId)
             : truncated,
           session: null,
           totalCostUsd: 0,

@@ -1,4 +1,4 @@
-import type { SlashCommandInfo } from '../../../shared/agent-types'
+import type { ChatMessage, SlashCommandInfo } from '../../../shared/agent-types'
 
 /** Merge global slash commands with user/project skills and commands, deduplicating by name. */
 export function buildSlashCommands(
@@ -23,6 +23,30 @@ export function buildSlashCommands(
     extra.push({ name: 'add-dir', description: 'Manage additional working directories', argumentHint: '', isSkill: false })
   }
   return [...tagged, ...extra]
+}
+
+/**
+ * Find the index of the user message that should receive a checkpoint.
+ * Returns -1 if no suitable user message is found.
+ */
+export function findCheckpointTarget(messages: ChatMessage[], assistantMessageId: string): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].id === assistantMessageId) {
+      for (let j = i - 1; j >= 0; j--) {
+        if (messages[j].role === 'user') return j
+      }
+      break
+    }
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') return i
+  }
+  return -1
+}
+
+/** Remap message IDs for a forked session to avoid DB upsert conflicts. */
+export function remapMessagesForFork(messages: ChatMessage[], forkedSessionId: string): ChatMessage[] {
+  return messages.map((m) => ({ ...m, id: `${forkedSessionId}_${m.id}` }))
 }
 
 /** Commands that render as a lightweight popup near the input area. Everything else uses full overlay. */

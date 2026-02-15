@@ -8,6 +8,7 @@ import { AppSidebar } from '@/components/AppSidebar'
 import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
 import { SettingsLayout } from '@/components/SettingsLayout'
+import { UpdateNotification } from '@/components/UpdateNotification'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useTheme } from '@/hooks/useTheme'
@@ -20,6 +21,12 @@ function App(): React.JSX.Element {
   const theme = useTheme()
   const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, layoutMode, setLayoutMode } = useAppStore()
   const isFullscreen = useFullscreen()
+
+  useEffect(() => {
+    return window.app.onUpdateEvent((event) => {
+      useAppStore.getState().handleUpdateEvent(event)
+    })
+  }, [])
 
   // ⌘B keyboard shortcut to toggle sidebar
   useEffect(() => {
@@ -100,7 +107,8 @@ function App(): React.JSX.Element {
         </div>
         {view === 'startup' && <StartupPage />}
         {view === 'setup' && <SetupPage />}
-{view === 'settings' && <SettingsLayout />}
+        {view === 'settings' && <SettingsLayout />}
+        <UpdateNotification />
       </div>
     )
   }
@@ -211,6 +219,7 @@ function App(): React.JSX.Element {
           </>
         )}
       </div>
+      <UpdateNotification />
     </div>
   )
 }

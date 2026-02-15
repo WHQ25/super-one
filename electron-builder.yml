@@ -1,0 +1,35 @@
+appId: com.superone.app
+productName: SuperOne
+directories:
+  output: dist
+
+files:
+  - out/**/*
+
+asarUnpack:
+  - "**/*.node"
+
+publish:
+  provider: github
+
+mac:
+  target:
+    - target: dmg
+      arch: [universal]
+    - target: zip
+      arch: [universal]
+  category: public.app-category.developer-tools
+  # hardenedRuntime: true
+  # entitlements: build/entitlements.mac.plist
+  # entitlementsInherit: build/entitlements.mac.plist
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+  category: Development

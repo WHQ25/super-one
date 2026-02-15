@@ -10,14 +10,20 @@ SuperOne is an meta desktop app built with Electron. It can be a IDE, it also pr
 
 ```bash
 bun run dev              # Start Electron app with hot reload
-bun run build            # Production build
+bun run build            # Production build (electron-vite only)
 bun run preview          # Preview production build
 bun run test             # Run all tests once
 bun run test:watch       # Run tests in watch mode
 bun run typecheck        # Full type check (main + renderer)
 bun run typecheck:node   # Type check main/preload only
 bun run typecheck:web    # Type check renderer only
+bun run build:app        # Full packaged build (electron-vite + electron-builder)
+bun run build:mac        # macOS package (DMG + ZIP)
+bun run build:win        # Windows package (NSIS)
+bun run build:linux      # Linux package (AppImage)
 ```
+
+To run a single test file: `bunx vitest run src/path/to/file.test.ts`
 
 ## Architecture
 
@@ -51,7 +57,7 @@ Navigation via `navigateTo()` action. The `main` view has two layout modes: `can
 
 Three stores with clear responsibilities:
 
-- **`useAppStore`** — App lifecycle, folder/project management, layout mode, sidebar state
+- **`useAppStore`** — App lifecycle, folder/project management, layout mode, sidebar state, auto-update status, worktree management
 - **`useChatStore`** — Multi-project chat sessions (`projectSessions: Record<path, SessionState>`), message streaming, permission handling, background sessions (`_bgSessions`)
 - **`useSettingsStore`** — Resource CRUD (agents, skills, MCP configs, plugins), lazy-loaded per settings view
 
@@ -62,7 +68,9 @@ Use `useActiveSession<T>(selector)` hook to read the active project's session st
 Two namespaces exposed via preload:
 
 - **`window.agent`** — AI agent interaction, scoped by `projectPath`: `sendMessage()`, `interrupt()`, `respondToPermission()`, `resetSession()`, `parkSession()`, `activateSession()`, `onAgentEvent()`
-- **`window.app`** — Global operations: folder management, git ops, session DB (CRUD), resource discovery, Claude setup/install, window state
+- **`window.app`** — Global operations: folder management, git ops (including worktrees), session DB (CRUD), resource discovery, Claude setup/install, auto-update, Codex integration, plugin/skill/MCP/agent management, window state
+
+All IPC channels are defined as constants in `AgentIpcChannels` (`src/shared/agent-types.ts`), grouped by namespace prefix (`app:`, `agent:`, `codex:`, `plugins:`, `skills:`, `mcp:`, `sessions:`, `updater:`).
 
 ### Component Structure
 
@@ -92,6 +100,11 @@ src/renderer/src/components/
 | `streamdown` | Markdown rendering in chat messages |
 | `motion` | Animations (import from `motion/react`) |
 | `better-sqlite3` | Session & message persistence (WAL mode) |
+| `electron-updater` | Auto-update via GitHub Releases |
+| `electron-builder` | App packaging (macOS/Windows/Linux) |
+| `@openai/codex-sdk` | Codex AI integration (experimental) |
+| `electron-log` | Structured logging (`src/main/logger.ts`) |
+| `diff` | Diff computation for file rewind |
 
 ### Persistence (SQLite)
 
@@ -109,7 +122,47 @@ Tables: `projects`, `sessions`, `chat_messages`. Messages stored as JSON blobs.
 - `AgentEvent` (20+ event union: message_start, content_delta, permission_request, etc.)
 - `PermissionRequest`, `AskUserQuestionRequest`, `PlanApprovalRequest`
 - `TodoItem`, `ModelOption`, `SlashCommandInfo`, `AgentInfo`
+- `UpdateEvent` (checking | available | not-available | download-progress | downloaded | error)
 - `PermissionMode`: `default` → `acceptEdits` → `plan` → `bypassPermissions` (cycles)
+- Codex types: `CodexThreadItem`, `CodexTurnInfo`, `CodexRunResult`, `CodexAuthStatus`
+
+### Auto-Update
+
+`src/main/updater.ts` wraps `electron-updater` with an IPC push pattern:
+
+- Guarded by `is.dev` — completely skipped in development
+- Events flow: `autoUpdater` → `webContents.send(UPDATER_EVENT)` → `useAppStore.handleUpdateEvent()` → `<UpdateNotification />`
+- Checks on startup + every 4 hours; `autoInstallOnAppQuit` ensures updates apply even if dismissed
+- Renderer calls `window.app.installUpdate()` to trigger `quitAndInstall()`
+
+### Codex Integration (Experimental)
+
+`src/main/codex/codex-experiment-service.ts` provides an alternative AI provider alongside Claude:
+
+- Scoped per project like Claude sessions
+- Supports `run`, `review`, `compact`, `steer`, `interrupt`
+- Auth modes: `auto`, `chatgpt`, `apiKey` — managed via `codex:get-auth-status` / `codex:set-auth`
+- Permission presets: `default` (sandboxed) and `full-access`
+- Thread items stream via `codex_item_delta` agent events
+
+### Build & Packaging
+
+Configured via `electron-builder.yml` (electron-vite natively supports this file):
+
+- Output: `dist/` directory
+- `asarUnpack: "**/*.node"` — required for `better-sqlite3` native module
+- `publish.provider: github` — electron-updater reads from GitHub Releases
+- macOS: DMG + ZIP (universal). ZIP target required for auto-update. Code signing env vars commented out for now
+- Windows: NSIS (x64 + arm64)
+- Linux: AppImage (x64 + arm64)
+
+### CI/CD
+
+`.github/workflows/release.yml` — triggered on `push tags: v*`:
+
+- Three parallel jobs: macOS / Windows / Linux
+- Flow: checkout → setup-bun → `bun install --frozen-lockfile` → `bun run build:{platform} -- --publish always`
+- Release: `git tag v0.2.0 && git push origin v0.2.0`
 
 ## Styling
 

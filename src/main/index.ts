@@ -4,6 +4,7 @@ import { existsSync, mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
+import log from './logger'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { AgentService } from './agent/agent-service'
 import {
@@ -20,6 +21,7 @@ import {
   type ConnectResult,
   type StartupData,
 } from '../shared/agent-types'
+import { initUpdater, installUpdate, checkForUpdates } from './updater'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
 import { getDb, closeDb, getCachedResources, setCachedResources } from './database'
@@ -523,6 +525,18 @@ function registerIpcHandlers(): void {
     })
   })
 
+  ipcMain.handle(AgentIpcChannels.UPDATER_INSTALL, () => {
+    installUpdate()
+  })
+
+  ipcMain.handle(AgentIpcChannels.UPDATER_CHECK, () => {
+    checkForUpdates()
+  })
+
+  ipcMain.handle(AgentIpcChannels.GET_LOG_PATH, () => {
+    return log.transports.file.getFile().path
+  })
+
   ipcMain.handle('get-fullscreen', () => getMainWindow().isFullScreen())
 
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
@@ -549,11 +563,11 @@ function registerIpcHandlers(): void {
     const userSkills = discoverUserSkills()
     const userCommands = discoverUserCommands()
 
-    console.log('[CONNECT_CLAUDE] Models:', JSON.stringify(modelInfos, null, 2))
-    console.log('[CONNECT_CLAUDE] Account:', JSON.stringify(accountInfo, null, 2))
-    console.log('[CONNECT_CLAUDE] Commands:', JSON.stringify(commands, null, 2))
-    console.log('[CONNECT_CLAUDE] User Skills:', JSON.stringify(userSkills, null, 2))
-    console.log('[CONNECT_CLAUDE] User Commands:', JSON.stringify(userCommands, null, 2))
+    log.info('[CONNECT_CLAUDE] Models:', JSON.stringify(modelInfos, null, 2))
+    log.info('[CONNECT_CLAUDE] Account:', JSON.stringify(accountInfo, null, 2))
+    log.info('[CONNECT_CLAUDE] Commands:', JSON.stringify(commands, null, 2))
+    log.info('[CONNECT_CLAUDE] User Skills:', JSON.stringify(userSkills, null, 2))
+    log.info('[CONNECT_CLAUDE] User Commands:', JSON.stringify(userCommands, null, 2))
 
     const models = modelInfos.map(mapModelInfo)
     const account = {
@@ -581,6 +595,7 @@ app.whenReady().then(() => {
   getDb() // Initialize database
   registerIpcHandlers()
   createWindow()
+  initUpdater(mainWindow!)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, GitInfo, GitResult, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, GitInfo, GitResult, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -49,6 +49,9 @@ interface AppAPI {
   codexRespondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string): Promise<boolean>
   codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>
   codexSetAuth(projectPath: string, request: CodexSetAuthRequest): Promise<CodexAuthStatus>
+  installUpdate(): Promise<void>
+  checkForUpdates(): Promise<void>
+  onUpdateEvent(callback: (event: UpdateEvent) => void): () => void
   onSetupEvent(callback: (event: SetupEvent) => void): () => void
 
   // Plugins
@@ -91,6 +94,9 @@ interface AppAPI {
   // MCP library
   listMcpLibrary(): Promise<McpLibraryEntry[]>
   deleteMcpLibraryEntry(name: string): Promise<void>
+
+  // Logging
+  getLogPath(): Promise<string>
 
   // Window state
   getFullscreen(): Promise<boolean>

@@ -669,6 +669,16 @@ export interface CodexCompactRequest {
   messageId?: string
 }
 
+// --- Update events ---
+
+export type UpdateEvent =
+  | { type: 'checking' }
+  | { type: 'available'; version: string; releaseNotes?: string }
+  | { type: 'not-available' }
+  | { type: 'download-progress'; percent: number }
+  | { type: 'downloaded'; version: string }
+  | { type: 'error'; message: string }
+
 // --- IPC channel constants ---
 
 export const AgentIpcChannels = {
@@ -785,4 +795,12 @@ export const AgentIpcChannels = {
   // Additional directories
   READ_PROJECT_ADDITIONAL_DIRS: 'agent:read-project-additional-dirs',
   WRITE_PROJECT_ADDITIONAL_DIRS: 'agent:write-project-additional-dirs',
+
+  // Logging
+  GET_LOG_PATH: 'app:get-log-path',
+
+  // Updater
+  UPDATER_EVENT: 'updater:event',
+  UPDATER_INSTALL: 'updater:install',
+  UPDATER_CHECK: 'updater:check',
 } as const

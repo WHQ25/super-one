@@ -1,8 +1,9 @@
 import { create } from 'zustand'
-import type { RecentFolder, SetupEvent, SettingsProvider } from '../../../shared/agent-types'
+import type { RecentFolder, SetupEvent, SettingsProvider, UpdateEvent } from '../../../shared/agent-types'
 
 type AppView = 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
+type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
 type SettingsTab = 'agents' | 'skills' | 'mcp' | 'plugins'
 export type LayoutMode = 'canvas' | 'coding'
 
@@ -16,6 +17,11 @@ interface AppState {
   currentFolder: string | null
   tmpFolder: string | null
   recentFolders: RecentFolder[]
+
+  // Update
+  updateStatus: UpdateStatus
+  updateVersion: string | null
+  updateProgress: number
 
   // Per-project worktree state
   _worktrees: Record<string, WorktreeState>
@@ -48,6 +54,11 @@ interface AppState {
   continueToMain: () => Promise<void>
   navigateTo: (view: AppView) => void
   setSettingsTab: (tab: SettingsTab) => void
+
+  // Update
+  handleUpdateEvent: (event: UpdateEvent) => void
+  installUpdate: () => void
+  dismissUpdate: () => void
 
   // Multi-session: switch to a project that already has an agent
   switchToProject: (folderPath: string) => void
@@ -91,6 +102,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   tmpFolder: null,
   recentFolders: [],
   _worktrees: {},
+  updateStatus: 'idle',
+  updateVersion: null,
+  updateProgress: 0,
   installStatus: 'idle',
   installOutput: '',
   settingsProvider: 'claude',
@@ -146,6 +160,37 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { useChatStore } = await import('./chat')
     useChatStore.getState().ensureSession(tmpPath)
     useChatStore.getState().switchProject(tmpPath)
+  },
+
+  handleUpdateEvent: (event: UpdateEvent) => {
+    switch (event.type) {
+      case 'checking':
+        set({ updateStatus: 'checking' })
+        break
+      case 'available':
+        set({ updateStatus: 'available', updateVersion: event.version })
+        break
+      case 'not-available':
+        set({ updateStatus: 'idle' })
+        break
+      case 'download-progress':
+        set({ updateStatus: 'downloading', updateProgress: event.percent })
+        break
+      case 'downloaded':
+        set({ updateStatus: 'ready', updateVersion: event.version })
+        break
+      case 'error':
+        set({ updateStatus: 'error' })
+        break
+    }
+  },
+
+  installUpdate: () => {
+    window.app.installUpdate()
+  },
+
+  dismissUpdate: () => {
+    set({ updateStatus: 'idle' })
   },
 
   switchToProject: (folderPath: string) => {

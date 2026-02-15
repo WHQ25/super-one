@@ -206,6 +206,22 @@ const appAPI = {
   ) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_SET_AUTH, projectPath, request),
 
+  installUpdate: () =>
+    ipcRenderer.invoke(AgentIpcChannels.UPDATER_INSTALL),
+
+  checkForUpdates: () =>
+    ipcRenderer.invoke(AgentIpcChannels.UPDATER_CHECK),
+
+  onUpdateEvent: (callback: (event: unknown) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, event: unknown): void => {
+      callback(event)
+    }
+    ipcRenderer.on(AgentIpcChannels.UPDATER_EVENT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.UPDATER_EVENT, handler)
+    }
+  },
+
   onSetupEvent: (callback: (event: unknown) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: unknown): void => {
       callback(event)
@@ -297,6 +313,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MCP_LIST_LIBRARY),
   deleteMcpLibraryEntry: (name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY, name),
+
+  // Logging
+  getLogPath: () =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_LOG_PATH) as Promise<string>,
 
   // Window state
   getFullscreen: () =>

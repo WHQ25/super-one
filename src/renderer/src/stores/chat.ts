@@ -191,6 +191,9 @@ interface ChatStore {
   resetSession: () => Promise<void>
   resetSessionForWorktreeSwitch: (projectPath: string) => void
   rewindFiles: (userMessageId: string) => Promise<RewindFilesResult>
+  rewindCodeAndChat: (userMessageId: string) => Promise<RewindFilesResult>
+  rewindConversation: (userMessageId: string) => Promise<RewindFilesResult>
+  previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
 
   // Draft text
   setDraftText: (text: string) => void
@@ -559,6 +562,37 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
 
     case 'status_indicator':
       return { isCompacting: event.indicator === 'compacting' }
+
+    case 'checkpoint_captured': {
+      const msgs = [...session.messages]
+      let targetIdx = -1
+      // Find the assistant message that event.messageId refers to, then look back for the user message
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].id === event.messageId) {
+          // Search backward from this assistant message for the nearest user message
+          for (let j = i - 1; j >= 0; j--) {
+            if (msgs[j].role === 'user') {
+              targetIdx = j
+              break
+            }
+          }
+          break
+        }
+      }
+      // Fallback: if assistant message not found yet, use the last user message
+      if (targetIdx === -1) {
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === 'user') {
+            targetIdx = i
+            break
+          }
+        }
+      }
+      if (targetIdx === -1) return {}
+      if (msgs[targetIdx].checkpointId) return {}
+      msgs[targetIdx] = { ...msgs[targetIdx], checkpointId: event.checkpointId, resumePointId: event.resumePointId }
+      return { messages: msgs }
+    }
 
     case 'hook_started':
     case 'hook_complete':
@@ -1317,7 +1351,78 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   rewindFiles: async (userMessageId: string) => {
     const { activeProject } = get()
     if (!activeProject) throw new Error('No active project')
-    return window.agent.rewindFiles(activeProject, userMessageId)
+    const result = await window.agent.rewindFiles(activeProject, userMessageId)
+    if (result.canRewind !== false) {
+      // Mark the user message as rewound
+      set((s) => updateSession(s, activeProject, (sess) => ({
+        messages: sess.messages.map((m) =>
+          m.checkpointId === userMessageId ? { ...m, rewound: 'code' as const } : m
+        ),
+      })))
+    }
+    return result
+  },
+
+  rewindCodeAndChat: async (userMessageId: string) => {
+    const { activeProject } = get()
+    if (!activeProject) throw new Error('No active project')
+    const sess = getSession(get())
+    const msg = sess.messages.find((m) => m.checkpointId === userMessageId)
+    const resumePointId = msg?.resumePointId ?? ''
+    const result = await window.agent.rewindCodeAndChat(activeProject, userMessageId, resumePointId)
+    if (result.canRewind !== false) {
+      set((s) => updateSession(s, activeProject, (sess) => {
+        const idx = sess.messages.findIndex((m) => m.checkpointId === userMessageId)
+        const truncated = idx >= 0 ? sess.messages.slice(0, idx) : sess.messages
+        return {
+          messages: result.forkedSessionId
+            ? truncated.map((m) => ({ ...m, id: `${result.forkedSessionId}_${m.id}` }))
+            : truncated,
+          session: null,
+          totalCostUsd: 0,
+          contextTokens: 0,
+          _historySessionId: result.forkedSessionId ?? null,
+        }
+      }))
+      if (result.forkedSessionId) {
+        _saveSessionState(get, activeProject)
+      }
+    }
+    return result
+  },
+
+  rewindConversation: async (userMessageId: string) => {
+    const { activeProject } = get()
+    if (!activeProject) throw new Error('No active project')
+    const sess = getSession(get())
+    const msg = sess.messages.find((m) => m.checkpointId === userMessageId)
+    const resumePointId = msg?.resumePointId ?? ''
+    const result = await window.agent.rewindConversation(activeProject, userMessageId, resumePointId)
+    if (result.canRewind !== false) {
+      set((s) => updateSession(s, activeProject, (sess) => {
+        const idx = sess.messages.findIndex((m) => m.checkpointId === userMessageId)
+        const truncated = idx >= 0 ? sess.messages.slice(0, idx) : sess.messages
+        return {
+          messages: result.forkedSessionId
+            ? truncated.map((m) => ({ ...m, id: `${result.forkedSessionId}_${m.id}` }))
+            : truncated,
+          session: null,
+          totalCostUsd: 0,
+          contextTokens: 0,
+          _historySessionId: result.forkedSessionId ?? null,
+        }
+      }))
+      if (result.forkedSessionId) {
+        _saveSessionState(get, activeProject)
+      }
+    }
+    return result
+  },
+
+  previewRewind: async (checkpointId: string) => {
+    const { activeProject } = get()
+    if (!activeProject) throw new Error('No active project')
+    return window.agent.previewRewind(activeProject, checkpointId)
   },
 
   setDraftText: (text) => {

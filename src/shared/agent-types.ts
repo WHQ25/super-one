@@ -193,6 +193,9 @@ export interface ChatMessage {
   createdAt: string
   providerId: string
   metadata?: MessageMetadata
+  checkpointId?: string
+  resumePointId?: string
+  rewound?: 'code' | 'conversation' | 'code_and_chat'
 }
 
 // --- Permission request ---
@@ -358,6 +361,7 @@ export type AgentEventBase =
   | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number }
   | { type: 'codex_thread_started'; messageId: string; threadId: string }
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
+  | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
@@ -392,6 +396,7 @@ export interface RewindFilesResult {
   filesChanged?: string[]
   insertions?: number
   deletions?: number
+  forkedSessionId?: string
 }
 
 // --- Setup events ---
@@ -703,6 +708,9 @@ export const AgentIpcChannels = {
   RESPOND_PLAN_APPROVAL: 'agent:respond-plan-approval',
   RESET_SESSION: 'agent:reset-session',
   REWIND_FILES: 'agent:rewind-files',
+  REWIND_FILES_PREVIEW: 'agent:rewind-files-preview',
+  REWIND_CODE_AND_CHAT: 'agent:rewind-code-and-chat',
+  REWIND_CONVERSATION: 'agent:rewind-conversation',
   GET_SESSION_ID: 'agent:get-session-id',
   MCP_SERVER_STATUS: 'agent:mcp-server-status',
   LIST_DIRECTORY: 'agent:list-directory',

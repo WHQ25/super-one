@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
+import { randomUUID } from 'crypto'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, PermissionMode, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
@@ -88,15 +89,18 @@ export class ClaudeAgent {
   }
 
   /** Create a new session (bridge + query). Safe to call if session already exists (no-op). */
-  private createSession(resumeSessionId?: string): void {
+  private createSession(resumeSessionId?: string, resumeSessionAt?: string, forkSession?: boolean, forkedSessionId?: string): void {
     if (this.bridge) return
 
-    // On first creation, read project-level additionalDirectories from settings.json
     if (this.additionalDirs.length === 0) {
       const projectDirs = readProjectAdditionalDirs(this.config!.cwd)
       if (projectDirs.length > 0) {
         this.additionalDirs = projectDirs
       }
+    }
+
+    if (forkedSessionId) {
+      this.sessionId = forkedSessionId
     }
 
     this.bridge = new MessageBridge()
@@ -113,6 +117,9 @@ export class ClaudeAgent {
         canUseTool,
         trackPlanFile,
         resume: resumeSessionId,
+        resumeSessionAt,
+        forkSession,
+        sessionId: forkedSessionId,
         abortController: this.sessionAbort,
         additionalDirectories: this.additionalDirs.length > 0 ? this.additionalDirs : undefined,
       },
@@ -121,8 +128,10 @@ export class ClaudeAgent {
       () => this.currentStartTime,
       () => this.interrupted,
       (id) => {
+        console.log('[Fork Debug] onSessionId:', { id })
+        const isNew = this.sessionId !== id
         this.sessionId = id
-        this.emitSessionInit()
+        if (isNew) this.emitSessionInit()
       },
     )
 
@@ -182,9 +191,10 @@ export class ClaudeAgent {
     this.emit({ type: 'status_change', status: 'streaming' })
     this.emit({ type: 'message_start', message })
 
-    // Switch model for this turn if requested
     if (request.model && this.sessionQuery) {
-      await this.sessionQuery.setModel(request.model)
+      try {
+        await this.sessionQuery.setModel(request.model)
+      } catch { /* transport may not be ready yet after fork */ }
     }
 
     // Create a promise that resolves when this turn completes
@@ -264,6 +274,66 @@ export class ClaudeAgent {
         insertions: result.insertions,
         deletions: result.deletions,
       }
+    } catch (err) {
+      return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  /** Preview file rewind without modifying files (dry run). */
+  async previewRewind(userMessageId: string): Promise<RewindFilesResult> {
+    if (!this.sessionQuery) {
+      return { canRewind: false, error: 'No active session' }
+    }
+    try {
+      const result = await this.sessionQuery.rewindFiles(userMessageId, { dryRun: true })
+      return {
+        canRewind: result.canRewind,
+        error: result.error,
+        filesChanged: result.filesChanged,
+        insertions: result.insertions,
+        deletions: result.deletions,
+      }
+    } catch (err) {
+      return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  async rewindCodeAndChat(userMessageId: string, resumePointId: string): Promise<RewindFilesResult> {
+    if (!this.sessionQuery) {
+      return { canRewind: false, error: 'No active session' }
+    }
+    try {
+      const result = await this.sessionQuery.rewindFiles(userMessageId)
+      if (!result.canRewind) return result
+
+      const prevSessionId = this.sessionId
+      const forkedId = randomUUID()
+      await this.resetSession()
+      this.createSession(prevSessionId, resumePointId, true, forkedId)
+
+      return {
+        canRewind: result.canRewind,
+        error: result.error,
+        filesChanged: result.filesChanged,
+        insertions: result.insertions,
+        deletions: result.deletions,
+        forkedSessionId: forkedId,
+      }
+    } catch (err) {
+      return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  async rewindConversation(_userMessageId: string, resumePointId: string): Promise<RewindFilesResult> {
+    if (!this.sessionQuery) {
+      return { canRewind: false, error: 'No active session' }
+    }
+    try {
+      const prevSessionId = this.sessionId
+      const forkedId = randomUUID()
+      await this.resetSession()
+      this.createSession(prevSessionId, resumePointId, true, forkedId)
+      return { canRewind: true, forkedSessionId: forkedId }
     } catch (err) {
       return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
     }

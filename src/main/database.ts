@@ -76,6 +76,15 @@ function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE sessions ADD COLUMN provider TEXT DEFAULT 'claude'")
   }
 
+  // Add checkpoint_id column to chat_messages if missing
+  const msgCols = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
+  if (!msgCols.some((c) => c.name === 'checkpoint_id')) {
+    db.exec('ALTER TABLE chat_messages ADD COLUMN checkpoint_id TEXT')
+  }
+  if (!msgCols.some((c) => c.name === 'resume_point_id')) {
+    db.exec('ALTER TABLE chat_messages ADD COLUMN resume_point_id TEXT')
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS global_resource_cache (
       id INTEGER PRIMARY KEY CHECK (id = 1),

@@ -17,6 +17,7 @@ import {
   useAnimatedTokens,
   getTokenAnimationDurationMs,
 } from './chat-shared'
+import { RewindButton } from './RewindButton'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -181,7 +182,7 @@ function renderBlock(
           key={index}
           toolName={block.toolName}
           input={block.input}
-          status={block.status}
+          status={!isStreaming && block.status === 'streaming' ? undefined : block.status}
           elapsedSeconds={block.elapsedSeconds}
           result={toolResultMap?.get(block.toolUseId)}
         />
@@ -414,9 +415,6 @@ export function ChatMessage({ message }: ChatMessageProps) {
               )
             })
         }
-        {isStreaming && !isCodexMessage && message.content.length === 0 && (
-          <Loader2 className="size-4 animate-spin text-muted-foreground" />
-        )}
         {message.status === 'interrupted' && (
           <div className="mt-1 flex items-center gap-1 text-xs text-destructive">
             <OctagonX className="size-3" />
@@ -425,8 +423,11 @@ export function ChatMessage({ message }: ChatMessageProps) {
         )}
         {!isUser && <DurationFooter message={message} copyText={assistantCopyText} />}
       </div>
-      {isUser && userText.length > 0 && (
-        <CopyButton text={userText} className="relative mt-1 opacity-0 group-hover/copy:opacity-100" />
+      {isUser && (
+        <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
+          {message.checkpointId && <RewindButton checkpointId={message.checkpointId} rewound={message.rewound} className="opacity-100" />}
+          {userText.length > 0 && <CopyButton text={userText} className="opacity-100" />}
+        </div>
       )}
       </div>
     </div>
@@ -531,7 +532,10 @@ function DurationFooter({ message, copyText }: { message: ChatMessageType; copyT
       )}
       {showDuration && (
         <>
-          <Clock className="size-3" />
+          {isStreaming
+            ? <Loader2 className="size-3 animate-spin" />
+            : <Clock className="size-3" />
+          }
           <span>{display}</span>
         </>
       )}

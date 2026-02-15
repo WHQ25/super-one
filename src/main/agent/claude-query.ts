@@ -10,6 +10,9 @@ export interface SessionQueryOptions {
   canUseTool: CanUseTool
   trackPlanFile?: (filePath: string) => void
   resume?: string
+  resumeSessionAt?: string
+  forkSession?: boolean
+  sessionId?: string
   abortController?: AbortController
   additionalDirectories?: string[]
 }
@@ -42,8 +45,12 @@ export function createSessionQuery(
         ? { enabled: true, autoAllowBashIfSandboxed: options.sandboxInfo.autoAllowBash }
         : undefined,
       enableFileCheckpointing: true,
+      extraArgs: { 'replay-user-messages': null },
       settingSources: ['user', 'project', 'local'],
       resume: options.resume,
+      resumeSessionAt: options.resumeSessionAt,
+      forkSession: options.forkSession,
+      sessionId: options.sessionId,
       abortController: options.abortController,
       additionalDirectories: options.additionalDirectories,
     },
@@ -94,6 +101,8 @@ async function iterateMessages(
   // Track the last assistant message's usage (= current context window snapshot)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let lastAssistantUsage: any = null
+  // Track the most recent top-level assistant message UUID for resumeSessionAt
+  let lastTopLevelAssistantUuid = ''
   // Per-step dedup: track processed step IDs (SDK message IDs) and accumulate tokens
   const processedStepIds = new Set<string>()
   let messageInputTokens = 0
@@ -145,6 +154,12 @@ async function iterateMessages(
             emit({ type: 'slash_command_output', messageId, content: text })
           }
         }
+
+        // Capture file checkpoint UUID from top-level user messages
+        const uuid = userMsg.uuid as string | undefined
+        if (uuid && !userMsg.parent_tool_use_id) {
+          emit({ type: 'checkpoint_captured', messageId, checkpointId: uuid, resumePointId: lastTopLevelAssistantUuid })
+        }
       }
 
       switch (msg.type) {
@@ -152,8 +167,7 @@ async function iterateMessages(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const sys = msg as any
           if (sys.subtype === 'init') {
-            // Note: The SDK does not yield the init message through the async iterator.
-            // Use query.initializationResult() (control channel) for init data instead.
+            console.log('[Fork Debug] system init received:', { session_id: sys.session_id })
             if (sys.session_id) onSessionId?.(sys.session_id)
           } else if (sys.subtype === 'hook_started') {
             emit({
@@ -215,6 +229,11 @@ async function iterateMessages(
           if (msg.message?.usage) lastAssistantUsage = msg.message.usage
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const assistantParent = (msg as any).parent_tool_use_id ?? null
+
+          if (!assistantParent) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            lastTopLevelAssistantUuid = (msg as any).uuid ?? ''
+          }
 
           // Track top-level message usage (per-step accumulation, deduped by SDK message ID)
           if (!assistantParent && msg.message?.usage) {

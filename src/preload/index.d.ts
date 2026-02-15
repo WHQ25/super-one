@@ -15,6 +15,9 @@ interface AgentAPI {
   parkSession(projectPath: string): Promise<void>
   activateSession(projectPath: string, sessionId: string): Promise<void>
   rewindFiles(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
+  previewRewind(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
+  rewindCodeAndChat(projectPath: string, userMessageId: string, resumePointId: string): Promise<RewindFilesResult>
+  rewindConversation(projectPath: string, userMessageId: string, resumePointId: string): Promise<RewindFilesResult>
   getSessionId(projectPath: string): Promise<string>
   getMcpServerStatus(projectPath: string): Promise<McpServerInfo[]>
   listDirectory(projectPath: string, relativePath: string): Promise<ListDirEntry[]>

@@ -143,6 +143,18 @@ export class AgentService {
       return this.getAgent(projectPath).rewindFiles(userMessageId)
     })
 
+    ipcMain.handle(AgentIpcChannels.REWIND_FILES_PREVIEW, async (_event, projectPath: string, userMessageId: string) => {
+      return this.getAgent(projectPath).previewRewind(userMessageId)
+    })
+
+    ipcMain.handle(AgentIpcChannels.REWIND_CODE_AND_CHAT, async (_event, projectPath: string, userMessageId: string, resumePointId: string) => {
+      return this.getAgent(projectPath).rewindCodeAndChat(userMessageId, resumePointId)
+    })
+
+    ipcMain.handle(AgentIpcChannels.REWIND_CONVERSATION, async (_event, projectPath: string, userMessageId: string, resumePointId: string) => {
+      return this.getAgent(projectPath).rewindConversation(userMessageId, resumePointId)
+    })
+
     ipcMain.handle(AgentIpcChannels.GET_SESSION_ID, (_event, projectPath: string) => {
       return this.getAgent(projectPath).getSessionId()
     })
@@ -470,6 +482,9 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.RESPOND_PLAN_APPROVAL)
     ipcMain.removeHandler(AgentIpcChannels.RESET_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.REWIND_FILES)
+    ipcMain.removeHandler(AgentIpcChannels.REWIND_FILES_PREVIEW)
+    ipcMain.removeHandler(AgentIpcChannels.REWIND_CODE_AND_CHAT)
+    ipcMain.removeHandler(AgentIpcChannels.REWIND_CONVERSATION)
     ipcMain.removeHandler(AgentIpcChannels.GET_SESSION_ID)
     ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_STATUS)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)

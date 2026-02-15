@@ -301,7 +301,7 @@ function renderChildBlock(
           key={index}
           toolName={block.toolName}
           input={block.input}
-          status={block.status}
+          status={!isStreaming && block.status === 'streaming' ? undefined : block.status}
           elapsedSeconds={block.elapsedSeconds}
           result={toolResultMap.get(block.toolUseId)}
         />

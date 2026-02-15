@@ -23,6 +23,8 @@ interface DbChatMessage {
   created_at: string
   provider_id: string
   metadata_json: string | null
+  checkpoint_id: string | null
+  resume_point_id: string | null
 }
 
 /** List sessions for a project folder from DB (no external sync). */
@@ -96,12 +98,14 @@ export function saveSessionState(
   const db = getDb()
 
   const upsertMsg = db.prepare(`
-    INSERT INTO chat_messages (id, claude_session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO chat_messages (id, claude_session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       status = excluded.status,
       content_json = excluded.content_json,
-      metadata_json = excluded.metadata_json
+      metadata_json = excluded.metadata_json,
+      checkpoint_id = excluded.checkpoint_id,
+      resume_point_id = excluded.resume_point_id
   `)
 
   const updateSession = data.title
@@ -133,6 +137,8 @@ export function saveSessionState(
         msg.createdAt,
         msg.providerId,
         msg.metadata ? JSON.stringify(msg.metadata) : null,
+        msg.checkpointId ?? null,
+        msg.resumePointId ?? null,
       )
     }
 
@@ -160,7 +166,7 @@ export function loadSessionState(
   if (!session) return null
 
   const rows = db.prepare(`
-    SELECT id, role, status, content_json, created_at, provider_id, metadata_json
+    SELECT id, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id
     FROM chat_messages
     WHERE claude_session_id = ?
     ORDER BY sort_order ASC
@@ -176,6 +182,8 @@ export function loadSessionState(
     createdAt: r.created_at,
     providerId: r.provider_id,
     ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
+    ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
+    ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
   }))
 
   return {

@@ -39,6 +39,15 @@ const agentAPI = {
   rewindFiles: (projectPath: string, userMessageId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.REWIND_FILES, projectPath, userMessageId),
 
+  previewRewind: (projectPath: string, userMessageId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.REWIND_FILES_PREVIEW, projectPath, userMessageId),
+
+  rewindCodeAndChat: (projectPath: string, userMessageId: string, resumePointId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.REWIND_CODE_AND_CHAT, projectPath, userMessageId, resumePointId),
+
+  rewindConversation: (projectPath: string, userMessageId: string, resumePointId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.REWIND_CONVERSATION, projectPath, userMessageId, resumePointId),
+
   getSessionId: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GET_SESSION_ID, projectPath),
 

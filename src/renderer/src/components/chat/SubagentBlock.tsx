@@ -130,7 +130,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           </span>
         )}
         {taskInput.description && (
-          <span className="min-w-0 text-left text-muted-foreground">{taskInput.description}</span>
+          <span className="min-w-0 truncate text-left text-muted-foreground">{taskInput.description}</span>
         )}
         {showSpawningPlaceholder && (
           <span className="min-w-0 text-left text-muted-foreground">Spawning subagent...</span>

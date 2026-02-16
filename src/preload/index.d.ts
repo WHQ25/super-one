@@ -116,9 +116,9 @@ interface AppAPI {
   resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string): Promise<void>
   loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
   renameSession(sessionId: string, title: string): Promise<void>
-  createSession(projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string): Promise<void>
+  createSession(projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string): Promise<void>
   saveSessionState(claudeSessionId: string, data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string; provider?: string }): Promise<void>
-  loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; provider: string } | null>
+  loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string } | null>
   deleteSession(sessionId: string): Promise<void>
   pinSession(sessionId: string, pinned: boolean): Promise<void>
   listPinnedSessions(): Promise<PinnedSessionEntry[]>

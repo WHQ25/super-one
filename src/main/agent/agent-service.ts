@@ -388,8 +388,8 @@ export class AgentService {
       dbRenameSession(sessionId, title)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_CREATE, (_event, projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string) => {
-      try { createSession(projectPath, claudeSessionId, undefined, isWorktree, gitBranch) } catch { /* ignore duplicate */ }
+    ipcMain.handle(AgentIpcChannels.SESSIONS_CREATE, (_event, projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string) => {
+      try { createSession(projectPath, claudeSessionId, undefined, isWorktree, gitBranch, worktreePath) } catch { /* ignore duplicate */ }
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_SAVE_STATE, (_event, claudeSessionId: string, data: { messages: unknown[]; totalCostUsd: number; contextTokens: number; title?: string; provider?: string }) => {

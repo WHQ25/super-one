@@ -606,12 +606,14 @@ function _extractTitle(messages: ChatMessage[]): string | undefined {
 }
 
 function _getWorktreeBranch(projectPath: string, session: SessionState): string | undefined {
-  // Prefer the branch stored in session state (set during worktree activation or DB restore)
   if (session._worktreeBranch) return session._worktreeBranch
-  // Fallback: use pendingBaseBranch from app store
   const wt = useAppStore.getState().getWorktreeState(projectPath)
   if (wt.pendingBaseBranch) return wt.pendingBaseBranch
   return undefined
+}
+
+function _getWorktreePath(projectPath: string): string | undefined {
+  return useAppStore.getState().getWorktreeState(projectPath).activePath ?? undefined
 }
 
 /** Save session state to DB. Reads current store state — safe for synchronous call sites. */
@@ -623,7 +625,8 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   if (!sessionId) return
 
   const branch = _getWorktreeBranch(projectPath, session)
-  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch)
+  const wtPath = _getWorktreePath(projectPath)
+  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath)
     .catch(() => { /* ignore duplicate */ })
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
@@ -641,7 +644,8 @@ function _saveSessionSnapshot(projectPath: string, session: SessionState): void 
   if (!sessionId || session.messages.length === 0) return
 
   const branch = _getWorktreeBranch(projectPath, session)
-  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch)
+  const wtPath = _getWorktreePath(projectPath)
+  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath)
     .catch(() => { /* ignore duplicate */ })
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
@@ -1713,25 +1717,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         savedTokens = saved.contextTokens
         savedWorktreeBranch = saved.gitBranch
         savedProvider = saved.provider
-
-        // If this session was in a worktree, try to find the worktree path
-        // (worktrees are detached HEAD, so we match by checking if any non-main entry still exists)
-        if (savedWorktreeBranch) {
-          try {
-            const wtInfo = await window.app.getWorktreeInfo(activeProject)
-            if (wtInfo) {
-              // Try matching by branch name first, then by path suffix
-              const entry = wtInfo.entries.find((e) =>
-                !e.isMain && (e.branch === savedWorktreeBranch || e.path.endsWith('/' + savedWorktreeBranch))
-              )
-              if (entry) {
-                savedWorktreePath = entry.path
-              }
-            }
-          } catch {
-            // Use the saved value if lookup fails
-          }
-        }
+        savedWorktreePath = saved.worktreePath ?? undefined
       }
     } catch {
       // History loading is best-effort
@@ -1784,7 +1770,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     if (restoredProvider !== 'codex') {
-      // Main process handles park + resume (pass worktree cwd so agent starts in correct directory)
       await window.app.resumeSession(activeProject, sessionId, savedWorktreePath)
     }
 

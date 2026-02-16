@@ -356,8 +356,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, projectPath, sessionId, limit, cursor),
   renameSession: (sessionId: string, title: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RENAME, sessionId, title),
-  createSession: (projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_CREATE, projectPath, claudeSessionId, isWorktree, gitBranch),
+  createSession: (projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_CREATE, projectPath, claudeSessionId, isWorktree, gitBranch, worktreePath),
   saveSessionState: (claudeSessionId: string, data: { messages: unknown[]; totalCostUsd: number; contextTokens: number; title?: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SAVE_STATE, claudeSessionId, data),
   loadSessionState: (claudeSessionId: string) =>

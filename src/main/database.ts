@@ -69,6 +69,9 @@ function migrate(db: Database.Database): void {
   if (!cols.some((c) => c.name === 'git_branch')) {
     db.exec('ALTER TABLE sessions ADD COLUMN git_branch TEXT')
   }
+  if (!cols.some((c) => c.name === 'worktree_path')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN worktree_path TEXT')
+  }
   if (!cols.some((c) => c.name === 'is_pinned')) {
     db.exec('ALTER TABLE sessions ADD COLUMN is_pinned INTEGER DEFAULT 0')
   }

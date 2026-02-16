@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
+import log from '../logger'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
@@ -345,12 +346,12 @@ export class ClaudeAgent {
 
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
     if (!this.sessionQuery) throw new Error('No active session')
-    console.log(`[MCP] toggleMcpServer("${serverName}", ${enabled}) — calling SDK...`)
+    log.info(`[MCP] toggleMcpServer("${serverName}", ${enabled}) — calling SDK...`)
     try {
       const result = await this.sessionQuery.toggleMcpServer(serverName, enabled)
-      console.log(`[MCP] toggleMcpServer result:`, JSON.stringify(result))
+      log.info(`[MCP] toggleMcpServer result:`, JSON.stringify(result))
     } catch (err) {
-      console.error(`[MCP] toggleMcpServer error:`, err)
+      log.error(`[MCP] toggleMcpServer error:`, err)
       throw err
     }
   }
@@ -358,10 +359,10 @@ export class ClaudeAgent {
   /** Reset session and recreate with resume, preserving conversation history. */
   async refreshSession(): Promise<void> {
     const prevSessionId = this.sessionId
-    console.log(`[MCP] refreshSession — resetting (sessionId=${prevSessionId})...`)
+    log.info(`[MCP] refreshSession — resetting (sessionId=${prevSessionId})...`)
     await this.resetSession()
     this.createSession(prevSessionId || undefined)
-    console.log(`[MCP] refreshSession — session recreated (resume=${prevSessionId || 'none'})`)
+    log.info(`[MCP] refreshSession — session recreated (resume=${prevSessionId || 'none'})`)
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {

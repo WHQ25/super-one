@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { CommandShortcut } from '@/components/ui/command'
 import { useChatStore, useActiveSession } from '@/stores/chat'
@@ -28,17 +28,6 @@ function formatSuggestion(s: Record<string, unknown>): { label: string; destinat
     case 'addDirectories': return { label: `Add directory: ${directories?.join(', ')}`, destination }
     case 'removeDirectories': return { label: `Remove directory: ${directories?.join(', ')}`, destination }
     default: return { label: JSON.stringify(s), destination }
-  }
-}
-
-/** Derive a smart button label from the primary suggestion type. */
-function getAlwaysAllowLabel(suggestions?: Array<Record<string, unknown>>): string {
-  const primary = suggestions?.[0]?.type as string | undefined
-  switch (primary) {
-    case 'addRules': return 'Allow Similar'
-    case 'setMode': return 'Switch Mode'
-    case 'addDirectories': return 'Add Directory'
-    default: return 'Always Allow'
   }
 }
 
@@ -73,7 +62,7 @@ export function PermissionPrompt() {
   }, [requestId])
 
   // Number of action buttons
-  const btnCount = useMemo(() => (allowAlwaysAllow ? 3 : 2), [allowAlwaysAllow])
+  const btnCount = 2
 
   const handleDeny = useCallback(() => {
     if (!requestId) return
@@ -149,6 +138,7 @@ export function PermissionPrompt() {
   const { input, decisionReason, blockedPath, suggestions } = pendingPermission
   const display = getToolDisplay(toolName ?? '', input, cwd, homedir)
   const isBash = toolName === 'Bash'
+  const hasSuggestionRow = allowAlwaysAllow || (suggestions && suggestions.length > 0)
 
   const isDebug = DEBUG_TOOL_NAMES.length > 0 &&
     DEBUG_TOOL_NAMES.some((n) => (toolName ?? '').toLowerCase().includes(n))
@@ -192,71 +182,75 @@ export function PermissionPrompt() {
           )}
         </div>
       )}
-      {suggestions && suggestions.length > 0 && (
-        <div className="mb-2 space-y-0.5">
-          {suggestions.map((s, i) => {
-            const { label, destination } = formatSuggestion(s)
-            return (
-              <div key={i} className="flex items-center gap-1.5 text-[11px]">
-                <span className="text-muted-foreground">{label}</span>
-                <span className="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground/60">{destination}</span>
-              </div>
-            )
-          })}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            ref={(el) => { btnRefs.current[btnIdx++] = el }}
+            size="sm"
+            className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
+            onClick={() => respondToPermission(requestId!, true)}
+          >
+            Allow
+          </Button>
+          <Button
+            ref={(el) => { btnRefs.current[btnIdx++] = el }}
+            size="sm"
+            className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
+            onClick={handleDeny}
+          >
+            Deny
+            <CommandShortcut className="ml-1 text-[10px] text-red-200/80">Esc</CommandShortcut>
+          </Button>
+          <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
+            <input
+              ref={feedbackRef}
+              data-feedback
+              type="text"
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="Deny reason (optional, Enter to submit)"
+              className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">⇥</CommandShortcut>
+          </div>
         </div>
-      )}
-      <div className="flex items-center gap-2">
-        <Button
-          ref={(el) => { btnRefs.current[btnIdx++] = el }}
-          size="sm"
-          className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
-          onClick={() => respondToPermission(requestId!, true)}
-        >
-          Allow
-        </Button>
-        {allowAlwaysAllow && (
-          isEditTool ? (
-            <Button
-              ref={(el) => { btnRefs.current[btnIdx++] = el }}
-              size="sm"
-              className="h-7 cursor-pointer bg-purple-600 px-3 text-xs text-white hover:bg-purple-500 focus:ring-2 focus:ring-purple-400 focus:outline-none"
-              onClick={handleAcceptEdit}
-            >
-              Accept Edit
-              <CommandShortcut className="ml-1 text-[10px] text-purple-200/80">⇧⇥</CommandShortcut>
-            </Button>
-          ) : (
-            <Button
-              ref={(el) => { btnRefs.current[btnIdx++] = el }}
-              size="sm"
-              className="h-7 cursor-pointer bg-blue-600 px-3 text-xs text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
-              onClick={handleAlwaysAllow}
-            >
-              {getAlwaysAllowLabel(suggestions)}
-            </Button>
-          )
+        {hasSuggestionRow && (
+          <div className="flex flex-col gap-1.5 @lg:flex-row @lg:flex-wrap @lg:items-center @lg:gap-2">
+            {allowAlwaysAllow && isEditTool && (
+              <Button
+                size="sm"
+                className="h-7 w-full cursor-pointer bg-purple-600 px-3 text-xs text-white hover:bg-purple-500 focus:ring-2 focus:ring-purple-400 focus:outline-none @lg:w-auto"
+                onClick={handleAcceptEdit}
+              >
+                Accept Edit
+                <CommandShortcut className="ml-1 text-[10px] text-purple-200/80">⇧⇥</CommandShortcut>
+              </Button>
+            )}
+            {allowAlwaysAllow && !isEditTool && (!suggestions || suggestions.length === 0) && (
+              <Button
+                size="sm"
+                className="h-7 w-full cursor-pointer bg-blue-600 px-3 text-xs text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none @lg:w-auto"
+                onClick={handleAlwaysAllow}
+              >
+                Always Allow
+              </Button>
+            )}
+            {suggestions?.map((s, i) => {
+              const { label, destination } = formatSuggestion(s)
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border border-border bg-muted px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground @lg:w-auto"
+                  onClick={handleAlwaysAllow}
+                >
+                  <span className="truncate">{label}</span>
+                  <span className="shrink-0 rounded bg-background/60 px-1 py-px text-[10px] text-muted-foreground/60">{destination}</span>
+                </button>
+              )
+            })}
+          </div>
         )}
-        <Button
-          ref={(el) => { btnRefs.current[btnIdx++] = el }}
-          size="sm"
-          className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
-          onClick={handleDeny}
-        >
-          Deny
-          <CommandShortcut className="ml-1 text-[10px] text-red-200/80">Esc</CommandShortcut>
-        </Button>
-        <div className="relative flex flex-1 items-center">
-          <input
-            ref={feedbackRef}
-            data-feedback
-            type="text"
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            placeholder="Deny reason (optional, Enter to submit)"
-            className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-          <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">⇥</CommandShortcut>
-        </div>
       </div>
     </div>
   )

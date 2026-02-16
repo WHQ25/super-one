@@ -1,5 +1,5 @@
 import { renameSync } from 'fs'
-import log from 'electron-log/main'
+import log from 'electron-log/main.js'
 
 log.transports.file.maxSize = 5 * 1024 * 1024
 log.transports.file.archiveLogFn = (oldLog) => {

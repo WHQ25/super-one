@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
+import log from '../logger'
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent } from '../../shared/agent-types'
 
@@ -66,7 +67,7 @@ export function createCanUseTool(
     const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
     if (context.suggestions?.length) {
-      console.log('[canUseTool] suggestions:', JSON.stringify(context.suggestions, null, 2))
+      log.debug('[canUseTool] suggestions:', JSON.stringify(context.suggestions, null, 2))
     }
 
     emit({

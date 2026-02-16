@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import pkg from 'electron-updater'
+const { autoUpdater } = pkg
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { AgentIpcChannels, type UpdateEvent } from '../shared/agent-types'

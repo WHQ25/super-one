@@ -212,7 +212,7 @@ interface ChatStore {
   clearAttachments: () => void
 
   // Permission actions
-  respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) => void
+  respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   cyclePermissionMode: () => void
   setSandboxMode: (mode: SandboxMode) => Promise<void>
@@ -1512,14 +1512,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateSession(s, activeProject, () => ({ attachments: [] })))
   },
 
-  respondToPermission: (requestId, allow, alwaysAllow, reason) => {
+  respondToPermission: (requestId, allow, alwaysAllow, reason, selectedSuggestions) => {
     const { activeProject } = get()
     if (!activeProject) return
     const session = getSession(get(), activeProject)
     if (session.sessionProvider === 'codex') {
       void window.app.codexRespondToPermission(activeProject, requestId, allow, alwaysAllow, reason)
     } else {
-      void window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason)
+      void window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions)
     }
     set((s) => updateSession(s, activeProject, () => ({ pendingPermission: null, hasPendingInteraction: false })))
   },

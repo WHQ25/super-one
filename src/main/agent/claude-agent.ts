@@ -210,8 +210,8 @@ export class ClaudeAgent {
     await turnDone
   }
 
-  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string): void {
-    respondToPermission(this.pendingPermissions, requestId, allow, alwaysAllow, reason)
+  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): void {
+    respondToPermission(this.pendingPermissions, requestId, allow, alwaysAllow, reason, selectedSuggestions)
   }
 
   respondToQuestion(requestId: string, answers: Record<string, string>): void {

@@ -6,7 +6,7 @@ import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent } from '../../shared/agent-types'
 
 export interface PendingPermission {
-  resolve: (result: { allow: boolean; alwaysAllow?: boolean; reason?: string }) => void
+  resolve: (result: { allow: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[] }) => void
   suggestions?: PermissionUpdate[]
   toolUseID: string
 }
@@ -83,7 +83,7 @@ export function createCanUseTool(
       },
     })
 
-    const result = await new Promise<{ allow: boolean; alwaysAllow?: boolean; reason?: string }>((resolve) => {
+    const result = await new Promise<{ allow: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[] }>((resolve) => {
       // If already aborted before prompting, deny immediately
       if (context.signal.aborted) {
         resolve({ allow: false })
@@ -105,10 +105,16 @@ export function createCanUseTool(
     const toolUseID = pending?.toolUseID ?? context.toolUseID
 
     if (result.allow) {
+      let updatedPermissions: PermissionUpdate[] | undefined
+      if (result.selectedSuggestions && context.suggestions) {
+        updatedPermissions = context.suggestions.filter((_, i) => result.selectedSuggestions!.includes(i))
+      } else if (result.alwaysAllow) {
+        updatedPermissions = context.suggestions
+      }
       return {
         behavior: 'allow' as const,
         updatedInput: input,
-        updatedPermissions: result.alwaysAllow ? context.suggestions : undefined,
+        updatedPermissions,
         toolUseID,
       }
     }
@@ -229,12 +235,13 @@ export function respondToPermission(
   requestId: string,
   allow: boolean,
   alwaysAllow?: boolean,
-  reason?: string
+  reason?: string,
+  selectedSuggestions?: number[]
 ): void {
   const pending = pendingPermissions.get(requestId)
   if (pending) {
     pendingPermissions.delete(requestId)
-    pending.resolve({ allow, alwaysAllow, reason })
+    pending.resolve({ allow, alwaysAllow, reason, selectedSuggestions })
   }
 }
 

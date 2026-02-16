@@ -9,8 +9,8 @@ const agentAPI = {
   interrupt: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, projectPath),
 
-  respondToPermission: (projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, projectPath, requestId, allow, alwaysAllow, reason),
+  respondToPermission: (projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, projectPath, requestId, allow, alwaysAllow, reason, selectedSuggestions),
 
   setPermissionMode: (projectPath: string, mode: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_PERMISSION_MODE, projectPath, mode),

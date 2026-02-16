@@ -39,6 +39,8 @@ export function PermissionPrompt() {
   const homedir = useActiveSession((s) => s.homedir)
   const [feedback, setFeedback] = useState('')
   const [focusedIdx, setFocusedIdx] = useState(0)
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set())
+  const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const btnRefs = useRef<(HTMLButtonElement | null)[]>([])
   const feedbackRef = useRef<HTMLInputElement>(null)
 
@@ -46,12 +48,14 @@ export function PermissionPrompt() {
   const toolName = pendingPermission?.toolName
   const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow
   const isEditTool = toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit'
+  const suggestionsCount = pendingPermission?.suggestions?.length ?? 0
 
   // Reset state when a new permission request comes in
   useEffect(() => {
     setFeedback('')
     setFocusedIdx(0)
-  }, [requestId])
+    setSelectedSuggestions(new Set(Array.from({ length: suggestionsCount }, (_, i) => i)))
+  }, [requestId, suggestionsCount])
 
   // Auto-focus first button when prompt appears
   useEffect(() => {
@@ -80,21 +84,30 @@ export function PermissionPrompt() {
     respondToPermission(requestId, true, true)
   }, [requestId, respondToPermission])
 
-  // Keyboard navigation: arrows move between buttons, Tab goes to feedback, Shift+Tab for Accept Edit
+  const toggleSuggestion = useCallback((idx: number) => {
+    setSelectedSuggestions(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }, [])
+
+  const handleAllow = useCallback(() => {
+    if (!requestId) return
+    if (selectedSuggestions.size > 0) {
+      respondToPermission(requestId, true, undefined, undefined, [...selectedSuggestions])
+    } else {
+      respondToPermission(requestId, true)
+    }
+  }, [requestId, respondToPermission, selectedSuggestions])
+
+  // Keyboard navigation
   useEffect(() => {
     if (!requestId) return
 
     function onKeyDown(e: KeyboardEvent) {
-      const active = document.activeElement
-
-      // Escape → deny immediately
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        handleDeny()
-        return
-      }
-
-      // Shift+Tab on Write/Edit tools → Accept Edit
+      // Shift+Tab on Write/Edit tools → Accept Edit (always)
       if (e.key === 'Tab' && e.shiftKey && isEditTool) {
         e.preventDefault()
         e.stopImmediatePropagation()
@@ -102,11 +115,38 @@ export function PermissionPrompt() {
         return
       }
 
-      // If focused on feedback input, only handle Enter (submit)
-      if (active === feedbackRef.current) {
+      // When feedback is focused: Enter → deny with reason, Escape → blur
+      if (document.activeElement === feedbackRef.current) {
         if (e.key === 'Enter') {
           e.preventDefault()
           handleDeny()
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          feedbackRef.current?.blur()
+        }
+        return
+      }
+
+      // Enter → allow (with selected suggestions)
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        handleAllow()
+        return
+      }
+
+      // Escape → deny
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        handleDeny()
+        return
+      }
+
+      // Number keys 1-9 to toggle suggestion selection
+      if (e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key) - 1
+        if (idx < suggestionsCount) {
+          e.preventDefault()
+          toggleSuggestion(idx)
         }
         return
       }
@@ -123,7 +163,7 @@ export function PermissionPrompt() {
         return
       }
 
-      // Tab (without Shift) to focus feedback input
+      // Tab → focus feedback input
       if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault()
         feedbackRef.current?.focus()
@@ -131,7 +171,7 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleDeny, handleAcceptEdit, isEditTool])
+  }, [requestId, btnCount, handleDeny, handleAcceptEdit, handleAllow, isEditTool, suggestionsCount, toggleSuggestion])
 
   if (!pendingPermission) return null
 
@@ -188,9 +228,15 @@ export function PermissionPrompt() {
             ref={(el) => { btnRefs.current[btnIdx++] = el }}
             size="sm"
             className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
-            onClick={() => respondToPermission(requestId!, true)}
+            onClick={handleAllow}
           >
             Allow
+            {selectedSuggestions.size > 0 && (
+              <span className="ml-1 text-[10px] text-green-200/80">+{selectedSuggestions.size}</span>
+            )}
+            {!isFeedbackFocused && (
+              <CommandShortcut className="ml-1 text-[10px] text-green-200/80">⏎</CommandShortcut>
+            )}
           </Button>
           <Button
             ref={(el) => { btnRefs.current[btnIdx++] = el }}
@@ -199,7 +245,9 @@ export function PermissionPrompt() {
             onClick={handleDeny}
           >
             Deny
-            <CommandShortcut className="ml-1 text-[10px] text-red-200/80">Esc</CommandShortcut>
+            {!isFeedbackFocused && (
+              <CommandShortcut className="ml-1 text-[10px] text-red-200/80">Esc</CommandShortcut>
+            )}
           </Button>
           <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
             <input
@@ -208,6 +256,8 @@ export function PermissionPrompt() {
               type="text"
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
+              onFocus={() => setIsFeedbackFocused(true)}
+              onBlur={() => setIsFeedbackFocused(false)}
               placeholder="Deny reason (optional, Enter to submit)"
               className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
@@ -237,13 +287,19 @@ export function PermissionPrompt() {
             )}
             {suggestions?.map((s, i) => {
               const { label, destination } = formatSuggestion(s)
+              const isSelected = selectedSuggestions.has(i)
               return (
                 <button
                   key={i}
                   type="button"
-                  className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border border-border bg-muted px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground @lg:w-auto"
-                  onClick={handleAlwaysAllow}
+                  className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors @lg:w-auto ${
+                    isSelected
+                      ? 'border-blue-500/50 bg-blue-500/10 text-foreground'
+                      : 'border-border text-muted-foreground'
+                  } hover:bg-accent hover:text-accent-foreground`}
+                  onClick={() => toggleSuggestion(i)}
                 >
+                  <kbd className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-background/80 font-mono text-[10px]">{i + 1}</kbd>
                   <span className="truncate">{label}</span>
                   <span className="shrink-0 rounded bg-background/60 px-1 py-px text-[10px] text-muted-foreground/60">{destination}</span>
                 </button>

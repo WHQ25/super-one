@@ -111,8 +111,8 @@ export class AgentService {
       await this.getAgent(projectPath).interrupt()
     })
 
-    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) => {
-      this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason)
+    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) => {
+      this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {

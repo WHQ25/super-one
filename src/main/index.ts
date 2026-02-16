@@ -436,29 +436,34 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, async (_event, folderPath: string, baseBranch: string | null) => {
+  ipcMain.handle(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, async (_event, folderPath: string, baseBranch: string | null, carryLocalChanges?: boolean) => {
     try {
       if (baseBranch === null) {
-        // Switch back to the main project directory
         await agentService.switchCwd(folderPath, folderPath)
         return { ok: true as const, path: folderPath }
       }
-      // Resolve repo name for the worktree directory
       const repoRoot = resolve(folderPath, await gitRun(folderPath, ['rev-parse', '--git-common-dir']))
-      // repoRoot is e.g. /path/to/repo/.git — strip .git to get repo dir
       const mainDir = repoRoot.endsWith('/.git') ? dirname(repoRoot) : repoRoot
       const repoName = basename(mainDir)
-      // Use short commit hash as directory name
       const commitHash = (await gitRun(folderPath, ['rev-parse', baseBranch])).trim()
       const shortHash = commitHash.slice(0, 7)
       const wtDir = join(homedir(), '.worktrees', repoName)
       const wtPath = join(wtDir, shortHash)
-      // Create detached HEAD worktree if it doesn't exist yet
+
+      let stashSha: string | undefined
+      if (carryLocalChanges) {
+        stashSha = (await gitRun(folderPath, ['stash', 'create'])).trim() || undefined
+      }
+
       if (!existsSync(wtPath)) {
         if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
         await gitRun(folderPath, ['worktree', 'add', '--detach', wtPath, baseBranch])
       }
-      // Switch the agent's cwd to the worktree path
+
+      if (stashSha) {
+        await gitRun(wtPath, ['stash', 'apply', stashSha])
+      }
+
       await agentService.switchCwd(folderPath, wtPath)
       return { ok: true as const, path: wtPath }
     } catch (err) {

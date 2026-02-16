@@ -108,7 +108,7 @@ interface AppAPI {
   switchGitBranch(folderPath: string, branch: string): Promise<GitResult>
   createBranch(folderPath: string, branch: string): Promise<GitResult>
   getWorktreeInfo(folderPath: string): Promise<WorktreeInfo | null>
-  activateWorktree(folderPath: string, baseBranch: string | null): Promise<{ ok: true; path: string } | { ok: false; error: string }>
+  activateWorktree(folderPath: string, baseBranch: string | null, carryLocalChanges?: boolean): Promise<{ ok: true; path: string } | { ok: false; error: string }>
 
   // Session history
   listSessions(projectPath: string): Promise<SessionHistoryEntry[]>

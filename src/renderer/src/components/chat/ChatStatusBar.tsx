@@ -26,6 +26,7 @@ import { SandboxModeSelector } from './SandboxModeSelector'
 import {
   DEFAULT_CODEX_PERMISSION_PRESET,
   type CodexPermissionPreset,
+  type GitDirtyStatus,
   type GitInfo,
   type WorktreeInfo,
 } from '../../../../shared/agent-types'
@@ -124,6 +125,7 @@ function WorkDirIndicator() {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [branches, setBranches] = useState<string[]>([])
   const [search, setSearch] = useState('')
+  const [dirty, setDirty] = useState<GitDirtyStatus | undefined>()
 
   useEffect(() => {
     if (!currentFolder) { setWorktreeInfo(null); return }
@@ -141,9 +143,11 @@ function WorkDirIndicator() {
       Promise.all([
         window.app.getWorktreeInfo(currentFolder),
         window.app.getGitBranches(currentFolder),
-      ]).then(([info, br]) => {
+        window.app.getGitInfo(currentFolder),
+      ]).then(([info, br, gitInfo]) => {
         if (info) setWorktreeInfo(info)
         setBranches(br)
+        setDirty(gitInfo?.dirty)
       })
     }
   }, [currentFolder])
@@ -196,7 +200,6 @@ function WorkDirIndicator() {
     )
   }
 
-  const detachedWorktrees = worktreeInfo.entries.filter((e) => !e.isMain && !e.branch)
   const lowerSearch = search.toLowerCase()
   const filteredBranches = branches.filter(
     (b) => b.toLowerCase().includes(lowerSearch)
@@ -242,27 +245,6 @@ function WorkDirIndicator() {
               </CommandItem>
             </CommandGroup>
 
-            {/* Detached worktrees (read-only display) */}
-            {detachedWorktrees.length > 0 && (
-              <>
-                <CommandSeparator />
-                <CommandGroup heading="Detached Worktrees">
-                  {detachedWorktrees.map((wt) => (
-                    <CommandItem
-                      key={wt.path}
-                      value={wt.path}
-                      disabled
-                      className="gap-2 text-xs opacity-60"
-                    >
-                      <GitFork className="size-3 shrink-0 text-muted-foreground" />
-                      <span className="truncate font-mono">{wt.head.slice(0, 7)}</span>
-                      <span className="text-muted-foreground">(detached)</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </>
-            )}
-
             {/* Create worktree from branch — only in Local mode */}
             {filteredBranches.length > 0 && (
               <>
@@ -288,6 +270,28 @@ function WorkDirIndicator() {
               <CommandEmpty>No matches</CommandEmpty>
             )}
           </CommandList>
+
+          {dirty && (
+            <>
+              <CommandSeparator />
+              <div className="p-1">
+                <button
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent"
+                  onClick={() => currentFolder && useAppStore.getState().setCarryLocalChanges(currentFolder, !wtState?.carryLocalChanges)}
+                >
+                  <div className={`flex size-3.5 items-center justify-center rounded-sm border ${wtState?.carryLocalChanges ? 'border-foreground bg-foreground' : 'border-muted-foreground'}`}>
+                    {wtState?.carryLocalChanges && <Check className="size-2.5 text-background" />}
+                  </div>
+                  <span>Carry local changes</span>
+                  <span className="ml-auto text-[10px] text-muted-foreground">
+                    {fmt(dirty.files)} {dirty.files === 1 ? 'file' : 'files'}
+                    {dirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(dirty.insertions)}</span>}
+                    {dirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(dirty.deletions)}</span>}
+                  </span>
+                </button>
+              </div>
+            </>
+          )}
         </Command>
       </PopoverContent>
     </Popover>

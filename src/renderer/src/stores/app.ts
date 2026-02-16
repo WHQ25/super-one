@@ -8,8 +8,9 @@ type SettingsTab = 'agents' | 'skills' | 'mcp' | 'plugins'
 export type LayoutMode = 'canvas' | 'coding'
 
 interface WorktreeState {
-  pendingBaseBranch: string | null   // Base branch to detach from
-  activePath: string | null          // Worktree path currently active (agent cwd switched)
+  pendingBaseBranch: string | null
+  activePath: string | null
+  carryLocalChanges: boolean
 }
 
 interface AppState {
@@ -65,6 +66,7 @@ interface AppState {
 
   // Worktree management
   setPendingWorktree: (projectPath: string, baseBranch: string) => void
+  setCarryLocalChanges: (projectPath: string, carry: boolean) => void
   setActiveWorktree: (projectPath: string, path: string | null) => void
   clearWorktree: (projectPath: string) => Promise<void>
   getWorktreeState: (projectPath: string) => WorktreeState
@@ -94,7 +96,7 @@ async function refreshResourcesInBackground(): Promise<void> {
   }
 }
 
-const defaultWorktreeState: WorktreeState = { pendingBaseBranch: null, activePath: null }
+const defaultWorktreeState: WorktreeState = { pendingBaseBranch: null, activePath: null, carryLocalChanges: false }
 
 export const useAppStore = create<AppState>((set, get) => ({
   view: 'setup',
@@ -299,19 +301,34 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Worktree management
   setPendingWorktree: (projectPath, baseBranch) => {
-    set((s) => ({
-      _worktrees: {
-        ...s._worktrees,
-        [projectPath]: { pendingBaseBranch: baseBranch, activePath: s._worktrees[projectPath]?.activePath ?? null },
-      },
-    }))
+    set((s) => {
+      const prev = s._worktrees[projectPath]
+      return {
+        _worktrees: {
+          ...s._worktrees,
+          [projectPath]: { pendingBaseBranch: baseBranch, activePath: prev?.activePath ?? null, carryLocalChanges: prev?.carryLocalChanges ?? false },
+        },
+      }
+    })
+  },
+
+  setCarryLocalChanges: (projectPath, carry) => {
+    set((s) => {
+      const prev = s._worktrees[projectPath] ?? defaultWorktreeState
+      return {
+        _worktrees: {
+          ...s._worktrees,
+          [projectPath]: { ...prev, carryLocalChanges: carry },
+        },
+      }
+    })
   },
 
   setActiveWorktree: (projectPath, path) => {
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
-        [projectPath]: { pendingBaseBranch: null, activePath: path },
+        [projectPath]: { pendingBaseBranch: null, activePath: path, carryLocalChanges: false },
       },
     }))
   },
@@ -319,16 +336,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearWorktree: async (projectPath) => {
     const wt = get()._worktrees[projectPath]
     if (wt?.activePath) {
-      // Agent cwd was switched — switch back to project root
       await window.app.activateWorktree(projectPath, null)
-      // Reset chat session state for the new agent
       const { useChatStore } = await import('./chat')
       useChatStore.getState().resetSessionForWorktreeSwitch(projectPath)
     }
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
-        [projectPath]: { pendingBaseBranch: null, activePath: null },
+        [projectPath]: { pendingBaseBranch: null, activePath: null, carryLocalChanges: false },
       },
     }))
   },

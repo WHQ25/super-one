@@ -990,7 +990,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const wtState = useAppStore.getState().getWorktreeState(activeProject)
     if (wtState.pendingBaseBranch) {
       const baseBranch = wtState.pendingBaseBranch
-      const result = await window.app.activateWorktree(activeProject, baseBranch)
+      const result = await window.app.activateWorktree(activeProject, baseBranch, wtState.carryLocalChanges)
       if (!result.ok) {
         console.error('[sendMessage] Failed to activate worktree:', result.error)
         return

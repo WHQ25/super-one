@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Bot, ChevronRight, Loader2, Check, BookOpen, Wrench, ArrowUp, ArrowDown } from 'lucide-react'
+import { Bot, ChevronRight, Check, BookOpen, Wrench, ArrowUp, ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
 import { parseToolInput } from './tool-display'
@@ -156,10 +156,9 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         </div>
       )}
 
-      {(isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+      {expanded && (isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
         {isRunning ? (
           <>
-            <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
             <span>Running</span>
             {elapsed > 0 && <span className="tabular-nums">{formatElapsed(elapsed)}</span>}
           </>

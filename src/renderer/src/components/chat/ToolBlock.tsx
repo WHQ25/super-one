@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { ToolIcon } from './ToolIcon'
+import { FileIcon } from '@/components/ui/FileIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { getToolDisplay, parseToolInput, parseMcpToolName } from './tool-display'
 import { codePlugin } from './chat-shared'
@@ -23,6 +24,7 @@ interface ToolBlockProps {
 }
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
+const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
 
 function splitContentLines(text: string): string[] {
   if (!text) return []
@@ -122,6 +124,8 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
       ?? mcpLibrary.find((e) => e.name === mcpInfo.serverName)?.icons?.[0]?.src)
     : undefined
   const isStreaming = status === 'streaming'
+  const fileToolPath = FILE_PATH_TOOLS.has(toolName) ? String(params.file_path ?? params.notebook_path ?? '') : ''
+  const fileToolName = fileToolPath ? fileToolPath.split('/').pop() || '' : ''
 
   // Debug mode (dev only): highest priority — show raw input/output for matching tools
   // Set RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate to enable
@@ -137,14 +141,14 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
   // Plan mode tools — compact inline indicator
   if (toolName === 'EnterPlanMode') {
     return (
-      <div className="my-0.5 flex items-center gap-1.5 rounded bg-blue-500/10 px-2 py-1.5 text-xs">
+      <div className="my-4 flex items-center gap-1.5 rounded bg-blue-500/10 px-2 py-1.5 text-sm">
         <PenLine className="size-3 shrink-0 text-blue-400" />
         <span className="font-medium text-blue-400">Entered plan mode</span>
       </div>
     )
   }
   if (toolName === 'ExitPlanMode') {
-    return <ExitPlanModeBlock />
+    return <ExitPlanModeBlock result={result} />
   }
 
   const isDenied = !!result && result.startsWith('[denied] ')
@@ -193,10 +197,21 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
         {isStreaming && <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />}
         {isDenied ? (
           <>
-            {summary && <span className="min-w-0 truncate text-muted-foreground">{summary}</span>}
+            {fileToolName ? (
+              <FileChip name={fileToolName} title={display.summary} />
+            ) : summary ? (
+              <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
+            ) : null}
             <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>
             {cleanResult !== 'User denied permission' && (
               <span className="shrink-0 text-red-400/70">{cleanResult}</span>
+            )}
+          </>
+        ) : fileToolName ? (
+          <>
+            <FileChip name={fileToolName} title={display.summary} />
+            {toolName === 'FileChange' && params.kind && (
+              <span className="text-muted-foreground">{String(params.kind)}</span>
             )}
           </>
         ) : summary ? (
@@ -249,6 +264,23 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
         </div>
       )}
     </div>
+  )
+}
+
+function FileChip({ name, title }: { name: string; title: string }) {
+  const handleClick = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+  }
+  return (
+    <span
+      role="button"
+      onClick={handleClick}
+      title={title}
+      className="inline-flex cursor-pointer items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground whitespace-nowrap hover:bg-muted/80 transition-colors"
+    >
+      <FileIcon name={name} size={12} />
+      <span className="max-w-[160px] truncate">{name}</span>
+    </span>
   )
 }
 
@@ -627,14 +659,19 @@ function FileChangeDiff({ params }: { params: Record<string, unknown> }) {
   return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} />
 }
 
-/** ExitPlanMode: shows pending / approved / rejected state. */
-function ExitPlanModeBlock() {
-  const outcome = useActiveSession((s) => s.planApprovalOutcome)
+/** ExitPlanMode: shows pending / approved / rejected state.
+ *  Derives outcome from tool result (persisted in messages) with live store as fallback. */
+function ExitPlanModeBlock({ result }: { result?: string }) {
+  const liveOutcome = useActiveSession((s) => s.planApprovalOutcome)
+
+  const isDenied = !!result && result.startsWith('[denied] ')
+  const outcome = result
+    ? (isDenied ? { approved: false, feedback: result.slice('[denied] '.length) } : { approved: true })
+    : liveOutcome
 
   if (!outcome) {
-    // Pending — plan is being reviewed
     return (
-      <div className="my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs">
+      <div className="my-4 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-sm">
         <PenLine className="size-3 shrink-0 text-muted-foreground" />
         <span className="font-medium text-muted-foreground">Review Plan</span>
       </div>
@@ -643,7 +680,7 @@ function ExitPlanModeBlock() {
 
   if (outcome.approved) {
     return (
-      <div className="my-0.5 flex items-center gap-1.5 rounded bg-green-500/10 px-2 py-1.5 text-xs">
+      <div className="my-4 flex items-center gap-1.5 rounded bg-green-500/10 px-2 py-1.5 text-sm">
         <PenLine className="size-3 shrink-0 text-green-400" />
         <span className="font-medium text-green-400">Plan Approved</span>
         <Check className="ml-auto size-3 shrink-0 text-green-400" />
@@ -652,10 +689,10 @@ function ExitPlanModeBlock() {
   }
 
   return (
-    <div className="my-0.5 flex items-center gap-1.5 rounded bg-red-500/10 px-2 py-1.5 text-xs">
+    <div className="my-4 flex items-center gap-1.5 rounded bg-red-500/10 px-2 py-1.5 text-sm">
       <PenLine className="size-3 shrink-0 text-red-400" />
       <span className="font-medium text-red-400">Plan Rejected</span>
-      {outcome.feedback && (
+      {outcome.feedback && outcome.feedback !== 'User rejected the plan' && (
         <span className="min-w-0 truncate text-red-400/70">{outcome.feedback}</span>
       )}
       <X className="ml-auto size-3 shrink-0 text-red-400" />

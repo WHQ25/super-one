@@ -86,5 +86,6 @@ function generateSummary(toolUses: ContentBlock[]): string {
     if (grepCount > 0) sub.push(`${grepCount} code`)
     parts.push(`searched ${sub.join(' · ')}`)
   }
-  return parts.join(', ')
+  const text = parts.join(', ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }

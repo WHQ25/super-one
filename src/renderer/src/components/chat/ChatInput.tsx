@@ -339,7 +339,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             mentionInfoRef.current = null
             return true
           }
-          if (e.key === 'Enter' && !e.shiftKey) {
+          if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
             e.preventDefault()
             mentionRef.current?.confirmEnter()
             return true
@@ -358,7 +358,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             setSlashIndex((i) => (i <= 0 ? matchingCommands.length - 1 : i - 1))
             return true
           }
-          if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+          if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !e.altKey)) {
             e.preventDefault()
             const idx = slashIndex >= 0 ? Math.min(slashIndex, matchingCommands.length - 1) : 0
             if (matchingCommands[idx]) {
@@ -383,8 +383,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
         }
 
-        // Enter → send message (Shift+Enter falls through to ProseMirror for newline)
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && (e.shiftKey || e.altKey)) {
+          e.preventDefault()
+          editorRef.current?.commands.setHardBreak()
+          return true
+        }
+
+        if (e.key === 'Enter') {
           e.preventDefault()
           handleSend()
           return true

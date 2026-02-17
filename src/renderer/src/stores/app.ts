@@ -77,10 +77,10 @@ async function openFolderDirect(folderPath: string, set: (partial: Partial<AppSt
   if (!ok) return
   set({ currentFolder: folderPath })
   useAppStore.getState().fetchRecentFolders()
-  // Activate this project's session in chat store
   const { useChatStore } = await import('./chat')
   useChatStore.getState().ensureSession(folderPath)
   useChatStore.getState().switchProject(folderPath)
+  if (useAppStore.getState().view === 'startup') set({ view: 'main' })
 }
 
 async function refreshResourcesInBackground(): Promise<void> {
@@ -205,6 +205,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   removeRecentFolder: async (folderPath: string) => {
+    const wasActive = get().currentFolder === folderPath
     // Dispose agent and clean up DB (cascade deletes sessions + messages)
     await window.app.closeProject(folderPath).catch(() => {})
     const updated = await window.app.removeRecentFolder(folderPath)
@@ -214,8 +215,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         recentFolders: updated,
         _worktrees,
-        // If the removed project was the active one, clear it
-        ...(s.currentFolder === folderPath ? { currentFolder: null } : {}),
+        ...(wasActive ? { currentFolder: null } : {}),
       }
     })
     // Clean up chat store in-memory session state
@@ -227,6 +227,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...(s.activeProject === folderPath ? { activeProject: null } : {}),
       }
     })
+    if (wasActive) {
+      if (updated.length > 0) {
+        await openFolderDirect(updated[0].path, set)
+      } else {
+        set({ view: 'startup' })
+      }
+    }
   },
 
   startInstall: async () => {
@@ -270,16 +277,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       useChatStore.getState().setGlobalResources([], {}, [], startupData.userSkills, startupData.userCommands, startupData.userAgents)
     }
 
-    set({ view: 'main' })
-
-    // Open default folder
+    // Open default folder or show startup page
     if (get().layoutMode === 'coding' && !get().currentFolder) {
       const folders = get().recentFolders
       if (folders.length > 0) {
+        set({ view: 'main' })
         await openFolderDirect(folders[0].path, set)
       } else {
-        get().openTmpFolder()
+        set({ view: 'startup' })
+        return
       }
+    } else {
+      set({ view: 'main' })
     }
 
     // Refresh resources in background (connect to Claude SDK, update cache + store)

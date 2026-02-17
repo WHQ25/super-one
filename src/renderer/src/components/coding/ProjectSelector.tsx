@@ -26,6 +26,27 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
   const selectAndSwitchFolder = useAppStore((s) => s.selectAndSwitchFolder)
 
   const projectName = currentFolder?.split('/').pop() ?? 'No Project'
+  const handleAddProject = mode === 'switch' ? selectAndSwitchFolder : selectAndOpenFolder
+
+  if (recentFolders.length === 0) {
+    return compact ? (
+      <button
+        onClick={() => void handleAddProject()}
+        className="flex items-center gap-1 truncate rounded px-1 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Plus className="size-3 shrink-0" />
+        <span>Add Project...</span>
+      </button>
+    ) : (
+      <button
+        onClick={() => void handleAddProject()}
+        className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
+      >
+        <Plus className="size-4 shrink-0 text-muted-foreground" />
+        <span>Add Project...</span>
+      </button>
+    )
+  }
 
   return (
     <DropdownMenu>

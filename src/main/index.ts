@@ -351,7 +351,13 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GIT_INFO, async (_event, folderPath: string) => {
     try {
-      const branch = await gitRun(folderPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
+      let branch: string
+      try {
+        branch = await gitRun(folderPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
+      } catch {
+        const ref = await gitRun(folderPath, ['symbolic-ref', 'HEAD'])
+        branch = ref.replace('refs/heads/', '')
+      }
       const status = await gitRun(folderPath, ['status', '--porcelain'])
       const files = status ? status.split('\n').filter(Boolean).length : 0
       let insertions = 0
@@ -432,7 +438,17 @@ function registerIpcHandlers(): void {
       const currentBranch = current?.branch || (current?.head ? current.head.slice(0, 7) : '')
       return { isWorktree, currentBranch, entries }
     } catch {
-      return null
+      try {
+        const ref = await gitRun(folderPath, ['symbolic-ref', 'HEAD'])
+        const branch = ref.replace('refs/heads/', '')
+        return {
+          isWorktree: false,
+          currentBranch: branch,
+          entries: [{ path: folderPath, branch, head: '', isMain: true, isCurrent: true }],
+        }
+      } catch {
+        return null
+      }
     }
   })
 

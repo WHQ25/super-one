@@ -209,6 +209,7 @@ Follow **Test-Driven Development** — write tests before implementation.
 - **Scope**: Test pure logic, utilities, store actions, and IPC handlers. Do not test trivial UI wiring or third-party library internals.
 - **Naming**: Use descriptive `describe` / `it` blocks: `describe('functionName', () => { it('should return X when given Y', ...) })`.
 - **No mocking by default**: Prefer testing real logic. Only mock external boundaries (IPC, filesystem, network).
+- **Regression tests for bug fixes**: Every bug fix must include a test that reproduces the bug scenario. This prevents the same bug from reappearing in the future.
 
 ## Conventions
 

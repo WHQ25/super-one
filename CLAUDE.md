@@ -185,6 +185,10 @@ RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate bun run dev
 - Only works in development mode (`import.meta.env.DEV`)
 - Matching tool blocks render a debug view with prettified JSON input and raw output instead of the normal UI
 
+### Log File
+
+In development mode, `electron-log` writes to `dev.log` in the project root (configured in `src/main/logger.ts`). When debugging main process issues, read this file to inspect logs instead of guessing. The log format is `[date time] [level] text`.
+
 ## Testing (TDD)
 
 Follow **Test-Driven Development** — write tests before implementation.

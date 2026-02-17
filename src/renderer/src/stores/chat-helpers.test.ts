@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSlashCommands, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
+import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
 import type { ChatMessage, SlashCommandInfo } from '../../../shared/agent-types'
 
 function cmd(name: string, description = ''): SlashCommandInfo {
@@ -130,5 +130,45 @@ describe('remapMessagesForFork', () => {
     const original = msg('abc', 'user')
     remapMessagesForFork([original], 'fork-1')
     expect(original.id).toBe('abc')
+  })
+})
+
+describe('extractModeFromSuggestions', () => {
+  it('returns the mode when a setMode suggestion is selected', () => {
+    const suggestions = [
+      { type: 'addRules', rules: [] },
+      { type: 'setMode', mode: 'acceptEdits', destination: 'session' },
+    ]
+    expect(extractModeFromSuggestions(suggestions, [1])).toBe('acceptEdits')
+  })
+
+  it('returns undefined when no setMode suggestion is selected', () => {
+    const suggestions = [
+      { type: 'addRules', rules: [] },
+      { type: 'setMode', mode: 'acceptEdits', destination: 'session' },
+    ]
+    expect(extractModeFromSuggestions(suggestions, [0])).toBeUndefined()
+  })
+
+  it('returns undefined when suggestions is undefined', () => {
+    expect(extractModeFromSuggestions(undefined, [0])).toBeUndefined()
+  })
+
+  it('returns undefined when selectedIndices is empty', () => {
+    const suggestions = [{ type: 'setMode', mode: 'acceptEdits' }]
+    expect(extractModeFromSuggestions(suggestions, [])).toBeUndefined()
+  })
+
+  it('returns the last setMode when multiple setMode suggestions are selected', () => {
+    const suggestions = [
+      { type: 'setMode', mode: 'acceptEdits' },
+      { type: 'setMode', mode: 'bypassPermissions' },
+    ]
+    expect(extractModeFromSuggestions(suggestions, [0, 1])).toBe('bypassPermissions')
+  })
+
+  it('ignores out-of-bounds indices', () => {
+    const suggestions = [{ type: 'setMode', mode: 'acceptEdits' }]
+    expect(extractModeFromSuggestions(suggestions, [5])).toBeUndefined()
   })
 })

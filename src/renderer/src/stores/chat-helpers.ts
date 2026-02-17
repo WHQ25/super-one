@@ -55,3 +55,18 @@ const POPUP_COMMANDS = new Set(['help', 'reset', 'auth', 'auth-status', 'auth-se
 export function getCommandOutputMode(command: string): 'overlay' | 'popup' {
   return POPUP_COMMANDS.has(command) ? 'popup' : 'overlay'
 }
+
+export function extractModeFromSuggestions(
+  suggestions: Array<Record<string, unknown>> | undefined,
+  selectedIndices: number[]
+): string | undefined {
+  if (!suggestions) return undefined
+  let mode: string | undefined
+  for (const idx of selectedIndices) {
+    const s = suggestions[idx]
+    if (s?.type === 'setMode' && typeof s.mode === 'string') {
+      mode = s.mode
+    }
+  }
+  return mode
+}

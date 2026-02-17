@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { useChatStore, useActiveSession } from '@/stores/chat'
+import { CommandShortcut } from '@/components/ui/command'
 import type { UserQuestion } from '../../../../shared/agent-types'
 
 function QuestionPanel({
@@ -37,16 +38,16 @@ function QuestionPanel({
               }`}
               title={opt.description}
             >
-              <kbd className="mr-1 font-mono text-[10px] opacity-50">{i + 1}</kbd>
+              <CommandShortcut className="mr-1 font-mono text-[10px] opacity-50">{i + 1}</CommandShortcut>
               {opt.label}
             </button>
           )
         })}
       </div>
       <div className="relative mt-2">
-        <kbd className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[10px] text-muted-foreground/50">
+        <CommandShortcut className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[10px] text-muted-foreground/50">
           {q.options.length + 1}
-        </kbd>
+        </CommandShortcut>
         <input
           ref={inputRef}
           type="text"
@@ -241,7 +242,7 @@ export function AskUserQuestionPrompt() {
           onClick={handleSubmit}
         >
           Submit
-          <kbd className="ml-1.5 font-mono text-[10px] opacity-50">↵</kbd>
+          <CommandShortcut className="ml-1.5 font-mono text-[10px] opacity-50">↵</CommandShortcut>
         </Button>
         <span className="text-[10px] text-muted-foreground">
           {!singleQuestion && 'tab switch · '}1-{questions[singleQuestion ? 0 : activeTab].options.length} select · {questions[singleQuestion ? 0 : activeTab].options.length + 1} other · esc dismiss

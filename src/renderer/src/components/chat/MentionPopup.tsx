@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardR
 import { Bot, Folder } from 'lucide-react'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { cn } from '@/lib/utils'
+import { CommandShortcut } from '@/components/ui/command'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import type { AgentInfo, ListDirEntry } from '../../../../shared/agent-types'
 
@@ -228,13 +229,13 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
         {/* Footer hint */}
         <div className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground shrink-0">
-          <kbd className="rounded bg-muted px-1">Tab</kbd> autocomplete
+          <CommandShortcut className="rounded bg-muted px-1">Tab</CommandShortcut> autocomplete
           <span className="mx-1.5">&middot;</span>
-          <kbd className="rounded bg-muted px-1">Enter</kbd> select
+          <CommandShortcut className="rounded bg-muted px-1">Enter</CommandShortcut> select
           <span className="mx-1.5">&middot;</span>
-          <kbd className="rounded bg-muted px-1">&uarr;&darr;</kbd> navigate
+          <CommandShortcut className="rounded bg-muted px-1">&uarr;&darr;</CommandShortcut> navigate
           <span className="mx-1.5">&middot;</span>
-          <kbd className="rounded bg-muted px-1">Esc</kbd> close
+          <CommandShortcut className="rounded bg-muted px-1">Esc</CommandShortcut> close
         </div>
       </div>
     )

@@ -2,32 +2,78 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { CommandShortcut } from '@/components/ui/command'
 import { useChatStore, useActiveSession } from '@/stores/chat'
+import { Circle, CheckCircle2 } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay } from './tool-display'
+import { modes as permissionModes } from './PermissionModeSelector'
 
 /** Dev-only: comma-separated tool names to show debug data in permission prompt. */
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
   ? (import.meta.env.RENDERER_VITE_DEBUG_TOOL_NAMES ?? '').split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
   : []
 
-/** Turn a raw suggestion object into a human-readable label + destination tag. */
-function formatSuggestion(s: Record<string, unknown>): { label: string; destination: string } {
+const DEST_LABELS: Record<string, string> = {
+  session: 'session',
+  localSettings: 'folder',
+  projectSettings: 'project',
+  userSettings: 'user',
+  cliArg: 'CLI',
+}
+
+function destLabel(destination: string): string {
+  return DEST_LABELS[destination] ?? destination
+}
+
+function SuggestionContent({ s }: { s: Record<string, unknown> }) {
   const type = s.type as string | undefined
   const destination = (s.destination as string) ?? 'session'
   const rules = s.rules as Array<{ toolName?: string; ruleContent?: string }> | undefined
   const directories = s.directories as string[] | undefined
 
-  const formatRules = () =>
-    rules?.map((r) => [r.toolName, r.ruleContent].filter(Boolean).join(': ')).join(', ') ?? ''
-
   switch (type) {
-    case 'addRules': return { label: `Allow ${formatRules()}`, destination }
-    case 'replaceRules': return { label: `Replace ${formatRules()}`, destination }
-    case 'removeRules': return { label: `Remove ${formatRules()}`, destination }
-    case 'setMode': return { label: `Switch to ${s.mode} mode`, destination }
-    case 'addDirectories': return { label: `Add directory: ${directories?.join(', ')}`, destination }
-    case 'removeDirectories': return { label: `Remove directory: ${directories?.join(', ')}`, destination }
-    default: return { label: JSON.stringify(s), destination }
+    case 'addRules':
+      return (
+        <>
+          Allow{' '}
+          {rules?.map((r, i) => (
+            <span key={i}>
+              {i > 0 && ', '}
+              <span className="font-medium">{r.toolName}</span>
+              {r.ruleContent && <span className="text-muted-foreground">({r.ruleContent})</span>}
+            </span>
+          ))}
+          {' '}for this {destLabel(destination)}
+        </>
+      )
+    case 'setMode': {
+      const mode = permissionModes.find((m) => m.id === s.mode)
+      if (!mode) return <>Switch to {String(s.mode)}</>
+      return (
+        <>
+          Switch to{' '}
+          <span className={`inline-flex items-center gap-0.5 font-medium ${mode.color}`}>
+            {mode.icon}
+            {mode.label}
+          </span>
+        </>
+      )
+    }
+    case 'addDirectories':
+      return (
+        <>
+          Allow access to{' '}
+          <span className="font-mono font-medium">{directories?.join(', ')}</span>
+          {' '}for this {destLabel(destination)}
+        </>
+      )
+    case 'replaceRules':
+      return <>Replace {rules?.map((r) => [r.toolName, r.ruleContent].filter(Boolean).join(': ')).join(', ')}</>
+    case 'removeRules':
+      return <>Remove {rules?.map((r) => [r.toolName, r.ruleContent].filter(Boolean).join(': ')).join(', ')}</>
+    case 'removeDirectories':
+      return <>Remove directory: {directories?.join(', ')}</>
+    default:
+      return <>{JSON.stringify(s)}</>
   }
 }
 
@@ -54,7 +100,7 @@ export function PermissionPrompt() {
   useEffect(() => {
     setFeedback('')
     setFocusedIdx(0)
-    setSelectedSuggestions(new Set(Array.from({ length: suggestionsCount }, (_, i) => i)))
+    setSelectedSuggestions(new Set())
   }, [requestId, suggestionsCount])
 
   // Auto-focus first button when prompt appears
@@ -265,43 +311,35 @@ export function PermissionPrompt() {
           </div>
         </div>
         {hasSuggestionRow && (
-          <div className="flex flex-col gap-1.5 @lg:flex-row @lg:flex-wrap @lg:items-center @lg:gap-2">
-            {allowAlwaysAllow && isEditTool && (
-              <Button
-                size="sm"
-                className="h-7 w-full cursor-pointer bg-purple-600 px-3 text-xs text-white hover:bg-purple-500 focus:ring-2 focus:ring-purple-400 focus:outline-none @lg:w-auto"
-                onClick={handleAcceptEdit}
-              >
-                Accept Edit
-                <CommandShortcut className="ml-1 text-[10px] text-purple-200/80">⇧⇥</CommandShortcut>
-              </Button>
-            )}
+          <div className="grid grid-cols-1 gap-1.5 @lg:grid-cols-2">
             {allowAlwaysAllow && !isEditTool && (!suggestions || suggestions.length === 0) && (
               <Button
                 size="sm"
-                className="h-7 w-full cursor-pointer bg-blue-600 px-3 text-xs text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none @lg:w-auto"
+                className="h-7 w-full cursor-pointer bg-blue-600 px-3 text-xs text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
                 onClick={handleAlwaysAllow}
               >
                 Always Allow
               </Button>
             )}
             {suggestions?.map((s, i) => {
-              const { label, destination } = formatSuggestion(s)
               const isSelected = selectedSuggestions.has(i)
               return (
                 <button
                   key={i}
                   type="button"
-                  className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors @lg:w-auto ${
+                  className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors ${
                     isSelected
                       ? 'border-blue-500/50 bg-blue-500/10 text-foreground'
                       : 'border-border text-muted-foreground'
                   } hover:bg-accent hover:text-accent-foreground`}
                   onClick={() => toggleSuggestion(i)}
                 >
-                  <kbd className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-background/80 font-mono text-[10px]">{i + 1}</kbd>
-                  <span className="truncate">{label}</span>
-                  <span className="shrink-0 rounded bg-background/60 px-1 py-px text-[10px] text-muted-foreground/60">{destination}</span>
+                  {isSelected
+                    ? <CheckCircle2 className="size-3.5 shrink-0 text-blue-400" />
+                    : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
+                  }
+                  <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>
+                  <CommandShortcut className="ml-auto inline-flex size-4 shrink-0 items-center justify-center rounded bg-background/60 text-[10px] text-muted-foreground">{i + 1}</CommandShortcut>
                 </button>
               )
             })}

@@ -2,6 +2,7 @@ import { useEffect, useCallback, useRef } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { CommandShortcut } from '@/components/ui/command'
 import { ContextCommandView } from './ContextCommandView'
 import { ReleaseNotesView } from './ReleaseNotesView'
 
@@ -77,7 +78,7 @@ export function SlashCommandOverlay() {
 
       {/* Footer hint */}
       <div className="border-t border-border px-3 py-1.5 text-center text-[10px] text-muted-foreground">
-        Press <kbd className="rounded bg-muted px-1 py-0.5 text-muted-foreground">Esc</kbd> to close
+        Press <CommandShortcut className="rounded bg-muted px-1 py-0.5 text-muted-foreground">Esc</CommandShortcut> to close
       </div>
     </div>
   )

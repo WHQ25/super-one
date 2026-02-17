@@ -3,6 +3,7 @@ import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { ListTodo, Circle, Loader2, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { CommandShortcut } from '@/components/ui/command'
 
 export function TodoPopup() {
   const todos = useActiveSession((s) => s.todos)
@@ -78,7 +79,7 @@ export function TodoPopup() {
           Todos ({completed}/{todoList.length})
         </span>
         <span className="ml-auto text-[10px] text-muted-foreground">
-          <kbd className="rounded bg-muted px-1 py-0.5">{showTodos ? 'ESC' : 'Ctrl+T'}</kbd>
+          <CommandShortcut className="rounded bg-muted px-1 py-0.5">{showTodos ? 'ESC' : 'Ctrl+T'}</CommandShortcut>
         </span>
       </div>
 

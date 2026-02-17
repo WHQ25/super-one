@@ -7,7 +7,7 @@ import type { PermissionMode } from '../../../../shared/agent-types'
 /** Ordered list of permission modes — used for cycling via Shift+Tab. */
 export const PERMISSION_MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions']
 
-const modes: { id: PermissionMode; label: string; description: string; icon: React.ReactNode; color: string; hoverBg: string }[] = [
+export const modes: { id: PermissionMode; label: string; description: string; icon: React.ReactNode; color: string; hoverBg: string }[] = [
   {
     id: 'default',
     label: 'Normal',

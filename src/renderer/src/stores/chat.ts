@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
-import { buildSlashCommands, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
+import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
@@ -1525,7 +1525,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } else {
       void window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions)
     }
-    set((s) => updateSession(s, activeProject, () => ({ pendingPermission: null, hasPendingInteraction: false })))
+    const updates: Partial<SessionState> = { pendingPermission: null, hasPendingInteraction: false }
+    if (allow && selectedSuggestions) {
+      const mode = extractModeFromSuggestions(session.pendingPermission?.suggestions, selectedSuggestions)
+      if (mode) updates.permissionMode = mode as PermissionMode
+    }
+    set((s) => updateSession(s, activeProject, () => updates))
   },
 
   setPermissionMode: async (mode) => {

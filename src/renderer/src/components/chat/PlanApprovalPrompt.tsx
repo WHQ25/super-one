@@ -5,6 +5,7 @@ import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { PenLine, Check, X } from 'lucide-react'
+import { CommandShortcut } from '@/components/ui/command'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 const streamdownPlugins = { code: codePlugin }
@@ -163,7 +164,7 @@ export function PlanApprovalPrompt() {
                 placeholder="Reject feedback (optional)"
                 className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
-              <kbd className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">Tab</kbd>
+              <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">Tab</CommandShortcut>
             </div>
           </div>
 
@@ -178,7 +179,7 @@ export function PlanApprovalPrompt() {
                 placeholder="Reject feedback (optional)"
                 className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
-              <kbd className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">Tab</kbd>
+              <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">Tab</CommandShortcut>
             </div>
             <div className="flex items-center gap-2">
               <Button

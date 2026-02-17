@@ -141,13 +141,13 @@ function App(): React.JSX.Element {
       <div className={cn('flex min-w-0 flex-1 flex-col transition-[border-radius] duration-300', layoutMode === 'coding' && showSidebar && 'rounded-l-xl bg-background overflow-hidden')}>
         {/* Main header — drag region */}
         <div
-          className={`flex h-11 shrink-0 items-center bg-card pt-[2px] ${isFullscreen ? 'pl-2' : 'pl-[18px]'}`}
+          className={cn('flex h-11 shrink-0 items-center bg-card pt-[2px] transition-[padding-left] duration-300 ease-in-out', isFullscreen && !(layoutMode === 'coding' && showSidebar) ? 'pl-2' : 'pl-[18px]')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          {!isFullscreen && !(layoutMode === 'coding' && showSidebar) && <div className="w-[66px] shrink-0" />}
-          {layoutMode === 'coding' && !showSidebar && (
-            <>
-            <TooltipProvider>
+          <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', !isFullscreen && !(layoutMode === 'coding' && showSidebar) ? 'w-[66px]' : 'w-0')} />
+          {layoutMode === 'coding' && (
+            <div className={cn('shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out', showSidebar ? 'w-0' : 'w-[30px]')}>
+              <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
@@ -163,7 +163,7 @@ function App(): React.JSX.Element {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-            </>
+            </div>
           )}
           <span className="max-w-[200px] truncate text-xs text-muted-foreground">
             {layoutMode === 'coding' ? (sessionTitle ?? 'New Session') : folderName}

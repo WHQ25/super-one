@@ -491,9 +491,13 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.SETUP_CHECK_CLAUDE, () => {
     if (testInstall) return false
-    const cmd = process.platform === 'win32' ? 'where' : 'which'
+    if (process.platform === 'win32') {
+      return new Promise<boolean>((resolve) => {
+        execFile('where', ['claude'], (error) => resolve(!error))
+      })
+    }
     return new Promise<boolean>((resolve) => {
-      execFile(cmd, ['claude'], (error) => {
+      execFile(process.env.SHELL || '/bin/zsh', ['-l', '-c', 'which claude'], (error) => {
         resolve(!error)
       })
     })

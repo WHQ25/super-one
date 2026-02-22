@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, ContentBlock, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
@@ -43,6 +43,7 @@ export interface SessionState {
   contextTokens: number
 
   selectedModel: string
+  selectedEffort?: EffortLevel
   selectedCodexModel: string
   selectedCodexReasoningEffort?: CodexReasoningEffort
   selectedCodexPermissionPreset: CodexPermissionPreset
@@ -50,6 +51,7 @@ export interface SessionState {
   codexModelsLoading: boolean
   preferredProvider: ChatProvider
   draftText: string
+  promptSuggestion: string | null
   attachments: ImageAttachment[]
   mentions: Mention[]
 
@@ -110,6 +112,7 @@ export function createDefaultSessionState(): SessionState {
     totalCostUsd: 0,
     contextTokens: 0,
     selectedModel: '',
+    selectedEffort: undefined,
     selectedCodexModel: '',
     selectedCodexReasoningEffort: undefined,
     selectedCodexPermissionPreset: 'default',
@@ -117,6 +120,7 @@ export function createDefaultSessionState(): SessionState {
     codexModelsLoading: false,
     preferredProvider: 'claude',
     draftText: '',
+    promptSuggestion: null,
     attachments: [],
     mentions: [],
     pendingPermission: null,
@@ -200,6 +204,7 @@ interface ChatStore {
 
   // Model actions
   setSelectedModel: (model: string) => void
+  setSelectedEffort: (effort?: EffortLevel) => void
   setSelectedCodexModel: (model: string) => void
   setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void
@@ -299,7 +304,7 @@ function pruneTransientCodexItems(items: CodexThreadItem[]): CodexThreadItem[] {
 function applyEventToSession(session: SessionState, event: AgentEvent): Partial<SessionState> {
   switch (event.type) {
     case 'message_start':
-      return { messages: [...session.messages, event.message] }
+      return { messages: [...session.messages, event.message], promptSuggestion: null }
 
     case 'content_delta': {
       const updatedMessages = session.messages.map((msg) => {
@@ -435,6 +440,9 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
 
     case 'status_change':
       return { status: event.status }
+
+    case 'prompt_suggestion':
+      return { promptSuggestion: event.suggestion }
 
     case 'permission_request':
       return { pendingPermission: event.request, hasPendingInteraction: true }
@@ -574,6 +582,7 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
 
     case 'hook_started':
     case 'hook_complete':
+    case 'task_started':
     case 'task_notification':
     case 'auth_status':
       return {}
@@ -843,8 +852,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           pendingPlanApproval: delta.pendingPlanApproval !== undefined ? delta.pendingPlanApproval : bg.pendingPlanApproval,
         }
 
-        // Auto-save when bg session message finishes
-        if (event.type === 'message_complete' || event.type === 'message_interrupted' || event.type === 'message_error') {
+        // Incremental save on tool_result + final save on complete/interrupted/error
+        if (
+          (event.type === 'content_delta' && event.delta.type === 'tool_result') ||
+          event.type === 'message_complete' || event.type === 'message_interrupted' || event.type === 'message_error'
+        ) {
           setTimeout(() => {
             window.app.saveSessionState(eventSessionId, {
               messages: updatedBg.messages,
@@ -926,6 +938,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const globalModels = s.availableModels
         if (!updatedSession.selectedModel && globalModels[0]) {
           updatedSession.selectedModel = globalModels[0].id
+          if (globalModels[0].supportedEffortLevels?.length) {
+            updatedSession.selectedEffort = 'max'
+          }
         }
 
         // Load project-level additional directories
@@ -938,6 +953,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       // On session_init, create session in DB
       if (event.type === 'session_init' && event.session) {
+        const snapshot = updatedSession
+        setTimeout(() => _saveSessionSnapshot(projectPath, snapshot), 0)
+      }
+
+      // Incremental save when a tool_result arrives (block boundary)
+      if (event.type === 'content_delta' && event.delta.type === 'tool_result') {
         const snapshot = updatedSession
         setTimeout(() => _saveSessionSnapshot(projectPath, snapshot), 0)
       }
@@ -1021,6 +1042,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const {
       preferredProvider,
       selectedModel,
+      selectedEffort,
       selectedCodexModel,
       selectedCodexReasoningEffort,
       selectedCodexPermissionPreset,
@@ -1087,7 +1109,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     const userContent: ContentBlock[] = [
-      ...attachments.map((img) => ({ type: 'image' as const, name: img.name })),
+      ...attachments.map((att) =>
+        att.mimeType === 'application/pdf'
+          ? { type: 'document' as const, name: att.name }
+          : { type: 'image' as const, name: att.name }
+      ),
       { type: 'text' as const, text: finalContent },
     ]
 
@@ -1243,6 +1269,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     await window.agent.sendMessage(activeProject, {
       content: finalContent,
       model: selectedModel || undefined,
+      effort: selectedEffort,
       images: attachments.length > 0 ? attachments : undefined,
       additionalDirs: mergedDirs.length > 0 ? mergedDirs : undefined,
     })
@@ -1414,9 +1441,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setSelectedModel: (model) => {
+    const { activeProject, availableModels } = get()
+    if (!activeProject) return
+    const modelInfo = availableModels.find((m) => m.id === model)
+    const defaultEffort = modelInfo?.supportedEffortLevels?.length ? 'max' as EffortLevel : undefined
+    set((s) => updateSession(s, activeProject, () => ({ selectedModel: model, selectedEffort: defaultEffort })))
+  },
+
+  setSelectedEffort: (effort) => {
     const { activeProject } = get()
     if (!activeProject) return
-    set((s) => updateSession(s, activeProject, () => ({ selectedModel: model })))
+    set((s) => updateSession(s, activeProject, () => ({ selectedEffort: effort })))
   },
 
   setSelectedCodexModel: (model) => {

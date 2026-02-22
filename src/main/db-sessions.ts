@@ -122,12 +122,9 @@ export function saveSessionState(
         WHERE claude_session_id = ?
       `)
 
-  // Skip messages still streaming — they haven't completed and shouldn't be persisted
-  const settled = data.messages.filter((m) => m.status !== 'streaming')
-
   const tx = db.transaction(() => {
-    for (let i = 0; i < settled.length; i++) {
-      const msg = settled[i]
+    for (let i = 0; i < data.messages.length; i++) {
+      const msg = data.messages[i]
       upsertMsg.run(
         msg.id,
         claudeSessionId,
@@ -178,7 +175,7 @@ export function loadSessionState(
   const messages: ChatMessage[] = rows.map((r) => ({
     id: r.id,
     role: r.role as ChatMessage['role'],
-    status: r.status as ChatMessage['status'],
+    status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
     content: JSON.parse(r.content_json),
     createdAt: r.created_at,
     providerId: r.provider_id,

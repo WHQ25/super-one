@@ -160,6 +160,7 @@ function renderBlock(
   index: number,
   isStreaming: boolean,
   toolResultMap?: Map<string, string>,
+  nextBlockType?: string,
 ) {
   switch (block.type) {
     case 'text':
@@ -176,6 +177,16 @@ function renderBlock(
           <span className="truncate">{block.name}</span>
         </div>
       )
+    case 'document':
+      return (
+        <div
+          key={index}
+          className="my-1 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs text-foreground"
+        >
+          <FileIcon name={block.name} size={14} />
+          <span className="truncate">{block.name}</span>
+        </div>
+      )
     case 'tool_use':
       return (
         <ToolBlock
@@ -188,7 +199,7 @@ function renderBlock(
         />
       )
     case 'thinking':
-      return <ThinkingBlock key={index} thinking={block.thinking} isStreaming={isStreaming} />
+      return <ThinkingBlock key={index} thinking={block.thinking} isStreaming={isStreaming} followedByText={nextBlockType === 'text'} />
     case 'tool_result':
       // Normally rendered inside the parent ToolBlock via toolResultMap.
       // If orphaned (no matching tool_use), show a compact fallback.
@@ -202,23 +213,61 @@ function renderBlock(
   }
 }
 
-function ThinkingBlock({ thinking, isStreaming }: { thinking: string; isStreaming: boolean }) {
-  const [expanded, setExpanded] = useState(false)
+function ThinkingBlock({ thinking, isStreaming, followedByText }: { thinking: string; isStreaming: boolean; followedByText?: boolean }) {
+  const [elapsed, setElapsed] = useState(0)
+  const startRef = useRef(isStreaming ? Date.now() : 0)
+  const thinkingRef = useRef(thinking)
+  thinkingRef.current = thinking
+  const [done, setDone] = useState(!isStreaming)
+  const [expanded, setExpanded] = useState(!done)
+
+  useEffect(() => {
+    if (!isStreaming && !done) {
+      setDone(true)
+      if (startRef.current) setElapsed(Math.round((Date.now() - startRef.current) / 1000))
+    }
+  }, [isStreaming, done])
+
+  useEffect(() => {
+    if (done || !startRef.current) return
+    let prevLen = thinkingRef.current.length
+    const id = setInterval(() => {
+      setElapsed(Math.round((Date.now() - startRef.current) / 1000))
+      const curLen = thinkingRef.current.length
+      if (curLen > 0 && curLen === prevLen) {
+        setDone(true)
+      }
+      prevLen = curLen
+    }, 500)
+    return () => clearInterval(id)
+  }, [done])
+
+  useEffect(() => {
+    if (!isStreaming) setExpanded(false)
+  }, [isStreaming])
+
+  const active = !done
+  const label = active
+    ? (elapsed >= 1 ? `Thinking for ${elapsed}s...` : 'Thinking...')
+    : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')
+
   return (
-    <div className="my-1">
+    <div className={cn('mt-1', followedByText && '@lg:-mb-4')}>
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
-        {isStreaming
-          ? <Brain className="size-3 animate-pulse text-purple-400" />
+        {active
+          ? <Brain className="size-3 animate-pulse" />
           : <Brain className="size-3" />
         }
-        <span>{isStreaming ? 'Thinking...' : 'Thinking'}</span>
+        <span>{label}</span>
         <ChevronRight className={cn('size-3 transition-transform duration-200', expanded && 'rotate-90')} />
       </button>
       {expanded && (
-        <div className="mt-1 max-h-48 overflow-y-auto rounded border border-border bg-muted/30 px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+        <div className={cn(
+          'mt-1 max-h-48 overflow-y-auto border-l-2 border-purple-400/40 pl-3 text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap',
+        )}>
           {thinking}
         </div>
       )}
@@ -385,7 +434,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
               </>
           : isCodexMessage
             ? <CodexTurnView message={message} isStreaming={isStreaming} />
-          : grouped!.segments.map((seg) => {
+          : grouped!.segments.map((seg, segIdx, segs) => {
               if (seg.kind === 'subagent') {
                 return (
                   <SubagentBlock
@@ -398,12 +447,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 )
               }
               if (seg.kind === 'block') {
-                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap)
+                const nextSeg = segs[segIdx + 1]
+                const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : undefined
+                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, nextType)
               }
               const toolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
               if (toolUseCount <= 1) {
                 return seg.blocks.map((block, i) =>
-                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap)
+                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, seg.blocks[i + 1]?.type)
                 )
               }
               return (

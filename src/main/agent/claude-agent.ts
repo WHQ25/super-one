@@ -71,6 +71,7 @@ export class ClaudeAgent {
   private currentPermissionMode: PermissionMode = 'default'
   private currentSandboxInfo: SandboxInfo = DEFAULT_SANDBOX_INFO
   private additionalDirs: string[] = []
+  private currentEffort: SendMessageRequest['effort'] = undefined
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
   private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
@@ -113,6 +114,7 @@ export class ClaudeAgent {
       {
         cwd: this.config!.cwd,
         model: this.config!.model,
+        effort: this.currentEffort,
         permissionMode: this.currentPermissionMode,
         sandboxInfo: this.currentSandboxInfo,
         canUseTool,
@@ -158,6 +160,16 @@ export class ClaudeAgent {
   async sendMessage(request: SendMessageRequest): Promise<void> {
     if (!this.config || !this.onEvent) {
       throw new Error('ClaudeAgent not initialized')
+    }
+
+    // If effort changed, refresh session to apply new effort level
+    if (request.effort !== this.currentEffort && this.bridge) {
+      const prevSessionId = this.sessionId
+      await this.resetSession()
+      this.currentEffort = request.effort
+      this.createSession(prevSessionId || undefined)
+    } else {
+      this.currentEffort = request.effort
     }
 
     // If additionalDirs changed, refresh session to apply new directories

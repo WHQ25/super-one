@@ -5,6 +5,7 @@ import type { MessageBridge } from './message-bridge'
 export interface SessionQueryOptions {
   cwd: string
   model?: string
+  effort?: 'low' | 'medium' | 'high' | 'max'
   permissionMode: PermissionMode
   sandboxInfo?: SandboxInfo
   canUseTool: CanUseTool
@@ -37,6 +38,8 @@ export function createSessionQuery(
     options: {
       cwd: options.cwd,
       model: options.model,
+      effort: options.effort,
+      promptSuggestions: true,
       includePartialMessages: true,
       permissionMode: options.permissionMode,
       allowDangerouslySkipPermissions: options.permissionMode === 'bypassPermissions',
@@ -66,9 +69,9 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
   let content: unknown
 
   if (request.images?.length) {
-    const blocks: Array<Record<string, unknown>> = request.images.map((img) => ({
-      type: 'image',
-      source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
+    const blocks: Array<Record<string, unknown>> = request.images.map((att) => ({
+      type: att.mimeType === 'application/pdf' ? 'document' : 'image',
+      source: { type: 'base64', media_type: att.mimeType, data: att.base64 },
     }))
     blocks.push({ type: 'text', text: request.content })
     content = blocks
@@ -200,10 +203,19 @@ async function iterateMessages(
               type: 'status_indicator',
               indicator: sys.status ?? null,
             })
+          } else if (sys.subtype === 'task_started') {
+            emit({
+              type: 'task_started',
+              taskId: sys.task_id ?? '',
+              toolUseId: sys.tool_use_id,
+              description: sys.description ?? '',
+              taskType: sys.task_type,
+            })
           } else if (sys.subtype === 'task_notification') {
             emit({
               type: 'task_notification',
               taskId: sys.task_id ?? '',
+              toolUseId: sys.tool_use_id,
               taskStatus: sys.status ?? 'completed',
               outputFile: sys.output_file ?? '',
             })
@@ -448,6 +460,15 @@ async function iterateMessages(
 
           // Turn complete — signal idle until next user message
           emit({ type: 'status_change', status: 'idle' })
+          break
+        }
+
+        case 'prompt_suggestion': {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ps = msg as any
+          if (ps.suggestion) {
+            emit({ type: 'prompt_suggestion', suggestion: ps.suggestion })
+          }
           break
         }
       }

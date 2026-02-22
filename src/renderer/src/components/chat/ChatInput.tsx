@@ -12,6 +12,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { MentionNode } from './mention-node'
 import { SlashDecoration } from './slash-decoration'
+import { PromptSuggestion } from './prompt-suggestion'
 import type { MentionNodeAttrs } from './mention-node'
 import type { SlashCommandInfo } from '../../../../shared/agent-types'
 import type { ImageAttachment } from '../../../../shared/agent-types'
@@ -57,6 +58,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const dismissCommandPopup = useChatStore((s) => s.dismissSlashCommandOutput)
     const showDirManager = useActiveSession((s) => s.showDirManager)
     const setShowDirManager = useChatStore((s) => s.setShowDirManager)
+    const promptSuggestion = useActiveSession((s) => s.promptSuggestion)
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const [slashDismissed, setSlashDismissed] = useState(false)
@@ -84,6 +86,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const matchingCommandsRef = useRef<typeof matchingCommands>([])
     const slashDismissedRef = useRef(false)
     const handleKeyDownRef = useRef<(e: KeyboardEvent) => boolean>(() => false)
+    const promptSuggestionRef = useRef(promptSuggestion)
+    promptSuggestionRef.current = promptSuggestion
 
     useEffect(() => {
       if (slashIndex >= 0) {
@@ -295,6 +299,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
         }
 
+        if (e.key === 'Tab' && !e.shiftKey) {
+          const suggestion = promptSuggestionRef.current
+          const ed = editorRef.current
+          if (suggestion && ed && ed.isEmpty) {
+            e.preventDefault()
+            ed.commands.setContent(suggestion)
+            ed.commands.focus('end')
+            setTextRef.current(suggestion)
+            return true
+          }
+        }
+
         if (e.key === 'Backspace') {
           const ed = editorRef.current
           if (ed && ed.isEmpty && attachments.length > 0) {
@@ -444,6 +460,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         Placeholder.configure({ placeholder: placeholderText }),
         MentionNode,
         SlashDecoration.configure({ slashCommands: activeSlashCommands }),
+        PromptSuggestion,
       ],
       content: '',
       editorProps: {
@@ -541,6 +558,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         editor.view.dispatch(editor.state.tr)
       }
     }, [activeSlashCommands, editor])
+
+    useEffect(() => {
+      if (editor) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(editor.storage as any).promptSuggestion.suggestion =
+          (status !== 'streaming' ? promptSuggestion : null)
+        editor.view.dispatch(editor.state.tr)
+      }
+    }, [promptSuggestion, status, editor])
 
     if (compact) {
       return (

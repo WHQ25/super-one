@@ -21,7 +21,7 @@
     "build:linux": "electron-vite build && electron-builder --linux --config electron-builder.yml"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.37",
+    "@anthropic-ai/claude-agent-sdk": "0.2.50",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
@@ -29,6 +29,7 @@
     "better-sqlite3": "^12.6.2",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.7.3",
+    "pdfjs-dist": "^5.4.624",
     "smol-toml": "^1.6.0"
   },
   "devDependencies": {

@@ -16,6 +16,7 @@ export type ContentBlock =
   | { type: 'tool_use'; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; parentToolUseId?: string | null }
   | { type: 'tool_result'; toolUseId: string; summary: string; parentToolUseId?: string | null }
   | { type: 'image'; name: string }
+  | { type: 'document'; name: string }
 
 // --- Session info (from system init) ---
 
@@ -354,7 +355,8 @@ export type AgentEventBase =
   | { type: 'hook_complete'; hook: HookEvent }
   | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number }
   | { type: 'status_indicator'; indicator: 'compacting' | null }
-  | { type: 'task_notification'; taskId: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string }
+  | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string }
+  | { type: 'task_notification'; taskId: string; toolUseId?: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
@@ -363,6 +365,7 @@ export type AgentEventBase =
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo }
+  | { type: 'prompt_suggestion'; suggestion: string }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
 
@@ -370,9 +373,12 @@ export type AgentStatus = 'idle' | 'streaming' | 'error'
 
 // --- Renderer → Main requests ---
 
+export type EffortLevel = 'low' | 'medium' | 'high' | 'max'
+
 export interface SendMessageRequest {
   content: string
   model?: string
+  effort?: EffortLevel
   images?: ImageAttachment[]
   additionalDirs?: string[]
 }
@@ -384,6 +390,9 @@ export interface ModelOption {
   name: string
   description: string
   isDefault?: boolean
+  supportsEffort?: boolean
+  supportedEffortLevels?: ('low' | 'medium' | 'high' | 'max')[]
+  supportsAdaptiveThinking?: boolean
   supportedReasoningEfforts?: ReasoningEffortOption[]
   defaultReasoningEffort?: CodexReasoningEffort
 }

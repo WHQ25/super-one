@@ -2,8 +2,7 @@ import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo
 import { cn } from '@/lib/utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ArrowUp, Square, ChevronDown, Paperclip, X, Loader2, Check, FolderPlus, Folder } from 'lucide-react'
+import { ArrowUp, Square, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
@@ -15,6 +14,11 @@ import { MentionNode } from './mention-node'
 import { SlashDecoration } from './slash-decoration'
 import type { MentionNodeAttrs } from './mention-node'
 import type { SlashCommandInfo } from '../../../../shared/agent-types'
+import type { ImageAttachment } from '../../../../shared/agent-types'
+import { toMentionPath } from './chat-input-utils'
+import { AttachmentBar } from './AttachmentBar'
+import { ModelSelector } from './ModelSelector'
+import { DirManagerPanel } from './DirManagerPanel'
 
 export interface ChatInputHandle {
   send: () => void
@@ -24,60 +28,10 @@ interface ChatInputProps {
   compact?: boolean
 }
 
-function formatCodexModelLabel(raw: string): string {
-  const normalized = raw.trim().split('/').pop()?.trim() ?? raw.trim()
-  if (!normalized) return raw
-  const tokens = normalized
-    .replace(/_/g, '-')
-    .split(/[-\s]+/)
-    .filter(Boolean)
-  if (tokens.length === 0) return normalized
-  return tokens.map((token) => {
-    const lower = token.toLowerCase()
-    if (lower === 'gpt') return 'GPT'
-    if (/^\d+(\.\d+)*$/.test(token)) return token
-    return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`
-  }).join('-')
-}
-
-function formatReasoningEffortLabel(value: string): string {
-  switch (value) {
-    case 'minimal':
-      return 'Minimal'
-    case 'low':
-      return 'Low'
-    case 'medium':
-      return 'Medium'
-    case 'high':
-      return 'High'
-    case 'xhigh':
-      return 'Extra High'
-    default:
-      return value
-  }
-}
-
-function normalizeFilePath(path: string): string {
-  return path.replace(/\\/g, '/')
-}
-
-function toMentionPath(filePath: string, projectPath?: string | null): string {
-  const normalizedFilePath = normalizeFilePath(filePath)
-  const normalizedProjectPath = projectPath ? normalizeFilePath(projectPath).replace(/\/+$/, '') : ''
-  if (!normalizedProjectPath) return normalizedFilePath
-  if (normalizedFilePath === normalizedProjectPath) return '.'
-  if (normalizedFilePath.startsWith(`${normalizedProjectPath}/`)) {
-    return normalizedFilePath.slice(normalizedProjectPath.length + 1)
-  }
-  return normalizedFilePath
-}
-
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   function ChatInput({ compact }, ref) {
     const text = useActiveSession((s) => s.draftText)
     const setText = useChatStore((s) => s.setDraftText)
-    const [modelOpen, setModelOpen] = useState(false)
-    const [effortOpen, setEffortOpen] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const sendMessage = useChatStore((s) => s.sendMessage)
@@ -86,16 +40,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const isOpen = useChatStore((s) => s.isOpen)
     const toggleOpen = useChatStore((s) => s.toggleOpen)
     const status = useActiveSession((s) => s.status)
-    const selectedModel = useActiveSession((s) => s.selectedModel)
-    const selectedCodexModel = useActiveSession((s) => s.selectedCodexModel)
-    const selectedCodexReasoningEffort = useActiveSession((s) => s.selectedCodexReasoningEffort)
-    const availableModels = useChatStore((s) => s.availableModels)
-    const codexModels = useActiveSession((s) => s.codexModels)
-    const codexModelsLoading = useActiveSession((s) => s.codexModelsLoading)
-    const setSelectedModel = useChatStore((s) => s.setSelectedModel)
-    const setSelectedCodexModel = useChatStore((s) => s.setSelectedCodexModel)
-    const setSelectedCodexReasoningEffort = useChatStore((s) => s.setSelectedCodexReasoningEffort)
-    const refreshCodexModels = useChatStore((s) => s.refreshCodexModels)
     const attachments = useActiveSession((s) => s.attachments)
     const addAttachment = useChatStore((s) => s.addAttachment)
     const removeAttachment = useChatStore((s) => s.removeAttachment)
@@ -113,27 +57,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const dismissCommandPopup = useChatStore((s) => s.dismissSlashCommandOutput)
     const showDirManager = useActiveSession((s) => s.showDirManager)
     const setShowDirManager = useChatStore((s) => s.setShowDirManager)
-    const additionalDirs = useActiveSession((s) => s.additionalDirs)
-    const projectAdditionalDirs = useActiveSession((s) => s.projectAdditionalDirs)
-    const addDir = useChatStore((s) => s.addDir)
-    const removeDir = useChatStore((s) => s.removeDir)
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const [slashDismissed, setSlashDismissed] = useState(false)
     const slashItemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
 
-    // Drag-and-drop state
     const [isDragging, setIsDragging] = useState(false)
     const dragCounterRef = useRef(0)
 
-    // @ mention state
     const [mentionActive, setMentionActive] = useState(false)
     const [mentionIndex, setMentionIndex] = useState(0)
     const mentionRef = useRef<MentionPopupHandle>(null)
 
-    // Track mention trigger info (computed in onUpdate, not from store text)
     const mentionInfoRef = useRef<{ atPos: number; query: string } | null>(null)
-    // Stable refs for callbacks used inside TipTap (to avoid stale closures)
     const mentionActiveRef = useRef(mentionActive)
     mentionActiveRef.current = mentionActive
     const slashCommandsRef = useRef(slashCommands)
@@ -149,7 +85,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const slashDismissedRef = useRef(false)
     const handleKeyDownRef = useRef<(e: KeyboardEvent) => boolean>(() => false)
 
-    // Scroll selected slash command into view
     useEffect(() => {
       if (slashIndex >= 0) {
         slashItemRefs.current.get(slashIndex)?.scrollIntoView({ block: 'nearest' })
@@ -176,7 +111,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const activeSlashCommands = activeProviderForResources === 'codex' ? codexSlashCommands : slashCommands
 
-    // Filter slash commands based on current input
     const HIDDEN_COMMANDS = new Set(['keybindings-help', 'debug'])
     const matchingCommands = useMemo(() => {
       if (activeProviderForResources === 'codex') {
@@ -197,7 +131,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const selectSlashCommand = useCallback(
       (name: string) => {
-        // Special handling for add-dir: show directory manager instead of inserting text
         if (name === 'add-dir') {
           const ed = editorRef.current
           if (ed) {
@@ -211,7 +144,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         const ed = editorRef.current
         if (ed) {
           ed.chain().focus().setContent(`/${name} `).run()
-          // Move cursor to end
           ed.commands.focus('end')
         }
         setText(`/${name} `)
@@ -227,7 +159,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         if (!info || !ed) return
 
         if (action === 'navigate') {
-          // Replace @query text with new path for directory navigation
           ed.chain()
             .focus()
             .deleteRange({ from: info.atPos, to: info.atPos + 1 + info.query.length })
@@ -237,14 +168,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           return
         }
 
-        // Determine mention kind
         const isAgent = showAgentMentions && agents.some((a) => a.name === value)
         const kind: MentionKind = isAgent ? 'agent' : value.endsWith('/') ? 'directory' : 'file'
         const displayName = value.split('/').filter(Boolean).pop() || value
 
         addMention({ kind, value, displayName })
 
-        // Delete @query text and insert mention node inline
         ed.chain()
           .focus()
           .deleteRange({ from: info.atPos, to: info.atPos + 1 + info.query.length })
@@ -264,7 +193,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const handleSend = useCallback(() => {
       if (!canSend) return
       const ed = editorRef.current
-      // Serialize editor content with inline @mentions preserved at their positions
       let serialized = ''
       if (ed) {
         ed.state.doc.descendants((node) => {
@@ -290,14 +218,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     useImperativeHandle(ref, () => ({ send: handleSend }), [handleSend])
 
-    // Core keyboard handler — works with both native and React events
-    // Returns true if the key was handled (used by ProseMirror's handleKeyDown)
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {
         const isComposing = 'nativeEvent' in e ? e.nativeEvent.isComposing : e.isComposing
         if (isComposing) return false
 
-        // Escape → dismiss dir manager or command output popup
         if (e.key === 'Escape' && showDirManager) {
           setShowDirManager(false)
           return true
@@ -307,14 +232,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           return true
         }
 
-        // Shift+Enter in collapsed mode → expand the panel
         if (e.key === 'Enter' && e.shiftKey && !isOpen) {
           e.preventDefault()
           toggleOpen()
           return true
         }
 
-        // @ mention navigation
         if (mentionInfoRef.current && mentionActive) {
           const count = mentionRef.current?.getItemCount() ?? 0
           if (e.key === 'ArrowDown') {
@@ -346,7 +269,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
         }
 
-        // Slash command navigation
         if (matchingCommands.length > 0 && !slashDismissed) {
           if (e.key === 'ArrowDown') {
             e.preventDefault()
@@ -373,7 +295,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
         }
 
-        // Backspace on empty editor → remove last attachment
         if (e.key === 'Backspace') {
           const ed = editorRef.current
           if (ed && ed.isEmpty && attachments.length > 0) {
@@ -400,7 +321,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, showDirManager, setShowDirManager]
     )
 
-    // Keep ref in sync for ProseMirror's handleKeyDown (avoids stale closure)
     handleKeyDownRef.current = handleKeyDownCore
 
     const insertFileMention = useCallback(
@@ -431,7 +351,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const processSelectedFiles = useCallback(
       (files: FileList | File[]) => {
         for (const file of Array.from(files)) {
-          if (file.type.startsWith('image/')) {
+          if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader()
             reader.onload = () => {
               const result = reader.result as string
@@ -497,7 +417,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       [processSelectedFiles]
     )
 
-    // --- TipTap editor ---
     const placeholderText = mentions.length > 0
       ? 'Add instructions...'
       : activeProviderForResources === 'codex'
@@ -531,28 +450,26 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         attributes: {
           class: 'w-full min-h-[36px] max-h-[120px] overflow-y-auto text-[15px] leading-6 outline-none text-foreground',
         },
-        // Intercept keys BEFORE ProseMirror handles them
         handleKeyDown: (_view, event) => {
           return handleKeyDownRef.current(event)
         },
         handlePaste: (_view, event) => {
           const items = event.clipboardData?.items
           if (!items) return false
-          const imageFiles: File[] = []
+          const attachableFiles: File[] = []
           for (const item of Array.from(items)) {
-            if (item.type.startsWith('image/')) {
+            if (item.type.startsWith('image/') || item.type === 'application/pdf') {
               const file = item.getAsFile()
-              if (file) imageFiles.push(file)
+              if (file) attachableFiles.push(file)
             }
           }
-          if (imageFiles.length > 0) {
+          if (attachableFiles.length > 0) {
             event.preventDefault()
-            processSelectedFilesRef.current(imageFiles)
+            processSelectedFilesRef.current(attachableFiles)
             return true
           }
           return false
         },
-        // Drop handled by outer container's onDrop to avoid duplicate processing
         handleDrop: () => true,
       },
       onUpdate: ({ editor: ed }) => {
@@ -562,14 +479,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         setSlashIndex(-1)
         setSlashDismissed(false)
 
-        // Sync mention nodes with store
         const editorMentions: MentionNodeAttrs[] = []
         ed.state.doc.descendants((node) => {
           if (node.type.name === 'mention') {
             editorMentions.push(node.attrs as MentionNodeAttrs)
           }
         })
-        // Remove mentions from store that are no longer in editor
         const editorValues = new Set(editorMentions.map((m) => m.value))
         for (const m of mentionsRef.current) {
           if (!editorValues.has(m.value)) {
@@ -577,7 +492,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
         }
 
-        // Detect @ mention trigger within the current paragraph
         const { from } = ed.state.selection
         const $pos = ed.state.doc.resolve(from)
         const textInParent = $pos.parent.textBetween(0, $pos.parentOffset, undefined, '\0')
@@ -589,7 +503,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               setMentionIndex(0)
             }
             setMentionActive(true)
-            // $pos.start() = start of paragraph content; offset 1:1 within inline content
             mentionInfoRef.current = { atPos: $pos.start() + lastAt, query: afterAt }
           } else {
             setMentionActive(false)
@@ -603,7 +516,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     })
     editorRef.current = editor
 
-    // Sync external draftText changes (e.g. from "Commit First" button) into the editor
     const isEditorUpdateRef = useRef(false)
     useEffect(() => {
       if (isEditorUpdateRef.current) {
@@ -616,47 +528,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       }
     }, [text, editor])
 
-    // Auto-focus when panel opens
     useEffect(() => {
       if (!compact && isOpen && editor) {
         editor.commands.focus('end')
       }
     }, [compact, isOpen, editor])
 
-    // Update SlashDecoration storage when slashCommands change
     useEffect(() => {
       if (editor) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(editor.storage as any).slashDecoration.slashCommands = activeSlashCommands
-        // Force decoration recalculation by dispatching an empty transaction
         editor.view.dispatch(editor.state.tr)
       }
     }, [activeSlashCommands, editor])
-
-    const currentModelName =
-      (availableModels.find((m) => m.id === selectedModel)?.name ?? selectedModel) || null
-    const selectedCodexModelOption = codexModels.find((m) => m.id === selectedCodexModel)
-    const currentCodexModelName =
-      (selectedCodexModelOption
-        ? formatCodexModelLabel(selectedCodexModelOption.id || selectedCodexModelOption.name)
-        : selectedCodexModel
-        ? formatCodexModelLabel(selectedCodexModel)
-        : null)
-    const codexReasoningEfforts = selectedCodexModelOption?.supportedReasoningEfforts ?? []
-    const currentCodexReasoningEffort =
-      selectedCodexReasoningEffort
-      ?? selectedCodexModelOption?.defaultReasoningEffort
-      ?? codexReasoningEfforts[0]?.value
-      ?? null
-    const currentCodexReasoningEffortLabel = currentCodexReasoningEffort
-      ? formatReasoningEffortLabel(currentCodexReasoningEffort)
-      : null
-
-    useEffect(() => {
-      if (activeProviderForResources !== 'codex') return
-      if (codexModelsLoading || codexModels.length > 0) return
-      void refreshCodexModels()
-    }, [activeProviderForResources, codexModelsLoading, codexModels.length, refreshCodexModels])
 
     if (compact) {
       return (
@@ -699,7 +583,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {/* Slash command autocomplete */}
         {matchingCommands.length > 0 && !slashDismissed && (
           <div className={cn(
             'absolute bottom-full left-0 right-0 z-10 flex max-h-64 flex-col overflow-hidden border border-border bg-card p-1.5',
@@ -745,7 +628,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           </div>
         )}
 
-        {/* Command output popup */}
         {commandPopup && (
           <div className={cn(
             'absolute bottom-full left-0 right-0 z-10 flex max-h-64 flex-col overflow-hidden border border-border bg-card',
@@ -766,99 +648,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           </div>
         )}
 
-        {/* Directory manager panel */}
-        {showDirManager && (
-          <div className={cn(
-            'absolute bottom-full left-0 right-0 z-10 flex max-h-80 flex-col overflow-hidden border border-border bg-card',
-            isCoding ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg'
-          )}>
-            <div className="flex items-center justify-between px-3 py-1.5">
-              <span className="text-[11px] font-medium text-muted-foreground">/add-dir</span>
-              <button
-                onMouseDown={(e) => { e.preventDefault(); setShowDirManager(false) }}
-                className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <X className="size-3" />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-3 py-2 space-y-3">
-              {/* Project-level directories */}
-              <div>
-                <div className="mb-1 flex items-center gap-1.5">
-                  <span className="text-sm font-medium text-muted-foreground">Project</span>
-                  <button
-                    onMouseDown={async (e) => {
-                      e.preventDefault()
-                      const folder = await window.app.selectFolder()
-                      if (folder) addDir(folder, 'project')
-                    }}
-                    className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    <FolderPlus className="size-3.5" />
-                  </button>
-                </div>
-                {projectAdditionalDirs.length === 0 ? (
-                  <div className="text-xs text-muted-foreground/60 italic">No additional directories</div>
-                ) : (
-                  <div className="space-y-0.5">
-                    {projectAdditionalDirs.map((dir) => (
-                      <div key={dir} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50">
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <Folder className="size-3.5 shrink-0 text-blue-500" />
-                          <span className="truncate text-foreground">{dir}</span>
-                        </span>
-                        <button
-                          onMouseDown={(e) => { e.preventDefault(); removeDir(dir, 'project') }}
-                          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-                        >
-                          <X className="size-2.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {/* Session-level directories */}
-              <div>
-                <div className="mb-1 flex items-center gap-1.5">
-                  <span className="text-sm font-medium text-muted-foreground">Session</span>
-                  <button
-                    onMouseDown={async (e) => {
-                      e.preventDefault()
-                      const folder = await window.app.selectFolder()
-                      if (folder) addDir(folder, 'session')
-                    }}
-                    className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    <FolderPlus className="size-3.5" />
-                  </button>
-                </div>
-                {additionalDirs.length === 0 ? (
-                  <div className="text-xs text-muted-foreground/60 italic">No additional directories</div>
-                ) : (
-                  <div className="space-y-0.5">
-                    {additionalDirs.map((dir) => (
-                      <div key={dir} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50">
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <Folder className="size-3.5 shrink-0 text-blue-500" />
-                          <span className="truncate text-foreground">{dir}</span>
-                        </span>
-                        <button
-                          onMouseDown={(e) => { e.preventDefault(); removeDir(dir, 'session') }}
-                          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-                        >
-                          <X className="size-2.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        {showDirManager && <DirManagerPanel isCoding={isCoding} />}
 
-        {/* @ mention autocomplete */}
         {mentionInfoRef.current && mentionActive && matchingCommands.length === 0 && (
           <MentionPopup
             ref={mentionRef}
@@ -872,42 +663,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           />
         )}
 
-        {/* Attachment thumbnails */}
-        {attachments.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {attachments.map((att, i) => (
-              <div
-                key={i}
-                className="group relative size-12 overflow-hidden rounded border border-border"
-              >
-                <img
-                  src={`data:${att.mimeType};base64,${att.base64}`}
-                  alt={att.name}
-                  className="size-full object-cover"
-                />
-                <button
-                  onClick={() => removeAttachment(i)}
-                  className="absolute -right-0.5 -top-0.5 hidden rounded-full bg-card p-0.5 group-hover:block"
-                >
-                  <X className="size-2.5 text-foreground" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
 
-        {/* TipTap editor */}
         <div className="relative w-full">
           <EditorContent editor={editor} />
         </div>
 
         <div className="mt-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {/* Attachment upload */}
             <input
               ref={fileInputRef}
               type="file"
-              accept="*/*"
+              accept="image/*,.pdf"
               multiple
               onChange={handleFileSelect}
               className="hidden"
@@ -921,145 +688,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               <Paperclip className="size-3.5" />
             </Button>
 
-            {/* Provider / model selector */}
-            {activeProviderForResources === 'claude' ? (
-              <Popover open={modelOpen} onOpenChange={setModelOpen}>
-                <PopoverTrigger asChild>
-                  <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                    {currentModelName ? (
-                      <span className="max-w-[140px] truncate">{currentModelName}</span>
-                    ) : (
-                      <Loader2 className="size-3 animate-spin" />
-                    )}
-                    <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  side="top"
-                  className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1"
-                >
-                  {availableModels.map((model) => (
-                    <button
-                      key={model.id}
-                      onClick={() => {
-                        setSelectedModel(model.id)
-                        setModelOpen(false)
-                      }}
-                      className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                        model.id === selectedModel
-                          ? 'bg-muted text-foreground'
-                          : 'text-foreground hover:bg-muted/50'
-                      }`}
-                    >
-                      <div className="font-medium">{model.name}</div>
-                      {model.description && (
-                        <div className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">
-                          {model.description}
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                  {availableModels.length === 0 && (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading models...</div>
-                  )}
-                </PopoverContent>
-              </Popover>
-            ) : (
-              <div className="flex items-center gap-1">
-                <Popover
-                  open={modelOpen}
-                  onOpenChange={(open) => {
-                    setModelOpen(open)
-                    if (open) void refreshCodexModels()
-                  }}
-                >
-                  <PopoverTrigger asChild>
-                    <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                      {currentCodexModelName ? (
-                        <span className="max-w-[140px] truncate">{currentCodexModelName}</span>
-                      ) : codexModelsLoading ? (
-                        <Loader2 className="size-3 animate-spin" />
-                      ) : (
-                        <span>Codex model</span>
-                      )}
-                      <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    align="start"
-                    side="top"
-                    className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1"
-                  >
-                    {codexModels.map((model) => (
-                      <button
-                        key={model.id}
-                        onClick={() => {
-                          setSelectedCodexModel(model.id)
-                          setModelOpen(false)
-                        }}
-                        className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                          model.id === selectedCodexModel
-                            ? 'bg-muted text-foreground'
-                            : 'text-foreground hover:bg-muted/50'
-                        }`}
-                      >
-                        <div className="font-medium">
-                          {formatCodexModelLabel(model.id || model.name)}
-                        </div>
-                        {model.id === selectedCodexModel && (
-                          <Check className="size-3.5 shrink-0" />
-                        )}
-                      </button>
-                    ))}
-                    {codexModelsLoading && (
-                      <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading Codex models...</div>
-                    )}
-                    {!codexModelsLoading && codexModels.length === 0 && (
-                      <div className="px-2 py-1.5 text-xs text-muted-foreground">Use default model (auto)</div>
-                    )}
-                  </PopoverContent>
-                </Popover>
-
-                {codexReasoningEfforts.length > 0 && (
-                  <Popover open={effortOpen} onOpenChange={setEffortOpen}>
-                    <PopoverTrigger asChild>
-                      <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                        <span className="max-w-[120px] truncate">
-                          {currentCodexReasoningEffortLabel ?? formatReasoningEffortLabel(codexReasoningEfforts[0].value)}
-                        </span>
-                        <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="start"
-                      side="top"
-                      className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1"
-                    >
-                      {codexReasoningEfforts.map((option) => (
-                        <button
-                          key={option.value}
-                          onClick={() => {
-                            setSelectedCodexReasoningEffort(option.value)
-                            setEffortOpen(false)
-                          }}
-                          className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                            option.value === currentCodexReasoningEffort
-                              ? 'bg-muted text-foreground'
-                              : 'text-foreground hover:bg-muted/50'
-                          }`}
-                        >
-                          <div className="font-medium">{formatReasoningEffortLabel(option.value)}</div>
-                          {option.value === currentCodexReasoningEffort && (
-                            <Check className="size-3.5 shrink-0" />
-                          )}
-                        </button>
-                      ))}
-                    </PopoverContent>
-                  </Popover>
-                )}
-              </div>
-            )}
+            <ModelSelector />
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -1093,10 +722,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           </div>
         </div>
 
-        {/* Drag overlay */}
         {isDragging && (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-blue-500 bg-blue-500/10">
-            <span className="text-xs font-medium text-blue-400">Drop to attach files</span>
+            <span className="text-xs font-medium text-blue-400">Drop images or PDFs to attach</span>
           </div>
         )}
       </div>

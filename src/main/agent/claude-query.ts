@@ -1,6 +1,7 @@
 import { query, type CanUseTool, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMessageRequest } from '../../shared/agent-types'
 import type { MessageBridge } from './message-bridge'
+import log from '../logger'
 
 export interface SessionQueryOptions {
   cwd: string
@@ -56,6 +57,7 @@ export function createSessionQuery(
       sessionId: options.sessionId,
       abortController: options.abortController,
       additionalDirectories: options.additionalDirectories,
+      stderr: (data: string) => log.warn('[claude-cli]', data.trimEnd()),
     },
   })
 

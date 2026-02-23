@@ -263,6 +263,7 @@ export interface AccountInfo {
   email?: string
   organization?: string
   subscriptionType?: string
+  apiKeySource?: string
 }
 
 // --- Slash commands ---

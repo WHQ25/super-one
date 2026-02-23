@@ -939,7 +939,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (!updatedSession.selectedModel && globalModels[0]) {
           updatedSession.selectedModel = globalModels[0].id
           if (globalModels[0].supportedEffortLevels?.length) {
-            updatedSession.selectedEffort = 'max'
+            updatedSession.selectedEffort = 'high'
           }
         }
 
@@ -1444,7 +1444,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject, availableModels } = get()
     if (!activeProject) return
     const modelInfo = availableModels.find((m) => m.id === model)
-    const defaultEffort = modelInfo?.supportedEffortLevels?.length ? 'max' as EffortLevel : undefined
+    const defaultEffort = modelInfo?.supportedEffortLevels?.length ? 'high' as EffortLevel : undefined
     set((s) => updateSession(s, activeProject, () => ({ selectedModel: model, selectedEffort: defaultEffort })))
   },
 

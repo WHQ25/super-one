@@ -33,9 +33,12 @@ export function ModelSelector() {
 
   const activeProvider = sessionProvider ?? preferredProvider
 
+  const account = useChatStore((s) => s.account)
+  const isApiUser = !!account.apiKeySource
+
   const currentModel = availableModels.find((m) => m.id === selectedModel)
   const currentModelName = (currentModel?.name ?? selectedModel) || null
-  const effortLevels = currentModel?.supportedEffortLevels
+  const effortLevels = currentModel?.supportedEffortLevels?.filter((l) => isApiUser || l !== 'max')
   const currentEffortLabel = selectedEffort ? EFFORT_LABELS[selectedEffort] : null
 
   const selectedCodexModelOption = codexModels.find((m) => m.id === selectedCodexModel)

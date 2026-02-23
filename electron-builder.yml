@@ -11,6 +11,8 @@ files:
 
 asarUnpack:
   - "**/*.node"
+  - "node_modules/@anthropic-ai/claude-agent-sdk/cli.js"
+  - "node_modules/@anthropic-ai/claude-agent-sdk/vendor/**"
 
 publish:
   provider: github

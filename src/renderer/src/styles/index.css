@@ -253,16 +253,16 @@ body {
   margin: 0.3em 0;
 }
 
-/* --- Content visibility: skip rendering for off-screen messages --- */
-.chat-message-wrapper {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 80px;
-}
 
 /* --- Wide panel: extra spacing and tool call timeline --- */
 @container (min-width: 512px) {
   .chat-md {
     margin-top: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .assistant-reply > :first-child > .chat-md {
+    margin-top: 0;
   }
 
   .tool-node,
@@ -282,6 +282,11 @@ body {
 @container (min-width: 672px) {
   .chat-md {
     margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .assistant-reply > :first-child > .chat-md {
+    margin-top: 0;
   }
 
   .tool-node,

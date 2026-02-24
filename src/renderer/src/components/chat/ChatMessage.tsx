@@ -252,7 +252,7 @@ function ThinkingBlock({ thinking, isStreaming, followedByText }: { thinking: st
     : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')
 
   return (
-    <div className={cn('mt-1', followedByText && '@lg:-mb-4')}>
+    <div className={cn('mt-3', followedByText && '@lg:-mb-3')}>
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -423,7 +423,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
             'min-w-0 text-sm',
             isUser
               ? 'rounded-xl bg-secondary text-secondary-foreground px-3 py-2'
-              : 'w-full text-foreground'
+              : 'assistant-reply w-full text-foreground'
           )}
         >
           {isUser

@@ -1,5 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const mockSourceControlReset = vi.fn()
+vi.mock('./source-control', () => ({
+  useSourceControlStore: {
+    getState: () => ({ reset: mockSourceControlReset }),
+  },
+}))
+
+const mockExplorerReset = vi.fn()
+vi.mock('./explorer', () => ({
+  useExplorerStore: {
+    getState: () => ({ reset: mockExplorerReset }),
+  },
+}))
+
 vi.mock('./chat', () => {
   const state = { projectSessions: {} as Record<string, unknown>, activeProject: null as string | null }
   return {
@@ -135,5 +149,32 @@ describe('openFolderDirect (via selectAndOpenFolder)', () => {
 
     expect(useAppStore.getState().view).toBe('main')
     expect(useAppStore.getState().currentFolder).toBe('/new')
+  })
+})
+
+describe('currentFolder subscription', () => {
+  it('should reset file panel and stores when project changes', async () => {
+    resetStore({ currentFolder: '/projA', showFilePanel: true })
+
+    useAppStore.setState({ currentFolder: '/projB' })
+    await vi.dynamicImportSettled()
+
+    expect(useAppStore.getState().showFilePanel).toBe(false)
+    expect(mockSourceControlReset).toHaveBeenCalled()
+    expect(mockExplorerReset).toHaveBeenCalled()
+  })
+
+  it('should not reset when currentFolder stays the same', async () => {
+    useAppStore.setState({ currentFolder: '/projA' })
+    await vi.dynamicImportSettled()
+    mockSourceControlReset.mockClear()
+    mockExplorerReset.mockClear()
+
+    useAppStore.setState({ showFilePanel: true, layoutMode: 'canvas' })
+    await vi.dynamicImportSettled()
+
+    expect(useAppStore.getState().showFilePanel).toBe(true)
+    expect(mockSourceControlReset).not.toHaveBeenCalled()
+    expect(mockExplorerReset).not.toHaveBeenCalled()
   })
 })

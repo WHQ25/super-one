@@ -393,3 +393,17 @@ export function useHasRealProject(): boolean {
 
 // Load recent folders on module init
 useAppStore.getState().fetchRecentFolders()
+
+// Reset file panel and explorer/source-control stores when project changes
+let _prevFolder = useAppStore.getState().currentFolder
+useAppStore.subscribe((state) => {
+  if (state.currentFolder === _prevFolder) return
+  _prevFolder = state.currentFolder
+  useAppStore.setState({ showFilePanel: false })
+  import('./source-control').then(({ useSourceControlStore }) => {
+    useSourceControlStore.getState().reset()
+  })
+  import('./explorer').then(({ useExplorerStore }) => {
+    useExplorerStore.getState().reset()
+  })
+})

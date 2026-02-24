@@ -95,6 +95,11 @@ interface AppAPI {
   listMcpLibrary(): Promise<McpLibraryEntry[]>
   deleteMcpLibraryEntry(name: string): Promise<void>
 
+  // File watcher
+  startFileWatch(folderPath: string): Promise<void>
+  stopFileWatch(): Promise<void>
+  onFileChangeEvent(callback: (event: { folderPath: string }) => void): () => void
+
   // Logging
   getLogPath(): Promise<string>
 

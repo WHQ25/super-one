@@ -314,6 +314,21 @@ const appAPI = {
   deleteMcpLibraryEntry: (name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY, name),
 
+  // File watcher
+  startFileWatch: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.FILE_WATCH_START, folderPath),
+  stopFileWatch: () =>
+    ipcRenderer.invoke(AgentIpcChannels.FILE_WATCH_STOP),
+  onFileChangeEvent: (callback: (event: { folderPath: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { folderPath: string }): void => {
+      callback(event)
+    }
+    ipcRenderer.on(AgentIpcChannels.FILE_CHANGE_EVENT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.FILE_CHANGE_EVENT, handler)
+    }
+  },
+
   // Logging
   getLogPath: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_LOG_PATH) as Promise<string>,

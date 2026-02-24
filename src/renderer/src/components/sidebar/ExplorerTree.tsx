@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChevronRight } from 'lucide-react'
-import { FileIcon } from '@/components/ui/FileIcon'
+import { FileIcon, FolderIcon } from '@/components/ui/FileIcon'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
@@ -46,7 +46,7 @@ function TreeNode({ entry, depth }: { entry: FileTreeEntry; depth: number }) {
       <button
         onClick={handleClick}
         className={cn(
-          'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[13px] transition-colors hover:bg-sidebar-accent',
+          'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors hover:bg-sidebar-accent',
           !entry.isDirectory && selectedFile === entry.path && 'bg-sidebar-accent',
         )}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
@@ -59,7 +59,7 @@ function TreeNode({ entry, depth }: { entry: FileTreeEntry; depth: number }) {
         ) : (
           <span className="w-3.5 shrink-0" />
         )}
-        {!entry.isDirectory && <FileIcon name={entry.name} size={15} />}
+        {entry.isDirectory ? <FolderIcon name={entry.name} size={15} /> : <FileIcon name={entry.name} size={15} />}
         <span className={cn('min-w-0 truncate', colorClass)}>{entry.name}</span>
       </button>
 

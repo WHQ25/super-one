@@ -38,4 +38,31 @@ export function useGitAutoRefresh() {
       useSourceControlStore.getState().fetchFiles(currentFolder)
     }
   }, [showFilePanel, currentFolder])
+
+  const needsWatch = showFilePanel || sidebarTab === 'explorer'
+
+  useEffect(() => {
+    if (!currentFolder || !needsWatch) {
+      window.app.stopFileWatch()
+      return
+    }
+
+    window.app.startFileWatch(currentFolder)
+
+    const unsub = window.app.onFileChangeEvent(() => {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        const folder = useAppStore.getState().currentFolder
+        if (!folder) return
+        const { showFilePanel: fp, sidebarTab: tab } = useAppStore.getState()
+        if (fp) useSourceControlStore.getState().refresh(folder)
+        if (tab === 'explorer') useExplorerStore.getState().fetchTree(folder)
+      }, 500)
+    })
+
+    return () => {
+      unsub()
+      window.app.stopFileWatch()
+    }
+  }, [currentFolder, needsWatch])
 }

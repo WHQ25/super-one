@@ -25,6 +25,7 @@ import {
   type GitFileStatus,
 } from '../shared/agent-types'
 import { initUpdater, installUpdate, checkForUpdates } from './updater'
+import { startWatching, stopWatching } from './file-watcher'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
 import { getDb, closeDb, getCachedResources, setCachedResources } from './database'
@@ -59,13 +60,22 @@ function createWindow(): void {
     trafficLightPosition: { x: 16, y: 16 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
-      sandbox: false
+      sandbox: false,
+      zoomFactor: 1
     }
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  mainWindow.webContents.on('before-input-event', (_e, input) => {
+    if (input.control || input.meta) {
+      if (input.key === '=' || input.key === '+' || input.key === '-') {
+        _e.preventDefault()
+      }
+    }
   })
 
   // Update agentService's window reference for event forwarding
@@ -706,6 +716,14 @@ function registerIpcHandlers(): void {
     checkForUpdates()
   })
 
+  ipcMain.handle(AgentIpcChannels.FILE_WATCH_START, (_e, folderPath: string) => {
+    startWatching(getMainWindow(), folderPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.FILE_WATCH_STOP, () => {
+    stopWatching()
+  })
+
   ipcMain.handle(AgentIpcChannels.GET_LOG_PATH, () => {
     return log.transports.file.getFile().path
   })
@@ -788,6 +806,7 @@ let quitting = false
 
 function performQuit(): void {
   quitting = true
+  stopWatching()
   agentService
     .dispose()
     .catch(() => {})

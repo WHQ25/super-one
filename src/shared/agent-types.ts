@@ -191,6 +191,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   status: 'streaming' | 'complete' | 'interrupted' | 'error'
   content: ContentBlock[]
+  attachments?: ImageAttachment[]
   createdAt: string
   providerId: string
   metadata?: MessageMetadata

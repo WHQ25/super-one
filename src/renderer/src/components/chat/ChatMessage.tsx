@@ -7,6 +7,7 @@ import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { SubagentBlock } from './SubagentBlock'
 import { CodexTurnView } from './CodexTurnView'
+import { AttachmentBar } from './AttachmentBar'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { useActiveSession } from '@/stores/chat'
 import {
@@ -431,9 +432,13 @@ export function ChatMessage({ message }: ChatMessageProps) {
         >
           {isUser
             ? <>
-                {message.content.map((block, i) =>
-                  block.type === 'text' ? <UserTextBlock key={i} text={block.text} /> : renderBlock(block, i, false)
+                {message.attachments && message.attachments.length > 0 && (
+                  <AttachmentBar attachments={message.attachments} />
                 )}
+                {message.content.map((block, i) => {
+                  if (message.attachments?.length && (block.type === 'image' || block.type === 'document')) return null
+                  return block.type === 'text' ? <UserTextBlock key={i} text={block.text} /> : renderBlock(block, i, false)
+                })}
               </>
           : isCodexMessage
             ? <CodexTurnView message={message} isStreaming={isStreaming} />

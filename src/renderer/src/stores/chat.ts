@@ -1122,6 +1122,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       role: 'user',
       status: 'complete',
       content: userContent,
+      attachments: attachments.length > 0 ? attachments : undefined,
       createdAt: new Date().toISOString(),
       providerId: 'local',
     }

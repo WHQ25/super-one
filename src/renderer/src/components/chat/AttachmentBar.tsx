@@ -8,7 +8,7 @@ import type { ImageAttachment } from '../../../../shared/agent-types'
 
 interface AttachmentBarProps {
   attachments: ImageAttachment[]
-  onRemove: (index: number) => void
+  onRemove?: (index: number) => void
 }
 
 export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
@@ -28,12 +28,14 @@ export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
                 <img src={`data:${att.mimeType};base64,${att.base64}`} alt={att.name} className="size-full object-cover" />
               )}
             </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onRemove(i) }}
-              className="absolute right-0.5 top-0.5 hidden rounded-full bg-destructive p-0.5 group-hover:block"
-            >
-              <X className="size-2.5 text-destructive-foreground" />
-            </button>
+            {onRemove && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRemove(i) }}
+                className="absolute right-0.5 top-0.5 hidden rounded-full bg-destructive p-0.5 group-hover:block"
+              >
+                <X className="size-2.5 text-destructive-foreground" />
+              </button>
+            )}
           </div>
         ))}
       </div>

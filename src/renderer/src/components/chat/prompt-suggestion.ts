@@ -27,25 +27,36 @@ export const PromptSuggestion = Extension.create<object, PromptSuggestionStorage
             const doc = state.doc
             if (doc.textContent.length > 0) return DecorationSet.empty
 
-            let targetPos = -1
-            let targetSize = 0
+            let insertPos = 1
             doc.descendants((node, pos) => {
-              if (node.isBlock && node.childCount === 0 && targetPos < 0) {
-                targetPos = pos
-                targetSize = node.nodeSize
+              if (node.isBlock && node.childCount === 0) {
+                insertPos = pos + 1
                 return false
               }
               return true
             })
 
-            if (targetPos < 0) return DecorationSet.empty
+            const widget = Decoration.widget(
+              insertPos,
+              () => {
+                const container = document.createElement('span')
+                container.className = 'prompt-suggestion-ghost'
 
-            const deco = Decoration.node(targetPos, targetPos + targetSize, {
-              class: 'has-prompt-suggestion',
-              'data-prompt-suggestion': suggestion,
-            })
+                const text = document.createElement('span')
+                text.textContent = suggestion
+                container.appendChild(text)
 
-            return DecorationSet.create(doc, [deco])
+                const badge = document.createElement('kbd')
+                badge.className = 'prompt-suggestion-badge'
+                badge.textContent = 'Tab'
+                container.appendChild(badge)
+
+                return container
+              },
+              { side: 1 },
+            )
+
+            return DecorationSet.create(doc, [widget])
           },
         },
       }),

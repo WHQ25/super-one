@@ -1221,7 +1221,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
         const text = result.finalResponse?.trim() || (
           resolvedCodexCommand.kind === 'compact'
-            ? 'Context compacted.'
+            ? 'Conversation compacted.'
             : 'Codex completed without returning text.'
         )
         const renderedItems = pruneTransientCodexItems(result.items)

@@ -299,7 +299,7 @@ function renderItem(
       return (
         <div key={`${item.id}-${index}`} className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Check className="size-3.5 text-green-400" />
-          <span>Context compacted</span>
+          <span>Conversation compacted</span>
         </div>
       )
   }

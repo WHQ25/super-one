@@ -1,9 +1,9 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, parseCompactMarker } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -28,6 +28,17 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
   const hasActiveSession = useActiveSession((s) => !!s.session)
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const prevScrollHeightRef = useRef(0)
+  const [expandLevel, setExpandLevel] = useState(0)
+  const compactIndices = useMemo(
+    () => messages.flatMap((msg, i) => (parseCompactMarker(msg) ? [i] : [])),
+    [messages]
+  )
+  const visibleStart =
+    compactIndices.length > 0 && expandLevel < compactIndices.length
+      ? compactIndices[compactIndices.length - 1 - expandLevel]
+      : 0
+  const visibleMessages = visibleStart > 0 ? messages.slice(visibleStart) : messages
   const [zoom, setZoom] = useState(1)
   useEffect(() => {
     const parent = containerRef.current?.parentElement
@@ -39,6 +50,14 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
     observer.observe(parent)
     return () => observer.disconnect()
   }, [])
+
+  useLayoutEffect(() => {
+    const viewport = scrollViewportRef.current
+    if (!viewport || prevScrollHeightRef.current === 0) return
+    const delta = viewport.scrollHeight - prevScrollHeightRef.current
+    viewport.scrollTop += delta
+    prevScrollHeightRef.current = 0
+  }, [expandLevel])
 
   return (
     <div ref={containerRef} className="relative flex min-h-0 w-full flex-1 flex-col bg-card" style={zoom !== 1 ? { zoom } : undefined}>
@@ -55,11 +74,31 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
             ) : (
               <ScrollArea key={historySessionId ?? 'default'} className="h-full animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
                 <div className="mx-auto flex max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
-                  {messages.map((msg) => (
-                    <div key={msg.id} className="chat-message-wrapper">
-                      <ChatMessage message={msg} />
-                    </div>
-                  ))}
+                  {visibleMessages.map((msg, visIdx) => {
+                    const compactInfo = parseCompactMarker(msg)
+                    if (compactInfo) {
+                      const origIdx = visibleStart + visIdx
+                      const rank = compactIndices.length - 1 - compactIndices.indexOf(origIdx)
+                      const isExpanded = rank < expandLevel
+                      return (
+                        <CompactIndicator
+                          key={msg.id}
+                          trigger={compactInfo.trigger}
+                          preTokens={compactInfo.preTokens}
+                          expanded={isExpanded}
+                          onToggle={() => {
+                            prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
+                            setExpandLevel(isExpanded ? rank : rank + 1)
+                          }}
+                        />
+                      )
+                    }
+                    return (
+                      <div key={msg.id} className="chat-message-wrapper">
+                        <ChatMessage message={msg} />
+                      </div>
+                    )
+                  })}
                   {isCompacting && <CompactingIndicator />}
                 </div>
               </ScrollArea>

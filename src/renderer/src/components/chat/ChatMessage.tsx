@@ -221,6 +221,7 @@ function ThinkingBlock({ thinking, isStreaming, blockDone }: { thinking: string;
   const [elapsed, setElapsed] = useState(0)
   const startRef = useRef(!blockDone ? Date.now() : 0)
   const [expanded, setExpanded] = useState(!blockDone)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (blockDone || !startRef.current) return
@@ -236,6 +237,16 @@ function ThinkingBlock({ thinking, isStreaming, blockDone }: { thinking: string;
       setExpanded(false)
     }
   }, [blockDone])
+
+  const rafRef = useRef(0)
+  useEffect(() => {
+    if (!expanded) return
+    cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    })
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [thinking, expanded])
 
   const active = !blockDone
   const label = active
@@ -256,9 +267,10 @@ function ThinkingBlock({ thinking, isStreaming, blockDone }: { thinking: string;
         <ChevronRight className={cn('size-3 transition-transform duration-200', expanded && 'rotate-90')} />
       </button>
       {expanded && (
-        <div className={cn(
-          'mt-1 max-h-48 overflow-y-auto border-l-2 border-purple-400/40 pl-3 text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap',
-        )}>
+        <div
+          ref={scrollRef}
+          className="mt-1 max-h-32 overflow-y-auto border-l-2 border-purple-400/40 pl-3 text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap"
+        >
           {thinking}
         </div>
       )}
@@ -328,8 +340,7 @@ function UserTextBlock({ text }: { text: string }) {
   )
 }
 
-/** Parse __compact__ marker text. Returns null if not a compact message. */
-function parseCompactMarker(message: ChatMessageType): { trigger: string; preTokens: number } | null {
+export function parseCompactMarker(message: ChatMessageType): { trigger: string; preTokens: number } | null {
   if (message.providerId !== 'system') return null
   const firstBlock = message.content[0]
   if (!firstBlock || firstBlock.type !== 'text') return null
@@ -345,13 +356,29 @@ function formatCompactTokens(tokens: number): string {
   return String(tokens)
 }
 
-export function CompactIndicator({ trigger, preTokens }: { trigger: string; preTokens: number }) {
+export function CompactIndicator({
+  trigger,
+  preTokens,
+  expanded,
+  onToggle,
+}: {
+  trigger: string
+  preTokens: number
+  expanded?: boolean
+  onToggle?: () => void
+}) {
   return (
-    <div className="my-0.5 flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-xs">
-      <Minimize2 className="size-3 shrink-0 text-amber-400" />
-      <span className="font-medium text-amber-400">Context compacted</span>
-      <span className="text-amber-400/60">{trigger === 'auto' ? 'auto' : 'manual'}</span>
-      {preTokens > 0 && <span className="text-amber-400/60">· {formatCompactTokens(preTokens)} tokens</span>}
+    <div className="my-0.5 flex items-center gap-1.5 rounded bg-violet-500/10 px-2 py-1.5 text-xs">
+      <Minimize2 className="size-3 shrink-0 text-violet-400" />
+      <span className="font-medium text-violet-400">Conversation compacted</span>
+      <span className="text-violet-400/60">{trigger === 'auto' ? 'auto' : 'manual'}</span>
+      {preTokens > 0 && <span className="text-violet-400/60">· {formatCompactTokens(preTokens)} tokens</span>}
+      {onToggle && (
+        <button onClick={onToggle} className="ml-auto flex items-center gap-0.5 text-violet-400/60 transition-colors hover:text-violet-400">
+          {expanded ? <ChevronRight className="size-3 -rotate-90" /> : <ChevronRight className="size-3 rotate-90" />}
+          <span>{expanded ? 'Hide history' : 'Show history'}</span>
+        </button>
+      )}
     </div>
   )
 }
@@ -360,7 +387,7 @@ export function CompactingIndicator() {
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-xs">
       <Loader2 className="size-3 shrink-0 animate-spin text-amber-400" />
-      <span className="font-medium text-amber-400">Compacting context…</span>
+      <span className="font-medium text-amber-400">Compacting conversation…</span>
     </div>
   )
 }
@@ -385,18 +412,6 @@ export function ChatMessage({ message }: ChatMessageProps) {
           .join('\n')
       })()
     : undefined
-
-  // Compact boundary messages — render as styled indicator
-  const compactInfo = parseCompactMarker(message)
-  if (compactInfo) {
-    return (
-      <div className="w-0 min-w-full flex justify-start">
-        <div className="w-full">
-          <CompactIndicator trigger={compactInfo.trigger} preTokens={compactInfo.preTokens} />
-        </div>
-      </div>
-    )
-  }
 
   const grouped = useMemo(
     () => (isUser || isCodexMessage) ? null : groupContent(message.content),

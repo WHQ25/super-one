@@ -59,6 +59,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const showDirManager = useActiveSession((s) => s.showDirManager)
     const setShowDirManager = useChatStore((s) => s.setShowDirManager)
     const promptSuggestion = useActiveSession((s) => s.promptSuggestion)
+    const hasPendingInteraction = useActiveSession((s) => s.hasPendingInteraction)
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const [slashDismissed, setSlashDismissed] = useState(false)
@@ -568,6 +569,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         editor.view.dispatch(editor.state.tr)
       }
     }, [promptSuggestion, status, editor])
+
+    useEffect(() => {
+      if (!promptSuggestion || isStreaming || hasPendingInteraction) return
+      function onKeyDown(e: KeyboardEvent) {
+        if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return
+        const ed = editorRef.current
+        if (!ed || !ed.isEmpty) return
+        if (ed.view.hasFocus()) return
+        e.preventDefault()
+        ed.commands.setContent(promptSuggestion!)
+        ed.commands.focus('end')
+        setTextRef.current(promptSuggestion!)
+      }
+      window.addEventListener('keydown', onKeyDown)
+      return () => window.removeEventListener('keydown', onKeyDown)
+    }, [promptSuggestion, isStreaming, hasPendingInteraction])
 
     if (compact) {
       return (

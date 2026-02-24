@@ -187,7 +187,9 @@ RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate bun run dev
 
 ### Log File
 
-In development mode, `electron-log` writes to `dev.log` in the project root (configured in `src/main/logger.ts`). When debugging main process issues, read this file to inspect logs instead of guessing. The log format is `[date time] [level] text`.
+In development mode, `electron-log` writes to `dev.log` in the project root (configured in `src/main/logger.ts`). The dev script auto-deletes the previous `dev.log` on each run to keep it small. When debugging main process issues, read this file to inspect logs instead of guessing. The log format is `[date time] [level] text`.
+
+For packaged builds (`build:mac-dev`), logs are written to `~/Library/Logs/super-one/main.log` (macOS default `electron-log` location).
 
 ## Testing (TDD)
 

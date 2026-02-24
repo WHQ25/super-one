@@ -2,6 +2,7 @@ import { query, type CanUseTool, type Query, type SDKUserMessage } from '@anthro
 import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMessageRequest } from '../../shared/agent-types'
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
+import { getClaudeCliPath } from './resolve-cli'
 
 export interface SessionQueryOptions {
   cwd: string
@@ -37,6 +38,7 @@ export function createSessionQuery(
   const q = query({
     prompt: bridge,
     options: {
+      pathToClaudeCodeExecutable: getClaudeCliPath(),
       cwd: options.cwd,
       model: options.model,
       effort: options.effort,

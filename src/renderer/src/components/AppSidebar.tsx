@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil } from 'lucide-react'
+import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderTree, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -20,10 +20,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useChatStore } from '@/stores/chat'
-import { useAppStore, useHasRealProject } from '@/stores/app'
+import { useAppStore, useHasRealProject, type SidebarTab } from '@/stores/app'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
+import { ExplorerTree } from '@/components/sidebar/ExplorerTree'
 import type { SessionHistoryEntry, PinnedSessionEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
 import { getDeleteSessionRecovery } from './session-delete-helpers'
 
@@ -45,7 +46,8 @@ const MAX_SESSIONS = 5
 
 export function AppSidebar() {
   const theme = useTheme()
-  const { setShowSidebar, navigateTo, selectAndOpenFolder, openFolder, removeRecentFolder } = useAppStore()
+  const { setShowSidebar, navigateTo, selectAndOpenFolder, openFolder, removeRecentFolder, setSidebarTab } = useAppStore()
+  const sidebarTab = useAppStore((s) => s.sidebarTab)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
   const isFullscreen = useFullscreen()
@@ -180,7 +182,29 @@ export function AppSidebar() {
         </TooltipProvider>
       </div>
 
-      {/* Pinned sessions */}
+      {/* Tab switcher */}
+      <div className="flex shrink-0 items-center gap-0.5 px-2 pb-1">
+        {([
+          { key: 'sessions' as SidebarTab, icon: MessageSquare, label: 'Sessions' },
+          { key: 'explorer' as SidebarTab, icon: FolderTree, label: 'Explorer' },
+        ]).map(({ key, icon: Icon, label }) => (
+          <button
+            key={key}
+            onClick={() => setSidebarTab(key)}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors',
+              sidebarTab === key
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground'
+            )}
+          >
+            <Icon className="size-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Pinned sessions (always visible) */}
       {pinnedSessions.length > 0 && (
         <div className="flex flex-col px-1.5 pb-1">
           <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">Pinned</span>
@@ -214,6 +238,12 @@ export function AppSidebar() {
         </div>
       )}
 
+      {sidebarTab === 'explorer' ? (
+        <div className="min-h-0 flex-1">
+          <ExplorerTree />
+        </div>
+      ) : (
+      <>
       {/* Projects header */}
       <div className="flex items-center justify-between px-3 py-1.5">
         <span className="text-xs font-medium text-sidebar-foreground/70">Projects</span>
@@ -451,6 +481,8 @@ export function AppSidebar() {
           </ScrollArea>
         )}
       </div>
+      </>
+      )}
 
       {/* Footer — settings, theme */}
       <div className="flex items-center gap-1 px-3 py-2">

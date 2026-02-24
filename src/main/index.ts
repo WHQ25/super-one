@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { join, dirname, basename, resolve } from 'path'
+import { join, dirname, basename, resolve, extname, relative } from 'path'
 import { existsSync, mkdirSync } from 'fs'
+import { readFile, readdir } from 'fs/promises'
 import { homedir } from 'os'
 import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
@@ -20,6 +21,8 @@ import {
   type ImageAttachment,
   type ConnectResult,
   type StartupData,
+  type FileTreeEntry,
+  type GitFileStatus,
 } from '../shared/agent-types'
 import { initUpdater, installUpdate, checkForUpdates } from './updater'
 import { mapModelInfo } from './agent/claude-models'
@@ -484,6 +487,151 @@ function registerIpcHandlers(): void {
       return { ok: true as const, path: wtPath }
     } catch (err) {
       return { ok: false as const, error: gitErrorMessage(err) }
+    }
+  })
+
+  const EXT_LANG: Record<string, string> = {
+    '.ts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.jsx': 'jsx',
+    '.py': 'python', '.rb': 'ruby', '.rs': 'rust', '.go': 'go', '.java': 'java',
+    '.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.toml': 'toml',
+    '.html': 'html', '.css': 'css', '.scss': 'scss', '.md': 'markdown',
+    '.sh': 'bash', '.sql': 'sql', '.swift': 'swift', '.kt': 'kotlin',
+    '.c': 'c', '.cpp': 'cpp', '.cs': 'csharp', '.php': 'php',
+  }
+
+  ipcMain.handle(AgentIpcChannels.GIT_STATUS_FILES, async (_event, folderPath: string) => {
+    try {
+      const raw = await gitRun(folderPath, ['status', '--porcelain=v1'])
+      if (!raw) return []
+      return raw.split('\n').filter(Boolean).map((line) => {
+        const x = line[0]
+        const y = line[1]
+        const path = line.slice(3)
+        const staged = x !== ' ' && x !== '?'
+        let status: string
+        if (x === '?' || y === '?') status = '?'
+        else if (x === 'D' || y === 'D') status = 'D'
+        else if (x === 'A') status = 'A'
+        else if (x === 'R' || y === 'R') status = 'R'
+        else if (x === 'C' || y === 'C') status = 'C'
+        else if (x === 'U' || y === 'U') status = 'U'
+        else status = 'M'
+        return { path, status, staged }
+      })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_DIFF_FILE, async (_event, folderPath: string, filePath: string, staged: boolean) => {
+    try {
+      const args = staged
+        ? ['diff', '--cached', '--', filePath]
+        : ['diff', '--', filePath]
+      const diff = await gitRun(folderPath, args)
+      return { path: filePath, diff }
+    } catch {
+      return { path: filePath, diff: '' }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_READ_FILE, async (_event, folderPath: string, filePath: string) => {
+    try {
+      const fullPath = join(folderPath, filePath)
+      const content = await readFile(fullPath, 'utf-8')
+      const ext = extname(filePath).toLowerCase()
+      const language = EXT_LANG[ext] ?? 'text'
+      return { path: filePath, content, language }
+    } catch {
+      return { path: filePath, content: '', language: 'text' }
+    }
+  })
+
+  const SKIP_DIRS = new Set(['.git'])
+
+  const GIT_STATUS_PRIORITY: Record<string, number> = { D: 4, M: 3, A: 2, '?': 1 }
+
+  function worstGitStatus(children: FileTreeEntry[]): GitFileStatus | null {
+    let worst: GitFileStatus | null = null
+    let worstPri = 0
+    for (const child of children) {
+      const s = child.gitStatus
+      if (!s) continue
+      const pri = GIT_STATUS_PRIORITY[s] ?? 0
+      if (pri > worstPri) { worst = s; worstPri = pri }
+    }
+    return worst
+  }
+
+  ipcMain.handle(AgentIpcChannels.GIT_FILE_TREE, async (_event, folderPath: string) => {
+    try {
+      const statusMap = new Map<string, GitFileStatus>()
+      const ignoredDirs = new Set<string>()
+      try {
+        const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
+        if (raw) {
+          for (const line of raw.split('\n').filter(Boolean)) {
+            const x = line[0]
+            const y = line[1]
+            const filePath = line.slice(3)
+            if (x === '!' && y === '!') {
+              const p = filePath.replace(/\/$/, '')
+              statusMap.set(p, '!')
+              if (filePath.endsWith('/')) ignoredDirs.add(p)
+            } else {
+              let status: GitFileStatus
+              if (x === '?' || y === '?') status = '?'
+              else if (x === 'D' || y === 'D') status = 'D'
+              else if (x === 'A') status = 'A'
+              else if (x === 'R' || y === 'R') status = 'R'
+              else status = 'M'
+              statusMap.set(filePath, status)
+            }
+          }
+        }
+      } catch { /* not a git repo or no commits */ }
+
+      async function walk(dir: string, parentIgnored = false): Promise<FileTreeEntry[]> {
+        const entries = await readdir(dir, { withFileTypes: true })
+        const result: FileTreeEntry[] = []
+
+        const sorted = entries.sort((a, b) => {
+          if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
+          return a.name.localeCompare(b.name)
+        })
+
+        for (const entry of sorted) {
+          if (SKIP_DIRS.has(entry.name)) continue
+          if (entry.name === '.DS_Store') continue
+
+          const fullPath = join(dir, entry.name)
+          const relPath = relative(folderPath, fullPath)
+          const isIgnored = parentIgnored || ignoredDirs.has(relPath) || statusMap.get(relPath) === '!'
+
+          if (entry.isDirectory()) {
+            const children = await walk(fullPath, isIgnored)
+            result.push({
+              name: entry.name,
+              path: relPath,
+              isDirectory: true,
+              children,
+              gitStatus: isIgnored ? '!' : worstGitStatus(children),
+            })
+          } else {
+            result.push({
+              name: entry.name,
+              path: relPath,
+              isDirectory: false,
+              gitStatus: isIgnored ? '!' : (statusMap.get(relPath) ?? null),
+            })
+          }
+        }
+        return result
+      }
+
+      return await walk(folderPath)
+    } catch {
+      return []
     }
   })
 

@@ -27,17 +27,16 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
   const historySessionId = useActiveSession((s) => s._historySessionId)
   const hasActiveSession = useActiveSession((s) => !!s.session)
 
-  // Auto-zoom based on own container width
   const containerRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(1)
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
+    const parent = containerRef.current?.parentElement
+    if (!parent) return
     const observer = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width ?? 0
       setZoom(w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1)
     })
-    observer.observe(el)
+    observer.observe(parent)
     return () => observer.disconnect()
   }, [])
 
@@ -55,7 +54,7 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
               <ChatSuggestions />
             ) : (
               <ScrollArea key={historySessionId ?? 'default'} className="h-full animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
-                <div className="mx-auto flex max-w-3xl flex-col gap-1.5 p-3 @lg:gap-2.5 @lg:p-3.5 @2xl:gap-2.5 @2xl:p-4">
+                <div className="mx-auto flex max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
                   {messages.map((msg) => (
                     <div key={msg.id} className="chat-message-wrapper">
                       <ChatMessage message={msg} />

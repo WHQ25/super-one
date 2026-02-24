@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, GitInfo, GitResult, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -109,6 +109,10 @@ interface AppAPI {
   createBranch(folderPath: string, branch: string): Promise<GitResult>
   getWorktreeInfo(folderPath: string): Promise<WorktreeInfo | null>
   activateWorktree(folderPath: string, baseBranch: string | null, carryLocalChanges?: boolean): Promise<{ ok: true; path: string } | { ok: false; error: string }>
+  getGitStatusFiles(folderPath: string): Promise<GitStatusFile[]>
+  getGitDiffFile(folderPath: string, filePath: string, staged: boolean): Promise<GitFileDiff>
+  getGitReadFile(folderPath: string, filePath: string): Promise<GitFileContent>
+  getFileTree(folderPath: string): Promise<FileTreeEntry[]>
 
   // Session history
   listSessions(projectPath: string): Promise<SessionHistoryEntry[]>

@@ -4,6 +4,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { CommandShortcut } from '@/components/ui/command'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { CodingLayout } from '@/components/coding/CodingLayout'
+import { FilePanel } from '@/components/coding/FilePanel'
 import { AppSidebar } from '@/components/AppSidebar'
 import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
@@ -11,6 +12,7 @@ import { SettingsLayout } from '@/components/SettingsLayout'
 import { UpdateNotification } from '@/components/UpdateNotification'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useFullscreen } from '@/hooks/useFullscreen'
+import { useGitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
 import { useAppStore } from '@/stores/app'
 import { useActiveSession } from '@/stores/chat'
@@ -18,8 +20,9 @@ import { cn } from '@/lib/utils'
 
 function App(): React.JSX.Element {
   useAgentEvents()
+  useGitAutoRefresh()
   const theme = useTheme()
-  const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, layoutMode, setLayoutMode } = useAppStore()
+  const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, showFilePanel, filePanelWidth, setFilePanelWidth, layoutMode, setLayoutMode } = useAppStore()
   const isFullscreen = useFullscreen()
 
   useEffect(() => {
@@ -41,6 +44,7 @@ function App(): React.JSX.Element {
   }, [])
 
   // Sidebar resize — manipulate DOM directly for smooth dragging
+  const MIN_MAIN = 400
   const MIN_SIDEBAR = 200
   const sidebarRef = useRef<HTMLDivElement>(null)
   const sidebarInnerRef = useRef<HTMLDivElement>(null)
@@ -58,13 +62,13 @@ function App(): React.JSX.Element {
     document.body.style.userSelect = 'none'
 
     const onMove = (ev: MouseEvent) => {
-      const maxW = window.innerWidth * 0.3
+      const maxW = window.innerWidth - (fpRef.current?.offsetWidth ?? 0) - MIN_MAIN
       const newW = Math.min(maxW, Math.max(MIN_SIDEBAR, startW + ev.clientX - startX))
       outer.style.width = `${newW}px`
       inner.style.width = `${newW}px`
     }
     const onUp = (ev: MouseEvent) => {
-      const maxW = window.innerWidth * 0.3
+      const maxW = window.innerWidth - (fpRef.current?.offsetWidth ?? 0) - MIN_MAIN
       const finalW = Math.min(maxW, Math.max(MIN_SIDEBAR, startW + ev.clientX - startX))
       outer.style.transition = ''
       document.body.style.cursor = ''
@@ -76,6 +80,45 @@ function App(): React.JSX.Element {
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
   }, [setSidebarWidth])
+
+  // File panel resize
+  const MIN_FP = 200
+  const fpRef = useRef<HTMLDivElement>(null)
+  const fpInnerRef = useRef<HTMLDivElement>(null)
+
+  const onFpResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = useAppStore.getState().filePanelWidth
+    const outer = fpRef.current
+    const inner = fpInnerRef.current
+    if (!outer || !inner) return
+
+    outer.style.transition = 'none'
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const onMove = (ev: MouseEvent) => {
+      const maxW = window.innerWidth - (sidebarRef.current?.offsetWidth ?? 0) - MIN_MAIN
+      const newW = Math.min(maxW, Math.max(MIN_FP, startW + ev.clientX - startX))
+      outer.style.width = `${newW}px`
+      inner.style.width = `${newW}px`
+    }
+    const onUp = (ev: MouseEvent) => {
+      const maxW = window.innerWidth - (sidebarRef.current?.offsetWidth ?? 0) - MIN_MAIN
+      const finalW = Math.min(maxW, Math.max(MIN_FP, startW + ev.clientX - startX))
+      outer.style.transition = ''
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setFilePanelWidth(finalW)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [setFilePanelWidth])
+
+  const hasLeftPanel = showSidebar || showFilePanel
 
   const folderName = currentFolder?.split('/').pop() ?? null
   const sessionTitle = useActiveSession((s) => {
@@ -115,7 +158,7 @@ function App(): React.JSX.Element {
 
   // Main view: sidebar + content
   return (
-    <div className="flex h-screen bg-sidebar text-foreground">
+    <div className="flex h-screen overflow-hidden bg-sidebar text-foreground">
       {/* Sidebar — only in coding mode, animated width */}
       {layoutMode === 'coding' && (
         <div
@@ -137,14 +180,35 @@ function App(): React.JSX.Element {
         </div>
       )}
 
+      {/* File Panel — between sidebar and main area */}
+      {layoutMode === 'coding' && (
+        <div
+          ref={fpRef}
+          className="relative shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
+          style={{ width: showFilePanel ? filePanelWidth : 0 }}
+        >
+          <div ref={fpInnerRef} className="h-full" style={{ width: filePanelWidth }}>
+            <FilePanel />
+          </div>
+          {showFilePanel && (
+            <div
+              onMouseDown={onFpResizeStart}
+              className="group absolute inset-y-0 -right-1 w-2 cursor-col-resize"
+            >
+              <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main area — overlaps sidebar with rounded left edge */}
-      <div className={cn('flex min-w-0 flex-1 flex-col transition-[border-radius] duration-300', layoutMode === 'coding' && showSidebar && 'rounded-l-xl bg-background overflow-hidden')}>
+      <div className={cn('flex min-w-[400px] flex-1 flex-col transition-[border-radius] duration-300', layoutMode === 'coding' && hasLeftPanel && 'rounded-l-xl bg-background overflow-hidden')}>
         {/* Main header — drag region */}
         <div
-          className={cn('flex h-11 shrink-0 items-center bg-card pt-[2px] transition-[padding-left] duration-300 ease-in-out', isFullscreen && !(layoutMode === 'coding' && showSidebar) ? 'pl-2' : 'pl-[18px]')}
+          className={cn('flex h-11 shrink-0 items-center bg-card pt-[2px] transition-[padding-left] duration-300 ease-in-out', isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'pl-2' : 'pl-[18px]')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', !isFullscreen && !(layoutMode === 'coding' && showSidebar) ? 'w-[66px]' : 'w-0')} />
+          <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', !isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'w-[66px]' : 'w-0')} />
           {layoutMode === 'coding' && (
             <div className={cn('shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out', showSidebar ? 'w-0' : 'w-[30px]')}>
               <TooltipProvider>

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Loader2, ChevronRight, PenLine, Check, X, Ban } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
+import { inferLanguage, useHighlightedTokens, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { ToolIcon } from './ToolIcon'
@@ -26,10 +27,6 @@ interface ToolBlockProps {
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
 const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
 
-function splitContentLines(text: string): string[] {
-  if (!text) return []
-  return text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
-}
 
 function countContentLines(text: string): number {
   return splitContentLines(text).length
@@ -370,54 +367,6 @@ function QAResult({ text }: { text: string }) {
   )
 }
 
-/** Infer language from file extension for syntax highlighting. */
-function inferLanguage(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-  const map: Record<string, string> = {
-    ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-    py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
-    json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
-    html: 'html', css: 'css', scss: 'scss', md: 'markdown',
-    sh: 'bash', bash: 'bash', sql: 'sql', swift: 'swift',
-    kt: 'kotlin', c: 'c', cpp: 'cpp', cs: 'csharp', php: 'php',
-  }
-  return map[ext] ?? 'text'
-}
-
-interface HLToken { content: string; style?: React.CSSProperties }
-
-/** Highlight code with codePlugin and return token arrays per line. */
-function useHighlightedTokens(code: string, language: string): HLToken[][] | null {
-  const [tokens, setTokens] = useState<HLToken[][] | null>(null)
-
-  useEffect(() => {
-    if (!code) { setTokens(null); return }
-    const lang = codePlugin.supportsLanguage(language as never) ? language : 'md'
-    const themes = codePlugin.getThemes()
-    const extract = (res: { tokens: Array<Array<{ content: string; color?: string; bgColor?: string; htmlStyle?: Record<string, string> }>> }): HLToken[][] =>
-      res.tokens.map((line) => line.map((t) => {
-        const s: React.CSSProperties = { ...(t.htmlStyle ?? {}) }
-        if (t.color) s.color = t.color
-        if (t.bgColor) s.backgroundColor = t.bgColor
-        return { content: t.content, style: Object.keys(s).length ? s : undefined }
-      }))
-    const result = codePlugin.highlight(
-      { code, language: lang as never, themes },
-      (res) => setTokens(extract(res)),
-    )
-    if (result) setTokens(extract(result))
-  }, [code, language])
-
-  return tokens
-}
-
-/** A single rendered line in the diff view. */
-interface DiffLine {
-  kind: 'added' | 'removed' | 'unchanged'
-  lineNum: number
-  text: string
-  sourceIdx: number
-}
 
 /** Build unified diff lines with actual file line numbers. */
 function buildDiffLines(oldStr: string, newStr: string, startLine: number): DiffLine[] {
@@ -448,47 +397,6 @@ function buildDiffLines(oldStr: string, newStr: string, startLine: number): Diff
   return result
 }
 
-function buildUnifiedFileChangeDiffLines(unifiedDiff: string): DiffLine[] {
-  const rows = splitContentLines(unifiedDiff)
-  const result: DiffLine[] = []
-  let oldLine = 1
-  let newLine = 1
-  let oldIdx = 0
-  let newIdx = 0
-  let inHunk = false
-
-  for (const row of rows) {
-    if (row.startsWith('@@')) {
-      const match = row.match(/^@@\s*-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s*@@/)
-      if (match) {
-        oldLine = Number(match[1])
-        newLine = Number(match[2])
-      }
-      inHunk = true
-      continue
-    }
-
-    if (!inHunk || row.startsWith('\\')) continue
-
-    if (row.startsWith('+')) {
-      result.push({ kind: 'added', lineNum: newLine++, text: row.slice(1), sourceIdx: newIdx++ })
-      continue
-    }
-    if (row.startsWith('-')) {
-      result.push({ kind: 'removed', lineNum: oldLine++, text: row.slice(1), sourceIdx: oldIdx++ })
-      continue
-    }
-
-    const text = row.startsWith(' ') ? row.slice(1) : row
-    result.push({ kind: 'unchanged', lineNum: newLine, text, sourceIdx: newIdx })
-    oldLine++
-    newLine++
-    oldIdx++
-    newIdx++
-  }
-
-  return result
-}
 
 function buildFileChangeDiffLines(kind: string, diffText: string): DiffLine[] {
   const rows = splitContentLines(diffText)
@@ -545,50 +453,6 @@ function buildDiffSourceText(lines: DiffLine[]): { oldText: string; newText: str
   }
 }
 
-/** Line number gutter width based on max line number. */
-function gutterWidth(maxLine: number): number {
-  return Math.max(2, String(maxLine).length)
-}
-
-const LINE_STYLE: Record<DiffLine['kind'], { bg: string; marker: string; markerColor: string }> = {
-  removed: { bg: 'bg-red-500/15', marker: '-', markerColor: 'text-red-400/60' },
-  added: { bg: 'bg-green-500/15', marker: '+', markerColor: 'text-green-400/60' },
-  unchanged: { bg: '', marker: ' ', markerColor: 'text-transparent' },
-}
-
-/** Render a list of DiffLine entries with optional syntax highlighting. */
-function DiffView({ lines, oldTokens, newTokens }: {
-  lines: DiffLine[]
-  oldTokens?: HLToken[][] | null
-  newTokens?: HLToken[][] | null
-}) {
-  const maxLine = lines.reduce((m, l) => Math.max(m, l.lineNum), 0)
-  const gw = gutterWidth(maxLine)
-
-  return (
-    <div className="max-h-[300px] overflow-auto rounded bg-background/70 p-2 text-[11px] font-mono leading-relaxed text-foreground">
-      {lines.map((line, i) => {
-        const s = LINE_STYLE[line.kind]
-        const tokens = line.kind === 'removed'
-          ? oldTokens?.[line.sourceIdx]
-          : (newTokens ?? oldTokens)?.[line.sourceIdx]
-        return (
-          <div key={i} className={cn('whitespace-pre', s.bg)}>
-            <span className="inline-block select-none text-right text-muted-foreground/50 mr-1" style={{ width: `${gw}ch` }}>
-              {line.lineNum}
-            </span>
-            <span className={cn('inline-block w-[1ch] select-none text-center mr-1', s.markerColor)}>{s.marker}</span>
-            {tokens
-              ? tokens.map((t, j) => (
-                  <span key={j} style={t.style}>{t.content}</span>
-                ))
-              : (line.text || ' ')}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
 
 /** Unified diff for Edit tool with actual file line numbers. */
 function EditDiff({ params }: { params: Record<string, unknown> }) {

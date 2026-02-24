@@ -217,7 +217,7 @@ Follow **Test-Driven Development** — write tests before implementation.
 
 ## Conventions
 
-- **Package manager**: Bun (not npm/pnpm)
+- **Package manager**: bun (not npm/pnpm), use bunx instead of npx 
 - **Module system**: ES modules (`"type": "module"`)
 - **Window style**: macOS hiddenInset titlebar with traffic lights at (16, 16)
 - **Commit messages**: `<type>(<scope>): <description>` (e.g. `feat(mcp): add document tools`)

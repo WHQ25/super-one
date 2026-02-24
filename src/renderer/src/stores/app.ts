@@ -6,6 +6,7 @@ type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
 type SettingsTab = 'agents' | 'skills' | 'mcp' | 'plugins'
 export type LayoutMode = 'canvas' | 'coding'
+export type SidebarTab = 'sessions' | 'explorer'
 
 interface WorktreeState {
   pendingBaseBranch: string | null
@@ -39,10 +40,16 @@ interface AppState {
   // Layout mode
   layoutMode: LayoutMode
   setLayoutMode: (mode: LayoutMode) => void
+  sidebarTab: SidebarTab
+  setSidebarTab: (tab: SidebarTab) => void
   showSidebar: boolean
   setShowSidebar: (show: boolean) => void
   sidebarWidth: number
   setSidebarWidth: (width: number) => void
+  showFilePanel: boolean
+  setShowFilePanel: (show: boolean) => void
+  filePanelWidth: number
+  setFilePanelWidth: (width: number) => void
 
   fetchRecentFolders: () => Promise<void>
   selectAndOpenFolder: () => Promise<void>
@@ -123,10 +130,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
   },
+  sidebarTab: 'sessions',
+  setSidebarTab: (tab) => {
+    set({ sidebarTab: tab })
+    if (tab === 'sessions') {
+      set({ showFilePanel: false })
+    } else {
+      import('./source-control').then(({ useSourceControlStore }) => {
+        if (useSourceControlStore.getState().selectedFile) set({ showFilePanel: true })
+      })
+    }
+  },
   showSidebar: true,
   setShowSidebar: (show) => set({ showSidebar: show }),
   sidebarWidth: 256,
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
+  showFilePanel: false,
+  setShowFilePanel: (show) => set({ showFilePanel: show }),
+  filePanelWidth: 300,
+  setFilePanelWidth: (width) => set({ filePanelWidth: width }),
 
   fetchRecentFolders: async () => {
     const folders = await window.app.getRecentFolders()

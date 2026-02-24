@@ -322,6 +322,33 @@ export interface GitInfo {
 
 export type GitResult = { ok: true } | { ok: false; error: string }
 
+export type GitFileStatus = 'M' | 'A' | 'D' | 'R' | 'C' | 'U' | '?' | '!'
+
+export interface FileTreeEntry {
+  name: string
+  path: string
+  isDirectory: boolean
+  children?: FileTreeEntry[]
+  gitStatus?: GitFileStatus | null
+}
+
+export interface GitStatusFile {
+  path: string
+  status: GitFileStatus
+  staged: boolean
+}
+
+export interface GitFileDiff {
+  path: string
+  diff: string
+}
+
+export interface GitFileContent {
+  path: string
+  content: string
+  language: string
+}
+
 export interface WorktreeEntry {
   path: string
   branch: string
@@ -784,6 +811,10 @@ export const AgentIpcChannels = {
   GIT_CREATE_BRANCH: 'app:git-create-branch',
   GIT_WORKTREE_INFO: 'app:git-worktree-info',
   GIT_ACTIVATE_WORKTREE: 'app:git-activate-worktree',
+  GIT_STATUS_FILES: 'app:git-status-files',
+  GIT_FILE_TREE: 'app:git-file-tree',
+  GIT_DIFF_FILE: 'app:git-diff-file',
+  GIT_READ_FILE: 'app:git-read-file',
 
   // Concurrent session management
   PARK_SESSION: 'agent:park-session',

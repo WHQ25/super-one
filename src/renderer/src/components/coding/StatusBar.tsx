@@ -1,9 +1,9 @@
 import { useActiveSession } from '@/stores/chat'
-import { useHasRealProject } from '@/stores/app'
+import { useAppStore, useHasRealProject } from '@/stores/app'
 import { ContextUsage } from '@/components/chat/ContextUsage'
 import { PermissionModeSelector } from '@/components/chat/PermissionModeSelector'
 import { ProjectSelector } from './ProjectSelector'
-import { PanelBottom, PanelRight, ShieldCheck } from 'lucide-react'
+import { GitBranch, PanelBottom, PanelRight, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface StatusBarProps {
@@ -22,11 +22,23 @@ export function StatusBar({
   const status = useActiveSession((s) => s.status)
   const sandboxInfo = useActiveSession((s) => s.sandboxInfo)
   const hasRealProject = useHasRealProject()
+  const showFilePanel = useAppStore((s) => s.showFilePanel)
+  const setShowFilePanel = useAppStore((s) => s.setShowFilePanel)
 
   return (
     <div className="flex h-6 shrink-0 items-center gap-2 border-t border-border px-2 text-[11px] text-muted-foreground">
       {/* Panel toggle buttons */}
       <div className="flex items-center gap-0.5">
+        <button
+          onClick={() => setShowFilePanel(!showFilePanel)}
+          className={cn(
+            'rounded p-0.5 transition-colors hover:text-foreground',
+            showFilePanel && 'text-foreground'
+          )}
+          title="File Panel"
+        >
+          <GitBranch className="size-3.5" />
+        </button>
         <button
           onClick={onToggleBottomPanel}
           className={cn(

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 import { X, FileX2, PanelLeft } from 'lucide-react'
-import { Streamdown } from 'streamdown'
+import { Streamdown, defaultRehypePlugins } from 'streamdown'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -63,6 +63,25 @@ export function FilePanel() {
   const fileName = selectedFile?.split('/').pop() ?? ''
   const hasDiff = !!fileDiff?.diff
   const isMd = isMarkdown(fileName)
+
+  const resolvedContent = useMemo(() => {
+    const raw = fileContent?.content ?? ''
+    if (!currentFolder || !selectedFile) return raw
+    const dir = selectedFile.includes('/') ? selectedFile.substring(0, selectedFile.lastIndexOf('/')) : ''
+    const baseDir = currentFolder + (dir ? '/' + dir : '')
+    return raw.replace(
+      /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g,
+      (_, alt, src, rest) => {
+        const cleanSrc = src.replace(/^\.\//, '')
+        const resolved = src.startsWith('/')
+          ? `local-file://${src}`
+          : `local-file://${baseDir}/${cleanSrc}`
+        return `![${alt}](${resolved}${rest})`
+      },
+    )
+  }, [currentFolder, selectedFile, fileContent?.content])
+
+  const previewRehypePlugins = useMemo(() => [defaultRehypePlugins.raw], [])
 
   const tabs = useMemo(() => {
     const t: { key: TabKey; label: string }[] = []
@@ -127,8 +146,9 @@ export function FilePanel() {
               plugins={streamdownPlugins}
               components={streamdownComponents}
               controls={streamdownControls}
+              rehypePlugins={previewRehypePlugins}
             >
-              {fileContent?.content ?? ''}
+              {resolvedContent}
             </Streamdown>
           </div>
         ) : (

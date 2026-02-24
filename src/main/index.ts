@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
 import { join, dirname, basename, resolve, extname, relative } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
@@ -31,6 +31,10 @@ import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-
 import { getDb, closeDb, getCachedResources, setCachedResources } from './database'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
+])
 
 // Isolate userData when running parallel instances (e.g. git worktrees)
 if (process.env.SUPERONE_INSTANCE) {
@@ -784,6 +788,24 @@ function registerIpcHandlers(): void {
 }
 
 app.whenReady().then(() => {
+  protocol.handle('local-file', async (request) => {
+    try {
+      const filePath = decodeURIComponent(request.url.slice('local-file://'.length))
+      log.info('[local-file]', request.url, '->', filePath)
+      const data = await readFile(filePath)
+      const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+      const mime: Record<string, string> = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+        svg: 'image/svg+xml', webp: 'image/webp', ico: 'image/x-icon', bmp: 'image/bmp',
+      }
+      return new Response(data, {
+        headers: { 'Content-Type': mime[ext] ?? 'application/octet-stream' },
+      })
+    } catch (err) {
+      log.error('[local-file] failed:', err)
+      return new Response('Not found', { status: 404 })
+    }
+  })
   getDb() // Initialize database
   registerIpcHandlers()
   createWindow()

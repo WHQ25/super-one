@@ -1,6 +1,14 @@
 import { useState, useCallback, useRef, useEffect, isValidElement } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, Loader2 } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
+import mermaid from 'mermaid'
+
+let mermaidInitialized = false
+function ensureMermaidInit() {
+  if (mermaidInitialized) return
+  mermaidInitialized = true
+  mermaid.initialize({ startOnLoad: false, theme: 'dark', suppressErrorRendering: true })
+}
 
 // --- Inline code ---
 
@@ -12,6 +20,48 @@ export function InlineCode({ children, className, ...props }: React.ComponentPro
     >
       {children}
     </code>
+  )
+}
+
+// --- Mermaid block ---
+
+function MermaidBlock({ code }: { code: string }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [svg, setSvg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ensureMermaidInit()
+    const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    mermaid.render(id, code).then(
+      ({ svg: result }) => { if (!cancelled) setSvg(result) },
+      (err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)) },
+    )
+    return () => { cancelled = true }
+  }, [code])
+
+  if (error) {
+    return (
+      <div className="my-1.5 overflow-hidden rounded-md border border-destructive/30 bg-destructive/5 p-3">
+        <p className="text-xs text-destructive">Mermaid Error: {error}</p>
+      </div>
+    )
+  }
+
+  if (!svg) {
+    return (
+      <div className="my-1.5 flex items-center justify-center rounded-md bg-muted/30 py-8">
+        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="my-1.5 overflow-x-auto rounded-md bg-muted/30 p-4 [&_svg]:mx-auto [&_svg]:max-w-full"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
   )
 }
 
@@ -165,6 +215,7 @@ export function createStreamdownCodeComponent(codePlugin: CodeHighlighterPlugin)
     }
 
     const language = className?.match(/language-([^\s]+)/)?.[1] ?? 'text'
+    if (language === 'mermaid') return <MermaidBlock code={code} />
     return <HighlightedCodeBlock code={code} language={language} codePlugin={codePlugin} />
   }
 

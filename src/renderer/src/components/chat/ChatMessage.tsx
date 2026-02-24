@@ -167,7 +167,7 @@ function renderBlock(
   switch (block.type) {
     case 'text':
       return (
-        <div key={index} className={prevBlockType === 'thinking' ? 'mt-1' : undefined}>
+        <div key={index} className={prevBlockType === 'thinking' ? 'mt-1 after-thinking' : undefined}>
           <CopyableText text={block.text} isStreaming={isStreaming} />
         </div>
       )
@@ -203,7 +203,7 @@ function renderBlock(
         />
       )
     case 'thinking':
-      return <ThinkingBlock key={index} thinking={block.thinking} isStreaming={isStreaming} />
+      return <ThinkingBlock key={index} thinking={block.thinking} isStreaming={isStreaming} blockDone={!isStreaming || !!nextBlockType} />
     case 'tool_result':
       // Normally rendered inside the parent ToolBlock via toolResultMap.
       // If orphaned (no matching tool_use), show a compact fallback.
@@ -217,40 +217,27 @@ function renderBlock(
   }
 }
 
-function ThinkingBlock({ thinking, isStreaming }: { thinking: string; isStreaming: boolean }) {
+function ThinkingBlock({ thinking, isStreaming, blockDone }: { thinking: string; isStreaming: boolean; blockDone: boolean }) {
   const [elapsed, setElapsed] = useState(0)
-  const startRef = useRef(isStreaming ? Date.now() : 0)
-  const thinkingRef = useRef(thinking)
-  thinkingRef.current = thinking
-  const [done, setDone] = useState(!isStreaming)
-  const [expanded, setExpanded] = useState(!done)
+  const startRef = useRef(!blockDone ? Date.now() : 0)
+  const [expanded, setExpanded] = useState(!blockDone)
 
   useEffect(() => {
-    if (!isStreaming && !done) {
-      setDone(true)
-      if (startRef.current) setElapsed(Math.round((Date.now() - startRef.current) / 1000))
-    }
-  }, [isStreaming, done])
-
-  useEffect(() => {
-    if (done || !startRef.current) return
-    let prevLen = thinkingRef.current.length
+    if (blockDone || !startRef.current) return
     const id = setInterval(() => {
       setElapsed(Math.round((Date.now() - startRef.current) / 1000))
-      const curLen = thinkingRef.current.length
-      if (curLen > 0 && curLen === prevLen) {
-        setDone(true)
-      }
-      prevLen = curLen
-    }, 500)
+    }, 1000)
     return () => clearInterval(id)
-  }, [done])
+  }, [blockDone])
 
   useEffect(() => {
-    if (done) setExpanded(false)
-  }, [done])
+    if (blockDone) {
+      if (startRef.current) setElapsed(Math.round((Date.now() - startRef.current) / 1000))
+      setExpanded(false)
+    }
+  }, [blockDone])
 
-  const active = !done
+  const active = !blockDone
   const label = active
     ? (elapsed >= 1 ? `Thinking for ${elapsed}s...` : 'Thinking...')
     : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')

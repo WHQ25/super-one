@@ -305,7 +305,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           if (suggestion && ed && ed.isEmpty) {
             e.preventDefault()
             ed.commands.setContent(suggestion)
-            ed.commands.focus('start')
+            ed.commands.focus('end')
             setTextRef.current(suggestion)
             return true
           }

@@ -20,12 +20,6 @@ export const PromptSuggestion = Extension.create<object, PromptSuggestionStorage
       new Plugin({
         key: new PluginKey('promptSuggestion'),
         props: {
-          attributes(state): Record<string, string> {
-            if (storage.suggestion && state.doc.textContent.length === 0) {
-              return { class: 'has-prompt-suggestion' }
-            }
-            return {}
-          },
           decorations(state) {
             const suggestion = storage.suggestion
             if (!suggestion) return DecorationSet.empty
@@ -33,36 +27,25 @@ export const PromptSuggestion = Extension.create<object, PromptSuggestionStorage
             const doc = state.doc
             if (doc.textContent.length > 0) return DecorationSet.empty
 
-            let insertPos = 1
+            let targetPos = -1
+            let targetSize = 0
             doc.descendants((node, pos) => {
-              if (node.isBlock && node.childCount === 0) {
-                insertPos = pos + 1
+              if (node.isBlock && node.childCount === 0 && targetPos < 0) {
+                targetPos = pos
+                targetSize = node.nodeSize
                 return false
               }
               return true
             })
 
-            const widget = Decoration.widget(
-              insertPos,
-              () => {
-                const container = document.createElement('span')
-                container.className = 'prompt-suggestion-ghost'
+            if (targetPos < 0) return DecorationSet.empty
 
-                const text = document.createElement('span')
-                text.textContent = suggestion
-                container.appendChild(text)
+            const deco = Decoration.node(targetPos, targetPos + targetSize, {
+              class: 'has-prompt-suggestion',
+              'data-prompt-suggestion': suggestion,
+            })
 
-                const badge = document.createElement('kbd')
-                badge.className = 'prompt-suggestion-badge'
-                badge.textContent = 'Tab'
-                container.appendChild(badge)
-
-                return container
-              },
-              { side: -1 },
-            )
-
-            return DecorationSet.create(doc, [widget])
+            return DecorationSet.create(doc, [deco])
           },
         },
       }),

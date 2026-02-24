@@ -1,3 +1,27 @@
+const TOOL_VERBS: Record<string, string> = {
+  Bash: 'Running command',
+  Read: 'Reading',
+  Edit: 'Editing',
+  Write: 'Writing',
+  FileChange: 'Editing',
+  NotebookEdit: 'Editing',
+  Grep: 'Searching',
+  Glob: 'Searching',
+  WebSearch: 'Searching',
+  WebFetch: 'Fetching',
+  Skill: 'Running',
+  Task: 'Spawning',
+  TaskOutput: 'Waiting',
+  AskUserQuestion: 'Asking',
+  EnterPlanMode: 'Planning',
+  ExitPlanMode: 'Reviewing',
+}
+
+export function getToolVerb(toolName: string): string {
+  if (toolName.startsWith('mcp__')) return 'Running'
+  return TOOL_VERBS[toolName] ?? 'Running'
+}
+
 /** Shared tool name → icon key + summary extraction for ToolBlock & PermissionPrompt. */
 
 export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'message-circle' | 'wrench' | 'plug' | 'clipboard-list' | 'bot'

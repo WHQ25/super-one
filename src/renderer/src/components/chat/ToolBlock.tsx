@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Loader2, ChevronRight, PenLine, Check, X, Ban } from 'lucide-react'
+import { ChevronRight, PenLine, Check, X, Ban } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
 import { inferLanguage, useHighlightedTokens, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
@@ -8,7 +8,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { ToolIcon } from './ToolIcon'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
-import { getToolDisplay, parseToolInput, parseMcpToolName } from './tool-display'
+import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName } from './tool-display'
 import { codePlugin } from './chat-shared'
 
 /** Dev-only: comma-separated tool names to show raw debug UI. e.g. RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate */
@@ -194,8 +194,9 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
         ) : (
           <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground')}>{displayName}</span>
-        {isStreaming && <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />}
+        <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground')}>
+          {isStreaming ? <>{getToolVerb(toolName)}…</> : displayName}
+        </span>
         {isDenied ? (
           <>
             {fileToolName ? (
@@ -588,12 +589,10 @@ function DebugToolBlock({
   return (
     <div className="my-0.5 rounded border border-amber-500/30 bg-muted/50">
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
-        {isStreaming ? (
-          <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
-        ) : (
-          <span className="size-3 shrink-0 text-center text-amber-400">&#9881;</span>
-        )}
-        <span className="font-medium text-amber-400">{toolName}</span>
+        <span className="size-3 shrink-0 text-center text-amber-400">&#9881;</span>
+        <span className="font-medium text-amber-400">
+          {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName}
+        </span>
         <span className="rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-400">debug</span>
         {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
           <span className="ml-auto shrink-0 text-muted-foreground">{Math.round(elapsedSeconds)}s</span>

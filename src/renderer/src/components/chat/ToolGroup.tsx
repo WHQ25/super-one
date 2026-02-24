@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { ChevronRight, Loader2 } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
+import { getToolVerb } from './tool-display'
 import type { ContentBlock } from '../../../../shared/agent-types'
 
 interface ToolGroupProps {
@@ -29,10 +30,11 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
         <ChevronRight
           className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-90')}
         />
-        {hasStreamingTool && (
-          <Loader2 className="size-3 shrink-0 animate-spin text-blue-400" />
-        )}
-        <span className="text-foreground">{summary}</span>
+        <span className="text-foreground">
+          {hasStreamingTool && streamingTool?.type === 'tool_use'
+            ? <>{getToolVerb(streamingTool.toolName)}…</>
+            : summary}
+        </span>
         <span className="ml-auto shrink-0 text-muted-foreground">{toolUses.length} tool use</span>
       </button>
 

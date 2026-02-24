@@ -17,6 +17,7 @@ export function PlanApprovalPrompt() {
   const respond = useChatStore((s) => s.respondToPlanApproval)
   const [feedback, setFeedback] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
+  const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const requestId = pending?.requestId
   const planContent = pending?.planContent ?? ''
   const planFilePath = pending?.planFilePath ?? ''
@@ -56,9 +57,13 @@ export function PlanApprovalPrompt() {
         active.dataset.feedback !== undefined &&
         containerRef.current?.contains(active)
 
-      // Esc: reject immediately
+      // Esc: blur feedback first, reject only when not in feedback
       if (e.key === 'Escape') {
         e.preventDefault()
+        if (isFeedbackInputFocused) {
+          ;(active as HTMLInputElement).blur()
+          return
+        }
         handleReject()
         return
       }
@@ -140,20 +145,25 @@ export function PlanApprovalPrompt() {
           <div className="hidden items-center gap-2 @xl:flex">
             <Button
               size="sm"
-              className="h-7 w-[100px] cursor-pointer gap-1 bg-green-600 text-xs text-white hover:bg-green-500"
+              className="h-7 cursor-pointer gap-1 bg-green-600 px-3 text-xs text-white hover:bg-green-500"
               onClick={handleApprove}
             >
               <Check className="size-3" />
               Approve
+              {!isFeedbackFocused && (
+                <CommandShortcut className="ml-1 text-[10px] text-green-200/80">⏎</CommandShortcut>
+              )}
             </Button>
             <Button
               size="sm"
-              variant="destructive"
-              className="h-7 w-[100px] cursor-pointer gap-1 text-xs"
+              className="h-7 cursor-pointer gap-1 bg-red-700 px-3 text-xs text-white hover:bg-red-600"
               onClick={handleReject}
             >
               <X className="size-3" />
               Reject
+              {!isFeedbackFocused && (
+                <CommandShortcut className="ml-1 text-[10px] text-red-200/80">Esc</CommandShortcut>
+              )}
             </Button>
             <div className="relative flex flex-1 items-center">
               <input
@@ -161,10 +171,12 @@ export function PlanApprovalPrompt() {
                 type="text"
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
-                placeholder="Reject feedback (optional)"
+                onFocus={() => setIsFeedbackFocused(true)}
+                onBlur={() => setIsFeedbackFocused(false)}
+                placeholder="Reject feedback (optional, Enter to submit)"
                 className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
-              <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">Tab</CommandShortcut>
+              <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">{isFeedbackFocused ? '⏎' : '⇥'}</CommandShortcut>
             </div>
           </div>
 
@@ -176,28 +188,35 @@ export function PlanApprovalPrompt() {
                 type="text"
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
-                placeholder="Reject feedback (optional)"
+                onFocus={() => setIsFeedbackFocused(true)}
+                onBlur={() => setIsFeedbackFocused(false)}
+                placeholder="Reject feedback (optional, Enter to submit)"
                 className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
-              <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">Tab</CommandShortcut>
+              <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">{isFeedbackFocused ? '⏎' : '⇥'}</CommandShortcut>
             </div>
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
-                className="h-7 flex-1 cursor-pointer gap-1 bg-green-600 text-xs text-white hover:bg-green-500"
+                className="h-7 flex-1 cursor-pointer gap-1 bg-green-600 px-3 text-xs text-white hover:bg-green-500"
                 onClick={handleApprove}
               >
                 <Check className="size-3" />
                 Approve
+                {!isFeedbackFocused && (
+                  <CommandShortcut className="ml-1 text-[10px] text-green-200/80">⏎</CommandShortcut>
+                )}
               </Button>
               <Button
                 size="sm"
-                variant="destructive"
-                className="h-7 flex-1 cursor-pointer gap-1 text-xs"
+                className="h-7 flex-1 cursor-pointer gap-1 bg-red-700 px-3 text-xs text-white hover:bg-red-600"
                 onClick={handleReject}
               >
                 <X className="size-3" />
                 Reject
+                {!isFeedbackFocused && (
+                  <CommandShortcut className="ml-1 text-[10px] text-red-200/80">Esc</CommandShortcut>
+                )}
               </Button>
             </div>
           </div>

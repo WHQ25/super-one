@@ -24,6 +24,7 @@ import { useAppStore, useHasRealProject, type SidebarTab } from '@/stores/app'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExplorerTree } from '@/components/sidebar/ExplorerTree'
 import type { SessionHistoryEntry, PinnedSessionEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
 import { getDeleteSessionRecovery } from './session-delete-helpers'
@@ -183,26 +184,18 @@ export function AppSidebar() {
       </div>
 
       {/* Tab switcher */}
-      <div className="flex shrink-0 items-center gap-0.5 px-2 pb-1">
-        {([
-          { key: 'sessions' as SidebarTab, icon: MessageSquare, label: 'Sessions' },
-          { key: 'explorer' as SidebarTab, icon: FolderTree, label: 'Explorer' },
-        ]).map(({ key, icon: Icon, label }) => (
-          <button
-            key={key}
-            onClick={() => setSidebarTab(key)}
-            className={cn(
-              'flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors',
-              sidebarTab === key
-                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground'
-            )}
-          >
-            <Icon className="size-3.5" />
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as SidebarTab)} className="mx-2 mb-1 shrink-0">
+        <TabsList variant="sidebar">
+          <TabsTrigger value="sessions" className="py-1">
+            <MessageSquare className="size-3.5" />
+            Sessions
+          </TabsTrigger>
+          <TabsTrigger value="explorer" className="py-1">
+            <FolderTree className="size-3.5" />
+            Explorer
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Pinned sessions (always visible) */}
       {pinnedSessions.length > 0 && (

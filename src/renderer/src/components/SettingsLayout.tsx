@@ -5,6 +5,7 @@ import { AgentsPage } from './AgentsPage'
 import { SkillsPage } from './SkillsPage'
 import { McpPage } from './McpPage'
 import { PluginsPage } from './PluginsPage'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { SettingsProvider } from '../../../shared/agent-types'
 
@@ -48,22 +49,15 @@ export function SettingsLayout() {
         </Button>
 
         {/* Provider toggle */}
-        <div className="mb-4 flex rounded-md bg-muted p-0.5">
-          {providers.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setSettingsProvider(p.id)}
-              className={cn(
-                'flex-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors',
-                settingsProvider === p.id
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <Tabs value={settingsProvider} onValueChange={(v) => setSettingsProvider(v as SettingsProvider)} className="mb-4">
+          <TabsList className="border-0 bg-muted">
+            {providers.map((p) => (
+              <TabsTrigger key={p.id} value={p.id} className="py-1">
+                {p.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         <nav className="flex flex-col gap-1">
           {visibleTabs.map((tab) => (

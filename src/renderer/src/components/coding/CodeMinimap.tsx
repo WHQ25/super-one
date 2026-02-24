@@ -6,6 +6,7 @@ const CHAR_W = 1.2
 const LINE_H = 3
 const MINIMAP_W = 100
 const GUTTER_W = 3
+const MINIMAP_DETAIL_LIMIT = 5000
 
 export function CodeMinimap({ lines, tokens, scrollRef }: {
   lines: DiffLine[]
@@ -44,6 +45,8 @@ export function CodeMinimap({ lines, tokens, scrollRef }: {
     const lineH = LINE_H * scale
     const charW = CHAR_W * scale
 
+    const drawDetail = lines.length <= MINIMAP_DETAIL_LIMIT
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
       const y = i * lineH
@@ -59,6 +62,8 @@ export function CodeMinimap({ lines, tokens, scrollRef }: {
         ctx.fillStyle = 'rgba(239, 68, 68, 0.7)'
         ctx.fillRect(0, y, GUTTER_W, lineH)
       }
+
+      if (!drawDetail) continue
 
       const lineTokens = line.kind !== 'removed' ? tokens?.[line.sourceIdx] : null
       if (lineTokens) {

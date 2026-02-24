@@ -1,4 +1,5 @@
-import { useState, useEffect, forwardRef } from 'react'
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useMemo } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { cn } from '@/lib/utils'
 import { codePlugin } from '@/components/chat/chat-shared'
 
@@ -34,11 +35,14 @@ export function inferLanguage(filePath: string): string {
 
 export interface HLToken { content: string; style?: React.CSSProperties }
 
+const HIGHLIGHT_LINE_LIMIT = 10000
+
 export function useHighlightedTokens(code: string, language: string): HLToken[][] | null {
   const [tokens, setTokens] = useState<HLToken[][] | null>(null)
 
   useEffect(() => {
     if (!code) { setTokens(null); return }
+    if (code.split('\n').length > HIGHLIGHT_LINE_LIMIT) { setTokens(null); return }
     const lang = codePlugin.supportsLanguage(language as never) ? language : 'md'
     const themes = codePlugin.getThemes()
     const extract = (res: { tokens: Array<Array<{ content: string; color?: string; bgColor?: string; htmlStyle?: Record<string, string> }>> }): HLToken[][] =>
@@ -202,6 +206,8 @@ export const LINE_STYLE: Record<DiffLine['kind'], { bg: string; marker: string; 
   unchanged: { bg: '', marker: ' ', markerColor: 'text-transparent' },
 }
 
+const ESTIMATED_LINE_HEIGHT = 20
+
 export const DiffView = forwardRef<HTMLDivElement, {
   lines: DiffLine[]
   oldTokens?: HLToken[][] | null
@@ -212,26 +218,56 @@ export const DiffView = forwardRef<HTMLDivElement, {
 }>(function DiffView({ lines, oldTokens, newTokens, maxHeight, className, hideScrollbar }, ref) {
   const maxLine = lines.reduce((m, l) => Math.max(m, l.lineNum), 0)
   const gw = gutterWidth(maxLine)
+  const minContentWidth = useMemo(() => {
+    let max = 0
+    for (const line of lines) {
+      if (line.text.length > max) max = line.text.length
+    }
+    return `${max + gw + 4}ch`
+  }, [lines, gw])
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  useImperativeHandle(ref, () => scrollRef.current!, [])
+
+  const virtualizer = useVirtualizer({
+    count: lines.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ESTIMATED_LINE_HEIGHT,
+    overscan: 20,
+  })
+
+  const renderLine = useCallback((line: DiffLine, _index: number) => {
+    const s = LINE_STYLE[line.kind]
+    const tokens = line.kind === 'removed'
+      ? oldTokens?.[line.sourceIdx]
+      : (newTokens ?? oldTokens)?.[line.sourceIdx]
+    return (
+      <>
+        <span className="inline-block select-none text-right text-muted-foreground/50 mr-1" style={{ width: `${gw}ch` }}>
+          {line.lineNum}
+        </span>
+        <span className={cn('inline-block w-[1ch] select-none text-center mr-1', s.markerColor)}>{s.marker}</span>
+        {tokens
+          ? tokens.map((t, j) => (
+              <span key={j} style={t.style}>{t.content}</span>
+            ))
+          : (line.text || ' ')}
+      </>
+    )
+  }, [gw, oldTokens, newTokens])
 
   return (
-    <div ref={ref} className={cn('overflow-auto rounded bg-background/70 p-2 text-[11px] font-mono leading-relaxed text-foreground', maxHeight ?? 'max-h-[300px]', hideScrollbar && 'hide-scrollbar', className)}>
-      <div className="inline-block min-w-full">
-        {lines.map((line, i) => {
-          const s = LINE_STYLE[line.kind]
-          const tokens = line.kind === 'removed'
-            ? oldTokens?.[line.sourceIdx]
-            : (newTokens ?? oldTokens)?.[line.sourceIdx]
+    <div ref={scrollRef} className={cn('overflow-auto rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground', maxHeight ?? 'max-h-[300px]', hideScrollbar && 'hide-scrollbar', className)}>
+      <div className="relative min-w-full" style={{ height: virtualizer.getTotalSize(), minWidth: minContentWidth }}>
+        {virtualizer.getVirtualItems().map((vItem) => {
+          const line = lines[vItem.index]
           return (
-            <div key={i} className={cn('whitespace-pre', s.bg)}>
-              <span className="inline-block select-none text-right text-muted-foreground/50 mr-1" style={{ width: `${gw}ch` }}>
-                {line.lineNum}
-              </span>
-              <span className={cn('inline-block w-[1ch] select-none text-center mr-1', s.markerColor)}>{s.marker}</span>
-              {tokens
-                ? tokens.map((t, j) => (
-                    <span key={j} style={t.style}>{t.content}</span>
-                  ))
-                : (line.text || ' ')}
+            <div
+              key={vItem.index}
+              className={cn('absolute left-0 right-0 whitespace-pre px-2', LINE_STYLE[line.kind].bg)}
+              style={{ height: vItem.size, transform: `translateY(${vItem.start}px)` }}
+            >
+              {renderLine(line, vItem.index)}
             </div>
           )
         })}

@@ -851,4 +851,5 @@ export const AgentIpcChannels = {
   FILE_WATCH_START: 'app:file-watch-start',
   FILE_WATCH_STOP: 'app:file-watch-stop',
   FILE_CHANGE_EVENT: 'app:file-change-event',
+  GIT_HEAD_CHANGE: 'app:git-head-change',
 } as const

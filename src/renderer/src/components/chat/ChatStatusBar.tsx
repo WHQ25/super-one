@@ -326,6 +326,11 @@ export function ChatStatusBar() {
     return () => { cancelled = true; clearInterval(interval) }
   }, [currentFolder])
 
+  useEffect(() => {
+    const unsub = window.app.onGitHeadChange(() => refreshGitInfo())
+    return unsub
+  }, [refreshGitInfo])
+
   const openPopover = useCallback((open: boolean) => {
     setPopoverOpen(open)
     if (open) {

@@ -534,9 +534,10 @@ function ExitPlanModeBlock({ result }: { result?: string }) {
   const liveOutcome = useActiveSession((s) => s.planApprovalOutcome)
 
   const isDenied = !!result && result.startsWith('[denied] ')
-  const outcome = result
+  const resultOutcome = result
     ? (isDenied ? { approved: false, feedback: result.slice('[denied] '.length) } : { approved: true })
-    : liveOutcome
+    : null
+  const outcome = liveOutcome ?? resultOutcome
 
   if (!outcome) {
     return (

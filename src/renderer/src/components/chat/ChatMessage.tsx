@@ -254,7 +254,7 @@ function ThinkingBlock({ thinking, isStreaming, blockDone }: { thinking: string;
     : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')
 
   return (
-    <div className="mt-3">
+    <div className="thinking-node mt-3">
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -269,7 +269,7 @@ function ThinkingBlock({ thinking, isStreaming, blockDone }: { thinking: string;
       {expanded && (
         <div
           ref={scrollRef}
-          className="mt-1 max-h-32 overflow-y-auto border-l-2 border-purple-400/40 pl-3 text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap"
+          className="mt-1 max-h-32 overflow-y-auto pl-2 text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap"
         >
           {thinking}
         </div>
@@ -459,7 +459,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
               if (seg.kind === 'block') {
                 const nextSeg = segs[segIdx + 1]
                 const prevSeg = segs[segIdx - 1]
-                const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : undefined
+                const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : nextSeg?.kind === 'subagent' ? 'tool_use' : undefined
                 const prevType = prevSeg?.kind === 'block' ? prevSeg.block.type : undefined
                 return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, nextType, prevType)
               }

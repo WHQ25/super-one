@@ -270,7 +270,8 @@ body {
   }
 
   .tool-node,
-  .tool-group {
+  .tool-group,
+  .thinking-node {
     margin-left: 0.5rem;
     border-left: 2px solid var(--border);
     border-radius: 0;
@@ -296,6 +297,7 @@ body {
 
   .tool-node,
   .tool-group,
+  .thinking-node,
   .subagent-container {
     margin-left: 0.75rem;
   }
@@ -327,12 +329,16 @@ body {
   height: 0;
 }
 
+.tiptap.has-prompt-suggestion p.is-editor-empty:first-child::before {
+  display: none;
+}
+
 .prompt-suggestion-ghost {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--muted-foreground);
-  opacity: 0.5;
+  opacity: 0.7;
   pointer-events: none;
   white-space: nowrap;
   max-width: 100%;

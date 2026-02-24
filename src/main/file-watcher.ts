@@ -5,18 +5,31 @@ import { AgentIpcChannels } from '../shared/agent-types'
 
 let watcher: FSWatcher | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let gitHeadTimer: ReturnType<typeof setTimeout> | null = null
 let currentFolder: string | null = null
 let win: BrowserWindow | null = null
 
 const IGNORED = /(?:^|[/\\])(?:\.git|node_modules|\.DS_Store|\.next|dist|\.cache)(?:[/\\]|$)/
+const GIT_HEAD = /(?:^|[/\\])\.git[/\\]HEAD$/
 
 function send(): void {
   if (!win || !currentFolder) return
   win.webContents.send(AgentIpcChannels.FILE_CHANGE_EVENT, { folderPath: currentFolder })
 }
 
+function sendGitHeadChange(): void {
+  if (!win || !currentFolder) return
+  win.webContents.send(AgentIpcChannels.GIT_HEAD_CHANGE, { folderPath: currentFolder })
+}
+
 function handleChange(_eventType: string, filename: string | null): void {
-  if (filename && IGNORED.test(filename)) return
+  if (!filename) return
+  if (GIT_HEAD.test(filename)) {
+    if (gitHeadTimer) clearTimeout(gitHeadTimer)
+    gitHeadTimer = setTimeout(sendGitHeadChange, 100)
+    return
+  }
+  if (IGNORED.test(filename)) return
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(send, 300)
 }
@@ -41,6 +54,10 @@ export function stopWatching(): void {
   if (debounceTimer) {
     clearTimeout(debounceTimer)
     debounceTimer = null
+  }
+  if (gitHeadTimer) {
+    clearTimeout(gitHeadTimer)
+    gitHeadTimer = null
   }
   if (watcher) {
     watcher.close()

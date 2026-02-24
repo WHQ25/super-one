@@ -561,9 +561,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     useEffect(() => {
       if (editor) {
+        const active = status !== 'streaming' ? promptSuggestion : null
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(editor.storage as any).promptSuggestion.suggestion =
-          (status !== 'streaming' ? promptSuggestion : null)
+        ;(editor.storage as any).promptSuggestion.suggestion = active
+        editor.view.dom.classList.toggle('has-prompt-suggestion', !!active)
         editor.view.dispatch(editor.state.tr)
       }
     }, [promptSuggestion, status, editor])

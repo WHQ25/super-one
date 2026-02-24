@@ -99,6 +99,7 @@ interface AppAPI {
   startFileWatch(folderPath: string): Promise<void>
   stopFileWatch(): Promise<void>
   onFileChangeEvent(callback: (event: { folderPath: string }) => void): () => void
+  onGitHeadChange(callback: (event: { folderPath: string }) => void): () => void
 
   // Logging
   getLogPath(): Promise<string>

@@ -328,6 +328,15 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.FILE_CHANGE_EVENT, handler)
     }
   },
+  onGitHeadChange: (callback: (event: { folderPath: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { folderPath: string }): void => {
+      callback(event)
+    }
+    ipcRenderer.on(AgentIpcChannels.GIT_HEAD_CHANGE, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.GIT_HEAD_CHANGE, handler)
+    }
+  },
 
   // Logging
   getLogPath: () =>

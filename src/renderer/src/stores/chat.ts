@@ -307,7 +307,7 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
       return { messages: [...session.messages, event.message], promptSuggestion: null }
 
     case 'content_delta': {
-      const updatedMessages = session.messages.map((msg) => {
+      let updatedMessages = session.messages.map((msg) => {
         if (msg.id !== event.messageId) return msg
         return { ...msg, content: applyDelta(msg.content, event.delta) }
       })
@@ -383,6 +383,23 @@ function applyEventToSession(session: SessionState, event: AgentEvent): Partial<
 
           if (tn === 'EnterPlanMode') {
             extraUpdates = { ...extraUpdates, permissionMode: 'plan' }
+          }
+          if (tn === 'ExitPlanMode' && session.planApprovalOutcome && !session.planApprovalOutcome.approved) {
+            const feedback = session.planApprovalOutcome.feedback?.trim()
+            const base = feedback || resultDelta.summary || 'User rejected the plan'
+            const summary = base.startsWith('[denied] ') ? base : `[denied] ${base}`
+            updatedMessages = updatedMessages.map((m) => {
+              if (m.id !== event.messageId) return m
+              const nextContent = [...m.content]
+              for (let i = nextContent.length - 1; i >= 0; i--) {
+                const block = nextContent[i]
+                if (block.type === 'tool_result' && block.toolUseId === resultDelta.toolUseId) {
+                  nextContent[i] = { ...block, summary }
+                  break
+                }
+              }
+              return { ...m, content: nextContent }
+            })
           }
         }
       }

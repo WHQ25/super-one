@@ -367,6 +367,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_READ_FILE, folderPath, filePath),
   getFileTree: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_FILE_TREE, folderPath),
+  listDir: (folderPath: string, dirRelPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_LIST_DIR, folderPath, dirRelPath),
 
   // Session history
   listSessions: (projectPath: string) =>

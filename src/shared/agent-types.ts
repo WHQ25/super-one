@@ -813,6 +813,7 @@ export const AgentIpcChannels = {
   GIT_ACTIVATE_WORKTREE: 'app:git-activate-worktree',
   GIT_STATUS_FILES: 'app:git-status-files',
   GIT_FILE_TREE: 'app:git-file-tree',
+  GIT_LIST_DIR: 'app:git-list-dir',
   GIT_DIFF_FILE: 'app:git-diff-file',
   GIT_READ_FILE: 'app:git-read-file',
 

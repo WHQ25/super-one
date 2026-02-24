@@ -1,6 +1,6 @@
 import { useEffect, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Loader2 } from 'lucide-react'
 import { FileIcon, FolderIcon } from '@/components/ui/FileIcon'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
@@ -27,14 +27,16 @@ function getStatusColor(status: GitFileStatus | null | undefined): string {
 function TreeNode({ entry, depth }: { entry: FileTreeEntry; depth: number }) {
   const expandedDirs = useExplorerStore((s) => s.expandedDirs)
   const toggleDir = useExplorerStore((s) => s.toggleDir)
+  const loadingDirs = useExplorerStore((s) => s.loadingDirs)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const selectedFile = useSourceControlStore((s) => s.selectedFile)
   const isExpanded = expandedDirs.has(entry.path)
+  const isLoading = loadingDirs.has(entry.path)
   const colorClass = getStatusColor(entry.gitStatus)
 
   const handleClick = useCallback(() => {
-    if (entry.isDirectory) {
-      toggleDir(entry.path)
+    if (entry.isDirectory && currentFolder) {
+      toggleDir(currentFolder, entry.path)
     } else if (currentFolder) {
       useSourceControlStore.getState().selectFile(currentFolder, entry.path)
       useAppStore.getState().setShowFilePanel(true)
@@ -52,10 +54,14 @@ function TreeNode({ entry, depth }: { entry: FileTreeEntry; depth: number }) {
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
         {entry.isDirectory ? (
-          <ChevronRight className={cn(
-            'size-3.5 shrink-0 text-sidebar-foreground/70 transition-transform duration-150',
-            isExpanded && 'rotate-90'
-          )} />
+          isLoading ? (
+            <Loader2 className="size-3.5 shrink-0 animate-spin text-sidebar-foreground/50" />
+          ) : (
+            <ChevronRight className={cn(
+              'size-3.5 shrink-0 text-sidebar-foreground/70 transition-transform duration-150',
+              isExpanded && 'rotate-90'
+            )} />
+          )
         ) : (
           <span className="w-3.5 shrink-0" />
         )}

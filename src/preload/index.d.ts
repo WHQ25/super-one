@@ -118,6 +118,7 @@ interface AppAPI {
   getGitDiffFile(folderPath: string, filePath: string, staged: boolean): Promise<GitFileDiff>
   getGitReadFile(folderPath: string, filePath: string): Promise<GitFileContent>
   getFileTree(folderPath: string): Promise<FileTreeEntry[]>
+  listDir(folderPath: string, dirRelPath: string): Promise<FileTreeEntry[]>
 
   // Session history
   listSessions(projectPath: string): Promise<SessionHistoryEntry[]>

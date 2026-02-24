@@ -649,6 +649,88 @@ function registerIpcHandlers(): void {
     }
   })
 
+  async function getGitStatusMap(folderPath: string) {
+    const statusMap = new Map<string, GitFileStatus>()
+    const ignoredDirs = new Set<string>()
+    try {
+      const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
+      if (raw) {
+        for (const line of raw.split('\n').filter(Boolean)) {
+          const x = line[0]
+          const y = line[1]
+          const filePath = line.slice(3)
+          if (x === '!' && y === '!') {
+            const p = filePath.replace(/\/$/, '')
+            statusMap.set(p, '!')
+            if (filePath.endsWith('/')) ignoredDirs.add(p)
+          } else {
+            let status: GitFileStatus
+            if (x === '?' || y === '?') status = '?'
+            else if (x === 'D' || y === 'D') status = 'D'
+            else if (x === 'A') status = 'A'
+            else if (x === 'R' || y === 'R') status = 'R'
+            else status = 'M'
+            statusMap.set(filePath, status)
+          }
+        }
+      }
+    } catch { /* not a git repo or no commits */ }
+    return { statusMap, ignoredDirs }
+  }
+
+  function dirGitStatus(statusMap: Map<string, GitFileStatus>, dirRelPath: string): GitFileStatus | null {
+    const prefix = dirRelPath + '/'
+    let worst: GitFileStatus | null = null
+    let worstPri = 0
+    for (const [path, status] of statusMap) {
+      if (path.startsWith(prefix) && status !== '!') {
+        const pri = GIT_STATUS_PRIORITY[status] ?? 0
+        if (pri > worstPri) { worst = status; worstPri = pri }
+      }
+    }
+    return worst
+  }
+
+  ipcMain.handle(AgentIpcChannels.GIT_LIST_DIR, async (_event, folderPath: string, dirRelPath: string) => {
+    try {
+      const { statusMap, ignoredDirs } = await getGitStatusMap(folderPath)
+      const targetDir = dirRelPath ? join(folderPath, dirRelPath) : folderPath
+      const entries = await readdir(targetDir, { withFileTypes: true })
+
+      const sorted = entries.sort((a, b) => {
+        if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
+
+      const result: FileTreeEntry[] = []
+      for (const entry of sorted) {
+        if (SKIP_DIRS.has(entry.name) || entry.name === '.DS_Store') continue
+        const relPath = dirRelPath ? dirRelPath + '/' + entry.name : entry.name
+        const isIgnored = ignoredDirs.has(relPath) || statusMap.get(relPath) === '!'
+
+        if (entry.isDirectory()) {
+          result.push({
+            name: entry.name,
+            path: relPath,
+            isDirectory: true,
+            children: undefined,
+            gitStatus: isIgnored ? '!' : dirGitStatus(statusMap, relPath),
+          })
+        } else {
+          result.push({
+            name: entry.name,
+            path: relPath,
+            isDirectory: false,
+            gitStatus: isIgnored ? '!' : (statusMap.get(relPath) ?? null),
+          })
+        }
+      }
+      return result
+    } catch {
+      return []
+    }
+  })
+
   const testInstall = process.env.TEST_INSTALL_CLAUDE === '1'
 
   ipcMain.handle(AgentIpcChannels.SETUP_CHECK_CLAUDE, () => {

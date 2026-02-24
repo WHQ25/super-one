@@ -27,7 +27,7 @@ export function useGitAutoRefresh() {
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       if (showFilePanel) useSourceControlStore.getState().refresh(currentFolder)
-      if (sidebarTab === 'explorer') useExplorerStore.getState().fetchTree(currentFolder)
+      if (sidebarTab === 'explorer') useExplorerStore.getState().refreshTree(currentFolder)
     }, 500)
 
     return () => clearTimeout(debounceRef.current)
@@ -56,7 +56,7 @@ export function useGitAutoRefresh() {
         if (!folder) return
         const { showFilePanel: fp, sidebarTab: tab } = useAppStore.getState()
         if (fp) useSourceControlStore.getState().refresh(folder)
-        if (tab === 'explorer') useExplorerStore.getState().fetchTree(folder)
+        if (tab === 'explorer') useExplorerStore.getState().refreshTree(folder)
       }, 500)
     })
 

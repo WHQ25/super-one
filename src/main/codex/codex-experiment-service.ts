@@ -3,6 +3,7 @@ import { mkdirSync, unlinkSync, writeFileSync } from 'fs'
 import { createRequire } from 'module'
 import { basename, extname, join } from 'path'
 import { createInterface } from 'readline'
+import log from '../logger'
 import {
   CODEX_PERMISSION_PRESETS,
   DEFAULT_CODEX_PERMISSION_PRESET,
@@ -678,7 +679,10 @@ export class CodexExperimentService {
 
   private resolveCodexCliScriptPath(): string {
     if (this.codexCliScriptPath) return this.codexCliScriptPath
-    this.codexCliScriptPath = moduleRequire.resolve('@openai/codex/bin/codex.js')
+    let resolved = moduleRequire.resolve('@openai/codex/bin/codex.js')
+    resolved = resolved.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
+    log.info('[codex] Resolved CLI script:', resolved)
+    this.codexCliScriptPath = resolved
     return this.codexCliScriptPath
   }
 
@@ -906,6 +910,8 @@ export class CodexExperimentService {
       return await fn(connection)
     } catch (error) {
       const stderr = stderrChunks.join('').trim()
+      log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
+      if (stderr) log.error('[codex] app-server stderr:', stderr)
       if (stderr) {
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(`${message}\n${stderr}`)
@@ -961,7 +967,9 @@ export class CodexExperimentService {
       return session.modelCache.models
     }
 
+    log.info('[codex] listModels: mode=%s, hasApiKey=%s', session.mode, Boolean(session.apiKey || process.env.CODEX_API_KEY))
     const models = await this.fetchModelsFromAppServer(session)
+    log.info('[codex] listModels: fetched %d models', models.length)
     session.modelCache = { fetchedAt: now, models }
     return models
   }

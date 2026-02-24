@@ -312,6 +312,12 @@ export function ChatStatusBar() {
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
   const isInWorktree = !!(wtState?.pendingBaseBranch || wtState?.activePath)
 
+  const refreshGitInfo = useCallback(async () => {
+    if (!currentFolder) return
+    const info = await window.app.getGitInfo(currentFolder)
+    if (info) setGitInfo(info)
+  }, [currentFolder])
+
   useEffect(() => {
     if (!currentFolder) { setGitInfo(null); return }
 
@@ -337,12 +343,6 @@ export function ChatStatusBar() {
       setSearch('')
       if (currentFolder) window.app.getGitBranches(currentFolder).then(setBranches)
     }
-  }, [currentFolder])
-
-  const refreshGitInfo = useCallback(async () => {
-    if (!currentFolder) return
-    const info = await window.app.getGitInfo(currentFolder)
-    if (info) setGitInfo(info)
   }, [currentFolder])
 
   const handleBranchSelect = useCallback(async (branch: string) => {

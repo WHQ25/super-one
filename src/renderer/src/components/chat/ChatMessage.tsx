@@ -254,7 +254,7 @@ function ThinkingBlock({ thinking, isStreaming, blockDone }: { thinking: string;
     : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')
 
   return (
-    <div className="thinking-node mt-3">
+    <div className="thinking-node mt-3 mb-2">
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -269,7 +269,7 @@ function ThinkingBlock({ thinking, isStreaming, blockDone }: { thinking: string;
       {expanded && (
         <div
           ref={scrollRef}
-          className="mt-1 max-h-32 overflow-y-auto pl-2 text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap"
+          className="thinking-content mt-1 max-h-32 overflow-y-auto pl-2 text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap"
         >
           {thinking}
         </div>

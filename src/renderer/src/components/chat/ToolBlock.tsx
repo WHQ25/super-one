@@ -162,6 +162,10 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
   const expandable = hasDiff || hasResult || hasQA
   const [expanded, setExpanded] = useState(false)
 
+  useEffect(() => {
+    if (DIFF_TOOLS.has(toolName) && hasDiff && !isStreaming) setExpanded(true)
+  }, [isStreaming, hasDiff, toolName])
+
   // For unknown tools, show truncated raw input as fallback
   const summary = display.summary || (!isMcp && display.icon === 'wrench' && input.length > 0
     ? (input.length > 80 ? input.slice(0, 80) + '\u2026' : input)

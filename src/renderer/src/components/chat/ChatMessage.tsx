@@ -161,11 +161,14 @@ function renderBlock(
   isStreaming: boolean,
   toolResultMap?: Map<string, string>,
   nextBlockType?: string,
+  prevBlockType?: string,
 ) {
   switch (block.type) {
     case 'text':
       return (
-        <CopyableText key={index} text={block.text} isStreaming={isStreaming} />
+        <div key={index} className={prevBlockType === 'thinking' ? 'mt-1' : undefined}>
+          <CopyableText text={block.text} isStreaming={isStreaming} />
+        </div>
       )
     case 'image':
       return (
@@ -199,7 +202,7 @@ function renderBlock(
         />
       )
     case 'thinking':
-      return <ThinkingBlock key={index} thinking={block.thinking} isStreaming={isStreaming} followedByText={nextBlockType === 'text'} />
+      return <ThinkingBlock key={index} thinking={block.thinking} isStreaming={isStreaming} />
     case 'tool_result':
       // Normally rendered inside the parent ToolBlock via toolResultMap.
       // If orphaned (no matching tool_use), show a compact fallback.
@@ -213,7 +216,7 @@ function renderBlock(
   }
 }
 
-function ThinkingBlock({ thinking, isStreaming, followedByText }: { thinking: string; isStreaming: boolean; followedByText?: boolean }) {
+function ThinkingBlock({ thinking, isStreaming }: { thinking: string; isStreaming: boolean }) {
   const [elapsed, setElapsed] = useState(0)
   const startRef = useRef(isStreaming ? Date.now() : 0)
   const thinkingRef = useRef(thinking)
@@ -243,8 +246,8 @@ function ThinkingBlock({ thinking, isStreaming, followedByText }: { thinking: st
   }, [done])
 
   useEffect(() => {
-    if (!isStreaming) setExpanded(false)
-  }, [isStreaming])
+    if (done) setExpanded(false)
+  }, [done])
 
   const active = !done
   const label = active
@@ -252,7 +255,7 @@ function ThinkingBlock({ thinking, isStreaming, followedByText }: { thinking: st
     : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')
 
   return (
-    <div className={cn('mt-3', followedByText && '@lg:-mb-3')}>
+    <div className="mt-3">
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -416,7 +419,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
     ? message.content.filter((b) => b.type === 'text').map((b) => b.type === 'text' ? b.text : '').join('\n')
     : ''
   return (
-    <div className={cn('w-0 min-w-full flex', isUser ? 'justify-end' : 'justify-start')}>
+    <div className={cn('w-0 min-w-full flex', isUser ? 'justify-end' : 'mb-2 justify-start')}>
       <div className={cn(isUser ? 'group/copy relative mb-0 flex max-w-[85%] flex-col items-end' : 'w-full')}>
         <div
           className={cn(
@@ -448,13 +451,15 @@ export function ChatMessage({ message }: ChatMessageProps) {
               }
               if (seg.kind === 'block') {
                 const nextSeg = segs[segIdx + 1]
+                const prevSeg = segs[segIdx - 1]
                 const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : undefined
-                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, nextType)
+                const prevType = prevSeg?.kind === 'block' ? prevSeg.block.type : undefined
+                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, nextType, prevType)
               }
               const toolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
               if (toolUseCount <= 1) {
                 return seg.blocks.map((block, i) =>
-                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, seg.blocks[i + 1]?.type)
+                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type)
                 )
               }
               return (

@@ -1,18 +1,35 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, forwardRef } from 'react'
 import { cn } from '@/lib/utils'
 import { codePlugin } from '@/components/chat/chat-shared'
 
+const EXT_LANG: Record<string, string> = {
+  ts: 'typescript', tsx: 'tsx', mts: 'typescript', cts: 'typescript',
+  js: 'javascript', jsx: 'jsx', mjs: 'javascript', cjs: 'javascript',
+  py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
+  json: 'json', jsonc: 'jsonc', json5: 'json5', lock: 'json',
+  yaml: 'yaml', yml: 'yaml', toml: 'toml', ini: 'ini',
+  html: 'html', css: 'css', scss: 'scss', less: 'less', sass: 'sass',
+  md: 'markdown', mdx: 'mdx',
+  sh: 'bash', bash: 'bash', zsh: 'zsh', fish: 'fish',
+  sql: 'sql', graphql: 'graphql', gql: 'graphql', prisma: 'prisma',
+  swift: 'swift', kt: 'kotlin', c: 'c', cpp: 'cpp', cs: 'csharp', php: 'php',
+  vue: 'vue', svelte: 'svelte', astro: 'astro',
+  xml: 'xml', svg: 'xml', plist: 'xml',
+  dart: 'dart', r: 'r', lua: 'lua', scala: 'scala', zig: 'zig',
+  ex: 'elixir', exs: 'elixir', erl: 'erlang', hs: 'haskell', clj: 'clojure',
+  tf: 'terraform', hcl: 'hcl', proto: 'protobuf',
+  diff: 'diff', patch: 'diff', dockerfile: 'dockerfile',
+}
+
+const NAME_LANG: Record<string, string> = {
+  dockerfile: 'dockerfile', makefile: 'makefile',
+}
+
 export function inferLanguage(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-  const map: Record<string, string> = {
-    ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-    py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
-    json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
-    html: 'html', css: 'css', scss: 'scss', md: 'markdown',
-    sh: 'bash', bash: 'bash', sql: 'sql', swift: 'swift',
-    kt: 'kotlin', c: 'c', cpp: 'cpp', cs: 'csharp', php: 'php',
-  }
-  return map[ext] ?? 'text'
+  const name = filePath.split('/').pop()?.toLowerCase() ?? ''
+  if (NAME_LANG[name]) return NAME_LANG[name]
+  const ext = name.split('.').pop() ?? ''
+  return EXT_LANG[ext] ?? 'text'
 }
 
 export interface HLToken { content: string; style?: React.CSSProperties }
@@ -185,18 +202,19 @@ export const LINE_STYLE: Record<DiffLine['kind'], { bg: string; marker: string; 
   unchanged: { bg: '', marker: ' ', markerColor: 'text-transparent' },
 }
 
-export function DiffView({ lines, oldTokens, newTokens, maxHeight, className }: {
+export const DiffView = forwardRef<HTMLDivElement, {
   lines: DiffLine[]
   oldTokens?: HLToken[][] | null
   newTokens?: HLToken[][] | null
   maxHeight?: string
   className?: string
-}) {
+  hideScrollbar?: boolean
+}>(function DiffView({ lines, oldTokens, newTokens, maxHeight, className, hideScrollbar }, ref) {
   const maxLine = lines.reduce((m, l) => Math.max(m, l.lineNum), 0)
   const gw = gutterWidth(maxLine)
 
   return (
-    <div className={cn('overflow-auto rounded bg-background/70 p-2 text-[11px] font-mono leading-relaxed text-foreground', maxHeight ?? 'max-h-[300px]', className)}>
+    <div ref={ref} className={cn('overflow-auto rounded bg-background/70 p-2 text-[11px] font-mono leading-relaxed text-foreground', maxHeight ?? 'max-h-[300px]', hideScrollbar && 'hide-scrollbar', className)}>
       <div className="inline-block min-w-full">
         {lines.map((line, i) => {
           const s = LINE_STYLE[line.kind]
@@ -220,4 +238,4 @@ export function DiffView({ lines, oldTokens, newTokens, maxHeight, className }: 
       </div>
     </div>
   )
-}
+})

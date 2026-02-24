@@ -147,7 +147,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
   showFilePanel: false,
   setShowFilePanel: (show) => set({ showFilePanel: show }),
-  filePanelWidth: 300,
+  filePanelWidth: 560,
   setFilePanelWidth: (width) => set({ filePanelWidth: width }),
 
   fetchRecentFolders: async () => {

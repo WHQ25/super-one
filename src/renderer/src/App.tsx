@@ -14,6 +14,7 @@ import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useGitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAppStore } from '@/stores/app'
 import { useActiveSession } from '@/stores/chat'
 import { cn } from '@/lib/utils'
@@ -180,29 +181,34 @@ function App(): React.JSX.Element {
         </div>
       )}
 
-      {/* File Panel — between sidebar and main area */}
-      {layoutMode === 'coding' && (
-        <div
-          ref={fpRef}
-          className="relative shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
-          style={{ width: showFilePanel ? filePanelWidth : 0 }}
-        >
-          <div ref={fpInnerRef} className="h-full" style={{ width: filePanelWidth }}>
-            <FilePanel />
-          </div>
-          {showFilePanel && (
-            <div
-              onMouseDown={onFpResizeStart}
-              className="group absolute inset-y-0 -right-1 w-2 cursor-col-resize"
-            >
-              <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
+      {/* FilePanel + Main area wrapper — layered card effect */}
+      <div className={cn(
+        'flex min-w-0 flex-1',
+        layoutMode === 'coding' && showFilePanel && 'rounded-l-2xl bg-background/70 overflow-hidden'
+      )}>
+        {/* File Panel */}
+        {layoutMode === 'coding' && (
+          <div
+            ref={fpRef}
+            className="relative shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
+            style={{ width: showFilePanel ? filePanelWidth : 0 }}
+          >
+            <div ref={fpInnerRef} className="h-full" style={{ width: filePanelWidth }}>
+              <FilePanel />
             </div>
-          )}
-        </div>
-      )}
+            {showFilePanel && (
+              <div
+                onMouseDown={onFpResizeStart}
+                className="group absolute inset-y-0 -right-1 w-2 cursor-col-resize"
+              >
+                <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
+              </div>
+            )}
+          </div>
+        )}
 
-      {/* Main area — overlaps sidebar with rounded left edge */}
-      <div className={cn('flex min-w-[400px] flex-1 flex-col transition-[border-radius] duration-300', layoutMode === 'coding' && hasLeftPanel && 'rounded-l-xl bg-background overflow-hidden')}>
+        {/* Main area — overlaps with rounded left edge */}
+        <div className={cn('flex min-w-[400px] flex-1 flex-col transition-[border-radius] duration-300', layoutMode === 'coding' && hasLeftPanel && 'rounded-l-2xl bg-background overflow-hidden')}>
         {/* Main header — drag region */}
         <div
           className={cn('flex h-11 shrink-0 items-center bg-card pt-[2px] transition-[padding-left] duration-300 ease-in-out', isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'pl-2' : 'pl-[18px]')}
@@ -210,7 +216,7 @@ function App(): React.JSX.Element {
         >
           <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', !isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'w-[66px]' : 'w-0')} />
           {layoutMode === 'coding' && (
-            <div className={cn('shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out', showSidebar ? 'w-0' : 'w-[30px]')}>
+            <div className={cn('shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out', showSidebar || showFilePanel ? 'w-0' : 'w-[30px]')}>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -236,33 +242,21 @@ function App(): React.JSX.Element {
           <div className="flex-1" />
 
           {/* Mode switch */}
-          <div
-            className="mr-3 flex items-center rounded-md border border-border bg-muted/50 p-0.5"
+          <Tabs
+            value={layoutMode}
+            onValueChange={(v) => setLayoutMode(v as 'canvas' | 'coding')}
+            className="mr-3"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
-            <button
-              onClick={() => setLayoutMode('canvas')}
-              className={cn(
-                'rounded px-1.5 py-0.5 transition-colors',
-                layoutMode === 'canvas'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <Paintbrush className="size-3.5" />
-            </button>
-            <button
-              onClick={() => setLayoutMode('coding')}
-              className={cn(
-                'rounded px-1.5 py-0.5 transition-colors',
-                layoutMode === 'coding'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <Code className="size-3.5" />
-            </button>
-          </div>
+            <TabsList>
+              <TabsTrigger value="canvas" className="px-1.5">
+                <Paintbrush className="size-3.5" />
+              </TabsTrigger>
+              <TabsTrigger value="coding" className="px-1.5">
+                <Code className="size-3.5" />
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Content */}
@@ -282,6 +276,7 @@ function App(): React.JSX.Element {
             <ChatPanel />
           </>
         )}
+      </div>
       </div>
       <UpdateNotification />
     </div>

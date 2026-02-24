@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { Loader2 } from 'lucide-react'
 import { DiffView, buildFullFileWithDiff, useHighlightedTokens, inferLanguage } from '@/lib/diff-utils'
+import { CodeMinimap } from '@/components/coding/CodeMinimap'
 
 interface FileWithDiffViewProps {
   filePath: string
@@ -30,9 +31,15 @@ export function FileWithDiffView({ filePath, content, diff, loading }: FileWithD
 }
 
 function FileWithDiffContent({ filePath, content, diff }: { filePath: string; content: string; diff: string }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
   const language = inferLanguage(filePath)
   const lines = useMemo(() => buildFullFileWithDiff(content, diff), [content, diff])
   const tokens = useHighlightedTokens(content, language)
 
-  return <DiffView lines={lines} newTokens={tokens} maxHeight="max-h-full" className="text-sm" />
+  return (
+    <div className="flex h-full">
+      <DiffView ref={scrollRef} lines={lines} newTokens={tokens} maxHeight="max-h-full" className="flex-1 text-sm" hideScrollbar />
+      <CodeMinimap lines={lines} tokens={tokens} scrollRef={scrollRef} />
+    </div>
+  )
 }

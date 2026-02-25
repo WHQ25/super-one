@@ -77,9 +77,11 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   const hasTokens = tokens.input > 0 || tokens.output > 0
   const [expanded, setExpanded] = useState(!isComplete)
 
-  // Timer: count elapsed seconds while subagent is running.
-  // Initialize from persisted elapsedSeconds so remounting after park/restore doesn't reset to 0.
-  const baselineElapsed = taskBlock.elapsedSeconds ? Math.round(taskBlock.elapsedSeconds) : 0
+  const baselineElapsed = taskBlock.elapsedSeconds
+    ? Math.round(taskBlock.elapsedSeconds)
+    : taskBlock.startedAt
+      ? Math.floor((Date.now() - taskBlock.startedAt) / 1000)
+      : 0
   const startTimeRef = useRef<number>(Date.now() - baselineElapsed * 1000)
   const [elapsed, setElapsed] = useState(baselineElapsed)
 

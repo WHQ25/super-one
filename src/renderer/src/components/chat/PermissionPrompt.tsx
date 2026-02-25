@@ -163,7 +163,7 @@ export function PermissionPrompt() {
 
       // When feedback is focused: Enter → deny with reason, Escape → blur
       if (document.activeElement === feedbackRef.current) {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' && !e.isComposing) {
           e.preventDefault()
           handleDeny()
         } else if (e.key === 'Escape') {
@@ -174,7 +174,7 @@ export function PermissionPrompt() {
       }
 
       // Enter → allow (with selected suggestions)
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault()
         handleAllow()
         return
@@ -311,7 +311,7 @@ export function PermissionPrompt() {
           </div>
         </div>
         {hasSuggestionRow && (
-          <div className="grid grid-cols-1 gap-1.5 @lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-1.5">
             {allowAlwaysAllow && !isEditTool && (!suggestions || suggestions.length === 0) && (
               <Button
                 size="sm"
@@ -329,13 +329,13 @@ export function PermissionPrompt() {
                   type="button"
                   className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors ${
                     isSelected
-                      ? 'border-blue-500/50 bg-blue-500/10 text-foreground'
-                      : 'border-border text-muted-foreground'
-                  } hover:bg-accent hover:text-accent-foreground`}
+                      ? 'border-green-500/50 bg-green-500/10 text-green-500 hover:bg-green-500/20'
+                      : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`}
                   onClick={() => toggleSuggestion(i)}
                 >
                   {isSelected
-                    ? <CheckCircle2 className="size-3.5 shrink-0 text-blue-400" />
+                    ? <CheckCircle2 className="size-3.5 shrink-0 text-green-400" />
                     : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
                   }
                   <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>

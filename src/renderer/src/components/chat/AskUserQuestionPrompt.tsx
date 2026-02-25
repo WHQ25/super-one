@@ -117,6 +117,25 @@ export function AskUserQuestionPrompt() {
       return
     }
 
+    // Enter to submit (works even when typing in Other input)
+    if (e.key === 'Enter' && !e.isComposing) {
+      const allAnswered = questions.every(
+        (q) => (selections[q.question] || otherTexts[q.question])
+      )
+      if (allAnswered) {
+        e.preventDefault()
+        const answers: Record<string, string> = {}
+        for (const q of questions) {
+          answers[q.question] = otherTexts[q.question] || selections[q.question] || ''
+        }
+        answerQuestion(pendingQuestion.requestId, answers)
+        setSelections({})
+        setOtherTexts({})
+        setActiveTab(0)
+      }
+      return
+    }
+
     // Don't intercept keys when typing in the Other input
     if (isTyping) return
 
@@ -133,25 +152,6 @@ export function AskUserQuestionPrompt() {
       e.preventDefault()
       otherInputRef.current?.focus()
       return
-    }
-
-
-    // Enter to submit
-    if (e.key === 'Enter') {
-      const allAnswered = questions.every(
-        (q) => (selections[q.question] || otherTexts[q.question])
-      )
-      if (allAnswered) {
-        e.preventDefault()
-        const answers: Record<string, string> = {}
-        for (const q of questions) {
-          answers[q.question] = otherTexts[q.question] || selections[q.question] || ''
-        }
-        answerQuestion(pendingQuestion.requestId, answers)
-        setSelections({})
-        setOtherTexts({})
-        setActiveTab(0)
-      }
     }
   }, [pendingQuestion, activeTab, selections, otherTexts, dismissQuestion, answerQuestion, selectOption])
 

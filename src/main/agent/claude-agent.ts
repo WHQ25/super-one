@@ -3,7 +3,7 @@ import log from '../logger'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
-import type { Query } from '@anthropic-ai/claude-agent-sdk'
+import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, PermissionMode, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
 import { MessageBridge } from './message-bridge'
@@ -177,10 +177,25 @@ export class ClaudeAgent {
       const sorted = [...request.additionalDirs].sort()
       const current = [...this.additionalDirs].sort()
       if (JSON.stringify(sorted) !== JSON.stringify(current)) {
+        const added = request.additionalDirs.filter(d => !this.additionalDirs.includes(d))
+        const removed = this.additionalDirs.filter(d => !request.additionalDirs!.includes(d))
         const prevSessionId = this.sessionId
         await this.resetSession()
         this.additionalDirs = request.additionalDirs
         this.createSession(prevSessionId || undefined)
+
+        const lines = [
+          ...added.map(d => `Added ${d} as a working directory`),
+          ...removed.map(d => `Removed ${d} from working directories`),
+        ]
+        if (lines.length > 0) {
+          this.bridge!.push({
+            type: 'user',
+            message: { role: 'user', content: `<local-command-stdout>\n${lines.join('\n')}\n</local-command-stdout>` },
+            parent_tool_use_id: null,
+            session_id: this.sessionId!,
+          } as SDKUserMessage)
+        }
       }
     }
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { Download, CheckCircle, XCircle, ArrowRight, Loader2, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
+import { useShallow } from 'zustand/react/shallow'
 import type { SetupEvent } from '../../../shared/agent-types'
 
 // ANSI 16-color map → Tailwind classes
@@ -66,7 +67,7 @@ function TerminalOutput({ text }: { text: string }): React.JSX.Element {
 }
 
 export function SetupPage(): React.JSX.Element {
-  const { installStatus, installOutput, startInstall, handleSetupEvent, continueToMain } = useAppStore()
+  const { installStatus, installOutput, startInstall, handleSetupEvent, continueToMain } = useAppStore(useShallow((s) => ({ installStatus: s.installStatus, installOutput: s.installOutput, startInstall: s.startInstall, handleSetupEvent: s.handleSetupEvent, continueToMain: s.continueToMain })))
   const outputRef = useRef<HTMLDivElement>(null)
   const [checking, setChecking] = useState(true)
 

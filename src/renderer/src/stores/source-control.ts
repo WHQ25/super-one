@@ -40,15 +40,21 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
 
   selectFile: async (projectPath, path) => {
     const file = get().files.find((f) => f.path === path)
-    set({ selectedFile: path, diffLoading: true, fileDiff: null, fileContent: null })
+    const isSameFile = get().selectedFile === path
+    set(isSameFile
+      ? { selectedFile: path }
+      : { selectedFile: path, diffLoading: true, fileDiff: null, fileContent: null })
     try {
       const [diff, content] = await Promise.all([
         window.app.getGitDiffFile(projectPath, path, file?.staged ?? false),
         window.app.getGitReadFile(projectPath, path),
       ])
-      set({ fileDiff: diff, fileContent: content, diffLoading: false, activeTab: diff.diff ? 'changes' : 'file' })
+      if (get().selectedFile !== path) return
+      const isMd = /\.(?:md|mdx|markdown)$/i.test(path)
+      set({ fileDiff: diff, fileContent: content, diffLoading: false, ...(isSameFile ? {} : { activeTab: diff.diff ? 'changes' : isMd ? 'preview' : 'file' }) })
     } catch {
-      set({ diffLoading: false })
+      if (get().selectedFile !== path) return
+      if (!isSameFile) set({ diffLoading: false })
     }
   },
 

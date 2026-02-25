@@ -44,14 +44,24 @@ export function TodoPopup() {
       const activeProject = useChatStore.getState().activeProject
       if (activeProject) {
         const s = useChatStore.getState()
-        const session = s.projectSessions[activeProject]
-        if (session) {
-          useChatStore.setState({
-            projectSessions: {
-              ...s.projectSessions,
-              [activeProject]: { ...session, todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false },
-            },
-          })
+        const project = s.projectSessions[activeProject]
+        if (project && project._activeSessionId) {
+          const sid = project._activeSessionId
+          const sess = project._sessions[sid]
+          if (sess) {
+            useChatStore.setState({
+              projectSessions: {
+                ...s.projectSessions,
+                [activeProject]: {
+                  ...project,
+                  _sessions: {
+                    ...project._sessions,
+                    [sid]: { ...sess, todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false },
+                  },
+                },
+              },
+            })
+          }
         }
       }
     }, 3000)

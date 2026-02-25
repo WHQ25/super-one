@@ -26,6 +26,10 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: state.queryMock,
 }))
 
+vi.mock('../logger', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}))
+
 import { buildUserMessage, createSessionQuery } from './claude-query'
 
 beforeEach(() => {

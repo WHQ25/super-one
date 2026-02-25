@@ -4,7 +4,7 @@ import { useActiveSession } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
 import { useExplorerStore } from '@/stores/explorer'
 
-export function useGitAutoRefresh() {
+export function GitAutoRefresh() {
   const status = useActiveSession((s) => s.status)
   const showFilePanel = useAppStore((s) => s.showFilePanel)
   const sidebarTab = useAppStore((s) => s.sidebarTab)
@@ -65,4 +65,6 @@ export function useGitAutoRefresh() {
       window.app.stopFileWatch()
     }
   }, [currentFolder, needsWatch])
+
+  return null
 }

@@ -450,9 +450,11 @@ export class ClaudeAgent {
 
   /** Close the current session and reset state for a new one. */
   async resetSession(): Promise<void> {
-    // Resolve any pending sendMessage awaiter
     this.turnResolve?.()
     this.turnResolve = null
+
+    const savedOnEvent = this.onEvent
+    this.onEvent = null
 
     this.sessionAbort?.abort()
     if (this.sessionQuery) {
@@ -462,7 +464,6 @@ export class ClaudeAgent {
       this.bridge.close()
     }
 
-    // Wait for the iteration loop to finish (it will exit after query closes)
     if (this.iterationDone) {
       await this.iterationDone.catch(() => {})
     }
@@ -474,13 +475,16 @@ export class ClaudeAgent {
     this.iterationDone = null
     this.sessionId = ''
     this.currentMessageId = ''
+    this.interrupted = false
+
+    this.onEvent = savedOnEvent
   }
 
   async dispose(): Promise<void> {
-    // Force-close without waiting for iteration loop (unlike resetSession which
-    // awaits iterationDone to ensure clean state for a new session).
     this.turnResolve?.()
     this.turnResolve = null
+    this.onEvent = null
+
     this.sessionAbort?.abort()
     if (this.bridge) {
       this.bridge.close()
@@ -492,7 +496,6 @@ export class ClaudeAgent {
     this.iterationDone = null
     this.ready = false
     this.config = null
-    this.onEvent = null
   }
 
   /** Emit session_init once sessionId is available. */

@@ -12,18 +12,18 @@ import { SettingsLayout } from '@/components/SettingsLayout'
 import { UpdateNotification } from '@/components/UpdateNotification'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useFullscreen } from '@/hooks/useFullscreen'
-import { useGitAutoRefresh } from '@/hooks/useGitAutoRefresh'
+import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAppStore } from '@/stores/app'
 import { useActiveSession } from '@/stores/chat'
+import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 
 function App(): React.JSX.Element {
   useAgentEvents()
-  useGitAutoRefresh()
   const theme = useTheme()
-  const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, showFilePanel, filePanelWidth, setFilePanelWidth, layoutMode, setLayoutMode } = useAppStore()
+  const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, showFilePanel, filePanelWidth, setFilePanelWidth, layoutMode, setLayoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, setShowSidebar: s.setShowSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, showFilePanel: s.showFilePanel, filePanelWidth: s.filePanelWidth, setFilePanelWidth: s.setFilePanelWidth, layoutMode: s.layoutMode, setLayoutMode: s.setLayoutMode })))
   const isFullscreen = useFullscreen()
 
   useEffect(() => {
@@ -160,6 +160,7 @@ function App(): React.JSX.Element {
   // Main view: sidebar + content
   return (
     <div className="flex h-screen overflow-hidden bg-sidebar text-foreground">
+      <GitAutoRefresh />
       {/* Sidebar — only in coding mode, animated width */}
       {layoutMode === 'coding' && (
         <div

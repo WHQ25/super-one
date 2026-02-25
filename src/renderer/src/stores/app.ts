@@ -86,7 +86,7 @@ async function openFolderDirect(folderPath: string, set: (partial: Partial<AppSt
   useAppStore.getState().fetchRecentFolders()
   const { useChatStore } = await import('./chat')
   useChatStore.getState().ensureSession(folderPath)
-  useChatStore.getState().switchProject(folderPath)
+  await useChatStore.getState().switchProject(folderPath)
   if (useAppStore.getState().view === 'startup') set({ view: 'main' })
 }
 
@@ -170,7 +170,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await useAppStore.getState().fetchRecentFolders()
     const { useChatStore } = await import('./chat')
     useChatStore.getState().ensureSession(folderPath)
-    useChatStore.getState().switchProject(folderPath)
+    await useChatStore.getState().switchProject(folderPath)
   },
 
   openFolder: async (folderPath: string) => {
@@ -183,7 +183,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Activate tmp project session
     const { useChatStore } = await import('./chat')
     useChatStore.getState().ensureSession(tmpPath)
-    useChatStore.getState().switchProject(tmpPath)
+    await useChatStore.getState().switchProject(tmpPath)
   },
 
   handleUpdateEvent: (event: UpdateEvent) => {
@@ -217,13 +217,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ updateStatus: 'idle' })
   },
 
-  switchToProject: (folderPath: string) => {
+  switchToProject: async (folderPath: string) => {
     set({ currentFolder: folderPath })
-    // Just switch the active session — no IPC call (agent may not be running)
-    import('./chat').then(({ useChatStore }) => {
-      useChatStore.getState().ensureSession(folderPath)
-      useChatStore.getState().switchProject(folderPath)
-    })
+    const { useChatStore } = await import('./chat')
+    useChatStore.getState().ensureSession(folderPath)
+    await useChatStore.getState().switchProject(folderPath)
   },
 
   removeRecentFolder: async (folderPath: string) => {

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject, type SidebarTab } from '@/stores/app'
+import { useShallow } from 'zustand/react/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
@@ -47,7 +48,7 @@ const MAX_SESSIONS = 5
 
 export function AppSidebar() {
   const theme = useTheme()
-  const { setShowSidebar, navigateTo, selectAndOpenFolder, openFolder, removeRecentFolder, setSidebarTab } = useAppStore()
+  const { setShowSidebar, navigateTo, selectAndOpenFolder, openFolder, removeRecentFolder, setSidebarTab } = useAppStore(useShallow((s) => ({ setShowSidebar: s.setShowSidebar, navigateTo: s.navigateTo, selectAndOpenFolder: s.selectAndOpenFolder, openFolder: s.openFolder, removeRecentFolder: s.removeRecentFolder, setSidebarTab: s.setSidebarTab })))
   const sidebarTab = useAppStore((s) => s.sidebarTab)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
@@ -56,6 +57,9 @@ export function AppSidebar() {
   const resetSession = useChatStore((s) => s.resetSession)
   const resumeSession = useChatStore((s) => s.resumeSession)
   const projectSessions = useChatStore((s) => s.projectSessions)
+
+  const [explorerMounted, setExplorerMounted] = useState(sidebarTab === 'explorer')
+  if (sidebarTab === 'explorer' && !explorerMounted) setExplorerMounted(true)
 
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
@@ -99,8 +103,11 @@ export function AppSidebar() {
   // Load pinned sessions on mount
   useEffect(() => { refreshPinned() }, [refreshPinned])
 
-  const currentStatus = currentFolder ? projectSessions[currentFolder]?.status : undefined
-  const currentSessionId = currentFolder ? projectSessions[currentFolder]?.session?.sessionId : undefined
+  const currentProject = currentFolder ? projectSessions[currentFolder] : undefined
+  const currentActiveSid = currentProject?._activeSessionId
+  const currentActiveSession = currentActiveSid ? currentProject?._sessions?.[currentActiveSid] : undefined
+  const currentStatus = currentActiveSession?.status
+  const currentSessionId = currentActiveSid
   useEffect(() => {
     if (!currentFolder) return
     window.app.listSessionsForFolder(currentFolder).then((sessions) => {
@@ -111,7 +118,7 @@ export function AppSidebar() {
 
   const handleResumeSession = useCallback(async (folderPath: string, sessionId: string) => {
     const ps = projectSessions[folderPath]
-    const currentSid = ps?._historySessionId ?? ps?.session?.sessionId
+    const currentSid = ps?._activeSessionId
     // Skip if already on this session
     if (folderPath === currentFolder && currentSid === sessionId) return
     await openFolder(folderPath)
@@ -133,7 +140,7 @@ export function AppSidebar() {
 
     // If deleting the currently active session, reset to new session state
     const current = projectSessions[deleteTarget.folderPath]
-    const currentId = current?._historySessionId ?? current?.session?.sessionId
+    const currentId = current?._activeSessionId
     if (currentId === deleteTarget.sessionId) {
       resetSession()
     }
@@ -231,12 +238,12 @@ export function AppSidebar() {
         </div>
       )}
 
-      {sidebarTab === 'explorer' ? (
-        <div className="min-h-0 flex-1">
+      {explorerMounted && (
+        <div className={cn('min-h-0 flex-1', sidebarTab !== 'explorer' && 'hidden')}>
           <ExplorerTree />
         </div>
-      ) : (
-      <>
+      )}
+      <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
       {/* Projects header */}
       <div className="flex items-center justify-between px-3 py-1.5">
         <span className="text-xs font-medium text-sidebar-foreground/70">Projects</span>
@@ -371,15 +378,11 @@ export function AppSidebar() {
                               <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">No sessions</div>
                             ) : (
                               sessions.slice(0, MAX_SESSIONS).map((session) => {
-                                const fgSid = projectSession?._historySessionId ?? projectSession?.session?.sessionId
-                                const isForeground = fgSid === session.sessionId
-                                const bgEntry = projectSession?._bgSessions?.[session.sessionId]
-                                const isRunning = isForeground
-                                  ? projectSession?.status === 'streaming'
-                                  : bgEntry?.status === 'streaming'
-                                const pendingReason = isForeground
-                                  ? getPendingReason(projectSession?.pendingPermission, projectSession?.pendingQuestion, projectSession?.pendingPlanApproval)
-                                  : getPendingReason(bgEntry?.pendingPermission, bgEntry?.pendingQuestion, bgEntry?.pendingPlanApproval)
+                                const activeSid = projectSession?._activeSessionId
+                                const isForeground = activeSid === session.sessionId
+                                const sessionEntry = projectSession?._sessions?.[session.sessionId]
+                                const isRunning = sessionEntry?.status === 'streaming'
+                                const pendingReason = getPendingReason(sessionEntry?.pendingPermission, sessionEntry?.pendingQuestion, sessionEntry?.pendingPlanApproval)
                                 return (
                                   <div key={session.sessionId}>
                                     <div
@@ -474,8 +477,7 @@ export function AppSidebar() {
           </ScrollArea>
         )}
       </div>
-      </>
-      )}
+      </div>
 
       {/* Footer — settings, theme */}
       <div className="flex items-center gap-1 px-3 py-2">

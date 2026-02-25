@@ -16,7 +16,7 @@ export function SessionHistory({ showBackButton = true }: SessionHistoryProps) {
   const resumeSession = useChatStore((s) => s.resumeSession)
   const renameSession = useChatStore((s) => s.renameSession)
   const toggleHistory = useChatStore((s) => s.toggleHistory)
-  const currentSessionId = useActiveSession((s) => s._historySessionId ?? s.session?.sessionId)
+  const currentSessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId)
 
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')

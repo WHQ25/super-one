@@ -24,7 +24,7 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
   const isCompacting = useActiveSession((s) => s.isCompacting)
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
   const showHistory = useActiveSession((s) => s.showHistory)
-  const historySessionId = useActiveSession((s) => s._historySessionId)
+  const historySessionId = useActiveSession((s) => s._activeSessionId)
   const hasActiveSession = useActiveSession((s) => !!s.session)
 
   const containerRef = useRef<HTMLDivElement>(null)

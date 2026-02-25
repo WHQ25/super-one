@@ -9,7 +9,7 @@ let gitHeadTimer: ReturnType<typeof setTimeout> | null = null
 let currentFolder: string | null = null
 let win: BrowserWindow | null = null
 
-const IGNORED = /(?:^|[/\\])(?:\.git|node_modules|\.DS_Store|\.next|dist|\.cache)(?:[/\\]|$)/
+const IGNORED = /(?:^|[/\\])(?:\.git|node_modules|\.DS_Store|\.next|dist|\.cache)(?:[/\\]|$)|\.log$/
 const GIT_HEAD = /(?:^|[/\\])\.git[/\\]HEAD$/
 
 function send(): void {

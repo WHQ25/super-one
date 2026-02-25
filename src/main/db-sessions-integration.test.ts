@@ -27,7 +27,7 @@ function createMockDb() {
             sessions.set(id, {
               id, project_id: projectId, claude_session_id: claudeSessionId,
               title, created_at: createdAt,
-              is_worktree: isWorktree === '1' || isWorktree === 1 ? 1 : 0,
+              is_worktree: isWorktree === '1' || isWorktree === (1 as unknown) ? 1 : 0,
               git_branch: gitBranch ?? null,
               worktree_path: worktreePath ?? null,
               total_cost_usd: 0, context_tokens: 0, provider: 'claude', is_pinned: 0,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, memo } from 'react'
 import { ChevronRight, PenLine, Check, X, Ban } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
@@ -76,14 +76,7 @@ function computeLineDelta(toolName: string, params: Record<string, unknown>): { 
     const oldStr = String(params.old_string ?? '')
     const newStr = String(params.new_string ?? '')
     if (!oldStr && !newStr) return null
-    const changes = diffLines(oldStr, newStr)
-    let added = 0, removed = 0
-    for (const c of changes) {
-      const count = c.value.replace(/\n$/, '').split('\n').length
-      if (c.added) added += count
-      else if (c.removed) removed += count
-    }
-    return { added, removed }
+    return { added: countContentLines(newStr), removed: countContentLines(oldStr) }
   }
   if (toolName === 'FileChange') {
     const kind = String(params.kind ?? '')
@@ -107,7 +100,7 @@ function tryPrettifyJson(text: string): string | null {
   return null
 }
 
-export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: ToolBlockProps) {
+export const ToolBlock = memo(function ToolBlock({ toolName, input, status, elapsedSeconds, result }: ToolBlockProps) {
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const params = useMemo(() => parseToolInput(input), [input])
@@ -195,7 +188,7 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
           <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
         <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground')}>
-          {isStreaming ? <>{getToolVerb(toolName)}…</> : displayName}
+          {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName === 'AskUserQuestion' ? 'Asked' : displayName}
         </span>
         {isDenied ? (
           <>
@@ -267,7 +260,7 @@ export function ToolBlock({ toolName, input, status, elapsedSeconds, result }: T
       )}
     </div>
   )
-}
+})
 
 function FileChip({ name, title }: { name: string; title: string }) {
   const handleClick = (e: React.MouseEvent): void => {

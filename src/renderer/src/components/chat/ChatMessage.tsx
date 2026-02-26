@@ -1,5 +1,5 @@
 import type { ChatMessage as ChatMessageType, ContentBlock } from '../../../../shared/agent-types'
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, memo } from 'react'
 import { cn } from '@/lib/utils'
 import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check } from 'lucide-react'
 import { Streamdown } from 'streamdown'
@@ -392,7 +392,7 @@ export function CompactingIndicator() {
   )
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming'
   const isCodexMessage = !isUser && message.providerId === 'codex'
@@ -495,7 +495,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       </div>
     </div>
   )
-}
+})
 
 /** Single animated token value with ↑ or ↓ arrow. */
 function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 'down' }) {

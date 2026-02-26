@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
-import { ListTodo, Circle, Loader2, CheckCircle2 } from 'lucide-react'
+import { ListTodo, Circle, CircleDashed, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CommandShortcut } from '@/components/ui/command'
 
@@ -85,12 +85,10 @@ export function TodoPopup() {
         onClick={toggleTodos}
       >
         <ListTodo className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="text-xs font-medium text-muted-foreground">
+        <span className={cn('text-xs font-medium text-muted-foreground', !showTodos && todoList.some((t) => t.status === 'in_progress') && 'animate-pulse')}>
           Todos ({completed}/{todoList.length})
         </span>
-        <span className="ml-auto text-[10px] text-muted-foreground">
-          <CommandShortcut className="rounded bg-muted px-1 py-0.5">{showTodos ? 'ESC' : 'Ctrl+T'}</CommandShortcut>
-        </span>
+        <CommandShortcut className="rounded bg-muted px-1 py-0.5">{showTodos ? 'Esc' : '⌃T'}</CommandShortcut>
       </div>
 
       {/* List — only when expanded */}
@@ -105,7 +103,7 @@ export function TodoPopup() {
               {todo.status === 'completed' ? (
                 <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-green-500" />
               ) : todo.status === 'in_progress' ? (
-                <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin text-blue-400" />
+                <CircleDashed className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary [animation-duration:3s]" />
               ) : (
                 <Circle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
               )}

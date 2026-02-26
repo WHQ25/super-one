@@ -12,7 +12,7 @@ const TOOL_VERBS: Record<string, string> = {
   Skill: 'Running',
   Task: 'Spawning',
   TaskOutput: 'Waiting',
-  AskUserQuestion: 'Asking',
+  AskUserQuestion: 'Asking questions',
   EnterPlanMode: 'Planning',
   ExitPlanMode: 'Reviewing',
 }

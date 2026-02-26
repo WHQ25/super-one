@@ -32,9 +32,10 @@ mac:
       arch: [universal]
   x64ArchFiles: "**/app.asar.unpacked/**"
   category: public.app-category.developer-tools
-  # hardenedRuntime: true
-  # entitlements: build/entitlements.mac.plist
-  # entitlementsInherit: build/entitlements.mac.plist
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
 
 win:
   target:

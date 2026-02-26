@@ -60,6 +60,7 @@ export class ClaudeAgent {
   private sessionAbort: AbortController | null = null
   private iterationDone: Promise<void> | null = null
   private iterationAlive = false
+  private sessionGeneration = 0
   private sessionId = ''
 
   // Per-turn state
@@ -93,15 +94,16 @@ export class ClaudeAgent {
 
   /** Create a new session (bridge + query). Safe to call if session already exists (no-op). */
   private createSession(resumeSessionId?: string, resumeSessionAt?: string, forkSession?: boolean, forkedSessionId?: string): void {
+    resumeSessionId = resumeSessionId || this.sessionId || undefined
+
     if (this.bridge) {
       if (this.iterationAlive) return
-      log.warn('[ClaudeAgent] dead session detected — iteration ended but bridge still exists, cleaning up')
+      log.debug(`[ClaudeAgent] dead session detected — iteration ended but bridge still exists, cleaning up (gen=${this.sessionGeneration}, sessionId=${this.sessionId})`)
       this.bridge.close()
       this.bridge = null
       this.sessionQuery = null
       this.sessionAbort = null
       this.iterationDone = null
-      resumeSessionId = resumeSessionId || this.sessionId || undefined
     }
 
     if (this.additionalDirs.length === 0) {
@@ -150,12 +152,22 @@ export class ClaudeAgent {
     this.sessionQuery = handle.query
     this.iterationDone = handle.iterationDone
     this.iterationAlive = true
+    const gen = ++this.sessionGeneration
+    log.debug(`[ClaudeAgent] createSession gen=${gen} resume=${resumeSessionId ?? 'none'}`)
     this.iterationDone.then(() => {
-      log.info(`[ClaudeAgent] iteration loop ended (sessionId=${this.sessionId}, bridge=${!!this.bridge})`)
-      this.iterationAlive = false
+      log.debug(`[ClaudeAgent] iterationDone.then gen=${gen} currentGen=${this.sessionGeneration} sessionId=${this.sessionId} bridge=${!!this.bridge}`)
+      if (gen === this.sessionGeneration) {
+        this.iterationAlive = false
+      } else {
+        log.warn(`[ClaudeAgent] STALE iterationDone.then — skipping iterationAlive=false (gen=${gen} != ${this.sessionGeneration})`)
+      }
     }).catch((err) => {
-      log.error(`[ClaudeAgent] iteration loop error (sessionId=${this.sessionId}):`, err)
-      this.iterationAlive = false
+      log.debug(`[ClaudeAgent] iterationDone.catch gen=${gen} currentGen=${this.sessionGeneration} sessionId=${this.sessionId} err=${err instanceof Error ? err.message : String(err)}`)
+      if (gen === this.sessionGeneration) {
+        this.iterationAlive = false
+      } else {
+        log.warn(`[ClaudeAgent] STALE iterationDone.catch — skipping iterationAlive=false (gen=${gen} != ${this.sessionGeneration})`)
+      }
     })
 
     // Emit project-level init_ready immediately (all data comes from filesystem reads).
@@ -217,7 +229,7 @@ export class ClaudeAgent {
       }
     }
 
-    log.info(`[ClaudeAgent] sendMessage (sessionId=${this.sessionId}, bridge=${!!this.bridge}, iterationAlive=${this.iterationAlive})`)
+    log.debug(`[ClaudeAgent] sendMessage (sessionId=${this.sessionId}, bridge=${!!this.bridge}, iterationAlive=${this.iterationAlive}, gen=${this.sessionGeneration})`)
     this.createSession()
 
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -290,7 +302,7 @@ export class ClaudeAgent {
 
   async interrupt(): Promise<void> {
     if (this.sessionQuery) {
-      log.info(`[ClaudeAgent] interrupt (sessionId=${this.sessionId}, iterationAlive=${this.iterationAlive}, pendingPerms=${this.pendingPermissions.size}, pendingQs=${this.pendingQuestions.size})`)
+      log.debug(`[ClaudeAgent] interrupt (sessionId=${this.sessionId}, iterationAlive=${this.iterationAlive}, pendingPerms=${this.pendingPermissions.size}, pendingQs=${this.pendingQuestions.size})`)
       this.interrupted = true
       rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
       await this.sessionQuery.interrupt()
@@ -304,8 +316,11 @@ export class ClaudeAgent {
   /** Resume a previous session by its ID. Resets current session first. */
   async resumeSession(sessionId: string): Promise<void> {
     if (!this.config || !this.onEvent) throw new Error('ClaudeAgent not initialized')
+    log.debug(`[ClaudeAgent] resumeSession start (target=${sessionId}, current=${this.sessionId}, gen=${this.sessionGeneration})`)
     await this.resetSession()
+    this.sessionId = sessionId
     this.createSession(sessionId)
+    log.debug(`[ClaudeAgent] resumeSession done (gen=${this.sessionGeneration})`)
   }
 
   /** Rewind files to the state before a given user message. */

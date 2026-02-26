@@ -118,7 +118,7 @@ async function iterateMessages(
   // Subagent token accumulation per parent_tool_use_id
   const subagentTracking = new Map<string, { stepIds: Set<string>; input: number; output: number }>()
 
-  log.info('[iterateMessages] starting iteration loop')
+  log.debug('[iterateMessages] starting iteration loop')
   try {
     for await (const msg of q) {
       const messageId = getCurrentMessageId()
@@ -174,6 +174,7 @@ async function iterateMessages(
         case 'system': {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const sys = msg as any
+          log.debug(`[iterateMessages] system message subtype=${sys.subtype} session_id=${sys.session_id ?? '(none)'}`)
           if (sys.subtype === 'init') {
             if (sys.session_id) onSessionId?.(sys.session_id)
           } else if (sys.subtype === 'hook_started') {
@@ -452,6 +453,7 @@ async function iterateMessages(
         case 'result': {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result = msg as any
+          log.debug(`[iterateMessages] result subtype=${result.subtype} session_id=${result.session_id ?? '(none)'}`)
           const metadata = buildResultMetadata(result, getCurrentStartTime(), lastAssistantUsage)
 
           if (getInterrupted()) {
@@ -478,11 +480,11 @@ async function iterateMessages(
         }
       }
     }
-    log.info('[iterateMessages] loop ended normally')
+    log.debug('[iterateMessages] loop ended normally')
   } catch (err) {
     const messageId = getCurrentMessageId()
     const interrupted = getInterrupted()
-    log.info(`[iterateMessages] catch — interrupted=${interrupted}, error=${err instanceof Error ? err.message : String(err)}`)
+    log.debug(`[iterateMessages] catch — interrupted=${interrupted}, error=${err instanceof Error ? err.message : String(err)}`)
     if (interrupted) {
       emit({ type: 'message_interrupted', messageId, metadata: { durationMs: Date.now() - getCurrentStartTime() } })
       emit({ type: 'status_change', status: 'idle' })

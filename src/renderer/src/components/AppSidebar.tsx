@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderTree, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil } from 'lucide-react'
+import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderTree, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -126,11 +126,16 @@ export function AppSidebar() {
   const handleResumeSession = useCallback(async (folderPath: string, sessionId: string) => {
     const ps = projectSessions[folderPath]
     const currentSid = ps?._activeSessionId
-    // Skip if already on this session
     if (folderPath === currentFolder && currentSid === sessionId) return
+    setExpandedFolders((prev) => prev.has(folderPath) ? prev : new Set([...prev, folderPath]))
+    if (!folderSessions[folderPath]) {
+      window.app.listSessionsForFolder(folderPath).then((sessions) => {
+        setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
+      })
+    }
     await openFolder(folderPath)
     await resumeSession(sessionId)
-  }, [openFolder, resumeSession, currentFolder, projectSessions])
+  }, [openFolder, resumeSession, currentFolder, projectSessions, folderSessions])
 
   const handlePinSession = useCallback(async (sessionId: string, pinned: boolean, folderPath: string) => {
     await window.app.pinSession(sessionId, pinned)
@@ -296,6 +301,14 @@ export function AppSidebar() {
                 const displayPath = folder.path.replace(/^\/Users\/[^/]+/, '~')
                 const sessions = folderSessions[folder.path] ?? []
                 const projectSession = projectSessions[folder.path]
+                const liveSessions = isExpanded ? [] : sessions.filter(s => {
+                  const entry = projectSession?._sessions?.[s.sessionId]
+                  const isUnseen = projectSession?.unseenCompletedSessions?.has(s.sessionId)
+                  if (!entry && !isUnseen) return false
+                  return entry?.status === 'streaming' || !!entry?.pendingPermission || !!entry?.pendingQuestion || !!entry?.pendingPlanApproval || isUnseen
+                })
+                const sessionsToShow = isExpanded ? sessions.slice(0, MAX_SESSIONS) : liveSessions
+                const showSessions = isExpanded || liveSessions.length > 0
                 return (
                   <div key={folder.path}>
                     {/* Folder row */}
@@ -371,7 +384,7 @@ export function AppSidebar() {
 
                     {/* Sessions list */}
                     <AnimatePresence initial={false}>
-                      {isExpanded && (
+                      {showSessions && (
                         <motion.div
                           key="sessions"
                           initial={{ height: 0, opacity: 0 }}
@@ -381,14 +394,15 @@ export function AppSidebar() {
                           className="overflow-hidden"
                         >
                           <div className="flex flex-col py-0.5 pl-5">
-                            {sessions.length === 0 ? (
+                            {sessionsToShow.length === 0 ? (
                               <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">No sessions</div>
                             ) : (
-                              sessions.slice(0, MAX_SESSIONS).map((session) => {
+                              sessionsToShow.map((session) => {
                                 const activeSid = projectSession?._activeSessionId
                                 const isForeground = activeSid === session.sessionId
                                 const sessionEntry = projectSession?._sessions?.[session.sessionId]
                                 const isRunning = sessionEntry?.status === 'streaming'
+                                const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
                                 const pendingReason = getPendingReason(sessionEntry?.pendingPermission, sessionEntry?.pendingQuestion, sessionEntry?.pendingPlanApproval)
                                 return (
                                   <div key={session.sessionId}>
@@ -404,9 +418,11 @@ export function AppSidebar() {
                                       <div className="flex min-w-0 items-center gap-2">
                                         {isRunning
                                           ? <Loader2 className="size-3 shrink-0 animate-spin text-sidebar-foreground/70" />
-                                          : session.isWorktree
-                                            ? <GitFork className="size-3 shrink-0 text-sidebar-foreground/70" />
-                                            : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
+                                          : isUnseen
+                                            ? <CircleCheck className="size-3 shrink-0 text-green-400" />
+                                            : session.isWorktree
+                                              ? <GitFork className="size-3 shrink-0 text-sidebar-foreground/70" />
+                                              : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
                                         }
                                         <span className="min-w-0 truncate text-[13px]">{session.title}</span>
                                       </div>

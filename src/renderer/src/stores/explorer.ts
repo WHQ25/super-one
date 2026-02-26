@@ -81,37 +81,31 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   refreshTree: async (projectPath) => {
     get()._bgAbort?.abort()
-    set({ loading: true })
+    const { expandedDirs } = get()
     try {
-      const tree = await window.app.listDir(projectPath, '')
-      const abort = new AbortController()
-      set({ tree, loading: false, _bgAbort: abort })
-      const { expandedDirs } = get()
-      if (expandedDirs.size > 0) {
-        const results = await Promise.all(
-          [...expandedDirs].map(async (dir) => {
-            try {
-              return { dir, children: await window.app.listDir(projectPath, dir) }
-            } catch {
-              return { dir, children: [] as FileTreeEntry[] }
-            }
-          })
-        )
-        if (!abort.signal.aborted) {
-          const sorted = results.sort((a, b) => a.dir.split('/').length - b.dir.split('/').length)
-          set((s) => {
-            let updated = s.tree
-            for (const { dir, children } of sorted) {
-              updated = mergeChildren(updated, dir, children)
-            }
-            return { tree: updated }
-          })
-        }
+      const dirs = ['', ...expandedDirs]
+      const results = await Promise.all(
+        dirs.map(async (dir) => {
+          try {
+            return { dir, entries: await window.app.listDir(projectPath, dir) }
+          } catch {
+            return { dir, entries: [] as FileTreeEntry[] }
+          }
+        })
+      )
+      const rootResult = results.find(r => r.dir === '')
+      if (!rootResult) return
+      let tree = rootResult.entries
+      const childResults = results
+        .filter(r => r.dir !== '')
+        .sort((a, b) => a.dir.split('/').length - b.dir.split('/').length)
+      for (const { dir, entries } of childResults) {
+        tree = mergeChildren(tree, dir, entries)
       }
+      const abort = new AbortController()
+      set({ tree, _bgAbort: abort })
       loadNonIgnoredDirs(projectPath, get, set, abort.signal)
-    } catch {
-      set({ tree: [], loading: false })
-    }
+    } catch { /* keep existing tree on refresh error */ }
   },
 
   toggleDir: (projectPath, path) => {

@@ -49,7 +49,7 @@ export function GitAutoRefresh() {
 
     window.app.startFileWatch(currentFolder)
 
-    const unsub = window.app.onFileChangeEvent(() => {
+    const scheduleRefresh = () => {
       clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
         const folder = useAppStore.getState().currentFolder
@@ -58,10 +58,14 @@ export function GitAutoRefresh() {
         if (fp) useSourceControlStore.getState().refresh(folder)
         if (tab === 'explorer') useExplorerStore.getState().refreshTree(folder)
       }, 500)
-    })
+    }
+
+    const unsubFile = window.app.onFileChangeEvent(scheduleRefresh)
+    const unsubHead = window.app.onGitHeadChange(scheduleRefresh)
 
     return () => {
-      unsub()
+      unsubFile()
+      unsubHead()
       window.app.stopFileWatch()
     }
   }, [currentFolder, needsWatch])

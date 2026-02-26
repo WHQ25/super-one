@@ -67,6 +67,7 @@ export interface ProjectState {
   showHistory: boolean
   hasUnseenActivity: boolean
   hasPendingInteraction: boolean
+  unseenCompletedSessions: Set<string>
   codexModels: ModelOption[]
   codexModelsLoading: boolean
   projectAdditionalDirs: string[]
@@ -137,6 +138,7 @@ export function createDefaultProjectState(): ProjectState {
     showHistory: false,
     hasUnseenActivity: false,
     hasPendingInteraction: false,
+    unseenCompletedSessions: new Set(),
     codexModels: [],
     codexModelsLoading: false,
     projectAdditionalDirs: [],
@@ -964,9 +966,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      // Non-active session went idle → save and evict from _sessions
+      // Non-active session went idle → save, mark unseen, and evict from _sessions
       if (event.type === 'status_change' && event.status === 'idle' && targetSid !== updatedProject._activeSessionId) {
         if (effectiveSid) {
+          updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
           const snapshot = updatedSession
           setTimeout(() => _savePerSessionSnapshot(projectPath, effectiveSid, snapshot), 0)
         }
@@ -974,8 +977,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         updatedProject._sessions = restSessions
       }
 
-      // Background activity indicators
+      // Active session went idle in a background project → mark as unseen
       const isBackground = projectPath !== s.activeProject
+      if (event.type === 'status_change' && event.status === 'idle' && targetSid === updatedProject._activeSessionId && isBackground && effectiveSid) {
+        updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
+      }
+
+      // Background activity indicators
       if (isBackground) {
         updatedProject.hasUnseenActivity = true
       }
@@ -1009,9 +1017,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const project = s.projectSessions[projectPath]
       const updates: Partial<ChatStore> = { activeProject: projectPath }
       if (project) {
+        let { unseenCompletedSessions } = project
+        if (project._activeSessionId && unseenCompletedSessions.has(project._activeSessionId)) {
+          unseenCompletedSessions = new Set(unseenCompletedSessions)
+          unseenCompletedSessions.delete(project._activeSessionId)
+        }
         updates.projectSessions = {
           ...s.projectSessions,
-          [projectPath]: { ...project, hasUnseenActivity: false },
+          [projectPath]: { ...project, hasUnseenActivity: false, unseenCompletedSessions },
         }
       }
       return updates
@@ -1804,6 +1817,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     const project = getProject(get())
+
+    if (project.unseenCompletedSessions.has(sessionId)) {
+      set((s) => {
+        const proj = s.projectSessions[activeProject]
+        if (!proj) return {}
+        const next = new Set(proj.unseenCompletedSessions)
+        next.delete(sessionId)
+        return { projectSessions: { ...s.projectSessions, [activeProject]: { ...proj, unseenCompletedSessions: next } } }
+      })
+    }
 
     // Case A: Session already in _sessions (background streaming or parked)
     if (project._sessions[sessionId]) {

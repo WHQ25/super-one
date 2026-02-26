@@ -11,6 +11,7 @@ let win: BrowserWindow | null = null
 
 const IGNORED = /(?:^|[/\\])(?:\.git|node_modules|\.DS_Store|\.next|dist|\.cache)(?:[/\\]|$)|\.log$/
 const GIT_HEAD = /(?:^|[/\\])\.git[/\\]HEAD$/
+const GIT_INDEX = /(?:^|[/\\])\.git[/\\]index(?:\.lock)?$/
 
 function send(): void {
   if (!win || !currentFolder) return
@@ -27,6 +28,11 @@ function handleChange(_eventType: string, filename: string | null): void {
   if (GIT_HEAD.test(filename)) {
     if (gitHeadTimer) clearTimeout(gitHeadTimer)
     gitHeadTimer = setTimeout(sendGitHeadChange, 100)
+    return
+  }
+  if (GIT_INDEX.test(filename)) {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(send, 300)
     return
   }
   if (IGNORED.test(filename)) return

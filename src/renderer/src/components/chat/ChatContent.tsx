@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { ArrowDown } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
 import { ChatMessage, CompactingIndicator, CompactIndicator, parseCompactMarker } from './ChatMessage'
@@ -15,11 +17,13 @@ import { SessionHistory } from './SessionHistory'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
+  showScrollButton?: boolean
+  scrollToBottom?: () => void
   /** When true, skip showHistory branch (history displayed externally, e.g. in sidebar) */
   externalHistory?: boolean
 }
 
-export function ChatContent({ scrollViewportRef, externalHistory = false }: ChatContentProps) {
+export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, externalHistory = false }: ChatContentProps) {
   const messages = useActiveSession((s) => s.messages)
   const isCompacting = useActiveSession((s) => s.isCompacting)
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
@@ -68,7 +72,7 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
       ) : (
         <>
           <SlashCommandOverlay />
-          <div className="flex-1 overflow-hidden">
+          <div className="relative flex-1 overflow-hidden">
             {messages.length === 0 && !hasActiveSession ? (
               <ChatSuggestions />
             ) : (
@@ -103,6 +107,20 @@ export function ChatContent({ scrollViewportRef, externalHistory = false }: Chat
                 </div>
               </ScrollArea>
             )}
+            <AnimatePresence>
+              {showScrollButton && scrollToBottom && messages.length > 0 && (
+                <motion.button
+                  onClick={scrollToBottom}
+                  className="absolute bottom-3 left-1/2 z-10 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <ArrowDown className="size-3.5" />
+                </motion.button>
+              )}
+            </AnimatePresence>
           </div>
           <div className="mx-auto w-full max-w-3xl">
             <PermissionPrompt />

@@ -66,7 +66,7 @@ export function ChatPanel() {
   const scrollViewportRef = useRef<HTMLDivElement>(null)
   const compactInputRef = useRef<ChatInputHandle>(null)
 
-  useChatScroll({ scrollViewportRef })
+  const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
   useChatKeyboardShortcuts()
 
   // Panel dimensions (user-resizable)
@@ -318,7 +318,7 @@ export function ChatPanel() {
       </div>
 
       {/* Expanded content — hidden by overflow when collapsed */}
-      <ChatContent scrollViewportRef={scrollViewportRef} />
+      <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} />
     </div>
   )
 }

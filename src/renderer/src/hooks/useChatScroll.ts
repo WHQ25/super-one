@@ -1,28 +1,41 @@
-import { useRef, useEffect, useLayoutEffect } from 'react'
+import { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useActiveSession } from '@/stores/chat'
 
 interface UseChatScrollOptions {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
 }
 
-export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions) {
+interface UseChatScrollReturn {
+  showScrollButton: boolean
+  scrollToBottom: () => void
+}
+
+export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseChatScrollReturn {
   const messages = useActiveSession((s) => s.messages)
+  const sessionId = useActiveSession((s) => s._activeSessionId)
 
   const isNearBottomRef = useRef(true)
+  const [showScrollButton, setShowScrollButton] = useState(false)
 
-  // Track whether user is near the bottom of the scroll area
+  useLayoutEffect(() => {
+    isNearBottomRef.current = true
+    setShowScrollButton(false)
+    const el = scrollViewportRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [sessionId])
+
   useEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
     const handleScroll = (): void => {
-      const threshold = 40
-      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+      const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
+      isNearBottomRef.current = remaining < el.clientHeight / 2
+      setShowScrollButton(remaining > el.clientHeight)
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
-  }, [messages.length > 0, scrollViewportRef])
+  }, [sessionId, messages.length > 0, scrollViewportRef])
 
-  // Auto-scroll only when user was already near the bottom (sync before paint to avoid flash)
   useLayoutEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
@@ -31,10 +44,10 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions) {
     if (isNearBottomRef.current || lastMsg?.role === 'user') {
       el.scrollTop = el.scrollHeight
       isNearBottomRef.current = true
+      setShowScrollButton(false)
     }
   }, [messages, scrollViewportRef])
 
-  // Catch async content size changes (image loads, dynamic content, etc.)
   useEffect(() => {
     const viewport = scrollViewportRef.current
     if (!viewport) return
@@ -47,5 +60,16 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions) {
     })
     observer.observe(content)
     return () => observer.disconnect()
-  }, [messages.length > 0, scrollViewportRef])
+  }, [sessionId, messages.length > 0, scrollViewportRef])
+
+  const scrollToBottom = useCallback(() => {
+    const el = scrollViewportRef.current
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      isNearBottomRef.current = true
+      setShowScrollButton(false)
+    }
+  }, [scrollViewportRef])
+
+  return { showScrollButton, scrollToBottom }
 }

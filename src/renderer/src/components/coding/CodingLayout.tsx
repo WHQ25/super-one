@@ -7,7 +7,7 @@ import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 export function CodingLayout() {
   const scrollViewportRef = useRef<HTMLDivElement>(null)
 
-  useChatScroll({ scrollViewportRef })
+  const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
   useChatKeyboardShortcuts()
 
   // Ensure chat is "open" for ChatInput auto-focus
@@ -19,7 +19,7 @@ export function CodingLayout() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="@container flex min-h-0 flex-1 flex-col bg-card">
-        <ChatContent scrollViewportRef={scrollViewportRef} externalHistory />
+        <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} externalHistory />
       </div>
     </div>
   )

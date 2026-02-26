@@ -61,7 +61,7 @@ export function AppSidebar() {
   const [explorerMounted, setExplorerMounted] = useState(sidebarTab === 'explorer')
   if (sidebarTab === 'explorer' && !explorerMounted) setExplorerMounted(true)
 
-  const [sortMode, setSortMode] = useState<SortMode>('recent')
+  const [sortMode, setSortMode] = useState<SortMode>('added')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
@@ -390,7 +390,7 @@ export function AppSidebar() {
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          transition={{ duration: 0.12, ease: 'easeOut' }}
                           className="overflow-hidden"
                         >
                           <div className="flex flex-col py-0.5 pl-5">

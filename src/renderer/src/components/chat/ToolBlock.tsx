@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, memo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo } from 'react'
 import { ChevronRight, PenLine, Check, X, Ban } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
@@ -156,9 +156,17 @@ export const ToolBlock = memo(function ToolBlock({ toolName, input, status, elap
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming
   const expandable = hasDiff || hasResult || hasQA
   const [expanded, setExpanded] = useState(false)
+  const gridRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (DIFF_TOOLS.has(toolName) && hasDiff && !isStreaming) setExpanded(true)
+  useLayoutEffect(() => {
+    if (DIFF_TOOLS.has(toolName) && hasDiff && !isStreaming) {
+      setExpanded(true)
+      const grid = gridRef.current
+      if (grid) {
+        grid.style.transition = 'none'
+        requestAnimationFrame(() => { grid.style.transition = '' })
+      }
+    }
   }, [isStreaming, hasDiff, toolName])
 
   // For unknown tools, show truncated raw input as fallback
@@ -233,6 +241,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, input, status, elap
 
       {expandable && (
         <div
+          ref={gridRef}
           className="grid transition-[grid-template-rows] duration-200 ease-out"
           style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
         >

@@ -53,13 +53,18 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     if (!viewport) return
     const content = viewport.firstElementChild as HTMLElement | null
     if (!content) return
+    let rafId = 0
     const observer = new ResizeObserver(() => {
       if (isNearBottomRef.current) {
         viewport.scrollTop = viewport.scrollHeight
+        cancelAnimationFrame(rafId)
+        rafId = requestAnimationFrame(() => {
+          if (isNearBottomRef.current) viewport.scrollTop = viewport.scrollHeight
+        })
       }
     })
     observer.observe(content)
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); cancelAnimationFrame(rafId) }
   }, [sessionId, messages.length > 0, scrollViewportRef])
 
   const scrollToBottom = useCallback(() => {

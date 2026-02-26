@@ -25,20 +25,25 @@ export function InlineCode({ children, className, ...props }: React.ComponentPro
 
 // --- Mermaid block ---
 
+const MERMAID_DEBOUNCE_MS = 300
+
 function MermaidBlock({ code }: { code: string }) {
-  const containerRef = useRef<HTMLDivElement>(null)
   const [svg, setSvg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    setSvg(null)
+    setError(null)
     let cancelled = false
-    ensureMermaidInit()
-    const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-    mermaid.render(id, code).then(
-      ({ svg: result }) => { if (!cancelled) setSvg(result) },
-      (err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)) },
-    )
-    return () => { cancelled = true }
+    const timer = setTimeout(() => {
+      ensureMermaidInit()
+      const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      mermaid.render(id, code).then(
+        ({ svg: result }) => { if (!cancelled) setSvg(result) },
+        (err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)) },
+      )
+    }, MERMAID_DEBOUNCE_MS)
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [code])
 
   if (error) {

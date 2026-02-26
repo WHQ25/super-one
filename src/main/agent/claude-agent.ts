@@ -87,6 +87,8 @@ export class ClaudeAgent {
     this.onEvent = onEvent
     this.ready = true
 
+    if (resumeSessionId) this.sessionId = resumeSessionId
+
     // Cache agents at init time
     // Eagerly create session — triggers system init, makes slash commands/models/MCP available
     this.createSession(resumeSessionId)

@@ -650,33 +650,57 @@ function registerIpcHandlers(): void {
     }
   })
 
+  const GIT_STATUS_CACHE_TTL_MS = 1500
+  const gitStatusSnapshotCache = new Map<string, { at: number; statusMap: Map<string, GitFileStatus>; ignoredDirs: Set<string> }>()
+  const gitStatusInFlight = new Map<string, Promise<{ statusMap: Map<string, GitFileStatus>; ignoredDirs: Set<string> }>>()
+
   async function getGitStatusMap(folderPath: string) {
-    const statusMap = new Map<string, GitFileStatus>()
-    const ignoredDirs = new Set<string>()
-    try {
-      const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
-      if (raw) {
-        for (const line of raw.split('\n').filter(Boolean)) {
-          const x = line[0]
-          const y = line[1]
-          const filePath = line.slice(3)
-          if (x === '!' && y === '!') {
-            const p = filePath.replace(/\/$/, '')
-            statusMap.set(p, '!')
-            if (filePath.endsWith('/')) ignoredDirs.add(p)
-          } else {
-            let status: GitFileStatus
-            if (x === '?' || y === '?') status = '?'
-            else if (x === 'D' || y === 'D') status = 'D'
-            else if (x === 'A') status = 'A'
-            else if (x === 'R' || y === 'R') status = 'R'
-            else status = 'M'
-            statusMap.set(filePath, status)
+    const now = Date.now()
+    const cached = gitStatusSnapshotCache.get(folderPath)
+    if (cached && now - cached.at < GIT_STATUS_CACHE_TTL_MS) {
+      return { statusMap: cached.statusMap, ignoredDirs: cached.ignoredDirs }
+    }
+    const inFlight = gitStatusInFlight.get(folderPath)
+    if (inFlight) return inFlight
+
+    const promise = (async () => {
+      const statusMap = new Map<string, GitFileStatus>()
+      const ignoredDirs = new Set<string>()
+      try {
+        const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
+        if (raw) {
+          for (const line of raw.split('\n').filter(Boolean)) {
+            const x = line[0]
+            const y = line[1]
+            const filePath = line.slice(3)
+            if (x === '!' && y === '!') {
+              const p = filePath.replace(/\/$/, '')
+              statusMap.set(p, '!')
+              if (filePath.endsWith('/')) ignoredDirs.add(p)
+            } else {
+              let status: GitFileStatus
+              if (x === '?' || y === '?') status = '?'
+              else if (x === 'D' || y === 'D') status = 'D'
+              else if (x === 'A') status = 'A'
+              else if (x === 'R' || y === 'R') status = 'R'
+              else status = 'M'
+              statusMap.set(filePath, status)
+            }
           }
         }
+      } catch { /* not a git repo or no commits */ }
+      gitStatusSnapshotCache.set(folderPath, { at: Date.now(), statusMap, ignoredDirs })
+      return { statusMap, ignoredDirs }
+    })()
+
+    gitStatusInFlight.set(folderPath, promise)
+    try {
+      return await promise
+    } finally {
+      if (gitStatusInFlight.get(folderPath) === promise) {
+        gitStatusInFlight.delete(folderPath)
       }
-    } catch { /* not a git repo or no commits */ }
-    return { statusMap, ignoredDirs }
+    }
   }
 
   function dirGitStatus(statusMap: Map<string, GitFileStatus>, dirRelPath: string): GitFileStatus | null {

@@ -389,7 +389,10 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_CREATE, (_event, projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string) => {
-      try { createSession(projectPath, claudeSessionId, undefined, isWorktree, gitBranch, worktreePath) } catch { /* ignore duplicate */ }
+      try {
+        createSession(projectPath, claudeSessionId, undefined, isWorktree, gitBranch, worktreePath)
+        this.mainWindow?.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+      } catch { /* ignore duplicate */ }
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_SAVE_STATE, (_event, claudeSessionId: string, data: { messages: unknown[]; totalCostUsd: number; contextTokens: number; title?: string; provider?: string }) => {
@@ -402,6 +405,7 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, (_event, claudeSessionId: string) => {
       dbDeleteSession(claudeSessionId)
+      this.mainWindow?.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_PIN, (_event, claudeSessionId: string, pinned: boolean) => {

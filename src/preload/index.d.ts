@@ -100,6 +100,7 @@ interface AppAPI {
   stopFileWatch(): Promise<void>
   onFileChangeEvent(callback: (event: { folderPath: string }) => void): () => void
   onGitHeadChange(callback: (event: { folderPath: string }) => void): () => void
+  onSessionChanged(callback: () => void): () => void
 
   // Logging
   getLogPath(): Promise<string>

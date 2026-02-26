@@ -337,6 +337,13 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.GIT_HEAD_CHANGE, handler)
     }
   },
+  onSessionChanged: (callback: () => void) => {
+    const handler = (): void => { callback() }
+    ipcRenderer.on(AgentIpcChannels.SESSIONS_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.SESSIONS_CHANGED, handler)
+    }
+  },
 
   // Logging
   getLogPath: () =>

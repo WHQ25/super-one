@@ -115,6 +115,13 @@ export function AppSidebar() {
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolder, currentStatus, currentSessionId])
+  useEffect(() => {
+    if (!currentFolder) return
+    return window.app.onSessionChanged(() => {
+      refreshFolderSessions(currentFolder)
+      refreshPinned()
+    })
+  }, [currentFolder, refreshFolderSessions, refreshPinned])
 
   const handleResumeSession = useCallback(async (folderPath: string, sessionId: string) => {
     const ps = projectSessions[folderPath]

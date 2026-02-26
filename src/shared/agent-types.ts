@@ -834,6 +834,7 @@ export const AgentIpcChannels = {
   SESSIONS_DELETE: 'sessions:delete',
   SESSIONS_PIN: 'sessions:pin',
   SESSIONS_LIST_PINNED: 'sessions:list-pinned',
+  SESSIONS_CHANGED: 'sessions:changed',
 
   // Additional directories
   READ_PROJECT_ADDITIONAL_DIRS: 'agent:read-project-additional-dirs',

@@ -1,4 +1,6 @@
 import { createRequire } from 'module'
+import { spawn } from 'child_process'
+import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
 
 const require = createRequire(import.meta.url)
 
@@ -13,4 +15,23 @@ export function getClaudeCliPath(): string | undefined {
     cached = ''
   }
   return cached || undefined
+}
+
+export function spawnClaudeProcess(options: SpawnOptions): SpawnedProcess {
+  const env = { ...options.env }
+  let command = options.command
+  let args = options.args
+
+  if (process.versions.electron) {
+    env.ELECTRON_RUN_AS_NODE = '1'
+    args = [command, ...args]
+    command = process.execPath
+  }
+
+  return spawn(command, args, {
+    cwd: options.cwd,
+    env,
+    signal: options.signal,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
 }

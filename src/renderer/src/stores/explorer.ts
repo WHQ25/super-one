@@ -1,86 +1,171 @@
 import { create } from 'zustand'
-import type { FileTreeEntry } from '../../../shared/agent-types'
+import type { FileTreeEntry, GitFileStatus } from '../../../shared/agent-types'
 
-function mergeChildren(tree: FileTreeEntry[], dirPath: string, children: FileTreeEntry[]): FileTreeEntry[] {
-  return tree.map(entry => {
-    if (entry.path === dirPath) return { ...entry, children }
-    if (entry.children && dirPath.startsWith(entry.path + '/')) {
-      return { ...entry, children: mergeChildren(entry.children, dirPath, children) }
-    }
-    return entry
-  })
+export interface FlatNode {
+  entry: FileTreeEntry
+  depth: number
+  parentPath: string
+  childPaths: string[]
+  isLoaded: boolean
 }
 
-function collectUnloadedNonIgnored(entries: FileTreeEntry[], changed: string[], clean: string[]): void {
-  for (const e of entries) {
-    if (e.isDirectory && e.gitStatus !== '!' && e.children === undefined) {
-      ;(e.gitStatus ? changed : clean).push(e.path)
-    }
-    if (e.children) collectUnloadedNonIgnored(e.children, changed, clean)
-  }
+export interface VisibleItem {
+  path: string
+  name: string
+  isDirectory: boolean
+  gitStatus: GitFileStatus | null | undefined
+  depth: number
+  isExpanded: boolean
+  isLoading: boolean
+  hasChildren: boolean
 }
 
 interface ExplorerState {
-  tree: FileTreeEntry[]
-  loading: boolean
-  loadingDirs: Set<string>
+  nodes: Map<string, FlatNode>
   expandedDirs: Set<string>
-  _bgAbort: AbortController | null
+  loadingDirs: Set<string>
+  loading: boolean
+  _visibleList: VisibleItem[]
+  _visibleVersion: number
+
   fetchTree: (projectPath: string) => Promise<void>
   refreshTree: (projectPath: string) => Promise<void>
   toggleDir: (projectPath: string, path: string) => void
   reset: () => void
 }
 
-async function loadNonIgnoredDirs(projectPath: string, get: () => ExplorerState, set: (fn: (s: ExplorerState) => Partial<ExplorerState>) => void, signal: AbortSignal) {
-  while (!signal.aborted) {
-    const changed: string[] = []
-    const clean: string[] = []
-    collectUnloadedNonIgnored(get().tree, changed, clean)
-    const dirs = [...changed, ...clean]
-    if (dirs.length === 0) break
-    const results = await Promise.all(
-      dirs.map(async (dir) => {
-        try {
-          return { dir, children: await window.app.listDir(projectPath, dir) }
-        } catch {
-          return { dir, children: [] as FileTreeEntry[] }
-        }
-      })
-    )
-    if (signal.aborted) break
-    set((s) => {
-      let updated = s.tree
-      for (const { dir, children } of results) {
-        updated = mergeChildren(updated, dir, children)
-      }
-      return { tree: updated }
+function entriesToNodes(
+  entries: FileTreeEntry[],
+  parentPath: string,
+  depth: number,
+  target: Map<string, FlatNode>,
+): string[] {
+  const paths: string[] = []
+  for (const entry of entries) {
+    paths.push(entry.path)
+    target.set(entry.path, {
+      entry: { name: entry.name, path: entry.path, isDirectory: entry.isDirectory, gitStatus: entry.gitStatus },
+      depth,
+      parentPath,
+      childPaths: [],
+      isLoaded: false,
     })
   }
+  return paths
+}
+
+function computeVisible(
+  nodes: Map<string, FlatNode>,
+  expandedDirs: Set<string>,
+  loadingDirs: Set<string>,
+): VisibleItem[] {
+  const result: VisibleItem[] = []
+
+  const rootNode = nodes.get('')
+  if (!rootNode) return result
+
+  const walk = (childPaths: string[]) => {
+    for (const path of childPaths) {
+      const node = nodes.get(path)
+      if (!node) continue
+      const isExpanded = expandedDirs.has(path)
+      const isLoading = loadingDirs.has(path)
+      result.push({
+        path,
+        name: node.entry.name,
+        isDirectory: node.entry.isDirectory,
+        gitStatus: node.entry.gitStatus,
+        depth: node.depth,
+        isExpanded,
+        isLoading,
+        hasChildren: node.childPaths.length > 0 || !node.isLoaded,
+      })
+      if (node.entry.isDirectory && isExpanded && node.isLoaded) {
+        walk(node.childPaths)
+      }
+    }
+  }
+
+  walk(rootNode.childPaths)
+  return result
+}
+
+function mergeEntries(
+  nodes: Map<string, FlatNode>,
+  parentPath: string,
+  depth: number,
+  entries: FileTreeEntry[],
+): void {
+  const parent = nodes.get(parentPath)
+  if (!parent) return
+
+  const newPaths = new Set(entries.map((e) => e.path))
+  for (const oldPath of parent.childPaths) {
+    if (!newPaths.has(oldPath)) removeSubtree(nodes, oldPath)
+  }
+
+  const childPaths: string[] = []
+  for (const entry of entries) {
+    childPaths.push(entry.path)
+    const existing = nodes.get(entry.path)
+    if (existing) {
+      existing.entry = { name: entry.name, path: entry.path, isDirectory: entry.isDirectory, gitStatus: entry.gitStatus }
+      existing.depth = depth
+      existing.parentPath = parentPath
+    } else {
+      nodes.set(entry.path, {
+        entry: { name: entry.name, path: entry.path, isDirectory: entry.isDirectory, gitStatus: entry.gitStatus },
+        depth,
+        parentPath,
+        childPaths: [],
+        isLoaded: false,
+      })
+    }
+  }
+  parent.childPaths = childPaths
+  parent.isLoaded = true
+}
+
+function removeSubtree(nodes: Map<string, FlatNode>, path: string): void {
+  const node = nodes.get(path)
+  if (!node) return
+  for (const child of node.childPaths) removeSubtree(nodes, child)
+  nodes.delete(path)
+}
+
+function recomputeAndSet(
+  get: () => ExplorerState,
+  set: (partial: Partial<ExplorerState>) => void,
+  extra?: Partial<ExplorerState>,
+): void {
+  const s = get()
+  const _visibleList = computeVisible(s.nodes, s.expandedDirs, s.loadingDirs)
+  set({ ...extra, _visibleList, _visibleVersion: s._visibleVersion + 1 })
 }
 
 export const useExplorerStore = create<ExplorerState>((set, get) => ({
-  tree: [],
-  loading: false,
-  loadingDirs: new Set(),
+  nodes: new Map(),
   expandedDirs: new Set(),
-  _bgAbort: null,
+  loadingDirs: new Set(),
+  loading: false,
+  _visibleList: [],
+  _visibleVersion: 0,
 
   fetchTree: async (projectPath) => {
-    get()._bgAbort?.abort()
     set({ loading: true })
     try {
-      const tree = await window.app.listDir(projectPath, '')
-      const abort = new AbortController()
-      set({ tree, loading: false, _bgAbort: abort })
-      loadNonIgnoredDirs(projectPath, get, set, abort.signal)
+      const entries = await window.app.listDir(projectPath, '')
+      const nodes = new Map<string, FlatNode>()
+      const rootChildPaths = entriesToNodes(entries, '', 0, nodes)
+      nodes.set('', { entry: { name: '', path: '', isDirectory: true }, depth: -1, parentPath: '', childPaths: rootChildPaths, isLoaded: true })
+      const _visibleList = computeVisible(nodes, new Set(), new Set())
+      set({ nodes, expandedDirs: new Set(), loadingDirs: new Set(), loading: false, _visibleList, _visibleVersion: get()._visibleVersion + 1 })
     } catch {
-      set({ tree: [], loading: false })
+      set({ nodes: new Map(), loading: false, _visibleList: [], _visibleVersion: get()._visibleVersion + 1 })
     }
   },
 
   refreshTree: async (projectPath) => {
-    get()._bgAbort?.abort()
     const { expandedDirs } = get()
     try {
       const dirs = ['', ...expandedDirs]
@@ -91,29 +176,29 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
           } catch {
             return { dir, entries: [] as FileTreeEntry[] }
           }
-        })
+        }),
       )
-      const rootResult = results.find(r => r.dir === '')
-      if (!rootResult) return
-      let tree = rootResult.entries
-      const childResults = results
-        .filter(r => r.dir !== '')
-        .sort((a, b) => a.dir.split('/').length - b.dir.split('/').length)
-      for (const { dir, entries } of childResults) {
-        tree = mergeChildren(tree, dir, entries)
+
+      const sorted = results.sort((a, b) => a.dir.split('/').length - b.dir.split('/').length)
+
+      const { nodes } = get()
+      for (const { dir, entries } of sorted) {
+        const depth = dir === '' ? 0 : (nodes.get(dir)?.depth ?? 0) + 1
+        mergeEntries(nodes, dir, depth, entries)
       }
-      const abort = new AbortController()
-      set({ tree, _bgAbort: abort })
-      loadNonIgnoredDirs(projectPath, get, set, abort.signal)
-    } catch { /* keep existing tree on refresh error */ }
+
+      recomputeAndSet(get, set)
+    } catch { /* keep existing on error */ }
   },
 
   toggleDir: (projectPath, path) => {
-    const { expandedDirs, loadingDirs, tree } = get()
+    const { expandedDirs, loadingDirs, nodes } = get()
+
     if (expandedDirs.has(path)) {
       const next = new Set(expandedDirs)
       next.delete(path)
       set({ expandedDirs: next })
+      recomputeAndSet(get, set)
       return
     }
 
@@ -121,36 +206,49 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     next.add(path)
     set({ expandedDirs: next })
 
-    const findEntry = (entries: FileTreeEntry[], target: string): FileTreeEntry | undefined => {
-      for (const e of entries) {
-        if (e.path === target) return e
-        if (e.children && target.startsWith(e.path + '/')) {
-          const found = findEntry(e.children, target)
-          if (found) return found
-        }
-      }
+    const node = nodes.get(path)
+    if (node?.isLoaded) {
+      recomputeAndSet(get, set)
+      return
     }
 
-    const entry = findEntry(tree, path)
-    if (entry?.children !== undefined) return
-    if (loadingDirs.has(path)) return
+    if (loadingDirs.has(path)) {
+      recomputeAndSet(get, set)
+      return
+    }
 
-    set({ loadingDirs: new Set([...loadingDirs, path]) })
+    const nextLoading = new Set(loadingDirs)
+    nextLoading.add(path)
+    set({ loadingDirs: nextLoading })
+    recomputeAndSet(get, set)
+
     window.app.listDir(projectPath, path).then((children) => {
-      set((s) => ({
-        tree: mergeChildren(s.tree, path, children),
-        loadingDirs: (() => { const n = new Set(s.loadingDirs); n.delete(path); return n })(),
-      }))
+      const { nodes: currentNodes } = get()
+      const parentNode = currentNodes.get(path)
+      const depth = parentNode ? parentNode.depth + 1 : 0
+      mergeEntries(currentNodes, path, depth, children)
+      const nl = new Set(get().loadingDirs)
+      nl.delete(path)
+      set({ loadingDirs: nl })
+      recomputeAndSet(get, set)
     }).catch(() => {
-      set((s) => ({
-        tree: mergeChildren(s.tree, path, []),
-        loadingDirs: (() => { const n = new Set(s.loadingDirs); n.delete(path); return n })(),
-      }))
+      const { nodes: currentNodes } = get()
+      mergeEntries(currentNodes, path, (currentNodes.get(path)?.depth ?? 0) + 1, [])
+      const nl = new Set(get().loadingDirs)
+      nl.delete(path)
+      set({ loadingDirs: nl })
+      recomputeAndSet(get, set)
     })
   },
 
   reset: () => {
-    get()._bgAbort?.abort()
-    set({ tree: [], loading: false, loadingDirs: new Set(), expandedDirs: new Set(), _bgAbort: null })
+    set({
+      nodes: new Map(),
+      expandedDirs: new Set(),
+      loadingDirs: new Set(),
+      loading: false,
+      _visibleList: [],
+      _visibleVersion: get()._visibleVersion + 1,
+    })
   },
 }))

@@ -95,14 +95,16 @@ async function openFolderDirect(folderPath: string, set: (partial: Partial<AppSt
 
 async function refreshResourcesInBackground(): Promise<void> {
   try {
+    console.info('[refreshResources] Calling connectClaude...')
     const result = await window.app.connectClaude()
+    console.info('[refreshResources] Done:', result.models?.length, 'models')
     const { useChatStore } = await import('./chat')
     useChatStore.getState().setGlobalResources(
       result.models, result.account, result.slashCommands,
       result.userSkills, result.userCommands, result.userAgents,
     )
   } catch (err) {
-    console.warn('[refreshResourcesInBackground] Failed:', err)
+    console.error('[refreshResources] Failed:', err)
   }
 }
 
@@ -284,8 +286,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   continueToMain: async () => {
-    // Load cached resources + user resources from main process
     const startupData = await window.app.getStartupData()
+    console.info('[continueToMain] cached:', startupData.cached ? `${startupData.cached.models?.length} models` : 'null')
     const { useChatStore } = await import('./chat')
 
     if (startupData.cached) {
@@ -298,7 +300,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         startupData.userAgents,
       )
     } else {
-      // First launch — no cache, enter main with empty data
+      console.info('[continueToMain] No cache, using empty models')
       useChatStore.getState().setGlobalResources([], {}, [], startupData.userSkills, startupData.userCommands, startupData.userAgents)
     }
 

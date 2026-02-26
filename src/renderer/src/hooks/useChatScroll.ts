@@ -13,6 +13,9 @@ interface UseChatScrollReturn {
 export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseChatScrollReturn {
   const messages = useActiveSession((s) => s.messages)
   const sessionId = useActiveSession((s) => s._activeSessionId)
+  const status = useActiveSession((s) => s.status)
+  const statusRef = useRef(status)
+  statusRef.current = status
 
   const isNearBottomRef = useRef(true)
   const [showScrollButton, setShowScrollButton] = useState(false)
@@ -55,7 +58,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     if (!content) return
     let rafId = 0
     const observer = new ResizeObserver(() => {
-      if (isNearBottomRef.current) {
+      if (isNearBottomRef.current && statusRef.current === 'streaming') {
         viewport.scrollTop = viewport.scrollHeight
         cancelAnimationFrame(rafId)
         rafId = requestAnimationFrame(() => {

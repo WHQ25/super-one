@@ -13,6 +13,7 @@ vi.mock('@/stores/chat', () => ({
 let mockSessionState: Record<string, unknown> = {
   messages: [],
   _activeSessionId: 'session-1',
+  status: 'streaming',
 }
 
 function createMockViewport() {
@@ -57,8 +58,9 @@ describe('useChatScroll', () => {
     resizeCallbacks = []
     vi.stubGlobal('ResizeObserver', MockResizeObserver)
     mockSessionState = {
-      messages: [{ id: '1', role: 'assistant', status: 'streaming', content: [] }],
+      messages: [{ id: '1', role: 'assistant', content: [] }],
       _activeSessionId: 'session-1',
+      status: 'streaming',
     }
   })
 
@@ -96,6 +98,18 @@ describe('useChatScroll', () => {
     state.scrollHeight = 800
     fireResize()
     expect(state.scrollTop).toBe(0)
+  })
+
+  it('does not scroll on resize when not streaming', () => {
+    mockSessionState = { ...mockSessionState, status: 'idle' }
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    state.scrollHeight = 800
+    fireResize()
+    expect(state.scrollTop).toBe(200)
   })
 
   it('scrolls to bottom when messages change and near bottom', () => {

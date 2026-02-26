@@ -5,6 +5,9 @@ import { resolve } from 'path'
 
 export default defineConfig({
   main: {
+    define: {
+      __UPDATER_TOKEN__: JSON.stringify(process.env.UPDATER_TOKEN ?? '')
+    },
     build: {
       externalizeDeps: true
     }

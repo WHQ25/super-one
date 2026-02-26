@@ -5,6 +5,8 @@ import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { AgentIpcChannels, type UpdateEvent } from '../shared/agent-types'
 
+declare const __UPDATER_TOKEN__: string
+
 let win: BrowserWindow | null = null
 let checkInterval: ReturnType<typeof setInterval> | null = null
 
@@ -19,6 +21,9 @@ export function initUpdater(mainWindow: BrowserWindow): void {
   autoUpdater.logger = log
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
+  if (__UPDATER_TOKEN__) {
+    autoUpdater.requestHeaders = { Authorization: `token ${__UPDATER_TOKEN__}` }
+  }
 
   autoUpdater.on('checking-for-update', () => {
     send({ type: 'checking' })

@@ -765,8 +765,10 @@ function registerIpcHandlers(): void {
         execFile('where', ['claude'], (error) => resolve(!error))
       })
     }
+    const shell = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh']
+      .find((s) => s && existsSync(s))!
     return new Promise<boolean>((resolve) => {
-      execFile(process.env.SHELL || '/bin/zsh', ['-l', '-c', 'which claude'], (error) => {
+      execFile(shell, ['-l', '-c', 'command -v claude'], (error) => {
         resolve(!error)
       })
     })
@@ -843,6 +845,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
     const cached = getCachedResources() as StartupData['cached']
+    log.info('[GET_STARTUP_DATA] cached:', cached ? `${cached.models?.length ?? 0} models` : 'null')
     const userSkills = discoverUserSkills()
     const userCommands = discoverUserCommands()
     const userAgents = discoverUserAgents()
@@ -850,15 +853,21 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ConnectResult> => {
+    const cliPath = getClaudeCliPath()
+    log.info('[CONNECT_CLAUDE] cliPath:', cliPath ?? 'undefined (will use system claude)')
+    log.info('[CONNECT_CLAUDE] cwd:', app.getPath('userData'))
+    log.info('[CONNECT_CLAUDE] Creating query...')
     const q = query({
       prompt: 'hi',
-      options: { pathToClaudeCodeExecutable: getClaudeCliPath(), cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
+      options: { pathToClaudeCodeExecutable: cliPath, cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
     })
+    log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')
     const [modelInfos, accountInfo, commands] = await Promise.all([
       q.supportedModels(),
       q.accountInfo(),
       q.supportedCommands(),
     ])
+    log.info('[CONNECT_CLAUDE] Fetch complete, closing query...')
     q.close()
 
     // Scan user-level resources from filesystem

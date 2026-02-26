@@ -9,9 +9,11 @@ import type { SessionHistoryEntry } from '../../../../shared/agent-types'
 interface SessionHistoryProps {
   /** Show back arrow button. Default true (canvas mode). Set false for sidebar usage. */
   showBackButton?: boolean
+  /** Called when close button is clicked (file panel mode). */
+  onClose?: () => void
 }
 
-export function SessionHistory({ showBackButton = true }: SessionHistoryProps) {
+export function SessionHistory({ showBackButton = true, onClose }: SessionHistoryProps) {
   const sessions = useActiveSession((s) => s.sessions)
   const resumeSession = useChatStore((s) => s.resumeSession)
   const renameSession = useChatStore((s) => s.renameSession)
@@ -73,6 +75,9 @@ export function SessionHistory({ showBackButton = true }: SessionHistoryProps) {
             <ArrowLeft className="size-4" />
           </Button>
         )}
+        {!showBackButton && onClose && (
+          <span className="shrink-0 text-xs font-medium text-foreground">Sessions</span>
+        )}
         <div className="flex flex-1 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1">
           <Search className="size-3 shrink-0 text-muted-foreground" />
           <input
@@ -90,6 +95,11 @@ export function SessionHistory({ showBackButton = true }: SessionHistoryProps) {
             </button>
           )}
         </div>
+        {!showBackButton && onClose && (
+          <Button size="icon-xs" variant="ghost" onClick={onClose} className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground">
+            <X className="size-4" />
+          </Button>
+        )}
       </div>
       {filteredSessions.length === 0 ? (
         <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">

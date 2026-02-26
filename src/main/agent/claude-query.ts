@@ -77,7 +77,9 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
       type: att.mimeType === 'application/pdf' ? 'document' : 'image',
       source: { type: 'base64', media_type: att.mimeType, data: att.base64 },
     }))
-    blocks.push({ type: 'text', text: request.content })
+    if (request.content.trim()) {
+      blocks.push({ type: 'text', text: request.content })
+    }
     content = blocks
   } else {
     content = request.content

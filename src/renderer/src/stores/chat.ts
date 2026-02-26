@@ -1185,7 +1185,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ? { type: 'document' as const, name: att.name }
           : { type: 'image' as const, name: att.name }
       ),
-      { type: 'text' as const, text: finalContent },
+      ...(finalContent ? [{ type: 'text' as const, text: finalContent }] : []),
     ]
 
     const userMessage: ChatMessage = {

@@ -7,6 +7,7 @@ type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' 
 type SettingsTab = 'agents' | 'skills' | 'mcp' | 'plugins'
 export type LayoutMode = 'canvas' | 'coding'
 export type SidebarTab = 'sessions' | 'explorer'
+export type FilePanelView = 'file' | 'history'
 
 interface WorktreeState {
   pendingBaseBranch: string | null
@@ -48,6 +49,8 @@ interface AppState {
   setSidebarWidth: (width: number) => void
   showFilePanel: boolean
   setShowFilePanel: (show: boolean) => void
+  filePanelView: FilePanelView
+  setFilePanelView: (view: FilePanelView) => void
   filePanelWidth: number
   setFilePanelWidth: (width: number) => void
 
@@ -134,10 +137,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSidebarTab: (tab) => {
     set({ sidebarTab: tab })
     if (tab === 'sessions') {
-      set({ showFilePanel: false })
+      set({ showFilePanel: false, filePanelView: 'file' as FilePanelView })
     } else {
       import('./source-control').then(({ useSourceControlStore }) => {
-        if (useSourceControlStore.getState().selectedFile) set({ showFilePanel: true })
+        if (useSourceControlStore.getState().selectedFile) set({ showFilePanel: true, filePanelView: 'file' as FilePanelView })
       })
     }
   },
@@ -146,7 +149,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarWidth: 256,
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
   showFilePanel: false,
-  setShowFilePanel: (show) => set({ showFilePanel: show }),
+  setShowFilePanel: (show) => set({ showFilePanel: show, ...(!show && { filePanelView: 'file' as FilePanelView }) }),
+  filePanelView: 'file' as FilePanelView,
+  setFilePanelView: (view) => set({ filePanelView: view }),
   filePanelWidth: 560,
   setFilePanelWidth: (width) => set({ filePanelWidth: width }),
 

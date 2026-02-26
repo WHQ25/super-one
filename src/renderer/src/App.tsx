@@ -5,6 +5,7 @@ import { CommandShortcut } from '@/components/ui/command'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { CodingLayout } from '@/components/coding/CodingLayout'
 import { FilePanel } from '@/components/coding/FilePanel'
+import { SessionHistory } from '@/components/chat/SessionHistory'
 import { AppSidebar } from '@/components/AppSidebar'
 import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
@@ -23,7 +24,7 @@ import { cn } from '@/lib/utils'
 function App(): React.JSX.Element {
   useAgentEvents()
   const theme = useTheme()
-  const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, showFilePanel, filePanelWidth, setFilePanelWidth, layoutMode, setLayoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, setShowSidebar: s.setShowSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, showFilePanel: s.showFilePanel, filePanelWidth: s.filePanelWidth, setFilePanelWidth: s.setFilePanelWidth, layoutMode: s.layoutMode, setLayoutMode: s.setLayoutMode })))
+  const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, showFilePanel, setShowFilePanel, filePanelView, filePanelWidth, setFilePanelWidth, layoutMode, setLayoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, setShowSidebar: s.setShowSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, showFilePanel: s.showFilePanel, setShowFilePanel: s.setShowFilePanel, filePanelView: s.filePanelView, filePanelWidth: s.filePanelWidth, setFilePanelWidth: s.setFilePanelWidth, layoutMode: s.layoutMode, setLayoutMode: s.setLayoutMode })))
   const isFullscreen = useFullscreen()
 
   useEffect(() => {
@@ -195,7 +196,10 @@ function App(): React.JSX.Element {
             style={{ width: showFilePanel ? filePanelWidth : 0 }}
           >
             <div ref={fpInnerRef} className="h-full" style={{ width: filePanelWidth }}>
-              <FilePanel />
+              {filePanelView === 'history'
+                ? <SessionHistory showBackButton={false} onClose={() => setShowFilePanel(false)} />
+                : <FilePanel />
+              }
             </div>
             {showFilePanel && (
               <div

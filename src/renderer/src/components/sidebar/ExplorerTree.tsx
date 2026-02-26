@@ -40,6 +40,7 @@ function TreeNode({ entry, depth }: { entry: FileTreeEntry; depth: number }) {
     } else if (currentFolder) {
       useSourceControlStore.getState().selectFile(currentFolder, entry.path)
       useAppStore.getState().setShowFilePanel(true)
+      useAppStore.getState().setFilePanelView('file')
     }
   }, [entry.path, entry.isDirectory, currentFolder, toggleDir])
 

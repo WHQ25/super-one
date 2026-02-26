@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderTree, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck } from 'lucide-react'
+import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderTree, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -44,7 +44,7 @@ function getPendingReason(
   return null
 }
 
-const MAX_SESSIONS = 5
+const MAX_SESSIONS = 10
 
 export function AppSidebar() {
   const theme = useTheme()
@@ -349,7 +349,20 @@ export function AppSidebar() {
                               <MoreHorizontal className="size-4" />
                             </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" side="right" className="w-36">
+                          <DropdownMenuContent align="start" side="right" className="w-44">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openFolder(folder.path).then(() => {
+                                  useChatStore.getState().fetchSessions()
+                                  useAppStore.setState({ showFilePanel: true, filePanelView: 'history' })
+                                })
+                              }}
+                              className="text-xs"
+                            >
+                              <History className="size-3.5" />
+                              Session History
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               variant="destructive"
                               onClick={(e) => {

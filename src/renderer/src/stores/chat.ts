@@ -538,21 +538,25 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     case 'init_ready':
       return {}
 
-    case 'compact_boundary':
-      return {
-        isCompacting: false,
-        messages: [
-          ...session.messages,
-          {
-            id: `compact_${Date.now()}`,
-            role: 'assistant' as const,
-            status: 'complete' as const,
-            content: [{ type: 'text' as const, text: `__compact__:${event.trigger}:${event.preTokens}` }],
-            createdAt: new Date().toISOString(),
-            providerId: 'system',
-          },
-        ],
+    case 'compact_boundary': {
+      const msgs = [...session.messages]
+      let insertIdx = msgs.length
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role === 'user') {
+          insertIdx = i
+          break
+        }
       }
+      msgs.splice(insertIdx, 0, {
+        id: `compact_${Date.now()}`,
+        role: 'assistant' as const,
+        status: 'complete' as const,
+        content: [{ type: 'text' as const, text: `__compact__:${event.trigger}:${event.preTokens}` }],
+        createdAt: new Date().toISOString(),
+        providerId: 'system',
+      })
+      return { isCompacting: false, messages: msgs }
+    }
 
     case 'subagent_usage':
       return {

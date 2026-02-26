@@ -230,13 +230,12 @@ export class ClaudeAgent {
     }
 
     log.debug(`[ClaudeAgent] sendMessage (sessionId=${this.sessionId}, bridge=${!!this.bridge}, iterationAlive=${this.iterationAlive}, gen=${this.sessionGeneration})`)
-    const wasInterrupted = this.interrupted
     this.createSession()
 
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.currentMessageId = messageId
     this.currentStartTime = Date.now()
-    this.interrupted = wasInterrupted ? true : false
+    this.interrupted = false
 
     const message: ChatMessage = {
       id: messageId,

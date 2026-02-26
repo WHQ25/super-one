@@ -108,7 +108,10 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.INTERRUPT, async (_event, projectPath: string) => {
-      await this.getAgent(projectPath).interrupt()
+      const agent = this.agents.get(projectPath)
+      if (!agent) return false
+      await agent.interrupt()
+      return true
     })
 
     ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) => {

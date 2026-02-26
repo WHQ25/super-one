@@ -10,6 +10,7 @@ import { FileIcon } from '@/components/ui/FileIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName } from './tool-display'
 import { codePlugin } from './chat-shared'
+import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 
 /** Dev-only: comma-separated tool names to show raw debug UI. e.g. RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate */
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
@@ -114,6 +115,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, input, status, elap
       ?? mcpLibrary.find((e) => e.name === mcpInfo.serverName)?.icons?.[0]?.src)
     : undefined
   const isStreaming = status === 'streaming'
+  const stallLevel = useStallLevel(isStreaming)
   const fileToolPath = FILE_PATH_TOOLS.has(toolName) ? String(params.file_path ?? params.notebook_path ?? '') : ''
   const fileToolName = fileToolPath ? fileToolPath.split('/').pop() || '' : ''
 
@@ -220,7 +222,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, input, status, elap
           </span>
         )}
         {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
-          <span className="ml-auto shrink-0 text-muted-foreground">{Math.round(elapsedSeconds)}s</span>
+          <span className={cn('ml-auto shrink-0 transition-colors duration-500', getStallColor(stallLevel))}>{Math.round(elapsedSeconds)}s</span>
         )}
         {expandable && (
           <ChevronRight

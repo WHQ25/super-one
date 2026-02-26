@@ -230,12 +230,13 @@ export class ClaudeAgent {
     }
 
     log.debug(`[ClaudeAgent] sendMessage (sessionId=${this.sessionId}, bridge=${!!this.bridge}, iterationAlive=${this.iterationAlive}, gen=${this.sessionGeneration})`)
+    const wasInterrupted = this.interrupted
     this.createSession()
 
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.currentMessageId = messageId
     this.currentStartTime = Date.now()
-    this.interrupted = false
+    this.interrupted = wasInterrupted ? true : false
 
     const message: ChatMessage = {
       id: messageId,
@@ -301,11 +302,15 @@ export class ClaudeAgent {
   }
 
   async interrupt(): Promise<void> {
+    log.debug(`[ClaudeAgent] interrupt (sessionId=${this.sessionId}, iterationAlive=${this.iterationAlive}, hasQuery=${!!this.sessionQuery}, pendingPerms=${this.pendingPermissions.size}, pendingQs=${this.pendingQuestions.size})`)
+    this.interrupted = true
+    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
     if (this.sessionQuery) {
-      log.debug(`[ClaudeAgent] interrupt (sessionId=${this.sessionId}, iterationAlive=${this.iterationAlive}, pendingPerms=${this.pendingPermissions.size}, pendingQs=${this.pendingQuestions.size})`)
-      this.interrupted = true
-      rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
       await this.sessionQuery.interrupt()
+    } else {
+      this.turnResolve?.()
+      this.turnResolve = null
+      this.emit({ type: 'status_change', status: 'idle' })
     }
   }
 

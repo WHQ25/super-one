@@ -51,6 +51,7 @@ export interface PerSessionState {
   isCompacting: boolean
   _worktreeBranch: string | null
   additionalDirs: string[]
+  lastEventAt: number
 }
 
 export interface ProjectState {
@@ -110,6 +111,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     isCompacting: false,
     _worktreeBranch: null,
     additionalDirs: [],
+    lastEventAt: 0,
   }
 }
 
@@ -330,7 +332,7 @@ function pruneTransientCodexItems(items: CodexThreadItem[]): CodexThreadItem[] {
 function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
   switch (event.type) {
     case 'message_start':
-      return { messages: [...session.messages, event.message], promptSuggestion: null }
+      return { messages: [...session.messages, event.message], promptSuggestion: null, lastEventAt: Date.now() }
 
     case 'content_delta': {
       let updatedMessages = session.messages.map((msg) => {
@@ -430,7 +432,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         }
       }
 
-      return { messages: updatedMessages, ...extraUpdates }
+      return { messages: updatedMessages, lastEventAt: Date.now(), ...extraUpdates }
     }
 
     case 'message_complete': {
@@ -454,6 +456,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           return total > 0 ? total : session.contextTokens
         })(),
         streamingTokens: { input: 0, output: 0 },
+        lastEventAt: 0,
       }
     }
 
@@ -470,10 +473,12 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         pendingPermission: null,
         pendingQuestion: null,
         pendingPlanApproval: null,
+        lastEventAt: 0,
       }
 
     case 'message_error':
       return {
+        lastEventAt: 0,
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           return {
@@ -511,10 +516,11 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       // via the 'result' event (content_delta with full tool_use block) which replaces
       // the streaming block entirely via applyDelta dedup. Updating state on every
       // delta caused massive re-render overhead for large-input tools (Write/Edit).
-      return {}
+      return { lastEventAt: Date.now() }
 
     case 'tool_progress':
       return {
+        lastEventAt: Date.now(),
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           return {
@@ -1344,10 +1350,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   interrupt: async () => {
     const { activeProject } = get()
     if (!activeProject) return
-    await Promise.allSettled([
+    const [claudeResult] = await Promise.allSettled([
       window.agent.interrupt(activeProject),
       window.app.codexInterrupt(activeProject),
     ])
+    const claudeFailed = claudeResult.status === 'rejected' || claudeResult.value === false
+    if (claudeFailed) {
+      set((s) => updateActivePerSession(s, () => ({
+        status: 'idle',
+        pendingPermission: null,
+        pendingQuestion: null,
+        pendingPlanApproval: null,
+      })))
+    }
   },
 
   toggleOpen: () => set((s) => ({ isOpen: !s.isOpen })),

@@ -4,7 +4,7 @@ import type { AgentEvent, AgentInfo, ChatMessage, CodexAuthStatus, CodexPermissi
 
 interface AgentAPI {
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
-  interrupt(projectPath: string): Promise<void>
+  interrupt(projectPath: string): Promise<boolean>
   respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): Promise<void>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
   setSandboxMode(projectPath: string, mode: SandboxMode): Promise<SandboxInfo>

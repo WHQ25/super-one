@@ -19,6 +19,7 @@ import {
   getTokenAnimationDurationMs,
 } from './chat-shared'
 import { RewindButton } from './RewindButton'
+import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -535,9 +536,8 @@ const ZERO_TOKENS = { input: 0, output: 0 }
 
 function DurationFooter({ message, copyText }: { message: ChatMessageType; copyText?: string }) {
   const isStreaming = message.status === 'streaming'
-  // Only subscribe to streamingTokens when this message is actually streaming
-  // to avoid re-rendering all completed message footers on every token update.
   const streamingTokens = useActiveSession((s) => isStreaming ? s.streamingTokens : ZERO_TOKENS)
+  const stallLevel = useStallLevel(isStreaming)
   const startTimeRef = useRef(() => {
     if (message.createdAt) {
       const t = new Date(message.createdAt).getTime()
@@ -580,8 +580,10 @@ function DurationFooter({ message, copyText }: { message: ChatMessageType; copyT
     ? `${seconds}s`
     : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 
+  const stallColor = isStreaming ? getStallColor(stallLevel) : 'text-muted-foreground'
+
   return (
-    <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+    <div className={cn('mt-2 flex items-center gap-1.5 text-[11px] transition-colors duration-500', stallColor)}>
       {showCopy && (
         <button
           onClick={handleCopy}

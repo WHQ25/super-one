@@ -59,6 +59,7 @@ export class ClaudeAgent {
   private sessionQuery: Query | null = null
   private sessionAbort: AbortController | null = null
   private iterationDone: Promise<void> | null = null
+  private iterationAlive = false
   private sessionId = ''
 
   // Per-turn state
@@ -92,7 +93,16 @@ export class ClaudeAgent {
 
   /** Create a new session (bridge + query). Safe to call if session already exists (no-op). */
   private createSession(resumeSessionId?: string, resumeSessionAt?: string, forkSession?: boolean, forkedSessionId?: string): void {
-    if (this.bridge) return
+    if (this.bridge) {
+      if (this.iterationAlive) return
+      log.warn('[ClaudeAgent] dead session detected — iteration ended but bridge still exists, cleaning up')
+      this.bridge.close()
+      this.bridge = null
+      this.sessionQuery = null
+      this.sessionAbort = null
+      this.iterationDone = null
+      resumeSessionId = resumeSessionId || this.sessionId || undefined
+    }
 
     if (this.additionalDirs.length === 0) {
       const projectDirs = readProjectAdditionalDirs(this.config!.cwd)
@@ -139,6 +149,14 @@ export class ClaudeAgent {
 
     this.sessionQuery = handle.query
     this.iterationDone = handle.iterationDone
+    this.iterationAlive = true
+    this.iterationDone.then(() => {
+      log.info(`[ClaudeAgent] iteration loop ended (sessionId=${this.sessionId}, bridge=${!!this.bridge})`)
+      this.iterationAlive = false
+    }).catch((err) => {
+      log.error(`[ClaudeAgent] iteration loop error (sessionId=${this.sessionId}):`, err)
+      this.iterationAlive = false
+    })
 
     // Emit project-level init_ready immediately (all data comes from filesystem reads).
     // Models, account, and base slash commands are already global (from connecting page).
@@ -199,6 +217,7 @@ export class ClaudeAgent {
       }
     }
 
+    log.info(`[ClaudeAgent] sendMessage (sessionId=${this.sessionId}, bridge=${!!this.bridge}, iterationAlive=${this.iterationAlive})`)
     this.createSession()
 
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -271,7 +290,9 @@ export class ClaudeAgent {
 
   async interrupt(): Promise<void> {
     if (this.sessionQuery) {
+      log.info(`[ClaudeAgent] interrupt (sessionId=${this.sessionId}, iterationAlive=${this.iterationAlive}, pendingPerms=${this.pendingPermissions.size}, pendingQs=${this.pendingQuestions.size})`)
       this.interrupted = true
+      rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
       await this.sessionQuery.interrupt()
     }
   }
@@ -488,6 +509,7 @@ export class ClaudeAgent {
     this.sessionQuery = null
     this.sessionAbort = null
     this.iterationDone = null
+    this.iterationAlive = false
     this.sessionId = ''
     this.currentMessageId = ''
     this.interrupted = false
@@ -509,6 +531,7 @@ export class ClaudeAgent {
     this.sessionQuery = null
     this.sessionAbort = null
     this.iterationDone = null
+    this.iterationAlive = false
     this.ready = false
     this.config = null
   }

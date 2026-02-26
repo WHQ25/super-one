@@ -465,6 +465,9 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
             metadata: event.metadata ? { ...msg.metadata, ...event.metadata } : msg.metadata,
           }
         }),
+        pendingPermission: null,
+        pendingQuestion: null,
+        pendingPlanApproval: null,
       }
 
     case 'message_error':

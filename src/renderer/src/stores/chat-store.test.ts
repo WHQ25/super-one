@@ -644,6 +644,48 @@ describe('resumeSession Case B (from DB)', () => {
   })
 })
 
+describe('message_interrupted clears pending states', () => {
+  it('clears pendingPermission, pendingQuestion, pendingPlanApproval on interrupt', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const msgId = 'msg-1'
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          hasPendingInteraction: true,
+          _sessions: {
+            a: {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              messages: [{ id: msgId, role: 'assistant' as const, content: [], status: 'streaming' as const, createdAt: '', providerId: 'claude' }],
+              pendingPermission: { requestId: 'r1', toolName: 'Bash', description: 'run ls' } as never,
+              pendingQuestion: { requestId: 'q1', questions: [] } as never,
+              pendingPlanApproval: { requestId: 'p1', planContent: '' } as never,
+            },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_interrupted',
+      sessionId: 'a',
+      messageId: msgId,
+    }))
+
+    const after = useChatStore.getState().projectSessions['/test']
+    const session = after._sessions['a']
+    expect(session.pendingPermission).toBeNull()
+    expect(session.pendingQuestion).toBeNull()
+    expect(session.pendingPlanApproval).toBeNull()
+    expect(session.messages[0].status).toBe('interrupted')
+    expect(after.hasPendingInteraction).toBe(false)
+  })
+})
+
 describe('hasPendingInteraction across multiple sessions', () => {
   it('stays true until ALL sessions clear pending state', () => {
     setupProject('/test')

@@ -118,6 +118,7 @@ async function iterateMessages(
   // Subagent token accumulation per parent_tool_use_id
   const subagentTracking = new Map<string, { stepIds: Set<string>; input: number; output: number }>()
 
+  log.info('[iterateMessages] starting iteration loop')
   try {
     for await (const msg of q) {
       const messageId = getCurrentMessageId()
@@ -477,9 +478,12 @@ async function iterateMessages(
         }
       }
     }
+    log.info('[iterateMessages] loop ended normally')
   } catch (err) {
     const messageId = getCurrentMessageId()
-    if (getInterrupted()) {
+    const interrupted = getInterrupted()
+    log.info(`[iterateMessages] catch — interrupted=${interrupted}, error=${err instanceof Error ? err.message : String(err)}`)
+    if (interrupted) {
       emit({ type: 'message_interrupted', messageId, metadata: { durationMs: Date.now() - getCurrentStartTime() } })
       emit({ type: 'status_change', status: 'idle' })
       return

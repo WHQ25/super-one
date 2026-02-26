@@ -23,6 +23,7 @@ asarUnpack:
 
 publish:
   provider: github
+  private: true
 
 mac:
   target:

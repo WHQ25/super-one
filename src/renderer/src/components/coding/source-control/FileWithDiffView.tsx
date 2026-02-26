@@ -1,5 +1,4 @@
 import { useMemo, useRef } from 'react'
-import { Loader2 } from 'lucide-react'
 import { DiffView, buildFullFileWithDiff, useHighlightedTokens, inferLanguage } from '@/lib/diff-utils'
 import { CodeMinimap } from '@/components/coding/CodeMinimap'
 
@@ -7,18 +6,9 @@ interface FileWithDiffViewProps {
   filePath: string
   content: string
   diff: string
-  loading: boolean
 }
 
-export function FileWithDiffView({ filePath, content, diff, loading }: FileWithDiffViewProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-8">
-        <Loader2 className="size-4 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
+export function FileWithDiffView({ filePath, content, diff }: FileWithDiffViewProps) {
   if (!content) {
     return (
       <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">

@@ -7,7 +7,6 @@ interface SourceControlState {
   selectedFile: string | null
   fileDiff: GitFileDiff | null
   fileContent: GitFileContent | null
-  diffLoading: boolean
   activeTab: 'changes' | 'file' | 'preview'
   setActiveTab: (tab: 'changes' | 'file' | 'preview') => void
   fetchFiles: (projectPath: string) => Promise<void>
@@ -23,7 +22,6 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
   selectedFile: null,
   fileDiff: null,
   fileContent: null,
-  diffLoading: false,
   activeTab: 'changes',
 
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -41,9 +39,7 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
   selectFile: async (projectPath, path) => {
     const file = get().files.find((f) => f.path === path)
     const isSameFile = get().selectedFile === path
-    set(isSameFile
-      ? { selectedFile: path }
-      : { selectedFile: path, diffLoading: true, fileDiff: null, fileContent: null })
+    set({ selectedFile: path })
     try {
       const [diff, content] = await Promise.all([
         window.app.getGitDiffFile(projectPath, path, file?.staged ?? false),
@@ -51,10 +47,10 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
       ])
       if (get().selectedFile !== path) return
       const isMd = /\.(?:md|mdx|markdown)$/i.test(path)
-      set({ fileDiff: diff, fileContent: content, diffLoading: false, ...(isSameFile ? {} : { activeTab: diff.diff ? 'changes' : isMd ? 'preview' : 'file' }) })
+      set({ fileDiff: diff, fileContent: content, ...(isSameFile ? {} : { activeTab: diff.diff ? 'changes' : isMd ? 'preview' : 'file' }) })
     } catch {
       if (get().selectedFile !== path) return
-      if (!isSameFile) set({ diffLoading: false })
+      set({ fileDiff: null, fileContent: null })
     }
   },
 
@@ -74,7 +70,6 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
     selectedFile: null,
     fileDiff: null,
     fileContent: null,
-    diffLoading: false,
     activeTab: 'changes',
   }),
 }))

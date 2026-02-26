@@ -53,7 +53,7 @@ export function FilePanel() {
   const showSidebar = useAppStore((s) => s.showSidebar)
   const setShowSidebar = useAppStore((s) => s.setShowSidebar)
   const isFullscreen = useFullscreen()
-  const { selectedFile, fileDiff, fileContent, diffLoading, activeTab, setActiveTab, clearSelection } = useSourceControlStore()
+  const { selectedFile, fileDiff, fileContent, activeTab, setActiveTab, clearSelection } = useSourceControlStore()
 
   const handleClose = useCallback(() => {
     useAppStore.getState().setShowFilePanel(false)
@@ -138,7 +138,6 @@ export function FilePanel() {
           <FileDiffView
             filePath={selectedFile}
             diff={fileDiff?.diff ?? ''}
-            loading={diffLoading}
           />
         ) : effectiveTab === 'preview' && isMd ? (
           <div className="chat-md p-4 text-sm">
@@ -156,7 +155,6 @@ export function FilePanel() {
             filePath={selectedFile}
             content={fileContent?.content ?? ''}
             diff={fileDiff?.diff ?? ''}
-            loading={diffLoading}
           />
         )}
       </div>

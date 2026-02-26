@@ -1,11 +1,9 @@
 import { useMemo } from 'react'
-import { Loader2 } from 'lucide-react'
 import { DiffView, buildUnifiedFileChangeDiffLines, useHighlightedTokens, inferLanguage, type DiffLine } from '@/lib/diff-utils'
 
 interface FileDiffViewProps {
   filePath: string
   diff: string
-  loading: boolean
 }
 
 function buildDiffSourceText(lines: DiffLine[]): { oldText: string; newText: string } {
@@ -18,15 +16,7 @@ function buildDiffSourceText(lines: DiffLine[]): { oldText: string; newText: str
   return { oldText: oldParts.join('\n'), newText: newParts.join('\n') }
 }
 
-export function FileDiffView({ filePath, diff, loading }: FileDiffViewProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-8">
-        <Loader2 className="size-4 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
+export function FileDiffView({ filePath, diff }: FileDiffViewProps) {
   if (!diff) {
     return (
       <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">

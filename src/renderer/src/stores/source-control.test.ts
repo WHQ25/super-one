@@ -25,7 +25,6 @@ function resetStore(overrides: Record<string, unknown> = {}) {
     selectedFile: null,
     fileDiff: null,
     fileContent: null,
-    diffLoading: false,
     activeTab: 'changes',
     ...overrides,
   })
@@ -39,33 +38,27 @@ beforeEach(() => {
 })
 
 describe('selectFile', () => {
-  it('should set diffLoading and clear content for a new file', async () => {
+  it('should select file and load content', async () => {
     const promise = store.getState().selectFile('/project', 'src/index.ts')
     expect(store.getState().selectedFile).toBe('src/index.ts')
-    expect(store.getState().diffLoading).toBe(true)
-    expect(store.getState().fileDiff).toBeNull()
-    expect(store.getState().fileContent).toBeNull()
 
     resolveDiff({ diff: '' })
     resolveContent({ content: 'code' })
     await promise
 
-    expect(store.getState().diffLoading).toBe(false)
     expect(store.getState().fileContent).toEqual({ content: 'code' })
   })
 
-  it('should NOT set diffLoading when refreshing the same file', async () => {
+  it('should keep old content visible until new file loads', async () => {
     resetStore({
-      selectedFile: 'src/index.ts',
+      selectedFile: 'src/old.ts',
       fileDiff: { diff: 'old-diff' },
       fileContent: { content: 'old-content' },
-      diffLoading: false,
     })
 
-    const promise = store.getState().selectFile('/project', 'src/index.ts')
-    expect(store.getState().diffLoading).toBe(false)
+    const promise = store.getState().selectFile('/project', 'src/new.ts')
+    expect(store.getState().selectedFile).toBe('src/new.ts')
     expect(store.getState().fileContent).toEqual({ content: 'old-content' })
-    expect(store.getState().fileDiff).toEqual({ diff: 'old-diff' })
 
     resolveDiff({ diff: 'new-diff' })
     resolveContent({ content: 'new-content' })

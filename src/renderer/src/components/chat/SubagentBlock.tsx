@@ -127,7 +127,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         />
         <Bot className="mt-0.5 size-3.5 shrink-0 text-purple-400" />
         {taskInput.subagentType && (
-          <span className="mt-px shrink-0 rounded bg-purple-900/40 px-1 py-px text-[10px] text-purple-300">
+          <span className="mt-px shrink-0 rounded bg-purple-500/15 px-1 py-px text-[10px] text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
             {taskInput.subagentType}
           </span>
         )}

@@ -4,6 +4,7 @@ import { createStreamdownCodeComponent } from './CodeBlock'
 
 /** Shared code highlighter plugin instance — reused across all chat components. */
 export const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
+export const codePluginLight = createCodePlugin({ themes: ['github-light', 'github-light'] })
 
 /** Shared Streamdown plugins config. */
 export const streamdownPlugins = { code: codePlugin }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useMemo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { cn } from '@/lib/utils'
-import { codePlugin } from '@/components/chat/chat-shared'
+import { codePlugin, codePluginLight } from '@/components/chat/chat-shared'
 
 const EXT_LANG: Record<string, string> = {
   ts: 'typescript', tsx: 'tsx', mts: 'typescript', cts: 'typescript',
@@ -37,14 +37,28 @@ export interface HLToken { content: string; style?: React.CSSProperties }
 
 const HIGHLIGHT_LINE_LIMIT = 10000
 
+function useIsDark(): boolean {
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'))
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains('dark'))
+    })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    return () => observer.disconnect()
+  }, [])
+  return isDark
+}
+
 export function useHighlightedTokens(code: string, language: string): HLToken[][] | null {
   const [tokens, setTokens] = useState<HLToken[][] | null>(null)
+  const isDark = useIsDark()
+  const plugin = isDark ? codePlugin : codePluginLight
 
   useEffect(() => {
     if (!code) { setTokens(null); return }
     if (code.split('\n').length > HIGHLIGHT_LINE_LIMIT) { setTokens(null); return }
-    const lang = codePlugin.supportsLanguage(language as never) ? language : 'md'
-    const themes = codePlugin.getThemes()
+    const lang = plugin.supportsLanguage(language as never) ? language : 'md'
+    const themes = plugin.getThemes()
     const extract = (res: { tokens: Array<Array<{ content: string; color?: string; bgColor?: string; htmlStyle?: Record<string, string> }>> }): HLToken[][] =>
       res.tokens.map((line) => line.map((t) => {
         const s: React.CSSProperties = { ...(t.htmlStyle ?? {}) }
@@ -52,12 +66,12 @@ export function useHighlightedTokens(code: string, language: string): HLToken[][
         if (t.bgColor) s.backgroundColor = t.bgColor
         return { content: t.content, style: Object.keys(s).length ? s : undefined }
       }))
-    const result = codePlugin.highlight(
+    const result = plugin.highlight(
       { code, language: lang as never, themes },
       (res) => setTokens(extract(res)),
     )
     if (result) setTokens(extract(result))
-  }, [code, language])
+  }, [code, language, isDark, plugin])
 
   return tokens
 }

@@ -47,7 +47,9 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
       ])
       if (get().selectedFile !== path) return
       const isMd = /\.(?:md|mdx|markdown)$/i.test(path)
-      set({ fileDiff: diff, fileContent: content, ...(isSameFile ? {} : { activeTab: diff.diff ? 'changes' : isMd ? 'preview' : 'file' }) })
+      const isBinaryPreview = content.language === 'image' || content.language === 'pdf' || content.language === 'video' || content.language === 'audio'
+      const isSvg = content.language === 'svg'
+      set({ fileDiff: diff, fileContent: content, ...(isSameFile ? {} : { activeTab: isBinaryPreview ? 'preview' : diff.diff ? 'changes' : (isMd || isSvg) ? 'preview' : 'file' }) })
     } catch {
       if (get().selectedFile !== path) return
       set({ fileDiff: null, fileContent: null })

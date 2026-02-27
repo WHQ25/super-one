@@ -14,10 +14,37 @@ import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown'])
+const BINARY_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'])
+const PDF_EXTS = new Set(['pdf'])
+const VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg', 'mov'])
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg'])
+
+function getFileExt(fileName: string): string {
+  return fileName.split('.').pop()?.toLowerCase() ?? ''
+}
 
 function isMarkdown(fileName: string): boolean {
-  const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
-  return MARKDOWN_EXTS.has(ext)
+  return MARKDOWN_EXTS.has(getFileExt(fileName))
+}
+
+function isBinaryImage(fileName: string): boolean {
+  return BINARY_IMAGE_EXTS.has(getFileExt(fileName))
+}
+
+function isPdf(fileName: string): boolean {
+  return PDF_EXTS.has(getFileExt(fileName))
+}
+
+function isVideo(fileName: string): boolean {
+  return VIDEO_EXTS.has(getFileExt(fileName))
+}
+
+function isAudio(fileName: string): boolean {
+  return AUDIO_EXTS.has(getFileExt(fileName))
+}
+
+function isSvg(fileName: string): boolean {
+  return getFileExt(fileName) === 'svg'
 }
 
 function SidebarToggle({ showSidebar, isFullscreen, onToggle }: { showSidebar: boolean; isFullscreen: boolean; onToggle: () => void }) {
@@ -63,6 +90,12 @@ export function FilePanel() {
   const fileName = selectedFile?.split('/').pop() ?? ''
   const hasDiff = !!fileDiff?.diff
   const isMd = isMarkdown(fileName)
+  const isBinImg = isBinaryImage(fileName)
+  const isPdfFile = isPdf(fileName)
+  const isSvgFile = isSvg(fileName)
+  const isVideoFile = isVideo(fileName)
+  const isAudioFile = isAudio(fileName)
+  const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile
 
   const resolvedContent = useMemo(() => {
     const raw = fileContent?.content ?? ''
@@ -84,12 +117,13 @@ export function FilePanel() {
   const previewRehypePlugins = useMemo(() => [defaultRehypePlugins.raw], [])
 
   const tabs = useMemo(() => {
+    if (isBinaryPreview) return [{ key: 'preview' as TabKey, label: 'Preview' }]
     const t: { key: TabKey; label: string }[] = []
     if (hasDiff) t.push({ key: 'changes', label: 'Changes' })
     t.push({ key: 'file', label: 'File' })
-    if (isMd) t.push({ key: 'preview', label: 'Preview' })
+    if (isMd || isSvgFile) t.push({ key: 'preview', label: 'Preview' })
     return t
-  }, [hasDiff, isMd])
+  }, [hasDiff, isMd, isBinaryPreview, isSvgFile])
 
   const effectiveTab = tabs.find((t) => t.key === activeTab) ? activeTab : tabs[0]?.key ?? 'file'
   const toggleSidebar = useCallback(() => setShowSidebar(true), [setShowSidebar])
@@ -139,6 +173,45 @@ export function FilePanel() {
             filePath={selectedFile}
             diff={fileDiff?.diff ?? ''}
           />
+        ) : effectiveTab === 'preview' && isBinImg ? (
+          <div className="flex h-full items-center justify-center p-4">
+            <img
+              src={`local-file://${currentFolder}/${selectedFile}`}
+              alt={fileName}
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+        ) : effectiveTab === 'preview' && isPdfFile ? (
+          <iframe
+            src={`local-file://${currentFolder}/${selectedFile}`}
+            className="h-full w-full border-0"
+            title={fileName}
+          />
+        ) : effectiveTab === 'preview' && isVideoFile ? (
+          <div className="flex h-full items-center justify-center p-4">
+            <video
+              src={`local-file://${currentFolder}/${selectedFile}`}
+              controls
+              preload="auto"
+              className="max-h-full max-w-full"
+            />
+          </div>
+        ) : effectiveTab === 'preview' && isAudioFile ? (
+          <div className="flex h-full items-center justify-center p-4">
+            <audio
+              src={`local-file://${currentFolder}/${selectedFile}`}
+              controls
+              preload="auto"
+            />
+          </div>
+        ) : effectiveTab === 'preview' && isSvgFile ? (
+          <div className="flex h-full items-center justify-center p-4">
+            <img
+              src={`local-file://${currentFolder}/${selectedFile}`}
+              alt={fileName}
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
         ) : effectiveTab === 'preview' && isMd ? (
           <div className="chat-md p-4 text-sm">
             <Streamdown

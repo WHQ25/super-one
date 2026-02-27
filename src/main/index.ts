@@ -37,6 +37,8 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
 ])
 
+app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport')
+
 // Isolate userData when running parallel instances (e.g. git worktrees)
 if (process.env.SUPERONE_INSTANCE) {
   app.setPath('userData', join(app.getPath('userData'), `instance-${process.env.SUPERONE_INSTANCE}`))
@@ -550,11 +552,21 @@ function registerIpcHandlers(): void {
     }
   })
 
+  const BINARY_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico'])
+  const PDF_EXTS = new Set(['.pdf'])
+  const VIDEO_EXTS = new Set(['.mp4', '.webm', '.ogg', '.mov'])
+  const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'])
+
   ipcMain.handle(AgentIpcChannels.GIT_READ_FILE, async (_event, folderPath: string, filePath: string) => {
     try {
+      const ext = extname(filePath).toLowerCase()
+      if (BINARY_IMAGE_EXTS.has(ext)) return { path: filePath, content: '', language: 'image' }
+      if (PDF_EXTS.has(ext)) return { path: filePath, content: '', language: 'pdf' }
+      if (VIDEO_EXTS.has(ext)) return { path: filePath, content: '', language: 'video' }
+      if (AUDIO_EXTS.has(ext)) return { path: filePath, content: '', language: 'audio' }
       const fullPath = join(folderPath, filePath)
       const content = await readFile(fullPath, 'utf-8')
-      const ext = extname(filePath).toLowerCase()
+      if (ext === '.svg') return { path: filePath, content, language: 'svg' }
       const language = EXT_LANG[ext] ?? 'text'
       return { path: filePath, content, language }
     } catch {
@@ -899,18 +911,44 @@ function registerIpcHandlers(): void {
 }
 
 app.whenReady().then(() => {
+  const LOCAL_FILE_MIME: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+    svg: 'image/svg+xml', webp: 'image/webp', ico: 'image/x-icon', bmp: 'image/bmp',
+    pdf: 'application/pdf',
+    mp4: 'video/mp4', webm: 'video/webm', ogg: 'video/ogg', mov: 'video/quicktime',
+    mp3: 'audio/mpeg', wav: 'audio/wav', flac: 'audio/flac', aac: 'audio/aac', m4a: 'audio/mp4',
+  }
+
   protocol.handle('local-file', async (request) => {
     try {
       const filePath = decodeURIComponent(request.url.slice('local-file://'.length))
-      log.info('[local-file]', request.url, '->', filePath)
-      const data = await readFile(filePath)
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-      const mime: Record<string, string> = {
-        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
-        svg: 'image/svg+xml', webp: 'image/webp', ico: 'image/x-icon', bmp: 'image/bmp',
+      const contentType = LOCAL_FILE_MIME[ext] ?? 'application/octet-stream'
+      const data = await readFile(filePath)
+      const total = data.byteLength
+      const range = request.headers.get('Range')
+
+      if (range) {
+        const match = range.match(/bytes=(\d+)-(\d*)/)
+        const start = match ? parseInt(match[1]) : 0
+        const end = match?.[2] ? parseInt(match[2]) : total - 1
+        return new Response(data.subarray(start, end + 1), {
+          status: 206,
+          headers: {
+            'Content-Type': contentType,
+            'Content-Range': `bytes ${start}-${end}/${total}`,
+            'Content-Length': String(end - start + 1),
+            'Accept-Ranges': 'bytes',
+          },
+        })
       }
+
       return new Response(data, {
-        headers: { 'Content-Type': mime[ext] ?? 'application/octet-stream' },
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': String(total),
+          'Accept-Ranges': 'bytes',
+        },
       })
     } catch (err) {
       log.error('[local-file] failed:', err)

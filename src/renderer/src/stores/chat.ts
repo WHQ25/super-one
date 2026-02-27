@@ -863,10 +863,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (activeSid && patched._sessions[activeSid]) {
           const sess = patched._sessions[activeSid]
           if (!sess.selectedModel && models.length > 0) {
-            patched._sessions = {
-              ...patched._sessions,
-              [activeSid]: { ...sess, selectedModel: models[0].id },
-            }
+            const updated = { ...sess }
+            applyDefaultModel(updated, models)
+            patched._sessions = { ...patched._sessions, [activeSid]: updated }
             projectChanged = true
           }
         }

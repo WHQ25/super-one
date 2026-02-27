@@ -10,7 +10,7 @@ export function UpdateNotification(): React.JSX.Element | null {
   const installUpdate = useAppStore((s) => s.installUpdate)
   const dismissUpdate = useAppStore((s) => s.dismissUpdate)
 
-  const show = updateStatus === 'checking' || updateStatus === 'downloading' || updateStatus === 'ready' || updateStatus === 'up-to-date'
+  const show = updateStatus === 'checking' || updateStatus === 'preparing' || updateStatus === 'downloading' || updateStatus === 'ready' || updateStatus === 'up-to-date'
 
   return (
     <AnimatePresence>
@@ -27,6 +27,17 @@ export function UpdateNotification(): React.JSX.Element | null {
               <Loader2 className="size-4 animate-spin text-muted-foreground" />
               <span className="text-sm">Checking for updates...</span>
             </>
+          ) : updateStatus === 'preparing' ? (
+            <>
+              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              <span className="text-sm">Preparing update{updateVersion ? ` v${updateVersion}` : ''}...</span>
+              <button
+                onClick={dismissUpdate}
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            </>
           ) : updateStatus === 'up-to-date' ? (
             <>
               <CheckCircle className="size-4 text-green-500" />
@@ -36,8 +47,14 @@ export function UpdateNotification(): React.JSX.Element | null {
             <>
               <Loader2 className="size-4 animate-spin text-primary" />
               <span className="text-sm">
-                Downloading {updateVersion ? `v${updateVersion}` : 'update'}... {updateProgress}%
+                Downloading {updateVersion ? `v${updateVersion}` : 'update'}...{updateProgress > 0 ? ` ${updateProgress}%` : ''}
               </span>
+              <button
+                onClick={dismissUpdate}
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
             </>
           ) : (
             <>

@@ -3,7 +3,7 @@ import type { RecentFolder, SetupEvent, SettingsProvider, UpdateEvent } from '..
 
 type AppView = 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
-type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'up-to-date' | 'error'
+type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
 type SettingsTab = 'agents' | 'skills' | 'mcp' | 'plugins'
 export type LayoutMode = 'canvas' | 'coding'
 export type SidebarTab = 'sessions' | 'files'
@@ -199,7 +199,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ updateStatus: 'checking' })
         break
       case 'available':
-        set({ updateStatus: 'available', updateVersion: event.version })
+        set({ updateStatus: 'preparing', updateVersion: event.version, updateProgress: 0 })
         break
       case 'not-available':
         set({ updateStatus: 'up-to-date' })

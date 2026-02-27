@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="28" y1="148" x2="468" y2="352">
+      <stop offset="0%" stop-color="#FFD4A8"/>
+      <stop offset="40%" stop-color="#FF7B22"/>
+      <stop offset="100%" stop-color="#FF3D00"/>
+    </linearGradient>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FF6B00" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#FF6B00" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0 0 0.35 0 0 0 0 0 0 0 0 0 0 0 0.45 0"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="c"><rect width="512" height="512" rx="112"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#c)">
+    <rect width="512" height="512" fill="#0A0A0A"/>
+    <rect width="512" height="512" fill="url(#bg)"/>
+
+    <!-- Ghost blocks (10x10) -->
+    <g fill="url(#g)">
+      <rect x="51" y="134" width="10" height="10" rx="2" opacity="0.07"/>
+      <rect x="91" y="191" width="10" height="10" rx="2" opacity="0.09"/>
+      <rect x="487" y="151" width="10" height="10" rx="2" opacity="0.06"/>
+      <rect x="131" y="370" width="10" height="10" rx="2" opacity="0.07"/>
+      <rect x="291" y="274" width="10" height="10" rx="2" opacity="0.08"/>
+      <rect x="371" y="356" width="10" height="10" rx="2" opacity="0.06"/>
+    </g>
+
+    <!-- Fade blocks (12x12) -->
+    <g fill="url(#g)">
+      <rect x="30" y="150" width="12" height="12" rx="2" opacity="0.18"/>
+      <rect x="90" y="210" width="12" height="12" rx="2" opacity="0.16"/>
+      <rect x="290" y="190" width="12" height="12" rx="2" opacity="0.18"/>
+      <rect x="450" y="170" width="12" height="12" rx="2" opacity="0.14"/>
+      <rect x="250" y="314" width="12" height="12" rx="2" opacity="0.14"/>
+      <rect x="90" y="150" width="12" height="12" rx="2" opacity="0.12"/>
+      <rect x="370" y="210" width="12" height="12" rx="2" opacity="0.12"/>
+      <rect x="190" y="274" width="12" height="12" rx="2" opacity="0.14"/>
+    </g>
+
+    <!-- Separator dots -->
+    <g fill="url(#g)">
+      <rect x="224" y="252" width="8" height="8" rx="2" opacity="0.2"/>
+      <rect x="252" y="252" width="8" height="8" rx="2" opacity="0.3"/>
+      <rect x="280" y="252" width="8" height="8" rx="2" opacity="0.2"/>
+    </g>
+
+    <!-- Main blocks with glow -->
+    <g filter="url(#glow)" fill="url(#g)">
+      <!-- S -->
+      <rect x="48" y="148" width="16" height="16" rx="3"/>
+      <rect x="68" y="148" width="16" height="16" rx="3"/>
+      <rect x="88" y="148" width="16" height="16" rx="3"/>
+      <rect x="28" y="168" width="16" height="16" rx="3"/>
+      <rect x="48" y="188" width="16" height="16" rx="3"/>
+      <rect x="68" y="188" width="16" height="16" rx="3"/>
+      <rect x="88" y="208" width="16" height="16" rx="3"/>
+      <rect x="28" y="228" width="16" height="16" rx="3"/>
+      <rect x="48" y="228" width="16" height="16" rx="3"/>
+      <rect x="68" y="228" width="16" height="16" rx="3"/>
+      <!-- U -->
+      <rect x="128" y="148" width="16" height="16" rx="3"/>
+      <rect x="188" y="148" width="16" height="16" rx="3"/>
+      <rect x="128" y="168" width="16" height="16" rx="3"/>
+      <rect x="188" y="168" width="16" height="16" rx="3"/>
+      <rect x="128" y="188" width="16" height="16" rx="3"/>
+      <rect x="188" y="188" width="16" height="16" rx="3"/>
+      <rect x="128" y="208" width="16" height="16" rx="3"/>
+      <rect x="188" y="208" width="16" height="16" rx="3"/>
+      <rect x="148" y="228" width="16" height="16" rx="3"/>
+      <rect x="168" y="228" width="16" height="16" rx="3"/>
+      <!-- P -->
+      <rect x="228" y="148" width="16" height="16" rx="3"/>
+      <rect x="248" y="148" width="16" height="16" rx="3"/>
+      <rect x="268" y="148" width="16" height="16" rx="3"/>
+      <rect x="228" y="168" width="16" height="16" rx="3"/>
+      <rect x="288" y="168" width="16" height="16" rx="3"/>
+      <rect x="228" y="188" width="16" height="16" rx="3"/>
+      <rect x="248" y="188" width="16" height="16" rx="3"/>
+      <rect x="268" y="188" width="16" height="16" rx="3"/>
+      <rect x="228" y="208" width="16" height="16" rx="3"/>
+      <rect x="228" y="228" width="16" height="16" rx="3"/>
+      <!-- E -->
+      <rect x="328" y="148" width="16" height="16" rx="3"/>
+      <rect x="348" y="148" width="16" height="16" rx="3"/>
+      <rect x="368" y="148" width="16" height="16" rx="3"/>
+      <rect x="328" y="168" width="16" height="16" rx="3"/>
+      <rect x="328" y="188" width="16" height="16" rx="3"/>
+      <rect x="348" y="188" width="16" height="16" rx="3"/>
+      <rect x="328" y="208" width="16" height="16" rx="3"/>
+      <rect x="328" y="228" width="16" height="16" rx="3"/>
+      <rect x="348" y="228" width="16" height="16" rx="3"/>
+      <rect x="368" y="228" width="16" height="16" rx="3"/>
+      <!-- R -->
+      <rect x="408" y="148" width="16" height="16" rx="3"/>
+      <rect x="428" y="148" width="16" height="16" rx="3"/>
+      <rect x="448" y="148" width="16" height="16" rx="3"/>
+      <rect x="408" y="168" width="16" height="16" rx="3"/>
+      <rect x="468" y="168" width="16" height="16" rx="3"/>
+      <rect x="408" y="188" width="16" height="16" rx="3"/>
+      <rect x="428" y="188" width="16" height="16" rx="3"/>
+      <rect x="448" y="188" width="16" height="16" rx="3"/>
+      <rect x="408" y="208" width="16" height="16" rx="3"/>
+      <rect x="448" y="208" width="16" height="16" rx="3"/>
+      <rect x="408" y="228" width="16" height="16" rx="3"/>
+      <rect x="468" y="228" width="16" height="16" rx="3"/>
+      <!-- O -->
+      <rect x="148" y="272" width="16" height="16" rx="3"/>
+      <rect x="168" y="272" width="16" height="16" rx="3"/>
+      <rect x="128" y="292" width="16" height="16" rx="3"/>
+      <rect x="188" y="292" width="16" height="16" rx="3"/>
+      <rect x="128" y="312" width="16" height="16" rx="3"/>
+      <rect x="188" y="312" width="16" height="16" rx="3"/>
+      <rect x="128" y="332" width="16" height="16" rx="3"/>
+      <rect x="188" y="332" width="16" height="16" rx="3"/>
+      <rect x="148" y="352" width="16" height="16" rx="3"/>
+      <rect x="168" y="352" width="16" height="16" rx="3"/>
+      <!-- N -->
+      <rect x="228" y="272" width="16" height="16" rx="3"/>
+      <rect x="288" y="272" width="16" height="16" rx="3"/>
+      <rect x="228" y="292" width="16" height="16" rx="3"/>
+      <rect x="248" y="292" width="16" height="16" rx="3"/>
+      <rect x="288" y="292" width="16" height="16" rx="3"/>
+      <rect x="228" y="312" width="16" height="16" rx="3"/>
+      <rect x="268" y="312" width="16" height="16" rx="3"/>
+      <rect x="288" y="312" width="16" height="16" rx="3"/>
+      <rect x="228" y="332" width="16" height="16" rx="3"/>
+      <rect x="288" y="332" width="16" height="16" rx="3"/>
+      <rect x="228" y="352" width="16" height="16" rx="3"/>
+      <rect x="288" y="352" width="16" height="16" rx="3"/>
+      <!-- E -->
+      <rect x="328" y="272" width="16" height="16" rx="3"/>
+      <rect x="348" y="272" width="16" height="16" rx="3"/>
+      <rect x="368" y="272" width="16" height="16" rx="3"/>
+      <rect x="328" y="292" width="16" height="16" rx="3"/>
+      <rect x="328" y="312" width="16" height="16" rx="3"/>
+      <rect x="348" y="312" width="16" height="16" rx="3"/>
+      <rect x="328" y="332" width="16" height="16" rx="3"/>
+      <rect x="328" y="352" width="16" height="16" rx="3"/>
+      <rect x="348" y="352" width="16" height="16" rx="3"/>
+      <rect x="368" y="352" width="16" height="16" rx="3"/>
+    </g>
+  </g>
+</svg>

@@ -10,6 +10,7 @@ import { useSourceControlStore } from '@/stores/source-control'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { cn } from '@/lib/utils'
 import { streamdownPlugins, streamdownControls, streamdownComponents } from '@/components/chat/chat-shared'
+import { PdfPreview } from '@/components/chat/PdfPreview'
 import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
 
@@ -182,10 +183,9 @@ export function FilePanel() {
             />
           </div>
         ) : effectiveTab === 'preview' && isPdfFile ? (
-          <iframe
-            src={`local-file://${currentFolder}/${selectedFile}`}
-            className="h-full w-full border-0"
-            title={fileName}
+          <PdfPreview
+            url={`local-file://${currentFolder}/${selectedFile}`}
+            className="h-full"
           />
         ) : effectiveTab === 'preview' && isVideoFile ? (
           <div className="flex h-full items-center justify-center p-4">

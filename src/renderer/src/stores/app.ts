@@ -148,7 +148,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   showSidebar: true,
   setShowSidebar: (show) => set({ showSidebar: show }),
-  sidebarWidth: 256,
+  sidebarWidth: 320,
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
   showFilePanel: false,
   setShowFilePanel: (show) => set({ showFilePanel: show, ...(!show && { filePanelView: 'file' as FilePanelView }) }),

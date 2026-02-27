@@ -1,6 +1,6 @@
 {
   "name": "super-one",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "main": "./out/main/index.js",
   "type": "module",
   "private": true,

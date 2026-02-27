@@ -209,7 +209,7 @@ export function AppSidebar() {
             <MessageSquare className="size-3.5" />
             Sessions
           </TabsTrigger>
-          <TabsTrigger value="explorer" className="py-1">
+          <TabsTrigger value="files" className="py-1">
             <FolderClosed className="size-3.5" />
             Files
           </TabsTrigger>

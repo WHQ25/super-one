@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron'
 import { join, dirname, basename, resolve, extname, relative } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
@@ -7,7 +7,7 @@ import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { fixPath, getClaudeCliPath } from './agent/resolve-cli'
+import { fixPath, getClaudeCliPath, findSystemClaude, clearCliCache } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import {
   AgentIpcChannels,
@@ -25,7 +25,7 @@ import {
   type FileTreeEntry,
   type GitFileStatus,
 } from '../shared/agent-types'
-import { initUpdater, installUpdate, checkForUpdates } from './updater'
+import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
@@ -760,18 +760,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.SETUP_CHECK_CLAUDE, () => {
     if (testInstall) return false
-    if (process.platform === 'win32') {
-      return new Promise<boolean>((resolve) => {
-        execFile('where', ['claude'], (error) => resolve(!error))
-      })
-    }
-    const shell = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh']
-      .find((s) => s && existsSync(s))!
-    return new Promise<boolean>((resolve) => {
-      execFile(shell, ['-l', '-c', 'command -v claude'], (error) => {
-        resolve(!error)
-      })
-    })
+    return !!findSystemClaude()
   })
 
   ipcMain.handle(AgentIpcChannels.SETUP_INSTALL_CLAUDE, () => {
@@ -807,6 +796,8 @@ function registerIpcHandlers(): void {
     })
 
     child.on('close', (code) => {
+      fixPath()
+      clearCliCache()
       win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_complete',
         code: code ?? 1,
@@ -827,6 +818,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.UPDATER_CHECK, () => {
     checkForUpdates()
+  })
+
+  ipcMain.handle(AgentIpcChannels.UPDATER_SIMULATE, () => {
+    simulateUpdate()
   })
 
   ipcMain.handle(AgentIpcChannels.FILE_WATCH_START, (_e, folderPath: string) => {
@@ -927,6 +922,52 @@ app.whenReady().then(() => {
   registerIpcHandlers()
   createWindow()
   initUpdater(mainWindow!)
+
+  let devUpdateToggle = false
+  function buildAppMenu(): void {
+    if (process.platform !== 'darwin') return
+    const { label: updateLabel, enabled: updateEnabled } = getUpdateMenuState()
+    const template: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: app.name,
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { label: updateLabel, enabled: updateEnabled, click: () => {
+            if (getUpdaterState() === 'downloaded') {
+              if (is.dev) {
+                devUpdateToggle = false
+                simulateNotAvailable()
+              } else {
+                installUpdate()
+              }
+              return
+            }
+            if (is.dev) {
+              devUpdateToggle = !devUpdateToggle
+              devUpdateToggle ? simulateUpdate() : simulateNotAvailable()
+            } else {
+              checkForUpdates()
+            }
+          } },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      },
+      { role: 'editMenu' },
+      { role: 'viewMenu' },
+      { role: 'windowMenu' },
+    ]
+    Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+  }
+  buildAppMenu()
+  setOnMenuChange(buildAppMenu)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

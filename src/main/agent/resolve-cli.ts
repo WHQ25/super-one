@@ -23,7 +23,7 @@ export function fixPath(): void {
   }
 }
 
-function findSystemClaude(): string | undefined {
+export function findSystemClaude(): string | undefined {
   const cmd = process.platform === 'win32' ? 'where' : '/usr/bin/which'
   try {
     const result = execFileSync(cmd, ['claude'], { timeout: 3000, stdio: 'pipe' })
@@ -44,6 +44,10 @@ function findSdkCli(): string | undefined {
   } catch {
     return undefined
   }
+}
+
+export function clearCliCache(): void {
+  cachedPath = undefined
 }
 
 export function getClaudeCliPath(): string | undefined {

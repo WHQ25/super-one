@@ -4,6 +4,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -65,7 +66,8 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
           </button>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="w-64">
+      <DropdownMenuContent align={align} className="max-h-80 w-64 overflow-y-auto">
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Select Project</DropdownMenuLabel>
         {recentFolders.map((folder) => (
           <DropdownMenuItem
             key={folder.path}

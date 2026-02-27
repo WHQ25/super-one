@@ -25,6 +25,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
+import { homePath } from '@/lib/path-utils'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FileTree } from '@/components/sidebar/FileTree'
 import type { SessionHistoryEntry, PinnedSessionEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
@@ -202,7 +203,18 @@ export function AppSidebar() {
         </TooltipProvider>
       </div>
 
-      {/* Tab switcher */}
+      {/* New session button */}
+      <div className="mx-2 mb-1 shrink-0">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => resetSession()}
+          className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <SquarePen className="size-3.5" />
+          New Session
+        </Button>
+      </div>
       <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as SidebarTab)} className="mx-2 mb-1 shrink-0">
         <TabsList variant="sidebar">
           <TabsTrigger value="sessions" className="py-1">
@@ -298,7 +310,7 @@ export function AppSidebar() {
               {sortedFolders.map((folder) => {
                 const isActive = hasRealProject && folder.path === currentFolder
                 const isExpanded = expandedFolders.has(folder.path)
-                const displayPath = folder.path.replace(/^\/Users\/[^/]+/, '~')
+                const displayPath = homePath(folder.path)
                 const sessions = folderSessions[folder.path] ?? []
                 const projectSession = projectSessions[folder.path]
                 const liveSessions = isExpanded ? [] : sessions.filter(s => {

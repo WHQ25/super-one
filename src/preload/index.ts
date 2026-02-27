@@ -212,6 +212,9 @@ const appAPI = {
   checkForUpdates: () =>
     ipcRenderer.invoke(AgentIpcChannels.UPDATER_CHECK),
 
+  simulateUpdate: () =>
+    ipcRenderer.invoke(AgentIpcChannels.UPDATER_SIMULATE),
+
   onUpdateEvent: (callback: (event: unknown) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: unknown): void => {
       callback(event)

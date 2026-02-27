@@ -79,6 +79,7 @@ export function ModelSelector() {
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" side="top" className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1">
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">Select Model</div>
             {availableModels.map((model) => (
               <button
                 key={model.id}
@@ -108,6 +109,7 @@ export function ModelSelector() {
               </button>
             </PopoverTrigger>
             <PopoverContent align="start" side="top" className="w-48 border-border bg-card p-1">
+              <div className="px-2 py-1.5 text-xs text-muted-foreground">Thinking Effort</div>
               {effortLevels.map((level) => (
                 <button
                   key={level}
@@ -146,6 +148,7 @@ export function ModelSelector() {
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" side="top" className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1">
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">Select Model</div>
           {codexModels.map((model) => (
             <button
               key={model.id}
@@ -178,6 +181,7 @@ export function ModelSelector() {
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" side="top" className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1">
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">Reasoning Effort</div>
             {codexReasoningEfforts.map((option) => (
               <button
                 key={option.value}

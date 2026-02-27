@@ -13,6 +13,7 @@ import {
 import { ChevronDown, Plus } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
+import { homePath } from '@/lib/path-utils'
 
 function ClaudeAgentIcon() {
   return (
@@ -135,12 +136,12 @@ export function ChatSuggestions() {
                 <ChevronDown className={cn('size-4 text-muted-foreground transition-transform duration-200', addOpen && 'rotate-180')} />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" className="w-64">
+            <DropdownMenuContent align="center" className="max-h-80 w-64 overflow-y-auto">
               {recentFolders.map((folder) => (
                 <DropdownMenuItem key={folder.path} onClick={() => openFolder(folder.path)} className="gap-2">
                   <span className="truncate">{folder.name}</span>
                   <span className="ml-auto truncate text-xs text-muted-foreground">
-                    {folder.path.replace(/^\/Users\/[^/]+/, '~')}
+                    {homePath(folder.path)}
                   </span>
                 </DropdownMenuItem>
               ))}

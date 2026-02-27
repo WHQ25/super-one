@@ -1,3 +1,5 @@
+import { shortenPath } from '@/lib/path-utils'
+
 const TOOL_VERBS: Record<string, string> = {
   Bash: 'Running command',
   Read: 'Reading',
@@ -31,23 +33,7 @@ export interface ToolDisplay {
   summary: string
 }
 
-/** Shorten an absolute file path: relative to cwd, or replace homedir with ~. */
-export function shortenPath(filePath: string, cwd?: string, homedir?: string): string {
-  if (!filePath) return filePath
-  if (cwd && filePath.startsWith(cwd + '/')) {
-    return filePath.slice(cwd.length + 1)
-  }
-  if (cwd && filePath === cwd) {
-    return '.'
-  }
-  if (homedir && filePath.startsWith(homedir + '/')) {
-    return '~/' + filePath.slice(homedir.length + 1)
-  }
-  if (homedir && filePath === homedir) {
-    return '~'
-  }
-  return filePath
-}
+export { shortenPath } from '@/lib/path-utils'
 
 /** Parse MCP tool name pattern `mcp__{serverName}__{toolName}`. */
 export function parseMcpToolName(toolName: string): { serverName: string; mcpToolName: string } | null {

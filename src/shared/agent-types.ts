@@ -847,6 +847,7 @@ export const AgentIpcChannels = {
   UPDATER_EVENT: 'updater:event',
   UPDATER_INSTALL: 'updater:install',
   UPDATER_CHECK: 'updater:check',
+  UPDATER_SIMULATE: 'updater:simulate',
 
   // File watcher
   FILE_WATCH_START: 'app:file-watch-start',

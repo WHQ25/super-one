@@ -61,6 +61,7 @@ export function SandboxModeSelector() {
         side="top"
         className="w-56 border-border bg-card p-1"
       >
+        <div className="px-2 py-1.5 text-xs text-muted-foreground">Sandbox Mode</div>
         {modes.map((mode) => (
           <button
             key={mode.id}

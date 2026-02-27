@@ -63,6 +63,7 @@ export function PermissionModeSelector() {
         side="top"
         className="w-52 border-border bg-card p-1"
       >
+        <div className="px-2 py-1.5 text-xs text-muted-foreground">Permission Mode</div>
         {modes.map((mode) => (
           <button
             key={mode.id}

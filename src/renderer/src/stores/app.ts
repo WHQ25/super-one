@@ -6,7 +6,7 @@ type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
 type SettingsTab = 'agents' | 'skills' | 'mcp' | 'plugins'
 export type LayoutMode = 'canvas' | 'coding'
-export type SidebarTab = 'sessions' | 'explorer'
+export type SidebarTab = 'sessions' | 'files'
 export type FilePanelView = 'file' | 'history'
 
 interface WorktreeState {
@@ -399,7 +399,8 @@ export function useHasRealProject(): boolean {
 // Load recent folders on module init
 useAppStore.getState().fetchRecentFolders()
 
-// Reset file panel and explorer/source-control stores when project changes
+// Reset file panel and source-control store when project changes
+// NOTE: file-tree reset is handled by fetchTree (called from FileTree useEffect on currentFolder change)
 let _prevFolder = useAppStore.getState().currentFolder
 useAppStore.subscribe((state) => {
   if (state.currentFolder === _prevFolder) return
@@ -407,8 +408,5 @@ useAppStore.subscribe((state) => {
   useAppStore.setState({ showFilePanel: false })
   import('./source-control').then(({ useSourceControlStore }) => {
     useSourceControlStore.getState().reset()
-  })
-  import('./explorer').then(({ useExplorerStore }) => {
-    useExplorerStore.getState().reset()
   })
 })

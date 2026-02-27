@@ -4,7 +4,7 @@ import { ChevronRight } from 'lucide-react'
 import { FileIcon, FolderIcon } from '@/components/ui/FileIcon'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
-import { useExplorerStore, type VisibleItem } from '@/stores/explorer'
+import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
 import type { GitFileStatus } from '../../../../shared/agent-types'
 
@@ -32,7 +32,7 @@ const TreeRow = memo(function TreeRow({
   currentFolder: string
   isSelected: boolean
 }) {
-  const toggleDir = useExplorerStore((s) => s.toggleDir)
+  const toggleDir = useFileTreeStore((s) => s.toggleDir)
   const colorClass = getStatusColor(item.gitStatus)
 
   const handleClick = useCallback(() => {
@@ -75,12 +75,12 @@ const TreeRow = memo(function TreeRow({
   prev.currentFolder === next.currentFolder
 )
 
-export function ExplorerTree() {
+export function FileTree() {
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const loading = useExplorerStore((s) => s.loading)
-  const visibleList = useExplorerStore((s) => s._visibleList)
-  const visibleVersion = useExplorerStore((s) => s._visibleVersion)
-  const fetchTree = useExplorerStore((s) => s.fetchTree)
+  const loading = useFileTreeStore((s) => s.loading)
+  const visibleList = useFileTreeStore((s) => s._visibleList)
+  const visibleVersion = useFileTreeStore((s) => s._visibleVersion)
+  const fetchTree = useFileTreeStore((s) => s.fetchTree)
   const selectedFile = useSourceControlStore((s) => s.selectedFile)
   const folderName = currentFolder?.split('/').pop() ?? 'Project'
 

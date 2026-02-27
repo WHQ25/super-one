@@ -20,7 +20,7 @@ export interface VisibleItem {
   hasChildren: boolean
 }
 
-interface ExplorerState {
+interface FileTreeState {
   nodes: Map<string, FlatNode>
   expandedDirs: Set<string>
   loadingDirs: Set<string>
@@ -134,16 +134,16 @@ function removeSubtree(nodes: Map<string, FlatNode>, path: string): void {
 }
 
 function recomputeAndSet(
-  get: () => ExplorerState,
-  set: (partial: Partial<ExplorerState>) => void,
-  extra?: Partial<ExplorerState>,
+  get: () => FileTreeState,
+  set: (partial: Partial<FileTreeState>) => void,
+  extra?: Partial<FileTreeState>,
 ): void {
   const s = get()
   const _visibleList = computeVisible(s.nodes, s.expandedDirs, s.loadingDirs)
   set({ ...extra, _visibleList, _visibleVersion: s._visibleVersion + 1 })
 }
 
-export const useExplorerStore = create<ExplorerState>((set, get) => ({
+export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   nodes: new Map(),
   expandedDirs: new Set(),
   loadingDirs: new Set(),

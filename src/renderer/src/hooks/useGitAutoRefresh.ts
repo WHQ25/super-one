@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useAppStore } from '@/stores/app'
 import { useActiveSession } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
-import { useExplorerStore } from '@/stores/explorer'
+import { useFileTreeStore } from '@/stores/file-tree'
 
 export function GitAutoRefresh() {
   const status = useActiveSession((s) => s.status)
@@ -18,7 +18,7 @@ export function GitAutoRefresh() {
 
     if (!currentFolder) return
 
-    const needsRefresh = showFilePanel || sidebarTab === 'explorer'
+    const needsRefresh = showFilePanel || sidebarTab === 'files'
     if (!needsRefresh) return
 
     const shouldRefresh = prev === 'streaming' && status === 'idle'
@@ -27,7 +27,7 @@ export function GitAutoRefresh() {
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       if (showFilePanel) useSourceControlStore.getState().refresh(currentFolder)
-      if (sidebarTab === 'explorer') useExplorerStore.getState().refreshTree(currentFolder)
+      if (sidebarTab === 'files') useFileTreeStore.getState().refreshTree(currentFolder)
     }, 500)
 
     return () => clearTimeout(debounceRef.current)
@@ -39,7 +39,7 @@ export function GitAutoRefresh() {
     }
   }, [showFilePanel, currentFolder])
 
-  const needsWatch = showFilePanel || sidebarTab === 'explorer'
+  const needsWatch = showFilePanel || sidebarTab === 'files'
 
   useEffect(() => {
     if (!currentFolder || !needsWatch) {
@@ -56,7 +56,7 @@ export function GitAutoRefresh() {
         if (!folder) return
         const { showFilePanel: fp, sidebarTab: tab } = useAppStore.getState()
         if (fp) useSourceControlStore.getState().refresh(folder)
-        if (tab === 'explorer') useExplorerStore.getState().refreshTree(folder)
+        if (tab === 'files') useFileTreeStore.getState().refreshTree(folder)
       }, 500)
     }
 

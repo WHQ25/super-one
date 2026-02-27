@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderTree, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History } from 'lucide-react'
+import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderClosed, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -26,7 +26,7 @@ import { useFullscreen } from '@/hooks/useFullscreen'
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ExplorerTree } from '@/components/sidebar/ExplorerTree'
+import { FileTree } from '@/components/sidebar/FileTree'
 import type { SessionHistoryEntry, PinnedSessionEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
 import { getDeleteSessionRecovery } from './session-delete-helpers'
 
@@ -58,8 +58,8 @@ export function AppSidebar() {
   const resumeSession = useChatStore((s) => s.resumeSession)
   const projectSessions = useChatStore((s) => s.projectSessions)
 
-  const [explorerMounted, setExplorerMounted] = useState(sidebarTab === 'explorer')
-  if (sidebarTab === 'explorer' && !explorerMounted) setExplorerMounted(true)
+  const [filesMounted, setExplorerMounted] = useState(sidebarTab === 'files')
+  if (sidebarTab === 'files' && !filesMounted) setExplorerMounted(true)
 
   const [sortMode, setSortMode] = useState<SortMode>('added')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
@@ -210,8 +210,8 @@ export function AppSidebar() {
             Sessions
           </TabsTrigger>
           <TabsTrigger value="explorer" className="py-1">
-            <FolderTree className="size-3.5" />
-            Explorer
+            <FolderClosed className="size-3.5" />
+            Files
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -250,9 +250,9 @@ export function AppSidebar() {
         </div>
       )}
 
-      {explorerMounted && (
-        <div className={cn('min-h-0 flex-1', sidebarTab !== 'explorer' && 'hidden')}>
-          <ExplorerTree />
+      {filesMounted && (
+        <div className={cn('min-h-0 flex-1', sidebarTab !== 'files' && 'hidden')}>
+          <FileTree />
         </div>
       )}
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>

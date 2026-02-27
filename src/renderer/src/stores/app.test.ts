@@ -7,13 +7,6 @@ vi.mock('./source-control', () => ({
   },
 }))
 
-const mockExplorerReset = vi.fn()
-vi.mock('./explorer', () => ({
-  useExplorerStore: {
-    getState: () => ({ reset: mockExplorerReset }),
-  },
-}))
-
 vi.mock('./chat', () => {
   const state = { projectSessions: {} as Record<string, unknown>, activeProject: null as string | null }
   return {
@@ -161,20 +154,17 @@ describe('currentFolder subscription', () => {
 
     expect(useAppStore.getState().showFilePanel).toBe(false)
     expect(mockSourceControlReset).toHaveBeenCalled()
-    expect(mockExplorerReset).toHaveBeenCalled()
   })
 
   it('should not reset when currentFolder stays the same', async () => {
     useAppStore.setState({ currentFolder: '/projA' })
     await vi.dynamicImportSettled()
     mockSourceControlReset.mockClear()
-    mockExplorerReset.mockClear()
 
     useAppStore.setState({ showFilePanel: true, layoutMode: 'canvas' })
     await vi.dynamicImportSettled()
 
     expect(useAppStore.getState().showFilePanel).toBe(true)
     expect(mockSourceControlReset).not.toHaveBeenCalled()
-    expect(mockExplorerReset).not.toHaveBeenCalled()
   })
 })

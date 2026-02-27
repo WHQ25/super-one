@@ -98,7 +98,7 @@ export function FilePanel() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
         <FileX2 className="size-8 opacity-30" />
-        <span className="text-xs">Select a file from Explorer</span>
+        <span className="text-xs">Select a file from Files</span>
       </div>
     )
   }

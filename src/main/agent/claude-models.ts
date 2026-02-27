@@ -1,6 +1,6 @@
 import { query, type Query } from '@anthropic-ai/claude-agent-sdk'
 import type { ModelOption } from '../../shared/agent-types'
-import { getClaudeCliPath, spawnClaudeProcess } from './resolve-cli'
+import { getClaudeCliPath } from './resolve-cli'
 
 /** Create a throwaway query to fetch the model list. */
 export async function fetchModels(cwd: string): Promise<ModelOption[]> {
@@ -9,7 +9,6 @@ export async function fetchModels(cwd: string): Promise<ModelOption[]> {
       prompt: 'hi',
       options: {
         pathToClaudeCodeExecutable: getClaudeCliPath(),
-        spawnClaudeCodeProcess: spawnClaudeProcess,
         cwd,
         maxTurns: 0,
         permissionMode: 'bypassPermissions',

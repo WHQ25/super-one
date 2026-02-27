@@ -15,14 +15,16 @@ function send(event: UpdateEvent): void {
 }
 
 export function initUpdater(mainWindow: BrowserWindow): void {
-  if (is.dev) return
+  const testUpdater = process.env.TEST_UPDATER === '1'
+  if (is.dev && !testUpdater) return
 
   win = mainWindow
   autoUpdater.logger = log
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
+  if (testUpdater) autoUpdater.forceDevUpdateConfig = true
   if (__UPDATER_TOKEN__) {
-    autoUpdater.requestHeaders = { Authorization: `token ${__UPDATER_TOKEN__}` }
+    process.env.GH_TOKEN = __UPDATER_TOKEN__
   }
 
   autoUpdater.on('checking-for-update', () => {

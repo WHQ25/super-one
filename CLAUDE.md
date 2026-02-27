@@ -130,10 +130,12 @@ Tables: `projects`, `sessions`, `chat_messages`. Messages stored as JSON blobs.
 
 `src/main/updater.ts` wraps `electron-updater` with an IPC push pattern:
 
-- Guarded by `is.dev` — completely skipped in development
+- Guarded by `is.dev` — completely skipped in development unless `TEST_UPDATER=1`
+- Private repo auth: `UPDATER_TOKEN` → Vite `define` → `process.env.GH_TOKEN` at runtime (`PrivateGitHubProvider` reads this)
+- Prerelease behavior: version with `-alpha`/`-beta` suffix auto-enables `allowPrerelease`, which prefers releases with `prerelease: true` flag on GitHub. **All alpha/beta releases MUST be marked prerelease on GitHub.**
 - Events flow: `autoUpdater` → `webContents.send(UPDATER_EVENT)` → `useAppStore.handleUpdateEvent()` → `<UpdateNotification />`
-- Checks on startup + every 4 hours; `autoInstallOnAppQuit` ensures updates apply even if dismissed
-- Renderer calls `window.app.installUpdate()` to trigger `quitAndInstall()`
+
+Dev testing: `TEST_UPDATER=1 UPDATER_TOKEN=<token> bun run dev` (requires `dev-app-update.yml` in project root)
 
 ### Codex Integration (Experimental)
 
@@ -156,13 +158,26 @@ Configured via `electron-builder.yml` (electron-vite natively supports this file
 - Windows: NSIS (x64 + arm64)
 - Linux: AppImage (x64 + arm64)
 
-### CI/CD
+### CI/CD & Release
 
 `.github/workflows/release.yml` — triggered on `push tags: v*`:
 
 - Three parallel jobs: macOS / Windows / Linux
 - Flow: checkout → setup-bun → `bun install --frozen-lockfile` → `bun run build:{platform} -- --publish always`
-- Release: `git tag v0.2.0 && git push origin v0.2.0`
+
+Versioning: prerelease iterations use `-alpha.N` suffix (e.g. `0.1.0-alpha.1` → `0.1.0-alpha.2`). Patch number is reserved for stable releases (`0.1.0` → `0.1.1`).
+
+Release steps:
+
+```bash
+# 1. Bump version in package.json
+# 2. Commit and tag
+git commit -am "chore(release): bump version to 0.1.0-alpha.3"
+git tag v0.1.0-alpha.3
+git push origin main --tags
+# 3. Wait for CI, then publish
+gh release edit v0.1.0-alpha.3 --draft=false --prerelease  # alpha/beta must use --prerelease
+```
 
 ## Styling
 

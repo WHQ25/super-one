@@ -1,0 +1,4 @@
+provider: github
+owner: WHQ25
+repo: super-one
+private: true

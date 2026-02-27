@@ -1,37 +1,54 @@
+import { execFileSync } from 'child_process'
 import { createRequire } from 'module'
-import { spawn } from 'child_process'
-import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
 
 const require = createRequire(import.meta.url)
 
-let cached: string | undefined
+let cachedPath: string | undefined
 
-export function getClaudeCliPath(): string | undefined {
-  if (cached !== undefined) return cached || undefined
+export function fixPath(): void {
+  if (process.platform === 'win32') return
   try {
-    const resolved = require.resolve('@anthropic-ai/claude-agent-sdk/cli.js')
-    cached = resolved.replace('/app.asar/', '/app.asar.unpacked/')
+    const shell = process.env.SHELL || '/bin/sh'
+    const result = execFileSync(shell, ['-ilc', 'printf "%s" "$PATH"'], {
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const shellPath = result.toString().trim()
+    if (shellPath) {
+      process.env.PATH = shellPath
+      console.log('[fixPath] PATH updated via', shell, '→', shellPath)
+    }
   } catch {
-    cached = ''
+    console.warn('[fixPath] Failed to get PATH from login shell')
   }
-  return cached || undefined
 }
 
-export function spawnClaudeProcess(options: SpawnOptions): SpawnedProcess {
-  const env = { ...options.env }
-  let command = options.command
-  let args = options.args
-
-  if (process.versions.electron) {
-    env.ELECTRON_RUN_AS_NODE = '1'
-    args = [command, ...args]
-    command = process.execPath
+function findSystemClaude(): string | undefined {
+  const cmd = process.platform === 'win32' ? 'where' : '/usr/bin/which'
+  try {
+    const result = execFileSync(cmd, ['claude'], { timeout: 3000, stdio: 'pipe' })
+    const bin = result.toString().trim().split(/\r?\n/)[0]
+    if (bin) {
+      execFileSync(bin, ['--version'], { timeout: 3000, stdio: 'pipe' })
+      return bin
+    }
+  } catch (err) {
+    console.warn('[findSystemClaude] failed:', (err as Error).message)
   }
+  return undefined
+}
 
-  return spawn(command, args, {
-    cwd: options.cwd,
-    env,
-    signal: options.signal,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  })
+function findSdkCli(): string | undefined {
+  try {
+    return require.resolve('@anthropic-ai/claude-agent-sdk/cli.js').replace('/app.asar/', '/app.asar.unpacked/')
+  } catch {
+    return undefined
+  }
+}
+
+export function getClaudeCliPath(): string | undefined {
+  if (cachedPath !== undefined) return cachedPath || undefined
+  cachedPath = findSystemClaude() ?? findSdkCli() ?? ''
+  console.log('[resolve-cli] resolved:', cachedPath || 'none')
+  return cachedPath || undefined
 }

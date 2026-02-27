@@ -7,7 +7,7 @@ import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { getClaudeCliPath, spawnClaudeProcess } from './agent/resolve-cli'
+import { fixPath, getClaudeCliPath } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import {
   AgentIpcChannels,
@@ -859,7 +859,7 @@ function registerIpcHandlers(): void {
     log.info('[CONNECT_CLAUDE] Creating query...')
     const q = query({
       prompt: 'hi',
-      options: { pathToClaudeCodeExecutable: cliPath, spawnClaudeCodeProcess: spawnClaudeProcess, cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
+      options: { pathToClaudeCodeExecutable: cliPath, cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
     })
     log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')
     const [modelInfos, accountInfo, commands] = await Promise.all([
@@ -922,6 +922,7 @@ app.whenReady().then(() => {
       return new Response('Not found', { status: 404 })
     }
   })
+  fixPath()
   getDb() // Initialize database
   registerIpcHandlers()
   createWindow()

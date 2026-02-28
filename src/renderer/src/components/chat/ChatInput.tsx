@@ -323,7 +323,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         if (e.key === 'Enter' && (e.shiftKey || e.altKey)) {
           e.preventDefault()
-          editorRef.current?.commands.setHardBreak()
+          editorRef.current?.chain().setHardBreak().scrollIntoView().run()
           return true
         }
 

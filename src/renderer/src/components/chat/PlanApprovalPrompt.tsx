@@ -5,7 +5,7 @@ import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { PenLine, Check, X } from 'lucide-react'
-import { CommandShortcut } from '@/components/ui/command'
+import { Kbd } from '@/components/ui/kbd'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 const streamdownPlugins = { code: codePlugin }
@@ -151,7 +151,7 @@ export function PlanApprovalPrompt() {
               <Check className="size-3" />
               Approve
               {!isFeedbackFocused && (
-                <CommandShortcut className="ml-1 text-[10px] text-green-200/80">⏎</CommandShortcut>
+                <Kbd variant="inline" className="ml-1 text-green-200/80">↵</Kbd>
               )}
             </Button>
             <Button
@@ -161,9 +161,7 @@ export function PlanApprovalPrompt() {
             >
               <X className="size-3" />
               Reject
-              {!isFeedbackFocused && (
-                <CommandShortcut className="ml-1 text-[10px] text-red-200/80">Esc</CommandShortcut>
-              )}
+              <Kbd variant="inline" className="ml-1 text-red-200/80">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
             </Button>
             <div className="relative flex flex-1 items-center">
               <input
@@ -176,7 +174,7 @@ export function PlanApprovalPrompt() {
                 placeholder="Reject feedback (optional, Enter to submit)"
                 className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
-              <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">{isFeedbackFocused ? '⏎' : '⇥'}</CommandShortcut>
+              <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
             </div>
           </div>
 
@@ -193,7 +191,7 @@ export function PlanApprovalPrompt() {
                 placeholder="Reject feedback (optional, Enter to submit)"
                 className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
-              <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">{isFeedbackFocused ? '⏎' : '⇥'}</CommandShortcut>
+              <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -204,7 +202,7 @@ export function PlanApprovalPrompt() {
                 <Check className="size-3" />
                 Approve
                 {!isFeedbackFocused && (
-                  <CommandShortcut className="ml-1 text-[10px] text-green-200/80">⏎</CommandShortcut>
+                  <Kbd variant="inline" className="ml-1 text-green-200/80">↵</Kbd>
                 )}
               </Button>
               <Button
@@ -215,7 +213,7 @@ export function PlanApprovalPrompt() {
                 <X className="size-3" />
                 Reject
                 {!isFeedbackFocused && (
-                  <CommandShortcut className="ml-1 text-[10px] text-red-200/80">Esc</CommandShortcut>
+                  <Kbd variant="inline" className="ml-1 text-red-200/80">esc</Kbd>
                 )}
               </Button>
             </div>

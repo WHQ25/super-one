@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { useChatStore, useActiveSession } from '@/stores/chat'
-import { CommandShortcut } from '@/components/ui/command'
+import { Kbd } from '@/components/ui/kbd'
 import type { UserQuestion } from '../../../../shared/agent-types'
 
 function QuestionPanel({
@@ -38,23 +38,23 @@ function QuestionPanel({
               }`}
               title={opt.description}
             >
-              <CommandShortcut className="mr-1 font-mono text-[10px] opacity-50">{i + 1}</CommandShortcut>
+              <Kbd variant="square" className="mr-1.5">{i + 1}</Kbd>
               {opt.label}
             </button>
           )
         })}
       </div>
       <div className="relative mt-2">
-        <CommandShortcut className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[10px] text-muted-foreground/50">
+        <Kbd variant="square" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2">
           {q.options.length + 1}
-        </CommandShortcut>
+        </Kbd>
         <input
           ref={inputRef}
           type="text"
           placeholder="Other..."
           value={otherTexts[q.question] ?? ''}
           onChange={(e) => onOther(q, e.target.value)}
-          className="w-full rounded bg-muted py-1 pl-6 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
       </div>
     </div>
@@ -242,10 +242,10 @@ export function AskUserQuestionPrompt() {
           onClick={handleSubmit}
         >
           Submit
-          <CommandShortcut className="ml-1.5 font-mono text-[10px] opacity-50">↵</CommandShortcut>
+          <Kbd variant="inline" className="ml-1 text-white/70">↵</Kbd>
         </Button>
         <span className="text-[10px] text-muted-foreground">
-          {!singleQuestion && 'tab switch · '}1-{questions[singleQuestion ? 0 : activeTab].options.length} select · {questions[singleQuestion ? 0 : activeTab].options.length + 1} other · esc dismiss
+          {!singleQuestion && <><Kbd>⇥</Kbd><span className="ml-0.5">switch</span><span className="mx-1 opacity-40">·</span></>}<Kbd>esc</Kbd><span className="ml-0.5">dismiss</span>
         </span>
       </div>
     </div>

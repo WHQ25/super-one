@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { CommandShortcut } from '@/components/ui/command'
+import { Kbd } from '@/components/ui/kbd'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Circle, CheckCircle2 } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
@@ -281,7 +281,7 @@ export function PermissionPrompt() {
               <span className="ml-1 text-[10px] text-green-200/80">+{selectedSuggestions.size}</span>
             )}
             {!isFeedbackFocused && (
-              <CommandShortcut className="ml-1 text-[10px] text-green-200/80">⏎</CommandShortcut>
+              <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
             )}
           </Button>
           <Button
@@ -291,9 +291,7 @@ export function PermissionPrompt() {
             onClick={handleDeny}
           >
             Deny
-            {!isFeedbackFocused && (
-              <CommandShortcut className="ml-1 text-[10px] text-red-200/80">Esc</CommandShortcut>
-            )}
+            <Kbd variant="inline" className="ml-1 text-red-200/80">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
           </Button>
           <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
             <input
@@ -307,7 +305,7 @@ export function PermissionPrompt() {
               placeholder="Deny reason (optional, Enter to submit)"
               className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
-            <CommandShortcut className="pointer-events-none absolute right-2 rounded bg-background/60 px-1 py-0.5 text-[10px] text-muted-foreground">⇥</CommandShortcut>
+            <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
           </div>
         </div>
         {hasSuggestionRow && (
@@ -339,7 +337,7 @@ export function PermissionPrompt() {
                     : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
                   }
                   <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>
-                  <CommandShortcut className="ml-auto inline-flex size-4 shrink-0 items-center justify-center rounded bg-background/60 text-[10px] text-muted-foreground">{i + 1}</CommandShortcut>
+                  <Kbd variant="square" className="ml-auto">{i + 1}</Kbd>
                 </button>
               )
             })}

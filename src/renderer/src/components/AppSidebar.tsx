@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderClosed, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History } from 'lucide-react'
+import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderClosed, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -11,6 +11,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu'
 import {
   Dialog,
   DialogContent,
@@ -143,6 +150,11 @@ export function AppSidebar() {
     refreshPinned()
     refreshFolderSessions(folderPath)
   }, [refreshPinned, refreshFolderSessions])
+
+  const handleHideSession = useCallback(async (sessionId: string, hidden: boolean, folderPath: string) => {
+    await window.app.hideSession(sessionId, hidden)
+    refreshFolderSessions(folderPath)
+  }, [refreshFolderSessions])
 
   const handleDeleteSession = useCallback(async () => {
     if (!deleteTarget) return
@@ -311,7 +323,8 @@ export function AppSidebar() {
                 const isActive = hasRealProject && folder.path === currentFolder
                 const isExpanded = expandedFolders.has(folder.path)
                 const displayPath = homePath(folder.path)
-                const sessions = folderSessions[folder.path] ?? []
+                const allSessions = folderSessions[folder.path] ?? []
+                const sessions = allSessions.filter(s => !s.isHidden)
                 const projectSession = projectSessions[folder.path]
                 const liveSessions = isExpanded ? [] : sessions.filter(s => {
                   const entry = projectSession?._sessions?.[s.sessionId]
@@ -431,76 +444,91 @@ export function AppSidebar() {
                                 const pendingReason = getPendingReason(sessionEntry?.pendingPermission, sessionEntry?.pendingQuestion, sessionEntry?.pendingPlanApproval)
                                 return (
                                   <div key={session.sessionId}>
-                                    <div
-                                      onClick={() => handleResumeSession(folder.path, session.sessionId)}
-                                      className={cn(
-                                        'group/session flex cursor-pointer items-center justify-between gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
-                                        isActive && isForeground
-                                          ? 'bg-sidebar-accent'
-                                          : 'hover:bg-sidebar-accent'
-                                      )}
-                                    >
-                                      <div className="flex min-w-0 items-center gap-2">
-                                        {isRunning
-                                          ? <Loader2 className="size-3 shrink-0 animate-spin text-sidebar-foreground/70" />
-                                          : isUnseen
-                                            ? <CircleCheck className="size-3 shrink-0 text-green-400" />
-                                            : session.isWorktree
-                                              ? <GitFork className="size-3 shrink-0 text-sidebar-foreground/70" />
-                                              : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
-                                        }
-                                        <span className="min-w-0 truncate text-[13px]">{session.title}</span>
-                                      </div>
-                                      <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
+                                    <ContextMenu>
+                                      <ContextMenuTrigger asChild>
+                                        <div
+                                          onClick={() => handleResumeSession(folder.path, session.sessionId)}
+                                          className={cn(
+                                            'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
+                                            isActive && isForeground
+                                              ? 'bg-sidebar-accent'
+                                              : 'hover:bg-sidebar-accent'
+                                          )}
+                                        >
+                                          <div className="relative flex shrink-0 items-center justify-center size-3">
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleHideSession(session.sessionId, true, folder.path)
+                                              }}
+                                              className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-accent-foreground group-hover/session:opacity-100"
+                                            >
+                                              <EyeOff className="size-3" />
+                                            </button>
+                                            <span className="group-hover/session:opacity-0 transition-opacity">
+                                              {isRunning
+                                                ? <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
+                                                : isUnseen
+                                                  ? <CircleCheck className="size-3 text-green-400" />
+                                                  : session.isWorktree
+                                                    ? <GitFork className="size-3 text-sidebar-foreground/70" />
+                                                    : <MessageSquare className="size-3 text-sidebar-foreground/70" />
+                                              }
+                                            </span>
+                                          </div>
+                                          <span className="min-w-0 truncate text-[13px]">{session.title}</span>
                                           <button
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="shrink-0 rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-colors hover:text-sidebar-accent-foreground group-hover/session:opacity-100"
-                                          >
-                                            <MoreHorizontal className="size-3.5" />
-                                          </button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="start" side="right" className="w-36">
-                                          <DropdownMenuItem
                                             onClick={(e) => {
                                               e.stopPropagation()
                                               handlePinSession(session.sessionId, !session.isPinned, folder.path)
                                             }}
-                                            className="text-xs"
+                                            className="ml-auto shrink-0 rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-accent-foreground group-hover/session:opacity-100"
                                           >
-                                            <Pin className="size-3.5" />
-                                            {session.isPinned ? 'Unpin' : 'Pin'}
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              setRenameTarget({ sessionId: session.sessionId, title: session.title, folderPath: folder.path })
-                                              setRenameValue(session.title)
-                                            }}
-                                            className="text-xs"
-                                          >
-                                            <Pencil className="size-3.5" />
-                                            Rename
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            variant="destructive"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              setDeleteTarget({
-                                                sessionId: session.sessionId,
-                                                title: session.title,
-                                                folderPath: folder.path,
-                                                provider: session.provider ?? 'claude',
-                                              })
-                                            }}
-                                            className="text-xs"
-                                          >
-                                            <Trash2 className="size-3.5" />
-                                            Delete
-                                          </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                      </DropdownMenu>
-                                    </div>
+                                            <Pin className="size-3" />
+                                          </button>
+                                        </div>
+                                      </ContextMenuTrigger>
+                                      <ContextMenuContent className="w-36">
+                                        <ContextMenuItem
+                                          onClick={() => {
+                                            setRenameTarget({ sessionId: session.sessionId, title: session.title, folderPath: folder.path })
+                                            setRenameValue(session.title)
+                                          }}
+                                          className="text-xs"
+                                        >
+                                          <Pencil className="size-3.5" />
+                                          Rename
+                                        </ContextMenuItem>
+                                        <ContextMenuItem
+                                          onClick={() => handlePinSession(session.sessionId, !session.isPinned, folder.path)}
+                                          className="text-xs"
+                                        >
+                                          <Pin className="size-3.5" />
+                                          {session.isPinned ? 'Unpin' : 'Pin'}
+                                        </ContextMenuItem>
+                                        <ContextMenuItem
+                                          onClick={() => handleHideSession(session.sessionId, true, folder.path)}
+                                          className="text-xs"
+                                        >
+                                          <EyeOff className="size-3.5" />
+                                          Hide
+                                        </ContextMenuItem>
+                                        <ContextMenuSeparator />
+                                        <ContextMenuItem
+                                          variant="destructive"
+                                          onClick={() => setDeleteTarget({
+                                            sessionId: session.sessionId,
+                                            title: session.title,
+                                            folderPath: folder.path,
+                                            provider: session.provider ?? 'claude',
+                                          })}
+                                          className="text-xs"
+                                        >
+                                          <Trash2 className="size-3.5" />
+                                          Delete
+                                        </ContextMenuItem>
+                                      </ContextMenuContent>
+                                    </ContextMenu>
                                     {pendingReason && (
                                       <div
                                         onClick={() => handleResumeSession(folder.path, session.sessionId)}

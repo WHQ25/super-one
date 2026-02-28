@@ -36,6 +36,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const sendMessage = useChatStore((s) => s.sendMessage)
+    const setPrefireMessage = useChatStore((s) => s.setPrefireMessage)
+    const cancelPrefireMessage = useChatStore((s) => s.cancelPrefireMessage)
     const activeProject = useChatStore((s) => s.activeProject)
     const interrupt = useChatStore((s) => s.interrupt)
     const isOpen = useChatStore((s) => s.isOpen)
@@ -59,6 +61,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const showDirManager = useActiveSession((s) => s.showDirManager)
     const setShowDirManager = useChatStore((s) => s.setShowDirManager)
     const promptSuggestion = useActiveSession((s) => s.promptSuggestion)
+    const prefireMessage = useActiveSession((s) => s.prefireMessage)
     const hasPendingInteraction = useActiveSession((s) => s.hasPendingInteraction)
 
     const [slashIndex, setSlashIndex] = useState(-1)
@@ -98,7 +101,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const isStreaming = status === 'streaming'
     const activeProviderForResources = sessionProvider ?? preferredProvider
-    const canSend = (text.trim().length > 0 || attachments.length > 0 || mentions.length > 0) && (!isStreaming || activeProviderForResources === 'codex')
+    const hasContent = text.trim().length > 0 || attachments.length > 0 || mentions.length > 0
+    const canSend = hasContent && (!isStreaming || activeProviderForResources === 'codex')
+    const canPrefire = isStreaming && !prefireMessage && hasContent && activeProviderForResources !== 'codex'
     const showAgentMentions = activeProviderForResources === 'claude'
 
     const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
@@ -195,8 +200,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       [agents, addMention, showAgentMentions]
     )
 
-    const handleSend = useCallback(() => {
-      if (!canSend) return
+    const serializeAndClear = useCallback(() => {
       const ed = editorRef.current
       let serialized = ''
       if (ed) {
@@ -212,14 +216,24 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       } else {
         serialized = text
       }
-      sendMessage(serialized.trim())
       setText('')
       ed?.commands.clearContent()
       setSlashIndex(-1)
       setMentionActive(false)
       setMentionIndex(0)
       mentionInfoRef.current = null
-    }, [canSend, text, sendMessage])
+      return serialized.trim()
+    }, [text])
+
+    const handleSend = useCallback(() => {
+      if (!canSend) return
+      sendMessage(serializeAndClear())
+    }, [canSend, sendMessage, serializeAndClear])
+
+    const handlePrefire = useCallback(() => {
+      if (!canPrefire) return
+      setPrefireMessage(serializeAndClear())
+    }, [canPrefire, setPrefireMessage, serializeAndClear])
 
     useImperativeHandle(ref, () => ({ send: handleSend }), [handleSend])
 
@@ -321,6 +335,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
         }
 
+        if (e.key === 'ArrowUp' && editorRef.current?.isEmpty && prefireMessage) {
+          e.preventDefault()
+          cancelPrefireMessage()
+          return true
+        }
+
         if (e.key === 'Enter' && (e.shiftKey || e.altKey)) {
           e.preventDefault()
           editorRef.current?.chain().setHardBreak().scrollIntoView().run()
@@ -329,13 +349,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         if (e.key === 'Enter') {
           e.preventDefault()
-          handleSend()
+          if (canPrefire) {
+            handlePrefire()
+          } else {
+            handleSend()
+          }
           return true
         }
 
         return false
       },
-      [handleSend, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, showDirManager, setShowDirManager]
+      [handleSend, handlePrefire, canPrefire, prefireMessage, cancelPrefireMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, showDirManager, setShowDirManager]
     )
 
     handleKeyDownRef.current = handleKeyDownCore
@@ -737,7 +761,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
           <div className="flex items-center gap-1.5">
             <ContextUsage />
-            {isStreaming ? (
+            {isStreaming && (
               <Button
                 size="icon-xs"
                 variant="ghost"
@@ -749,6 +773,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               >
                 <Square className="size-3" />
               </Button>
+            )}
+            {isStreaming ? (
+              canPrefire && (
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  onClick={handlePrefire}
+                  className={cn(
+                    'text-muted-foreground hover:text-foreground',
+                    isCoding && 'size-7 rounded-full border border-border'
+                  )}
+                >
+                  <ArrowUp className="size-3.5" />
+                </Button>
+              )
             ) : (
               <Button
                 size="icon-xs"

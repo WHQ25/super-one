@@ -310,7 +310,7 @@ function parseUserMentions(text: string) {
   return { mentions, rest }
 }
 
-function UserTextBlock({ text }: { text: string }) {
+export function UserTextBlock({ text }: { text: string }) {
   const { mentions, rest } = parseUserMentions(text)
   if (mentions.length === 0) return <span className="whitespace-pre-wrap">{text}</span>
 

@@ -53,6 +53,7 @@ export interface PerSessionState {
   _worktreeBaseBranch: string | null
   additionalDirs: string[]
   lastEventAt: number
+  prefireMessage: { content: string; attachments: ImageAttachment[]; mentions: Mention[] } | null
 }
 
 export interface ProjectState {
@@ -114,6 +115,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     _worktreeBaseBranch: null,
     additionalDirs: [],
     lastEventAt: 0,
+    prefireMessage: null,
   }
 }
 
@@ -193,6 +195,11 @@ interface ChatStore {
   rewindCodeAndChat: (userMessageId: string) => Promise<RewindFilesResult>
   rewindConversation: (userMessageId: string) => Promise<RewindFilesResult>
   previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
+
+  // Prefire (queue message during streaming)
+  setPrefireMessage: (content: string) => void
+  cancelPrefireMessage: () => void
+  discardPrefireMessage: () => void
 
   // Draft text
   setDraftText: (text: string) => void
@@ -1017,6 +1024,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
+      // Active foreground session went idle with prefire → auto-send
+      const isBackground = projectPath !== s.activeProject
+      if (event.type === 'status_change' && event.status === 'idle'
+        && targetSid === updatedProject._activeSessionId && !isBackground) {
+        const prefire = updatedSession.prefireMessage
+        if (prefire) {
+          updatedProject._sessions = {
+            ...updatedProject._sessions,
+            [targetSid]: { ...updatedSession, prefireMessage: null },
+          }
+          setTimeout(() => {
+            set((st) => updateActivePerSession(st, () => ({
+              attachments: prefire.attachments,
+              mentions: prefire.mentions,
+            })))
+            get().sendMessage(prefire.content)
+          }, 0)
+        }
+      }
+
       // Non-active session went idle → save, mark unseen, and evict from _sessions
       if (event.type === 'status_change' && event.status === 'idle' && targetSid !== updatedProject._activeSessionId) {
         if (effectiveSid) {
@@ -1029,7 +1056,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
 
       // Active session went idle in a background project → mark as unseen
-      const isBackground = projectPath !== s.activeProject
       if (event.type === 'status_change' && event.status === 'idle' && targetSid === updatedProject._activeSessionId && isBackground && effectiveSid) {
         updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
       }
@@ -1406,6 +1432,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   interrupt: async () => {
     const { activeProject } = get()
     if (!activeProject) return
+    set((s) => updateActivePerSession(s, () => ({ prefireMessage: null })))
     const [claudeResult] = await Promise.allSettled([
       window.agent.interrupt(activeProject),
       window.app.codexInterrupt(activeProject),
@@ -1450,6 +1477,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       pendingPermission: null, pendingQuestion: null, pendingPlanApproval: null,
       planApprovalOutcome: null, mentions: [], subagentTokens: {},
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
+      prefireMessage: null,
     })), _bashOutputs: remainingOutputs }))
   },
 
@@ -1605,6 +1633,35 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) throw new Error('No active project')
     return window.agent.previewRewind(activeProject, checkpointId)
+  },
+
+  setPrefireMessage: (content) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    const session = getActivePerSession(get())
+    set((s) => updateActivePerSession(s, () => ({
+      prefireMessage: { content, attachments: session.attachments, mentions: session.mentions },
+      attachments: [],
+      mentions: [],
+      draftText: '',
+    })))
+  },
+
+  cancelPrefireMessage: () => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    const session = getActivePerSession(get())
+    if (!session.prefireMessage) return
+    set((s) => updateActivePerSession(s, () => ({
+      draftText: session.prefireMessage!.content,
+      attachments: session.prefireMessage!.attachments,
+      mentions: session.prefireMessage!.mentions,
+      prefireMessage: null,
+    })))
+  },
+
+  discardPrefireMessage: () => {
+    set((s) => updateActivePerSession(s, () => ({ prefireMessage: null })))
   },
 
   setDraftText: (text) => {

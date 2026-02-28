@@ -1,11 +1,12 @@
 import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ArrowDown } from 'lucide-react'
+import { ArrowDown, PenLine, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, RateLimitIndicator, parseCompactMarker } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, RateLimitIndicator, UserTextBlock, parseCompactMarker } from './ChatMessage'
+import { AttachmentBar } from './AttachmentBar'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -31,6 +32,9 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const showHistory = useActiveSession((s) => s.showHistory)
   const historySessionId = useActiveSession((s) => s._activeSessionId)
   const hasActiveSession = useActiveSession((s) => !!s.session)
+  const prefireMessage = useActiveSession((s) => s.prefireMessage)
+  const cancelPrefireMessage = useChatStore((s) => s.cancelPrefireMessage)
+  const discardPrefireMessage = useChatStore((s) => s.discardPrefireMessage)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const prevScrollHeightRef = useRef(0)
@@ -104,6 +108,28 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                       </div>
                     )
                   })}
+                  {prefireMessage && (
+                    <div className="group/prefire chat-message-wrapper opacity-50">
+                      <div className="flex w-0 min-w-full justify-end">
+                        <div className="flex max-w-[85%] flex-col items-end">
+                          <div className="min-w-0 rounded-xl bg-secondary px-3 py-2 text-sm text-secondary-foreground">
+                            {prefireMessage.attachments.length > 0 && (
+                              <AttachmentBar attachments={prefireMessage.attachments} />
+                            )}
+                            <UserTextBlock text={prefireMessage.content} />
+                          </div>
+                          <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/prefire:opacity-100">
+                            <button onClick={cancelPrefireMessage} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
+                              <PenLine className="size-3" />
+                            </button>
+                            <button onClick={discardPrefireMessage} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
+                              <Trash2 className="size-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {isCompacting && <CompactingIndicator />}
                   {rateLimitInfo && <RateLimitIndicator info={rateLimitInfo} />}
                 </div>

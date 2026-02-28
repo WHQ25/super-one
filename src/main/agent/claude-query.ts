@@ -3,6 +3,16 @@ import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMess
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
 import { getClaudeCliPath } from './resolve-cli'
+import { appendFileSync } from 'fs'
+import { join } from 'path'
+
+const RAW_LOG = process.env.NODE_ENV !== 'production' ? join(process.cwd(), 'raw-session.log') : null
+
+function rawLog(role: string, content: string): void {
+  if (!RAW_LOG) return
+  const ts = new Date().toISOString().slice(11, 19)
+  appendFileSync(RAW_LOG, `[${ts}] [${role}]\n${content}\n\n`)
+}
 export interface SessionQueryOptions {
   cwd: string
   model?: string
@@ -91,12 +101,14 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
     content = request.content
   }
 
-  return {
+  const msg = {
     type: 'user' as const,
     message: { role: 'user' as const, content },
     parent_tool_use_id: null,
     session_id: sessionId,
   } as SDKUserMessage
+  rawLog('user-send', typeof content === 'string' ? content : JSON.stringify(content))
+  return msg
 }
 
 interface IterateMessagesOptions {
@@ -130,6 +142,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
   log.debug('[iterateMessages] starting iteration loop')
   try {
     for await (const msg of q) {
+      rawLog(`msg:${msg.type}`, JSON.stringify(msg))
       const messageId = getCurrentMessageId()
 
       // User messages carry tool results and slash command output
@@ -240,6 +253,11 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               taskStatus: sys.status ?? 'completed',
               outputFile: sys.output_file ?? '',
             })
+          } else if (sys.subtype === 'local_command_output') {
+            const text = typeof sys.content === 'string' ? sys.content : ''
+            if (text) {
+              emit({ type: 'slash_command_output', messageId, content: text })
+            }
           }
           break
         }

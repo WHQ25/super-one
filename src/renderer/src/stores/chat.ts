@@ -615,11 +615,12 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       }
 
     case 'slash_command_output': {
+      const cmd = session._pendingSlashCommand
       const filtered = session.messages.filter((m) => m.id !== event.messageId)
       const lastUserIdx = filtered.findLastIndex((m) => m.role === 'user')
       if (lastUserIdx >= 0) filtered.splice(lastUserIdx, 1)
       return {
-        slashCommandOutput: { command: session._pendingSlashCommand, content: event.content, mode: getCommandOutputMode(session._pendingSlashCommand) },
+        slashCommandOutput: { command: cmd, content: event.content, mode: getCommandOutputMode(cmd) },
         _pendingSlashCommand: '',
         messages: filtered,
       }

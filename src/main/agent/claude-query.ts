@@ -6,7 +6,7 @@ import { getClaudeCliPath } from './resolve-cli'
 import { appendFileSync } from 'fs'
 import { join } from 'path'
 
-const RAW_LOG = process.env.NODE_ENV !== 'production' ? join(process.cwd(), 'raw-session.log') : null
+const RAW_LOG = process.env.NODE_ENV === 'development' ? join(process.cwd(), 'raw-session.log') : null
 
 function rawLog(role: string, content: string): void {
   if (!RAW_LOG) return

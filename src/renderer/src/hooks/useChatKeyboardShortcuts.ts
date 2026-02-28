@@ -30,4 +30,17 @@ export function useChatKeyboardShortcuts() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [toggleTodos])
+
+  // Cmd/Ctrl+N creates a new session
+  const resetSession = useChatStore((s) => s.resetSession)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      if (e.key === 'n' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        e.preventDefault()
+        resetSession()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [resetSession])
 }

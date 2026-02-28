@@ -7,7 +7,6 @@ import type { ContentBlock } from '../../../../shared/agent-types'
 
 interface ToolGroupProps {
   blocks: ContentBlock[]
-  isStreaming: boolean
 }
 
 /** Collapsible group for consecutive read-only tool calls (Read, Glob, Grep). */
@@ -43,7 +42,7 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
           {blocks.map((block, i) => {
             if (block.type === 'tool_use') {
               return (
-                <ToolBlock key={i} toolName={block.toolName} input={block.input} status={block.status} elapsedSeconds={block.elapsedSeconds} />
+                <ToolBlock key={i} toolName={block.toolName} toolUseId={block.toolUseId} input={block.input} status={block.status} elapsedSeconds={block.elapsedSeconds} />
               )
             }
             if (block.type === 'tool_result') {
@@ -56,7 +55,7 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
 
       {!expanded && streamingTool && streamingTool.type === 'tool_use' && (
         <div className="mt-0.5">
-          <ToolBlock toolName={streamingTool.toolName} input={streamingTool.input} status={streamingTool.status} elapsedSeconds={streamingTool.elapsedSeconds} />
+          <ToolBlock toolName={streamingTool.toolName} toolUseId={streamingTool.toolUseId} input={streamingTool.input} status={streamingTool.status} elapsedSeconds={streamingTool.elapsedSeconds} />
         </div>
       )}
     </div>

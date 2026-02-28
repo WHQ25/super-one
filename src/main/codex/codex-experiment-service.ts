@@ -493,6 +493,7 @@ function mapApprovalRequest(notification: AppServerNotification): PermissionRequ
     return {
       requestId,
       toolName: 'Bash',
+      toolUseId: requestId,
       input: compactRecord({
         command,
         cwd,
@@ -508,6 +509,7 @@ function mapApprovalRequest(notification: AppServerNotification): PermissionRequ
     return {
       requestId,
       toolName: 'FileChange',
+      toolUseId: requestId,
       input: compactRecord({
         file_path: grantRoot,
         kind: 'grant_root',

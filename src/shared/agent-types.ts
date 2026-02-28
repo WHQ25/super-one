@@ -14,7 +14,7 @@ export type ContentBlock =
   | { type: 'text'; text: string; parentToolUseId?: string | null }
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null }
   | { type: 'tool_use'; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; startedAt?: number; parentToolUseId?: string | null }
-  | { type: 'tool_result'; toolUseId: string; summary: string; parentToolUseId?: string | null }
+  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; parentToolUseId?: string | null }
   | { type: 'image'; name: string }
   | { type: 'document'; name: string }
 
@@ -205,6 +205,7 @@ export interface ChatMessage {
 export interface PermissionRequest {
   requestId: string
   toolName: string
+  toolUseId?: string
   input: Record<string, unknown>
   decisionReason?: string
   blockedPath?: string
@@ -395,6 +396,7 @@ export type AgentEventBase =
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo }
   | { type: 'prompt_suggestion'; suggestion: string }
+  | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
 
@@ -717,6 +719,14 @@ export type UpdateEvent =
   | { type: 'downloaded'; version: string }
   | { type: 'error'; message: string }
 
+// --- Bash output events ---
+
+export interface BashOutputEvent {
+  toolUseId: string
+  content: string
+  finished: boolean
+}
+
 // --- IPC channel constants ---
 
 export const AgentIpcChannels = {
@@ -854,4 +864,11 @@ export const AgentIpcChannels = {
   FILE_WATCH_STOP: 'app:file-watch-stop',
   FILE_CHANGE_EVENT: 'app:file-change-event',
   GIT_HEAD_CHANGE: 'app:git-head-change',
+
+  // Bash output watcher
+  BASH_OUTPUT_WATCH: 'app:bash-output-watch',
+  BASH_OUTPUT_UNWATCH: 'app:bash-output-unwatch',
+  BASH_OUTPUT_EVENT: 'app:bash-output-event',
+  BASH_OUTPUT_READ_MORE: 'app:bash-output-read-more',
+  BASH_OUTPUT_READ_FILE: 'app:bash-output-read-file',
 } as const

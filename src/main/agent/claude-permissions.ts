@@ -75,6 +75,7 @@ export function createCanUseTool(
       request: {
         requestId,
         toolName,
+        toolUseId: context.toolUseID,
         input,
         decisionReason: context.decisionReason,
         blockedPath: context.blockedPath,

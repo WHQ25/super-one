@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -102,6 +102,13 @@ interface AppAPI {
   onFileChangeEvent(callback: (event: { folderPath: string }) => void): () => void
   onGitHeadChange(callback: (event: { folderPath: string }) => void): () => void
   onSessionChanged(callback: () => void): () => void
+
+  // Bash output watcher
+  watchBashOutput(toolUseId: string, filePath: string): Promise<void>
+  unwatchBashOutput(toolUseId: string): Promise<void>
+  readBashOutputMore(toolUseId: string, tailLines: number): Promise<string>
+  readBashOutputFile(filePath: string, tailLines: number): Promise<string>
+  onBashOutputEvent(callback: (event: BashOutputEvent) => void): () => void
 
   // Logging
   getLogPath(): Promise<string>

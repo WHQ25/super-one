@@ -1,7 +1,7 @@
 import type { ChatMessage as ChatMessageType, ContentBlock } from '../../../../shared/agent-types'
 import { useState, useEffect, useRef, useMemo, memo } from 'react'
 import { cn } from '@/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
@@ -37,24 +37,30 @@ interface GroupResult {
   segments: RenderSegment[]
   toolNameMap: Map<string, string>
   toolResultMap: Map<string, string>
+  timedOutToolIds: Set<string>
+  outputPathMap: Map<string, string>
 }
 
 /** Group consecutive collapsible tool blocks and subagent blocks; everything else stays individual. */
 function groupContent(content: ContentBlock[]): GroupResult {
   const toolNameMap = new Map<string, string>()
   const toolResultMap = new Map<string, string>()
+  const timedOutToolIds = new Set<string>()
+  const outputPathMap = new Map<string, string>()
   for (const block of content) {
     if (block.type === 'tool_use') {
       toolNameMap.set(block.toolUseId, block.toolName)
-    } else if (block.type === 'tool_result' && block.summary) {
-      toolResultMap.set(block.toolUseId, block.summary)
+    } else if (block.type === 'tool_result') {
+      if (block.summary) toolResultMap.set(block.toolUseId, block.summary)
+      if (block.isTimedOut) timedOutToolIds.add(block.toolUseId)
+      if (block.outputPath) outputPathMap.set(block.toolUseId, block.outputPath)
     }
   }
 
   // Collect Task tool_use ids for subagent grouping
   const taskToolUseIds = new Set<string>()
   for (const block of content) {
-    if (block.type === 'tool_use' && block.toolName === 'Task') {
+    if (block.type === 'tool_use' && block.toolName === 'Agent') {
       taskToolUseIds.add(block.toolUseId)
     }
   }
@@ -90,7 +96,7 @@ function groupContent(content: ContentBlock[]): GroupResult {
     }
 
     // Start a new subagent segment for Task tool_use
-    if (block.type === 'tool_use' && block.toolName === 'Task') {
+    if (block.type === 'tool_use' && block.toolName === 'Agent') {
       flush()
       const seg: RenderSegment & { kind: 'subagent' } = {
         kind: 'subagent',
@@ -115,7 +121,7 @@ function groupContent(content: ContentBlock[]): GroupResult {
     }
   }
   flush()
-  return { segments, toolNameMap, toolResultMap }
+  return { segments, toolNameMap, toolResultMap, timedOutToolIds, outputPathMap }
 }
 
 function CopyButton({ text, className }: { text: string; className?: string }) {
@@ -162,6 +168,8 @@ function renderBlock(
   index: number,
   isStreaming: boolean,
   toolResultMap?: Map<string, string>,
+  timedOutToolIds?: Set<string>,
+  outputPathMap?: Map<string, string>,
   nextBlockType?: string,
   prevBlockType?: string,
 ) {
@@ -197,10 +205,13 @@ function renderBlock(
         <ToolBlock
           key={index}
           toolName={block.toolName}
+          toolUseId={block.toolUseId}
           input={block.input}
           status={!isStreaming && block.status === 'streaming' ? undefined : block.status}
           elapsedSeconds={block.elapsedSeconds}
           result={toolResultMap?.get(block.toolUseId)}
+          isTimedOut={timedOutToolIds?.has(block.toolUseId)}
+          resultOutputPath={outputPathMap?.get(block.toolUseId)}
         />
       )
     case 'thinking':
@@ -393,6 +404,43 @@ export function CompactingIndicator() {
   )
 }
 
+function formatResetTime(resetsAt?: number): string | null {
+  if (!resetsAt) return null
+  const now = Date.now() / 1000
+  const diff = resetsAt - now
+  if (diff <= 0) return null
+  if (diff < 60) return 'less than 1 min'
+  if (diff < 3600) return `${Math.ceil(diff / 60)} min`
+  return `${Math.round(diff / 3600 * 10) / 10} hrs`
+}
+
+export function RateLimitIndicator({ info }: { info: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number } }) {
+  const isRejected = info.status === 'rejected'
+  const resetLabel = formatResetTime(info.resetsAt)
+  const pct = info.utilization != null ? Math.round(info.utilization * 100) : null
+
+  return (
+    <div className={cn(
+      'my-0.5 flex items-center gap-1.5 rounded px-2 py-1.5 text-xs',
+      isRejected ? 'bg-red-500/10' : 'bg-amber-500/10',
+    )}>
+      {isRejected
+        ? <OctagonX className="size-3 shrink-0 text-red-400" />
+        : <AlertTriangle className="size-3 shrink-0 text-amber-400" />
+      }
+      <span className={cn('font-medium', isRejected ? 'text-red-400' : 'text-amber-400')}>
+        {isRejected ? 'Rate limited' : 'Approaching rate limit'}
+      </span>
+      {pct != null && !isRejected && (
+        <span className="text-amber-400/60">{pct}% used</span>
+      )}
+      {resetLabel && (
+        <span className={isRejected ? 'text-red-400/60' : 'text-amber-400/60'}>· resets in {resetLabel}</span>
+      )}
+    </div>
+  )
+}
+
 export const ChatMessage = memo(function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming'
@@ -462,19 +510,18 @@ export const ChatMessage = memo(function ChatMessage({ message }: ChatMessagePro
                 const prevSeg = segs[segIdx - 1]
                 const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : nextSeg?.kind === 'subagent' ? 'tool_use' : undefined
                 const prevType = prevSeg?.kind === 'block' ? prevSeg.block.type : undefined
-                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, nextType, prevType)
+                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.outputPathMap, nextType, prevType)
               }
               const toolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
               if (toolUseCount <= 1) {
                 return seg.blocks.map((block, i) =>
-                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type)
+                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type)
                 )
               }
               return (
                 <ToolGroup
                   key={`tg-${seg.startIndex}`}
                   blocks={seg.blocks}
-                  isStreaming={isStreaming}
                 />
               )
             })

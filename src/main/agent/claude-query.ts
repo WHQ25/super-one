@@ -3,7 +3,6 @@ import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMess
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
 import { getClaudeCliPath } from './resolve-cli'
-
 export interface SessionQueryOptions {
   cwd: string
   model?: string
@@ -63,7 +62,14 @@ export function createSessionQuery(
     },
   })
 
-  const iterationDone = iterateMessages(q, emit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, options.trackPlanFile)
+  const iterationDone = iterateMessages(q, {
+    emit,
+    getCurrentMessageId,
+    getCurrentStartTime,
+    getInterrupted,
+    onSessionId,
+    trackPlanFile: options.trackPlanFile,
+  })
 
   return { query: q, iterationDone }
 }
@@ -93,16 +99,17 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
   } as SDKUserMessage
 }
 
-/** Continuously iterate SDK messages, mapping them to AgentEvents. */
-async function iterateMessages(
-  q: Query,
-  emit: (event: AgentEvent) => void,
-  getCurrentMessageId: () => string,
-  getCurrentStartTime: () => number,
-  getInterrupted: () => boolean,
-  onSessionId?: (id: string) => void,
+interface IterateMessagesOptions {
+  emit: (event: AgentEvent) => void
+  getCurrentMessageId: () => string
+  getCurrentStartTime: () => number
+  getInterrupted: () => boolean
+  onSessionId?: (id: string) => void
   trackPlanFile?: (filePath: string) => void
-): Promise<void> {
+}
+
+async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
+  const { emit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile } = opts
   // Track content_block index → tool_use_id for input_json_delta correlation
   const activeToolBlocks = new Map<number, string>()
   // Track tool_use_id → tool_name so we can tag tool_result events
@@ -136,7 +143,11 @@ async function iterateMessages(
         if (Array.isArray(msgContent)) {
           for (const block of msgContent) {
             if (block.type === 'tool_result' && block.tool_use_id) {
+              const toolName = toolIdToName.get(block.tool_use_id)
               const text = extractToolResultText(block.content)
+              const isBash = toolName === 'Bash'
+              const outputPath = isBash ? extractBashOutputPath(text) : undefined
+              const isTimedOut = isBash ? extractBashKilled(userMsg.tool_use_result) : undefined
               if (text) {
                 emit({
                   type: 'content_delta',
@@ -145,6 +156,8 @@ async function iterateMessages(
                     type: 'tool_result',
                     toolUseId: block.tool_use_id,
                     summary: text,
+                    ...(outputPath ? { outputPath } : {}),
+                    ...(isTimedOut ? { isTimedOut } : {}),
                     parentToolUseId,
                   },
                 })
@@ -323,6 +336,11 @@ async function iterateMessages(
               if (block.type === 'tool_use') {
                 toolIdToName.set(block.id ?? '', block.name ?? 'unknown')
 
+                if (block.name === 'Bash') {
+                  const inp = typeof block.input === 'string' ? block.input : JSON.stringify(block.input ?? {})
+                  log.debug(`[bash-debug] assistant tool_use input=${inp.slice(0, 200)} typeof_input=${typeof block.input}`)
+                }
+
                 // Track Write/Edit to plan files (catches auto-allowed calls that skip canUseTool)
                 if (trackPlanFile && (block.name === 'Write' || block.name === 'Edit')) {
                   const inp = typeof block.input === 'object' && block.input !== null ? block.input : {}
@@ -443,10 +461,14 @@ async function iterateMessages(
           const summaryText = raw.summary as string | undefined
           if (summaryText) {
             const toolUseId = raw.preceding_tool_use_ids?.[0] ?? raw.tool_use_id ?? ''
+            const toolName = toolIdToName.get(toolUseId)
+            const isBash = toolName === 'Bash'
+            const outputPath = isBash ? extractBashOutputPath(summaryText) : undefined
+            const isTimedOut = isBash ? extractBashKilled(raw.tool_use_result) : undefined
             emit({
               type: 'content_delta',
               messageId,
-              delta: { type: 'tool_result', toolUseId, summary: summaryText, parentToolUseId: raw.parent_tool_use_id ?? null },
+              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), parentToolUseId: raw.parent_tool_use_id ?? null },
             })
           }
           break
@@ -477,6 +499,21 @@ async function iterateMessages(
           const ps = msg as any
           if (ps.suggestion) {
             emit({ type: 'prompt_suggestion', suggestion: ps.suggestion })
+          }
+          break
+        }
+
+        case 'rate_limit_event': {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const rl = (msg as any).rate_limit_info
+          if (rl) {
+            emit({
+              type: 'rate_limit',
+              status: rl.status,
+              resetsAt: rl.resetsAt,
+              rateLimitType: rl.rateLimitType,
+              utilization: rl.utilization,
+            })
           }
           break
         }
@@ -550,4 +587,16 @@ function extractToolResultText(content: unknown): string {
       .join('\n')
   }
   return ''
+}
+
+function extractBashKilled(toolUseResult?: unknown): boolean | undefined {
+  const tur = toolUseResult as any
+  return tur?.killed === true ? true : undefined
+}
+
+const BASH_OUTPUT_PATH_RE = /Output is being written to:\s*(\S+\.output)/
+
+function extractBashOutputPath(summaryText?: string): string | undefined {
+  if (!summaryText) return undefined
+  return summaryText.match(BASH_OUTPUT_PATH_RE)?.[1]
 }

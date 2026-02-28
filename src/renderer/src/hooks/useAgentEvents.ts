@@ -11,4 +11,13 @@ export function useAgentEvents(): void {
     })
     return cleanup
   }, [handleAgentEvent])
+
+  useEffect(() => {
+    const cleanup = window.app.onBashOutputEvent((event) => {
+      useChatStore.setState((s) => ({
+        _bashOutputs: { ...s._bashOutputs, [event.toolUseId]: { content: event.content, finished: event.finished, outputPath: s._bashOutputs[event.toolUseId]?.outputPath } },
+      }))
+    })
+    return cleanup
+  }, [])
 }

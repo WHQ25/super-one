@@ -5,7 +5,7 @@ import { ArrowDown } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, parseCompactMarker } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, RateLimitIndicator, parseCompactMarker } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -26,6 +26,7 @@ interface ChatContentProps {
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, externalHistory = false }: ChatContentProps) {
   const messages = useActiveSession((s) => s.messages)
   const isCompacting = useActiveSession((s) => s.isCompacting)
+  const rateLimitInfo = useActiveSession((s) => s.rateLimitInfo)
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
   const showHistory = useActiveSession((s) => s.showHistory)
   const historySessionId = useActiveSession((s) => s._activeSessionId)
@@ -104,6 +105,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                     )
                   })}
                   {isCompacting && <CompactingIndicator />}
+                  {rateLimitInfo && <RateLimitIndicator info={rateLimitInfo} />}
                 </div>
               </ScrollArea>
             )}

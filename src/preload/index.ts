@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type SandboxMode } from '../shared/agent-types'
+import { AgentIpcChannels, type BashOutputEvent, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type SandboxMode } from '../shared/agent-types'
 
 const agentAPI = {
   sendMessage: (projectPath: string, request: { content: string; model?: string; images?: { mimeType: string; base64: string; name: string }[]; additionalDirs?: string[] }) =>
@@ -345,6 +345,25 @@ const appAPI = {
     ipcRenderer.on(AgentIpcChannels.SESSIONS_CHANGED, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.SESSIONS_CHANGED, handler)
+    }
+  },
+
+  // Bash output watcher
+  watchBashOutput: (toolUseId: string, filePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BASH_OUTPUT_WATCH, toolUseId, filePath),
+  unwatchBashOutput: (toolUseId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BASH_OUTPUT_UNWATCH, toolUseId),
+  readBashOutputMore: (toolUseId: string, tailLines: number): Promise<string> =>
+    ipcRenderer.invoke(AgentIpcChannels.BASH_OUTPUT_READ_MORE, toolUseId, tailLines),
+  readBashOutputFile: (filePath: string, tailLines: number): Promise<string> =>
+    ipcRenderer.invoke(AgentIpcChannels.BASH_OUTPUT_READ_FILE, filePath, tailLines),
+  onBashOutputEvent: (callback: (event: BashOutputEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: BashOutputEvent): void => {
+      callback(event)
+    }
+    ipcRenderer.on(AgentIpcChannels.BASH_OUTPUT_EVENT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.BASH_OUTPUT_EVENT, handler)
     }
   },
 

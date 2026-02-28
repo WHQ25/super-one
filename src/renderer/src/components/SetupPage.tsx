@@ -4,47 +4,7 @@ import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
 import type { SetupEvent } from '../../../shared/agent-types'
-
-// ANSI 16-color map → Tailwind classes
-const ANSI_COLOR_MAP: Record<number, string> = {
-  30: 'text-zinc-900', 31: 'text-red-400', 32: 'text-green-400', 33: 'text-yellow-400',
-  34: 'text-blue-400', 35: 'text-purple-400', 36: 'text-cyan-400', 37: 'text-zinc-300',
-  90: 'text-zinc-500', 91: 'text-red-300', 92: 'text-green-300', 93: 'text-yellow-300',
-  94: 'text-blue-300', 95: 'text-purple-300', 96: 'text-cyan-300', 97: 'text-white',
-}
-
-interface AnsiSpan { text: string; className: string }
-
-/** Parse ANSI escape sequences into colored spans */
-function parseAnsi(raw: string): AnsiSpan[] {
-  const spans: AnsiSpan[] = []
-  const re = /\x1b\[([0-9;]*)m/g
-  let currentClass = 'text-zinc-300'
-  let lastIndex = 0
-  let match: RegExpExecArray | null
-
-  while ((match = re.exec(raw)) !== null) {
-    if (match.index > lastIndex) {
-      spans.push({ text: raw.slice(lastIndex, match.index), className: currentClass })
-    }
-    const codes = match[1].split(';').map(Number)
-    for (const code of codes) {
-      if (code === 0 || code === 39) {
-        currentClass = 'text-zinc-300'
-      } else if (code === 1) {
-        currentClass += ' font-bold'
-      } else if (ANSI_COLOR_MAP[code]) {
-        currentClass = ANSI_COLOR_MAP[code]
-      }
-    }
-    lastIndex = re.lastIndex
-  }
-
-  if (lastIndex < raw.length) {
-    spans.push({ text: raw.slice(lastIndex), className: currentClass })
-  }
-  return spans
-}
+import { parseAnsiToTailwind } from '@/lib/ansi'
 
 function TerminalOutput({ text }: { text: string }): React.JSX.Element {
   const lines = useMemo(() => text.split('\n'), [text])
@@ -54,7 +14,7 @@ function TerminalOutput({ text }: { text: string }): React.JSX.Element {
       {lines.map((line, i) => (
         <div key={i}>
           {line ? (
-            parseAnsi(line).map((span, j) => (
+            parseAnsiToTailwind(line).map((span, j) => (
               <span key={j} className={span.className}>{span.text}</span>
             ))
           ) : (

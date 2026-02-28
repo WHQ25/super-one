@@ -27,6 +27,8 @@ import {
 } from '../shared/agent-types'
 import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
+import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
+import { parseGitStatusOutput, parseGitStatusFiles } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
 import { getDb, closeDb, getCachedResources, setCachedResources } from './database'
@@ -87,6 +89,11 @@ function createWindow(): void {
 
   // Update agentService's window reference for event forwarding
   agentService.setMainWindow(mainWindow)
+  setBashOutputWindow(mainWindow)
+
+  mainWindow.on('closed', () => {
+    unwatchAllBashOutputs()
+  })
 
   // Fullscreen state (window-specific, re-binds per window)
   mainWindow.on('enter-full-screen', () => {
@@ -520,21 +527,7 @@ function registerIpcHandlers(): void {
     try {
       const raw = await gitRun(folderPath, ['status', '--porcelain=v1'])
       if (!raw) return []
-      return raw.split('\n').filter(Boolean).map((line) => {
-        const x = line[0]
-        const y = line[1]
-        const path = line.slice(3)
-        const staged = x !== ' ' && x !== '?'
-        let status: string
-        if (x === '?' || y === '?') status = '?'
-        else if (x === 'D' || y === 'D') status = 'D'
-        else if (x === 'A') status = 'A'
-        else if (x === 'R' || y === 'R') status = 'R'
-        else if (x === 'C' || y === 'C') status = 'C'
-        else if (x === 'U' || y === 'U') status = 'U'
-        else status = 'M'
-        return { path, status, staged }
-      })
+      return parseGitStatusFiles(raw)
     } catch {
       return []
     }
@@ -592,29 +585,14 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GIT_FILE_TREE, async (_event, folderPath: string) => {
     try {
-      const statusMap = new Map<string, GitFileStatus>()
-      const ignoredDirs = new Set<string>()
+      let statusMap = new Map<string, GitFileStatus>()
+      let ignoredDirs = new Set<string>()
       try {
         const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
         if (raw) {
-          for (const line of raw.split('\n').filter(Boolean)) {
-            const x = line[0]
-            const y = line[1]
-            const filePath = line.slice(3)
-            if (x === '!' && y === '!') {
-              const p = filePath.replace(/\/$/, '')
-              statusMap.set(p, '!')
-              if (filePath.endsWith('/')) ignoredDirs.add(p)
-            } else {
-              let status: GitFileStatus
-              if (x === '?' || y === '?') status = '?'
-              else if (x === 'D' || y === 'D') status = 'D'
-              else if (x === 'A') status = 'A'
-              else if (x === 'R' || y === 'R') status = 'R'
-              else status = 'M'
-              statusMap.set(filePath, status)
-            }
-          }
+          const parsed = parseGitStatusOutput(raw)
+          statusMap = parsed.statusMap
+          ignoredDirs = parsed.ignoredDirs
         }
       } catch { /* not a git repo or no commits */ }
 
@@ -676,29 +654,14 @@ function registerIpcHandlers(): void {
     if (inFlight) return inFlight
 
     const promise = (async () => {
-      const statusMap = new Map<string, GitFileStatus>()
-      const ignoredDirs = new Set<string>()
+      let statusMap = new Map<string, GitFileStatus>()
+      let ignoredDirs = new Set<string>()
       try {
         const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
         if (raw) {
-          for (const line of raw.split('\n').filter(Boolean)) {
-            const x = line[0]
-            const y = line[1]
-            const filePath = line.slice(3)
-            if (x === '!' && y === '!') {
-              const p = filePath.replace(/\/$/, '')
-              statusMap.set(p, '!')
-              if (filePath.endsWith('/')) ignoredDirs.add(p)
-            } else {
-              let status: GitFileStatus
-              if (x === '?' || y === '?') status = '?'
-              else if (x === 'D' || y === 'D') status = 'D'
-              else if (x === 'A') status = 'A'
-              else if (x === 'R' || y === 'R') status = 'R'
-              else status = 'M'
-              statusMap.set(filePath, status)
-            }
-          }
+          const parsed = parseGitStatusOutput(raw)
+          statusMap = parsed.statusMap
+          ignoredDirs = parsed.ignoredDirs
         }
       } catch { /* not a git repo or no commits */ }
       gitStatusSnapshotCache.set(folderPath, { at: Date.now(), statusMap, ignoredDirs })
@@ -842,6 +805,24 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.FILE_WATCH_STOP, () => {
     stopWatching()
+  })
+
+  ipcMain.handle(AgentIpcChannels.BASH_OUTPUT_WATCH, (_e, toolUseId: string, filePath: string) => {
+    watchBashOutput(toolUseId, filePath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.BASH_OUTPUT_UNWATCH, (_e, toolUseId: string) => {
+    unwatchBashOutput(toolUseId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.BASH_OUTPUT_READ_MORE, (_e, toolUseId: string, tailLines: number) => {
+    const filePath = getWatchedFilePath(toolUseId)
+    if (!filePath) return ''
+    return readBashOutputTail(filePath, tailLines)
+  })
+
+  ipcMain.handle(AgentIpcChannels.BASH_OUTPUT_READ_FILE, (_e, filePath: string, tailLines: number) => {
+    return readBashOutputTail(filePath, tailLines)
   })
 
   ipcMain.handle(AgentIpcChannels.GET_LOG_PATH, () => {

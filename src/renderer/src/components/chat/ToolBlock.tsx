@@ -1,16 +1,17 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, memo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { ChevronRight, PenLine, Check, X, Ban } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
 import { inferLanguage, useHighlightedTokens, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useChatStore, useActiveSession, useBashOutput } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { ToolIcon } from './ToolIcon'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName } from './tool-display'
 import { codePlugin } from './chat-shared'
-import { useStallLevel, getStallColor } from '@/lib/stall-utils'
+import { useStallLevel, getStallColor, type StallLevel } from '@/lib/stall-utils'
+import { AnsiText } from '@/lib/ansi'
 
 /** Dev-only: comma-separated tool names to show raw debug UI. e.g. RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate */
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
@@ -19,10 +20,13 @@ const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
 
 interface ToolBlockProps {
   toolName: string
+  toolUseId?: string
   input: string
   status?: 'streaming' | 'complete'
   elapsedSeconds?: number
   result?: string
+  isTimedOut?: boolean
+  resultOutputPath?: string
 }
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
@@ -101,7 +105,7 @@ function tryPrettifyJson(text: string): string | null {
   return null
 }
 
-export const ToolBlock = memo(function ToolBlock({ toolName, input, status, elapsedSeconds, result }: ToolBlockProps) {
+export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, resultOutputPath }: ToolBlockProps) {
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const params = useMemo(() => parseToolInput(input), [input])
@@ -127,10 +131,28 @@ export const ToolBlock = memo(function ToolBlock({ toolName, input, status, elap
     return <DebugToolBlock toolName={toolName} input={input} result={result} status={status} elapsedSeconds={elapsedSeconds} />
   }
 
-  // Hide TodoWrite from chat — handled by TodoPopup
   if (toolName === 'TodoWrite') return null
 
-  // Plan mode tools — compact inline indicator
+  const isDenied = !!result && result.startsWith('[denied] ')
+
+  if (toolName === 'Bash') {
+    const timeout = typeof params.timeout === 'number' ? params.timeout : undefined
+    return (
+      <BashTerminalView
+        toolUseId={toolUseId ?? ''}
+        command={display.summary}
+        fallbackResult={isDenied ? undefined : (result ?? undefined)}
+        isStreaming={isStreaming}
+        isDenied={isDenied}
+        elapsedSeconds={elapsedSeconds}
+        stallLevel={stallLevel}
+        timeoutMs={timeout}
+        isTimedOut={isTimedOut}
+        resultOutputPath={resultOutputPath}
+      />
+    )
+  }
+
   if (toolName === 'EnterPlanMode') {
     return (
       <div className="my-4 flex items-center gap-1.5 rounded bg-blue-500/10 px-2 py-1.5 text-sm">
@@ -142,8 +164,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, input, status, elap
   if (toolName === 'ExitPlanMode') {
     return <ExitPlanModeBlock result={result} />
   }
-
-  const isDenied = !!result && result.startsWith('[denied] ')
   const cleanResult = isDenied ? result.slice('[denied] '.length) : result
 
   const lineDelta = useMemo(() => (!isStreaming && !isDenied) ? computeLineDelta(toolName, params) : null, [toolName, params, isStreaming, isDenied])
@@ -247,20 +267,11 @@ export const ToolBlock = memo(function ToolBlock({ toolName, input, status, elap
         >
           <div className="overflow-hidden">
             <div className="px-2 pb-1.5">
-              {toolName === 'Bash' && summary && (
-                <div className="mb-1">
-                  <div className="mb-0.5 text-[11px] font-medium text-muted-foreground">Command</div>
-                  <div className="overflow-x-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap">
-                    {summary}
-                  </div>
-                </div>
-              )}
               {toolName === 'Edit' && <EditDiff params={params} />}
               {toolName === 'Write' && <WriteDiff params={params} />}
               {toolName === 'FileChange' && <FileChangeDiff params={params} />}
               {hasResult && (!hasDiff || toolName === 'FileChange') && (
                 <div>
-                  {toolName === 'Bash' && <div className="mb-0.5 text-[11px] font-medium text-muted-foreground">Output</div>}
                   {isMcp ? <PrettyJSONCodeBlock text={cleanResult!} /> : <ToolResult text={cleanResult!} />}
                 </div>
               )}
@@ -287,6 +298,182 @@ function FileChip({ name, title }: { name: string; title: string }) {
       <FileIcon name={name} size={12} />
       <span className="max-w-[160px] truncate">{name}</span>
     </span>
+  )
+}
+
+const BASH_LOAD_CHUNK = 50
+
+function BashTerminalView({
+  toolUseId,
+  command,
+  fallbackResult,
+  isStreaming,
+  isDenied,
+  elapsedSeconds,
+  stallLevel,
+  timeoutMs,
+  isTimedOut,
+  resultOutputPath,
+}: {
+  toolUseId: string
+  command: string
+  fallbackResult?: string
+  isStreaming: boolean
+  isDenied?: boolean
+  elapsedSeconds?: number
+  stallLevel?: StallLevel
+  timeoutMs?: number
+  isTimedOut?: boolean
+  resultOutputPath?: string
+}) {
+  const bashOutput = useBashOutput(toolUseId)
+  const outputExpired = !!resultOutputPath && !bashOutput && !isStreaming
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const [expanded, setExpanded] = useState(!outputExpired)
+  const [extraContent, setExtraContent] = useState('')
+  const [loadedLines, setLoadedLines] = useState(BASH_LOAD_CHUNK)
+  const [hasMore, setHasMore] = useState(true)
+  const loadingRef = useRef(false)
+  const prevExtraRef = useRef('')
+  const prevScrollHeightRef = useRef(0)
+  const [restoredContent, setRestoredContent] = useState<string | null>(outputExpired ? null : '')
+  const restoredRef = useRef(false)
+
+  useEffect(() => {
+    if (!outputExpired || !resultOutputPath || restoredRef.current) return
+    restoredRef.current = true
+    window.app.readBashOutputFile(resultOutputPath, 50).then((result) => {
+      setRestoredContent(result || '')
+      if (result) setExpanded(true)
+    })
+  }, [outputExpired, resultOutputPath])
+
+  const isPendingPermission = useActiveSession((s) => s.pendingPermission?.toolUseId === toolUseId)
+  const liveContent = outputExpired
+    ? (restoredContent || '')
+    : (bashOutput?.content || fallbackResult || '')
+  const liveContentRef = useRef(liveContent)
+  liveContentRef.current = liveContent
+  const outputPath = bashOutput?.outputPath || (restoredContent ? resultOutputPath : undefined)
+  const isLive = !!bashOutput && !bashOutput.finished
+  const hasResult = !!fallbackResult || isDenied
+  const timerActive = (isStreaming && !hasResult && !isPendingPermission) || isLive
+  const content = extraContent ? extraContent + '\n' + liveContent : liveContent
+  const fileExpired = outputExpired && restoredContent === ''
+
+  const [localElapsed, setLocalElapsed] = useState(0)
+  const startTimeRef = useRef(0)
+  useEffect(() => {
+    if (!timerActive) {
+      startTimeRef.current = 0
+      setLocalElapsed(0)
+      return
+    }
+    if (!startTimeRef.current) startTimeRef.current = Date.now()
+    const tick = (): void => setLocalElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [timerActive])
+
+  useEffect(() => {
+    if (isLive && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [liveContent, isLive])
+
+  useLayoutEffect(() => {
+    if (extraContent && extraContent !== prevExtraRef.current) {
+      const el = scrollRef.current
+      if (el) el.scrollTop = el.scrollHeight - prevScrollHeightRef.current
+      prevExtraRef.current = extraContent
+    }
+  }, [extraContent])
+
+  const loadMore = useCallback(async () => {
+    if (!outputPath || isLive || loadingRef.current || !hasMore) return
+    loadingRef.current = true
+    prevScrollHeightRef.current = scrollRef.current?.scrollHeight ?? 0
+    const nextLines = loadedLines + BASH_LOAD_CHUNK
+    const result = outputExpired
+      ? await window.app.readBashOutputFile(outputPath, nextLines)
+      : await window.app.readBashOutputMore(toolUseId, nextLines)
+    const resultLineCount = result.split('\n').length
+    if (resultLineCount <= loadedLines) {
+      setHasMore(false)
+    } else {
+      const lc = liveContentRef.current
+      const tail = result.split('\n').slice(0, -lc.split('\n').length)
+      setExtraContent(tail.join('\n'))
+      setLoadedLines(nextLines)
+    }
+    loadingRef.current = false
+  }, [toolUseId, outputPath, outputExpired, isLive, hasMore, loadedLines])
+
+  useEffect(() => {
+    if (isLive || !expanded || !hasMore || !outputPath) return
+    const el = scrollRef.current
+    const sentinel = sentinelRef.current
+    if (!el || !sentinel) return
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadMore() },
+      { root: el, threshold: 0.1 }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [isLive, expanded, hasMore, outputPath, loadMore])
+
+  return (
+    <div className={cn(
+      'tool-node my-0.5 rounded transition-colors cursor-pointer hover:bg-muted/70',
+      isDenied ? 'bg-red-500/10' : 'bg-muted/50',
+      expanded && 'overflow-hidden',
+    )}>
+      <div
+        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        {isDenied ? (
+          <Ban className="size-3 shrink-0 text-red-400" />
+        ) : (
+          <ToolIcon icon="terminal" className="size-3 shrink-0 text-muted-foreground" />
+        )}
+        <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground')}>
+          {isStreaming && !expanded ? <>Running…</> : 'Bash'}
+        </span>
+        {!expanded && <span className="min-w-0 truncate text-muted-foreground">{command}</span>}
+        {isDenied && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>}
+        {isTimedOut && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Timed out</span>}
+        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
+      </div>
+      {expanded && (
+        <div className="bg-[#0d1117] font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
+          {command && (
+            <div className="px-3 pt-2 text-[#e6edf3]">
+              <span className="text-[#7ee787]">$ </span>{command}
+            </div>
+          )}
+          <div
+            ref={scrollRef}
+            className="max-h-24 overflow-y-auto overflow-x-auto px-3 py-1.5"
+          >
+            {!isLive && hasMore && outputPath && <div ref={sentinelRef} className="h-px" />}
+            {fileExpired ? (
+              <div className="text-[#6e7681] italic">Output file: {resultOutputPath!.split('/').pop()} expired</div>
+            ) : outputExpired && restoredContent === null ? (
+              <div className="animate-shimmer text-[#6e7681]">Loading…</div>
+            ) : content ? (
+              <div className="text-[#8b949e]"><AnsiText text={content} /></div>
+            ) : isStreaming ? (
+              <div className="text-[#8b949e]">
+                <span className="animate-shimmer">Running…</span>{localElapsed >= 1 && <span className="text-[#6e7681]"> {localElapsed}s{timeoutMs && !isLive ? ` · timeout ${Math.round(timeoutMs / 1000)}s` : ''}</span>}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

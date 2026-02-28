@@ -49,6 +49,7 @@ export interface PerSessionState {
   _todosUserDismissed: boolean
   _nextTodoId: number
   isCompacting: boolean
+  rateLimitInfo: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number } | null
   _worktreeBranch: string | null
   additionalDirs: string[]
   lastEventAt: number
@@ -109,6 +110,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     _todosUserDismissed: false,
     _nextTodoId: 1,
     isCompacting: false,
+    rateLimitInfo: null,
     _worktreeBranch: null,
     additionalDirs: [],
     lastEventAt: 0,
@@ -153,6 +155,9 @@ export function createDefaultProjectState(): ProjectState {
 interface ChatStore {
   projectSessions: Record<string, ProjectState>
   activeProject: string | null
+
+  // Bash output live content (not persisted)
+  _bashOutputs: Record<string, { content: string; finished: boolean; outputPath?: string }>
 
   // Global UI state (not per-session)
   isOpen: boolean
@@ -409,6 +414,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
             } catch { /* ignore malformed JSON */ }
           }
 
+
           if (tn === 'EnterPlanMode') {
             extraUpdates = { ...extraUpdates, permissionMode: 'plan' }
           }
@@ -622,6 +628,13 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     case 'status_indicator':
       return { isCompacting: event.indicator === 'compacting' }
 
+    case 'rate_limit':
+      return {
+        rateLimitInfo: event.status === 'allowed'
+          ? null
+          : { status: event.status, resetsAt: event.resetsAt, rateLimitType: event.rateLimitType, utilization: event.utilization },
+      }
+
     case 'checkpoint_captured': {
       const msgs = [...session.messages]
       const targetIdx = findCheckpointTarget(msgs, event.messageId)
@@ -631,10 +644,23 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       return { messages: msgs }
     }
 
+    case 'task_notification': {
+      if (!event.toolUseId || !event.outputFile) return {}
+      const tid = event.toolUseId
+      const file = event.outputFile
+      return {
+        messages: session.messages.map((msg) => ({
+          ...msg,
+          content: msg.content.map((block) =>
+            block.type === 'tool_result' && block.toolUseId === tid ? { ...block, outputPath: file } : block,
+          ),
+        })),
+      }
+    }
+
     case 'hook_started':
     case 'hook_complete':
     case 'task_started':
-    case 'task_notification':
     case 'auth_status':
       return {}
   }
@@ -828,6 +854,7 @@ function resolveCodexReasoningEffort(
 export const useChatStore = create<ChatStore>((set, get) => ({
   projectSessions: {},
   activeProject: null,
+  _bashOutputs: {},
   isOpen: false,
   corner: 'br',
   availableModels: [],
@@ -927,6 +954,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }
           updatedProject._sessions = updatedSessions
 
+          const title = _extractTitle(updatedSession.messages) || ''
+          updatedProject.sessions = [
+            {
+              sessionId: realSid,
+              title,
+              lastActiveAt: new Date().toISOString(),
+              provider: updatedSession.sessionProvider ?? undefined,
+              messageCount: updatedSession.messages.length,
+              isWorktree: !!updatedSession._worktreeBranch,
+              gitBranch: updatedSession._worktreeBranch ?? undefined,
+            },
+            ...updatedProject.sessions.filter((e) => e.sessionId !== realSid),
+          ]
+
           const snapshot = updatedSession
           setTimeout(() => _savePerSessionSnapshot(projectPath, realSid, snapshot), 0)
         }
@@ -998,7 +1039,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       updatedProject.hasPendingInteraction = _computeHasPendingInteraction(updatedProject)
 
+      let bashOutputUpdate: Partial<ChatStore> | undefined
+      if (event.type === 'content_delta' && event.delta.type === 'tool_result' && event.delta.outputPath) {
+        const tid = event.delta.toolUseId
+        const op = event.delta.outputPath
+        bashOutputUpdate = {
+          _bashOutputs: { ...s._bashOutputs, [tid]: { content: s._bashOutputs[tid]?.content ?? '', finished: false, outputPath: op } },
+        }
+        setTimeout(() => window.app.watchBashOutput(tid, op), 0)
+      }
+
       return {
+        ...bashOutputUpdate,
         projectSessions: {
           ...s.projectSessions,
           [projectPath]: updatedProject,
@@ -1373,15 +1425,31 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setCorner: (corner) => set({ corner }),
 
   clearMessages: () => {
-    const { activeProject } = get()
+    const { activeProject, _bashOutputs } = get()
     if (!activeProject) return
-    set((s) => updateActivePerSession(s,() => ({
+    const session = getActivePerSession(get())
+    const sessionToolUseIds = new Set<string>()
+    if (session) {
+      for (const msg of session.messages) {
+        for (const b of msg.content) {
+          if (b.type === 'tool_use') sessionToolUseIds.add(b.toolUseId)
+        }
+      }
+    }
+    for (const id of sessionToolUseIds) {
+      if (_bashOutputs[id]) window.app.unwatchBashOutput(id)
+    }
+    const remainingOutputs: typeof _bashOutputs = {}
+    for (const [id, val] of Object.entries(_bashOutputs)) {
+      if (!sessionToolUseIds.has(id)) remainingOutputs[id] = val
+    }
+    set((s) => ({ ...updateActivePerSession(s,() => ({
       messages: [], session: null, totalCostUsd: 0, contextTokens: 0,
       sessionProvider: null, slashCommandOutput: null,
       pendingPermission: null, pendingQuestion: null, pendingPlanApproval: null,
       planApprovalOutcome: null, mentions: [], subagentTokens: {},
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
-    })))
+    })), _bashOutputs: remainingOutputs }))
   },
 
   resetSessionForWorktreeSwitch: (projectPath: string) => {
@@ -2003,6 +2071,10 @@ export function useActiveSession<T>(selector: (s: ActiveSessionView) => T): T {
   })
 }
 
+export function useBashOutput(toolUseId: string): { content: string; finished: boolean; outputPath?: string } | undefined {
+  return useChatStore((s) => s._bashOutputs[toolUseId])
+}
+
 /** Apply a content delta to the content array, merging consecutive text blocks and deduplicating tool_use. */
 function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {
   if (delta.type === 'text') {
@@ -2022,11 +2094,17 @@ function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[
     if (idx !== -1) {
       const existing = content[idx]
       const preserved = existing.type === 'tool_use'
-        ? { startedAt: existing.startedAt, elapsedSeconds: existing.elapsedSeconds }
+        ? { startedAt: existing.startedAt, elapsedSeconds: existing.elapsedSeconds, ...(!delta.status && existing.status ? { status: existing.status } : {}) }
         : {}
       return content.map((b, i) => (i === idx ? { ...preserved, ...delta } : b))
     }
     return [...content, { ...delta, startedAt: Date.now() }]
+  }
+  if (delta.type === 'tool_result') {
+    const updated = content.map((b) =>
+      b.type === 'tool_use' && b.toolUseId === delta.toolUseId ? { ...b, status: 'complete' as const } : b,
+    )
+    return [...updated, delta]
   }
   return [...content, delta]
 }

@@ -207,7 +207,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
       )}
     >
       <div
-        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
+        className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={expandable ? () => setExpanded((e) => !e) : undefined}
       >
         {isDenied ? (
@@ -229,7 +229,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
             ) : null}
             <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>
             {cleanResult !== 'User denied permission' && (
-              <span className="shrink-0 text-red-400/70">{cleanResult}</span>
+              <span className="basis-full text-red-400/70">{cleanResult}</span>
             )}
           </>
         ) : fileToolName ? (
@@ -330,7 +330,11 @@ function BashTerminalView({
   const outputExpired = !!resultOutputPath && !bashOutput && !isStreaming
   const scrollRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
-  const [expanded, setExpanded] = useState(!outputExpired)
+  const isLiveRunning = !!bashOutput && !bashOutput.finished
+  const isPendingPermission = useActiveSession((s) => s.pendingPermission?.toolUseId === toolUseId)
+  const hasResult = !!fallbackResult || isDenied
+  const isRunning = (isStreaming && !hasResult && !isPendingPermission) || isLiveRunning
+  const [expanded, setExpanded] = useState(isRunning)
   const [extraContent, setExtraContent] = useState('')
   const [loadedLines, setLoadedLines] = useState(BASH_LOAD_CHUNK)
   const [hasMore, setHasMore] = useState(true)
@@ -341,24 +345,25 @@ function BashTerminalView({
   const restoredRef = useRef(false)
 
   useEffect(() => {
+    setExpanded(isRunning)
+  }, [isRunning])
+
+  useEffect(() => {
     if (!outputExpired || !resultOutputPath || restoredRef.current) return
     restoredRef.current = true
     window.app.readBashOutputFile(resultOutputPath, 50).then((result) => {
       setRestoredContent(result || '')
-      if (result) setExpanded(true)
     })
   }, [outputExpired, resultOutputPath])
 
-  const isPendingPermission = useActiveSession((s) => s.pendingPermission?.toolUseId === toolUseId)
   const liveContent = outputExpired
     ? (restoredContent || '')
     : (bashOutput?.content || fallbackResult || '')
   const liveContentRef = useRef(liveContent)
   liveContentRef.current = liveContent
   const outputPath = bashOutput?.outputPath || (restoredContent ? resultOutputPath : undefined)
-  const isLive = !!bashOutput && !bashOutput.finished
-  const hasResult = !!fallbackResult || isDenied
-  const timerActive = (isStreaming && !hasResult && !isPendingPermission) || isLive
+  const isLive = isLiveRunning
+  const timerActive = isRunning
   const content = extraContent ? extraContent + '\n' + liveContent : liveContent
   const fileExpired = outputExpired && restoredContent === ''
 
@@ -442,12 +447,16 @@ function BashTerminalView({
         <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground')}>
           {isStreaming && !expanded ? <>Running…</> : 'Bash'}
         </span>
-        {!expanded && <span className="min-w-0 truncate text-muted-foreground">{command}</span>}
+        {(!expanded || fileExpired) && <span className="min-w-0 truncate text-muted-foreground">{command}</span>}
         {isDenied && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>}
         {isTimedOut && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Timed out</span>}
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
-      {expanded && (
+      {expanded && (fileExpired ? (
+        <div className="px-3 py-1.5 text-xs text-muted-foreground/50 italic">
+          Output file: {resultOutputPath!.split('/').pop()} expired
+        </div>
+      ) : (
         <div className="bg-[#0d1117] font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
           {command && (
             <div className="px-3 pt-2 text-[#e6edf3]">
@@ -459,9 +468,7 @@ function BashTerminalView({
             className="max-h-24 overflow-y-auto overflow-x-auto px-3 py-1.5"
           >
             {!isLive && hasMore && outputPath && <div ref={sentinelRef} className="h-px" />}
-            {fileExpired ? (
-              <div className="text-[#6e7681] italic">Output file: {resultOutputPath!.split('/').pop()} expired</div>
-            ) : outputExpired && restoredContent === null ? (
+            {outputExpired && restoredContent === null ? (
               <div className="animate-shimmer text-[#6e7681]">Loading…</div>
             ) : content ? (
               <div className="text-[#8b949e]"><AnsiText text={content} /></div>
@@ -472,7 +479,7 @@ function BashTerminalView({
             ) : null}
           </div>
         </div>
-      )}
+      ))}
     </div>
   )
 }
@@ -750,13 +757,13 @@ function ExitPlanModeBlock({ result }: { result?: string }) {
   }
 
   return (
-    <div className="my-4 flex items-center gap-1.5 rounded bg-red-500/10 px-2 py-1.5 text-sm">
+    <div className="my-4 flex flex-wrap items-center gap-1.5 rounded bg-red-500/10 px-2 py-1.5 text-sm">
       <PenLine className="size-3 shrink-0 text-red-400" />
       <span className="font-medium text-red-400">Plan Rejected</span>
-      {outcome.feedback && outcome.feedback !== 'User rejected the plan' && (
-        <span className="min-w-0 truncate text-red-400/70">{outcome.feedback}</span>
-      )}
       <X className="ml-auto size-3 shrink-0 text-red-400" />
+      {outcome.feedback && outcome.feedback !== 'User rejected the plan' && (
+        <span className="basis-full text-red-400/70">{outcome.feedback}</span>
+      )}
     </div>
   )
 }

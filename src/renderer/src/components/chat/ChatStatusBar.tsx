@@ -44,9 +44,9 @@ export function ChatStatusBar() {
   const [search, setSearch] = useState('')
   const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
 
-  const worktreeBranch = useActiveSession((s) => s._worktreeBranch)
+  const worktreeBaseBranch = useActiveSession((s) => s._worktreeBaseBranch)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
-  const isInWorktree = !!(wtState?.pendingBaseBranch || wtState?.activePath)
+  const isInWorktree = !!(wtState?.pendingBaseBranch || (wtState?.activePath && worktreeBaseBranch))
 
   const refreshGitInfo = useCallback(async () => {
     if (!currentFolder) return
@@ -121,7 +121,7 @@ export function ChatStatusBar() {
       <div className="flex items-center gap-2 px-7 pb-3 pt-1 text-[11px] text-muted-foreground">
         {gitInfo && <WorkDirIndicator />}
 
-        {gitInfo && !isInWorktree && !worktreeBranch && (
+        {gitInfo && !isInWorktree && !worktreeBaseBranch && (
           <>
             <div className="h-3 w-px bg-border" />
             <Popover open={popoverOpen} onOpenChange={openPopover}>

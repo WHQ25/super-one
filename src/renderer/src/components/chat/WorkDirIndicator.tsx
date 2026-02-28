@@ -21,7 +21,7 @@ export function WorkDirIndicator() {
   const worktrees = useAppStore((s) => s._worktrees)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
   const hasMessages = useActiveSession((s) => s.messages.length > 0)
-  const worktreeBranch = useActiveSession((s) => s._worktreeBranch)
+  const worktreeBaseBranch = useActiveSession((s) => s._worktreeBaseBranch)
 
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -69,7 +69,7 @@ export function WorkDirIndicator() {
   if (!worktreeInfo) return null
 
   const isPending = !!wtState?.pendingBaseBranch
-  const isActive = !!wtState?.activePath
+  const isActive = !!wtState?.activePath && !!worktreeBaseBranch
   const isInWorktree = isPending || isActive
 
   if (isActive) {
@@ -81,7 +81,7 @@ export function WorkDirIndicator() {
     )
   }
 
-  if (worktreeBranch && !isInWorktree) {
+  if (worktreeBaseBranch && !isInWorktree) {
     return (
       <div className="flex items-center gap-1 rounded-lg px-2 py-1">
         <GitFork className="size-3" />

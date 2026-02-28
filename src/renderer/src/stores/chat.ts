@@ -50,7 +50,7 @@ export interface PerSessionState {
   _nextTodoId: number
   isCompacting: boolean
   rateLimitInfo: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number } | null
-  _worktreeBranch: string | null
+  _worktreeBaseBranch: string | null
   additionalDirs: string[]
   lastEventAt: number
 }
@@ -111,7 +111,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     _nextTodoId: 1,
     isCompacting: false,
     rateLimitInfo: null,
-    _worktreeBranch: null,
+    _worktreeBaseBranch: null,
     additionalDirs: [],
     lastEventAt: 0,
   }
@@ -692,7 +692,7 @@ function _extractTitle(messages: ChatMessage[]): string | undefined {
 }
 
 function _getWorktreeBranch(projectPath: string, session: PerSessionState): string | undefined {
-  if (session._worktreeBranch) return session._worktreeBranch
+  if (session._worktreeBaseBranch) return session._worktreeBaseBranch
   const wt = useAppStore.getState().getWorktreeState(projectPath)
   if (wt.pendingBaseBranch) return wt.pendingBaseBranch
   return undefined
@@ -962,8 +962,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               lastActiveAt: new Date().toISOString(),
               provider: updatedSession.sessionProvider ?? undefined,
               messageCount: updatedSession.messages.length,
-              isWorktree: !!updatedSession._worktreeBranch,
-              gitBranch: updatedSession._worktreeBranch ?? undefined,
+              isWorktree: !!updatedSession._worktreeBaseBranch,
+              gitBranch: updatedSession._worktreeBaseBranch ?? undefined,
             },
             ...updatedProject.sessions.filter((e) => e.sessionId !== realSid),
           ]
@@ -1138,7 +1138,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         contextTokens: 0,
         session: null,
         sessionProvider: null,
-        _worktreeBranch: baseBranch,
+        _worktreeBaseBranch: baseBranch,
         todos: {},
         _nextTodoId: 1,
         showTodos: false,
@@ -1978,7 +1978,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messages: savedMessages,
       totalCostUsd: savedCost,
       contextTokens: savedTokens,
-      _worktreeBranch: savedWorktreeBranch,
+      _worktreeBaseBranch: savedWorktreeBranch,
       preferredProvider: restoredProvider,
       sessionProvider: restoredProvider,
     }

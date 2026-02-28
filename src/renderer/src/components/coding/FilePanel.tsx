@@ -213,7 +213,7 @@ export function FilePanel() {
             />
           </div>
         ) : effectiveTab === 'preview' && isMd ? (
-          <div className="chat-md p-4 text-sm">
+          <div className="github-md px-8 py-6 text-sm">
             <Streamdown
               plugins={streamdownPlugins}
               components={streamdownComponents}

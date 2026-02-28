@@ -52,14 +52,14 @@ export function CodeMinimap({ lines, tokens, scrollRef }: {
       const y = i * lineH
 
       if (line.kind === 'added') {
-        ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.5)'
         ctx.fillRect(0, y, MINIMAP_W, lineH)
-        ctx.fillStyle = 'rgba(34, 197, 94, 0.7)'
+        ctx.fillStyle = 'rgba(34, 197, 94, 1)'
         ctx.fillRect(0, y, GUTTER_W, lineH)
       } else if (line.kind === 'removed') {
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'
         ctx.fillRect(0, y, MINIMAP_W, lineH)
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.7)'
+        ctx.fillStyle = 'rgba(239, 68, 68, 1)'
         ctx.fillRect(0, y, GUTTER_W, lineH)
       }
 
@@ -69,7 +69,7 @@ export function CodeMinimap({ lines, tokens, scrollRef }: {
       if (lineTokens) {
         let x = 0
         for (const token of lineTokens) {
-          ctx.fillStyle = token.style?.color || 'rgba(150, 150, 150, 0.6)'
+          ctx.fillStyle = token.style?.color || 'rgba(150, 150, 150, 0.3)'
           for (const ch of token.content) {
             if (ch === ' ' || ch === '\t') { x += charW * (ch === '\t' ? 4 : 1); continue }
             if (x >= MINIMAP_W) break
@@ -79,7 +79,7 @@ export function CodeMinimap({ lines, tokens, scrollRef }: {
           if (x >= MINIMAP_W) break
         }
       } else if (line.text) {
-        ctx.fillStyle = 'rgba(150, 150, 150, 0.4)'
+        ctx.fillStyle = 'rgba(150, 150, 150, 0.2)'
         let x = 0
         for (const ch of line.text) {
           if (ch === ' ' || ch === '\t') { x += charW * (ch === '\t' ? 4 : 1); continue }

@@ -1,0 +1,169 @@
+/* ==============================================
+   GitHub-flavored markdown (scoped to .github-md)
+   Mirrors github.com's .markdown-body styling
+   ============================================== */
+
+.github-md {
+  line-height: 1.6;
+  word-wrap: break-word;
+}
+
+.github-md > :first-child {
+  margin-top: 0 !important;
+}
+
+.github-md > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* --- Headings --- */
+.github-md [data-streamdown="heading-1"] {
+  font-size: 2em;
+  font-weight: 600;
+  margin: 24px 0 16px;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.25;
+}
+
+.github-md [data-streamdown="heading-2"] {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 24px 0 16px;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.25;
+}
+
+.github-md [data-streamdown="heading-3"] {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 24px 0 16px;
+  line-height: 1.25;
+}
+
+.github-md [data-streamdown="heading-4"] {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 24px 0 16px;
+  line-height: 1.25;
+}
+
+.github-md [data-streamdown="heading-5"] {
+  font-size: 0.875em;
+  font-weight: 600;
+  margin: 24px 0 16px;
+  line-height: 1.25;
+}
+
+.github-md [data-streamdown="heading-6"] {
+  font-size: 0.85em;
+  font-weight: 600;
+  margin: 24px 0 16px;
+  line-height: 1.25;
+  color: var(--muted-foreground);
+}
+
+/* --- Paragraphs --- */
+.github-md p {
+  margin: 0 0 16px;
+}
+
+/* --- Links --- */
+.github-md [data-streamdown="link"] {
+  color: oklch(0.55 0.18 250);
+  text-decoration: none;
+}
+
+.dark .github-md [data-streamdown="link"] {
+  color: oklch(0.7 0.15 250);
+}
+
+.github-md [data-streamdown="link"]:hover {
+  text-decoration: underline;
+}
+
+/* --- Lists --- */
+.github-md [data-streamdown="unordered-list"] {
+  list-style-type: disc;
+  padding-left: 2em;
+  margin: 0 0 16px;
+}
+
+.github-md [data-streamdown="ordered-list"] {
+  list-style-type: decimal;
+  padding-left: 2em;
+  margin: 0 0 16px;
+}
+
+.github-md [data-streamdown="list-item"] {
+  margin: 4px 0;
+}
+
+.github-md [data-streamdown="list-item"] [data-streamdown="unordered-list"],
+.github-md [data-streamdown="list-item"] [data-streamdown="ordered-list"] {
+  margin: 4px 0 0;
+}
+
+.github-md [data-streamdown="unordered-list"] [data-streamdown="unordered-list"] {
+  list-style-type: circle;
+}
+
+.github-md [data-streamdown="unordered-list"] [data-streamdown="unordered-list"] [data-streamdown="unordered-list"] {
+  list-style-type: square;
+}
+
+/* --- Blockquotes --- */
+.github-md [data-streamdown="blockquote"] {
+  border-left: 4px solid var(--border);
+  padding: 0 16px;
+  margin: 0 0 16px;
+  color: var(--muted-foreground);
+}
+
+.github-md [data-streamdown="blockquote"] [data-streamdown="blockquote"] {
+  margin: 8px 0;
+}
+
+/* --- Horizontal rule --- */
+.github-md [data-streamdown="horizontal-rule"] {
+  border: none;
+  height: 4px;
+  background-color: var(--border);
+  margin: 24px 0;
+  padding: 0;
+}
+
+/* --- Tables --- */
+.github-md [data-streamdown="table-wrapper"] {
+  overflow-x: auto;
+  margin: 0 0 16px;
+}
+
+.github-md [data-streamdown="table"] {
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 100%;
+}
+
+.github-md [data-streamdown="table-header-cell"],
+.github-md [data-streamdown="table-cell"] {
+  border: 1px solid var(--border);
+  padding: 6px 13px;
+  text-align: left;
+}
+
+.github-md [data-streamdown="table-header-cell"] {
+  font-weight: 600;
+  background-color: var(--muted);
+}
+
+.github-md [data-streamdown="table-row"]:nth-child(2n) {
+  background-color: color-mix(in oklch, var(--muted), transparent 50%);
+}
+
+/* --- Images --- */
+.github-md img {
+  max-width: 100%;
+  border-radius: 6px;
+}

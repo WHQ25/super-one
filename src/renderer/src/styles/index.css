@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./github-md.css";
 @source "../../../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
@@ -288,6 +289,10 @@ body {
     margin-left: 0.5rem;
     border-left: 2px solid var(--border);
     border-radius: 0;
+  }
+
+  .tool-node.denied {
+    border-left-color: var(--color-red-400);
   }
 
   .thinking-content {

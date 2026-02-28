@@ -39,6 +39,12 @@ export function GitAutoRefresh() {
     }
   }, [showFilePanel, currentFolder])
 
+  useEffect(() => {
+    if (sidebarTab === 'files' && currentFolder) {
+      useFileTreeStore.getState().refreshTree(currentFolder)
+    }
+  }, [sidebarTab, currentFolder])
+
   const needsWatch = showFilePanel || sidebarTab === 'files'
 
   useEffect(() => {

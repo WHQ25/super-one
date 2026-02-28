@@ -372,7 +372,7 @@ function registerIpcHandlers(): void {
     new Promise<string>((resolve, reject) => {
       execFile('git', args, { cwd: folderPath }, (err, stdout) => {
         if (err) reject(err)
-        else resolve(stdout.trim())
+        else resolve(stdout.trimEnd())
       })
     })
 
@@ -726,7 +726,8 @@ function registerIpcHandlers(): void {
         }
       }
       return result
-    } catch {
+    } catch (err) {
+      log.error('[GIT_LIST_DIR] error:', err)
       return []
     }
   })
@@ -800,7 +801,9 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.FILE_WATCH_START, (_e, folderPath: string) => {
-    startWatching(getMainWindow(), folderPath)
+    startWatching(getMainWindow(), folderPath, () => {
+      gitStatusSnapshotCache.delete(folderPath)
+    })
   })
 
   ipcMain.handle(AgentIpcChannels.FILE_WATCH_STOP, () => {

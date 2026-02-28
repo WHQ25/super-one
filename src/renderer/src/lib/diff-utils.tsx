@@ -197,7 +197,7 @@ export function buildFullFileWithDiff(fullContent: string, unifiedDiff: string):
       fileLineIdx++
     }
     for (const line of hunk.lines) {
-      result.push({ ...line, sourceIdx: sourceIdx++ })
+      result.push({ ...line, sourceIdx: line.kind === 'removed' ? -1 : sourceIdx++ })
       if (line.kind !== 'removed') fileLineIdx++
     }
   }

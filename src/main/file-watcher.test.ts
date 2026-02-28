@@ -33,6 +33,36 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+describe('onInvalidate callback', () => {
+  it('should call onInvalidate for normal file changes', () => {
+    const onInvalidate = vi.fn()
+    startWatching(mockWindow, '/project', onInvalidate)
+    watchCallback('change', 'src/index.ts')
+    expect(onInvalidate).toHaveBeenCalledTimes(1)
+  })
+
+  it('should call onInvalidate for git HEAD changes', () => {
+    const onInvalidate = vi.fn()
+    startWatching(mockWindow, '/project', onInvalidate)
+    watchCallback('change', '.git/HEAD')
+    expect(onInvalidate).toHaveBeenCalledTimes(1)
+  })
+
+  it('should call onInvalidate for git index changes', () => {
+    const onInvalidate = vi.fn()
+    startWatching(mockWindow, '/project', onInvalidate)
+    watchCallback('change', '.git/index')
+    expect(onInvalidate).toHaveBeenCalledTimes(1)
+  })
+
+  it('should not call onInvalidate for ignored files', () => {
+    const onInvalidate = vi.fn()
+    startWatching(mockWindow, '/project', onInvalidate)
+    watchCallback('change', 'node_modules/pkg/index.js')
+    expect(onInvalidate).not.toHaveBeenCalled()
+  })
+})
+
 describe('file-watcher IGNORED pattern', () => {
   function triggerChange(filename: string) {
     startWatching(mockWindow, '/project')

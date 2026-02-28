@@ -13,6 +13,7 @@ const STATUS_COLOR: Record<string, string> = {
   A: 'text-green-400',
   D: 'text-red-400',
   R: 'text-blue-400',
+  C: 'text-blue-400',
   '?': 'text-sidebar-foreground/50',
   U: 'text-orange-400',
   '!': 'text-sidebar-foreground/30',

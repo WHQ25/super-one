@@ -107,6 +107,23 @@ describe('parseGitStatusOutput', () => {
   })
 })
 
+describe('parseGitStatusOutput with trimEnd (gitRun regression)', () => {
+  it('should preserve leading space on first line after trimEnd', () => {
+    const raw = ' M src/main/file-watcher.ts\n?? .claude/\n!! .env'
+    const trimmed = raw.trimEnd()
+    const result = parseGitStatusOutput(trimmed)
+    expect(result.statusMap.get('src/main/file-watcher.ts')).toBe('M')
+    expect(result.statusMap.get('rc/main/file-watcher.ts')).toBeUndefined()
+  })
+
+  it('should fail with trim (documents the bug)', () => {
+    const raw = ' M src/main/file-watcher.ts\n?? .claude/'
+    const trimmed = raw.trim()
+    const result = parseGitStatusOutput(trimmed)
+    expect(result.statusMap.has('src/main/file-watcher.ts')).toBe(false)
+  })
+})
+
 describe('parseGitStatusFiles', () => {
   it('should return empty array for empty input', () => {
     expect(parseGitStatusFiles('')).toEqual([])

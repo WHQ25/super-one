@@ -582,7 +582,8 @@ function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 
 const ZERO_TOKENS = { input: 0, output: 0 }
 
 function DurationFooter({ message, copyText }: { message: ChatMessageType; copyText?: string }) {
-  const isStreaming = message.status === 'streaming'
+  const isCompacting = useActiveSession((s) => s.isCompacting)
+  const isStreaming = message.status === 'streaming' && !isCompacting
   const streamingTokens = useActiveSession((s) => isStreaming ? s.streamingTokens : ZERO_TOKENS)
   const stallLevel = useStallLevel(isStreaming)
   const startTimeRef = useRef(() => {

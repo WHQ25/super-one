@@ -43,5 +43,5 @@ function DiffContent({ filePath, diff }: { filePath: string; diff: string }) {
     )
   }
 
-  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} maxHeight="max-h-full" className="text-sm" />
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} maxHeight="max-h-full" className="min-h-full text-sm" />
 }

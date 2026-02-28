@@ -120,6 +120,34 @@ function App(): React.JSX.Element {
     document.addEventListener('mouseup', onUp)
   }, [setFilePanelWidth])
 
+  useEffect(() => {
+    let raf = 0
+    const clampPanels = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const { showSidebar: sb, sidebarWidth: sw, showFilePanel: fp, filePanelWidth: fw, setSidebarWidth: setSW, setFilePanelWidth: setFW } = useAppStore.getState()
+        const totalPanels = (sb ? sw : 0) + (fp ? fw : 0)
+        const overflow = totalPanels + MIN_MAIN - window.innerWidth
+        if (overflow <= 0) return
+        if (fp && fw - overflow >= MIN_FP) {
+          setFW(fw - overflow)
+        } else if (fp && sb) {
+          const newFW = MIN_FP
+          const remaining = overflow - (fw - newFW)
+          setFW(newFW)
+          if (remaining > 0) setSW(Math.max(MIN_SIDEBAR, sw - remaining))
+        } else if (sb && sw - overflow >= MIN_SIDEBAR) {
+          setSW(sw - overflow)
+        }
+      })
+    }
+    window.addEventListener('resize', clampPanels)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', clampPanels)
+    }
+  }, [])
+
   const hasLeftPanel = showSidebar || showFilePanel
 
   const folderName = currentFolder?.split('/').pop() ?? null

@@ -158,6 +158,14 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
       trace('agent.sdk', msg.type, msg)
       let messageId = turnMessageId
 
+      if (!turnActive) {
+        const latestId = getCurrentMessageId()
+        if (latestId && latestId !== turnMessageId) {
+          turnMessageId = latestId
+          messageId = turnMessageId
+        }
+      }
+
       if ((msg.type === 'assistant' || msg.type === 'stream_event')) {
         const parent = (msg as any).parent_tool_use_id ?? null
         if (!parent) {

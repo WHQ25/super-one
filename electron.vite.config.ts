@@ -14,7 +14,13 @@ export default defineConfig({
   },
   preload: {
     build: {
-      externalizeDeps: true
+      externalizeDeps: false,
+      rollupOptions: {
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].js'
+        }
+      }
     }
   },
   renderer: {

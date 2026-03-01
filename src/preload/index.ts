@@ -429,6 +429,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_STATE, claudeSessionId),
   deleteSession: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE, sessionId),
+  deleteSessionsOlderThan: (folderPath: string, cutoffDate: string): Promise<string[]> =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE_OLDER, folderPath, cutoffDate),
   pinSession: (sessionId: string, pinned: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_PIN, sessionId, pinned),
   hideSession: (sessionId: string, hidden: boolean) =>

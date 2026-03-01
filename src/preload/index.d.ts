@@ -141,6 +141,7 @@ interface AppAPI {
   saveSessionState(claudeSessionId: string, data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string; provider?: string }): Promise<void>
   loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string } | null>
   deleteSession(sessionId: string): Promise<void>
+  deleteSessionsOlderThan(folderPath: string, cutoffDate: string): Promise<string[]>
   pinSession(sessionId: string, pinned: boolean): Promise<void>
   hideSession(sessionId: string, hidden: boolean): Promise<void>
   listPinnedSessions(): Promise<PinnedSessionEntry[]>

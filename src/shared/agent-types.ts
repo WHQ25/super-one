@@ -875,6 +875,7 @@ export const AgentIpcChannels = {
   SESSIONS_SAVE_STATE: 'sessions:save-state',
   SESSIONS_LOAD_STATE: 'sessions:load-state',
   SESSIONS_DELETE: 'sessions:delete',
+  SESSIONS_DELETE_OLDER: 'sessions:delete-older',
   SESSIONS_PIN: 'sessions:pin',
   SESSIONS_HIDE: 'sessions:hide',
   SESSIONS_LIST_PINNED: 'sessions:list-pinned',

@@ -205,6 +205,34 @@ export function deleteSession(claudeSessionId: string): void {
   db.prepare('DELETE FROM sessions WHERE claude_session_id = ?').run(claudeSessionId)
 }
 
+/** Delete non-pinned sessions older than cutoffDate for a project. Returns deleted session IDs. */
+export function deleteSessionsOlderThan(folderPath: string, cutoffDate: string): string[] {
+  const projectId = getProjectId(folderPath)
+  if (!projectId) return []
+
+  const db = getDb()
+
+  const rows = db.prepare(`
+    SELECT s.claude_session_id
+    FROM sessions s
+    WHERE s.project_id = ?
+      AND COALESCE(s.is_pinned, 0) = 0
+      AND COALESCE(
+            (SELECT MAX(m.created_at) FROM chat_messages m
+             WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
+            s.created_at
+          ) < ?
+  `).all(projectId, cutoffDate) as Array<{ claude_session_id: string }>
+
+  const ids = rows.map((r) => r.claude_session_id)
+  if (ids.length === 0) return []
+
+  const placeholders = ids.map(() => '?').join(',')
+  db.prepare(`DELETE FROM sessions WHERE claude_session_id IN (${placeholders})`).run(...ids)
+
+  return ids
+}
+
 /** Pin or unpin a session. */
 export function pinSession(claudeSessionId: string, pinned: boolean): void {
   const db = getDb()

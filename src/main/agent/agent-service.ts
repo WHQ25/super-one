@@ -15,7 +15,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, deleteSession as dbDeleteSession, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
+import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import { checkMcpServers } from '../mcp-probe-service'
@@ -417,6 +417,14 @@ export class AgentService {
       this.mainWindow?.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
     })
 
+    ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE_OLDER, (_event, folderPath: string, cutoffDate: string) => {
+      const deleted = dbDeleteSessionsOlderThan(folderPath, cutoffDate)
+      if (deleted.length > 0) {
+        this.mainWindow?.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+      }
+      return deleted
+    })
+
     ipcMain.handle(AgentIpcChannels.SESSIONS_PIN, (_event, claudeSessionId: string, pinned: boolean) => {
       dbPinSession(claudeSessionId, pinned)
     })
@@ -547,6 +555,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_SAVE_STATE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_STATE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE_OLDER)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_PIN)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_HIDE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)

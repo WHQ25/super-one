@@ -13,7 +13,7 @@ vi.mock('./recent-folders', () => ({
   getProjectId: getProjectIdMock,
 }))
 
-import { listPinnedSessions, listSessionsForFolder } from './db-sessions'
+import { deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder } from './db-sessions'
 
 describe('db-sessions provider inference query + mapping', () => {
   beforeEach(() => {
@@ -113,3 +113,59 @@ describe('db-sessions provider inference query + mapping', () => {
   })
 })
 
+describe('deleteSessionsOlderThan', () => {
+  beforeEach(() => {
+    getDbMock.mockReset()
+    getProjectIdMock.mockReset()
+  })
+
+  it('returns empty array when project is unknown', () => {
+    getProjectIdMock.mockReturnValue(null)
+    const result = deleteSessionsOlderThan('/tmp/missing', '2026-01-01T00:00:00.000Z')
+    expect(result).toEqual([])
+  })
+
+  it('returns empty array when no sessions match', () => {
+    getProjectIdMock.mockReturnValue('proj-1')
+    const allMock = vi.fn().mockReturnValue([])
+    const prepareMock = vi.fn().mockReturnValue({ all: allMock })
+    getDbMock.mockReturnValue({ prepare: prepareMock })
+
+    const result = deleteSessionsOlderThan('/tmp/project', '2026-01-01T00:00:00.000Z')
+    expect(result).toEqual([])
+    expect(prepareMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('deletes matching sessions and returns their IDs', () => {
+    getProjectIdMock.mockReturnValue('proj-1')
+    const matchingRows = [
+      { claude_session_id: 'old-session-1' },
+      { claude_session_id: 'old-session-2' },
+    ]
+    const allMock = vi.fn().mockReturnValue(matchingRows)
+    const runMock = vi.fn()
+    const prepareMock = vi.fn().mockReturnValue({ all: allMock, run: runMock })
+    getDbMock.mockReturnValue({ prepare: prepareMock })
+
+    const result = deleteSessionsOlderThan('/tmp/project', '2026-02-01T00:00:00.000Z')
+
+    expect(result).toEqual(['old-session-1', 'old-session-2'])
+    expect(prepareMock).toHaveBeenCalledTimes(2)
+    expect(runMock).toHaveBeenCalledWith('old-session-1', 'old-session-2')
+  })
+
+  it('excludes pinned sessions in SQL query', () => {
+    getProjectIdMock.mockReturnValue('proj-1')
+    const allMock = vi.fn().mockReturnValue([])
+    const prepareMock = vi.fn((sql: string) => {
+      if (sql.includes('SELECT')) {
+        expect(sql).toContain('is_pinned')
+      }
+      return { all: allMock, run: vi.fn() }
+    })
+    getDbMock.mockReturnValue({ prepare: prepareMock })
+
+    deleteSessionsOlderThan('/tmp/project', '2026-01-01T00:00:00.000Z')
+    expect(allMock).toHaveBeenCalledWith('proj-1', '2026-01-01T00:00:00.000Z')
+  })
+})

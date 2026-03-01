@@ -1,13 +1,20 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ArrowLeft, Check, Copy, Eye, EyeOff, GitFork, MessageSquare, Pencil, Search, Trash2, X } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { ArrowLeft, Check, Copy, Eye, EyeOff, GitFork, MessageSquare, MoreHorizontal, Pencil, Search, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getDeleteSessionRecovery } from '../session-delete-helpers'
 import type { SessionHistoryEntry } from '../../../../shared/agent-types'
+
+const CLEANUP_OPTIONS = [
+  { label: 'Older than 1 week', days: 7 },
+  { label: 'Older than 2 weeks', days: 14 },
+  { label: 'Older than 30 days', days: 30 },
+] as const
 
 interface SessionHistoryProps {
   showBackButton?: boolean
@@ -31,6 +38,7 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
   const [searchQuery, setSearchQuery] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<SessionHistoryEntry | null>(null)
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null)
+  const [cleanupDays, setCleanupDays] = useState<number | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -90,6 +98,19 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
     setCopiedCmd(null)
   }
 
+  const cleanupCutoff = cleanupDays != null ? new Date(Date.now() - cleanupDays * 86400000).toISOString() : null
+  const cleanupCount = cleanupCutoff
+    ? sessions.filter((s) => !s.isPinned && s.lastActiveAt < cleanupCutoff).length
+    : 0
+
+  const handleBatchDelete = useCallback(async () => {
+    if (!activeProject || !cleanupCutoff) return
+    const deleted = await window.app.deleteSessionsOlderThan(activeProject, cleanupCutoff)
+    fetchSessions()
+    if (currentSessionId && deleted.includes(currentSessionId)) resetSession()
+    setCleanupDays(null)
+  }, [activeProject, cleanupCutoff, currentSessionId, fetchSessions, resetSession])
+
   const deleteTargetCli = getDeleteSessionRecovery(deleteTarget?.provider ?? 'claude', deleteTarget?.sessionId ?? '')
 
   const filteredSessions = searchQuery
@@ -147,6 +168,21 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
             </button>
           )}
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="icon-xs" variant="ghost" className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground">
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            {CLEANUP_OPTIONS.map((opt) => (
+              <DropdownMenuItem key={opt.days} variant="destructive" onClick={() => setCleanupDays(opt.days)} className="text-xs">
+                <Trash2 className="size-3.5" />
+                Delete {opt.label.toLowerCase()}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {!showBackButton && onClose && (
           <Button size="icon-xs" variant="ghost" onClick={onClose} className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground">
             <X className="size-4" />
@@ -273,6 +309,24 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cleanupDays != null} onOpenChange={(open) => { if (!open) setCleanupDays(null) }}>
+        <DialogContent showCloseButton={false} className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Batch Delete Sessions?</DialogTitle>
+            <DialogDescription>
+              {cleanupCount === 0
+                ? `No non-pinned sessions found ${CLEANUP_OPTIONS.find((o) => o.days === cleanupDays)?.label.toLowerCase() ?? ''}.`
+                : `This will delete ${cleanupCount} non-pinned session${cleanupCount > 1 ? 's' : ''} ${CLEANUP_OPTIONS.find((o) => o.days === cleanupDays)?.label.toLowerCase() ?? ''}. Pinned sessions will not be affected.`
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCleanupDays(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleBatchDelete} disabled={cleanupCount === 0}>Delete</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

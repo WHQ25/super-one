@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process'
+import log from '../logger'
 import { resolve } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, type ClaudeAgentConfig } from './claude-agent'
@@ -14,7 +15,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, deleteSession as dbDeleteSession, pinSession as dbPinSession, listPinnedSessions } from '../db-sessions'
+import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, deleteSession as dbDeleteSession, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
@@ -208,14 +209,14 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_INSTALL, async (_event, projectPath: string, key: string, scope: ResourceScope) => {
       await installPlugin(key, scope, projectPath)
-      try { await this.getAgent(projectPath).refreshSession() } catch { /* session may not be active */ }
+      try { await this.getAgent(projectPath).refreshSession() } catch (err) { log.debug('[agent] refreshSession skipped:', err) }
     })
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_UPDATE, async (_event, projectPath: string, updates: Array<{ key: string; scope: ResourceScope }>) => {
       for (const { key, scope } of updates) {
         updatePlugin(key, scope, projectPath)
       }
-      try { await this.getAgent(projectPath).refreshSession() } catch { /* session may not be active */ }
+      try { await this.getAgent(projectPath).refreshSession() } catch (err) { log.debug('[agent] refreshSession skipped:', err) }
     })
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE, async (_event, name: string) => {
@@ -285,7 +286,7 @@ export class AgentService {
       try {
         await this.getAgent(projectPath).reconnectMcpServer(name)
         await this.getAgent(projectPath).refreshSession()
-      } catch { /* session may not be active */ }
+      } catch (err) { log.debug('[agent] MCP save refreshSession skipped:', err) }
     })
 
     ipcMain.handle(AgentIpcChannels.MCP_DELETE_CONFIG, async (_event, projectPath: string, name: string, scope: ResourceScope) => {
@@ -293,7 +294,7 @@ export class AgentService {
       try {
         await this.getAgent(projectPath).toggleMcpServer(name, false)
         await this.getAgent(projectPath).refreshSession()
-      } catch { /* session may not be active */ }
+      } catch (err) { log.debug('[agent] MCP delete refreshSession skipped:', err) }
     })
 
     ipcMain.handle(AgentIpcChannels.MCP_TOGGLE_CONFIG, async (_event, projectPath: string, name: string, disabled: boolean, scope: ResourceScope) => {
@@ -301,7 +302,7 @@ export class AgentService {
       try {
         await this.getAgent(projectPath).toggleMcpServer(name, !disabled)
         await this.getAgent(projectPath).refreshSession()
-      } catch { /* session may not be active */ }
+      } catch (err) { log.debug('[agent] MCP toggle refreshSession skipped:', err) }
     })
 
     ipcMain.handle(AgentIpcChannels.MCP_CHECK_SERVERS, async (_event, projectPath: string) => {
@@ -311,7 +312,7 @@ export class AgentService {
       const connectedMeta = Object.fromEntries(
         Object.entries(result.meta).filter(([name]) => connectedNames.has(name))
       )
-      try { backupMcpServers(configs, connectedMeta) } catch { /* ignore */ }
+      try { backupMcpServers(configs, connectedMeta) } catch (err) { log.warn('[agent] MCP backup failed:', err) }
       return result
     })
 
@@ -337,6 +338,10 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER, (_event, folderPath: string) => {
       return listSessionsForFolder(folderPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE, (_event, folderPath: string, limit: number, offset: number) => {
+      return listSessionsForFolder(folderPath, limit, offset)
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string) => {
@@ -413,6 +418,10 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_PIN, (_event, claudeSessionId: string, pinned: boolean) => {
       dbPinSession(claudeSessionId, pinned)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_HIDE, (_event, claudeSessionId: string, hidden: boolean) => {
+      dbHideSession(claudeSessionId, hidden)
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_LIST_PINNED, () => {
@@ -529,6 +538,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.ACTIVATE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_RESUME)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_MESSAGES)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_RENAME)
@@ -537,6 +547,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_STATE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_PIN)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_HIDE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)
   }
 }

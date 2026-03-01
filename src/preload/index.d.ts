@@ -133,6 +133,7 @@ interface AppAPI {
   // Session history
   listSessions(projectPath: string): Promise<SessionHistoryEntry[]>
   listSessionsForFolder(folderPath: string): Promise<SessionHistoryEntry[]>
+  listSessionsForFolderPage(folderPath: string, limit: number, offset: number): Promise<SessionHistoryEntry[]>
   resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string): Promise<void>
   loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
   renameSession(sessionId: string, title: string): Promise<void>
@@ -141,7 +142,10 @@ interface AppAPI {
   loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string } | null>
   deleteSession(sessionId: string): Promise<void>
   pinSession(sessionId: string, pinned: boolean): Promise<void>
+  hideSession(sessionId: string, hidden: boolean): Promise<void>
   listPinnedSessions(): Promise<PinnedSessionEntry[]>
+
+  trace(source: string, type: string, data: unknown, tag?: string): void
 }
 
 declare global {

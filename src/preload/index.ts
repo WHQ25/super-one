@@ -413,6 +413,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST, projectPath),
   listSessionsForFolder: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER, folderPath),
+  listSessionsForFolderPage: (folderPath: string, limit: number, offset: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE, folderPath, limit, offset),
   resumeSession: (projectPath: string, sessionId: string, worktreeCwd?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RESUME, projectPath, sessionId, worktreeCwd),
   loadSessionMessages: (projectPath: string, sessionId: string, limit: number, cursor?: number) =>
@@ -429,8 +431,14 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE, sessionId),
   pinSession: (sessionId: string, pinned: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_PIN, sessionId, pinned),
+  hideSession: (sessionId: string, hidden: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_HIDE, sessionId, hidden),
   listPinnedSessions: () =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_PINNED),
+
+  trace: (source: string, type: string, data: unknown, tag?: string) => {
+    ipcRenderer.send('app:trace', source, type, data, tag)
+  },
 }
 
 if (process.contextIsolated) {

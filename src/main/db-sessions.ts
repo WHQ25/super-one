@@ -28,13 +28,13 @@ interface DbChatMessage {
 }
 
 /** List sessions for a project folder from DB (no external sync). */
-export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[] {
+export function listSessionsForFolder(folderPath: string, limit?: number, offset?: number): SessionHistoryEntry[] {
   const projectId = getProjectId(folderPath)
   if (!projectId) return []
 
   const db = getDb()
-  const rows = db.prepare(`
-    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree, s.is_pinned,
+  const baseSql = `
+    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden,
            COALESCE(
              (SELECT MAX(m.created_at) FROM chat_messages m
               WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
@@ -51,8 +51,11 @@ export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[]
            END AS provider
     FROM sessions s
     WHERE s.project_id = ?
-    ORDER BY last_user_msg_at DESC
-  `).all(projectId) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; provider: 'claude' | 'codex' }>
+    ORDER BY last_user_msg_at DESC`
+  const rows = (limit != null
+    ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(projectId, limit, offset ?? 0)
+    : db.prepare(baseSql).all(projectId)
+  ) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; provider: 'claude' | 'codex' }>
 
   return rows.map((r) => ({
     sessionId: r.claude_session_id ?? r.id,
@@ -62,6 +65,7 @@ export function listSessionsForFolder(folderPath: string): SessionHistoryEntry[]
     messageCount: 0,
     ...(r.is_worktree ? { isWorktree: true } : {}),
     ...(r.is_pinned ? { isPinned: true } : {}),
+    ...(r.is_hidden ? { isHidden: true } : {}),
   }))
 }
 
@@ -207,6 +211,12 @@ export function pinSession(claudeSessionId: string, pinned: boolean): void {
   db.prepare('UPDATE sessions SET is_pinned = ? WHERE claude_session_id = ?').run(pinned ? 1 : 0, claudeSessionId)
 }
 
+/** Hide or unhide a session. */
+export function hideSession(claudeSessionId: string, hidden: boolean): void {
+  const db = getDb()
+  db.prepare('UPDATE sessions SET is_hidden = ? WHERE claude_session_id = ?').run(hidden ? 1 : 0, claudeSessionId)
+}
+
 /** List all pinned sessions across all projects. */
 export function listPinnedSessions(): PinnedSessionEntry[] {
   const db = getDb()
@@ -229,7 +239,7 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
            END AS provider
     FROM sessions s
     JOIN projects p ON p.id = s.project_id
-    WHERE s.is_pinned = 1
+    WHERE s.is_pinned = 1 AND COALESCE(s.is_hidden, 0) = 0
     ORDER BY last_user_msg_at DESC
   `).all() as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; folder_path: string; folder_name: string; provider: 'claude' | 'codex' }>
 

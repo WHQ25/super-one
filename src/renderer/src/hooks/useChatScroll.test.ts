@@ -100,6 +100,50 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(0)
   })
 
+  it('disables auto-scroll immediately on any upward scroll during streaming', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    const scrolledPos = state.scrollHeight - state.clientHeight - 10
+    act(() => {
+      state.scrollTop = scrolledPos
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 900
+    mockSessionState = {
+      ...mockSessionState,
+      messages: [
+        { id: '1', role: 'assistant', content: [{ type: 'text', text: 'updated' }] },
+      ],
+    }
+    rerender()
+    expect(state.scrollTop).toBe(scrolledPos)
+  })
+
+  it('re-enables auto-scroll when user scrolls back near bottom', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      state.scrollTop = 0
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    act(() => {
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    fireResize()
+    expect(state.scrollTop).toBe(500)
+  })
+
   it('does not scroll on resize when not streaming', () => {
     mockSessionState = { ...mockSessionState, status: 'idle' }
     const { el, state } = createMockViewport()

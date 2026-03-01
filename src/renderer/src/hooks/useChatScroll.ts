@@ -18,13 +18,17 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   statusRef.current = status
 
   const isNearBottomRef = useRef(true)
+  const lastScrollTopRef = useRef(0)
   const [showScrollButton, setShowScrollButton] = useState(false)
 
   useLayoutEffect(() => {
     isNearBottomRef.current = true
     setShowScrollButton(false)
     const el = scrollViewportRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el) {
+      el.scrollTop = el.scrollHeight
+      lastScrollTopRef.current = el.scrollTop
+    }
   }, [sessionId])
 
   useEffect(() => {
@@ -32,7 +36,14 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     if (!el) return
     const handleScroll = (): void => {
       const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
-      isNearBottomRef.current = remaining < el.clientHeight / 2
+      const scrolledUp = el.scrollTop < lastScrollTopRef.current
+      lastScrollTopRef.current = el.scrollTop
+
+      if (scrolledUp && statusRef.current === 'streaming') {
+        isNearBottomRef.current = false
+      } else {
+        isNearBottomRef.current = remaining < el.clientHeight / 2
+      }
       setShowScrollButton(remaining > el.clientHeight)
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
@@ -46,6 +57,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const lastMsg = messages[messages.length - 1]
     if (isNearBottomRef.current || lastMsg?.role === 'user') {
       el.scrollTop = el.scrollHeight
+      lastScrollTopRef.current = el.scrollTop
       isNearBottomRef.current = true
       setShowScrollButton(false)
     }
@@ -60,9 +72,13 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const observer = new ResizeObserver(() => {
       if (isNearBottomRef.current && statusRef.current === 'streaming') {
         viewport.scrollTop = viewport.scrollHeight
+        lastScrollTopRef.current = viewport.scrollTop
         cancelAnimationFrame(rafId)
         rafId = requestAnimationFrame(() => {
-          if (isNearBottomRef.current) viewport.scrollTop = viewport.scrollHeight
+          if (isNearBottomRef.current) {
+            viewport.scrollTop = viewport.scrollHeight
+            lastScrollTopRef.current = viewport.scrollTop
+          }
         })
       }
     })

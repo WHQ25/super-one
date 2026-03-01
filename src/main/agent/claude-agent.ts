@@ -156,17 +156,15 @@ export class ClaudeAgent {
     log.debug(`[ClaudeAgent] createSession gen=${gen} resume=${resumeSessionId ?? 'none'}`)
     this.iterationDone.then(() => {
       log.debug(`[ClaudeAgent] iterationDone.then gen=${gen} currentGen=${this.sessionGeneration} sessionId=${this.sessionId} bridge=${!!this.bridge}`)
-      if (gen === this.sessionGeneration) {
-        this.iterationAlive = false
-      } else {
-        log.warn(`[ClaudeAgent] STALE iterationDone.then — skipping iterationAlive=false (gen=${gen} != ${this.sessionGeneration})`)
+      this.iterationAlive = false
+      if (gen !== this.sessionGeneration) {
+        log.warn(`[ClaudeAgent] STALE iterationDone.then (gen=${gen} != ${this.sessionGeneration})`)
       }
     }).catch((err) => {
       log.debug(`[ClaudeAgent] iterationDone.catch gen=${gen} currentGen=${this.sessionGeneration} sessionId=${this.sessionId} err=${err instanceof Error ? err.message : String(err)}`)
-      if (gen === this.sessionGeneration) {
-        this.iterationAlive = false
-      } else {
-        log.warn(`[ClaudeAgent] STALE iterationDone.catch — skipping iterationAlive=false (gen=${gen} != ${this.sessionGeneration})`)
+      this.iterationAlive = false
+      if (gen !== this.sessionGeneration) {
+        log.warn(`[ClaudeAgent] STALE iterationDone.catch (gen=${gen} != ${this.sessionGeneration})`)
       }
     })
 
@@ -192,41 +190,37 @@ export class ClaudeAgent {
       throw new Error('ClaudeAgent not initialized')
     }
 
-    // If effort changed, refresh session to apply new effort level
-    if (request.effort !== this.currentEffort && this.bridge) {
-      const prevSessionId = this.sessionId
-      await this.resetSession()
-      this.currentEffort = request.effort
-      this.createSession(prevSessionId || undefined)
-    } else {
-      this.currentEffort = request.effort
-    }
-
-    // If additionalDirs changed, refresh session to apply new directories
+    const effortChanged = request.effort !== this.currentEffort && !!this.bridge
+    let dirsChanged = false
+    let dirNotifyLines: string[] = []
     if (request.additionalDirs) {
       const sorted = [...request.additionalDirs].sort()
       const current = [...this.additionalDirs].sort()
-      if (JSON.stringify(sorted) !== JSON.stringify(current)) {
-        const added = request.additionalDirs.filter(d => !this.additionalDirs.includes(d))
-        const removed = this.additionalDirs.filter(d => !request.additionalDirs!.includes(d))
-        const prevSessionId = this.sessionId
-        await this.resetSession()
-        this.additionalDirs = request.additionalDirs
-        this.createSession(prevSessionId || undefined)
-
-        const lines = [
-          ...added.map(d => `Added ${d} as a working directory`),
-          ...removed.map(d => `Removed ${d} from working directories`),
+      dirsChanged = JSON.stringify(sorted) !== JSON.stringify(current)
+      if (dirsChanged) {
+        dirNotifyLines = [
+          ...request.additionalDirs.filter(d => !this.additionalDirs.includes(d)).map(d => `Added ${d} as a working directory`),
+          ...this.additionalDirs.filter(d => !request.additionalDirs!.includes(d)).map(d => `Removed ${d} from working directories`),
         ]
-        if (lines.length > 0) {
-          this.bridge!.push({
-            type: 'user',
-            message: { role: 'user', content: `<local-command-stdout>\n${lines.join('\n')}\n</local-command-stdout>` },
-            parent_tool_use_id: null,
-            session_id: this.sessionId!,
-          } as SDKUserMessage)
-        }
       }
+    }
+
+    if (effortChanged || dirsChanged) {
+      const prevSessionId = this.sessionId
+      await this.resetSession()
+      this.currentEffort = request.effort
+      if (dirsChanged) this.additionalDirs = request.additionalDirs!
+      this.createSession(prevSessionId || undefined)
+      if (dirNotifyLines.length > 0) {
+        this.bridge!.push({
+          type: 'user',
+          message: { role: 'user', content: `<local-command-stdout>\n${dirNotifyLines.join('\n')}\n</local-command-stdout>` },
+          parent_tool_use_id: null,
+          session_id: this.sessionId!,
+        } as SDKUserMessage)
+      }
+    } else {
+      this.currentEffort = request.effort
     }
 
     log.debug(`[ClaudeAgent] sendMessage (sessionId=${this.sessionId}, bridge=${!!this.bridge}, iterationAlive=${this.iterationAlive}, gen=${this.sessionGeneration})`)

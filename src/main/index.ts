@@ -3,6 +3,7 @@ import { join, dirname, basename, resolve, extname, relative } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
 import { homedir } from 'os'
+import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-security'
 import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
@@ -58,6 +59,24 @@ function getMainWindow(): BrowserWindow {
 
 function emitAgentEvent(event: AgentEvent): void {
   mainWindow?.webContents.send(AgentIpcChannels.EVENT, event)
+}
+
+function createCodexCallbacks(messageId: string | undefined, projectPath: string) {
+  if (!messageId) return undefined
+  return {
+    onThreadStarted: (resolvedThreadId: string) => {
+      emitAgentEvent({ type: 'codex_thread_started', messageId, threadId: resolvedThreadId, projectPath })
+    },
+    onItemDelta: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
+      emitAgentEvent({ type: 'codex_item_delta', messageId, phase, item, projectPath })
+    },
+    onUsageDelta: (usage: CodexUsageInfo) => {
+      emitAgentEvent({ type: 'message_usage', messageId, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, projectPath })
+    },
+    onPermissionRequest: (request: PermissionRequest) => {
+      emitAgentEvent({ type: 'permission_request', request, projectPath })
+    },
+  }
 }
 
 function createWindow(): void {
@@ -167,6 +186,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.CLOSE_PROJECT, async (_event, folderPath: string) => {
     await agentService.closeProject(folderPath)
     codexService.closeProject(folderPath)
+    gitStatusSnapshotCache.delete(folderPath)
   })
 
   ipcMain.handle(
@@ -182,44 +202,7 @@ function registerIpcHandlers(): void {
       messageId?: string,
       images?: ImageAttachment[],
     ) => {
-      const runCallbacks = messageId
-        ? {
-            onThreadStarted: (resolvedThreadId: string) => {
-              emitAgentEvent({
-                type: 'codex_thread_started',
-                messageId,
-                threadId: resolvedThreadId,
-                projectPath,
-              })
-            },
-            onItemDelta: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
-              emitAgentEvent({
-                type: 'codex_item_delta',
-                messageId,
-                phase,
-                item,
-                projectPath,
-              })
-            },
-            onUsageDelta: (usage: CodexUsageInfo) => {
-              emitAgentEvent({
-                type: 'message_usage',
-                messageId,
-                inputTokens: usage.inputTokens,
-                outputTokens: usage.outputTokens,
-                projectPath,
-              })
-            },
-            onPermissionRequest: (request: PermissionRequest) => {
-              emitAgentEvent({
-                type: 'permission_request',
-                request,
-                projectPath,
-              })
-            },
-          }
-        : undefined
-
+      const runCallbacks = createCodexCallbacks(messageId, projectPath)
       return codexService.run(
         projectPath,
         { prompt, model, reasoningEffort, permissionPreset, threadId, messageId, images },
@@ -271,44 +254,7 @@ function registerIpcHandlers(): void {
       threadId?: string,
       messageId?: string,
     ) => {
-      const runCallbacks = messageId
-        ? {
-            onThreadStarted: (resolvedThreadId: string) => {
-              emitAgentEvent({
-                type: 'codex_thread_started',
-                messageId,
-                threadId: resolvedThreadId,
-                projectPath,
-              })
-            },
-            onItemDelta: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
-              emitAgentEvent({
-                type: 'codex_item_delta',
-                messageId,
-                phase,
-                item,
-                projectPath,
-              })
-            },
-            onUsageDelta: (usage: CodexUsageInfo) => {
-              emitAgentEvent({
-                type: 'message_usage',
-                messageId,
-                inputTokens: usage.inputTokens,
-                outputTokens: usage.outputTokens,
-                projectPath,
-              })
-            },
-            onPermissionRequest: (request: PermissionRequest) => {
-              emitAgentEvent({
-                type: 'permission_request',
-                request,
-                projectPath,
-              })
-            },
-          }
-        : undefined
-
+      const runCallbacks = createCodexCallbacks(messageId, projectPath)
       return codexService.review(
         projectPath,
         { target, model, reasoningEffort, permissionPreset, threadId, messageId },
@@ -327,44 +273,7 @@ function registerIpcHandlers(): void {
       threadId?: string,
       messageId?: string,
     ) => {
-      const runCallbacks = messageId
-        ? {
-            onThreadStarted: (resolvedThreadId: string) => {
-              emitAgentEvent({
-                type: 'codex_thread_started',
-                messageId,
-                threadId: resolvedThreadId,
-                projectPath,
-              })
-            },
-            onItemDelta: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
-              emitAgentEvent({
-                type: 'codex_item_delta',
-                messageId,
-                phase,
-                item,
-                projectPath,
-              })
-            },
-            onUsageDelta: (usage: CodexUsageInfo) => {
-              emitAgentEvent({
-                type: 'message_usage',
-                messageId,
-                inputTokens: usage.inputTokens,
-                outputTokens: usage.outputTokens,
-                projectPath,
-              })
-            },
-            onPermissionRequest: (request: PermissionRequest) => {
-              emitAgentEvent({
-                type: 'permission_request',
-                request,
-                projectPath,
-              })
-            },
-          }
-        : undefined
-
+      const runCallbacks = createCodexCallbacks(messageId, projectPath)
       return codexService.compact(
         projectPath,
         { model, permissionPreset, threadId, messageId },
@@ -431,7 +340,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GIT_SWITCH_BRANCH, async (_event, folderPath: string, branch: string) => {
     try {
-      await gitRun(folderPath, ['checkout', branch])
+      await gitRun(folderPath, ['checkout', sanitizeGitRef(branch)])
       return { ok: true }
     } catch (err) {
       return { ok: false, error: gitErrorMessage(err) }
@@ -440,7 +349,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GIT_CREATE_BRANCH, async (_event, folderPath: string, branch: string) => {
     try {
-      await gitRun(folderPath, ['checkout', '-b', branch])
+      await gitRun(folderPath, ['checkout', '-b', sanitizeGitRef(branch)])
       return { ok: true }
     } catch (err) {
       return { ok: false, error: gitErrorMessage(err) }
@@ -493,7 +402,8 @@ function registerIpcHandlers(): void {
       const repoRoot = resolve(folderPath, await gitRun(folderPath, ['rev-parse', '--git-common-dir']))
       const mainDir = repoRoot.endsWith('/.git') ? dirname(repoRoot) : repoRoot
       const repoName = basename(mainDir)
-      const commitHash = (await gitRun(folderPath, ['rev-parse', baseBranch])).trim()
+      const safeRef = sanitizeGitRef(baseBranch)
+      const commitHash = (await gitRun(folderPath, ['rev-parse', safeRef])).trim()
       const shortHash = commitHash.slice(0, 7)
       const wtDir = join(homedir(), '.worktrees', repoName)
       const wtPath = join(wtDir, shortHash)
@@ -505,7 +415,7 @@ function registerIpcHandlers(): void {
 
       if (!existsSync(wtPath)) {
         if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
-        await gitRun(folderPath, ['worktree', 'add', '--detach', wtPath, baseBranch])
+        await gitRun(folderPath, ['worktree', 'add', '--detach', wtPath, safeRef])
       }
 
       if (stashSha) {
@@ -562,7 +472,10 @@ function registerIpcHandlers(): void {
       if (PDF_EXTS.has(ext)) return { path: filePath, content: '', language: 'pdf' }
       if (VIDEO_EXTS.has(ext)) return { path: filePath, content: '', language: 'video' }
       if (AUDIO_EXTS.has(ext)) return { path: filePath, content: '', language: 'audio' }
-      const fullPath = join(folderPath, filePath)
+      const fullPath = resolveRealPath(join(folderPath, filePath))
+      if (!isPathWithinAllowed(fullPath, [folderPath])) {
+        return { path: filePath, content: '', language: 'text' }
+      }
       const content = await readFile(fullPath, 'utf-8')
       if (ext === '.svg') return { path: filePath, content, language: 'svg' }
       const language = EXT_LANG[ext] ?? 'text'
@@ -911,9 +824,9 @@ app.whenReady().then(() => {
   protocol.handle('local-file', async (request) => {
     try {
       const filePath = decodeURIComponent(request.url.slice('local-file://'.length))
-      const resolved = resolve(filePath)
+      const resolved = resolveRealPath(filePath)
       const folders = getRecentFolders()
-      if (!folders.some((f) => resolved.startsWith(f.path + '/'))) {
+      if (!isPathWithinAllowed(resolved, folders.map((f) => f.path))) {
         log.warn('[local-file] blocked path outside project folders:', resolved)
         return new Response('Forbidden', { status: 403 })
       }

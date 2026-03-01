@@ -16,6 +16,7 @@ function getGitRoot(cwd: string): string {
   }
 }
 import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, deleteSession as dbDeleteSession, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
+import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
@@ -388,8 +389,8 @@ export class AgentService {
       await this.activateSession(projectPath, sessionId)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, (_event, _projectPath: string, sessionId: string) => {
-      return loadSessionState(sessionId)
+    ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, (_event, projectPath: string, sessionId: string, limit: number, cursor?: number) => {
+      return loadSessionMessages(projectPath, sessionId, limit, cursor)
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_RENAME, (_event, sessionId: string, title: string) => {

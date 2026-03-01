@@ -3,6 +3,7 @@ import { watch as fsWatch, type FSWatcher } from 'fs'
 import type { BrowserWindow } from 'electron'
 import log from './logger'
 import { AgentIpcChannels, type BashOutputEvent } from '../shared/agent-types'
+import { isValidBashOutputPath } from './path-security'
 
 const MAX_TAIL_LINES = 50
 const STABLE_TIMEOUT_MS = 5000
@@ -102,12 +103,6 @@ export function unwatchAll(): void {
 
 export function getWatchedFilePath(toolUseId: string): string | undefined {
   return filePaths.get(toolUseId)
-}
-
-function isValidBashOutputPath(filePath: string): boolean {
-  if (filePath.includes('..')) return false
-  if (!filePath.endsWith('.output')) return false
-  return true
 }
 
 export async function readBashOutputTail(filePath: string, lines: number): Promise<string> {

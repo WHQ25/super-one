@@ -3,8 +3,8 @@ import { useActiveSession } from '@/stores/chat'
 
 export type StallLevel = 'normal' | 'warning' | 'critical'
 
-const STALL_WARNING_MS = 20_000
-const STALL_CRITICAL_MS = 60_000
+const STALL_WARNING_MS = 60_000
+const STALL_CRITICAL_MS = 120_000
 
 export function getStallLevel(lastEventAt: number): StallLevel {
   if (!lastEventAt) return 'normal'

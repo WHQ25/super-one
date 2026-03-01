@@ -6,6 +6,7 @@ import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRe
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
 export const DEFAULT_PROVIDER: ChatProvider = 'claude'
+const SESSIONS_PAGE_SIZE = 30
 
 export type MentionKind = 'file' | 'directory' | 'agent'
 export interface Mention {
@@ -26,6 +27,7 @@ export interface PerSessionState {
   totalCostUsd: number
   contextTokens: number
   subagentTokens: Record<string, { input: number; output: number }>
+  taskProgress: Record<string, { description: string; lastToolName?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; outputFile?: string; toolHistory: Array<{ toolName: string; description: string }> }>
   streamingTokens: { input: number; output: number }
   selectedModel: string
   selectedEffort?: EffortLevel
@@ -67,6 +69,8 @@ export interface ProjectState {
   homedir: string
   sandboxInfo: SandboxInfo
   sessions: SessionHistoryEntry[]
+  sessionsPage: number
+  sessionsHasMore: boolean
   showHistory: boolean
   hasUnseenActivity: boolean
   hasPendingInteraction: boolean
@@ -88,6 +92,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     totalCostUsd: 0,
     contextTokens: 0,
     subagentTokens: {},
+    taskProgress: {},
     streamingTokens: { input: 0, output: 0 },
     selectedModel: '',
     selectedEffort: undefined,
@@ -141,6 +146,8 @@ export function createDefaultProjectState(): ProjectState {
     homedir: '',
     sandboxInfo: { enabled: true, autoAllowBash: false },
     sessions: [],
+    sessionsPage: 0,
+    sessionsHasMore: true,
     showHistory: false,
     hasUnseenActivity: false,
     hasPendingInteraction: false,
@@ -243,6 +250,7 @@ interface ChatStore {
 
   // Session history
   fetchSessions: () => Promise<void>
+  fetchSessionsPage: () => Promise<void>
   toggleHistory: () => void
   resumeSession: (sessionId: string) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
@@ -450,15 +458,27 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
 
     case 'message_complete': {
       const newCost = session.totalCostUsd + (event.metadata?.costUsd ?? 0)
+      const lastAssistantId = session.messages.findLast((m) => m.role === 'assistant')?.id
+      const isCurrentTurn = event.messageId === lastAssistantId
       const ft = session.streamingTokens
-      const consumedTokens = (ft.input > 0 || ft.output > 0) ? { input: ft.input, output: ft.output } : undefined
+      const consumedTokens = isCurrentTurn && (ft.input > 0 || ft.output > 0)
+        ? { input: ft.input, output: ft.output }
+        : undefined
+      const completingMsg = session.messages.find((m) => m.id === event.messageId)
+      const agentToolIds = new Set<string>()
+      if (completingMsg) {
+        for (const b of completingMsg.content) {
+          if (b.type === 'tool_use' && b.toolName === 'Agent') agentToolIds.add(b.toolUseId)
+        }
+      }
+      const hasUncompletedAgents = agentToolIds.size > 0 && [...agentToolIds].some((id) => !session.taskProgress[id]?.completed)
       return {
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           return {
             ...msg,
             status: 'complete' as const,
-            metadata: { ...msg.metadata, ...event.metadata, consumedTokens },
+            metadata: { ...msg.metadata, ...event.metadata, ...(consumedTokens ? { consumedTokens } : {}) },
           }
         }),
         totalCostUsd: newCost,
@@ -468,8 +488,26 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           const total = u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens
           return total > 0 ? total : session.contextTokens
         })(),
-        streamingTokens: { input: 0, output: 0 },
-        lastEventAt: 0,
+        ...(isCurrentTurn ? { streamingTokens: { input: 0, output: 0 }, lastEventAt: 0 } : {}),
+        ...(hasUncompletedAgents ? {
+          taskProgress: {
+            ...session.taskProgress,
+            ...Object.fromEntries(
+              [...agentToolIds]
+                .filter(id => !session.taskProgress[id]?.completed)
+                .map(id => [id, {
+                  ...(session.taskProgress[id] ?? {
+                    description: '',
+                    totalTokens: 0,
+                    toolUses: 0,
+                    durationMs: 0,
+                    toolHistory: [],
+                  }),
+                  completed: true,
+                }])
+            ),
+          },
+        } : {}),
       }
     }
 
@@ -653,23 +691,71 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     }
 
     case 'task_notification': {
-      if (!event.toolUseId || !event.outputFile) return {}
+      if (!event.toolUseId) return {}
       const tid = event.toolUseId
       const file = event.outputFile
+      const messagesUpdate = file
+        ? {
+            messages: session.messages.map((msg) => ({
+              ...msg,
+              content: msg.content.map((block) =>
+                block.type === 'tool_result' && block.toolUseId === tid ? { ...block, outputPath: file } : block,
+              ),
+            })),
+          }
+        : {}
+      const prevProgress = session.taskProgress[tid]
+      const usageUpdate = event.usage ? {
+        totalTokens: event.usage.totalTokens,
+        toolUses: event.usage.toolUses,
+        durationMs: event.usage.durationMs,
+      } : {}
       return {
-        messages: session.messages.map((msg) => ({
-          ...msg,
-          content: msg.content.map((block) =>
-            block.type === 'tool_result' && block.toolUseId === tid ? { ...block, outputPath: file } : block,
-          ),
-        })),
+        ...messagesUpdate,
+        taskProgress: {
+          ...session.taskProgress,
+          [tid]: {
+            ...(prevProgress ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
+            ...usageUpdate,
+            completed: true,
+            outputFile: file || prevProgress?.outputFile,
+          },
+        },
+      }
+    }
+
+    case 'task_progress': {
+      if (!event.toolUseId) return {}
+      const prev = session.taskProgress[event.toolUseId]
+      const toolHistory = prev?.toolHistory ? [...prev.toolHistory] : []
+      if (prev && prev.description && prev.description !== event.description) {
+        toolHistory.push({ toolName: prev.lastToolName ?? '', description: prev.description })
+      }
+      return {
+        taskProgress: {
+          ...session.taskProgress,
+          [event.toolUseId]: {
+            description: event.description,
+            lastToolName: event.lastToolName,
+            totalTokens: event.usage.totalTokens,
+            toolUses: event.usage.toolUses,
+            durationMs: event.usage.durationMs,
+            toolHistory,
+          },
+        },
       }
     }
 
     case 'hook_started':
     case 'hook_complete':
+    case 'hook_progress':
     case 'task_started':
     case 'auth_status':
+    case 'assistant_error':
+    case 'files_persisted':
+    case 'elicitation_complete':
+    case 'stream_message_start':
+    case 'stream_message_stop':
       return {}
   }
 }
@@ -721,7 +807,6 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   const branch = _getWorktreeBranch(projectPath, session)
   const wtPath = _getWorktreePath(projectPath)
   window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath)
-    .catch(() => {})
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
       totalCostUsd: session.totalCostUsd,
@@ -729,7 +814,7 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
       title: _extractTitle(session.messages),
       provider: session.sessionProvider ?? undefined,
     }))
-    .catch(() => {})
+    .catch((err) => console.warn('[saveSessionState] failed:', err))
 }
 
 function _savePerSessionSnapshot(projectPath: string, sessionId: string, session: PerSessionState): void {
@@ -738,7 +823,6 @@ function _savePerSessionSnapshot(projectPath: string, sessionId: string, session
   const branch = _getWorktreeBranch(projectPath, session)
   const wtPath = _getWorktreePath(projectPath)
   window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath)
-    .catch(() => {})
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
       totalCostUsd: session.totalCostUsd,
@@ -746,7 +830,7 @@ function _savePerSessionSnapshot(projectPath: string, sessionId: string, session
       title: _extractTitle(session.messages),
       provider: session.sessionProvider ?? undefined,
     }))
-    .catch(() => {})
+    .catch((err) => console.warn('[saveSessionSnapshot] failed:', err))
 }
 
 function _computeHasPendingInteraction(project: ProjectState): boolean {
@@ -946,6 +1030,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       const targetSession = project._sessions[targetSid]
       const delta = applyEventToSession(targetSession, event)
+      if (import.meta.env.DEV) {
+        window.app.trace?.('agent.store', event.type, {
+          deltaKeys: Object.keys(delta),
+          ...('status' in delta ? { status: delta.status } : {}),
+          ...('taskProgress' in delta ? { taskProgressKeys: Object.keys(delta.taskProgress ?? {}) } : {}),
+        }, (event as any).messageId)
+      }
       const updatedSession = { ...targetSession, ...delta }
 
       let updatedSessions = { ...project._sessions, [targetSid]: updatedSession }
@@ -1122,7 +1213,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (targetSession?.sessionProvider !== 'codex') {
         try {
           await window.agent.activateSession(projectPath, targetSid)
-        } catch {}
+        } catch (err) { console.warn('[chat] activateSession failed:', err) }
       }
     }
   },
@@ -1932,9 +2023,33 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     try {
-      const sessions = await window.app.listSessionsForFolder(activeProject)
-      set((s) => updateProjectState(s, activeProject, () => ({ sessions })))
-    } catch {}
+      const sessions = await window.app.listSessionsForFolderPage(activeProject, SESSIONS_PAGE_SIZE, 0)
+      set((s) => updateProjectState(s, activeProject, () => ({
+        sessions,
+        sessionsPage: 1,
+        sessionsHasMore: sessions.length >= SESSIONS_PAGE_SIZE,
+      })))
+    } catch (err) { console.warn('[chat] fetchSessions failed:', err) }
+  },
+
+  fetchSessionsPage: async () => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    const project = getProject(get())
+    if (!project.sessionsHasMore) return
+    const pageToFetch = project.sessionsPage
+    const offset = pageToFetch * SESSIONS_PAGE_SIZE
+    try {
+      const page = await window.app.listSessionsForFolderPage(activeProject, SESSIONS_PAGE_SIZE, offset)
+      set((s) => updateProjectState(s, activeProject, (proj) => {
+        if (proj.sessionsPage !== pageToFetch) return {}
+        return {
+          sessions: [...proj.sessions, ...page],
+          sessionsPage: pageToFetch + 1,
+          sessionsHasMore: page.length >= SESSIONS_PAGE_SIZE,
+        }
+      }))
+    } catch (err) { console.warn('[chat] fetchSessionsPage failed:', err) }
   },
 
   toggleHistory: () => {
@@ -2019,7 +2134,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         savedProvider = saved.provider
         savedWorktreePath = saved.worktreePath ?? undefined
       }
-    } catch {}
+    } catch (err) { console.warn('[chat] loadSessionState failed:', err) }
 
     const restoredProvider: ChatProvider = (savedProvider as ChatProvider) ?? DEFAULT_PROVIDER
 

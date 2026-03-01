@@ -15,8 +15,6 @@ import {
   streamdownControls,
   streamdownComponents,
   formatTokens,
-  useAnimatedTokens,
-  getTokenAnimationDurationMs,
 } from './chat-shared'
 import { RewindButton } from './RewindButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
@@ -443,7 +441,11 @@ export function RateLimitIndicator({ info }: { info: { status: 'allowed_warning'
 
 export const ChatMessage = memo(function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user'
-  const isStreaming = message.status === 'streaming'
+  const sessionStatus = useActiveSession((s) => s.status)
+  const isLastAssistant = useActiveSession(
+    (s) => s.messages.findLast((m) => m.role === 'assistant')?.id === message.id
+  )
+  const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
   const isCodexMessage = !isUser && message.providerId === 'codex'
   const assistantCopyText = !isUser
     ? (() => {
@@ -532,7 +534,7 @@ export const ChatMessage = memo(function ChatMessage({ message }: ChatMessagePro
             <span>Response interrupted</span>
           </div>
         )}
-        {!isUser && <DurationFooter message={message} copyText={assistantCopyText} />}
+        {!isUser && <DurationFooter message={message} copyText={assistantCopyText} parentIsStreaming={isStreaming} />}
       </div>
       {isUser && (
         <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
@@ -545,47 +547,54 @@ export const ChatMessage = memo(function ChatMessage({ message }: ChatMessagePro
   )
 })
 
-/** Single animated token value with ↑ or ↓ arrow. */
+/** Token value with ↑ or ↓ arrow. Highlights while value is actively changing, fades after 1s of inactivity. */
 function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 'down' }) {
-  const display = useAnimatedTokens(value)
   const [flash, setFlash] = useState(false)
-  const prev = useRef(0)
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const prevRef = useRef(0)
 
   useEffect(() => {
-    if (value > prev.current && prev.current > 0) {
+    if (value > prevRef.current && prevRef.current > 0) {
       setFlash(true)
-      // Match flash duration to the token animation duration
-      const duration = getTokenAnimationDurationMs(prev.current, value)
-      const t = setTimeout(() => setFlash(false), duration)
-      prev.current = value
-      return () => clearTimeout(t)
+      clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => setFlash(false), 1000)
     }
-    prev.current = value
+    prevRef.current = value
+    return () => clearTimeout(timerRef.current)
   }, [value])
 
-  if (display <= 0) return null
+  if (value <= 0) return null
 
   const isUp = direction === 'up'
   const flashColor = isUp ? 'text-blue-400' : 'text-emerald-400'
 
   return (
-    <span className={cn('inline-flex items-center gap-0.5 tabular-nums transition-colors duration-300', flash && flashColor)}>
+    <span className={cn('inline-flex items-center gap-0.5 tabular-nums transition-colors duration-500', flash && flashColor)}>
       {isUp
         ? <ArrowUp className={cn('size-3 transition-transform duration-300', flash && 'scale-110')} />
         : <ArrowDown className={cn('size-3 transition-transform duration-300', flash && 'scale-110')} />
       }
-      <span>{formatTokens(display)}</span>
+      <span>{formatTokens(value)}</span>
     </span>
   )
 }
 
 const ZERO_TOKENS = { input: 0, output: 0 }
 
-function DurationFooter({ message, copyText }: { message: ChatMessageType; copyText?: string }) {
+function DurationFooter({ message, copyText, parentIsStreaming }: { message: ChatMessageType; copyText?: string; parentIsStreaming: boolean }) {
   const isCompacting = useActiveSession((s) => s.isCompacting)
-  const isStreaming = message.status === 'streaming' && !isCompacting
+  const isStreaming = parentIsStreaming && !isCompacting
   const streamingTokens = useActiveSession((s) => isStreaming ? s.streamingTokens : ZERO_TOKENS)
+  const frozenTokensRef = useRef(ZERO_TOKENS)
+  if (isStreaming && (streamingTokens.input > 0 || streamingTokens.output > 0)) {
+    frozenTokensRef.current = streamingTokens
+  }
+  const pendingApproval = useActiveSession((s) =>
+    isStreaming && (!!s.pendingPermission || !!s.pendingQuestion || !!s.pendingPlanApproval),
+  )
   const stallLevel = useStallLevel(isStreaming)
+  const pausedMsRef = useRef(0)
+  const pauseStartRef = useRef(0)
   const startTimeRef = useRef(() => {
     if (message.createdAt) {
       const t = new Date(message.createdAt).getTime()
@@ -596,19 +605,37 @@ function DurationFooter({ message, copyText }: { message: ChatMessageType; copyT
   const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
-    if (!isStreaming) return
+    if (pendingApproval && !pauseStartRef.current) {
+      pauseStartRef.current = Date.now()
+    } else if (!pendingApproval && pauseStartRef.current) {
+      pausedMsRef.current += Date.now() - pauseStartRef.current
+      pauseStartRef.current = 0
+    }
+  }, [pendingApproval])
+
+  useEffect(() => {
+    if (!isStreaming) {
+      if (pauseStartRef.current) {
+        pausedMsRef.current += Date.now() - pauseStartRef.current
+        pauseStartRef.current = 0
+      }
+      return
+    }
     const start = startTimeRef.current()
-    const tick = () => setElapsed(Date.now() - start)
+    const tick = () => {
+      const activePause = pauseStartRef.current ? Date.now() - pauseStartRef.current : 0
+      setElapsed(Date.now() - start - pausedMsRef.current - activePause)
+    }
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
   }, [isStreaming])
 
-  const durationMs = isStreaming ? elapsed : message.metadata?.durationMs
+  const durationMs = isStreaming ? elapsed : (message.metadata?.durationMs ?? (elapsed || undefined))
   const ct = message.metadata?.consumedTokens
   const codexUsage = message.metadata?.codex?.usage
-  const tokenInput = isStreaming ? streamingTokens.input : (ct?.input ?? codexUsage?.inputTokens ?? 0)
-  const tokenOutput = isStreaming ? streamingTokens.output : (ct?.output ?? codexUsage?.outputTokens ?? 0)
+  const tokenInput = isStreaming ? streamingTokens.input : (ct?.input ?? codexUsage?.inputTokens ?? frozenTokensRef.current.input)
+  const tokenOutput = isStreaming ? streamingTokens.output : (ct?.output ?? codexUsage?.outputTokens ?? frozenTokensRef.current.output)
   const hasTokens = tokenInput > 0 || tokenOutput > 0
 
   const showDuration = durationMs && (isStreaming ? durationMs >= 1000 : durationMs >= 20000)

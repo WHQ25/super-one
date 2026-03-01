@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Bot, ChevronRight, Check, BookOpen, Wrench, ArrowUp, ArrowDown } from 'lucide-react'
+import { Bot, ChevronRight, Check, BookOpen, Wrench, ArrowUp, ArrowDown, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
-import { parseToolInput } from './tool-display'
+import { getToolDisplay, getToolVerb, parseToolInput } from './tool-display'
+import { ToolIcon } from './ToolIcon'
 import { useActiveSession } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '../../../../shared/agent-types'
-import { streamdownPlugins, streamdownControls, streamdownComponents, formatTokens, useAnimatedTokens } from './chat-shared'
+import { streamdownPlugins, streamdownControls, streamdownComponents, formatTokens } from './chat-shared'
+import { parseJsonlOutput, type JsonlEntry } from './subagent-utils'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
 
@@ -26,6 +28,7 @@ function parseTaskInput(input: string) {
     subagentType: String(params.subagent_type ?? ''),
     prompt: String(params.prompt ?? ''),
     model: params.model ? String(params.model) : undefined,
+    runInBackground: params.run_in_background === true,
   }
 }
 
@@ -37,22 +40,20 @@ function formatElapsed(seconds: number): string {
   return `${mins}m${secs}s`
 }
 
-function AnimatedSubagentTokens({ input, output }: { input: number; output: number }) {
-  const dInput = useAnimatedTokens(input)
-  const dOutput = useAnimatedTokens(output)
-  if (dInput <= 0 && dOutput <= 0) return null
+function SubagentTokens({ input, output }: { input: number; output: number }) {
+  if (input <= 0 && output <= 0) return null
   return (
     <>
-      {dInput > 0 && (
+      {input > 0 && (
         <span className="inline-flex items-center gap-0.5 tabular-nums">
           <ArrowUp className="size-2.5" />
-          {formatTokens(dInput)}
+          {formatTokens(input)}
         </span>
       )}
-      {dOutput > 0 && (
+      {output > 0 && (
         <span className="inline-flex items-center gap-0.5 tabular-nums">
           <ArrowDown className="size-2.5" />
-          {formatTokens(dOutput)}
+          {formatTokens(output)}
         </span>
       )}
     </>
@@ -70,10 +71,16 @@ function buildToolResultMap(blocks: ContentBlock[]) {
 
 export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming }: SubagentBlockProps) {
   const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
+  const progress = useActiveSession((s) => s.taskProgress[taskBlock.toolUseId])
   const taskInput = parseTaskInput(taskBlock.input)
   const showSpawningPlaceholder = !taskInput.subagentType && !taskInput.description
-  const isRunning = !resultBlock && isStreaming
-  const isComplete = !!resultBlock
+  const isAsync = taskInput.runInBackground
+  const isRunning = isAsync
+    ? !progress?.completed
+    : !resultBlock && isStreaming
+  const isComplete = isAsync
+    ? !!progress?.completed
+    : !!resultBlock
   const hasTokens = tokens.input > 0 || tokens.output > 0
   const [expanded, setExpanded] = useState(!isComplete)
 
@@ -106,7 +113,42 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   }, [isComplete])
 
   const toolResultMap = useMemo(() => buildToolResultMap(childBlocks), [childBlocks])
-  const resultText = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
+  const rawResultText = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
+  const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
+  const outputFile = asyncOutputPath ?? progress?.outputFile
+  const [jsonlEntries, setJsonlEntries] = useState<JsonlEntry[]>([])
+  const [jsonlResultText, setJsonlResultText] = useState<string>()
+  const lastLineCountRef = useRef(0)
+
+  useEffect(() => {
+    if (!outputFile) return
+    let cancelled = false
+
+    const readAndParse = async () => {
+      try {
+        const raw = await window.app.readBashOutputFile(outputFile, 10000)
+        if (cancelled) return
+        const lineCount = raw.split('\n').length
+        if (lineCount === lastLineCountRef.current) return
+        lastLineCountRef.current = lineCount
+        const parsed = parseJsonlOutput(raw)
+        if (parsed.entries.length > 0 || parsed.resultText) {
+          setJsonlEntries(parsed.entries)
+          if (parsed.resultText) setJsonlResultText(parsed.resultText)
+        }
+      } catch { /* file not ready yet */ }
+    }
+
+    readAndParse()
+
+    if (isRunning) {
+      const timer = setInterval(readAndParse, 3000)
+      return () => { cancelled = true; clearInterval(timer) }
+    }
+    return () => { cancelled = true }
+  }, [outputFile, isRunning])
+
+  const resultText = jsonlResultText ?? (asyncOutputPath ? undefined : rawResultText)
   const { toolCallCount, filesReadCount } = useMemo(() => {
     let tools = 0, reads = 0
     for (const b of childBlocks) {
@@ -144,6 +186,16 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           {/* Input: prompt preview */}
           {taskInput.prompt && <PromptPreview prompt={taskInput.prompt} model={taskInput.model} />}
 
+          {/* Agent activity — JSONL entries (text + tool interleaved), with live fallback */}
+          {isAsync && (jsonlEntries.length > 0 || progress) && (
+            <AgentActivity
+              entries={jsonlEntries}
+              fallbackTools={jsonlEntries.length === 0 ? progress?.toolHistory : undefined}
+              activeTool={isRunning && progress?.description ? { toolName: progress.lastToolName ?? '', description: progress.description } : undefined}
+              isRunning={isRunning}
+            />
+          )}
+
           {/* Sub tool calls — no grouping, scrollable with auto-scroll */}
           {childBlocks.length > 0 && (
             <SubagentScrollArea isStreaming={isStreaming}>
@@ -154,14 +206,14 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           )}
 
           {/* Output — collapsible with line limit */}
-          {resultText && <OutputPreview text={resultText} />}
+          {resultText && !(isAsync && isRunning) && <OutputPreview text={resultText} />}
         </div>
       )}
 
       {expanded && (isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
         {isRunning ? (
           <>
-            <span>Running</span>
+            <span>{isAsync ? 'Running in background' : 'Running'}</span>
             {elapsed > 0 && <span className="tabular-nums">{formatElapsed(elapsed)}</span>}
           </>
         ) : (
@@ -171,23 +223,83 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           </>
         )}
         <span className="ml-auto flex items-center gap-1.5">
-          {filesReadCount > 0 && (
-            <span className="inline-flex items-center gap-0.5">
-              <BookOpen className="size-3" />
-              {filesReadCount}
-            </span>
+          {isAsync && progress ? (
+            <>
+              {progress.toolUses > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  <Wrench className="size-3" />
+                  {progress.toolUses}
+                </span>
+              )}
+              {progress.totalTokens > 0 && (
+                <>
+                  {progress.toolUses > 0 && <span>·</span>}
+                  <span className="tabular-nums">{formatTokens(progress.totalTokens)}</span>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {filesReadCount > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  <BookOpen className="size-3" />
+                  {filesReadCount}
+                </span>
+              )}
+              {filesReadCount > 0 && toolCallCount > 0 && <span>·</span>}
+              {toolCallCount > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  <Wrench className="size-3" />
+                  {toolCallCount}
+                </span>
+              )}
+              {hasTokens && (filesReadCount > 0 || toolCallCount > 0) && <span>·</span>}
+              <SubagentTokens input={tokens.input} output={tokens.output} />
+            </>
           )}
-          {filesReadCount > 0 && toolCallCount > 0 && <span>·</span>}
-          {toolCallCount > 0 && (
-            <span className="inline-flex items-center gap-0.5">
-              <Wrench className="size-3" />
-              {toolCallCount}
-            </span>
-          )}
-          {hasTokens && (filesReadCount > 0 || toolCallCount > 0) && <span>·</span>}
-          <AnimatedSubagentTokens input={tokens.input} output={tokens.output} />
         </span>
       </div>}
+    </div>
+  )
+}
+
+function AgentActivity({ entries, fallbackTools, activeTool, isRunning }: {
+  entries: JsonlEntry[]
+  fallbackTools?: Array<{ toolName: string; description: string }>
+  activeTool?: { toolName: string; description: string }
+  isRunning: boolean
+}) {
+  const latestActivity = entries.findLast((e) => e.type === 'activity') as { type: 'activity'; text: string } | undefined
+  const tools = entries.filter((e): e is JsonlEntry & { type: 'tool' } => e.type === 'tool')
+  return (
+    <div className="border-t border-border/30">
+      {isRunning && latestActivity && (
+        <div className="mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md bg-purple-500/10 px-2.5 py-1.5 text-xs leading-relaxed text-foreground dark:bg-purple-900/20">
+          <MessageSquare className="mt-0.5 size-3 shrink-0 animate-pulse text-purple-400" />
+          <span className="line-clamp-2">{latestActivity.text}</span>
+        </div>
+      )}
+      <SubagentScrollArea isStreaming={isRunning}>
+        {(tools.length > 0 ? tools : fallbackTools ?? []).map((entry, i) => (
+          <AsyncToolRow key={i} toolName={entry.toolName} description={entry.description} isActive={false} />
+        ))}
+        {activeTool && (
+          <AsyncToolRow toolName={activeTool.toolName} description={activeTool.description} isActive />
+        )}
+      </SubagentScrollArea>
+    </div>
+  )
+}
+
+function AsyncToolRow({ toolName, description, isActive }: { toolName: string; description: string; isActive: boolean }) {
+  const icon = getToolDisplay(toolName, {}).icon
+  return (
+    <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs">
+      <ToolIcon icon={icon} className="size-3 shrink-0 text-muted-foreground" />
+      <span className="shrink-0 font-medium text-foreground">
+        {isActive ? <>{getToolVerb(toolName)}&hellip;</> : toolName}
+      </span>
+      {description && <span className="min-w-0 truncate text-muted-foreground">{description}</span>}
     </div>
   )
 }

@@ -9,7 +9,7 @@ import { useAppStore } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { cn } from '@/lib/utils'
-import { streamdownPlugins, streamdownControls, streamdownComponents } from '@/components/chat/chat-shared'
+import { streamdownPlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from '@/components/chat/chat-shared'
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
@@ -218,6 +218,7 @@ export function FilePanel() {
               plugins={streamdownPlugins}
               components={streamdownComponents}
               controls={streamdownControls}
+              linkSafety={streamdownLinkSafety}
               rehypePlugins={previewRehypePlugins}
             >
               {resolvedContent}

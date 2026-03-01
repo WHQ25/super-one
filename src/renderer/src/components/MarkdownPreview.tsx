@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
+import { streamdownLinkSafety } from '@/components/chat/chat-shared'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 const streamdownPlugins = { code: codePlugin }
@@ -113,7 +114,7 @@ export function MarkdownView({ content }: { content: string }) {
     <div className="px-1">
       {meta && <FrontmatterTable meta={meta} />}
       <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
-        <Streamdown plugins={streamdownPlugins} components={streamdownComponents}>
+        <Streamdown plugins={streamdownPlugins} components={streamdownComponents} linkSafety={streamdownLinkSafety}>
           {body}
         </Streamdown>
       </div>

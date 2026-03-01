@@ -6,6 +6,7 @@ import {
   streamdownPlugins,
   streamdownControls,
   streamdownComponents,
+  streamdownLinkSafety,
 } from './chat-shared'
 import {
   Copy,
@@ -60,6 +61,7 @@ function CopyableMarkdown({ text, isStreaming }: { text: string; isStreaming: bo
         plugins={streamdownPlugins}
         components={streamdownComponents}
         controls={streamdownControls}
+        linkSafety={streamdownLinkSafety}
         isAnimating={isStreaming}
       >
         {text}

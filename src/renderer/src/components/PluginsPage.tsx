@@ -25,6 +25,7 @@ import {
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
+import { streamdownLinkSafety } from '@/components/chat/chat-shared'
 import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
 import { Button } from '@/components/ui/button'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
@@ -145,7 +146,7 @@ function MarkdownView({ content }: { content: string }) {
     <div className="px-1">
       {meta && <FrontmatterTable meta={meta} />}
       <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
-        <Streamdown plugins={streamdownPlugins} components={streamdownComponents}>
+        <Streamdown plugins={streamdownPlugins} components={streamdownComponents} linkSafety={streamdownLinkSafety}>
           {body}
         </Streamdown>
       </div>

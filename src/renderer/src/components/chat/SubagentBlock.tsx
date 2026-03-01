@@ -7,7 +7,7 @@ import { ToolIcon } from './ToolIcon'
 import { useActiveSession } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '../../../../shared/agent-types'
-import { streamdownPlugins, streamdownControls, streamdownComponents, formatTokens } from './chat-shared'
+import { streamdownPlugins, streamdownControls, streamdownComponents, streamdownLinkSafety, formatTokens } from './chat-shared'
 import { parseJsonlOutput, type JsonlEntry } from './subagent-utils'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
@@ -355,6 +355,7 @@ function OutputPreview({ text }: { text: string }) {
             plugins={streamdownPlugins}
             components={streamdownComponents}
             controls={streamdownControls}
+            linkSafety={streamdownLinkSafety}
           >
             {text}
           </Streamdown>
@@ -403,6 +404,7 @@ function renderChildBlock(
           plugins={streamdownPlugins}
           components={streamdownComponents}
           controls={streamdownControls}
+          linkSafety={streamdownLinkSafety}
           isAnimating={isStreaming}
         >
           {block.text}

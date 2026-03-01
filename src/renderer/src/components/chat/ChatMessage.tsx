@@ -14,6 +14,7 @@ import {
   streamdownPlugins,
   streamdownControls,
   streamdownComponents,
+  streamdownLinkSafety,
   formatTokens,
 } from './chat-shared'
 import { RewindButton } from './RewindButton'
@@ -152,6 +153,7 @@ function CopyableText({ text, isStreaming }: { text: string; isStreaming: boolea
         plugins={streamdownPlugins}
         components={streamdownComponents}
         controls={streamdownControls}
+        linkSafety={streamdownLinkSafety}
         isAnimating={isStreaming}
       >
         {text}

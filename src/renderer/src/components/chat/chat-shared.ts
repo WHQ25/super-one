@@ -1,5 +1,8 @@
+import { createElement } from 'react'
+import type { LinkSafetyConfig } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
+import { LinkSafetyModal } from './LinkSafetyModal'
 
 /** Shared code highlighter plugin instance — reused across all chat components. */
 export const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
@@ -10,6 +13,12 @@ export const streamdownPlugins = { code: codePlugin }
 
 /** Shared Streamdown controls config. */
 export const streamdownControls = { table: false }
+
+/** Custom link safety modal scoped properly for Electron. */
+export const streamdownLinkSafety: LinkSafetyConfig = {
+  enabled: true,
+  renderModal: (props) => createElement(LinkSafetyModal, props),
+}
 
 /** Shared Streamdown code component. */
 export const streamdownComponents: Record<string, ReturnType<typeof createStreamdownCodeComponent>> = {

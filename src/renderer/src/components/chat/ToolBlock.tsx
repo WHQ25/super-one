@@ -4,7 +4,9 @@ import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
 import { inferLanguage, useHighlightedTokens, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
 import { useChatStore, useActiveSession, useBashOutput } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
+import { useSourceControlStore } from '@/stores/source-control'
 import { ToolIcon } from './ToolIcon'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
@@ -153,7 +155,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         {isDenied ? (
           <>
             {fileToolName ? (
-              <FileChip name={fileToolName} title={display.summary} />
+              <FileChip name={fileToolName} title={display.summary} filePath={fileToolPath} />
             ) : summary ? (
               <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
             ) : null}
@@ -164,7 +166,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
           </>
         ) : fileToolName ? (
           <>
-            <FileChip name={fileToolName} title={display.summary} />
+            <FileChip name={fileToolName} title={display.summary} filePath={fileToolPath} />
             {toolName === 'FileChange' && params.kind && (
               <span className="text-muted-foreground">{String(params.kind)}</span>
             )}
@@ -214,9 +216,16 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   )
 })
 
-function FileChip({ name, title }: { name: string; title: string }) {
+function FileChip({ name, title, filePath }: { name: string; title: string; filePath?: string }) {
   const handleClick = (e: React.MouseEvent): void => {
     e.stopPropagation()
+    if (!filePath) return
+    const projectPath = useChatStore.getState().activeProject
+    if (!projectPath) return
+    const relative = filePath.startsWith(projectPath + '/') ? filePath.slice(projectPath.length + 1) : filePath
+    useSourceControlStore.getState().selectFile(projectPath, relative)
+    useAppStore.getState().setShowFilePanel(true)
+    useAppStore.getState().setFilePanelView('file')
   }
   return (
     <span

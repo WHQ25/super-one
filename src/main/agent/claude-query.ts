@@ -136,7 +136,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
   let lastAssistantUsage: any = null
   // Track the most recent top-level assistant message UUID for resumeSessionAt
   let lastTopLevelAssistantUuid = ''
-  // Per-step dedup: track processed step IDs (SDK message IDs) and accumulate tokens
+  // Per-step dedup: track processed step IDs (SDK message IDs) and latest step tokens
   const processedStepIds = new Set<string>()
   let messageInputTokens = 0
   let messageOutputTokens = 0
@@ -423,7 +423,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             lastTopLevelAssistantUuid = (msg as any).uuid ?? ''
           }
 
-          // Track top-level message usage (per-step accumulation, deduped by SDK message ID)
+          // Track top-level message usage (latest step snapshot, deduped by SDK message ID)
           if (!assistantParent && msg.message?.usage) {
             // Reset accumulators when a new front-end message starts
             if (messageId !== lastTrackedMessageId) {
@@ -439,7 +439,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             const isDupe = stepId && processedStepIds.has(stepId)
             if (!isDupe) {
               if (stepId) processedStepIds.add(stepId)
-              messageInputTokens += stepInput
+              messageInputTokens = stepInput
               // output_tokens from assistant messages are incomplete (partial emit);
               // accurate output comes from message_delta stream events below.
             }
@@ -451,7 +451,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             })
           }
 
-          // Track subagent token usage (per-step accumulation, deduped by SDK message ID)
+          // Track subagent token usage (latest step snapshot, deduped by SDK message ID)
           if (assistantParent && msg.message?.usage) {
             if (!subagentTracking.has(assistantParent)) {
               subagentTracking.set(assistantParent, { stepIds: new Set(), input: 0, output: 0 })
@@ -464,7 +464,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             const isDupe = stepId && tracker.stepIds.has(stepId)
             if (!isDupe) {
               if (stepId) tracker.stepIds.add(stepId)
-              tracker.input += stepInput
+              tracker.input = stepInput
             }
             emit({
               type: 'subagent_usage',

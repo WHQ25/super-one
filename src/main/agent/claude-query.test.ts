@@ -30,6 +30,10 @@ vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
+vi.mock('./event-trace', () => ({
+  trace: vi.fn(),
+}))
+
 import { buildUserMessage, createSessionQuery } from './claude-query'
 
 beforeEach(() => {
@@ -283,6 +287,50 @@ describe('createSessionQuery', () => {
     const topLevelUsage = events.filter((e) => e.type === 'message_usage')
     const lastTopLevelUsage = topLevelUsage[topLevelUsage.length - 1] as Record<string, unknown>
     expect(lastTopLevelUsage.outputTokens).toBe(7)
+    expect(lastTopLevelUsage.inputTokens).toBe(12)
+  })
+
+  it('reports latest step input tokens instead of accumulating across steps', async () => {
+    state.messages = [
+      {
+        type: 'assistant',
+        message: {
+          id: 'step-1',
+          usage: { input_tokens: 100, cache_creation_input_tokens: 5, output_tokens: 0 },
+          content: [{ type: 'tool_use', id: 'tool-a', name: 'Read', input: {} }],
+        },
+      },
+      {
+        type: 'assistant',
+        message: {
+          id: 'step-2',
+          usage: { input_tokens: 110, cache_creation_input_tokens: 3, output_tokens: 0 },
+          content: [{ type: 'tool_use', id: 'tool-b', name: 'Read', input: {} }],
+        },
+      },
+      {
+        type: 'stream_event',
+        event: { type: 'message_delta', usage: { output_tokens: 20 } },
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      {} as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-tokens',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const usageEvents = events.filter((e) => e.type === 'message_usage')
+    expect(usageEvents).toHaveLength(3)
+    expect(usageEvents[0]).toMatchObject({ inputTokens: 105, outputTokens: 0 })
+    expect(usageEvents[1]).toMatchObject({ inputTokens: 113, outputTokens: 0 })
+    expect(usageEvents[2]).toMatchObject({ inputTokens: 113, outputTokens: 20 })
   })
 
   it('emits message_error on non-success result subtype and stays idle', async () => {

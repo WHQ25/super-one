@@ -31,5 +31,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # IntelliJ based IDEs
 .idea
 
+# Event trace (dev only)
+event-trace.db
+
 # Finder (MacOS) folder config
 .DS_Store

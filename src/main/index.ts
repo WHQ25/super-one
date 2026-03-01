@@ -34,6 +34,7 @@ import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-
 import { getDb, closeDb, getCachedResources, setCachedResources } from './database'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
+import { trace, closeTraceDb } from './agent/event-trace'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -69,7 +70,7 @@ function createWindow(): void {
     trafficLightPosition: { x: 16, y: 16 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
-      sandbox: false,
+      sandbox: true,
       zoomFactor: 1
     }
   })
@@ -118,6 +119,10 @@ function createWindow(): void {
 function registerIpcHandlers(): void {
   // Setup agent IPC handlers (does NOT auto-initialize)
   agentService.setup()
+
+  ipcMain.on('app:trace', (_e, source: string, type: string, data: unknown, tag?: string) => {
+    trace(source, type, data, tag)
+  })
 
   // App-level IPC handlers
   ipcMain.handle(AgentIpcChannels.SELECT_FOLDER, async () => {
@@ -906,9 +911,15 @@ app.whenReady().then(() => {
   protocol.handle('local-file', async (request) => {
     try {
       const filePath = decodeURIComponent(request.url.slice('local-file://'.length))
-      const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+      const resolved = resolve(filePath)
+      const folders = getRecentFolders()
+      if (!folders.some((f) => resolved.startsWith(f.path + '/'))) {
+        log.warn('[local-file] blocked path outside project folders:', resolved)
+        return new Response('Forbidden', { status: 403 })
+      }
+      const ext = resolved.split('.').pop()?.toLowerCase() ?? ''
       const contentType = LOCAL_FILE_MIME[ext] ?? 'application/octet-stream'
-      const data = await readFile(filePath)
+      const data = await readFile(resolved)
       const total = data.byteLength
       const range = request.headers.get('Range')
 
@@ -1015,6 +1026,7 @@ function performQuit(): void {
     .finally(() => {
       codexService.dispose()
       closeDb()
+      closeTraceDb()
       // Give SDK child processes a moment to fully terminate before quitting.
       // abort() signals the SDK to stop, but the async iterator needs time to
       // detect the child process exit and release its handles.

@@ -1,4 +1,5 @@
 import { join, resolve } from 'path'
+import log from './logger'
 import { homedir } from 'os'
 import { existsSync, readdirSync, readFileSync, statSync, cpSync, rmSync } from 'fs'
 import type { ResourceScope, SkillInfo, SkillDetail, SkillFileEntry } from '../shared/agent-types'
@@ -35,7 +36,7 @@ function getSkillDirs(cwd: string): SkillDir[] {
           })
         }
       }
-    } catch {}
+    } catch (err) { log.warn('[skills] failed to scan plugin dir:', err) }
   }
 
   return dirs

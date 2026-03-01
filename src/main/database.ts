@@ -78,6 +78,9 @@ function migrate(db: Database.Database): void {
   if (!cols.some((c) => c.name === 'provider')) {
     db.exec("ALTER TABLE sessions ADD COLUMN provider TEXT DEFAULT 'claude'")
   }
+  if (!cols.some((c) => c.name === 'is_hidden')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN is_hidden INTEGER DEFAULT 0')
+  }
 
   // Add checkpoint_id column to chat_messages if missing
   const msgCols = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>

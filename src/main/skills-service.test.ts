@@ -23,6 +23,12 @@ vi.mock('os', () => ({
   homedir: homedirMock,
 }))
 
+vi.mock('./logger', () => ({
+  default: {
+    warn: vi.fn(),
+  },
+}))
+
 import { listSkillsFromDirs, readSkillContentFromDirs, readSkillFileFromDirs, getCodexSkillDirs } from './skills-service'
 import type { SkillDir } from './skills-service'
 

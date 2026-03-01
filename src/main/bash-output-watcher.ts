@@ -56,7 +56,7 @@ export function watchBashOutput(toolUseId: string, filePath: string): void {
         try {
           entry.watcher = fsWatch(filePath, () => { readAndEmit() })
           entry.watcher.on('error', () => {})
-        } catch {}
+        } catch (err) { log.warn('[bash-output] failed to watch file:', err) }
       }
 
       if (entry.stableTimer) clearTimeout(entry.stableTimer)

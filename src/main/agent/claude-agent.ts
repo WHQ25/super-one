@@ -153,7 +153,7 @@ export class ClaudeAgent {
     this.iterationDone = handle.iterationDone
     this.iterationAlive = true
     const gen = ++this.sessionGeneration
-    log.debug(`[ClaudeAgent] createSession gen=${gen} resume=${resumeSessionId ?? 'none'}`)
+    log.debug(`[ClaudeAgent] createSession gen=${gen} resume=${resumeSessionId ?? 'none'} cwd=${this.config!.cwd}`)
     this.iterationDone.then(() => {
       log.debug(`[ClaudeAgent] iterationDone.then gen=${gen} currentGen=${this.sessionGeneration} sessionId=${this.sessionId} bridge=${!!this.bridge}`)
       this.iterationAlive = false

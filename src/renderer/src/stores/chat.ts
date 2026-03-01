@@ -785,11 +785,8 @@ function _extractTitle(messages: ChatMessage[]): string | undefined {
     .slice(0, 100) || undefined
 }
 
-function _getWorktreeBranch(projectPath: string, session: PerSessionState): string | undefined {
-  if (session._worktreeBaseBranch) return session._worktreeBaseBranch
-  const wt = useAppStore.getState().getWorktreeState(projectPath)
-  if (wt.pendingBaseBranch) return wt.pendingBaseBranch
-  return undefined
+function _getWorktreeBranch(_projectPath: string, session: PerSessionState): string | undefined {
+  return session._worktreeBaseBranch ?? undefined
 }
 
 function _getWorktreePath(projectPath: string): string | undefined {
@@ -805,7 +802,7 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   if (!session || session.messages.length === 0) return
 
   const branch = _getWorktreeBranch(projectPath, session)
-  const wtPath = _getWorktreePath(projectPath)
+  const wtPath = branch ? _getWorktreePath(projectPath) : undefined
   window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath)
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
@@ -821,7 +818,7 @@ function _savePerSessionSnapshot(projectPath: string, sessionId: string, session
   if (!sessionId || sessionId === DRAFT_SESSION_ID || session.messages.length === 0) return
 
   const branch = _getWorktreeBranch(projectPath, session)
-  const wtPath = _getWorktreePath(projectPath)
+  const wtPath = branch ? _getWorktreePath(projectPath) : undefined
   window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath)
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
@@ -2177,6 +2174,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     if (savedWorktreePath) {
       useAppStore.getState().setActiveWorktree(activeProject, savedWorktreePath)
+    } else {
+      useAppStore.getState().setActiveWorktree(activeProject, null)
     }
   },
 

@@ -5,6 +5,7 @@ vi.mock('./app', () => ({
   useAppStore: {
     getState: () => ({
       getWorktreeState: () => ({}),
+      setActiveWorktree: vi.fn(),
       clearWorktree: vi.fn().mockResolvedValue(undefined),
     }),
   },

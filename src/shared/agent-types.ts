@@ -30,6 +30,12 @@ export interface SessionInfo {
   skills: string[]
   claudeCodeVersion: string
   cwd: string
+  agents?: string[]
+  apiKeySource?: string
+  betas?: string[]
+  outputStyle?: string
+  plugins?: { name: string; path: string }[]
+  fastModeState?: 'off' | 'cooldown' | 'on'
 }
 
 // --- Usage / cost tracking ---
@@ -47,6 +53,9 @@ export interface ModelUsageInfo {
   cacheReadInputTokens: number
   cacheCreationInputTokens: number
   costUSD: number
+  webSearchRequests?: number
+  contextWindow?: number
+  maxOutputTokens?: number
 }
 
 export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
@@ -162,16 +171,29 @@ export interface CodexTurnInfo {
   items: CodexThreadItem[]
 }
 
+export interface PermissionDenialInfo {
+  toolName: string
+  toolUseId: string
+  toolInput: Record<string, unknown>
+}
+
 export interface MessageMetadata {
   model?: string
   costUsd?: number
   durationMs?: number
+  durationApiMs?: number
   numTurns?: number
   usage?: UsageInfo
   modelUsage?: Record<string, ModelUsageInfo>
   stopReason?: string | null
   consumedTokens?: { input: number; output: number }
   codex?: CodexTurnInfo
+  resultText?: string
+  permissionDenials?: PermissionDenialInfo[]
+  fastModeState?: 'off' | 'cooldown' | 'on'
+  errorSubtype?: string
+  structuredOutput?: unknown
+  isError?: boolean
 }
 
 // --- Todo items (derived from TaskCreate/TaskUpdate tool calls) ---
@@ -298,6 +320,8 @@ export interface HookEvent {
   hookName: string
   hookEvent: string
   output?: string
+  stdout?: string
+  stderr?: string
   exitCode?: number
   outcome?: 'success' | 'error' | 'cancelled'
 }
@@ -369,9 +393,9 @@ export interface WorktreeInfo {
 
 export type AgentEventBase =
   | { type: 'message_start'; message: ChatMessage }
-  | { type: 'content_delta'; messageId: string; delta: ContentBlock }
+  | { type: 'content_delta'; messageId: string; delta: ContentBlock; isSynthetic?: boolean; isReplay?: boolean }
   | { type: 'tool_input_delta'; messageId: string; toolUseId: string; partialJson: string; parentToolUseId?: string | null }
-  | { type: 'tool_progress'; messageId: string; toolUseId: string; toolName: string; elapsedSeconds: number; parentToolUseId?: string | null }
+  | { type: 'tool_progress'; messageId: string; toolUseId: string; toolName: string; elapsedSeconds: number; parentToolUseId?: string | null; taskId?: string }
   | { type: 'message_complete'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_interrupted'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_error'; messageId: string; error: string }
@@ -384,9 +408,10 @@ export type AgentEventBase =
   | { type: 'hook_started'; hook: HookEvent }
   | { type: 'hook_complete'; hook: HookEvent }
   | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number }
-  | { type: 'status_indicator'; indicator: 'compacting' | null }
+  | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode }
   | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string }
-  | { type: 'task_notification'; taskId: string; toolUseId?: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string }
+  | { type: 'task_progress'; taskId: string; toolUseId?: string; description: string; lastToolName?: string; usage: { totalTokens: number; toolUses: number; durationMs: number } }
+  | { type: 'task_notification'; taskId: string; toolUseId?: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string; summary?: string; usage?: { totalTokens: number; toolUses: number; durationMs: number } }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
@@ -396,7 +421,13 @@ export type AgentEventBase =
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo }
   | { type: 'prompt_suggestion'; suggestion: string }
-  | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number }
+  | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; overageStatus?: string; overageResetsAt?: number; overageDisabledReason?: string; isUsingOverage?: boolean; surpassedThreshold?: number }
+  | { type: 'assistant_error'; messageId: string; error: string }
+  | { type: 'hook_progress'; hook: HookEvent }
+  | { type: 'files_persisted'; files: Array<{ filename: string; fileId: string }>; failed: Array<{ filename: string; error: string }>; processedAt: string }
+  | { type: 'elicitation_complete'; mcpServerName: string; elicitationId: string }
+  | { type: 'stream_message_start'; messageId: string; apiMessageId: string; model: string; parentToolUseId?: string | null }
+  | { type: 'stream_message_stop'; messageId: string; parentToolUseId?: string | null }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
 
@@ -594,6 +625,7 @@ export interface SessionHistoryEntry {
   messageCount: number // Total user + assistant messages
   isWorktree?: boolean // true if session was created in a git worktree
   isPinned?: boolean   // true if session is pinned by user
+  isHidden?: boolean   // true if session is hidden by user
 }
 
 export interface PinnedSessionEntry extends SessionHistoryEntry {
@@ -835,6 +867,7 @@ export const AgentIpcChannels = {
   // Session history
   SESSIONS_LIST: 'sessions:list',
   SESSIONS_LIST_FOR_FOLDER: 'sessions:list-for-folder',
+  SESSIONS_LIST_FOR_FOLDER_PAGE: 'sessions:list-for-folder-page',
   SESSIONS_RESUME: 'sessions:resume',
   SESSIONS_LOAD_MESSAGES: 'sessions:load-messages',
   SESSIONS_RENAME: 'sessions:rename',
@@ -843,6 +876,7 @@ export const AgentIpcChannels = {
   SESSIONS_LOAD_STATE: 'sessions:load-state',
   SESSIONS_DELETE: 'sessions:delete',
   SESSIONS_PIN: 'sessions:pin',
+  SESSIONS_HIDE: 'sessions:hide',
   SESSIONS_LIST_PINNED: 'sessions:list-pinned',
   SESSIONS_CHANGED: 'sessions:changed',
 

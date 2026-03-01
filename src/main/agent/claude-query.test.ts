@@ -356,6 +356,257 @@ describe('createSessionQuery', () => {
     expect(events).toContainEqual({ type: 'status_change', status: 'error' })
   })
 
+  it('emits early idle when background tasks are running after main agent completes', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'init', session_id: 'sess-bg' },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'agent-tool', name: 'Agent', input: {} }] } },
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'bg task' },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'done' }] } },
+      { type: 'system', subtype: 'task_progress', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'progress', usage: {} },
+      { type: 'system', subtype: 'task_progress', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'progress2', usage: {} },
+      { type: 'system', subtype: 'task_notification', task_id: 'bg-1', status: 'completed', output_file: '' },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      {} as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-bg',
+      () => Date.now() - 100,
+      () => false
+    )
+    await handle.iterationDone
+
+    const statusChanges = events
+      .filter((e) => e.type === 'status_change')
+      .map((e) => e.status)
+    expect(statusChanges[0]).toBe('idle')
+    expect(statusChanges[statusChanges.length - 1]).toBe('idle')
+  })
+
+  it('emits early idle on task_notification without task_progress', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'init', session_id: 'sess-no-progress' },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'agent-tool', name: 'Agent', input: {} }] } },
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'bg task' },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'done' }] } },
+      { type: 'stream_event', event: { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 50 } } },
+      { type: 'system', subtype: 'task_notification', task_id: 'bg-1', status: 'completed', output_file: '' },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      {} as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-no-progress',
+      () => Date.now() - 100,
+      () => false
+    )
+    await handle.iterationDone
+
+    const statusChanges = events
+      .filter((e) => e.type === 'status_change')
+      .map((e) => e.status)
+    expect(statusChanges[0]).toBe('idle')
+    expect(statusChanges).toContain('idle')
+    const earlyIdleIdx = statusChanges.indexOf('idle')
+    expect(earlyIdleIdx).toBeLessThan(statusChanges.length - 1)
+  })
+
+  it('emits early idle when task_started fires after main agent final response', async () => {
+    state.messages = [
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'agent-tool', name: 'Agent', input: {} }] } },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'final response' }] } },
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'bg task' },
+      { type: 'system', subtype: 'task_progress', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'progress', usage: {} },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      {} as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-late-start',
+      () => Date.now() - 100,
+      () => false
+    )
+    await handle.iterationDone
+
+    const statusChanges = events
+      .filter((e) => e.type === 'status_change')
+      .map((e) => e.status)
+    expect(statusChanges[0]).toBe('idle')
+    expect(statusChanges[statusChanges.length - 1]).toBe('idle')
+  })
+
+  it('re-emits streaming when main agent resumes after early idle', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'bg task' },
+      { type: 'assistant', message: { content: [] } },
+      { type: 'stream_event', event: { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 10 } } },
+      { type: 'system', subtype: 'task_progress', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'progress', usage: {} },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'resumed' }] } },
+      { type: 'stream_event', event: { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 20 } } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      {} as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-resume',
+      () => Date.now() - 100,
+      () => false
+    )
+    await handle.iterationDone
+
+    const statusChanges = events
+      .filter((e) => e.type === 'status_change')
+      .map((e) => e.status)
+    expect(statusChanges).toEqual(['idle', 'streaming', 'idle', 'idle'])
+  })
+
+  it('uses per-turn messageId so result(A) keeps turn-A id when sendMessage(B) changes currentMessageId', async () => {
+    state.messages = [
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'turn A' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'turn B' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    let currentId = 'msg-A'
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      {} as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => {
+        events.push(event as unknown as Record<string, unknown>)
+        if ((event as Record<string, unknown>).type === 'status_change' && (event as Record<string, unknown>).status === 'idle' && currentId === 'msg-A') {
+          currentId = 'msg-B'
+        }
+      },
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const completes = events.filter((e) => e.type === 'message_complete')
+    expect(completes).toHaveLength(2)
+    expect(completes[0].messageId).toBe('msg-A')
+    expect(completes[1].messageId).toBe('msg-B')
+  })
+
+  it('continuation assistant in same turn keeps turn-A messageId even after sendMessage(B)', async () => {
+    state.messages = [
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'agent-tool', name: 'Agent', input: {} }] } },
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'bg task' },
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'main done' } } },
+      { type: 'assistant', message: { content: [] } },
+      { type: 'system', subtype: 'task_progress', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'progress', usage: {} },
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'resumed after bg' } } },
+      { type: 'assistant', message: { content: [] } },
+      { type: 'result', subtype: 'success', usage: {} },
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'turn B' } } },
+      { type: 'assistant', message: { content: [] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    let currentId = 'msg-A'
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      {} as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => {
+        events.push(event as unknown as Record<string, unknown>)
+        if ((event as Record<string, unknown>).type === 'status_change' && (event as Record<string, unknown>).status === 'idle') {
+          currentId = 'msg-B'
+        }
+      },
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const thinkingDeltas = events
+      .filter((e) => e.type === 'content_delta' && (e.delta as Record<string, unknown>)?.type === 'thinking')
+      .map((e) => ({ messageId: e.messageId, thinking: (e.delta as Record<string, unknown>).thinking }))
+    expect(thinkingDeltas[0]).toMatchObject({ messageId: 'msg-A', thinking: 'main done' })
+    expect(thinkingDeltas[1]).toMatchObject({ messageId: 'msg-A', thinking: 'resumed after bg' })
+    expect(thinkingDeltas[2]).toMatchObject({ messageId: 'msg-B', thinking: 'turn B' })
+
+    const completes = events.filter((e) => e.type === 'message_complete')
+    expect(completes[0].messageId).toBe('msg-A')
+    expect(completes[1].messageId).toBe('msg-B')
+  })
+
+  it('new turn stream_events get correct messageId even before assistant message', async () => {
+    state.messages = [
+      { type: 'assistant', message: { content: [] } },
+      { type: 'result', subtype: 'success', usage: {} },
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'hello B' } } },
+      { type: 'assistant', message: { content: [] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    let currentId = 'msg-A'
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      {} as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => {
+        events.push(event as unknown as Record<string, unknown>)
+        if ((event as Record<string, unknown>).type === 'status_change' && (event as Record<string, unknown>).status === 'idle' && currentId === 'msg-A') {
+          currentId = 'msg-B'
+        }
+      },
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const textDelta = events.find(
+      (e) => e.type === 'content_delta' && (e.delta as Record<string, unknown>)?.type === 'text' && (e.delta as Record<string, unknown>)?.text === 'hello B'
+    )
+    expect(textDelta?.messageId).toBe('msg-B')
+
+    const completes = events.filter((e) => e.type === 'message_complete')
+    expect(completes).toHaveLength(2)
+    expect(completes[0].messageId).toBe('msg-A')
+    expect(completes[1].messageId).toBe('msg-B')
+  })
+
+  it('re-emits streaming after result when new assistant arrives (resultSeen)', async () => {
+    state.messages = [
+      { type: 'assistant', message: { content: [] } },
+      { type: 'result', subtype: 'success', usage: {} },
+      { type: 'assistant', message: { content: [] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      {} as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-x',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const statusChanges = events.filter((e) => e.type === 'status_change').map((e) => e.status)
+    expect(statusChanges).toEqual(['idle', 'streaming', 'idle'])
+  })
+
   it('maps iterator errors to interrupted status when already interrupted', async () => {
     state.error = new Error('aborted')
 

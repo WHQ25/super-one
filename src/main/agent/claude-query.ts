@@ -3,16 +3,7 @@ import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMess
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
 import { getClaudeCliPath } from './resolve-cli'
-import { appendFileSync } from 'fs'
-import { join } from 'path'
-
-const RAW_LOG = process.env.NODE_ENV === 'development' ? join(process.cwd(), 'raw-session.log') : null
-
-function rawLog(role: string, content: string): void {
-  if (!RAW_LOG) return
-  const ts = new Date().toISOString().slice(11, 19)
-  appendFileSync(RAW_LOG, `[${ts}] [${role}]\n${content}\n\n`)
-}
+import { trace } from './event-trace'
 export interface SessionQueryOptions {
   cwd: string
   model?: string
@@ -44,6 +35,14 @@ export function createSessionQuery(
   getInterrupted: () => boolean,
   onSessionId?: (id: string) => void
 ): SessionQueryHandle {
+  const timing = { pausedMs: 0 }
+  const timedCanUseTool: CanUseTool = async (...args) => {
+    const start = Date.now()
+    const result = await options.canUseTool(...args)
+    timing.pausedMs += Date.now() - start
+    return result
+  }
+
   const q = query({
     prompt: bridge,
     options: {
@@ -55,7 +54,7 @@ export function createSessionQuery(
       includePartialMessages: true,
       permissionMode: options.permissionMode,
       allowDangerouslySkipPermissions: options.permissionMode === 'bypassPermissions',
-      canUseTool: options.canUseTool,
+      canUseTool: timedCanUseTool,
       sandbox: options.sandboxInfo?.enabled
         ? { enabled: true, autoAllowBashIfSandboxed: options.sandboxInfo.autoAllowBash }
         : undefined,
@@ -79,6 +78,7 @@ export function createSessionQuery(
     getInterrupted,
     onSessionId,
     trackPlanFile: options.trackPlanFile,
+    timing,
   })
 
   return { query: q, iterationDone }
@@ -107,7 +107,7 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
     parent_tool_use_id: null,
     session_id: sessionId,
   } as SDKUserMessage
-  rawLog('user-send', typeof content === 'string' ? content : JSON.stringify(content))
+  trace('agent.sdk', 'user_send', { content })
   return msg
 }
 
@@ -118,10 +118,15 @@ interface IterateMessagesOptions {
   getInterrupted: () => boolean
   onSessionId?: (id: string) => void
   trackPlanFile?: (filePath: string) => void
+  timing: { pausedMs: number }
 }
 
 async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
-  const { emit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile } = opts
+  const { emit: rawEmit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile, timing } = opts
+  const emit: typeof rawEmit = (event) => {
+    trace('agent.emit', event.type, event, (event as any).messageId)
+    rawEmit(event)
+  }
   // Track content_block index → tool_use_id for input_json_delta correlation
   const activeToolBlocks = new Map<number, string>()
   // Track tool_use_id → tool_name so we can tag tool_result events
@@ -139,17 +144,53 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
   // Subagent token accumulation per parent_tool_use_id
   const subagentTracking = new Map<string, { stepIds: Set<string>; input: number; output: number }>()
 
+  let pendingBackgroundTasks = 0
+  let earlyIdleEmitted = false
+  let earlyIdlePauseStart = 0
+  const backgroundToolUseIds = new Set<string>()
+  let turnMessageId = getCurrentMessageId()
+  let turnActive = false
+  let resultSeen = false
+
   log.debug('[iterateMessages] starting iteration loop')
   try {
     for await (const msg of q) {
-      rawLog(`msg:${msg.type}`, JSON.stringify(msg))
-      const messageId = getCurrentMessageId()
+      trace('agent.sdk', msg.type, msg)
+      let messageId = turnMessageId
+
+      if ((msg.type === 'assistant' || msg.type === 'stream_event')) {
+        const parent = (msg as any).parent_tool_use_id ?? null
+        if (!parent) {
+          const latestId = getCurrentMessageId()
+          if (!turnActive || latestId !== turnMessageId) {
+            turnMessageId = latestId
+            turnActive = true
+          }
+          messageId = turnMessageId
+        }
+      }
 
       // User messages carry tool results and slash command output
       if (msg.type === 'user') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userMsg = msg as any
         const parentToolUseId = userMsg.parent_tool_use_id ?? null
+        const isSynthetic = userMsg.isSynthetic === true ? true : undefined
+        const isReplay = userMsg.isReplay === true ? true : undefined
+        if (!parentToolUseId && earlyIdleEmitted) {
+          const msgContent2 = userMsg.message?.content
+          const isBackgroundResult = Array.isArray(msgContent2) && msgContent2.length > 0 &&
+            msgContent2.every((b: any) => b.type === 'tool_result' && backgroundToolUseIds.has(b.tool_use_id))
+          if (!isBackgroundResult) {
+            log.debug('[iterateMessages] re-emit streaming: user message after early idle')
+            if (earlyIdlePauseStart) {
+              timing.pausedMs += Date.now() - earlyIdlePauseStart
+              earlyIdlePauseStart = 0
+            }
+            emit({ type: 'status_change', status: 'streaming' })
+            earlyIdleEmitted = false
+          }
+        }
         const msgContent = userMsg.message?.content
 
         // Extract tool_result blocks from array content
@@ -161,20 +202,20 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               const isBash = toolName === 'Bash'
               const outputPath = isBash ? extractBashOutputPath(text) : undefined
               const isTimedOut = isBash ? extractBashKilled(userMsg.tool_use_result) : undefined
-              if (text) {
-                emit({
-                  type: 'content_delta',
-                  messageId,
-                  delta: {
-                    type: 'tool_result',
-                    toolUseId: block.tool_use_id,
-                    summary: text,
-                    ...(outputPath ? { outputPath } : {}),
-                    ...(isTimedOut ? { isTimedOut } : {}),
-                    parentToolUseId,
-                  },
-                })
-              }
+              emit({
+                type: 'content_delta',
+                messageId,
+                delta: {
+                  type: 'tool_result',
+                  toolUseId: block.tool_use_id,
+                  summary: text || '',
+                  ...(outputPath ? { outputPath } : {}),
+                  ...(isTimedOut ? { isTimedOut } : {}),
+                  parentToolUseId,
+                },
+                isSynthetic,
+                isReplay,
+              })
             }
           }
         }
@@ -205,6 +246,26 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           log.debug(`[iterateMessages] system message subtype=${sys.subtype} session_id=${sys.session_id ?? '(none)'}`)
           if (sys.subtype === 'init') {
             if (sys.session_id) onSessionId?.(sys.session_id)
+            emit({
+              type: 'session_init',
+              session: {
+                sessionId: sys.session_id ?? '',
+                model: sys.model ?? '',
+                tools: sys.tools ?? [],
+                mcpServers: sys.mcp_servers ?? [],
+                permissionMode: sys.permissionMode ?? 'default',
+                slashCommands: sys.slash_commands ?? [],
+                skills: sys.skills ?? [],
+                claudeCodeVersion: sys.claude_code_version ?? '',
+                cwd: sys.cwd ?? '',
+                agents: sys.agents,
+                apiKeySource: sys.apiKeySource,
+                betas: sys.betas,
+                outputStyle: sys.output_style,
+                plugins: sys.plugins,
+                fastModeState: sys.fast_mode_state,
+              },
+            })
           } else if (sys.subtype === 'hook_started') {
             emit({
               type: 'hook_started',
@@ -222,6 +283,8 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
                 hookName: sys.hook_name ?? '',
                 hookEvent: sys.hook_event ?? '',
                 output: sys.output ?? '',
+                stdout: sys.stdout,
+                stderr: sys.stderr,
                 exitCode: sys.exit_code,
                 outcome: sys.outcome ?? 'success',
               },
@@ -236,8 +299,11 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             emit({
               type: 'status_indicator',
               indicator: sys.status ?? null,
+              permissionMode: sys.permissionMode,
             })
           } else if (sys.subtype === 'task_started') {
+            pendingBackgroundTasks++
+            if (sys.tool_use_id) backgroundToolUseIds.add(sys.tool_use_id)
             emit({
               type: 'task_started',
               taskId: sys.task_id ?? '',
@@ -245,13 +311,58 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               description: sys.description ?? '',
               taskType: sys.task_type,
             })
+          } else if (sys.subtype === 'task_progress') {
+            emit({
+              type: 'task_progress',
+              taskId: sys.task_id ?? '',
+              toolUseId: sys.tool_use_id,
+              description: sys.description ?? '',
+              lastToolName: sys.last_tool_name,
+              usage: {
+                totalTokens: sys.usage?.total_tokens ?? 0,
+                toolUses: sys.usage?.tool_uses ?? 0,
+                durationMs: sys.usage?.duration_ms ?? 0,
+              },
+            })
           } else if (sys.subtype === 'task_notification') {
+            pendingBackgroundTasks = Math.max(0, pendingBackgroundTasks - 1)
             emit({
               type: 'task_notification',
               taskId: sys.task_id ?? '',
               toolUseId: sys.tool_use_id,
               taskStatus: sys.status ?? 'completed',
               outputFile: sys.output_file ?? '',
+              summary: sys.summary,
+              usage: sys.usage ? {
+                totalTokens: sys.usage.total_tokens ?? 0,
+                toolUses: sys.usage.tool_uses ?? 0,
+                durationMs: sys.usage.duration_ms ?? 0,
+              } : undefined,
+            })
+          } else if (sys.subtype === 'hook_progress') {
+            emit({
+              type: 'hook_progress',
+              hook: {
+                hookId: sys.hook_id ?? '',
+                hookName: sys.hook_name ?? '',
+                hookEvent: sys.hook_event ?? '',
+                stdout: sys.stdout,
+                stderr: sys.stderr,
+                output: sys.output,
+              },
+            })
+          } else if (sys.subtype === 'files_persisted') {
+            emit({
+              type: 'files_persisted',
+              files: (sys.files ?? []).map((f: any) => ({ filename: f.filename, fileId: f.file_id })),
+              failed: (sys.failed ?? []).map((f: any) => ({ filename: f.filename, error: f.error })),
+              processedAt: sys.processed_at ?? '',
+            })
+          } else if (sys.subtype === 'elicitation_complete') {
+            emit({
+              type: 'elicitation_complete',
+              mcpServerName: sys.mcp_server_name ?? '',
+              elicitationId: sys.elicitation_id ?? '',
             })
           } else if (sys.subtype === 'local_command_output') {
             const text = typeof sys.content === 'string' ? sys.content : ''
@@ -275,10 +386,29 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
         }
 
         case 'assistant': {
-          // Capture per-API-call usage for context window tracking
-          if (msg.message?.usage) lastAssistantUsage = msg.message.usage
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const assistantParent = (msg as any).parent_tool_use_id ?? null
+          if (!assistantParent) {
+            if (earlyIdleEmitted || resultSeen) {
+              log.debug('[iterateMessages] re-emit streaming: main agent resumed after early idle or result')
+              if (earlyIdlePauseStart) {
+                timing.pausedMs += Date.now() - earlyIdlePauseStart
+                earlyIdlePauseStart = 0
+              }
+              emit({ type: 'status_change', status: 'streaming' })
+              earlyIdleEmitted = false
+              resultSeen = false
+            }
+          }
+          // Capture per-API-call usage for context window tracking
+          if (msg.message?.usage) lastAssistantUsage = msg.message.usage
+
+          // Forward assistant-level errors (auth_failed, billing_error, rate_limit, etc.)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const assistantError = (msg as any).error
+          if (assistantError) {
+            emit({ type: 'assistant_error', messageId, error: assistantError })
+          }
 
           if (!assistantParent) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -340,17 +470,6 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           const content = msg.message?.content
           if (Array.isArray(content)) {
             for (const block of content) {
-              if (block.type === 'thinking' && block.thinking) {
-                emit({
-                  type: 'content_delta',
-                  messageId,
-                  delta: {
-                    type: 'thinking',
-                    thinking: block.thinking,
-                    parentToolUseId: assistantParent,
-                  },
-                })
-              }
               if (block.type === 'tool_use') {
                 toolIdToName.set(block.id ?? '', block.name ?? 'unknown')
 
@@ -382,6 +501,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               }
             }
           }
+
           break
         }
 
@@ -433,27 +553,48 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             }
           } else if (event.type === 'content_block_stop') {
             activeToolBlocks.delete(event.index)
-          } else if (event.type === 'message_delta' && event.usage?.output_tokens) {
-            // message_delta fires at end of streaming with final output_tokens for this step
-            const finalOutput = event.usage.output_tokens as number
-            if (!streamParent) {
-              messageOutputTokens += finalOutput
-              emit({
-                type: 'message_usage',
-                messageId,
-                inputTokens: messageInputTokens,
-                outputTokens: messageOutputTokens,
-              })
-            } else if (subagentTracking.has(streamParent)) {
-              const tracker = subagentTracking.get(streamParent)!
-              tracker.output += finalOutput
-              emit({
-                type: 'subagent_usage',
-                messageId,
-                parentToolUseId: streamParent,
-                inputTokens: tracker.input,
-                outputTokens: tracker.output,
-              })
+          } else if (event.type === 'message_start') {
+            emit({
+              type: 'stream_message_start',
+              messageId,
+              apiMessageId: event.message?.id ?? '',
+              model: event.message?.model ?? '',
+              parentToolUseId: streamParent,
+            })
+          } else if (event.type === 'message_stop') {
+            emit({
+              type: 'stream_message_stop',
+              messageId,
+              parentToolUseId: streamParent,
+            })
+          } else if (event.type === 'message_delta') {
+            if (event.usage?.output_tokens) {
+              const finalOutput = event.usage.output_tokens as number
+              if (!streamParent) {
+                messageOutputTokens += finalOutput
+                emit({
+                  type: 'message_usage',
+                  messageId,
+                  inputTokens: messageInputTokens,
+                  outputTokens: messageOutputTokens,
+                })
+              } else if (subagentTracking.has(streamParent)) {
+                const tracker = subagentTracking.get(streamParent)!
+                tracker.output += finalOutput
+                emit({
+                  type: 'subagent_usage',
+                  messageId,
+                  parentToolUseId: streamParent,
+                  inputTokens: tracker.input,
+                  outputTokens: tracker.output,
+                })
+              }
+            }
+            const stopReason = event.delta?.stop_reason
+            if (!streamParent && pendingBackgroundTasks > 0 && stopReason && stopReason !== 'tool_use') {
+              emit({ type: 'status_change', status: 'idle' })
+              earlyIdleEmitted = true
+              earlyIdlePauseStart = Date.now()
             }
           }
           break
@@ -469,6 +610,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             toolName: tp.tool_name ?? '',
             elapsedSeconds: tp.elapsed_time_seconds ?? 0,
             parentToolUseId: tp.parent_tool_use_id ?? null,
+            taskId: tp.task_id,
           })
           break
         }
@@ -496,7 +638,11 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result = msg as any
           log.debug(`[iterateMessages] result subtype=${result.subtype} session_id=${result.session_id ?? '(none)'}`)
-          const metadata = buildResultMetadata(result, getCurrentStartTime(), lastAssistantUsage)
+          if (earlyIdlePauseStart) {
+            timing.pausedMs += Date.now() - earlyIdlePauseStart
+            earlyIdlePauseStart = 0
+          }
+          const metadata = buildResultMetadata(result, getCurrentStartTime(), timing.pausedMs, lastAssistantUsage)
 
           if (getInterrupted()) {
             emit({ type: 'message_interrupted', messageId, metadata })
@@ -507,8 +653,11 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             emit({ type: 'message_error', messageId, error: errorMsg })
           }
 
-          // Turn complete — signal idle until next user message
-          emit({ type: 'status_change', status: 'idle' })
+          resultSeen = true
+          turnActive = false
+          if (messageId === getCurrentMessageId()) {
+            emit({ type: 'status_change', status: 'idle' })
+          }
           break
         }
 
@@ -531,19 +680,29 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               resetsAt: rl.resetsAt,
               rateLimitType: rl.rateLimitType,
               utilization: rl.utilization,
+              overageStatus: rl.overageStatus,
+              overageResetsAt: rl.overageResetsAt,
+              overageDisabledReason: rl.overageDisabledReason,
+              isUsingOverage: rl.isUsingOverage,
+              surpassedThreshold: rl.surpassedThreshold,
             })
           }
           break
         }
       }
+
     }
     log.debug('[iterateMessages] loop ended normally')
   } catch (err) {
     const messageId = getCurrentMessageId()
     const interrupted = getInterrupted()
     log.debug(`[iterateMessages] catch — interrupted=${interrupted}, error=${err instanceof Error ? err.message : String(err)}`)
+    if (earlyIdlePauseStart) {
+      timing.pausedMs += Date.now() - earlyIdlePauseStart
+      earlyIdlePauseStart = 0
+    }
     if (interrupted) {
-      emit({ type: 'message_interrupted', messageId, metadata: { durationMs: Date.now() - getCurrentStartTime() } })
+      emit({ type: 'message_interrupted', messageId, metadata: { durationMs: Date.now() - getCurrentStartTime() - timing.pausedMs } })
       emit({ type: 'status_change', status: 'idle' })
       return
     }
@@ -555,12 +714,26 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
 
 /** Extract rich metadata from an SDK result message. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildResultMetadata(result: any, startTime: number, lastAssistantUsage?: any): MessageMetadata {
+function buildResultMetadata(result: any, startTime: number, pausedMs: number, lastAssistantUsage?: any): MessageMetadata {
   const metadata: MessageMetadata = {
-    durationMs: Date.now() - startTime,
+    durationMs: Date.now() - startTime - pausedMs,
+    durationApiMs: result.duration_api_ms,
     costUsd: result.total_cost_usd,
     numTurns: result.num_turns,
     stopReason: result.stop_reason ?? null,
+    resultText: result.result,
+    fastModeState: result.fast_mode_state,
+    errorSubtype: result.subtype !== 'success' ? result.subtype : undefined,
+    structuredOutput: result.structured_output,
+    isError: result.is_error || undefined,
+  }
+
+  if (result.permission_denials?.length > 0) {
+    metadata.permissionDenials = result.permission_denials.map((d: any) => ({
+      toolName: d.tool_name,
+      toolUseId: d.tool_use_id,
+      toolInput: d.tool_input ?? {},
+    }))
   }
 
   // Use the last assistant message's usage as context window snapshot
@@ -586,6 +759,9 @@ function buildResultMetadata(result: any, startTime: number, lastAssistantUsage?
         cacheReadInputTokens: u.cacheReadInputTokens ?? 0,
         cacheCreationInputTokens: u.cacheCreationInputTokens ?? 0,
         costUSD: u.costUSD ?? 0,
+        webSearchRequests: u.webSearchRequests || undefined,
+        contextWindow: u.contextWindow || undefined,
+        maxOutputTokens: u.maxOutputTokens || undefined,
       }
     }
   }

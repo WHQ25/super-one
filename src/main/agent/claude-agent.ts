@@ -67,7 +67,7 @@ export class ClaudeAgent {
   private currentMessageId = ''
   private currentStartTime = 0
   private interrupted = false
-  private turnResolve: (() => void) | null = null
+  private turnResolves = new Map<string, () => void>()
 
   private ready = false
   private currentPermissionMode: PermissionMode = 'default'
@@ -145,9 +145,7 @@ export class ClaudeAgent {
       () => this.currentStartTime,
       () => this.interrupted,
       (id) => {
-        const isNew = this.sessionId !== id
         this.sessionId = id
-        if (isNew) this.emitSessionInit()
       },
     )
 
@@ -254,12 +252,11 @@ export class ClaudeAgent {
     if (request.model && this.sessionQuery) {
       try {
         await this.sessionQuery.setModel(request.model)
-      } catch { /* transport may not be ready yet after fork */ }
+      } catch (err) { log.debug('[claude-agent] setModel skipped (transport not ready):', err) }
     }
 
-    // Create a promise that resolves when this turn completes
     const turnDone = new Promise<void>((resolve) => {
-      this.turnResolve = resolve
+      this.turnResolves.set(messageId, resolve)
     })
 
     // Push the user message into the bridge
@@ -309,8 +306,8 @@ export class ClaudeAgent {
     if (this.sessionQuery) {
       await this.sessionQuery.interrupt()
     } else {
-      this.turnResolve?.()
-      this.turnResolve = null
+      for (const resolve of this.turnResolves.values()) resolve()
+      this.turnResolves.clear()
       this.emit({ type: 'status_change', status: 'idle' })
     }
   }
@@ -505,10 +502,9 @@ export class ClaudeAgent {
     return this.ready
   }
 
-  /** Close the current session and reset state for a new one. */
   async resetSession(): Promise<void> {
-    this.turnResolve?.()
-    this.turnResolve = null
+    for (const resolve of this.turnResolves.values()) resolve()
+    this.turnResolves.clear()
 
     const savedOnEvent = this.onEvent
     this.onEvent = null
@@ -539,8 +535,8 @@ export class ClaudeAgent {
   }
 
   async dispose(): Promise<void> {
-    this.turnResolve?.()
-    this.turnResolve = null
+    for (const resolve of this.turnResolves.values()) resolve()
+    this.turnResolves.clear()
     this.onEvent = null
 
     this.sessionAbort?.abort()
@@ -557,27 +553,8 @@ export class ClaudeAgent {
     this.config = null
   }
 
-  /** Emit session_init once sessionId is available. */
-  private emitSessionInit(): void {
-    if (!this.sessionId) return
-    this.emit({
-      type: 'session_init',
-      session: {
-        sessionId: this.sessionId,
-        model: '',
-        tools: [],
-        mcpServers: [],
-        permissionMode: this.currentPermissionMode,
-        slashCommands: [],
-        skills: [],
-        claudeCodeVersion: '',
-        cwd: this.config!.cwd,
-      },
-    })
-  }
-
   isStreaming(): boolean {
-    return this.turnResolve !== null
+    return this.turnResolves.size > 0
   }
 
   /** Replace the event emitter (used when moving agent between project paths). */
@@ -588,14 +565,17 @@ export class ClaudeAgent {
   private emit(event: AgentEvent): void {
     this.onEvent?.({ ...event, sessionId: this.sessionId || undefined })
 
-    // Detect turn completion to resolve the sendMessage awaiter
     if (
       event.type === 'message_complete' ||
       event.type === 'message_interrupted' ||
       event.type === 'message_error'
     ) {
-      this.turnResolve?.()
-      this.turnResolve = null
+      const mid = (event as { messageId?: string }).messageId ?? this.currentMessageId
+      const resolve = this.turnResolves.get(mid)
+      if (resolve) {
+        resolve()
+        this.turnResolves.delete(mid)
+      }
     }
   }
 }

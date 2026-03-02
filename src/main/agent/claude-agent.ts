@@ -243,19 +243,26 @@ export class ClaudeAgent {
     this.emit({ type: 'status_change', status: 'streaming' })
     this.emit({ type: 'message_start', message })
 
+    const turnDone = new Promise<void>((resolve) => {
+      this.turnResolves.set(messageId, resolve)
+    })
+
     if (request.model && this.sessionQuery) {
       try {
         await this.sessionQuery.setModel(request.model)
       } catch (err) { log.debug('[claude-agent] setModel skipped (transport not ready):', err) }
     }
 
-    const turnDone = new Promise<void>((resolve) => {
-      this.turnResolves.set(messageId, resolve)
-    })
+    if (!this.bridge) {
+      this.turnResolves.delete(messageId)
+      this.emit({ type: 'message_error', messageId, error: 'Session was terminated before message could be sent' })
+      this.emit({ type: 'status_change', status: 'idle' })
+      return
+    }
 
     // Push the user message into the bridge
     const userMsg = buildUserMessage(request, this.sessionId)
-    this.bridge!.push(userMsg)
+    this.bridge.push(userMsg)
 
     // Wait for this turn to complete (result/error/interrupt event)
     await turnDone

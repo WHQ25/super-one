@@ -30,6 +30,7 @@ export class AgentService {
   private agents = new Map<string, ClaudeAgent>()
   private bgAgents = new Map<string, { agent: ClaudeAgent; projectPath: string; gitRoot: string }>()
   private mainWindow: BrowserWindow | null = null
+  private pendingParkCounter = 0
 
   private getAgent(projectPath: string): ClaudeAgent {
     const agent = this.agents.get(projectPath)
@@ -41,12 +42,35 @@ export class AgentService {
     return (event: AgentEvent) => {
       this.mainWindow?.webContents.send(AgentIpcChannels.EVENT, { ...event, projectPath })
 
+      // Re-key pending background agents when session_init provides the real session ID
+      if (event.type === 'session_init' && event.session?.sessionId) {
+        const realSid = event.session.sessionId
+        for (const [key, bg] of this.bgAgents.entries()) {
+          if (key.startsWith('__pending_') && bg.agent.getSessionId() === realSid) {
+            this.bgAgents.delete(key)
+            this.bgAgents.set(realSid, bg)
+            break
+          }
+        }
+      }
+
       // Auto-dispose background agents when they go idle
-      if (event.type === 'status_change' && event.status === 'idle' && event.sessionId) {
-        const bg = this.bgAgents.get(event.sessionId)
-        if (bg) {
-          this.bgAgents.delete(event.sessionId)
-          bg.agent.dispose().catch(() => {})
+      if (event.type === 'status_change' && event.status === 'idle') {
+        const sid = event.sessionId
+        if (sid) {
+          const bg = this.bgAgents.get(sid)
+          if (bg) {
+            this.bgAgents.delete(sid)
+            bg.agent.dispose().catch(() => {})
+          }
+        } else {
+          for (const [key, bg] of this.bgAgents.entries()) {
+            if (key.startsWith('__pending_') && bg.projectPath === projectPath) {
+              this.bgAgents.delete(key)
+              bg.agent.dispose().catch(() => {})
+              break
+            }
+          }
         }
       }
     }
@@ -57,9 +81,9 @@ export class AgentService {
   private async parkSession(projectPath: string): Promise<void> {
     const current = this.agents.get(projectPath)
     if (current) {
-      const sid = current.getSessionId()
-      if (sid && current.isStreaming()) {
-        this.bgAgents.set(sid, { agent: current, projectPath, gitRoot: getGitRoot(projectPath) })
+      if (current.isStreaming()) {
+        const key = current.getSessionId() || `__pending_${++this.pendingParkCounter}`
+        this.bgAgents.set(key, { agent: current, projectPath, gitRoot: getGitRoot(projectPath) })
       } else {
         await current.dispose()
       }
@@ -397,9 +421,9 @@ export class AgentService {
       dbRenameSession(sessionId, title)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_CREATE, (_event, projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string) => {
+    ipcMain.handle(AgentIpcChannels.SESSIONS_CREATE, (_event, projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string, title?: string) => {
       try {
-        createSession(projectPath, claudeSessionId, undefined, isWorktree, gitBranch, worktreePath)
+        createSession(projectPath, claudeSessionId, title, isWorktree, gitBranch, worktreePath)
         this.mainWindow?.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
       } catch { /* ignore duplicate */ }
     })

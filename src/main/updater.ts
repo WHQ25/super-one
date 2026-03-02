@@ -14,6 +14,13 @@ let menuLabel = 'Check for Updates...'
 let menuEnabled = true
 let onMenuChange: (() => void) | null = null
 
+function safeCheckForUpdates(): Promise<unknown> {
+  if (__UPDATER_TOKEN__) process.env.GH_TOKEN = __UPDATER_TOKEN__
+  const result = autoUpdater.checkForUpdates()
+  if (__UPDATER_TOKEN__) delete process.env.GH_TOKEN
+  return result
+}
+
 function send(event: UpdateEvent): void {
   win?.webContents.send(AgentIpcChannels.UPDATER_EVENT, event)
   updaterState = event.type
@@ -61,10 +68,6 @@ export function initUpdater(mainWindow: BrowserWindow): void {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   if (testUpdater) autoUpdater.forceDevUpdateConfig = true
-  if (__UPDATER_TOKEN__) {
-    process.env.GH_TOKEN = __UPDATER_TOKEN__
-  }
-
   autoUpdater.on('checking-for-update', () => {
     send({ type: 'checking' })
   })
@@ -89,12 +92,12 @@ export function initUpdater(mainWindow: BrowserWindow): void {
     send({ type: 'error', message: err.message })
   })
 
-  autoUpdater.checkForUpdates().catch((err) => {
+  safeCheckForUpdates().catch((err) => {
     log.warn('[updater] Initial check failed:', err.message)
   })
 
   checkInterval = setInterval(() => {
-    autoUpdater.checkForUpdates().catch((err) => {
+    safeCheckForUpdates().catch((err) => {
       log.warn('[updater] Periodic check failed:', err.message)
     })
   }, 4 * 60 * 60 * 1000)
@@ -105,7 +108,7 @@ export function installUpdate(): void {
 }
 
 export function checkForUpdates(): void {
-  autoUpdater.checkForUpdates().catch((err) => {
+  safeCheckForUpdates().catch((err) => {
     log.warn('[updater] Manual check failed:', err.message)
     send({ type: 'error', message: err.message })
   })

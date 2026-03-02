@@ -1,7 +1,7 @@
 import type { ChatMessage as ChatMessageType, ContentBlock } from '../../../../shared/agent-types'
 import { useState, useEffect, useRef, useMemo, memo } from 'react'
 import { cn } from '@/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
@@ -406,15 +406,25 @@ export function CompactingIndicator() {
 
 function formatResetTime(resetsAt?: number): string | null {
   if (!resetsAt) return null
-  const now = Date.now() / 1000
-  const diff = resetsAt - now
-  if (diff <= 0) return null
-  if (diff < 60) return 'less than 1 min'
-  if (diff < 3600) return `${Math.ceil(diff / 60)} min`
-  return `${Math.round(diff / 3600 * 10) / 10} hrs`
+  const date = new Date(resetsAt * 1000)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZoneName: 'short',
+  }).format(date)
 }
 
-export function RateLimitIndicator({ info }: { info: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number } }) {
+export function RateLimitIndicator({
+  info,
+  onDismiss,
+}: {
+  info: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number }
+  onDismiss?: () => void
+}) {
   const isRejected = info.status === 'rejected'
   const resetLabel = formatResetTime(info.resetsAt)
   const pct = info.utilization != null ? Math.round(info.utilization * 100) : null
@@ -435,7 +445,19 @@ export function RateLimitIndicator({ info }: { info: { status: 'allowed_warning'
         <span className="text-amber-400/60">{pct}% used</span>
       )}
       {resetLabel && (
-        <span className={isRejected ? 'text-red-400/60' : 'text-amber-400/60'}>· resets in {resetLabel}</span>
+        <span className={isRejected ? 'text-red-400/60' : 'text-amber-400/60'}>· resets at {resetLabel}</span>
+      )}
+      {onDismiss && (
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss rate limit notice"
+          className={cn(
+            'ml-auto cursor-pointer rounded p-0.5 transition-colors',
+            isRejected ? 'text-red-400/60 hover:text-red-400' : 'text-amber-400/60 hover:text-amber-400',
+          )}
+        >
+          <X className="size-3" />
+        </button>
       )}
     </div>
   )

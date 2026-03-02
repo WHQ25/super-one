@@ -35,6 +35,14 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const prefireMessage = useActiveSession((s) => s.prefireMessage)
   const cancelPrefireMessage = useChatStore((s) => s.cancelPrefireMessage)
   const discardPrefireMessage = useChatStore((s) => s.discardPrefireMessage)
+  const [dismissedRateLimitKey, setDismissedRateLimitKey] = useState<string | null>(null)
+  const rateLimitInfoKey = useMemo(
+    () => rateLimitInfo
+      ? `${rateLimitInfo.status}:${rateLimitInfo.resetsAt ?? ''}:${rateLimitInfo.rateLimitType ?? ''}:${rateLimitInfo.utilization ?? ''}`
+      : null,
+    [rateLimitInfo],
+  )
+  const showRateLimitIndicator = !!rateLimitInfo && rateLimitInfoKey !== dismissedRateLimitKey
 
   const containerRef = useRef<HTMLDivElement>(null)
   const prevScrollHeightRef = useRef(0)
@@ -67,6 +75,10 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     viewport.scrollTop += delta
     prevScrollHeightRef.current = 0
   }, [expandLevel])
+
+  useEffect(() => {
+    if (!rateLimitInfo) setDismissedRateLimitKey(null)
+  }, [rateLimitInfo])
 
   return (
     <div ref={containerRef} className="relative flex min-h-0 w-full flex-1 flex-col bg-card" style={zoom !== 1 ? { zoom } : undefined}>
@@ -131,7 +143,14 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                     </div>
                   )}
                   {isCompacting && <CompactingIndicator />}
-                  {rateLimitInfo && <RateLimitIndicator info={rateLimitInfo} />}
+                  {showRateLimitIndicator && rateLimitInfo && (
+                    <RateLimitIndicator
+                      info={rateLimitInfo}
+                      onDismiss={() => {
+                        if (rateLimitInfoKey) setDismissedRateLimitKey(rateLimitInfoKey)
+                      }}
+                    />
+                  )}
                 </div>
               </ScrollArea>
             )}

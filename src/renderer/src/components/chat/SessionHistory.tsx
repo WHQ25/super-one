@@ -24,7 +24,7 @@ interface SessionHistoryProps {
 export function SessionHistory({ showBackButton = true, onClose }: SessionHistoryProps) {
   const sessions = useActiveSession((s) => s.sessions)
   const sessionsHasMore = useActiveSession((s) => s.sessionsHasMore)
-  const resumeSession = useChatStore((s) => s.resumeSession)
+  const switchSession = useChatStore((s) => s.switchSession)
   const renameSession = useChatStore((s) => s.renameSession)
   const fetchSessions = useChatStore((s) => s.fetchSessions)
   const fetchSessionsPage = useChatStore((s) => s.fetchSessionsPage)
@@ -61,7 +61,7 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
   const handleResume = (entry: SessionHistoryEntry) => {
     if (editingSessionId) return
     if (entry.sessionId === currentSessionId) return
-    resumeSession(entry.sessionId)
+    switchSession(entry.sessionId)
   }
 
   const startEditing = (entry: SessionHistoryEntry, e: React.MouseEvent) => {

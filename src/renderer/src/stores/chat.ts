@@ -22,6 +22,7 @@ export const DRAFT_SESSION_ID = '__draft__'
 export interface PerSessionState {
   messages: ChatMessage[]
   status: AgentStatus
+  awaitingAssistantReply: boolean
   session: SessionInfo | null
   sessionProvider: ChatProvider | null
   totalCostUsd: number
@@ -87,6 +88,7 @@ export function createDefaultPerSessionState(): PerSessionState {
   return {
     messages: [],
     status: 'idle',
+    awaitingAssistantReply: false,
     session: null,
     sessionProvider: null,
     totalCostUsd: 0,
@@ -252,7 +254,7 @@ interface ChatStore {
   fetchSessions: () => Promise<void>
   fetchSessionsPage: () => Promise<void>
   toggleHistory: () => void
-  resumeSession: (sessionId: string) => Promise<void>
+  switchSession: (sessionId: string) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
 
   // Additional directories
@@ -352,7 +354,7 @@ function pruneTransientCodexItems(items: CodexThreadItem[]): CodexThreadItem[] {
 function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
   switch (event.type) {
     case 'message_start':
-      return { messages: [...session.messages, event.message], promptSuggestion: null, lastEventAt: Date.now() }
+      return { messages: [...session.messages, event.message], promptSuggestion: null, awaitingAssistantReply: false, lastEventAt: Date.now() }
 
     case 'content_delta': {
       let updatedMessages = session.messages.map((msg) => {
@@ -488,6 +490,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           const total = u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens
           return total > 0 ? total : session.contextTokens
         })(),
+        awaitingAssistantReply: false,
         ...(isCurrentTurn ? { streamingTokens: { input: 0, output: 0 }, lastEventAt: 0 } : {}),
         ...(hasUncompletedAgents ? {
           taskProgress: {
@@ -524,11 +527,13 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         pendingPermission: null,
         pendingQuestion: null,
         pendingPlanApproval: null,
+        awaitingAssistantReply: false,
         lastEventAt: 0,
       }
 
     case 'message_error':
       return {
+        awaitingAssistantReply: false,
         lastEventAt: 0,
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
@@ -803,12 +808,13 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
 
   const branch = _getWorktreeBranch(projectPath, session)
   const wtPath = branch ? _getWorktreePath(projectPath) : undefined
-  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath)
+  const title = _extractTitle(session.messages)
+  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath, title)
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
       totalCostUsd: session.totalCostUsd,
       contextTokens: session.contextTokens,
-      title: _extractTitle(session.messages),
+      title,
       provider: session.sessionProvider ?? undefined,
     }))
     .catch((err) => console.warn('[saveSessionState] failed:', err))
@@ -819,12 +825,13 @@ function _savePerSessionSnapshot(projectPath: string, sessionId: string, session
 
   const branch = _getWorktreeBranch(projectPath, session)
   const wtPath = branch ? _getWorktreePath(projectPath) : undefined
-  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath)
+  const title = _extractTitle(session.messages)
+  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath, title)
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
       totalCostUsd: session.totalCostUsd,
       contextTokens: session.contextTokens,
-      title: _extractTitle(session.messages),
+      title,
       provider: session.sessionProvider ?? undefined,
     }))
     .catch((err) => console.warn('[saveSessionSnapshot] failed:', err))
@@ -834,6 +841,42 @@ function _computeHasPendingInteraction(project: ProjectState): boolean {
   return Object.values(project._sessions).some(
     (s) => !!s.pendingPermission || !!s.pendingQuestion || !!s.pendingPlanApproval,
   )
+}
+
+function _isLiveSession(session: PerSessionState | undefined): boolean {
+  return !!session && (
+    session.status === 'streaming'
+    || !!session.pendingPermission
+    || !!session.pendingQuestion
+    || !!session.pendingPlanApproval
+    || !!session.awaitingAssistantReply
+  )
+}
+
+function _needsForegroundActivation(session: PerSessionState): boolean {
+  return session.status === 'streaming' || !!session.pendingPermission || !!session.pendingQuestion || !!session.pendingPlanApproval
+}
+
+async function _ensureClaudeSessionReadyForSend(get: () => ChatStore, projectPath: string): Promise<void> {
+  const project = get().projectSessions[projectPath]
+  if (!project) return
+  const sessionId = resolveActiveSessionId(project)
+  if (!sessionId || sessionId === DRAFT_SESSION_ID) return
+  const session = project._sessions[sessionId]
+  if (!session || session.sessionProvider === 'codex') return
+
+  try {
+    const currentRuntimeSessionId = await window.agent.getSessionId(projectPath)
+    if (currentRuntimeSessionId === sessionId) return
+  } catch {}
+
+  try {
+    await window.agent.activateSession(projectPath, sessionId)
+    return
+  } catch {}
+
+  const worktreePath = session._worktreeBaseBranch ? _getWorktreePath(projectPath) : undefined
+  await window.app.resumeSession(projectPath, sessionId, worktreePath)
 }
 
 // --- Helpers ---
@@ -1004,10 +1047,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => {
       let project = s.projectSessions[projectPath] ?? createDefaultProjectState()
 
-      // Resolve target session: match by eventSessionId, or fall back to active
+      // Resolve target session: match by eventSessionId, or fall back to live DRAFT, then active
       let targetSid: string | null = (eventSessionId && project._sessions[eventSessionId])
         ? eventSessionId
-        : project._activeSessionId
+        : (eventSessionId && _isLiveSession(project._sessions[DRAFT_SESSION_ID]))
+          ? DRAFT_SESSION_ID
+          : project._activeSessionId
 
       if (!targetSid || !project._sessions[targetSid]) {
         if (event.type === 'init_ready' || event.type === 'session_init' || event.type === 'status_change') {
@@ -1064,8 +1109,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             ...updatedProject.sessions.filter((e) => e.sessionId !== realSid),
           ]
 
-          const snapshot = updatedSession
-          setTimeout(() => _savePerSessionSnapshot(projectPath, realSid, snapshot), 0)
+          _savePerSessionSnapshot(projectPath, realSid, updatedSession)
         }
       }
 
@@ -1134,13 +1178,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       // Non-active session went idle → save, mark unseen, and evict from _sessions
       if (event.type === 'status_change' && event.status === 'idle' && targetSid !== updatedProject._activeSessionId) {
-        if (effectiveSid) {
-          updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
-          const snapshot = updatedSession
-          setTimeout(() => _savePerSessionSnapshot(projectPath, effectiveSid, snapshot), 0)
+        if (!_isLiveSession(updatedSession)) {
+          if (effectiveSid) {
+            updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
+            const snapshot = updatedSession
+            setTimeout(() => _savePerSessionSnapshot(projectPath, effectiveSid, snapshot), 0)
+          }
+          const { [targetSid]: _, ...restSessions } = updatedProject._sessions
+          updatedProject._sessions = restSessions
         }
-        const { [targetSid]: _, ...restSessions } = updatedProject._sessions
-        updatedProject._sessions = restSessions
       }
 
       // Active session went idle in a background project → mark as unseen
@@ -1207,7 +1253,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })
     if (targetSid && targetSid !== DRAFT_SESSION_ID) {
       const targetSession = targetProject?._sessions[targetSid]
-      if (targetSession?.sessionProvider !== 'codex') {
+      if (targetSession?.sessionProvider !== 'codex' && _needsForegroundActivation(targetSession)) {
         try {
           await window.agent.activateSession(projectPath, targetSid)
         } catch (err) { console.warn('[chat] activateSession failed:', err) }
@@ -1372,6 +1418,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         messages: [...sess.messages, userMessage],
         attachments: [],
         mentions: [],
+        ...(effectiveProvider === 'claude' ? { awaitingAssistantReply: true } : {}),
       })),
       isOpen: true,
     }))
@@ -1504,23 +1551,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     _saveSessionState(get, activeProject)
+    await _ensureClaudeSessionReadyForSend(get, activeProject)
 
     // Merge project + session additional directories (deduplicated)
     const mergedDirs = [...new Set([...project.projectAdditionalDirs, ...session.additionalDirs])]
 
-    await window.agent.sendMessage(activeProject, {
-      content: finalContent,
-      model: selectedModel || undefined,
-      effort: selectedEffort,
-      images: attachments.length > 0 ? attachments : undefined,
-      additionalDirs: mergedDirs.length > 0 ? mergedDirs : undefined,
-    })
+    try {
+      await window.agent.sendMessage(activeProject, {
+        content: finalContent,
+        model: selectedModel || undefined,
+        effort: selectedEffort,
+        images: attachments.length > 0 ? attachments : undefined,
+        additionalDirs: mergedDirs.length > 0 ? mergedDirs : undefined,
+      })
+    } catch (err) {
+      set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))
+      throw err
+    }
   },
 
   interrupt: async () => {
     const { activeProject } = get()
     if (!activeProject) return
-    set((s) => updateActivePerSession(s, () => ({ prefireMessage: null })))
+    set((s) => updateActivePerSession(s, () => ({ prefireMessage: null, awaitingAssistantReply: false })))
     const [claudeResult] = await Promise.allSettled([
       window.agent.interrupt(activeProject),
       window.app.codexInterrupt(activeProject),
@@ -1565,6 +1618,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       pendingPermission: null, pendingQuestion: null, pendingPlanApproval: null,
       planApprovalOutcome: null, mentions: [], subagentTokens: {},
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
+      awaitingAssistantReply: false,
       prefireMessage: null,
     })), _bashOutputs: remainingOutputs }))
   },
@@ -2069,7 +2123,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })))
   },
 
-  resumeSession: async (sessionId) => {
+  switchSession: async (sessionId) => {
     const { activeProject } = get()
     if (!activeProject) return
     const project = getProject(get())
@@ -2105,13 +2159,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       const targetSession = project._sessions[sessionId]
       if (targetSession.sessionProvider === 'codex') return
+      if (sessionId === DRAFT_SESSION_ID) return
 
-      try {
-        await window.agent.activateSession(activeProject, sessionId)
-        return
-      } catch {
-        set((s) => updatePerSession(s, activeProject, sessionId, () => ({ status: 'idle' })))
+      if (!targetSession.selectedModel) {
+        const defaultModel = get().availableModels[0]
+        if (defaultModel) {
+          set((s) => updatePerSession(s, activeProject, sessionId, () => ({
+            selectedModel: defaultModel.id,
+            ...(defaultModel.supportedEffortLevels?.length ? { selectedEffort: 'high' as EffortLevel } : {}),
+          })))
+        }
       }
+
+      if (_needsForegroundActivation(targetSession)) {
+        try {
+          await window.agent.activateSession(activeProject, sessionId)
+        } catch (err) {
+          console.warn('[chat] activateSession failed:', err)
+        }
+      }
+      return
     }
 
     // Case B: Load from DB
@@ -2152,6 +2219,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       preferredProvider: restoredProvider,
       sessionProvider: restoredProvider,
     }
+    if (restoredProvider !== 'codex') {
+      applyDefaultModel(restoredSession, get().availableModels)
+    }
 
     set((s) => {
       const proj = getProject(s, activeProject)
@@ -2167,10 +2237,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }
     })
-
-    if (restoredProvider !== 'codex') {
-      await window.app.resumeSession(activeProject, sessionId, savedWorktreePath)
-    }
 
     if (savedWorktreePath) {
       useAppStore.getState().setActiveWorktree(activeProject, savedWorktreePath)

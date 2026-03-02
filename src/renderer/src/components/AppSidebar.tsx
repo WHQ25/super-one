@@ -52,6 +52,26 @@ function getPendingReason(
   return null
 }
 
+function isLiveSession(
+  session:
+    | {
+      status?: string
+      pendingPermission?: PermissionRequest | null
+      pendingQuestion?: AskUserQuestionRequest | null
+      pendingPlanApproval?: PlanApprovalRequest | null
+      awaitingAssistantReply?: boolean
+    }
+    | undefined,
+  isUnseen: boolean | undefined,
+): boolean {
+  return !!isUnseen
+    || session?.status === 'streaming'
+    || !!session?.pendingPermission
+    || !!session?.pendingQuestion
+    || !!session?.pendingPlanApproval
+    || !!session?.awaitingAssistantReply
+}
+
 const MAX_SESSIONS = 10
 
 export function AppSidebar() {
@@ -63,7 +83,7 @@ export function AppSidebar() {
   const isFullscreen = useFullscreen()
   const hasRealProject = useHasRealProject()
   const resetSession = useChatStore((s) => s.resetSession)
-  const resumeSession = useChatStore((s) => s.resumeSession)
+  const switchSession = useChatStore((s) => s.switchSession)
   const projectSessions = useChatStore((s) => s.projectSessions)
 
   const [filesMounted, setExplorerMounted] = useState(sidebarTab === 'files')
@@ -131,7 +151,7 @@ export function AppSidebar() {
     })
   }, [currentFolder, refreshFolderSessions, refreshPinned])
 
-  const handleResumeSession = useCallback(async (folderPath: string, sessionId: string) => {
+  const handleSwitchSession = useCallback(async (folderPath: string, sessionId: string) => {
     const ps = projectSessions[folderPath]
     const currentSid = ps?._activeSessionId
     if (folderPath === currentFolder && currentSid === sessionId) return
@@ -142,8 +162,8 @@ export function AppSidebar() {
       })
     }
     await openFolder(folderPath)
-    await resumeSession(sessionId)
-  }, [openFolder, resumeSession, currentFolder, projectSessions, folderSessions])
+    await switchSession(sessionId)
+  }, [openFolder, switchSession, currentFolder, projectSessions, folderSessions])
 
   const handlePinSession = useCallback(async (sessionId: string, pinned: boolean, folderPath: string) => {
     await window.app.pinSession(sessionId, pinned)
@@ -247,7 +267,7 @@ export function AppSidebar() {
           {pinnedSessions.map((s) => (
             <div
               key={s.sessionId}
-              onClick={() => handleResumeSession(s.folderPath, s.sessionId)}
+              onClick={() => handleSwitchSession(s.folderPath, s.sessionId)}
               className="group/pin flex cursor-pointer items-center justify-between overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
             >
               <div className="flex min-w-0 items-center gap-2">
@@ -324,13 +344,35 @@ export function AppSidebar() {
                 const isExpanded = expandedFolders.has(folder.path)
                 const displayPath = homePath(folder.path)
                 const allSessions = folderSessions[folder.path] ?? []
-                const sessions = allSessions.filter(s => !s.isHidden)
+                let sessions = allSessions.filter(s => !s.isHidden)
                 const projectSession = projectSessions[folder.path]
+                if (projectSession?._sessions) {
+                  const live: SessionHistoryEntry[] = []
+                  for (const [sid, data] of Object.entries(projectSession._sessions)) {
+                    if (data.messages.length === 0) continue
+                    const firstText = data.messages[0]?.content.find(b => b.type === 'text')
+                    const dbEntry = allSessions.find(s => s.sessionId === sid)
+                    if (dbEntry?.isHidden) continue
+                    if (dbEntry) continue
+                    const isUnseen = projectSession.unseenCompletedSessions?.has(sid)
+                    if (!isActive && !isLiveSession(data, isUnseen)) continue
+                    live.push({
+                      sessionId: sid,
+                      title: (firstText && 'text' in firstText ? firstText.text : '').slice(0, 100) || 'New session',
+                      lastActiveAt: new Date().toISOString(),
+                      provider: data.sessionProvider ?? undefined,
+                      messageCount: data.messages.length,
+                      isWorktree: !!data._worktreeBaseBranch,
+                      gitBranch: data._worktreeBaseBranch ?? undefined,
+                    })
+                  }
+                  if (live.length > 0) sessions = [...live, ...sessions]
+                }
                 const liveSessions = isExpanded ? [] : sessions.filter(s => {
                   const entry = projectSession?._sessions?.[s.sessionId]
                   const isUnseen = projectSession?.unseenCompletedSessions?.has(s.sessionId)
                   if (!entry && !isUnseen) return false
-                  return entry?.status === 'streaming' || !!entry?.pendingPermission || !!entry?.pendingQuestion || !!entry?.pendingPlanApproval || isUnseen
+                  return isLiveSession(entry, isUnseen)
                 })
                 const sessionsToShow = isExpanded ? sessions.slice(0, MAX_SESSIONS) : liveSessions
                 const showSessions = isExpanded || liveSessions.length > 0
@@ -447,7 +489,7 @@ export function AppSidebar() {
                                     <ContextMenu>
                                       <ContextMenuTrigger asChild>
                                         <div
-                                          onClick={() => handleResumeSession(folder.path, session.sessionId)}
+                                          onClick={() => handleSwitchSession(folder.path, session.sessionId)}
                                           className={cn(
                                             'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
                                             isActive && isForeground
@@ -465,7 +507,7 @@ export function AppSidebar() {
                                             >
                                               <EyeOff className="size-3" />
                                             </button>
-                                            <span className="group-hover/session:opacity-0 transition-opacity">
+                                            <span className="pointer-events-none group-hover/session:opacity-0 transition-opacity">
                                               {isRunning
                                                 ? <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
                                                 : isUnseen
@@ -531,7 +573,7 @@ export function AppSidebar() {
                                     </ContextMenu>
                                     {pendingReason && (
                                       <div
-                                        onClick={() => handleResumeSession(folder.path, session.sessionId)}
+                                        onClick={() => handleSwitchSession(folder.path, session.sessionId)}
                                         className="ml-5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1"
                                       >
                                         <Bot className="size-3 shrink-0 text-green-400" />

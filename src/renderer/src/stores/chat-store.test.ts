@@ -15,6 +15,8 @@ const mockWindowAgent = {
   parkSession: vi.fn().mockResolvedValue(undefined),
   resetSession: vi.fn().mockResolvedValue(undefined),
   activateSession: vi.fn().mockResolvedValue(undefined),
+  getSessionId: vi.fn().mockResolvedValue(''),
+  sendMessage: vi.fn().mockResolvedValue(undefined),
   readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
 }
 
@@ -228,6 +230,40 @@ describe('concurrent streaming sessions', () => {
     expect(after._sessions['a'].status).toBe('streaming')
     expect(after._sessions['b'].status).toBe('idle')
   })
+
+  it('routes session_init to live draft when switched away before first reply', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'old',
+          _sessions: {
+            old: createDefaultPerSessionState(),
+            [DRAFT_SESSION_ID]: {
+              ...createDefaultPerSessionState(),
+              messages: [{ id: 'u1', role: 'user' as const, content: [{ type: 'text', text: 'hello' }], status: 'complete' as const, createdAt: '', providerId: 'local' }],
+              awaitingAssistantReply: true,
+            },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'session_init',
+      sessionId: 'real-new',
+      session: { sessionId: 'real-new' } as never,
+    }))
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions[DRAFT_SESSION_ID]).toBeUndefined()
+    expect(after._sessions['real-new']).toBeDefined()
+    expect(after._sessions['real-new'].awaitingAssistantReply).toBe(true)
+    expect(after._sessions['old']).toBeDefined()
+  })
 })
 
 describe('idle eviction', () => {
@@ -284,6 +320,34 @@ describe('idle eviction', () => {
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['a']).toBeDefined()
     expect(after._sessions['a'].status).toBe('idle')
+  })
+
+  it('does NOT evict non-active session when awaitingAssistantReply is true', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: {
+            a: createDefaultPerSessionState(),
+            b: { ...createDefaultPerSessionState(), awaitingAssistantReply: true },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'status_change',
+      sessionId: 'b',
+      status: 'idle',
+    }))
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['b']).toBeDefined()
+    expect(after.unseenCompletedSessions.has('b')).toBe(false)
   })
 })
 
@@ -472,6 +536,21 @@ describe('switchProject restores parked session', () => {
       projectPath: '/proj-a',
       session: { sessionId: 'sid-a' } as never,
     }))
+    useChatStore.setState((s) => {
+      const proj = s.projectSessions['/proj-a']
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          '/proj-a': {
+            ...proj,
+            _sessions: {
+              ...proj._sessions,
+              'sid-a': { ...proj._sessions['sid-a'], status: 'streaming' as const },
+            },
+          },
+        },
+      }
+    })
 
     setupProject('/proj-b')
 
@@ -548,7 +627,7 @@ describe('applyDefaultModel via ensureSession', () => {
   })
 })
 
-describe('resumeSession Case A (in _sessions)', () => {
+describe('switchSession Case A (in _sessions)', () => {
   it('switches pointer to target session and calls activateSession', async () => {
     setupProject('/test')
 
@@ -571,15 +650,18 @@ describe('resumeSession Case A (in _sessions)', () => {
     })
 
     mockWindowAgent.activateSession.mockResolvedValue(undefined)
-    await useChatStore.getState().resumeSession('ses-b')
+    await useChatStore.getState().switchSession('ses-b')
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('ses-b')
     expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', 'ses-b')
   })
 
-  it('sets status to idle when activateSession throws', async () => {
+  it('switches pointer without activateSession for non-running target session', async () => {
     setupProject('/test')
+    useChatStore.setState({
+      availableModels: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[],
+    })
     const proj = useChatStore.getState().projectSessions['/test']
 
     useChatStore.setState({
@@ -589,24 +671,29 @@ describe('resumeSession Case A (in _sessions)', () => {
           _activeSessionId: 'ses-a',
           _sessions: {
             'ses-a': createDefaultPerSessionState(),
-            'ses-b': createDefaultPerSessionState(),
+            'ses-b': { ...createDefaultPerSessionState(), sessionProvider: 'claude' },
           },
         },
       },
     })
 
-    mockWindowAgent.activateSession.mockRejectedValue(new Error('No background session'))
-    await useChatStore.getState().resumeSession('ses-b')
+    mockWindowAgent.activateSession.mockClear()
+    await useChatStore.getState().switchSession('ses-b')
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('ses-b')
-    expect(after._sessions['ses-b'].status).toBe('idle')
+    expect(mockWindowAgent.activateSession).not.toHaveBeenCalled()
+    expect(after._sessions['ses-b'].selectedModel).toBe('claude-sonnet-4-6')
+    expect(after._sessions['ses-b'].selectedEffort).toBe('high')
   })
 })
 
-describe('resumeSession Case B (from DB)', () => {
+describe('switchSession Case B (from DB)', () => {
   it('loads session from DB and sets active', async () => {
     setupProject('/test')
+    useChatStore.setState({
+      availableModels: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[],
+    })
 
     mockWindowApp.loadSessionState.mockResolvedValue({
       messages: [{ id: 'db-msg', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'claude' }],
@@ -615,9 +702,7 @@ describe('resumeSession Case B (from DB)', () => {
       gitBranch: null,
       provider: 'claude',
     })
-    mockWindowApp.resumeSession.mockResolvedValue(undefined)
-
-    await useChatStore.getState().resumeSession('db-session')
+    await useChatStore.getState().switchSession('db-session')
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('db-session')
@@ -627,21 +712,175 @@ describe('resumeSession Case B (from DB)', () => {
     expect(after._sessions['db-session'].totalCostUsd).toBe(0.05)
     expect(after._sessions['db-session'].contextTokens).toBe(1000)
     expect(after._sessions['db-session'].sessionProvider).toBe('claude')
+    expect(after._sessions['db-session'].selectedModel).toBe('claude-sonnet-4-6')
+    expect(after._sessions['db-session'].selectedEffort).toBe('high')
     expect(after.showHistory).toBe(false)
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', undefined)
+    expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
   })
 
   it('handles null loadSessionState gracefully', async () => {
     setupProject('/test')
     mockWindowApp.loadSessionState.mockResolvedValue(null)
-    mockWindowApp.resumeSession.mockResolvedValue(undefined)
 
-    await useChatStore.getState().resumeSession('missing-session')
+    await useChatStore.getState().switchSession('missing-session')
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('missing-session')
     expect(after._sessions['missing-session'].messages).toHaveLength(0)
     expect(after._sessions['missing-session'].totalCostUsd).toBe(0)
+  })
+})
+
+describe('deferred resume on sendMessage', () => {
+  it('resumes non-running Claude session right before send', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'db-session',
+          _sessions: {
+            ...proj._sessions,
+            'db-session': {
+              ...createDefaultPerSessionState(),
+              sessionProvider: 'claude',
+              messages: [
+                { id: 'hist-1', role: 'user', content: [{ type: 'text', text: 'history' }], status: 'complete', createdAt: '', providerId: 'claude' },
+              ] as never[],
+            },
+          },
+        },
+      },
+    })
+
+    mockWindowAgent.getSessionId.mockResolvedValue('another-session')
+    mockWindowAgent.activateSession.mockRejectedValue(new Error('No background session'))
+
+    await useChatStore.getState().sendMessage('hello')
+
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', undefined)
+    expect(mockWindowAgent.sendMessage).toHaveBeenCalled()
+  })
+})
+
+describe('awaitingAssistantReply state machine', () => {
+  it('sets awaitingAssistantReply true when sending a new Claude turn', async () => {
+    setupProject('/test')
+    useChatStore.setState({
+      availableModels: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[],
+    })
+
+    await useChatStore.getState().sendMessage('hello')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.awaitingAssistantReply).toBe(true)
+  })
+
+  it('clears awaitingAssistantReply on message_start', async () => {
+    setupProject('/test')
+    useChatStore.setState((s) => {
+      const proj = s.projectSessions['/test']
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          '/test': {
+            ...proj,
+            _sessions: {
+              ...proj._sessions,
+              [DRAFT_SESSION_ID]: {
+                ...proj._sessions[DRAFT_SESSION_ID],
+                awaitingAssistantReply: true,
+              },
+            },
+          },
+        },
+      }
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'asst-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.awaitingAssistantReply).toBe(false)
+  })
+
+  it('clears awaitingAssistantReply on message_error', () => {
+    setupProject('/test')
+    useChatStore.setState((s) => {
+      const proj = s.projectSessions['/test']
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          '/test': {
+            ...proj,
+            _sessions: {
+              ...proj._sessions,
+              [DRAFT_SESSION_ID]: {
+                ...proj._sessions[DRAFT_SESSION_ID],
+                awaitingAssistantReply: true,
+              },
+            },
+          },
+        },
+      }
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_error',
+      messageId: 'missing-msg',
+      error: 'network error',
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.awaitingAssistantReply).toBe(false)
+  })
+
+  it('clears awaitingAssistantReply when sendMessage throws', async () => {
+    setupProject('/test')
+    useChatStore.setState({
+      availableModels: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[],
+    })
+    mockWindowAgent.sendMessage.mockRejectedValueOnce(new Error('send failed'))
+
+    await expect(useChatStore.getState().sendMessage('hello')).rejects.toThrow('send failed')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.awaitingAssistantReply).toBe(false)
+  })
+
+  it('keeps awaitingAssistantReply on status_change idle', () => {
+    setupProject('/test')
+    useChatStore.setState((s) => {
+      const proj = s.projectSessions['/test']
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          '/test': {
+            ...proj,
+            _sessions: {
+              ...proj._sessions,
+              [DRAFT_SESSION_ID]: {
+                ...proj._sessions[DRAFT_SESSION_ID],
+                awaitingAssistantReply: true,
+              },
+            },
+          },
+        },
+      }
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'status_change',
+      sessionId: DRAFT_SESSION_ID,
+      status: 'idle',
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.awaitingAssistantReply).toBe(true)
   })
 })
 

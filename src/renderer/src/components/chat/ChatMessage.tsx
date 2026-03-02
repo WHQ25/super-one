@@ -312,7 +312,7 @@ function parseUserMentions(text: string) {
 
 export function UserTextBlock({ text }: { text: string }) {
   const { mentions, rest } = parseUserMentions(text)
-  if (mentions.length === 0) return <span className="whitespace-pre-wrap">{text}</span>
+  if (mentions.length === 0) return <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</span>
 
   const displayName = (v: string) => v.replace(/\/$/, '').split('/').pop() || v
 
@@ -347,7 +347,7 @@ export function UserTextBlock({ text }: { text: string }) {
           ))}
         </span>
       )}
-      {rest && <span className="whitespace-pre-wrap">{rest}</span>}
+      {rest && <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{rest}</span>}
     </span>
   )
 }
@@ -481,7 +481,7 @@ export const ChatMessage = memo(function ChatMessage({ message }: ChatMessagePro
           className={cn(
             'min-w-0 text-sm',
             isUser
-              ? 'rounded-xl bg-secondary text-secondary-foreground px-3 py-2'
+              ? 'rounded-xl bg-secondary px-3 py-2 text-secondary-foreground break-words [overflow-wrap:anywhere]'
               : 'assistant-reply w-full text-foreground'
           )}
         >

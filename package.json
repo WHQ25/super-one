@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "rm -f dev.log event-trace.db && sqlite3 ~/Library/Application\\ Support/super-one/superone.db 'DELETE FROM global_resource_cache' 2>/dev/null; electron-vite dev",
+    "prepare:mac-optional-deps": "bun install --frozen-lockfile --os=darwin --cpu=*",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "test": "vitest run",
@@ -15,8 +16,8 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "bun run typecheck:node && bun run typecheck:web",
     "build:app": "electron-vite build && electron-builder --config electron-builder.yml",
-    "build:mac": "electron-vite build && electron-builder --mac --config electron-builder.yml",
-    "build:mac-dev": "electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --arm64 --config electron-builder.yml",
+    "build:mac": "bun run prepare:mac-optional-deps && electron-vite build && electron-builder --mac --config electron-builder.yml",
+    "build:mac-dev": "bun run prepare:mac-optional-deps && electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --arm64 --config electron-builder.yml",
     "build:win": "electron-vite build && electron-builder --win --config electron-builder.yml",
     "build:linux": "electron-vite build && electron-builder --linux --config electron-builder.yml"
   },

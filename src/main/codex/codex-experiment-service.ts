@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { execFileSync, spawn } from 'child_process'
 import { mkdirSync, unlinkSync, writeFileSync } from 'fs'
 import { createRequire } from 'module'
 import { basename, extname, join } from 'path'
@@ -90,6 +90,36 @@ interface AppServerConnection {
 const APP_SERVER_RESPONSE_TIMEOUT_MS = 15_000
 const MODEL_CACHE_TTL_MS = 60_000
 const moduleRequire = createRequire(import.meta.url)
+
+function resolveCodexPlatformPackage(platform: NodeJS.Platform = process.platform, arch: string = process.arch): string | null {
+  if (platform === 'darwin' && arch === 'x64') return '@openai/codex-darwin-x64'
+  if (platform === 'darwin' && arch === 'arm64') return '@openai/codex-darwin-arm64'
+  if (platform === 'linux' && arch === 'x64') return '@openai/codex-linux-x64'
+  if (platform === 'linux' && arch === 'arm64') return '@openai/codex-linux-arm64'
+  if (platform === 'win32' && arch === 'x64') return '@openai/codex-win32-x64'
+  if (platform === 'win32' && arch === 'arm64') return '@openai/codex-win32-arm64'
+  return null
+}
+
+function hasCodexPlatformPackage(packageName: string): boolean {
+  try {
+    moduleRequire.resolve(`${packageName}/package.json`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function findSystemCodexCli(): string | null {
+  const cmd = process.platform === 'win32' ? 'where' : '/usr/bin/which'
+  try {
+    const out = execFileSync(cmd, ['codex'], { timeout: 3000, stdio: 'pipe' }).toString()
+    const candidate = out.split(/\r?\n/).map((v) => v.trim()).find(Boolean)
+    return candidate ?? null
+  } catch {
+    return null
+  }
+}
 
 function normalizeApiKey(value?: string): string | undefined {
   const key = value?.trim()
@@ -767,10 +797,39 @@ export class CodexExperimentService {
     }
 
     const codexScript = this.resolveCodexCliScriptPath()
-    const child = spawn(process.execPath, [codexScript, 'app-server', '--listen', 'stdio://'], {
-      env: this.buildAppServerEnv(session),
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
+    const env = this.buildAppServerEnv(session)
+    const expectedPackage = resolveCodexPlatformPackage()
+    const hasBundledPackage = expectedPackage ? hasCodexPlatformPackage(expectedPackage) : false
+    const systemCodexCli = !hasBundledPackage ? findSystemCodexCli() : null
+    log.info(
+      '[codex] app-server launch platform=%s arch=%s mode=%s script=%s expectedPackage=%s bundledPackage=%s systemCodex=%s',
+      process.platform,
+      process.arch,
+      session.mode,
+      codexScript,
+      expectedPackage ?? 'unknown',
+      hasBundledPackage,
+      systemCodexCli ?? 'none',
+    )
+
+    if (!hasBundledPackage && !systemCodexCli) {
+      const hint = process.platform === 'darwin'
+        ? 'Rebuild dependencies with: bun install --frozen-lockfile --os=darwin --cpu=*'
+        : 'Rebuild dependencies for the current target architecture'
+      throw new Error(`Missing Codex runtime package (${expectedPackage ?? 'unknown'}). ${hint}`)
+    }
+
+    const child = systemCodexCli
+      ? spawn(systemCodexCli, ['app-server', '--listen', 'stdio://'], {
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: process.platform === 'win32',
+          windowsHide: process.platform === 'win32',
+        })
+      : spawn(process.execPath, [codexScript, 'app-server', '--listen', 'stdio://'], {
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        })
 
     const stdout = child.stdout
     const stdin = child.stdin
@@ -913,10 +972,19 @@ export class CodexExperimentService {
     } catch (error) {
       const stderr = stderrChunks.join('').trim()
       log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
+      if (stderr.includes('Missing optional dependency')) {
+        log.error(
+          '[codex] missing optional dependency detected platform=%s arch=%s expectedPackage=%s',
+          process.platform,
+          process.arch,
+          expectedPackage ?? 'unknown',
+        )
+      }
       if (stderr) log.error('[codex] app-server stderr:', stderr)
       if (stderr) {
         const message = error instanceof Error ? error.message : String(error)
-        throw new Error(`${message}\n${stderr}`)
+        const debugLogPath = String(log.transports.file.getFile().path)
+        throw new Error(`${message}\n${stderr}\nDebug log: ${debugLogPath}`)
       }
       throw error
     } finally {

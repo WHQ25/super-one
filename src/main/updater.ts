@@ -16,9 +16,9 @@ let onMenuChange: (() => void) | null = null
 
 function safeCheckForUpdates(): Promise<unknown> {
   if (__UPDATER_TOKEN__) process.env.GH_TOKEN = __UPDATER_TOKEN__
-  const result = autoUpdater.checkForUpdates()
-  if (__UPDATER_TOKEN__) delete process.env.GH_TOKEN
-  return result
+  return autoUpdater.checkForUpdates().finally(() => {
+    if (__UPDATER_TOKEN__) delete process.env.GH_TOKEN
+  })
 }
 
 function send(event: UpdateEvent): void {

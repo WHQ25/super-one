@@ -114,7 +114,11 @@ export function ChatStatusBar() {
   const currentMatch = gitInfo?.branch.toLowerCase().includes(lowerSearch)
   const otherBranches = branches.filter((b) => b !== gitInfo?.branch && b.toLowerCase().includes(lowerSearch))
   const trimmed = search.trim()
-  const canCreate = trimmed.length > 0 && !branches.some((b) => b === trimmed)
+  const normalizedTrimmed = trimmed.toLowerCase()
+  const currentBranchLower = gitInfo?.branch.toLowerCase()
+  const canCreate = trimmed.length > 0
+    && normalizedTrimmed !== currentBranchLower
+    && !branches.some((b) => b.toLowerCase() === normalizedTrimmed)
 
   return (
     <>

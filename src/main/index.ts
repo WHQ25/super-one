@@ -348,8 +348,14 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_CREATE_BRANCH, async (_event, folderPath: string, branch: string) => {
+    const safeRef = sanitizeGitRef(branch)
     try {
-      await gitRun(folderPath, ['checkout', '-b', sanitizeGitRef(branch)])
+      await gitRun(folderPath, ['rev-parse', '--verify', 'HEAD'])
+    } catch {
+      return { ok: false, error: 'Cannot create a new branch before the first commit. Commit once, then create the branch.' }
+    }
+    try {
+      await gitRun(folderPath, ['checkout', '-b', safeRef])
       return { ok: true }
     } catch (err) {
       return { ok: false, error: gitErrorMessage(err) }

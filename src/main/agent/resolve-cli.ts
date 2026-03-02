@@ -1,5 +1,6 @@
-import { execFileSync } from 'child_process'
+import { execFileSync, spawnSync } from 'child_process'
 import { createRequire } from 'module'
+import log from '../logger'
 
 const require = createRequire(import.meta.url)
 
@@ -16,31 +17,46 @@ export function fixPath(): void {
     const shellPath = result.toString().trim()
     if (shellPath) {
       process.env.PATH = shellPath
-      console.log('[fixPath] PATH updated via', shell, '→', shellPath)
+      log.info('[fixPath] PATH updated via %s', shell)
     }
   } catch {
-    console.warn('[fixPath] Failed to get PATH from login shell')
+    log.warn('[fixPath] Failed to get PATH from login shell')
   }
 }
 
 export function findSystemClaude(): string | undefined {
   const cmd = process.platform === 'win32' ? 'where' : '/usr/bin/which'
   try {
+    log.info('[findSystemClaude] probing with %s on %s/%s', cmd, process.platform, process.arch)
     const result = execFileSync(cmd, ['claude'], { timeout: 3000, stdio: 'pipe' })
-    const bin = result.toString().trim().split(/\r?\n/)[0]
-    if (bin) {
-      execFileSync(bin, ['--version'], { timeout: 3000, stdio: 'pipe' })
-      return bin
+    const bins = result.toString().split(/\r?\n/).map((v) => v.trim()).filter(Boolean)
+    log.info('[findSystemClaude] candidates=%d', bins.length)
+    for (const bin of bins) {
+      if (process.platform === 'win32') {
+        const probe = spawnSync(bin, ['--version'], {
+          timeout: 3000,
+          stdio: 'pipe',
+          shell: true,
+          windowsHide: true,
+        })
+        const ok = !probe.error && probe.status === 0
+        log.info('[findSystemClaude] candidate=%s ok=%s', bin, ok)
+        if (ok) return bin
+      } else {
+        execFileSync(bin, ['--version'], { timeout: 3000, stdio: 'pipe' })
+        log.info('[findSystemClaude] candidate=%s ok=true', bin)
+        return bin
+      }
     }
   } catch (err) {
-    console.warn('[findSystemClaude] failed:', (err as Error).message)
+    log.warn('[findSystemClaude] failed: %s', (err as Error).message)
   }
   return undefined
 }
 
 function findSdkCli(): string | undefined {
   try {
-    return require.resolve('@anthropic-ai/claude-agent-sdk/cli.js').replace('/app.asar/', '/app.asar.unpacked/')
+    return require.resolve('@anthropic-ai/claude-agent-sdk/cli.js').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
   } catch {
     return undefined
   }
@@ -53,6 +69,6 @@ export function clearCliCache(): void {
 export function getClaudeCliPath(): string | undefined {
   if (cachedPath !== undefined) return cachedPath || undefined
   cachedPath = findSystemClaude() ?? findSdkCli() ?? ''
-  console.log('[resolve-cli] resolved:', cachedPath || 'none')
+  log.info('[resolve-cli] resolved=%s platform=%s arch=%s', cachedPath || 'none', process.platform, process.arch)
   return cachedPath || undefined
 }

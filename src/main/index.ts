@@ -765,54 +765,70 @@ function registerIpcHandlers(): void {
     const cliPath = getClaudeCliPath()
     log.info('[CONNECT_CLAUDE] cliPath:', cliPath ?? 'undefined (will use system claude)')
     log.info('[CONNECT_CLAUDE] cwd:', app.getPath('userData'))
-    log.info('[CONNECT_CLAUDE] Creating query...')
+    log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
     const q = query({
       prompt: 'hi',
       options: { pathToClaudeCodeExecutable: cliPath, cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
     })
-    log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')
-    const [modelInfos, accountInfo, commands] = await Promise.all([
-      q.supportedModels(),
-      q.accountInfo(),
-      q.supportedCommands(),
-    ])
-    log.info('[CONNECT_CLAUDE] Fetch complete, closing query...')
-    q.close()
+    try {
+      log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')
+      const [modelInfos, accountInfo, commands] = await Promise.all([
+        q.supportedModels(),
+        q.accountInfo(),
+        q.supportedCommands(),
+      ])
+      log.info('[CONNECT_CLAUDE] Fetch complete, closing query...')
+      q.close()
 
-    // Scan user-level resources from filesystem
-    const userSkills = discoverUserSkills()
-    const userCommands = discoverUserCommands()
+      const userSkills = discoverUserSkills()
+      const userCommands = discoverUserCommands()
 
-    log.info('[CONNECT_CLAUDE] Models:', JSON.stringify(modelInfos, null, 2))
-    log.info('[CONNECT_CLAUDE] Account:', JSON.stringify(accountInfo, null, 2))
-    log.info('[CONNECT_CLAUDE] Commands:', JSON.stringify(commands, null, 2))
-    log.info('[CONNECT_CLAUDE] User Skills:', JSON.stringify(userSkills, null, 2))
-    log.info('[CONNECT_CLAUDE] User Commands:', JSON.stringify(userCommands, null, 2))
+      log.info('[CONNECT_CLAUDE] Models:', JSON.stringify(modelInfos, null, 2))
+      log.info('[CONNECT_CLAUDE] Account:', JSON.stringify(accountInfo, null, 2))
+      log.info('[CONNECT_CLAUDE] Commands:', JSON.stringify(commands, null, 2))
+      log.info('[CONNECT_CLAUDE] User Skills:', JSON.stringify(userSkills, null, 2))
+      log.info('[CONNECT_CLAUDE] User Commands:', JSON.stringify(userCommands, null, 2))
 
-    const models = modelInfos.map(mapModelInfo)
-    const account = {
-      email: accountInfo.email,
-      organization: accountInfo.organization,
-      subscriptionType: accountInfo.subscriptionType,
-      apiKeySource: accountInfo.apiKeySource,
+      const models = modelInfos.map(mapModelInfo)
+      const account = {
+        email: accountInfo.email,
+        organization: accountInfo.organization,
+        subscriptionType: accountInfo.subscriptionType,
+        apiKeySource: accountInfo.apiKeySource,
+      }
+      const slashCommands = commands.map((c) => ({
+        name: c.name,
+        description: c.description,
+        argumentHint: c.argumentHint,
+        isSkill: false,
+      }))
+
+      setCachedResources(models, account, slashCommands)
+
+      const userAgents = discoverUserAgents()
+
+      return { models, account, slashCommands, userSkills, userCommands, userAgents }
+    } catch (error) {
+      log.error('[CONNECT_CLAUDE] failed: %s', error instanceof Error ? error.message : String(error))
+      const debugLogPath = String(log.transports.file.getFile().path)
+      throw new Error(`CONNECT_CLAUDE failed. Debug log: ${debugLogPath}`)
+    } finally {
+      try {
+        q.close()
+      } catch {}
     }
-    const slashCommands = commands.map((c) => ({
-      name: c.name,
-      description: c.description,
-      argumentHint: c.argumentHint,
-      isSkill: false, // per-project isSkill tagging happens in createSession
-    }))
-
-    // Write to cache for next startup
-    setCachedResources(models, account, slashCommands)
-
-    const userAgents = discoverUserAgents()
-
-    return { models, account, slashCommands, userSkills, userCommands, userAgents }
   })
 }
 
 app.whenReady().then(() => {
+  log.info(
+    '[startup] appVersion=%s electron=%s platform=%s arch=%s logPath=%s',
+    app.getVersion(),
+    process.versions.electron,
+    process.platform,
+    process.arch,
+    log.transports.file.getFile().path,
+  )
   const LOCAL_FILE_MIME: Record<string, string> = {
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
     svg: 'image/svg+xml', webp: 'image/webp', ico: 'image/x-icon', bmp: 'image/bmp',

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 import { X, FileX2, PanelLeft } from 'lucide-react'
-import { Streamdown, defaultRehypePlugins } from 'streamdown'
+import { defaultRehypePlugins } from 'streamdown'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -9,7 +9,7 @@ import { useAppStore } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { cn } from '@/lib/utils'
-import { streamdownPlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from '@/components/chat/chat-shared'
+import { MarkdownView } from '@/components/MarkdownPreview'
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
@@ -213,17 +213,7 @@ export function FilePanel() {
             />
           </div>
         ) : effectiveTab === 'preview' && isMd ? (
-          <div className="github-md px-8 py-6 text-sm">
-            <Streamdown
-              plugins={streamdownPlugins}
-              components={streamdownComponents}
-              controls={streamdownControls}
-              linkSafety={streamdownLinkSafety}
-              rehypePlugins={previewRehypePlugins}
-            >
-              {resolvedContent}
-            </Streamdown>
-          </div>
+          <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
         ) : (
           <FileWithDiffView
             filePath={selectedFile}

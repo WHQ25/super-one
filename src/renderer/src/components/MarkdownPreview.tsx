@@ -1,12 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { Streamdown } from 'streamdown'
-import { createCodePlugin } from '@streamdown/code'
-import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
-import { streamdownLinkSafety } from '@/components/chat/chat-shared'
-
-const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
-const streamdownPlugins = { code: codePlugin }
-const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
+import { codePlugin, streamdownPlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from '@/components/chat/chat-shared'
+import { cn } from '@/lib/utils'
 
 interface TokenLine {
   tokens: Array<{ content: string; color?: string; htmlStyle?: Record<string, string> }>
@@ -108,16 +103,30 @@ export function FrontmatterTable({ meta, nested }: { meta: Record<string, Frontm
   )
 }
 
-export function MarkdownView({ content }: { content: string }) {
+type StreamdownProps = React.ComponentProps<typeof Streamdown>
+
+export function MarkdownView({
+  content,
+  className,
+  rehypePlugins,
+}: {
+  content: string
+  className?: string
+  rehypePlugins?: StreamdownProps['rehypePlugins']
+}) {
   const { meta, body } = parseFrontmatter(content)
   return (
-    <div className="px-1">
+    <div className={cn('github-md px-8 py-6 text-sm', className)}>
       {meta && <FrontmatterTable meta={meta} />}
-      <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
-        <Streamdown plugins={streamdownPlugins} components={streamdownComponents} linkSafety={streamdownLinkSafety}>
-          {body}
-        </Streamdown>
-      </div>
+      <Streamdown
+        plugins={streamdownPlugins}
+        components={streamdownComponents}
+        controls={streamdownControls}
+        linkSafety={streamdownLinkSafety}
+        rehypePlugins={rehypePlugins}
+      >
+        {body}
+      </Streamdown>
     </div>
   )
 }

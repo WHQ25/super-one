@@ -74,6 +74,7 @@ export class ClaudeAgent {
   private currentSandboxInfo: SandboxInfo = DEFAULT_SANDBOX_INFO
   private additionalDirs: string[] = []
   private currentEffort: SendMessageRequest['effort'] = undefined
+  private needsSessionRebuild = false
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
   private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
@@ -205,7 +206,8 @@ export class ClaudeAgent {
       }
     }
 
-    if (effortChanged || dirsChanged) {
+    if (effortChanged || dirsChanged || this.needsSessionRebuild) {
+      this.needsSessionRebuild = false
       const prevSessionId = this.sessionId
       await this.resetSession()
       this.currentEffort = request.effort
@@ -293,9 +295,18 @@ export class ClaudeAgent {
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
+    const prev = this.currentPermissionMode
     this.currentPermissionMode = mode
-    if (this.sessionQuery) {
-      await this.sessionQuery.setPermissionMode(mode)
+    const bypassChanged = (prev === 'bypassPermissions') !== (mode === 'bypassPermissions')
+    if (bypassChanged) {
+      this.needsSessionRebuild = true
+    } else if (this.sessionQuery) {
+      try {
+        await this.sessionQuery.setPermissionMode(mode)
+      } catch (err) {
+        log.debug('[claude-agent] setPermissionMode skipped (transport not ready):', err)
+        this.needsSessionRebuild = true
+      }
     }
     this.emit({ type: 'permission_mode_change', mode })
   }

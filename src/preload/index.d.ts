@@ -80,6 +80,7 @@ interface AppAPI {
   codexListSkills(projectPath: string): Promise<SkillInfo[]>
   codexReadSkill(projectPath: string, name: string): Promise<SkillDetail | null>
   codexReadSkillFile(projectPath: string, skillName: string, relativePath: string): Promise<string | null>
+  codexDeleteSkill(projectPath: string, name: string, scope: ResourceScope): Promise<void>
 
   // Codex MCP config
   codexListMcpConfigs(projectPath: string): Promise<McpServerConfig[]>

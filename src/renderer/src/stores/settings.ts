@@ -52,6 +52,7 @@ interface SettingsState {
   // MCP library
   mcpLibrary: McpLibraryEntry[]
   fetchMcpLibrary: () => Promise<void>
+  deleteMcpLibraryEntry: (name: string) => Promise<void>
 
   // Plugins
   plugins: PluginInfo[]
@@ -130,9 +131,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   deleteSkill: async (name, scope) => {
     const pp = getProjectPath()
-    await window.app.deleteSkill(pp, name, scope)
+    const provider = useAppStore.getState().settingsProvider
+    if (provider === 'codex') {
+      await window.app.codexDeleteSkill(pp, name, scope)
+    } else {
+      await window.app.deleteSkill(pp, name, scope)
+    }
     set({ skillDetail: null, skillFileContent: null, skillFilePath: null })
-    await get().fetchSkills()
+    if (provider === 'codex') {
+      await get().fetchCodexSkills()
+    } else {
+      await get().fetchSkills()
+    }
   },
 
   // Codex Skills (reuse same state fields)
@@ -221,6 +231,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } catch {
       // ignore
     }
+  },
+
+  deleteMcpLibraryEntry: async (name) => {
+    await window.app.deleteMcpLibraryEntry(name)
+    await get().fetchMcpLibrary()
   },
 
   fetchPlugins: async () => {

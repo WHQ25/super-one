@@ -24,7 +24,11 @@ const options: Array<{
   },
 ]
 
-export function CodexPermissionSelector() {
+interface CodexPermissionSelectorProps {
+  compact?: boolean
+}
+
+export function CodexPermissionSelector({ compact = false }: CodexPermissionSelectorProps) {
   const [open, setOpen] = useState(false)
   const selectedPreset = useActiveSession((s) => s.selectedCodexPermissionPreset)
   const setSelectedPreset = useChatStore((s) => s.setSelectedCodexPermissionPreset)
@@ -44,10 +48,11 @@ export function CodexPermissionSelector() {
               ? 'text-destructive hover:bg-destructive/10'
               : 'text-muted-foreground hover:bg-muted'
           }`}
+          title={presetLabel}
         >
           {modeIcon}
-          <span>{presetLabel}</span>
-          <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+          {!compact && <span>{presetLabel}</span>}
+          {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-64 border-border bg-card p-2">

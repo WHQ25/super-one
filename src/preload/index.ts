@@ -280,6 +280,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_READ, projectPath, name),
   codexReadSkillFile: (projectPath: string, skillName: string, relativePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_READ_FILE, projectPath, skillName, relativePath),
+  codexDeleteSkill: (projectPath: string, name: string, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_DELETE, projectPath, name, scope),
 
   // Codex MCP config
   codexListMcpConfigs: (projectPath: string) =>

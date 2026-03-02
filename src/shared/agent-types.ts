@@ -827,6 +827,7 @@ export const AgentIpcChannels = {
   CODEX_SKILLS_LIST: 'codex:skills-list',
   CODEX_SKILLS_READ: 'codex:skills-read',
   CODEX_SKILLS_READ_FILE: 'codex:skills-read-file',
+  CODEX_SKILLS_DELETE: 'codex:skills-delete',
 
   // Codex MCP config
   CODEX_MCP_LIST_CONFIG: 'codex:mcp-list-config',

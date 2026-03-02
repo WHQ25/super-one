@@ -17,6 +17,7 @@ interface SubagentBlockProps {
   childBlocks: ContentBlock[]
   resultBlock?: ContentBlock
   isStreaming: boolean
+  defaultExpanded?: boolean
 }
 
 /** Parse Task tool input to extract display info. */
@@ -69,7 +70,7 @@ function buildToolResultMap(blocks: ContentBlock[]) {
   return map
 }
 
-export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming }: SubagentBlockProps) {
+export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming, defaultExpanded }: SubagentBlockProps) {
   const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
   const progress = useActiveSession((s) => s.taskProgress[taskBlock.toolUseId])
   const taskInput = parseTaskInput(taskBlock.input)
@@ -82,7 +83,11 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
     ? !!progress?.completed
     : !!resultBlock
   const hasTokens = tokens.input > 0 || tokens.output > 0
-  const [expanded, setExpanded] = useState(!isComplete)
+  const [expanded, setExpanded] = useState(defaultExpanded ?? (isAsync ? false : !isComplete))
+
+  useEffect(() => {
+    if (isAsync && defaultExpanded === undefined) setExpanded(false)
+  }, [isAsync])
 
   const baselineElapsed = taskBlock.elapsedSeconds
     ? Math.round(taskBlock.elapsedSeconds)
@@ -121,22 +126,28 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   const lastLineCountRef = useRef(0)
 
   useEffect(() => {
-    if (!outputFile) return
+    if (!outputFile) {
+      window.app.trace?.('subagent.output', 'no_output_file', { asyncOutputPath, progressFile: progress?.outputFile, resultSummary: rawResultText?.slice(0, 200) }, taskBlock.toolUseId)
+      return
+    }
+    window.app.trace?.('subagent.output', 'start_reading', { outputFile, isRunning }, taskBlock.toolUseId)
     let cancelled = false
 
     const readAndParse = async () => {
       try {
         const raw = await window.app.readBashOutputFile(outputFile, 10000)
         if (cancelled) return
+        window.app.trace?.('subagent.output', 'read_result', { outputFile, rawLen: raw.length, first100: raw.slice(0, 100) }, taskBlock.toolUseId)
         const lineCount = raw.split('\n').length
         if (lineCount === lastLineCountRef.current) return
         lastLineCountRef.current = lineCount
         const parsed = parseJsonlOutput(raw)
+        window.app.trace?.('subagent.output', 'parsed', { entries: parsed.entries.length, hasResultText: !!parsed.resultText }, taskBlock.toolUseId)
         if (parsed.entries.length > 0 || parsed.resultText) {
           setJsonlEntries(parsed.entries)
           if (parsed.resultText) setJsonlResultText(parsed.resultText)
         }
-      } catch { /* file not ready yet */ }
+      } catch (err) { window.app.trace?.('subagent.output', 'read_error', { outputFile, error: String(err) }, taskBlock.toolUseId) }
     }
 
     readAndParse()
@@ -276,7 +287,7 @@ function AgentActivity({ entries, fallbackTools, activeTool, isRunning }: {
       {isRunning && latestActivity && (
         <div className="mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md bg-purple-500/10 px-2.5 py-1.5 text-xs leading-relaxed text-foreground dark:bg-purple-900/20">
           <MessageSquare className="mt-0.5 size-3 shrink-0 animate-pulse text-purple-400" />
-          <span className="line-clamp-2">{latestActivity.text}</span>
+          <span className="whitespace-pre-wrap">{latestActivity.text.trim()}</span>
         </div>
       )}
       <SubagentScrollArea isStreaming={isRunning}>

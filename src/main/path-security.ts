@@ -1,6 +1,5 @@
 import { realpathSync } from 'fs'
 import { resolve } from 'path'
-import { tmpdir } from 'os'
 
 export function resolveRealPath(inputPath: string): string {
   const absPath = resolve(inputPath)
@@ -26,14 +25,3 @@ export function sanitizeGitRef(ref: string): string {
   return trimmed
 }
 
-export function isValidBashOutputPath(filePath: string): boolean {
-  if (filePath.includes('..')) return false
-  if (!filePath.endsWith('.output')) return false
-  const resolved = resolve(filePath)
-  try {
-    if (realpathSync(resolved) !== resolved) return false
-  } catch {
-    // file doesn't exist yet — no symlink concern
-  }
-  return resolved.startsWith(resolve(tmpdir()) + '/')
-}

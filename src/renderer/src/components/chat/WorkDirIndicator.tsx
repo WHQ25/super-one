@@ -16,7 +16,11 @@ import type { WorktreeInfo, GitDirtyStatus } from '../../../../shared/agent-type
 
 const fmt = (n: number) => n.toLocaleString()
 
-export function WorkDirIndicator() {
+interface WorkDirIndicatorProps {
+  compact?: boolean
+}
+
+export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const worktrees = useAppStore((s) => s._worktrees)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
@@ -74,27 +78,27 @@ export function WorkDirIndicator() {
 
   if (isActive) {
     return (
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1">
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title="Worktree">
         <GitFork className="size-3" />
-        <span>Worktree</span>
+        {!compact && <span>Worktree</span>}
       </div>
     )
   }
 
   if (worktreeBaseBranch && !isInWorktree) {
     return (
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1">
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title="Worktree">
         <GitFork className="size-3" />
-        <span>Worktree</span>
+        {!compact && <span>Worktree</span>}
       </div>
     )
   }
 
   if (!isInWorktree && hasMessages) {
     return (
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1">
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title="Local">
         <Monitor className="size-3" />
-        <span>Local</span>
+        {!compact && <span>Local</span>}
       </div>
     )
   }
@@ -107,20 +111,23 @@ export function WorkDirIndicator() {
   return (
     <Popover open={popoverOpen} onOpenChange={openPopover}>
       <PopoverTrigger asChild>
-        <button className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground">
+        <button
+          className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
+          title={isPending ? `Create worktree from ${wtState?.pendingBaseBranch ?? ''}` : 'Local'}
+        >
           {isPending ? (
             <>
-              <span className="text-muted-foreground">Create worktree from:</span>
+              {!compact && <span className="text-muted-foreground">Create worktree from:</span>}
               <GitBranch className="size-3" />
-              <span>{wtState?.pendingBaseBranch}</span>
+              {!compact && <span>{wtState?.pendingBaseBranch}</span>}
             </>
           ) : (
             <>
               <Monitor className="size-3" />
-              <span>Local</span>
+              {!compact && <span>Local</span>}
             </>
           )}
-          <ChevronDown className={`size-3 transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />
+          {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-0" align="start">

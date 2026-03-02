@@ -3,7 +3,6 @@ import { watch as fsWatch, type FSWatcher } from 'fs'
 import type { BrowserWindow } from 'electron'
 import log from './logger'
 import { AgentIpcChannels, type BashOutputEvent } from '../shared/agent-types'
-import { isValidBashOutputPath } from './path-security'
 
 const MAX_TAIL_LINES = 50
 const STABLE_TIMEOUT_MS = 5000
@@ -12,6 +11,7 @@ interface WatchEntry {
   filePath: string
   watcher: FSWatcher | null
   lastSize: number
+  finished: boolean
   stableTimer: ReturnType<typeof setTimeout> | null
   pollTimer: ReturnType<typeof setInterval> | null
 }
@@ -37,6 +37,7 @@ export function watchBashOutput(toolUseId: string, filePath: string): void {
     filePath,
     watcher: null,
     lastSize: -1,
+    finished: false,
     stableTimer: null,
     pollTimer: null,
   }
@@ -51,6 +52,7 @@ export function watchBashOutput(toolUseId: string, filePath: string): void {
       const raw = await readFile(filePath, 'utf-8')
       if (!watchers.has(toolUseId)) return
       const content = tailLines(raw)
+      entry.finished = false
       send(toolUseId, content, false)
 
       if (!entry.watcher) {
@@ -63,8 +65,9 @@ export function watchBashOutput(toolUseId: string, filePath: string): void {
       if (entry.stableTimer) clearTimeout(entry.stableTimer)
       entry.stableTimer = setTimeout(() => {
         if (!watchers.has(toolUseId)) return
+        if (entry.finished) return
+        entry.finished = true
         send(toolUseId, content, true)
-        unwatchBashOutput(toolUseId)
       }, STABLE_TIMEOUT_MS)
     } catch {
       // file may not exist yet
@@ -106,7 +109,6 @@ export function getWatchedFilePath(toolUseId: string): string | undefined {
 }
 
 export async function readBashOutputTail(filePath: string, lines: number): Promise<string> {
-  if (!isValidBashOutputPath(filePath)) return ''
   try {
     const raw = await readFile(filePath, 'utf-8')
     const all = raw.split('\n')

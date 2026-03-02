@@ -5,6 +5,7 @@ import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock, Minim
 import { Streamdown } from 'streamdown'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
+import { parseToolInput } from './tool-display'
 import { SubagentBlock } from './SubagentBlock'
 import { CodexTurnView } from './CodexTurnView'
 import { AttachmentBar } from './AttachmentBar'
@@ -200,7 +201,8 @@ function renderBlock(
           <span className="truncate">{block.name}</span>
         </div>
       )
-    case 'tool_use':
+    case 'tool_use': {
+      const isBg = block.toolName === 'Bash' && (() => { const p = parseToolInput(block.input); return p.run_in_background === true || p.background === true })()
       return (
         <ToolBlock
           key={index}
@@ -212,8 +214,10 @@ function renderBlock(
           result={toolResultMap?.get(block.toolUseId)}
           isTimedOut={timedOutToolIds?.has(block.toolUseId)}
           resultOutputPath={outputPathMap?.get(block.toolUseId)}
+          autoExpand={isBg ? false : undefined}
         />
       )
+    }
     case 'thinking':
       return <ThinkingBlock key={index} thinking={block.thinking} isStreaming={isStreaming} blockDone={!isStreaming || !!nextBlockType} />
     case 'tool_result':

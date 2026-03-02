@@ -981,3 +981,44 @@ describe('hasPendingInteraction across multiple sessions', () => {
     expect(useChatStore.getState().projectSessions['/test'].hasPendingInteraction).toBe(false)
   })
 })
+
+describe('task_started event', () => {
+  it('initializes taskProgress for the toolUseId', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_started',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'Running background agent',
+    }))
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const progress = session.taskProgress['tool-abc']
+    expect(progress).toBeDefined()
+    expect(progress.description).toBe('Running background agent')
+    expect(progress.completed).toBe(false)
+    expect(progress.toolHistory).toEqual([])
+  })
+
+  it('preserves existing taskProgress fields', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_started',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'first',
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_progress',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'progressing',
+      lastToolName: 'Bash',
+      usage: { totalTokens: 100, toolUses: 2, durationMs: 500 },
+    }))
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const progress = session.taskProgress['tool-abc']
+    expect(progress.description).toBe('progressing')
+    expect(progress.totalTokens).toBe(100)
+    expect(progress.toolUses).toBe(2)
+  })
+})

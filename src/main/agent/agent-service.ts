@@ -20,7 +20,7 @@ import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
-import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, listCodexSkills, readCodexSkillContent, readCodexSkillFile } from '../skills-service'
+import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, listCodexSkills, readCodexSkillContent, readCodexSkillFile, deleteCodexSkill } from '../skills-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, readAgentFile } from './discover-resources'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
@@ -282,6 +282,10 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ_FILE, (_event, projectPath: string, skillName: string, relativePath: string) => {
       return readCodexSkillFile(projectPath, skillName, relativePath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_DELETE, (_event, projectPath: string, name: string, scope: ResourceScope) => {
+      deleteCodexSkill(name, scope, projectPath)
     })
 
     // --- Codex MCP config (read-only) ---
@@ -556,6 +560,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_READ)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_READ_FILE)
+    ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_MCP_LIST_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.AGENTS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.AGENTS_READ_FILE)

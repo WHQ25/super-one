@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Plus, ChevronRight, Clipboard, X, ArrowLeft, Check, Library, RefreshCw } from 'lucide-react'
+import { Plus, ChevronRight, Clipboard, X, ArrowLeft, Check, Library, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
@@ -408,17 +409,20 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
 }
 
 function LibraryView({ onClose }: { onClose: () => void }) {
-  const { mcpLibrary, mcpConfigs, saveMcpConfig, fetchMcpLibrary } = useSettingsStore()
+  const { mcpLibrary, mcpConfigs, saveMcpConfig, fetchMcpLibrary, deleteMcpLibraryEntry } = useSettingsStore()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [scope, setScope] = useState<'user' | 'project'>('user')
   const [adding, setAdding] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
   useEffect(() => { fetchMcpLibrary() }, [fetchMcpLibrary])
 
   const existingNames = new Set(mcpConfigs.map((c) => c.name))
+  const selectedEntries = mcpLibrary.filter((entry) => selected.has(entry.name))
+  const addableEntries = selectedEntries.filter((entry) => !existingNames.has(entry.name))
 
   const toggle = (name: string) => {
-    if (existingNames.has(name)) return
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(name)) next.delete(name)
@@ -428,10 +432,9 @@ function LibraryView({ onClose }: { onClose: () => void }) {
   }
 
   const handleAdd = async () => {
-    if (selected.size === 0) return
+    if (addableEntries.length === 0) return
     setAdding(true)
-    for (const entry of mcpLibrary) {
-      if (!selected.has(entry.name)) continue
+    for (const entry of addableEntries) {
       const config: Partial<Pick<McpLibraryEntry, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>> = { type: entry.type }
       if (entry.type === 'stdio') {
         config.command = entry.command
@@ -445,6 +448,20 @@ function LibraryView({ onClose }: { onClose: () => void }) {
     }
     setAdding(false)
     onClose()
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (selectedEntries.length === 0) return
+    setDeleting(true)
+    try {
+      for (const entry of selectedEntries) {
+        await deleteMcpLibraryEntry(entry.name)
+      }
+      setSelected(new Set())
+      setDeleteConfirmOpen(false)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   if (mcpLibrary.length === 0) {
@@ -478,22 +495,29 @@ function LibraryView({ onClose }: { onClose: () => void }) {
           const isAdded = existingNames.has(entry.name)
           const isSelected = selected.has(entry.name)
           return (
-            <button
+            <div
               key={entry.name}
-              type="button"
-              disabled={isAdded}
+              role="button"
+              tabIndex={0}
               onClick={() => toggle(entry.name)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  toggle(entry.name)
+                }
+              }}
               className={cn(
                 'relative flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors text-center',
-                isAdded
-                  ? 'cursor-default border-border bg-muted/50 opacity-50'
-                  : isSelected
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-muted-foreground/30 cursor-pointer',
+                'cursor-pointer',
+                isSelected
+                  ? 'border-primary bg-primary/5'
+                  : isAdded
+                    ? 'border-border bg-muted/40 hover:border-muted-foreground/30'
+                    : 'border-border hover:border-muted-foreground/30',
               )}
             >
               {isSelected && (
-                <div className="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-primary">
+                <div className="absolute left-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-primary">
                   <Check className="size-2.5 text-primary-foreground" />
                 </div>
               )}
@@ -502,7 +526,7 @@ function LibraryView({ onClose }: { onClose: () => void }) {
               )}
               <McpIcon name={entry.name} meta={{ name: entry.name, icons: entry.icons }} />
               <span className="text-xs font-medium truncate w-full">{entry.name}</span>
-            </button>
+            </div>
           )
         })}
       </div>
@@ -524,10 +548,38 @@ function LibraryView({ onClose }: { onClose: () => void }) {
             </button>
           ))}
         </div>
-        <Button size="sm" disabled={selected.size === 0 || adding} onClick={handleAdd}>
-          {adding ? 'Adding...' : `Add ${selected.size} server${selected.size !== 1 ? 's' : ''}`}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={selectedEntries.length === 0 || adding || deleting}
+            onClick={() => setDeleteConfirmOpen(true)}
+          >
+            <Trash2 className="size-4" />
+            Delete {selectedEntries.length > 0 ? selectedEntries.length : ''}
+          </Button>
+          <Button size="sm" disabled={addableEntries.length === 0 || adding || deleting} onClick={handleAdd}>
+            {adding ? 'Adding...' : `Add ${addableEntries.length} server${addableEntries.length !== 1 ? 's' : ''}`}
+          </Button>
+        </div>
       </div>
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent showCloseButton={false} className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete MCPs from Library?</DialogTitle>
+            <DialogDescription>
+              This will remove <span className="font-medium text-foreground">{selectedEntries.length}</span> selected server{selectedEntries.length !== 1 ? 's' : ''} from MCP library.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleting || selectedEntries.length === 0}>
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -575,47 +627,15 @@ export function McpPage() {
     }
   }
 
-  // Codex: read-only view
-  if (isCodex) {
-    const userConfigs = codexMcpConfigs.filter((c) => c.scope === 'user')
-    const projectConfigs = codexMcpConfigs.filter((c) => c.scope === 'project')
-
-    return (
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">MCP Servers</h2>
-            <p className="text-sm text-muted-foreground">Codex MCP server configurations (read-only)</p>
-          </div>
-          <ProjectSelector mode="switch" />
-        </div>
-
-        {codexMcpConfigs.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-8 text-center">
-            <p className="text-sm text-muted-foreground">No MCP servers configured</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              User: ~/.codex/config.toml | Project: .codex/config.toml
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <ServerSection title="User" configs={userConfigs} mcpStatus={[]} mcpMeta={{}} readOnly />
-            <ServerSection title="Project" configs={projectConfigs} mcpStatus={[]} mcpMeta={{}} readOnly />
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // Claude: full view with detail page
-  if (selectedMcpName) {
+  if (!isCodex && selectedMcpName) {
     const config = mcpConfigs.find((c) => c.name === selectedMcpName)
     const status = mcpStatus.find((s) => s.name === selectedMcpName)
     if (config) return <McpDetailPage config={config} status={status} meta={mcpMeta[config.name]} />
   }
 
-  const userConfigs = mcpConfigs.filter((c) => c.scope === 'user')
-  const projectConfigs = mcpConfigs.filter((c) => c.scope === 'project')
+  const currentConfigs = isCodex ? codexMcpConfigs : mcpConfigs
+  const userConfigs = currentConfigs.filter((c) => c.scope === 'user')
+  const projectConfigs = currentConfigs.filter((c) => c.scope === 'project')
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -623,49 +643,56 @@ export function McpPage() {
         <div>
           <h2 className="text-lg font-semibold">MCP Servers</h2>
           <p className="text-sm text-muted-foreground">Manage Model Context Protocol server configurations</p>
+          {isCodex && (
+            <p className="mt-1 text-xs text-muted-foreground">Codex MCP configurations are currently read-only</p>
+          )}
         </div>
         <div className="flex gap-2">
           <ProjectSelector mode="switch" />
-          <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing}>
-            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-            Refresh
-          </Button>
-          {mcpLibrary.length > 0 && (
-            <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}>
-              <Library className="size-4" />
-              Library
-            </Button>
+          {!isCodex && (
+            <>
+              <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing}>
+                <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+                Refresh
+              </Button>
+              {mcpLibrary.length > 0 && (
+                <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}>
+                  <Library className="size-4" />
+                  Library
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}>
+                <Plus className="size-4" />
+                Add Server
+              </Button>
+            </>
           )}
-          <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}>
-            <Plus className="size-4" />
-            Add Server
-          </Button>
         </div>
       </div>
 
-      {addView === 'form' && (
+      {!isCodex && addView === 'form' && (
         <div className="mb-4">
           <AddServerForm onClose={() => setAddView('none')} />
         </div>
       )}
 
-      {addView === 'library' && (
+      {!isCodex && addView === 'library' && (
         <div className="mb-4">
           <LibraryView onClose={() => setAddView('none')} />
         </div>
       )}
 
-      {mcpConfigs.length === 0 ? (
+      {currentConfigs.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">No MCP servers configured</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            User: ~/.claude.json | Project: .claude/settings.json, .mcp.json
+            {isCodex ? 'User: ~/.codex/config.toml | Project: .codex/config.toml' : 'User: ~/.claude.json | Project: .claude/settings.json, .mcp.json'}
           </p>
         </div>
       ) : (
         <div className="space-y-6">
-          <ServerSection title="User" configs={userConfigs} mcpStatus={mcpStatus} mcpMeta={mcpMeta} />
-          <ServerSection title="Project" configs={projectConfigs} mcpStatus={mcpStatus} mcpMeta={mcpMeta} />
+          <ServerSection title="User" configs={userConfigs} mcpStatus={isCodex ? [] : mcpStatus} mcpMeta={isCodex ? {} : mcpMeta} readOnly={isCodex} />
+          <ServerSection title="Project" configs={projectConfigs} mcpStatus={isCodex ? [] : mcpStatus} mcpMeta={isCodex ? {} : mcpMeta} readOnly={isCodex} />
         </div>
       )}
     </div>

@@ -272,6 +272,14 @@ body {
 }
 
 
+/* --- Activity panel: flat tool nodes --- */
+.activity-panel .tool-node,
+.activity-panel .tool-group,
+.activity-panel .subagent-container {
+  margin: 0;
+  border-left: none;
+}
+
 /* --- Wide panel: extra spacing and tool call timeline --- */
 @container (min-width: 512px) {
   .chat-md {

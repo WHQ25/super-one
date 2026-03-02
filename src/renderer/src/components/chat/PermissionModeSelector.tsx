@@ -42,7 +42,11 @@ export const modes: { id: PermissionMode; label: string; description: string; ic
   },
 ]
 
-export function PermissionModeSelector() {
+interface PermissionModeSelectorProps {
+  compact?: boolean
+}
+
+export function PermissionModeSelector({ compact = false }: PermissionModeSelectorProps) {
   const [open, setOpen] = useState(false)
   const permissionMode = useActiveSession((s) => s.permissionMode)
   const setPermissionMode = useChatStore((s) => s.setPermissionMode)
@@ -52,10 +56,13 @@ export function PermissionModeSelector() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${current.color} ${current.hoverBg}`}>
+        <button
+          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${current.color} ${current.hoverBg}`}
+          title={current.label}
+        >
           {current.icon}
-          <span>{current.label}</span>
-          <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+          {!compact && <span>{current.label}</span>}
+          {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
       <PopoverContent

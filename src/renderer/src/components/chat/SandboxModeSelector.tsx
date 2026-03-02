@@ -39,7 +39,11 @@ function getSandboxMode(info: { enabled: boolean; autoAllowBash: boolean }): San
   return info.autoAllowBash ? 'auto' : 'on'
 }
 
-export function SandboxModeSelector() {
+interface SandboxModeSelectorProps {
+  compact?: boolean
+}
+
+export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProps) {
   const [open, setOpen] = useState(false)
   const sandboxInfo = useActiveSession((s) => s.sandboxInfo)
   const setSandboxMode = useChatStore((s) => s.setSandboxMode)
@@ -50,10 +54,13 @@ export function SandboxModeSelector() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${current.color} ${current.hoverBg}`}>
+        <button
+          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${current.color} ${current.hoverBg}`}
+          title={current.label}
+        >
           {current.icon}
-          <span>{current.triggerLabel}</span>
-          <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+          {!compact && <span>{current.triggerLabel}</span>}
+          {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
       <PopoverContent

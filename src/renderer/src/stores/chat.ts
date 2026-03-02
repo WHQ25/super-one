@@ -729,6 +729,21 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       }
     }
 
+    case 'task_started': {
+      if (!event.toolUseId) return {}
+      const prev = session.taskProgress[event.toolUseId]
+      return {
+        taskProgress: {
+          ...session.taskProgress,
+          [event.toolUseId]: {
+            ...(prev ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
+            description: event.description,
+            completed: false,
+          },
+        },
+      }
+    }
+
     case 'task_progress': {
       if (!event.toolUseId) return {}
       const prev = session.taskProgress[event.toolUseId]
@@ -754,7 +769,6 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     case 'hook_started':
     case 'hook_complete':
     case 'hook_progress':
-    case 'task_started':
     case 'auth_status':
     case 'assistant_error':
     case 'files_persisted':

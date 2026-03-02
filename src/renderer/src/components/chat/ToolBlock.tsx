@@ -30,6 +30,7 @@ interface ToolBlockProps {
   result?: string
   isTimedOut?: boolean
   resultOutputPath?: string
+  autoExpand?: boolean
 }
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
@@ -37,7 +38,7 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 
-export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, resultOutputPath }: ToolBlockProps) {
+export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, resultOutputPath, autoExpand = true }: ToolBlockProps) {
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const params = useMemo(() => parseToolInput(input), [input])
@@ -69,6 +70,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
 
   if (toolName === 'Bash') {
     const timeout = typeof params.timeout === 'number' ? params.timeout : undefined
+    const runInBackground = params.run_in_background === true || params.background === true
     return (
       <BashTerminalView
         toolUseId={toolUseId ?? ''}
@@ -81,6 +83,8 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         timeoutMs={timeout}
         isTimedOut={isTimedOut}
         resultOutputPath={resultOutputPath}
+        runInBackground={runInBackground}
+        autoExpand={autoExpand}
       />
     )
   }
@@ -253,6 +257,8 @@ function BashTerminalView({
   timeoutMs,
   isTimedOut,
   resultOutputPath,
+  runInBackground,
+  autoExpand,
 }: {
   toolUseId: string
   command: string
@@ -264,16 +270,24 @@ function BashTerminalView({
   timeoutMs?: number
   isTimedOut?: boolean
   resultOutputPath?: string
+  runInBackground?: boolean
+  autoExpand?: boolean
 }) {
   const bashOutput = useBashOutput(toolUseId)
   const outputExpired = !!resultOutputPath && !bashOutput && !isStreaming
   const scrollRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
   const isLiveRunning = !!bashOutput && !bashOutput.finished
+  const taskProgress = useActiveSession((s) => s.taskProgress[toolUseId])
   const isPendingPermission = useActiveSession((s) => s.pendingPermission?.toolUseId === toolUseId)
   const hasResult = !!fallbackResult || isDenied
   const isRunning = (isStreaming && !hasResult && !isPendingPermission) || isLiveRunning
-  const [expanded, setExpanded] = useState(isRunning)
+  const hasTaskState = !!taskProgress
+  const holdOpenForBackgroundTask = runInBackground
+    ? (hasTaskState ? taskProgress.completed !== true : isStreaming)
+    : false
+  const autoExpanded = holdOpenForBackgroundTask || isRunning
+  const [expanded, setExpanded] = useState(autoExpand ? autoExpanded : false)
   const [extraContent, setExtraContent] = useState('')
   const [loadedLines, setLoadedLines] = useState(BASH_LOAD_CHUNK)
   const [hasMore, setHasMore] = useState(true)
@@ -284,8 +298,9 @@ function BashTerminalView({
   const restoredRef = useRef(false)
 
   useEffect(() => {
-    setExpanded(isRunning)
-  }, [isRunning])
+    if (autoExpand) setExpanded(autoExpanded)
+    else setExpanded(false)
+  }, [autoExpand, autoExpanded])
 
   useEffect(() => {
     if (!outputExpired || !resultOutputPath || restoredRef.current) return

@@ -1,7 +1,6 @@
 import { resolve } from 'path'
-import { tmpdir } from 'os'
 import { describe, it, expect } from 'vitest'
-import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, isValidBashOutputPath } from './path-security'
+import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-security'
 
 describe('resolveRealPath', () => {
   it('resolves relative path to absolute', () => {
@@ -76,21 +75,3 @@ describe('sanitizeGitRef', () => {
   })
 })
 
-describe('isValidBashOutputPath', () => {
-  it('accepts valid .output path in tmpdir', () => {
-    const validPath = resolve(tmpdir(), 'some-tool.output')
-    expect(isValidBashOutputPath(validPath)).toBe(true)
-  })
-
-  it('rejects path with ..', () => {
-    expect(isValidBashOutputPath(tmpdir() + '/../etc/passwd.output')).toBe(false)
-  })
-
-  it('rejects path without .output suffix', () => {
-    expect(isValidBashOutputPath(tmpdir() + '/file.txt')).toBe(false)
-  })
-
-  it('rejects path outside tmpdir', () => {
-    expect(isValidBashOutputPath('/etc/evil.output')).toBe(false)
-  })
-})

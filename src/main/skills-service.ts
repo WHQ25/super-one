@@ -223,12 +223,20 @@ export function installSkill(sourcePath: string): SkillInfo {
   }
 }
 
-export function deleteSkill(name: string, scope: ResourceScope, cwd: string): void {
+function deleteSkillFromBaseDir(baseDirName: '.claude' | '.agents', name: string, scope: ResourceScope, cwd: string): void {
   const dir = scope === 'user'
-    ? join(homedir(), '.claude', 'skills', name)
-    : join(cwd, '.claude', 'skills', name)
+    ? join(homedir(), baseDirName, 'skills', name)
+    : join(cwd, baseDirName, 'skills', name)
 
   if (existsSync(dir)) {
     rmSync(dir, { recursive: true, force: true })
   }
+}
+
+export function deleteSkill(name: string, scope: ResourceScope, cwd: string): void {
+  deleteSkillFromBaseDir('.claude', name, scope, cwd)
+}
+
+export function deleteCodexSkill(name: string, scope: ResourceScope, cwd: string): void {
+  deleteSkillFromBaseDir('.agents', name, scope, cwd)
 }

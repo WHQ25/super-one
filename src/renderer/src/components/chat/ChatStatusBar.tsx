@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
-import { GitBranch, ChevronDown, Check, Circle, Plus } from 'lucide-react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { GitBranch, ChevronDown, Check, Circle, Plus, SquareTerminal, Bot } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Command,
@@ -25,7 +26,10 @@ import { PermissionModeSelector } from './PermissionModeSelector'
 import { SandboxModeSelector } from './SandboxModeSelector'
 import { CodexPermissionSelector } from './CodexPermissionSelector'
 import { WorkDirIndicator } from './WorkDirIndicator'
-import type { GitInfo } from '../../../../shared/agent-types'
+import { parseToolInput } from './tool-display'
+import { ToolBlock } from './ToolBlock'
+import { SubagentBlock } from './SubagentBlock'
+import type { ContentBlock, GitInfo } from '../../../../shared/agent-types'
 
 const fmt = (n: number) => n.toLocaleString()
 
@@ -34,15 +38,41 @@ interface FailedCheckout {
   error: string
 }
 
+type BackgroundActivityItem =
+  | {
+      id: string
+      kind: 'bash'
+      title: string
+      toolUse: ContentBlock & { type: 'tool_use' }
+      result?: ContentBlock & { type: 'tool_result' }
+    }
+  | {
+      id: string
+      kind: 'agent'
+      title: string
+      taskBlock: ContentBlock & { type: 'tool_use' }
+      childBlocks: ContentBlock[]
+      resultBlock?: ContentBlock & { type: 'tool_result' }
+    }
+
 export function ChatStatusBar() {
+  const barRef = useRef<HTMLDivElement>(null)
+  const fullModeRequiredWidthRef = useRef(0)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const worktrees = useAppStore((s) => s._worktrees)
+  const messages = useActiveSession((s) => s.messages)
+  const sessionStatus = useActiveSession((s) => s.status)
+  const taskProgress = useActiveSession((s) => s.taskProgress)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
+  const [compactIndicators, setCompactIndicators] = useState(false)
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [branches, setBranches] = useState<string[]>([])
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const [bashOpen, setBashOpen] = useState(false)
+  const [agentOpen, setAgentOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
+  const dirty = gitInfo?.dirty
 
   const worktreeBaseBranch = useActiveSession((s) => s._worktreeBaseBranch)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
@@ -72,6 +102,47 @@ export function ChatStatusBar() {
     const unsub = window.app.onGitHeadChange(() => refreshGitInfo())
     return unsub
   }, [refreshGitInfo])
+
+  const updateCompactState = useCallback(() => {
+    const node = barRef.current
+    if (!node) return
+    const availableWidth = node.clientWidth
+
+    if (!compactIndicators) {
+      const requiredWidth = node.scrollWidth
+      fullModeRequiredWidthRef.current = requiredWidth
+      if (requiredWidth > availableWidth + 1) {
+        setCompactIndicators(true)
+      }
+      return
+    }
+
+    if (availableWidth >= fullModeRequiredWidthRef.current + 1) {
+      setCompactIndicators(false)
+    }
+  }, [compactIndicators])
+
+  useEffect(() => {
+    const node = barRef.current
+    if (!node) return
+    const observer = new ResizeObserver(() => updateCompactState())
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [updateCompactState])
+
+  useEffect(() => {
+    updateCompactState()
+  }, [
+    updateCompactState,
+    gitInfo?.branch,
+    dirty?.files,
+    dirty?.insertions,
+    dirty?.deletions,
+    preferredProvider,
+    worktreeBaseBranch,
+    wtState?.pendingBaseBranch,
+    wtState?.activePath,
+  ])
 
   const openPopover = useCallback((open: boolean) => {
     setPopoverOpen(open)
@@ -109,7 +180,6 @@ export function ChatStatusBar() {
     }
   }, [currentFolder, refreshGitInfo])
 
-  const dirty = gitInfo?.dirty
   const lowerSearch = search.toLowerCase()
   const currentMatch = gitInfo?.branch.toLowerCase().includes(lowerSearch)
   const otherBranches = branches.filter((b) => b !== gitInfo?.branch && b.toLowerCase().includes(lowerSearch))
@@ -120,21 +190,172 @@ export function ChatStatusBar() {
     && normalizedTrimmed !== currentBranchLower
     && !branches.some((b) => b.toLowerCase() === normalizedTrimmed)
 
+  const backgroundActivities = useMemo(() => {
+    const results = new Map<string, ContentBlock & { type: 'tool_result' }>()
+    const children = new Map<string, ContentBlock[]>()
+    const items: BackgroundActivityItem[] = []
+
+    for (const message of messages) {
+      for (const block of message.content) {
+        if (block.type === 'tool_result') {
+          results.set(block.toolUseId, block)
+        }
+        const parentId = 'parentToolUseId' in block ? block.parentToolUseId : null
+        if (parentId) {
+          const next = children.get(parentId) ?? []
+          next.push(block)
+          children.set(parentId, next)
+        }
+      }
+    }
+
+    for (const message of messages) {
+      for (const block of message.content) {
+        if (block.type !== 'tool_use') continue
+
+        if (block.toolName === 'Bash') {
+          const params = parseToolInput(block.input)
+          const result = results.get(block.toolUseId)
+          const progress = taskProgress[block.toolUseId]
+          const runInBackground = params.run_in_background === true || params.background === true
+          const hasTaskState = !!progress
+          const isStreamingTool = block.status === 'streaming'
+          const hasBackgroundSignal = runInBackground || !!result?.outputPath || hasTaskState
+          const isRunning = hasTaskState ? progress.completed !== true : (runInBackground && isStreamingTool)
+          if (!hasBackgroundSignal || !isRunning) continue
+
+          const command = typeof params.command === 'string' ? params.command.trim() : ''
+          items.push({
+            id: block.toolUseId,
+            kind: 'bash',
+            title: command || 'Bash',
+            toolUse: block,
+            result,
+          })
+          continue
+        }
+
+        if (block.toolName === 'Agent') {
+          const params = parseToolInput(block.input)
+          if (params.run_in_background !== true) continue
+          const progress = taskProgress[block.toolUseId]
+          const hasTaskState = !!progress
+          const isRunning = hasTaskState ? progress.completed !== true : block.status === 'streaming'
+          if (!isRunning) continue
+          const resultBlock = results.get(block.toolUseId)
+          const childBlocks = children.get(block.toolUseId) ?? []
+          const title = String(params.description ?? params.name ?? params.subagent_type ?? 'Async Agent').trim() || 'Async Agent'
+          items.push({
+            id: block.toolUseId,
+            kind: 'agent',
+            title,
+            taskBlock: block,
+            childBlocks,
+            resultBlock,
+          })
+        }
+      }
+    }
+
+    return items
+  }, [messages, taskProgress])
+
+  const bashActivities = useMemo(
+    () => backgroundActivities.filter((item): item is Extract<BackgroundActivityItem, { kind: 'bash' }> => item.kind === 'bash'),
+    [backgroundActivities],
+  )
+
+  const agentActivities = useMemo(
+    () => backgroundActivities.filter((item): item is Extract<BackgroundActivityItem, { kind: 'agent' }> => item.kind === 'agent'),
+    [backgroundActivities],
+  )
+  const bashLabel = bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'
+  const agentLabel = agentActivities.length > 1 ? `${agentActivities.length} Agents` : 'Agent'
+  const bashPanelTitle = `Background ${bashActivities.length > 1 ? 'Bashes' : 'Bash'}`
+  const agentPanelTitle = `Background ${agentActivities.length > 1 ? 'Agents' : 'Agent'}`
+
+  useEffect(() => {
+    if (bashActivities.length === 0) setBashOpen(false)
+  }, [bashActivities.length])
+
+  useEffect(() => {
+    if (agentActivities.length === 0) setAgentOpen(false)
+  }, [agentActivities.length])
+
   return (
     <>
-      <div className="flex items-center gap-2 px-7 pb-3 pt-1 text-[11px] text-muted-foreground">
-        {gitInfo && <WorkDirIndicator />}
+      <div ref={barRef} className="relative flex items-center gap-2 whitespace-nowrap px-7 pb-3 pt-1 text-[11px] text-muted-foreground">
+        <div className="pointer-events-none absolute bottom-full left-3 right-3 z-10 flex flex-col gap-1 pb-1">
+          <AnimatePresence>
+            {bashOpen && bashActivities.length > 0 && (
+              <motion.div
+                key="bash-panel"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="pointer-events-auto overflow-hidden rounded-lg border border-border bg-card shadow-md"
+              >
+                <div className="border-b border-border px-3 py-1.5 text-xs font-medium text-foreground">{bashPanelTitle}</div>
+                <div className="activity-panel max-h-[50vh] divide-y divide-border overflow-y-auto p-1.5">
+                  {bashActivities.map((item, i) => (
+                    <ToolBlock
+                      key={item.id}
+                      toolName="Bash"
+                      toolUseId={item.toolUse.toolUseId}
+                      input={item.toolUse.input}
+                      status={item.toolUse.status}
+                      elapsedSeconds={item.toolUse.elapsedSeconds}
+                      result={item.result?.summary}
+                      isTimedOut={item.result?.isTimedOut}
+                      resultOutputPath={item.result?.outputPath}
+                      autoExpand={i === 0}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            )}
+            {agentOpen && agentActivities.length > 0 && (
+              <motion.div
+                key="agent-panel"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="pointer-events-auto overflow-hidden rounded-lg border border-border bg-card shadow-md"
+              >
+                <div className="border-b border-border px-3 py-1.5 text-xs font-medium text-foreground">{agentPanelTitle}</div>
+                <div className="activity-panel max-h-[50vh] divide-y divide-border overflow-y-auto p-1.5">
+                  {agentActivities.map((item, i) => (
+                    <SubagentBlock
+                      key={item.id}
+                      taskBlock={item.taskBlock}
+                      childBlocks={item.childBlocks}
+                      resultBlock={item.resultBlock}
+                      isStreaming={sessionStatus === 'streaming'}
+                      defaultExpanded={i === 0}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        {gitInfo && <WorkDirIndicator compact={compactIndicators} />}
 
         {gitInfo && !isInWorktree && !worktreeBaseBranch && (
           <>
             <div className="h-3 w-px bg-border" />
             <Popover open={popoverOpen} onOpenChange={openPopover}>
               <PopoverTrigger asChild>
-                <button className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground">
+                <button
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
+                  title={gitInfo.branch}
+                >
                   <GitBranch className="size-3" />
-                  <span>{gitInfo.branch}</span>
+                  {!compactIndicators && <span>{gitInfo.branch}</span>}
                   {dirty && <Circle className="size-1.5 fill-amber-500 text-amber-500" />}
-                  <ChevronDown className={`size-3 transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />
+                  {!compactIndicators && <ChevronDown className={`size-3 transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-72 p-0" align="start">
@@ -219,14 +440,46 @@ export function ChatStatusBar() {
         <div className="h-3 w-px bg-border" />
 
         {preferredProvider === 'claude' ? (
-          <PermissionModeSelector />
+          <PermissionModeSelector compact={compactIndicators} />
         ) : (
-          <CodexPermissionSelector />
+          <CodexPermissionSelector compact={compactIndicators} />
         )}
 
         <div className="flex-1" />
 
-        {preferredProvider === 'claude' && <SandboxModeSelector />}
+        {bashActivities.length > 0 && (
+          <button
+            onClick={() => setBashOpen((o) => !o)}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
+            title={bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'}
+          >
+            <SquareTerminal className="size-3 animate-pulse" />
+            {!compactIndicators && <span>{bashLabel}</span>}
+            {!compactIndicators && <ChevronDown className={`size-3 transition-transform duration-200 ${bashOpen ? 'rotate-180' : ''}`} />}
+          </button>
+        )}
+
+        {agentActivities.length > 0 && (
+          <>
+            {bashActivities.length > 0 && <div className="h-3 w-px bg-border" />}
+            <button
+              onClick={() => setAgentOpen((o) => !o)}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
+              title={agentLabel}
+            >
+              <Bot className="size-3 animate-pulse" />
+              {!compactIndicators && <span>{agentLabel}</span>}
+              {!compactIndicators && <ChevronDown className={`size-3 transition-transform duration-200 ${agentOpen ? 'rotate-180' : ''}`} />}
+            </button>
+          </>
+        )}
+
+        {preferredProvider === 'claude' && (
+          <>
+            {(bashActivities.length > 0 || agentActivities.length > 0) && <div className="h-3 w-px bg-border" />}
+            <SandboxModeSelector compact={compactIndicators} />
+          </>
+        )}
       </div>
 
       <Dialog open={!!failedCheckout} onOpenChange={(open) => { if (!open) setFailedCheckout(null) }}>

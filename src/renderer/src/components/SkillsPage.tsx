@@ -1,8 +1,9 @@
 import { useEffect, useCallback, useState } from 'react'
-import { ChevronDown, ChevronRight, Folder, FolderOpen, PanelLeftClose, PanelLeftOpen, Code, BookOpen, Puzzle } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, FolderOpen, PanelLeftClose, PanelLeftOpen, Code, BookOpen, Puzzle, Trash2 } from 'lucide-react'
 import { motion, LayoutGroup } from 'motion/react'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
@@ -124,12 +125,15 @@ function isMarkdown(filePath: string): boolean {
 }
 
 function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: string; readOnly?: boolean }) {
-  const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail } = useSettingsStore()
+  const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail, deleteSkill } = useSettingsStore()
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const isExpanded = skillDetail?.name === skill.name
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mdRawView, setMdRawView] = useState(false)
   const [contentReady, setContentReady] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const canDelete = !readOnly && !skill.name.includes(':')
 
   const doReadSkill = settingsProvider === 'codex' ? readCodexSkill : readSkill
   const doReadSkillFile = settingsProvider === 'codex' ? readCodexSkillFile : readSkillFile
@@ -159,6 +163,22 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
     [doReadSkillFile]
   )
 
+  const handleDeleteClick = (event: React.MouseEvent) => {
+    event.stopPropagation()
+    if (!canDelete || deleting) return
+    setDeleteConfirmOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    setDeleting(true)
+    try {
+      await deleteSkill(skill.name, skill.scope)
+      setDeleteConfirmOpen(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <motion.div
       layout
@@ -175,6 +195,17 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
         <div className="flex items-center gap-2">
           <Puzzle className="size-4 shrink-0 text-muted-foreground" />
           <span className="text-sm font-medium">{skill.displayName}</span>
+          {canDelete && isExpanded && (
+            <button
+              type="button"
+              onClick={handleDeleteClick}
+              disabled={deleting}
+              className="ml-auto rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+              title={deleting ? 'Deleting...' : 'Delete skill'}
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          )}
         </div>
         {skill.description && (
           <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{skill.description}</p>
@@ -247,6 +278,23 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
           ) : null}
         </div>
       )}
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent showCloseButton={false} className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Skill?</DialogTitle>
+            <DialogDescription>
+              <span className="font-medium text-foreground">{skill.displayName}</span> will be removed from your skills.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleting}>
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   )
 }
@@ -347,8 +395,8 @@ export function SkillsPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          <SkillSection title="User" skills={userSkills} readOnly={isCodex} />
-          <SkillSection title="Project" skills={projectSkills} readOnly={isCodex} />
+          <SkillSection title="User" skills={userSkills} />
+          <SkillSection title="Project" skills={projectSkills} />
         </div>
       )}
     </div>

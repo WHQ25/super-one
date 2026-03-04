@@ -123,8 +123,8 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                   {prefireMessage && (
                     <div className="group/prefire chat-message-wrapper opacity-50">
                       <div className="flex w-0 min-w-full justify-end">
-                        <div className="flex max-w-[85%] flex-col items-end">
-                          <div className="min-w-0 rounded-xl bg-secondary px-3 py-2 text-sm text-secondary-foreground">
+                        <div className="flex min-w-0 max-w-[85%] flex-col items-end">
+                          <div className="min-w-0 break-all rounded-xl bg-secondary px-3 py-2 text-sm text-secondary-foreground">
                             {prefireMessage.attachments.length > 0 && (
                               <AttachmentBar attachments={prefireMessage.attachments} />
                             )}

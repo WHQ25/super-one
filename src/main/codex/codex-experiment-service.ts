@@ -56,8 +56,22 @@ interface CodexRunStreamCallbacks {
 
 type CodexApprovalDecision = 'accept' | 'acceptForSession' | 'decline'
 
+type PendingCodexApprovalResponse =
+  | { decision: CodexApprovalDecision }
+  | { answers: Record<string, { answers: string[] }> }
+
+interface AppServerUserInputQuestion {
+  id: string
+  header: string
+  question: string
+  isOther: boolean
+  options: string[]
+}
+
 interface PendingCodexApproval {
-  resolve: (decision: CodexApprovalDecision) => void
+  responseKind: 'decision' | 'user_input'
+  questions?: AppServerUserInputQuestion[]
+  resolve: (response: PendingCodexApprovalResponse) => void
   reject: (error: Error) => void
 }
 
@@ -85,6 +99,12 @@ interface AppServerConnection {
   respond(requestId: JsonRpcRequestId, result?: Record<string, unknown>): Promise<void>
   notify(method: string, params?: Record<string, unknown>): Promise<void>
   nextNotification(): Promise<AppServerNotification>
+}
+
+interface ParsedApprovalRequest {
+  request: PermissionRequest
+  responseKind: 'decision' | 'user_input'
+  questions?: AppServerUserInputQuestion[]
 }
 
 const APP_SERVER_RESPONSE_TIMEOUT_MS = 15_000
@@ -152,6 +172,16 @@ function readStringArray(value: unknown): string[] {
   return value
     .map((entry) => readString(entry))
     .filter((entry): entry is string => entry !== null)
+}
+
+function toReasoningEffort(value: unknown): CodexReasoningEffort | null {
+  return value === 'minimal'
+    || value === 'low'
+    || value === 'medium'
+    || value === 'high'
+    || value === 'xhigh'
+    ? value
+    : null
 }
 
 function compactRecord(input: Record<string, unknown>): Record<string, unknown> {
@@ -448,12 +478,12 @@ function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadItem): C
     }
 
     case 'enteredReviewMode': {
-      const text = readString(rec.text) ?? ''
+      const text = readString(rec.text) ?? readString(rec.review) ?? ''
       return { id, type: 'review', phase: 'entered', text }
     }
 
     case 'exitedReviewMode': {
-      const text = readString(rec.text) ?? ''
+      const text = readString(rec.text) ?? readString(rec.review) ?? ''
       return { id, type: 'review', phase: 'exited', text }
     }
 
@@ -480,9 +510,9 @@ function mapUsageFromTokenUsage(raw: unknown): CodexUsageInfo | null {
   const breakdown = asRecord(rec.last) ?? asRecord(rec.total)
   if (!breakdown) return null
 
-  const inputTokens = readNumber(breakdown.inputTokens) ?? 0
-  const outputTokens = readNumber(breakdown.outputTokens) ?? 0
-  const cachedInputTokens = readNumber(breakdown.cachedInputTokens) ?? 0
+  const inputTokens = readNumber(breakdown.inputTokens ?? breakdown.input_tokens) ?? 0
+  const outputTokens = readNumber(breakdown.outputTokens ?? breakdown.output_tokens) ?? 0
+  const cachedInputTokens = readNumber(breakdown.cachedInputTokens ?? breakdown.cached_input_tokens) ?? 0
 
   return mapUsage(inputTokens, outputTokens, cachedInputTokens)
 }
@@ -512,7 +542,68 @@ function extractTurnErrorMessage(raw: unknown): string {
   return readString(nested?.message) ?? 'Codex turn failed'
 }
 
-function mapApprovalRequest(notification: AppServerNotification): PermissionRequest | null {
+const POSITIVE_OPTION_PATTERN = /\b(accept|allow|yes|continue|proceed|approve|ok|confirm|run)\b/i
+const NEGATIVE_OPTION_PATTERN = /\b(decline|deny|reject|cancel|no|stop|abort|disallow)\b/i
+
+function parseUserInputQuestions(value: unknown): AppServerUserInputQuestion[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((entry) => {
+      const questionRec = asRecord(entry)
+      if (!questionRec) return null
+      const id = readString(questionRec?.id)
+      const question = readString(questionRec?.question)
+      if (!id || !question) return null
+
+      const options = Array.isArray(questionRec.options)
+        ? questionRec.options
+            .map((optionEntry) => readString(asRecord(optionEntry)?.label))
+            .filter((option): option is string => option !== null)
+        : []
+
+      return {
+        id,
+        header: readString(questionRec.header) ?? id,
+        question,
+        isOther: readBoolean(questionRec.isOther) ?? false,
+        options,
+      } satisfies AppServerUserInputQuestion
+    })
+    .filter((question): question is AppServerUserInputQuestion => question !== null)
+}
+
+function chooseUserInputAnswers(question: AppServerUserInputQuestion, allow: boolean, reason?: string): string[] {
+  const trimmedReason = reason?.trim()
+
+  if (!allow && trimmedReason && question.isOther) return [trimmedReason]
+  if (question.options.length === 0) {
+    return !allow && trimmedReason ? [trimmedReason] : []
+  }
+
+  const matchPattern = allow ? POSITIVE_OPTION_PATTERN : NEGATIVE_OPTION_PATTERN
+  const matched = question.options.find((option) => matchPattern.test(option))
+  if (matched) return [matched]
+  return [allow ? question.options[0] : question.options[question.options.length - 1]]
+}
+
+function buildUserInputApprovalResponse(
+  questions: AppServerUserInputQuestion[],
+  allow: boolean,
+  reason?: string,
+): { answers: Record<string, { answers: string[] }> } {
+  const answers: Record<string, { answers: string[] }> = {}
+
+  for (const question of questions) {
+    answers[question.id] = {
+      answers: chooseUserInputAnswers(question, allow, reason),
+    }
+  }
+
+  return { answers }
+}
+
+function mapApprovalRequest(notification: AppServerNotification): ParsedApprovalRequest | null {
   const requestId = notification.requestId
   if (!requestId) return null
 
@@ -521,15 +612,18 @@ function mapApprovalRequest(notification: AppServerNotification): PermissionRequ
     const cwd = readString(notification.params.cwd) ?? undefined
     const reason = readString(notification.params.reason) ?? undefined
     return {
-      requestId,
-      toolName: 'Bash',
-      toolUseId: requestId,
-      input: compactRecord({
-        command,
-        cwd,
-      }),
-      decisionReason: reason,
-      allowAlwaysAllow: true,
+      responseKind: 'decision',
+      request: {
+        requestId,
+        toolName: 'Bash',
+        toolUseId: requestId,
+        input: compactRecord({
+          command,
+          cwd,
+        }),
+        decisionReason: reason,
+        allowAlwaysAllow: true,
+      },
     }
   }
 
@@ -537,16 +631,46 @@ function mapApprovalRequest(notification: AppServerNotification): PermissionRequ
     const grantRoot = readString(notification.params.grantRoot) ?? undefined
     const reason = readString(notification.params.reason) ?? undefined
     return {
-      requestId,
-      toolName: 'FileChange',
-      toolUseId: requestId,
-      input: compactRecord({
-        file_path: grantRoot,
-        kind: 'grant_root',
-      }),
-      decisionReason: reason,
-      blockedPath: grantRoot,
-      allowAlwaysAllow: true,
+      responseKind: 'decision',
+      request: {
+        requestId,
+        toolName: 'FileChange',
+        toolUseId: requestId,
+        input: compactRecord({
+          file_path: grantRoot,
+          kind: 'grant_root',
+        }),
+        decisionReason: reason,
+        blockedPath: grantRoot,
+        allowAlwaysAllow: true,
+      },
+    }
+  }
+
+  if (
+    notification.method === 'item/tool/requestUserInput'
+    || notification.method === 'tool/requestUserInput'
+  ) {
+    const questions = parseUserInputQuestions(notification.params.questions)
+    const serializedQuestions = questions.map((question) => ({
+      id: question.id,
+      header: question.header,
+      question: question.question,
+      isOther: question.isOther,
+      options: question.options,
+    }))
+
+    return {
+      responseKind: 'user_input',
+      questions,
+      request: {
+        requestId,
+        toolName: 'ToolRequestUserInput',
+        toolUseId: requestId,
+        input: { questions: serializedQuestions },
+        decisionReason: questions[0]?.question,
+        allowAlwaysAllow: false,
+      },
     }
   }
 
@@ -572,30 +696,33 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
   if (!raw || typeof raw !== 'object') return null
   const rec = raw as Record<string, unknown>
-  const id = typeof rec.id === 'string' ? rec.id : null
-  const model = typeof rec.model === 'string' ? rec.model : null
+  if (readBoolean(rec.hidden) === true) return null
+  const model = readString(rec.model) ?? readString(rec.id)
+  const id = readString(rec.id) ?? model
   if (!id || !model) return null
+
+  const reasoningEfforts = Array.isArray(rec.supportedReasoningEfforts)
+    ? rec.supportedReasoningEfforts
+    : Array.isArray(rec.reasoningEffort)
+      ? rec.reasoningEffort
+      : []
+
   return {
     id,
     model,
     displayName: typeof rec.displayName === 'string' ? rec.displayName : model,
     description: typeof rec.description === 'string' ? rec.description : '',
     isDefault: rec.isDefault === true,
-    supportedReasoningEfforts: Array.isArray(rec.supportedReasoningEfforts)
-      ? rec.supportedReasoningEfforts
+    supportedReasoningEfforts: Array.isArray(reasoningEfforts)
+      ? reasoningEfforts
           .map((entry) => {
             if (!entry || typeof entry !== 'object') return null
-            const effort = (entry as Record<string, unknown>).reasoningEffort
+            const effort = toReasoningEffort(
+              (entry as Record<string, unknown>).reasoningEffort
+              ?? (entry as Record<string, unknown>).effort,
+            )
             const description = (entry as Record<string, unknown>).description
-            if (
-              effort !== 'minimal'
-              && effort !== 'low'
-              && effort !== 'medium'
-              && effort !== 'high'
-              && effort !== 'xhigh'
-            ) {
-              return null
-            }
+            if (!effort) return null
             return {
               value: effort,
               description: typeof description === 'string' ? description : effort,
@@ -603,14 +730,7 @@ function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
           })
           .filter((entry): entry is ReasoningEffortOption => Boolean(entry))
       : [],
-    defaultReasoningEffort:
-      rec.defaultReasoningEffort === 'minimal'
-      || rec.defaultReasoningEffort === 'low'
-      || rec.defaultReasoningEffort === 'medium'
-      || rec.defaultReasoningEffort === 'high'
-      || rec.defaultReasoningEffort === 'xhigh'
-        ? rec.defaultReasoningEffort
-        : undefined,
+    defaultReasoningEffort: toReasoningEffort(rec.defaultReasoningEffort) ?? undefined,
   }
 }
 
@@ -1112,26 +1232,35 @@ export class CodexExperimentService {
     const handleServerRequest = async (notification: AppServerNotification): Promise<boolean> => {
       if (notification.requestIdRaw === undefined) return false
 
-      const permissionRequest = mapApprovalRequest(notification)
-      if (permissionRequest) {
+      const parsedApprovalRequest = mapApprovalRequest(notification)
+      if (parsedApprovalRequest) {
+        const fallbackResponse: PendingCodexApprovalResponse = parsedApprovalRequest.responseKind === 'user_input'
+          ? buildUserInputApprovalResponse(parsedApprovalRequest.questions ?? [], false)
+          : { decision: 'decline' }
+
         if (controller.signal.aborted) {
-          await connection.respond(notification.requestIdRaw, { decision: 'decline' })
+          await connection.respond(notification.requestIdRaw, fallbackResponse)
           return true
         }
         if (!callbacks?.onPermissionRequest) {
-          await connection.respond(notification.requestIdRaw, { decision: 'decline' })
+          await connection.respond(notification.requestIdRaw, fallbackResponse)
           return true
         }
         try {
-          const decisionPromise = new Promise<CodexApprovalDecision>((resolve, reject) => {
-            session.pendingApprovals.set(permissionRequest.requestId, { resolve, reject })
+          const responsePromise = new Promise<PendingCodexApprovalResponse>((resolve, reject) => {
+            session.pendingApprovals.set(parsedApprovalRequest.request.requestId, {
+              responseKind: parsedApprovalRequest.responseKind,
+              questions: parsedApprovalRequest.questions,
+              resolve,
+              reject,
+            })
           })
-          callbacks?.onPermissionRequest?.(permissionRequest)
-          const decision = await decisionPromise
-          await connection.respond(notification.requestIdRaw, { decision })
+          callbacks?.onPermissionRequest?.(parsedApprovalRequest.request)
+          const response = await responsePromise
+          await connection.respond(notification.requestIdRaw, response)
           return true
         } finally {
-          session.pendingApprovals.delete(permissionRequest.requestId)
+          session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
         }
       }
 
@@ -1201,6 +1330,23 @@ export class CodexExperimentService {
 
         case 'item/reasoning/summaryTextDelta':
         case 'item/reasoning/textDelta': {
+          const itemId = readString(params.itemId)
+          const delta = readString(params.delta) ?? ''
+          if (!itemId) break
+
+          const previous = itemMap.get(itemId)
+          const previousText = previous?.type === 'reasoning' ? previous.text : ''
+          const updated: CodexThreadItem = {
+            id: itemId,
+            type: 'reasoning',
+            text: `${previousText}${delta}`,
+          }
+          upsertItem(itemOrder, itemMap, updated)
+          callbacks?.onItemDelta?.('updated', updated)
+          break
+        }
+
+        case 'item/plan/delta': {
           const itemId = readString(params.itemId)
           const delta = readString(params.delta) ?? ''
           if (!itemId) break
@@ -1526,7 +1672,7 @@ export class CodexExperimentService {
     requestId: string,
     allow: boolean,
     alwaysAllow?: boolean,
-    _reason?: string,
+    reason?: string,
   ): boolean {
     const session = this.sessions.get(projectPath)
     if (!session) return false
@@ -1534,10 +1680,15 @@ export class CodexExperimentService {
     if (!pending) return false
 
     session.pendingApprovals.delete(requestId)
+    if (pending.responseKind === 'user_input') {
+      pending.resolve(buildUserInputApprovalResponse(pending.questions ?? [], allow, reason))
+      return true
+    }
+
     const decision: CodexApprovalDecision = allow
       ? (alwaysAllow ? 'acceptForSession' : 'accept')
       : 'decline'
-    pending.resolve(decision)
+    pending.resolve({ decision })
     return true
   }
 

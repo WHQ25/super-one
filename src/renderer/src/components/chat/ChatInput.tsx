@@ -78,6 +78,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const mentionInfoRef = useRef<{ atPos: number; query: string } | null>(null)
     const mentionActiveRef = useRef(mentionActive)
     mentionActiveRef.current = mentionActive
+    const placeholderTextRef = useRef('')
     const slashCommandsRef = useRef(slashCommands)
     slashCommandsRef.current = slashCommands
     const mentionsRef = useRef(mentions)
@@ -465,6 +466,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         : permissionMode === 'plan'
         ? 'Plan mode — describe your intent...'
         : 'Ask anything, @ to add files, / for commands'
+    placeholderTextRef.current = placeholderText
 
     const editor = useEditor({
       extensions: [
@@ -482,7 +484,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           strike: false,
           dropcursor: false,
         }),
-        Placeholder.configure({ placeholder: placeholderText }),
+        Placeholder.configure({ placeholder: () => placeholderTextRef.current }),
         MentionNode,
         SlashDecoration.configure({ slashCommands: activeSlashCommands }),
         PromptSuggestion,
@@ -593,6 +595,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         editor.view.dispatch(editor.state.tr)
       }
     }, [promptSuggestion, status, editor])
+
+    useEffect(() => {
+      if (editor) {
+        editor.view.dispatch(editor.state.tr)
+      }
+    }, [placeholderText, editor])
 
     useEffect(() => {
       if (!promptSuggestion || isStreaming || hasPendingInteraction) return

@@ -28,7 +28,7 @@
     "@lobehub/icons": "^5.0.1",
     "@lobehub/ui": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "@openai/codex-sdk": "^0.101.0",
+    "@openai/codex-sdk": "0.107.0",
     "better-sqlite3": "^12.6.2",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.7.3",

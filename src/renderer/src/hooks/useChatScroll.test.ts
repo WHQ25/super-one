@@ -40,22 +40,23 @@ function createMockViewport() {
   return { el, state, contentChild }
 }
 
-let resizeCallbacks: Array<() => void> = []
+let resizeSubscriptions: Array<{ target: Element; cb: ResizeObserverCallback }> = []
 
 class MockResizeObserver {
-  _cb: () => void
+  _cb: ResizeObserverCallback
   constructor(cb: ResizeObserverCallback) {
-    const self = this
-    this._cb = () => cb([], self as unknown as ResizeObserver)
+    this._cb = cb
   }
-  observe() { resizeCallbacks.push(this._cb) }
-  disconnect() { resizeCallbacks = resizeCallbacks.filter((fn) => fn !== this._cb) }
-  unobserve() {}
+  observe(target: Element) { resizeSubscriptions.push({ target, cb: this._cb }) }
+  disconnect() { resizeSubscriptions = resizeSubscriptions.filter((sub) => sub.cb !== this._cb) }
+  unobserve(target: Element) {
+    resizeSubscriptions = resizeSubscriptions.filter((sub) => !(sub.cb === this._cb && sub.target === target))
+  }
 }
 
 describe('useChatScroll', () => {
   beforeEach(() => {
-    resizeCallbacks = []
+    resizeSubscriptions = []
     vi.stubGlobal('ResizeObserver', MockResizeObserver)
     mockSessionState = {
       messages: [{ id: '1', role: 'assistant', content: [] }],
@@ -69,8 +70,15 @@ describe('useChatScroll', () => {
     vi.unstubAllGlobals()
   })
 
-  function fireResize() {
-    resizeCallbacks.forEach((cb) => cb())
+  function fireResize(target?: Element) {
+    const matched = resizeSubscriptions.filter((sub) => !target || sub.target === target)
+    const callbacks = [...new Set(matched.map((sub) => sub.cb))]
+    for (const cb of callbacks) {
+      const entries = matched
+        .filter((sub) => sub.cb === cb)
+        .map((sub) => ({ target: sub.target } as ResizeObserverEntry))
+      cb(entries, {} as ResizeObserver)
+    }
   }
 
   it('scrolls to bottom on ResizeObserver callback when near bottom', () => {
@@ -82,6 +90,17 @@ describe('useChatScroll', () => {
     state.scrollHeight = 800
     fireResize()
     expect(state.scrollTop).toBe(500)
+  })
+
+  it('scrolls to bottom when viewport height changes during streaming', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    state.clientHeight = 250
+    fireResize(el)
+    expect(state.scrollTop).toBe(250)
   })
 
   it('does not scroll on resize when user has scrolled up', () => {

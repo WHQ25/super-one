@@ -79,7 +79,7 @@ export function PlanApprovalPrompt() {
       // Enter:
       // - in feedback input -> reject + submit
       // - otherwise -> approve
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault()
         if (isFeedbackInputFocused) {
           handleReject()

@@ -10,6 +10,20 @@ import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
 import { discoverSkills, discoverProjectCommands, discoverProjectAgents } from './discover-resources'
 import { getActiveProviderRaw } from '../database'
+import type { ApiProvider } from '../../shared/agent-types'
+
+export function buildProviderEnv(provider: ApiProvider): Record<string, string> {
+  const extra = JSON.parse(provider.extra_env || '{}')
+  const env: Record<string, string> = { ...extra }
+  if (provider.api_key) {
+    env.ANTHROPIC_API_KEY = provider.api_key
+    if ('ANTHROPIC_AUTH_TOKEN' in extra) {
+      env.ANTHROPIC_AUTH_TOKEN = provider.api_key
+    }
+  }
+  if (provider.base_url) env.ANTHROPIC_BASE_URL = provider.base_url
+  return env
+}
 
 
 const DEFAULT_SANDBOX_INFO: SandboxInfo = { enabled: true, autoAllowBash: false }
@@ -130,16 +144,7 @@ export class ClaudeAgent {
       const provider = getActiveProviderRaw()
       log.info('[ClaudeAgent] createSession provider lookup: %s', provider ? `name=${provider.name} type=${provider.provider_type} hasKey=${!!provider.api_key} hasUrl=${!!provider.base_url}` : 'none (using default)')
       if (provider) {
-        providerEnv = {}
-        const extra = JSON.parse(provider.extra_env || '{}')
-        if (provider.api_key) {
-          providerEnv.ANTHROPIC_API_KEY = provider.api_key
-          if ('ANTHROPIC_AUTH_TOKEN' in extra) {
-            providerEnv.ANTHROPIC_AUTH_TOKEN = provider.api_key
-          }
-        }
-        if (provider.base_url) providerEnv.ANTHROPIC_BASE_URL = provider.base_url
-        Object.assign(providerEnv, extra)
+        providerEnv = buildProviderEnv(provider)
         log.info('[ClaudeAgent] createSession providerEnv: apiKey=%s...%s (%d chars), baseUrl=%s', provider.api_key?.slice(0, 4) ?? '', provider.api_key?.slice(-4) ?? '', provider.api_key?.length ?? 0, provider.base_url ?? '')
       }
     } catch (err) {

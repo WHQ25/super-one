@@ -29,7 +29,7 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
         <ChevronRight
           className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-90')}
         />
-        <span className="text-foreground">
+        <span className="min-w-0 truncate text-foreground">
           {hasStreamingTool && streamingTool?.type === 'tool_use'
             ? <>{getToolVerb(streamingTool.toolName)}…</>
             : summary}

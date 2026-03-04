@@ -101,6 +101,16 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     return <ExitPlanModeBlock result={result} />
   }
   const cleanResult = isDenied ? result.slice('[denied] '.length) : result
+  const deniedFeedback = isDenied && cleanResult !== 'User denied permission' ? cleanResult! : ''
+  const feedbackRef = useRef<HTMLSpanElement>(null)
+  const [feedbackIsBlock, setFeedbackIsBlock] = useState(false)
+
+  useLayoutEffect(() => {
+    if (!deniedFeedback) { setFeedbackIsBlock(false); return }
+    const el = feedbackRef.current
+    if (!el) return
+    setFeedbackIsBlock(el.scrollWidth > el.clientWidth)
+  }, [deniedFeedback])
 
   const lineDelta = useMemo(() => (!isStreaming && !isDenied) ? computeLineDelta(toolName, params) : null, [toolName, params, isStreaming, isDenied])
   const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && !isDenied && (
@@ -143,7 +153,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
       )}
     >
       <div
-        className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 text-xs"
+        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={expandable ? () => setExpanded((e) => !e) : undefined}
       >
         {isDenied ? (
@@ -163,9 +173,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
             ) : summary ? (
               <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
             ) : null}
-            <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>
-            {cleanResult !== 'User denied permission' && (
-              <span className="basis-full text-red-400/70">{cleanResult}</span>
+            <span className="shrink-0 rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>
+            {deniedFeedback && !feedbackIsBlock && (
+              <span ref={feedbackRef} className="min-w-0 truncate text-red-400/70">{deniedFeedback}</span>
             )}
           </>
         ) : fileToolName ? (
@@ -194,6 +204,10 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
           />
         )}
       </div>
+
+      {deniedFeedback && feedbackIsBlock && (
+        <div className="px-2 pb-1.5 text-xs text-red-400/70">{deniedFeedback}</div>
+      )}
 
       {expandable && (
         <div
@@ -699,12 +713,14 @@ function ExitPlanModeBlock({ result }: { result?: string }) {
   }
 
   return (
-    <div className="my-4 flex flex-wrap items-center gap-1.5 rounded bg-red-500/10 px-2 py-1.5 text-sm">
-      <PenLine className="size-3 shrink-0 text-red-400" />
-      <span className="font-medium text-red-400">Plan Rejected</span>
-      <X className="ml-auto size-3 shrink-0 text-red-400" />
+    <div className="my-4 rounded bg-red-500/10 px-2 py-1.5 text-sm">
+      <div className="flex items-center gap-1.5">
+        <PenLine className="size-3 shrink-0 text-red-400" />
+        <span className="font-medium text-red-400">Plan Rejected</span>
+        <X className="ml-auto size-3 shrink-0 text-red-400" />
+      </div>
       {outcome.feedback && outcome.feedback !== 'User rejected the plan' && (
-        <span className="basis-full text-red-400/70">{outcome.feedback}</span>
+        <div className="mt-1 text-xs text-red-400/70">{outcome.feedback}</div>
       )}
     </div>
   )

@@ -1,6 +1,6 @@
 {
   "name": "super-one",
-  "version": "0.4.1-alpha",
+  "version": "0.4.2-alpha",
   "main": "./out/main/index.js",
   "type": "module",
   "private": true,
@@ -22,7 +22,7 @@
     "build:linux": "electron-vite build && electron-builder --linux --config electron-builder.yml"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.2.63",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.68",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@modelcontextprotocol/sdk": "^1.26.0",

@@ -131,7 +131,7 @@ function applyDefaultModel(session: PerSessionState, models: ModelOption[]): voi
   if (defaultModel) {
     session.selectedModel = defaultModel.id
     if (defaultModel.supportedEffortLevels?.length) {
-      session.selectedEffort = 'high'
+      session.selectedEffort = 'medium'
     }
   }
 }
@@ -1144,7 +1144,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (!updatedSession.selectedModel && globalModels[0]) {
           updatedSession.selectedModel = globalModels[0].id
           if (globalModels[0].supportedEffortLevels?.length) {
-            updatedSession.selectedEffort = 'high'
+            updatedSession.selectedEffort = 'medium'
           }
           // Write updated session back
           updatedProject._sessions = { ...updatedProject._sessions, [targetSid]: updatedSession }
@@ -1830,7 +1830,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject, availableModels } = get()
     if (!activeProject) return
     const modelInfo = availableModels.find((m) => m.id === model)
-    const defaultEffort = modelInfo?.supportedEffortLevels?.length ? 'high' as EffortLevel : undefined
+    const defaultEffort = modelInfo?.supportedEffortLevels?.length ? 'medium' as EffortLevel : undefined
     set((s) => updateActivePerSession(s,() => ({ selectedModel: model, selectedEffort: defaultEffort })))
   },
 
@@ -2180,7 +2180,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (defaultModel) {
           set((s) => updatePerSession(s, activeProject, sessionId, () => ({
             selectedModel: defaultModel.id,
-            ...(defaultModel.supportedEffortLevels?.length ? { selectedEffort: 'high' as EffortLevel } : {}),
+            ...(defaultModel.supportedEffortLevels?.length ? { selectedEffort: 'medium' as EffortLevel } : {}),
           })))
         }
       }

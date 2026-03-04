@@ -604,7 +604,7 @@ describe('applyDefaultModel via ensureSession', () => {
     const proj = useChatStore.getState().projectSessions['/model-test']
     const session = proj._sessions[DRAFT_SESSION_ID]
     expect(session.selectedModel).toBe('claude-sonnet-4-6')
-    expect(session.selectedEffort).toBe('high')
+    expect(session.selectedEffort).toBe('medium')
   })
 
   it('does not set effort when model has no supportedEffortLevels', () => {
@@ -684,7 +684,7 @@ describe('switchSession Case A (in _sessions)', () => {
     expect(after._activeSessionId).toBe('ses-b')
     expect(mockWindowAgent.activateSession).not.toHaveBeenCalled()
     expect(after._sessions['ses-b'].selectedModel).toBe('claude-sonnet-4-6')
-    expect(after._sessions['ses-b'].selectedEffort).toBe('high')
+    expect(after._sessions['ses-b'].selectedEffort).toBe('medium')
   })
 })
 
@@ -713,7 +713,7 @@ describe('switchSession Case B (from DB)', () => {
     expect(after._sessions['db-session'].contextTokens).toBe(1000)
     expect(after._sessions['db-session'].sessionProvider).toBe('claude')
     expect(after._sessions['db-session'].selectedModel).toBe('claude-sonnet-4-6')
-    expect(after._sessions['db-session'].selectedEffort).toBe('high')
+    expect(after._sessions['db-session'].selectedEffort).toBe('medium')
     expect(after.showHistory).toBe(false)
     expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
   })

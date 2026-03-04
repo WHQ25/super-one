@@ -154,6 +154,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                 </div>
               </ScrollArea>
             )}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />
             <AnimatePresence>
               {showScrollButton && scrollToBottom && messages.length > 0 && (
                 <motion.button

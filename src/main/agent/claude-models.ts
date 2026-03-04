@@ -4,7 +4,7 @@ import { getClaudeCliPath } from './resolve-cli'
 import log from '../logger'
 
 /** Create a throwaway query to fetch the model list. */
-export async function fetchModels(cwd: string): Promise<ModelOption[]> {
+export async function fetchModels(cwd: string, env?: Record<string, string | undefined>): Promise<ModelOption[]> {
   try {
     const cliPath = getClaudeCliPath()
     log.info('[claude] fetchModels start cwd=%s platform=%s arch=%s cliPath=%s', cwd, process.platform, process.arch, cliPath ?? 'system')
@@ -15,6 +15,7 @@ export async function fetchModels(cwd: string): Promise<ModelOption[]> {
         cwd,
         maxTurns: 0,
         permissionMode: 'bypassPermissions',
+        env,
       },
     })
     const models = await q.supportedModels()

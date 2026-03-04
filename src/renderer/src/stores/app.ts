@@ -4,7 +4,7 @@ import type { RecentFolder, SetupEvent, SettingsProvider, UpdateEvent } from '..
 type AppView = 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
-type SettingsTab = 'agents' | 'skills' | 'mcp' | 'plugins'
+type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins'
 export type LayoutMode = 'canvas' | 'coding'
 export type SidebarTab = 'sessions' | 'files'
 export type FilePanelView = 'file' | 'history'
@@ -330,7 +330,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSettingsProvider: (provider) => {
     const currentTab = get().settingsTab
     // Codex only supports 'skills' and 'mcp' tabs
-    const needsTabSwitch = provider === 'codex' && (currentTab === 'agents' || currentTab === 'plugins')
+    const needsTabSwitch = provider === 'codex' && (currentTab === 'providers' || currentTab === 'agents' || currentTab === 'plugins')
     set({
       settingsProvider: provider,
       ...(needsTabSwitch ? { settingsTab: 'skills' } : {}),

@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, CreateProviderRequest, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -96,6 +96,15 @@ interface AppAPI {
   // MCP library
   listMcpLibrary(): Promise<McpLibraryEntry[]>
   deleteMcpLibraryEntry(name: string): Promise<void>
+
+  // Providers
+  listProviders(): Promise<ApiProvider[]>
+  createProvider(data: CreateProviderRequest): Promise<ApiProvider>
+  updateProvider(id: string, data: UpdateProviderRequest): Promise<ApiProvider | undefined>
+  deleteProvider(id: string): Promise<boolean>
+  activateProvider(id: string): Promise<boolean>
+  deactivateAllProviders(): Promise<void>
+  testProvider(data: { api_key: string; base_url: string; extra_env: string }): Promise<{ success: boolean; models: number; error?: string }>
 
   // File watcher
   startFileWatch(folderPath: string): Promise<void>

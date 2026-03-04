@@ -759,6 +759,41 @@ export interface BashOutputEvent {
   finished: boolean
 }
 
+// --- API Provider types ---
+
+export interface ApiProvider {
+  id: string
+  name: string
+  provider_type: string
+  base_url: string
+  api_key: string
+  is_active: number
+  sort_order: number
+  extra_env: string
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateProviderRequest {
+  name: string
+  provider_type?: string
+  base_url?: string
+  api_key?: string
+  extra_env?: string
+  notes?: string
+}
+
+export interface UpdateProviderRequest {
+  name?: string
+  provider_type?: string
+  base_url?: string
+  api_key?: string
+  extra_env?: string
+  notes?: string
+  sort_order?: number
+}
+
 // --- IPC channel constants ---
 
 export const AgentIpcChannels = {
@@ -900,6 +935,15 @@ export const AgentIpcChannels = {
   FILE_WATCH_STOP: 'app:file-watch-stop',
   FILE_CHANGE_EVENT: 'app:file-change-event',
   GIT_HEAD_CHANGE: 'app:git-head-change',
+
+  // Providers
+  PROVIDERS_LIST: 'providers:list',
+  PROVIDERS_CREATE: 'providers:create',
+  PROVIDERS_UPDATE: 'providers:update',
+  PROVIDERS_DELETE: 'providers:delete',
+  PROVIDERS_ACTIVATE: 'providers:activate',
+  PROVIDERS_DEACTIVATE_ALL: 'providers:deactivate-all',
+  PROVIDERS_TEST: 'providers:test',
 
   // Bash output watcher
   BASH_OUTPUT_WATCH: 'app:bash-output-watch',

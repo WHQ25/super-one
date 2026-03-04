@@ -9,6 +9,7 @@ import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermissio
 import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
 import { discoverSkills, discoverProjectCommands, discoverProjectAgents } from './discover-resources'
+import { getActiveProviderRaw } from '../database'
 
 
 const DEFAULT_SANDBOX_INFO: SandboxInfo = { enabled: true, autoAllowBash: false }
@@ -124,6 +125,27 @@ export class ClaudeAgent {
     this.sessionAbort = new AbortController()
     const { canUseTool, trackPlanFile } = createCanUseTool(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, (e) => this.emit(e))
 
+    let providerEnv: Record<string, string> | undefined
+    try {
+      const provider = getActiveProviderRaw()
+      log.info('[ClaudeAgent] createSession provider lookup: %s', provider ? `name=${provider.name} type=${provider.provider_type} hasKey=${!!provider.api_key} hasUrl=${!!provider.base_url}` : 'none (using default)')
+      if (provider) {
+        providerEnv = {}
+        const extra = JSON.parse(provider.extra_env || '{}')
+        if (provider.api_key) {
+          providerEnv.ANTHROPIC_API_KEY = provider.api_key
+          if ('ANTHROPIC_AUTH_TOKEN' in extra) {
+            providerEnv.ANTHROPIC_AUTH_TOKEN = provider.api_key
+          }
+        }
+        if (provider.base_url) providerEnv.ANTHROPIC_BASE_URL = provider.base_url
+        Object.assign(providerEnv, extra)
+        log.info('[ClaudeAgent] createSession providerEnv: apiKey=%s...%s (%d chars), baseUrl=%s', provider.api_key?.slice(0, 4) ?? '', provider.api_key?.slice(-4) ?? '', provider.api_key?.length ?? 0, provider.base_url ?? '')
+      }
+    } catch (err) {
+      log.warn('[claude-agent] failed to load active provider:', err)
+    }
+
     const handle = createSessionQuery(
       this.bridge,
       {
@@ -140,6 +162,7 @@ export class ClaudeAgent {
         sessionId: forkedSessionId,
         abortController: this.sessionAbort,
         additionalDirectories: this.additionalDirs.length > 0 ? this.additionalDirs : undefined,
+        env: providerEnv,
       },
       (e) => this.emit(e),
       () => this.currentMessageId,
@@ -207,6 +230,7 @@ export class ClaudeAgent {
     }
 
     if (effortChanged || dirsChanged || this.needsSessionRebuild) {
+      log.info('[ClaudeAgent] session rebuild triggered (effortChanged=%s, dirsChanged=%s, needsRebuild=%s, sessionId=%s)', effortChanged, dirsChanged, this.needsSessionRebuild, this.sessionId)
       this.needsSessionRebuild = false
       const prevSessionId = this.sessionId
       await this.resetSession()
@@ -284,6 +308,11 @@ export class ClaudeAgent {
 
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void {
     respondToPlanApproval(this.pendingPlanApprovals, requestId, approved, feedback)
+  }
+
+  markNeedsRebuild(): void {
+    log.info('[ClaudeAgent] markNeedsRebuild (cwd=%s, sessionId=%s)', this.config?.cwd, this.sessionId)
+    this.needsSessionRebuild = true
   }
 
   setSandboxMode(mode: SandboxMode): SandboxInfo {

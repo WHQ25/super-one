@@ -18,6 +18,7 @@ export interface SessionQueryOptions {
   sessionId?: string
   abortController?: AbortController
   additionalDirectories?: string[]
+  env?: Record<string, string | undefined>
 }
 
 export interface SessionQueryHandle {
@@ -43,6 +44,9 @@ export function createSessionQuery(
     return result
   }
 
+  log.info('[claude-query] createSessionQuery env=%s model=%s cwd=%s resume=%s', options.env ? Object.keys(options.env).join(',') : 'none', options.model ?? 'default', options.cwd, options.resume ?? 'none')
+  trace('provider.query', 'create_session', { envKeys: options.env ? Object.keys(options.env) : null, model: options.model, resume: options.resume })
+
   const q = query({
     prompt: bridge,
     options: {
@@ -67,6 +71,7 @@ export function createSessionQuery(
       sessionId: options.sessionId,
       abortController: options.abortController,
       additionalDirectories: options.additionalDirectories,
+      env: options.env,
       stderr: (data: string) => log.warn('[claude-cli]', data.trimEnd()),
     },
   })

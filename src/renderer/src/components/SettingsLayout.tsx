@@ -1,15 +1,17 @@
-import { ArrowLeft, Blocks, Bot, Puzzle, Server } from 'lucide-react'
+import { ArrowLeft, Blocks, Bot, Globe, Puzzle, Server } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
 import { AgentsPage } from './AgentsPage'
 import { SkillsPage } from './SkillsPage'
 import { McpPage } from './McpPage'
 import { PluginsPage } from './PluginsPage'
+import { ProvidersPage } from './ProvidersPage'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { SettingsProvider } from '../../../shared/agent-types'
 
 const allTabs = [
+  { id: 'providers' as const, label: 'Providers', icon: Globe },
   { id: 'agents' as const, label: 'Subagents', icon: Bot },
   { id: 'skills' as const, label: 'Skills', icon: Puzzle },
   { id: 'mcp' as const, label: 'MCP Servers', icon: Server },
@@ -80,6 +82,7 @@ export function SettingsLayout() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
+        {settingsTab === 'providers' && <ProvidersPage />}
         {settingsTab === 'agents' && <AgentsPage />}
         {settingsTab === 'skills' && <SkillsPage />}
         {settingsTab === 'mcp' && <McpPage />}

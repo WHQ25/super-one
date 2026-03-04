@@ -25,6 +25,8 @@ import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, readAgentFile } from './discover-resources'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
 import { backupMcpServers, listLibrary, deleteLibraryEntry } from '../mcp-library-service'
+import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
+import type { CreateProviderRequest, UpdateProviderRequest } from '../../shared/agent-types'
 
 export class AgentService {
   private agents = new Map<string, ClaudeAgent>()
@@ -347,6 +349,94 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, async (_event, serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') => {
       return authorizeHttpMcpServer(serverUrl, headers, transport)
+    })
+
+    // --- Providers ---
+
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_LIST, () => {
+      return getAllProviders()
+    })
+
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_CREATE, (_event, data: CreateProviderRequest) => {
+      return createProvider(data)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_UPDATE, (_event, id: string, data: UpdateProviderRequest) => {
+      return updateProvider(id, data)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_DELETE, (_event, id: string) => {
+      return deleteProvider(id)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_ACTIVATE, (_event, id: string) => {
+      log.info('[providers] activate id=%s agents=%d', id, this.agents.size)
+      const result = activateProvider(id)
+      for (const agent of this.agents.values()) {
+        agent.markNeedsRebuild()
+      }
+      log.info('[providers] activate done, all agents marked for rebuild')
+      return result
+    })
+
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL, () => {
+      log.info('[providers] deactivate all, agents=%d', this.agents.size)
+      deactivateAllProviders()
+      for (const agent of this.agents.values()) {
+        agent.markNeedsRebuild()
+      }
+      log.info('[providers] deactivate done, all agents marked for rebuild')
+    })
+
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST, async (_event, data: { api_key: string; base_url: string; extra_env: string }) => {
+      const env: Record<string, string> = {}
+      if (data.api_key) env.ANTHROPIC_API_KEY = data.api_key
+      if (data.base_url) env.ANTHROPIC_BASE_URL = data.base_url
+      try {
+        const parsed = JSON.parse(data.extra_env || '{}')
+        Object.assign(env, parsed)
+      } catch { /* ignore */ }
+      if (data.api_key && env.ANTHROPIC_AUTH_TOKEN !== undefined) env.ANTHROPIC_AUTH_TOKEN = data.api_key
+      try {
+        const { query: testQuery } = await import('@anthropic-ai/claude-agent-sdk')
+        const { getClaudeCliPath } = await import('./resolve-cli')
+        const q = testQuery({
+          prompt: 'Reply with "ok" only.',
+          options: {
+            pathToClaudeCodeExecutable: getClaudeCliPath(),
+            cwd: process.cwd(),
+            maxTurns: 1,
+            permissionMode: 'bypassPermissions',
+            systemPrompt: 'Reply with a single word. Do not use any tools.',
+            allowedTools: ['Noop'],
+            env,
+          },
+        })
+        let authError = ''
+        for await (const msg of q) {
+          const m = msg as any
+          log.info('[providers:test] msg type=%s subtype=%s error=%s', m.type, m.subtype ?? '', m.error ?? '')
+          if (m.type === 'assistant' && m.error) {
+            authError = m.error
+            break
+          }
+          if (m.type === 'result') {
+            if (m.is_error) authError = m.result ?? 'Unknown error'
+            break
+          }
+          if (m.type === 'stream_event' && m.event?.type === 'content_block_start') {
+            break
+          }
+        }
+        q.close()
+        const result = authError
+          ? { success: false, models: 0, error: authError }
+          : { success: true, models: 0 }
+        log.info('[providers:test] result=%j', result)
+        return result
+      } catch (err) {
+        return { success: false, models: 0, error: err instanceof Error ? err.message : String(err) }
+      }
     })
 
     // --- MCP library (global) ---

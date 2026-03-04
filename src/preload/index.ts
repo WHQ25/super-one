@@ -319,6 +319,22 @@ const appAPI = {
   deleteMcpLibraryEntry: (name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY, name),
 
+  // Providers
+  listProviders: () =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_LIST),
+  createProvider: (data: { name: string; provider_type?: string; base_url?: string; api_key?: string; extra_env?: string; notes?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_CREATE, data),
+  updateProvider: (id: string, data: { name?: string; provider_type?: string; base_url?: string; api_key?: string; extra_env?: string; notes?: string; sort_order?: number }) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_UPDATE, id, data),
+  deleteProvider: (id: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DELETE, id),
+  activateProvider: (id: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_ACTIVATE, id),
+  deactivateAllProviders: () =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL),
+  testProvider: (data: { api_key: string; base_url: string; extra_env: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST, data) as Promise<{ success: boolean; models: number; error?: string }>,
+
   // File watcher
   startFileWatch: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FILE_WATCH_START, folderPath),

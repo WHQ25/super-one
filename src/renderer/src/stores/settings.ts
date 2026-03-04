@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentInfo, MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo } from '../../../shared/agent-types'
+import type { AgentInfo, ApiProvider, CreateProviderRequest, MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo, UpdateProviderRequest } from '../../../shared/agent-types'
 import { useAppStore } from './app'
 
 /** Get the active project path. Returns empty string if none active. */
@@ -54,6 +54,15 @@ interface SettingsState {
   fetchMcpLibrary: () => Promise<void>
   deleteMcpLibraryEntry: (name: string) => Promise<void>
 
+  // Providers
+  providers: ApiProvider[]
+  fetchProviders: () => Promise<void>
+  createProvider: (data: CreateProviderRequest) => Promise<void>
+  updateProvider: (id: string, data: UpdateProviderRequest) => Promise<void>
+  deleteProvider: (id: string) => Promise<void>
+  activateProvider: (id: string) => Promise<void>
+  deactivateAllProviders: () => Promise<void>
+
   // Plugins
   plugins: PluginInfo[]
   pluginDetail: PluginDetail | null
@@ -98,6 +107,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   selectedMcpName: null,
   codexMcpConfigs: [],
   mcpLibrary: [],
+  providers: [],
   plugins: [],
   pluginDetail: null,
   pluginFileContent: null,
@@ -280,5 +290,35 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await window.app.installPlugin(pp, key, scope)
     await get().fetchPlugins()
     await get().fetchMarketplacePlugins()
+  },
+
+  fetchProviders: async () => {
+    const providers = await window.app.listProviders()
+    set({ providers })
+  },
+
+  createProvider: async (data) => {
+    await window.app.createProvider(data)
+    await get().fetchProviders()
+  },
+
+  updateProvider: async (id, data) => {
+    await window.app.updateProvider(id, data)
+    await get().fetchProviders()
+  },
+
+  deleteProvider: async (id) => {
+    await window.app.deleteProvider(id)
+    await get().fetchProviders()
+  },
+
+  activateProvider: async (id) => {
+    await window.app.activateProvider(id)
+    await get().fetchProviders()
+  },
+
+  deactivateAllProviders: async () => {
+    await window.app.deactivateAllProviders()
+    await get().fetchProviders()
   },
 }))

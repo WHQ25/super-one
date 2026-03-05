@@ -3,6 +3,7 @@ import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMess
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
 import { trace } from './event-trace'
+import { resolveSdkCli } from './resolve-cli'
 export interface SessionQueryOptions {
   cwd: string
   model?: string
@@ -46,9 +47,13 @@ export function createSessionQuery(
   log.info('[claude-query] createSessionQuery env=%s model=%s cwd=%s resume=%s', options.env ? Object.keys(options.env).join(',') : 'none', options.model ?? 'default', options.cwd, options.resume ?? 'none')
   trace('provider.query', 'create_session', { envKeys: options.env ? Object.keys(options.env) : null, model: options.model, resume: options.resume })
 
+  const cliPath = resolveSdkCli()
+  log.info('[claude-query] resolved SDK CLI path=%s', cliPath ?? 'none')
+
   const q = query({
     prompt: bridge,
     options: {
+      pathToClaudeCodeExecutable: cliPath,
       cwd: options.cwd,
       model: options.model,
       effort: options.effort,

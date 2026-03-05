@@ -54,7 +54,7 @@ export function findSystemClaude(): string | undefined {
   return undefined
 }
 
-function findSdkCli(): string | undefined {
+export function resolveSdkCli(): string | undefined {
   try {
     return require.resolve('@anthropic-ai/claude-agent-sdk/cli.js').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
   } catch {
@@ -68,7 +68,7 @@ export function clearCliCache(): void {
 
 export function getClaudeCliPath(): string | undefined {
   if (cachedPath !== undefined) return cachedPath || undefined
-  cachedPath = findSystemClaude() ?? findSdkCli() ?? ''
+  cachedPath = findSystemClaude() ?? resolveSdkCli() ?? ''
   log.info('[resolve-cli] resolved=%s platform=%s arch=%s', cachedPath || 'none', process.platform, process.arch)
   return cachedPath || undefined
 }

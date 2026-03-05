@@ -2,7 +2,6 @@ import { query, type CanUseTool, type Query, type SDKUserMessage } from '@anthro
 import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMessageRequest } from '../../shared/agent-types'
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
-import { getClaudeCliPath } from './resolve-cli'
 import { trace } from './event-trace'
 export interface SessionQueryOptions {
   cwd: string
@@ -50,7 +49,6 @@ export function createSessionQuery(
   const q = query({
     prompt: bridge,
     options: {
-      pathToClaudeCodeExecutable: getClaudeCliPath(),
       cwd: options.cwd,
       model: options.model,
       effort: options.effort,
@@ -233,7 +231,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           }
         }
 
-        // Slash command output arrives as a string with <local-command-stdout> wrapper
+          // Slash command output arrives as a string with <local-command-stdout> wrapper
         const raw = typeof msgContent === 'string' ? msgContent : ''
         if (raw.includes('<local-command-stdout>')) {
           const text = raw

@@ -8,7 +8,7 @@ import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { fixPath, getClaudeCliPath, findSystemClaude, clearCliCache } from './agent/resolve-cli'
+import { fixPath } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import {
   AgentIpcChannels,
@@ -659,8 +659,7 @@ function registerIpcHandlers(): void {
   const testInstall = process.env.TEST_INSTALL_CLAUDE === '1'
 
   ipcMain.handle(AgentIpcChannels.SETUP_CHECK_CLAUDE, () => {
-    if (testInstall) return false
-    return !!findSystemClaude()
+    return true
   })
 
   ipcMain.handle(AgentIpcChannels.SETUP_INSTALL_CLAUDE, () => {
@@ -697,7 +696,6 @@ function registerIpcHandlers(): void {
 
     child.on('close', (code) => {
       fixPath()
-      clearCliCache()
       win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_complete',
         code: code ?? 1,
@@ -768,13 +766,11 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ConnectResult> => {
-    const cliPath = getClaudeCliPath()
-    log.info('[CONNECT_CLAUDE] cliPath:', cliPath ?? 'undefined (will use system claude)')
     log.info('[CONNECT_CLAUDE] cwd:', app.getPath('userData'))
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
     const q = query({
       prompt: 'hi',
-      options: { pathToClaudeCodeExecutable: cliPath, cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
+      options: { cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import { Download, CheckCircle, XCircle, ArrowRight, Loader2, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
@@ -29,20 +29,8 @@ function TerminalOutput({ text }: { text: string }): React.JSX.Element {
 export function SetupPage(): React.JSX.Element {
   const { installStatus, installOutput, startInstall, handleSetupEvent, continueToMain } = useAppStore(useShallow((s) => ({ installStatus: s.installStatus, installOutput: s.installOutput, startInstall: s.startInstall, handleSetupEvent: s.handleSetupEvent, continueToMain: s.continueToMain })))
   const outputRef = useRef<HTMLDivElement>(null)
-  const [checking, setChecking] = useState(true)
-
-  // Auto-detect Claude on mount
   useEffect(() => {
-    let ignore = false
-    window.app.checkClaude().then((hasClaude) => {
-      if (ignore) return
-      if (hasClaude) {
-        continueToMain()
-      } else {
-        setChecking(false)
-      }
-    })
-    return () => { ignore = true }
+    continueToMain()
   }, [continueToMain])
 
   useEffect(() => {
@@ -59,14 +47,6 @@ export function SetupPage(): React.JSX.Element {
   }, [installOutput])
 
   const isInstalling = installStatus === 'installing'
-
-  if (checking) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4">

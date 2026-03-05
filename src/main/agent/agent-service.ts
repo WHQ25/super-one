@@ -399,11 +399,9 @@ export class AgentService {
       if (data.api_key && env.ANTHROPIC_AUTH_TOKEN !== undefined) env.ANTHROPIC_AUTH_TOKEN = data.api_key
       try {
         const { query: testQuery } = await import('@anthropic-ai/claude-agent-sdk')
-        const { getClaudeCliPath } = await import('./resolve-cli')
         const q = testQuery({
           prompt: 'Reply with "ok" only.',
           options: {
-            pathToClaudeCodeExecutable: getClaudeCliPath(),
             cwd: process.cwd(),
             maxTurns: 1,
             permissionMode: 'bypassPermissions',

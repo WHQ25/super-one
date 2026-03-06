@@ -110,6 +110,31 @@ function migrate(db: Database.Database): void {
     );
   `)
 
+  const provCols = db.prepare("PRAGMA table_info(api_providers)").all() as Array<{ name: string }>
+  if (!provCols.some((c) => c.name === 'agent_type')) {
+    db.exec("ALTER TABLE api_providers ADD COLUMN agent_type TEXT NOT NULL DEFAULT 'claude'")
+  }
+  if (!provCols.some((c) => c.name === 'api_format')) {
+    db.exec("ALTER TABLE api_providers ADD COLUMN api_format TEXT NOT NULL DEFAULT 'anthropic'")
+  }
+  if (!provCols.some((c) => c.name === 'category')) {
+    db.exec("ALTER TABLE api_providers ADD COLUMN category TEXT NOT NULL DEFAULT 'custom'")
+  }
+  if (!provCols.some((c) => c.name === 'supported_agents')) {
+    db.exec(`ALTER TABLE api_providers ADD COLUMN supported_agents TEXT NOT NULL DEFAULT '["claude"]'`)
+  }
+  if (!provCols.some((c) => c.name === 'agent_configs')) {
+    db.exec("ALTER TABLE api_providers ADD COLUMN agent_configs TEXT NOT NULL DEFAULT '{}'")
+  }
+  if (!provCols.some((c) => c.name === 'is_active_claude')) {
+    db.exec('ALTER TABLE api_providers ADD COLUMN is_active_claude INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!provCols.some((c) => c.name === 'is_active_codex')) {
+    db.exec('ALTER TABLE api_providers ADD COLUMN is_active_codex INTEGER NOT NULL DEFAULT 0')
+  }
+
+  migrateProvidersToUnified(db)
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS global_resource_cache (
       id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -123,22 +148,47 @@ function migrate(db: Database.Database): void {
   if (is.dev) seedDevProviders(db)
 }
 
+function migrateProvidersToUnified(db: Database.Database): void {
+  const rows = db.prepare('SELECT * FROM api_providers WHERE agent_configs = \'{}\'').all() as ApiProvider[]
+  if (rows.length === 0) return
+  const stmt = db.prepare(`
+    UPDATE api_providers SET
+      supported_agents = ?, agent_configs = ?,
+      is_active_claude = ?, is_active_codex = ?
+    WHERE id = ?
+  `)
+  for (const row of rows) {
+    const agentType = row.agent_type || 'claude'
+    const supportedAgents = JSON.stringify([agentType])
+    const config = {
+      base_url: row.base_url || '',
+      model_env: '{}',
+      extra_env: row.extra_env || '{}',
+      api_format: row.api_format || 'anthropic',
+    }
+    const agentConfigs = JSON.stringify({ [agentType]: config })
+    const isActiveClaude = agentType === 'claude' ? row.is_active : 0
+    const isActiveCodex = agentType === 'codex' ? row.is_active : 0
+    stmt.run(supportedAgents, agentConfigs, isActiveClaude, isActiveCodex, row.id)
+  }
+}
+
 function seedDevProviders(db: Database.Database): void {
   const count = (db.prepare('SELECT COUNT(*) as c FROM api_providers').get() as { c: number }).c
   if (count > 0) return
   const now = new Date().toISOString()
+  const makeClaudeConfig = (url: string, env: string) => JSON.stringify({
+    claude: { base_url: url, model_env: '{}', extra_env: env, api_format: 'anthropic' },
+  })
   const seeds = [
-    { name: 'GLM (CN)', type: 'custom', url: 'https://open.bigmodel.cn/api/anthropic', key: 'sk-test-zhipu-123456', env: '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":"","ANTHROPIC_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_SONNET_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_OPUS_MODEL":"glm-5","ANTHROPIC_DEFAULT_HAIKU_MODEL":"glm-4.5-air"}', active: 1 },
-    { name: 'Kimi', type: 'custom', url: 'https://api.kimi.com/coding/', key: 'sk-test-kimi-abcdef', env: '{"ANTHROPIC_MODEL":"kimi-k2","ANTHROPIC_DEFAULT_SONNET_MODEL":"kimi-k2","ANTHROPIC_DEFAULT_OPUS_MODEL":"kimi-k2","ANTHROPIC_DEFAULT_HAIKU_MODEL":"kimi-k2"}', active: 0 },
-    { name: 'OpenRouter', type: 'openrouter', url: 'https://openrouter.ai/api', key: 'sk-or-test-999888', env: '{"ANTHROPIC_API_KEY":""}', active: 0 },
-    { name: 'MiniMax (CN)', type: 'custom', url: 'https://api.minimaxi.com/anthropic', key: 'sk-test-minimax-xyz', env: '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":"","ANTHROPIC_MODEL":"MiniMax-M2.5","ANTHROPIC_DEFAULT_SONNET_MODEL":"MiniMax-M2.5","ANTHROPIC_DEFAULT_OPUS_MODEL":"MiniMax-M2.5","ANTHROPIC_DEFAULT_HAIKU_MODEL":"MiniMax-M2.5"}', active: 0 },
-    { name: 'Volcengine Ark', type: 'custom', url: 'https://ark.cn-beijing.volces.com/api/coding', key: 'sk-test-volc-000111', env: '{"API_TIMEOUT_MS":"3000000","ANTHROPIC_AUTH_TOKEN":"","ANTHROPIC_MODEL":"ark-code-latest","ANTHROPIC_DEFAULT_SONNET_MODEL":"ark-code-latest","ANTHROPIC_DEFAULT_OPUS_MODEL":"ark-code-latest","ANTHROPIC_DEFAULT_HAIKU_MODEL":"ark-code-latest"}', active: 0 },
-    { name: 'Aliyun Bailian', type: 'custom', url: 'https://coding.dashscope.aliyuncs.com/apps/anthropic', key: 'sk-test-bailian-abc', env: '{"ANTHROPIC_AUTH_TOKEN":"","ANTHROPIC_MODEL":"qwen3.5-plus","ANTHROPIC_DEFAULT_SONNET_MODEL":"qwen3.5-plus","ANTHROPIC_DEFAULT_OPUS_MODEL":"qwen3.5-plus","ANTHROPIC_DEFAULT_HAIKU_MODEL":"qwen3-coder-next"}', active: 0 },
-    { name: 'AWS Bedrock', type: 'bedrock', url: '', key: '', env: '{"CLAUDE_CODE_USE_BEDROCK":"1","AWS_REGION":"us-east-1","AWS_ACCESS_KEY_ID":"","AWS_SECRET_ACCESS_KEY":"","AWS_SESSION_TOKEN":""}', active: 0 },
-    { name: 'Google Vertex', type: 'vertex', url: '', key: '', env: '{"CLAUDE_CODE_USE_VERTEX":"1","CLOUD_ML_REGION":"global","ANTHROPIC_VERTEX_PROJECT_ID":"my-gcp-project"}', active: 0 },
+    { name: 'GLM (CN)', type: 'custom', key: 'sk-test-zhipu-123456', category: 'model_provider', agents: '["claude"]', configs: makeClaudeConfig('https://open.bigmodel.cn/api/anthropic', '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":"","ANTHROPIC_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_SONNET_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_OPUS_MODEL":"glm-5","ANTHROPIC_DEFAULT_HAIKU_MODEL":"glm-4.5-air"}'), activeClaude: 1 },
+    { name: 'Kimi', type: 'custom', key: 'sk-test-kimi-abcdef', category: 'model_provider', agents: '["claude"]', configs: makeClaudeConfig('https://api.kimi.com/coding/', '{"ANTHROPIC_MODEL":"kimi-k2","ANTHROPIC_DEFAULT_SONNET_MODEL":"kimi-k2","ANTHROPIC_DEFAULT_OPUS_MODEL":"kimi-k2","ANTHROPIC_DEFAULT_HAIKU_MODEL":"kimi-k2"}'), activeClaude: 0 },
+    { name: 'OpenRouter', type: 'openrouter', key: 'sk-or-test-999888', category: 'aggregator', agents: '["claude","codex"]', configs: JSON.stringify({ claude: { base_url: 'https://openrouter.ai/api', model_env: '{}', extra_env: '{"ANTHROPIC_API_KEY":""}', api_format: 'anthropic' }, codex: { base_url: 'https://openrouter.ai/api/v1', model_env: '{}', extra_env: '{"OPENAI_BASE_URL":"https://openrouter.ai/api/v1"}', api_format: 'openai_chat' } }), activeClaude: 0 },
+    { name: 'AWS Bedrock', type: 'bedrock', key: '', category: 'cloud_platform', agents: '["claude"]', configs: makeClaudeConfig('', '{"CLAUDE_CODE_USE_BEDROCK":"1","AWS_REGION":"us-east-1","AWS_ACCESS_KEY_ID":"","AWS_SECRET_ACCESS_KEY":"","AWS_SESSION_TOKEN":""}'), activeClaude: 0 },
+    { name: 'Google Vertex', type: 'vertex', key: '', category: 'cloud_platform', agents: '["claude"]', configs: makeClaudeConfig('', '{"CLAUDE_CODE_USE_VERTEX":"1","CLOUD_ML_REGION":"global","ANTHROPIC_VERTEX_PROJECT_ID":"my-gcp-project"}'), activeClaude: 0 },
   ]
-  const stmt = db.prepare('INSERT INTO api_providers (id, name, provider_type, base_url, api_key, is_active, sort_order, extra_env, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-  seeds.forEach((s, i) => stmt.run(randomUUID(), s.name, s.type, s.url, s.key, s.active, i, s.env, now, now))
+  const stmt = db.prepare('INSERT INTO api_providers (id, name, provider_type, api_key, category, supported_agents, agent_configs, is_active_claude, is_active_codex, sort_order, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+  seeds.forEach((s, i) => stmt.run(randomUUID(), s.name, s.type, s.key, s.category, s.agents, s.configs, s.activeClaude, 0, i, '', now, now))
 }
 
 export function getCachedResources(): { models: unknown[]; account: Record<string, unknown>; slashCommands: unknown[] } | null {
@@ -184,12 +234,14 @@ export function getAllProviders(): ApiProvider[] {
   return (getDb().prepare('SELECT * FROM api_providers ORDER BY sort_order, created_at').all() as ApiProvider[]).map(maskProvider)
 }
 
-export function getActiveProvider(): ApiProvider | undefined {
-  return getDb().prepare('SELECT * FROM api_providers WHERE is_active = 1').get() as ApiProvider | undefined
+export function getActiveProvider(agentType: string = 'claude'): ApiProvider | undefined {
+  const col = agentType === 'codex' ? 'is_active_codex' : 'is_active_claude'
+  return getDb().prepare(`SELECT * FROM api_providers WHERE ${col} = 1`).get() as ApiProvider | undefined
 }
 
-export function getActiveProviderRaw(): ApiProvider | undefined {
-  return getDb().prepare('SELECT * FROM api_providers WHERE is_active = 1').get() as ApiProvider | undefined
+export function getActiveProviderRaw(agentType: string = 'claude'): ApiProvider | undefined {
+  const col = agentType === 'codex' ? 'is_active_codex' : 'is_active_claude'
+  return getDb().prepare(`SELECT * FROM api_providers WHERE ${col} = 1`).get() as ApiProvider | undefined
 }
 
 export function createProvider(data: CreateProviderRequest): ApiProvider {
@@ -197,15 +249,16 @@ export function createProvider(data: CreateProviderRequest): ApiProvider {
   const id = randomUUID()
   const maxOrder = (getDb().prepare('SELECT MAX(sort_order) as m FROM api_providers').get() as { m: number | null })?.m ?? -1
   getDb().prepare(`
-    INSERT INTO api_providers (id, name, provider_type, base_url, api_key, extra_env, notes, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO api_providers (id, name, provider_type, api_key, category, supported_agents, agent_configs, notes, sort_order, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     data.name,
-    data.provider_type ?? 'anthropic',
-    data.base_url ?? '',
+    data.provider_type ?? 'custom',
     data.api_key ?? '',
-    data.extra_env ?? '{}',
+    data.category ?? 'custom',
+    data.supported_agents ?? '["claude"]',
+    data.agent_configs ?? '{}',
     data.notes ?? '',
     maxOrder + 1,
     now,
@@ -220,16 +273,18 @@ export function updateProvider(id: string, data: UpdateProviderRequest): ApiProv
   const skipApiKey = data.api_key !== undefined && data.api_key.startsWith('***')
   getDb().prepare(`
     UPDATE api_providers SET
-      name = ?, provider_type = ?, base_url = ?, ${skipApiKey ? '' : 'api_key = ?,'}
-      extra_env = ?, notes = ?, sort_order = ?, updated_at = ?
+      name = ?, provider_type = ?, ${skipApiKey ? '' : 'api_key = ?,'}
+      category = ?, supported_agents = ?, agent_configs = ?,
+      notes = ?, sort_order = ?, updated_at = ?
     WHERE id = ?
   `).run(
     ...[
       data.name ?? existing.name,
       data.provider_type ?? existing.provider_type,
-      data.base_url ?? existing.base_url,
       ...(skipApiKey ? [] : [data.api_key ?? existing.api_key]),
-      data.extra_env ?? existing.extra_env,
+      data.category ?? existing.category,
+      data.supported_agents ?? existing.supported_agents,
+      data.agent_configs ?? existing.agent_configs,
       data.notes ?? existing.notes,
       data.sort_order ?? existing.sort_order,
       new Date().toISOString(),
@@ -243,14 +298,16 @@ export function deleteProvider(id: string): boolean {
   return getDb().prepare('DELETE FROM api_providers WHERE id = ?').run(id).changes > 0
 }
 
-export function activateProvider(id: string): boolean {
+export function activateProvider(id: string, agentType: string): boolean {
   const d = getDb()
-  d.prepare('UPDATE api_providers SET is_active = 0').run()
-  return d.prepare('UPDATE api_providers SET is_active = 1 WHERE id = ?').run(id).changes > 0
+  const col = agentType === 'codex' ? 'is_active_codex' : 'is_active_claude'
+  d.prepare(`UPDATE api_providers SET ${col} = 0`).run()
+  return d.prepare(`UPDATE api_providers SET ${col} = 1 WHERE id = ?`).run(id).changes > 0
 }
 
-export function deactivateAllProviders(): void {
-  getDb().prepare('UPDATE api_providers SET is_active = 0').run()
+export function deactivateAllProviders(agentType: string): void {
+  const col = agentType === 'codex' ? 'is_active_codex' : 'is_active_claude'
+  getDb().prepare(`UPDATE api_providers SET ${col} = 0`).run()
 }
 
 export function closeDb(): void {

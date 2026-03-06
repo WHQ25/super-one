@@ -60,8 +60,8 @@ interface SettingsState {
   createProvider: (data: CreateProviderRequest) => Promise<void>
   updateProvider: (id: string, data: UpdateProviderRequest) => Promise<void>
   deleteProvider: (id: string) => Promise<void>
-  activateProvider: (id: string) => Promise<void>
-  deactivateAllProviders: () => Promise<void>
+  activateProvider: (id: string, agentType: string) => Promise<void>
+  deactivateAllProviders: (agentType: string) => Promise<void>
 
   // Plugins
   plugins: PluginInfo[]
@@ -312,13 +312,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await get().fetchProviders()
   },
 
-  activateProvider: async (id) => {
-    await window.app.activateProvider(id)
+  activateProvider: async (id, agentType) => {
+    await window.app.activateProvider(id, agentType)
     await get().fetchProviders()
   },
 
-  deactivateAllProviders: async () => {
-    await window.app.deactivateAllProviders()
+  deactivateAllProviders: async (agentType) => {
+    await window.app.deactivateAllProviders(agentType)
     await get().fetchProviders()
   },
 }))

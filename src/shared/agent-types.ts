@@ -495,6 +495,9 @@ export type ResourceScope = 'user' | 'project'
 
 export type SettingsProvider = 'claude' | 'codex'
 
+export type AgentType = 'claude' | 'codex'
+export type ApiFormat = 'anthropic' | 'openai_chat' | 'openai_responses'
+
 // --- Plugins ---
 
 export interface PluginManifest {
@@ -761,35 +764,54 @@ export interface BashOutputEvent {
 
 // --- API Provider types ---
 
+export type ProviderCategory = 'model_provider' | 'cloud_platform' | 'aggregator' | 'proxy_service' | 'custom'
+
+export interface AgentProviderConfig {
+  base_url: string
+  model_env: string
+  extra_env: string
+  api_format: string
+}
+
 export interface ApiProvider {
   id: string
   name: string
   provider_type: string
-  base_url: string
   api_key: string
-  is_active: number
+  category: string
+  supported_agents: string
+  agent_configs: string
+  is_active_claude: number
+  is_active_codex: number
   sort_order: number
-  extra_env: string
   notes: string
   created_at: string
   updated_at: string
+  // Legacy columns (kept in DB, not used in new code)
+  base_url: string
+  extra_env: string
+  is_active: number
+  agent_type: string
+  api_format: string
 }
 
 export interface CreateProviderRequest {
   name: string
   provider_type?: string
-  base_url?: string
   api_key?: string
-  extra_env?: string
+  category?: string
+  supported_agents?: string
+  agent_configs?: string
   notes?: string
 }
 
 export interface UpdateProviderRequest {
   name?: string
   provider_type?: string
-  base_url?: string
   api_key?: string
-  extra_env?: string
+  category?: string
+  supported_agents?: string
+  agent_configs?: string
   notes?: string
   sort_order?: number
 }

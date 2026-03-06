@@ -369,9 +369,9 @@ export class AgentService {
       return deleteProvider(id)
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_ACTIVATE, (_event, id: string) => {
-      log.info('[providers] activate id=%s agents=%d', id, this.agents.size)
-      const result = activateProvider(id)
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_ACTIVATE, (_event, id: string, agentType: string) => {
+      log.info('[providers] activate id=%s agentType=%s agents=%d', id, agentType, this.agents.size)
+      const result = activateProvider(id, agentType)
       for (const agent of this.agents.values()) {
         agent.markNeedsRebuild()
       }
@@ -379,9 +379,9 @@ export class AgentService {
       return result
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL, () => {
-      log.info('[providers] deactivate all, agents=%d', this.agents.size)
-      deactivateAllProviders()
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL, (_event, agentType: string) => {
+      log.info('[providers] deactivate all, agentType=%s agents=%d', agentType, this.agents.size)
+      deactivateAllProviders(agentType)
       for (const agent of this.agents.values()) {
         agent.markNeedsRebuild()
       }

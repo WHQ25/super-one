@@ -83,6 +83,7 @@ export function AppSidebar() {
   const isFullscreen = useFullscreen()
   const hasRealProject = useHasRealProject()
   const resetSession = useChatStore((s) => s.resetSession)
+  const removeSessionFromMemory = useChatStore((s) => s.removeSessionFromMemory)
   const switchSession = useChatStore((s) => s.switchSession)
   const projectSessions = useChatStore((s) => s.projectSessions)
 
@@ -183,13 +184,14 @@ export function AppSidebar() {
     refreshPinned()
     setDeleteTarget(null)
 
-    // If deleting the currently active session, reset to new session state
     const current = projectSessions[deleteTarget.folderPath]
     const currentId = current?._activeSessionId
     if (currentId === deleteTarget.sessionId) {
       resetSession()
+    } else {
+      removeSessionFromMemory(deleteTarget.folderPath, deleteTarget.sessionId)
     }
-  }, [deleteTarget, refreshFolderSessions, refreshPinned, projectSessions, resetSession])
+  }, [deleteTarget, refreshFolderSessions, refreshPinned, projectSessions, resetSession, removeSessionFromMemory])
 
   const deleteTargetCli = getDeleteSessionRecovery(deleteTarget?.provider ?? 'claude', deleteTarget?.sessionId ?? '')
 

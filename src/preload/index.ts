@@ -322,16 +322,16 @@ const appAPI = {
   // Providers
   listProviders: () =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_LIST),
-  createProvider: (data: { name: string; provider_type?: string; base_url?: string; api_key?: string; extra_env?: string; notes?: string }) =>
+  createProvider: (data: { name: string; provider_type?: string; api_key?: string; category?: string; supported_agents?: string; agent_configs?: string; notes?: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_CREATE, data),
-  updateProvider: (id: string, data: { name?: string; provider_type?: string; base_url?: string; api_key?: string; extra_env?: string; notes?: string; sort_order?: number }) =>
+  updateProvider: (id: string, data: { name?: string; provider_type?: string; api_key?: string; category?: string; supported_agents?: string; agent_configs?: string; notes?: string; sort_order?: number }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_UPDATE, id, data),
   deleteProvider: (id: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DELETE, id),
-  activateProvider: (id: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_ACTIVATE, id),
-  deactivateAllProviders: () =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL),
+  activateProvider: (id: string, agentType: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_ACTIVATE, id, agentType),
+  deactivateAllProviders: (agentType: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL, agentType),
   testProvider: (data: { api_key: string; base_url: string; extra_env: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST, data) as Promise<{ success: boolean; models: number; error?: string }>,
 

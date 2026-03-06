@@ -12,16 +12,20 @@ import { discoverSkills, discoverProjectCommands, discoverProjectAgents } from '
 import { getActiveProviderRaw } from '../database'
 import type { ApiProvider } from '../../shared/agent-types'
 
-export function buildProviderEnv(provider: ApiProvider): Record<string, string> {
-  const extra = JSON.parse(provider.extra_env || '{}')
-  const env: Record<string, string> = { ...extra }
+export function buildProviderEnv(provider: ApiProvider, agentType: string = 'claude'): Record<string, string> {
+  const configs = JSON.parse(provider.agent_configs || '{}')
+  const ac = configs[agentType]
+  if (!ac) return {}
+  const modelEnv = JSON.parse(ac.model_env || '{}')
+  const extraEnv = JSON.parse(ac.extra_env || '{}')
+  const env: Record<string, string> = { ...extraEnv, ...modelEnv }
   if (provider.api_key) {
     env.ANTHROPIC_API_KEY = provider.api_key
-    if ('ANTHROPIC_AUTH_TOKEN' in extra) {
+    if ('ANTHROPIC_AUTH_TOKEN' in extraEnv) {
       env.ANTHROPIC_AUTH_TOKEN = provider.api_key
     }
   }
-  if (provider.base_url) env.ANTHROPIC_BASE_URL = provider.base_url
+  if (ac.base_url) env.ANTHROPIC_BASE_URL = ac.base_url
   return env
 }
 
@@ -142,10 +146,10 @@ export class ClaudeAgent {
     let providerEnv: Record<string, string> | undefined
     try {
       const provider = getActiveProviderRaw()
-      log.info('[ClaudeAgent] createSession provider lookup: %s', provider ? `name=${provider.name} type=${provider.provider_type} hasKey=${!!provider.api_key} hasUrl=${!!provider.base_url}` : 'none (using default)')
+      log.info('[ClaudeAgent] createSession provider lookup: %s', provider ? `name=${provider.name} type=${provider.provider_type} hasKey=${!!provider.api_key}` : 'none (using default)')
       if (provider) {
-        providerEnv = buildProviderEnv(provider)
-        log.info('[ClaudeAgent] createSession providerEnv: apiKey=%s...%s (%d chars), baseUrl=%s', provider.api_key?.slice(0, 4) ?? '', provider.api_key?.slice(-4) ?? '', provider.api_key?.length ?? 0, provider.base_url ?? '')
+        providerEnv = buildProviderEnv(provider, 'claude')
+        log.info('[ClaudeAgent] createSession providerEnv keys: %s', Object.keys(providerEnv).join(', '))
       }
     } catch (err) {
       log.warn('[claude-agent] failed to load active provider:', err)

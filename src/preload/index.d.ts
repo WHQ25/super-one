@@ -102,8 +102,8 @@ interface AppAPI {
   createProvider(data: CreateProviderRequest): Promise<ApiProvider>
   updateProvider(id: string, data: UpdateProviderRequest): Promise<ApiProvider | undefined>
   deleteProvider(id: string): Promise<boolean>
-  activateProvider(id: string): Promise<boolean>
-  deactivateAllProviders(): Promise<void>
+  activateProvider(id: string, agentType: string): Promise<boolean>
+  deactivateAllProviders(agentType: string): Promise<void>
   testProvider(data: { api_key: string; base_url: string; extra_env: string }): Promise<{ success: boolean; models: number; error?: string }>
 
   // File watcher

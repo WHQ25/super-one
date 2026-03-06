@@ -4,6 +4,7 @@ import { createRequire } from 'module'
 import { basename, extname, join } from 'path'
 import { createInterface } from 'readline'
 import log from '../logger'
+import { getActiveProviderRaw } from '../database'
 import {
   CODEX_PERMISSION_PRESETS,
   DEFAULT_CODEX_PERMISSION_PRESET,
@@ -844,6 +845,15 @@ export class CodexExperimentService {
     // Force child process to run in Node mode so it doesn't create a second app instance/Dock icon.
     if (process.versions.electron) {
       env.ELECTRON_RUN_AS_NODE = '1'
+    }
+    const codexProvider = getActiveProviderRaw('codex')
+    if (codexProvider) {
+      const configs = JSON.parse(codexProvider.agent_configs || '{}')
+      const cc = configs.codex
+      if (codexProvider.api_key) env.CODEX_API_KEY = codexProvider.api_key
+      if (cc?.base_url) env.OPENAI_BASE_URL = cc.base_url
+      try { Object.assign(env, JSON.parse(cc?.extra_env || '{}')) } catch {}
+      return env
     }
     if (session.mode === 'chatgpt') {
       delete env.CODEX_API_KEY

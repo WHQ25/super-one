@@ -200,6 +200,7 @@ interface ChatStore {
   clearMessages: () => void
   resetSession: () => Promise<void>
   resetSessionForWorktreeSwitch: (projectPath: string) => void
+  removeSessionFromMemory: (projectPath: string, sessionId: string) => void
   rewindFiles: (userMessageId: string) => Promise<RewindFilesResult>
   rewindCodeAndChat: (userMessageId: string) => Promise<RewindFilesResult>
   rewindConversation: (userMessageId: string) => Promise<RewindFilesResult>
@@ -1635,6 +1636,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       awaitingAssistantReply: false,
       prefireMessage: null,
     })), _bashOutputs: remainingOutputs }))
+  },
+
+  removeSessionFromMemory: (projectPath: string, sessionId: string) => {
+    set((s) => {
+      const proj = getProject(s, projectPath)
+      if (!proj._sessions[sessionId]) return s
+      const { [sessionId]: _, ...rest } = proj._sessions
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          [projectPath]: { ...proj, _sessions: rest },
+        },
+      }
+    })
   },
 
   resetSessionForWorktreeSwitch: (projectPath: string) => {

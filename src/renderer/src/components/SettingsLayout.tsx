@@ -18,7 +18,7 @@ const allTabs = [
   { id: 'plugins' as const, label: 'Plugins', icon: Blocks },
 ]
 
-const codexTabs = new Set<string>(['skills', 'mcp'])
+const codexTabs = new Set<string>(['providers', 'skills', 'mcp'])
 
 const providers: { id: SettingsProvider; label: string }[] = [
   { id: 'claude', label: 'Claude Code' },

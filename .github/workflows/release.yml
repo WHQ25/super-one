@@ -21,6 +21,8 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
+          SO_SUPABASE_URL: ${{ secrets.SO_SUPABASE_URL }}
+          SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}
 
   release-win:
     runs-on: windows-latest
@@ -32,6 +34,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
+          SO_SUPABASE_URL: ${{ secrets.SO_SUPABASE_URL }}
+          SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}
 
   release-linux:
     runs-on: ubuntu-latest
@@ -43,3 +47,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
+          SO_SUPABASE_URL: ${{ secrets.SO_SUPABASE_URL }}
+          SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}

@@ -3,6 +3,7 @@
   "version": "0.5.3-alpha",
   "main": "./out/main/index.js",
   "type": "module",
+  "packageManager": "bun@1.3.9",
   "private": true,
   "scripts": {
     "dev": "rm -f dev.log event-trace.db && sqlite3 ~/Library/Application\\ Support/super-one/superone.db 'DELETE FROM global_resource_cache' 2>/dev/null; electron-vite dev",

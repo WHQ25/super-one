@@ -158,8 +158,8 @@ const appAPI = {
       reason,
     ),
 
-  codexSteer: (projectPath: string, input: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, projectPath, input),
+  codexSteer: (projectPath: string, input: string, messageId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, projectPath, input, messageId),
 
   codexReview: (
     projectPath: string,

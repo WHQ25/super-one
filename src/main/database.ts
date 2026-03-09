@@ -139,11 +139,17 @@ function migrate(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS global_resource_cache (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       models_json TEXT NOT NULL,
+      codex_models_json TEXT NOT NULL DEFAULT '[]',
       account_json TEXT NOT NULL,
       slash_commands_json TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
   `)
+
+  const cacheCols = db.prepare("PRAGMA table_info(global_resource_cache)").all() as Array<{ name: string }>
+  if (!cacheCols.some((c) => c.name === 'codex_models_json')) {
+    db.exec("ALTER TABLE global_resource_cache ADD COLUMN codex_models_json TEXT NOT NULL DEFAULT '[]'")
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS paired_devices (
@@ -200,29 +206,32 @@ function seedDevProviders(db: Database.Database): void {
   seeds.forEach((s, i) => stmt.run(randomUUID(), s.name, s.type, s.key, s.category, s.agents, s.configs, s.activeClaude, 0, i, '', now, now))
 }
 
-export function getCachedResources(): { models: unknown[]; account: Record<string, unknown>; slashCommands: unknown[] } | null {
-  const row = getDb().prepare('SELECT models_json, account_json, slash_commands_json FROM global_resource_cache WHERE id = 1').get() as
-    | { models_json: string; account_json: string; slash_commands_json: string }
+export function getCachedResources(): { models: unknown[]; codexModels: unknown[]; account: Record<string, unknown>; slashCommands: unknown[] } | null {
+  const row = getDb().prepare('SELECT models_json, codex_models_json, account_json, slash_commands_json FROM global_resource_cache WHERE id = 1').get() as
+    | { models_json: string; codex_models_json: string; account_json: string; slash_commands_json: string }
     | undefined
   if (!row) return null
   return {
     models: JSON.parse(row.models_json),
+    codexModels: JSON.parse(row.codex_models_json || '[]'),
     account: JSON.parse(row.account_json),
     slashCommands: JSON.parse(row.slash_commands_json),
   }
 }
 
-export function setCachedResources(models: unknown[], account: unknown, slashCommands: unknown[]): void {
+export function setCachedResources(models: unknown[], codexModels: unknown[], account: unknown, slashCommands: unknown[]): void {
   getDb().prepare(`
-    INSERT INTO global_resource_cache (id, models_json, account_json, slash_commands_json, updated_at)
-    VALUES (1, ?, ?, ?, ?)
+    INSERT INTO global_resource_cache (id, models_json, codex_models_json, account_json, slash_commands_json, updated_at)
+    VALUES (1, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       models_json = excluded.models_json,
+      codex_models_json = excluded.codex_models_json,
       account_json = excluded.account_json,
       slash_commands_json = excluded.slash_commands_json,
       updated_at = excluded.updated_at
   `).run(
     JSON.stringify(models),
+    JSON.stringify(codexModels),
     JSON.stringify(account),
     JSON.stringify(slashCommands),
     new Date().toISOString(),

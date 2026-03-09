@@ -4,6 +4,7 @@ import { createRequire } from 'module'
 import { basename, extname, join } from 'path'
 import { createInterface } from 'readline'
 import log from '../logger'
+import { trace } from '../agent/event-trace'
 import { getActiveProviderRaw } from '../database'
 import {
   CODEX_PERMISSION_PRESETS,
@@ -42,7 +43,6 @@ interface CodexSession {
   permissionPreset: CodexPermissionPreset
   threadId: string | null
   runningController: AbortController | null
-  modelCache: { fetchedAt: number; models: ModelOption[] } | null
   pendingApprovals: Map<string, PendingCodexApproval>
   activeTurnId: string | null
   steerFn: ((input: string) => Promise<void>) | null
@@ -109,7 +109,6 @@ interface ParsedApprovalRequest {
 }
 
 const APP_SERVER_RESPONSE_TIMEOUT_MS = 15_000
-const MODEL_CACHE_TTL_MS = 60_000
 const moduleRequire = createRequire(import.meta.url)
 
 function resolveCodexPlatformPackage(platform: NodeJS.Platform = process.platform, arch: string = process.arch): string | null {
@@ -173,6 +172,45 @@ function readStringArray(value: unknown): string[] {
   return value
     .map((entry) => readString(entry))
     .filter((entry): entry is string => entry !== null)
+}
+
+function readTextPart(value: unknown): string | null {
+  const direct = readString(value)
+  if (direct !== null) return direct
+  const rec = asRecord(value)
+  if (!rec) return null
+  return readString(rec.text)
+    ?? readString(rec.summaryText)
+    ?? readString(rec.summary_text)
+    ?? readString(rec.content)
+}
+
+function readTextParts(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry) => readTextPart(entry))
+    .filter((entry): entry is string => entry !== null && entry.length > 0)
+}
+
+function readItemId(rec: Record<string, unknown>): string | null {
+  return readString(rec.itemId)
+    ?? readString(rec.item_id)
+    ?? readString(rec.id)
+    ?? readString(asRecord(rec.item)?.id)
+}
+
+function readDeltaText(rec: Record<string, unknown>): string {
+  return readString(rec.delta)
+    ?? readString(rec.textDelta)
+    ?? readString(rec.text_delta)
+    ?? readString(rec.summaryTextDelta)
+    ?? readString(rec.summary_text_delta)
+    ?? readString(rec.summaryDelta)
+    ?? readString(rec.summary_delta)
+    ?? readString(rec.text)
+    ?? readString(rec.summaryText)
+    ?? readString(rec.summary_text)
+    ?? ''
 }
 
 function toReasoningEffort(value: unknown): CodexReasoningEffort | null {
@@ -352,11 +390,14 @@ function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadItem): C
     }
 
     case 'reasoning': {
+      const directText = readString(rec.text)
+      const summaryText = readTextParts(rec.summary).join('\n\n')
+      const contentText = readTextParts(rec.content).join('\n\n')
       const text =
-        readString(rec.text)
-        ?? (readStringArray(rec.summary).join('\n\n')
-          || readStringArray(rec.content).join('\n\n')
-          || (previous?.type === 'reasoning' ? previous.text : ''))
+        (directText && directText.length > 0 ? directText : '')
+        || summaryText
+        || contentText
+        || (previous?.type === 'reasoning' ? previous.text : '')
       return { id, type: 'reasoning', text }
     }
 
@@ -501,21 +542,36 @@ function upsertItem(order: string[], map: Map<string, CodexThreadItem>, item: Co
   map.set(item.id, item)
 }
 
-function mapUsage(inputTokens: number, outputTokens: number, cachedInputTokens: number): CodexUsageInfo {
-  return { inputTokens, outputTokens, cachedInputTokens }
-}
-
 function mapUsageFromTokenUsage(raw: unknown): CodexUsageInfo | null {
   const rec = asRecord(raw)
   if (!rec) return null
-  const breakdown = asRecord(rec.last) ?? asRecord(rec.total)
-  if (!breakdown) return null
+  const parseBreakdown = (value: unknown): { inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningOutputTokens: number } | null => {
+    const breakdown = asRecord(value)
+    if (!breakdown) return null
+    return {
+      inputTokens: readNumber(breakdown.inputTokens ?? breakdown.input_tokens) ?? 0,
+      cachedInputTokens: readNumber(breakdown.cachedInputTokens ?? breakdown.cached_input_tokens) ?? 0,
+      outputTokens: readNumber(breakdown.outputTokens ?? breakdown.output_tokens) ?? 0,
+      reasoningOutputTokens: readNumber(breakdown.reasoningOutputTokens ?? breakdown.reasoning_output_tokens) ?? 0,
+    }
+  }
 
-  const inputTokens = readNumber(breakdown.inputTokens ?? breakdown.input_tokens) ?? 0
-  const outputTokens = readNumber(breakdown.outputTokens ?? breakdown.output_tokens) ?? 0
-  const cachedInputTokens = readNumber(breakdown.cachedInputTokens ?? breakdown.cached_input_tokens) ?? 0
+  const last = parseBreakdown(rec.last)
+  const total = parseBreakdown(rec.total)
+  const resolvedLast = last ?? total
+  const resolvedTotal = total ?? last
+  if (!resolvedLast || !resolvedTotal) return null
 
-  return mapUsage(inputTokens, outputTokens, cachedInputTokens)
+  return {
+    totalInputTokens: resolvedTotal.inputTokens,
+    totalCachedInputTokens: resolvedTotal.cachedInputTokens,
+    totalOutputTokens: resolvedTotal.outputTokens,
+    lastInputTokens: resolvedLast.inputTokens,
+    lastCachedInputTokens: resolvedLast.cachedInputTokens,
+    lastOutputTokens: resolvedLast.outputTokens,
+    reasoningOutputTokens: resolvedTotal.reasoningOutputTokens || (readNumber(rec.reasoningOutputTokens ?? rec.reasoning_output_tokens) ?? 0),
+    contextWindow: readNumber(rec.modelContextWindow ?? rec.model_context_window ?? rec.contextWindow ?? rec.context_window) ?? 0,
+  }
 }
 
 function deriveFinalResponse(items: CodexThreadItem[]): string {
@@ -766,7 +822,6 @@ export class CodexExperimentService {
       permissionPreset: resolvedPermissionProfile.permissionPreset,
       threadId: threadId ?? null,
       runningController: null,
-      modelCache: null,
       pendingApprovals: new Map<string, PendingCodexApproval>(),
       activeTurnId: null,
       steerFn: null,
@@ -1162,15 +1217,9 @@ export class CodexExperimentService {
 
   async listModels(projectPath: string): Promise<ModelOption[]> {
     const session = this.ensureSession(projectPath)
-    const now = Date.now()
-    if (session.modelCache && now - session.modelCache.fetchedAt < MODEL_CACHE_TTL_MS) {
-      return session.modelCache.models
-    }
-
     log.info('[codex] listModels: mode=%s, hasApiKey=%s', session.mode, Boolean(session.apiKey || process.env.CODEX_API_KEY))
     const models = await this.fetchModelsFromAppServer(session)
     log.info('[codex] listModels: fetched %d models', models.length)
-    session.modelCache = { fetchedAt: now, models }
     return models
   }
 
@@ -1287,6 +1336,17 @@ export class CodexExperimentService {
     while (!turnCompleted) {
       const notification = await connection.nextNotification()
       const { method, params } = notification
+      if (process.env.NODE_ENV === 'development') {
+        trace('codex.raw', method, {
+          params,
+          itemId: readItemId(params),
+          itemType: readString(asRecord(params.item)?.type),
+          deltaText: readDeltaText(params),
+          summaryIndex: readNumber(params.summaryIndex ?? params.summary_index),
+          itemSummary: asRecord(params.item)?.summary,
+          itemContent: asRecord(params.item)?.content,
+        }, activeTurnId ?? session.threadId ?? undefined)
+      }
 
       if (await handleServerRequest(notification)) {
         continue
@@ -1339,17 +1399,30 @@ export class CodexExperimentService {
         }
 
         case 'item/reasoning/summaryTextDelta':
-        case 'item/reasoning/textDelta': {
-          const itemId = readString(params.itemId)
-          const delta = readString(params.delta) ?? ''
+        case 'item/reasoning/summary_text_delta':
+        case 'item/reasoning/summaryDelta':
+        case 'item/reasoning/summary_delta':
+        case 'item/reasoning/summaryPartAdded':
+        case 'item/reasoning/summary_part_added':
+        case 'item/reasoning/textDelta':
+        case 'item/reasoning/text_delta':
+        case 'item/reasoning/delta': {
+          const itemId = readItemId(params)
+          const delta = readDeltaText(params)
           if (!itemId) break
 
           const previous = itemMap.get(itemId)
           const previousText = previous?.type === 'reasoning' ? previous.text : ''
+          const nextText = (
+            method === 'item/reasoning/summaryPartAdded'
+            || method === 'item/reasoning/summary_part_added'
+          )
+            ? (previousText && !previousText.endsWith('\n\n') ? `${previousText}\n\n` : previousText)
+            : `${previousText}${delta}`
           const updated: CodexThreadItem = {
             id: itemId,
             type: 'reasoning',
-            text: `${previousText}${delta}`,
+            text: nextText,
           }
           upsertItem(itemOrder, itemMap, updated)
           callbacks?.onItemDelta?.('updated', updated)
@@ -1357,8 +1430,8 @@ export class CodexExperimentService {
         }
 
         case 'item/plan/delta': {
-          const itemId = readString(params.itemId)
-          const delta = readString(params.delta) ?? ''
+          const itemId = readItemId(params)
+          const delta = readDeltaText(params)
           if (!itemId) break
 
           const previous = itemMap.get(itemId)
@@ -1709,7 +1782,6 @@ export class CodexExperimentService {
     if (session.runningController) session.runningController.abort()
     session.threadId = null
     session.runningController = null
-    session.modelCache = null
   }
 
   setAuth(projectPath: string, request: CodexSetAuthRequest): CodexAuthStatus {

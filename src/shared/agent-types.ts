@@ -73,9 +73,14 @@ export type CodexMcpToolCallStatus = 'in_progress' | 'completed' | 'failed'
 export type CodexPatchChangeKind = 'add' | 'delete' | 'update'
 
 export interface CodexUsageInfo {
-  inputTokens: number
-  outputTokens: number
-  cachedInputTokens: number
+  totalInputTokens: number
+  totalCachedInputTokens: number
+  totalOutputTokens: number
+  lastInputTokens: number
+  lastCachedInputTokens: number
+  lastOutputTokens: number
+  reasoningOutputTokens: number
+  contextWindow: number
 }
 
 export interface CodexAgentMessageItem {
@@ -415,7 +420,7 @@ export type AgentEventBase =
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
-  | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number }
+  | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number; codexUsage?: CodexUsageInfo }
   | { type: 'codex_thread_started'; messageId: string; threadId: string }
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
@@ -656,7 +661,7 @@ export interface ConnectResult {
 // --- Startup data (cached resources + user resources) ---
 
 export interface StartupData {
-  cached: { models: ModelOption[]; account: AccountInfo; slashCommands: SlashCommandInfo[] } | null
+  cached: { models: ModelOption[]; codexModels: ModelOption[]; account: AccountInfo; slashCommands: SlashCommandInfo[] } | null
   userSkills: SlashCommandInfo[]
   userCommands: SlashCommandInfo[]
   userAgents: AgentInfo[]

@@ -27,6 +27,7 @@ const mockWindowApp = {
   resumeSession: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   codexListModels: vi.fn().mockResolvedValue([]),
+  codexSteer: vi.fn().mockResolvedValue(undefined),
 }
 
 vi.stubGlobal('window', { agent: mockWindowAgent, app: mockWindowApp })
@@ -59,6 +60,7 @@ function makeEvent(overrides: Partial<AgentEvent> & { type: AgentEvent['type'] }
 beforeEach(() => {
   resetStore()
   vi.clearAllMocks()
+  globalThis.localStorage?.removeItem('super-one.codex.last-selection.v1')
 })
 
 describe('ensureSession', () => {
@@ -627,6 +629,99 @@ describe('applyDefaultModel via ensureSession', () => {
   })
 })
 
+describe('codex model cache + defaults', () => {
+  it('seeds new session with cached codex models and prefers GPT-5.4 high', () => {
+    useChatStore.getState().setGlobalResources(
+      [],
+      {},
+      [],
+      [],
+      [],
+      [],
+      [
+        {
+          id: 'gpt-5.4',
+          name: 'GPT-5.4',
+          supportedReasoningEfforts: [{ value: 'low', description: 'low' }, { value: 'high', description: 'high' }],
+        } as never,
+      ] as never[],
+    )
+
+    useChatStore.getState().ensureSession('/codex-cache')
+    const session = useChatStore.getState().projectSessions['/codex-cache']._sessions[DRAFT_SESSION_ID]
+    expect(session.selectedCodexModel).toBe('gpt-5.4')
+    expect(session.selectedCodexReasoningEffort).toBe('high')
+  })
+
+  it('seeds new session with remembered codex selection when available', () => {
+    globalThis.localStorage?.setItem('super-one.codex.last-selection.v1', JSON.stringify({
+      modelId: 'gpt-5.4',
+      reasoningEffort: 'low',
+    }))
+
+    useChatStore.getState().setGlobalResources(
+      [],
+      {},
+      [],
+      [],
+      [],
+      [],
+      [
+        {
+          id: 'gpt-5.4',
+          name: 'GPT-5.4',
+          supportedReasoningEfforts: [{ value: 'low', description: 'low' }, { value: 'high', description: 'high' }],
+        } as never,
+      ] as never[],
+    )
+
+    useChatStore.getState().ensureSession('/codex-memory')
+    const session = useChatStore.getState().projectSessions['/codex-memory']._sessions[DRAFT_SESSION_ID]
+    expect(session.selectedCodexModel).toBe('gpt-5.4')
+    expect(session.selectedCodexReasoningEffort).toBe('low')
+  })
+
+  it('updates global codex cache when refreshing codex models', async () => {
+    setupProject('/codex-refresh')
+    mockWindowApp.codexListModels.mockResolvedValueOnce([
+      {
+        id: 'gpt-5.4',
+        name: 'GPT-5.4',
+        supportedReasoningEfforts: [{ value: 'low', description: 'low' }, { value: 'high', description: 'high' }],
+      } as never,
+    ])
+
+    await useChatStore.getState().refreshCodexModels(true)
+    expect(useChatStore.getState().cachedCodexModels.map((m) => m.id)).toEqual(['gpt-5.4'])
+  })
+
+  it('persists codex selection changes to localStorage', () => {
+    useChatStore.getState().setGlobalResources(
+      [],
+      {},
+      [],
+      [],
+      [],
+      [],
+      [
+        {
+          id: 'gpt-5.4',
+          name: 'GPT-5.4',
+          supportedReasoningEfforts: [{ value: 'low', description: 'low' }, { value: 'high', description: 'high' }],
+        } as never,
+      ] as never[],
+    )
+    setupProject('/codex-persist')
+
+    useChatStore.getState().setSelectedCodexModel('gpt-5.4')
+    useChatStore.getState().setSelectedCodexReasoningEffort('low')
+
+    const raw = globalThis.localStorage?.getItem('super-one.codex.last-selection.v1')
+    expect(raw).toBeTruthy()
+    expect(JSON.parse(raw!)).toEqual({ modelId: 'gpt-5.4', reasoningEffort: 'low' })
+  })
+})
+
 describe('switchSession Case A (in _sessions)', () => {
   it('switches pointer to target session and calls activateSession', async () => {
     setupProject('/test')
@@ -774,7 +869,8 @@ describe('awaitingAssistantReply state machine', () => {
 
     await useChatStore.getState().sendMessage('hello')
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const projectState = useChatStore.getState().projectSessions['/test']
+    const session = projectState._sessions[projectState._activeSessionId!]
     expect(session.awaitingAssistantReply).toBe(true)
   })
 
@@ -804,7 +900,8 @@ describe('awaitingAssistantReply state machine', () => {
       message: { id: 'asst-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
     }))
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const projectState = useChatStore.getState().projectSessions['/test']
+    const session = projectState._sessions[projectState._activeSessionId!]
     expect(session.awaitingAssistantReply).toBe(false)
   })
 
@@ -881,6 +978,163 @@ describe('awaitingAssistantReply state machine', () => {
 
     const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
     expect(session.awaitingAssistantReply).toBe(true)
+  })
+})
+
+describe('codex steer routing', () => {
+  it('creates a new assistant placeholder for steer and retargets codex events to it', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [DRAFT_SESSION_ID]: {
+              ...proj._sessions[DRAFT_SESSION_ID],
+              status: 'streaming',
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+              activeCodexMessageId: 'codex-prev',
+              messages: [
+                {
+                  id: 'codex-prev',
+                  role: 'assistant',
+                  status: 'streaming',
+                  content: [{ type: 'text', text: 'previous response' }],
+                  createdAt: '',
+                  providerId: 'codex',
+                },
+              ] as never[],
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().sendMessage('steer follow-up')
+
+    const projectState = useChatStore.getState().projectSessions['/test']
+    const session = projectState._sessions[projectState._activeSessionId!]
+    const lastMessage = session.messages.at(-1)
+    const steerUserMessage = session.messages.at(-2)
+
+    expect(steerUserMessage?.role).toBe('user')
+    expect(lastMessage?.role).toBe('assistant')
+    expect(lastMessage?.providerId).toBe('codex')
+    expect(lastMessage?.status).toBe('streaming')
+    expect(lastMessage?.id).toBe(session.activeCodexMessageId)
+    expect(mockWindowApp.codexSteer).toHaveBeenCalledWith('/test', 'steer follow-up', lastMessage?.id)
+  })
+})
+
+describe('codex usage semantics', () => {
+  it('accumulates fresh last-usage deltas while keeping context tokens separate', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [DRAFT_SESSION_ID]: {
+              ...proj._sessions[DRAFT_SESSION_ID],
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+            },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_usage',
+      messageId: 'codex-msg-1',
+      inputTokens: 70,
+      outputTokens: 15,
+      codexUsage: {
+        totalInputTokens: 1100,
+        totalCachedInputTokens: 560,
+        totalOutputTokens: 215,
+        lastInputTokens: 70,
+        lastCachedInputTokens: 69,
+        lastOutputTokens: 15,
+        reasoningOutputTokens: 55,
+        contextWindow: 258400,
+      },
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.contextTokens).toBe(70)
+    expect(session.contextWindow).toBe(258400)
+    expect(session.streamingTokens).toEqual({ input: 1, output: 15 })
+    expect(session.codexUsageSnapshot?.totalInputTokens).toBe(1100)
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_usage',
+      messageId: 'codex-msg-2',
+      inputTokens: 30,
+      outputTokens: 5,
+      codexUsage: {
+        totalInputTokens: 1130,
+        totalCachedInputTokens: 580,
+        totalOutputTokens: 220,
+        lastInputTokens: 30,
+        lastCachedInputTokens: 20,
+        lastOutputTokens: 5,
+        reasoningOutputTokens: 55,
+        contextWindow: 258400,
+      },
+    }))
+
+    const updatedSession = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(updatedSession.contextTokens).toBe(30)
+    expect(updatedSession.streamingTokens).toEqual({ input: 11, output: 20 })
+  })
+
+  it('does not double-count duplicate last-usage snapshots', () => {
+    setupProject('/test')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_usage',
+      messageId: 'codex-msg-3',
+      inputTokens: 70,
+      outputTokens: 15,
+      codexUsage: {
+        totalInputTokens: 1100,
+        totalCachedInputTokens: 560,
+        totalOutputTokens: 215,
+        lastInputTokens: 70,
+        lastCachedInputTokens: 69,
+        lastOutputTokens: 15,
+        reasoningOutputTokens: 55,
+        contextWindow: 258400,
+      },
+    }))
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_usage',
+      messageId: 'codex-msg-3',
+      inputTokens: 70,
+      outputTokens: 15,
+      codexUsage: {
+        totalInputTokens: 1100,
+        totalCachedInputTokens: 560,
+        totalOutputTokens: 215,
+        lastInputTokens: 70,
+        lastCachedInputTokens: 69,
+        lastOutputTokens: 15,
+        reasoningOutputTokens: 55,
+        contextWindow: 258400,
+      },
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.contextTokens).toBe(70)
+    expect(session.streamingTokens).toEqual({ input: 1, output: 15 })
   })
 })
 
@@ -1020,5 +1274,49 @@ describe('task_started event', () => {
     expect(progress.description).toBe('progressing')
     expect(progress.totalTokens).toBe(100)
     expect(progress.toolUses).toBe(2)
+  })
+})
+
+describe('switchSession Case B codex usage restore', () => {
+  it('restores codex context window from saved message metadata', async () => {
+    setupProject('/test')
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [{
+        id: 'db-codex',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'done' }],
+        status: 'complete',
+        createdAt: '',
+        providerId: 'codex',
+        metadata: {
+          codex: {
+            threadId: 'thread-1',
+            usage: {
+              totalInputTokens: 1320345,
+              totalCachedInputTokens: 1155840,
+              totalOutputTokens: 4200,
+              lastInputTokens: 70105,
+              lastCachedInputTokens: 69376,
+              lastOutputTokens: 300,
+              reasoningOutputTokens: 120,
+              contextWindow: 258400,
+            },
+            items: [],
+          },
+        },
+      }] as never[],
+      totalCostUsd: 0.05,
+      contextTokens: 139481,
+      gitBranch: null,
+      provider: 'codex',
+    })
+
+    await useChatStore.getState().switchSession('db-codex-session')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions['db-codex-session']
+    expect(session.sessionProvider).toBe('codex')
+    expect(session.contextTokens).toBe(139481)
+    expect(session.contextWindow).toBe(258400)
+    expect(session.codexUsageSnapshot?.lastCachedInputTokens).toBe(69376)
   })
 })

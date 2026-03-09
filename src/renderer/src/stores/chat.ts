@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
 export const DEFAULT_PROVIDER: ChatProvider = 'claude'
 const SESSIONS_PAGE_SIZE = 30
+const CODEX_LAST_SELECTION_STORAGE_KEY = 'super-one.codex.last-selection.v1'
 
 export type MentionKind = 'file' | 'directory' | 'agent'
 export interface Mention {
@@ -27,9 +28,12 @@ export interface PerSessionState {
   sessionProvider: ChatProvider | null
   totalCostUsd: number
   contextTokens: number
+  contextWindow: number | null
   subagentTokens: Record<string, { input: number; output: number }>
   taskProgress: Record<string, { description: string; lastToolName?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; outputFile?: string; toolHistory: Array<{ toolName: string; description: string }> }>
   streamingTokens: { input: number; output: number }
+  codexUsageSnapshot: CodexUsageInfo | null
+  codexTurnLastUsage: CodexUsageInfo | null
   selectedModel: string
   selectedEffort?: EffortLevel
   selectedCodexModel: string
@@ -57,6 +61,7 @@ export interface PerSessionState {
   additionalDirs: string[]
   lastEventAt: number
   prefireMessage: { content: string; attachments: ImageAttachment[]; mentions: Mention[] } | null
+  activeCodexMessageId: string | null
 }
 
 export interface ProjectState {
@@ -93,9 +98,12 @@ export function createDefaultPerSessionState(): PerSessionState {
     sessionProvider: null,
     totalCostUsd: 0,
     contextTokens: 0,
+    contextWindow: null,
     subagentTokens: {},
     taskProgress: {},
     streamingTokens: { input: 0, output: 0 },
+    codexUsageSnapshot: null,
+    codexTurnLastUsage: null,
     selectedModel: '',
     selectedEffort: undefined,
     selectedCodexModel: '',
@@ -123,6 +131,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     additionalDirs: [],
     lastEventAt: 0,
     prefireMessage: null,
+    activeCodexMessageId: null,
   }
 }
 
@@ -174,6 +183,7 @@ interface ChatStore {
   isOpen: boolean
   corner: Corner
   availableModels: ModelOption[]
+  cachedCodexModels: ModelOption[]
   account: AccountInfo
   globalSlashCommands: SlashCommandInfo[]
   userSkills: SlashCommandInfo[]
@@ -181,7 +191,15 @@ interface ChatStore {
   userAgents: AgentInfo[]
 
   // Global resource setter
-  setGlobalResources: (models: ModelOption[], account: AccountInfo, slashCommands: SlashCommandInfo[], userSkills: SlashCommandInfo[], userCommands: SlashCommandInfo[], userAgents: AgentInfo[]) => void
+  setGlobalResources: (
+    models: ModelOption[],
+    account: AccountInfo,
+    slashCommands: SlashCommandInfo[],
+    userSkills: SlashCommandInfo[],
+    userCommands: SlashCommandInfo[],
+    userAgents: AgentInfo[],
+    codexModels?: ModelOption[],
+  ) => void
 
   // Event handling
   handleAgentEvent: (event: AgentEvent) => void
@@ -350,6 +368,65 @@ function pruneTransientCodexItems(items: CodexThreadItem[]): CodexThreadItem[] {
   return items.filter((item) => item.type !== 'reasoning')
 }
 
+function getCodexContextTokens(usage: CodexUsageInfo): number {
+  return usage.lastInputTokens
+}
+
+function getCodexUsageStepTokens(usage: CodexUsageInfo): { input: number; output: number } {
+  return {
+    input: Math.max(0, usage.lastInputTokens - usage.lastCachedInputTokens),
+    output: usage.lastOutputTokens,
+  }
+}
+
+function hasValidCodexUsageSnapshot(usage: CodexUsageInfo | null): usage is CodexUsageInfo {
+  return Boolean(
+    usage
+      && Number.isFinite(usage.totalInputTokens)
+      && Number.isFinite(usage.totalCachedInputTokens)
+      && Number.isFinite(usage.totalOutputTokens)
+      && Number.isFinite(usage.lastInputTokens)
+      && Number.isFinite(usage.lastCachedInputTokens)
+      && Number.isFinite(usage.lastOutputTokens)
+  )
+}
+
+function isSameCodexUsageSnapshot(a: CodexUsageInfo | null, b: CodexUsageInfo | null): boolean {
+  return Boolean(
+    hasValidCodexUsageSnapshot(a)
+      && hasValidCodexUsageSnapshot(b)
+      && a.totalInputTokens === b.totalInputTokens
+      && a.totalCachedInputTokens === b.totalCachedInputTokens
+      && a.totalOutputTokens === b.totalOutputTokens
+      && a.lastInputTokens === b.lastInputTokens
+      && a.lastCachedInputTokens === b.lastCachedInputTokens
+      && a.lastOutputTokens === b.lastOutputTokens
+  )
+}
+
+function accumulateCodexFooterTokens(
+  current: { input: number; output: number },
+  usage: CodexUsageInfo,
+  previous: CodexUsageInfo | null,
+): { input: number; output: number } {
+  if (!hasValidCodexUsageSnapshot(usage) || isSameCodexUsageSnapshot(usage, previous)) {
+    return current
+  }
+  const step = getCodexUsageStepTokens(usage)
+  return {
+    input: current.input + step.input,
+    output: current.output + step.output,
+  }
+}
+
+function findLatestCodexUsage(messages: ChatMessage[]): CodexUsageInfo | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const usage = messages[i].metadata?.codex?.usage
+    if (hasValidCodexUsageSnapshot(usage as CodexUsageInfo | null)) return usage as CodexUsageInfo
+  }
+  return null
+}
+
 // --- Apply agent event to a session (pure function) ---
 
 function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
@@ -474,6 +551,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           if (b.type === 'tool_use' && b.toolName === 'Agent') agentToolIds.add(b.toolUseId)
         }
       }
+      const codexUsage = event.metadata?.codex?.usage ?? null
       const hasUncompletedAgents = agentToolIds.size > 0 && [...agentToolIds].some((id) => !session.taskProgress[id]?.completed)
       return {
         messages: session.messages.map((msg) => {
@@ -486,11 +564,20 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         }),
         totalCostUsd: newCost,
         contextTokens: (() => {
+          if (codexUsage) {
+            const total = getCodexContextTokens(codexUsage)
+            return total > 0 ? total : session.contextTokens
+          }
           const u = event.metadata?.usage
           if (!u) return session.contextTokens
           const total = u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens
           return total > 0 ? total : session.contextTokens
         })(),
+        ...(codexUsage ? {
+          contextWindow: codexUsage.contextWindow > 0 ? codexUsage.contextWindow : session.contextWindow,
+          codexUsageSnapshot: codexUsage,
+          codexTurnLastUsage: null,
+        } : {}),
         awaitingAssistantReply: false,
         ...(isCurrentTurn ? { streamingTokens: { input: 0, output: 0 }, lastEventAt: 0 } : {}),
         ...(hasUncompletedAgents ? {
@@ -624,6 +711,19 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       }
 
     case 'message_usage':
+      if (event.codexUsage) {
+        const nextStreamingTokens = accumulateCodexFooterTokens(session.streamingTokens, event.codexUsage, session.codexTurnLastUsage)
+        return {
+          streamingTokens: nextStreamingTokens,
+          contextTokens: (() => {
+            const total = getCodexContextTokens(event.codexUsage)
+            return total > 0 ? total : session.contextTokens
+          })(),
+          contextWindow: event.codexUsage.contextWindow > 0 ? event.codexUsage.contextWindow : session.contextWindow,
+          codexUsageSnapshot: event.codexUsage,
+          codexTurnLastUsage: event.codexUsage,
+        }
+      }
       return { streamingTokens: { input: event.inputTokens, output: event.outputTokens } }
 
     case 'codex_thread_started':
@@ -993,7 +1093,57 @@ function resolveCodexReasoningEffort(
   if (model?.defaultReasoningEffort && supported.has(model.defaultReasoningEffort)) {
     return model.defaultReasoningEffort
   }
-  return options[0].value
+  return options[options.length - 1]?.value
+}
+
+function resolveCodexModelSelection(
+  models: ModelOption[],
+  selectedCodexModel: string,
+  selectedCodexReasoningEffort?: CodexReasoningEffort,
+): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
+  const current = selectedCodexModel.length > 0 ? models.find((m) => m.id === selectedCodexModel) : undefined
+  if (current) {
+    return {
+      modelId: current.id,
+      reasoningEffort: resolveCodexReasoningEffort(current, selectedCodexReasoningEffort),
+    }
+  }
+
+  const preferred = models.find((m) => m.isDefault)
+    ?? models[0]
+
+  if (!preferred) {
+    return { modelId: '', reasoningEffort: undefined }
+  }
+
+  return {
+    modelId: preferred.id,
+    reasoningEffort: resolveCodexReasoningEffort(preferred, selectedCodexReasoningEffort),
+  }
+}
+
+function readLastCodexSelection(): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
+  try {
+    const raw = globalThis.localStorage?.getItem(CODEX_LAST_SELECTION_STORAGE_KEY)
+    if (!raw) return { modelId: '', reasoningEffort: undefined }
+    const parsed = JSON.parse(raw) as { modelId?: unknown; reasoningEffort?: unknown }
+    if (typeof parsed.modelId !== 'string') return { modelId: '', reasoningEffort: undefined }
+    const effort = typeof parsed.reasoningEffort === 'string'
+      ? parsed.reasoningEffort as CodexReasoningEffort
+      : undefined
+    return { modelId: parsed.modelId, reasoningEffort: effort }
+  } catch {
+    return { modelId: '', reasoningEffort: undefined }
+  }
+}
+
+function saveLastCodexSelection(modelId: string, reasoningEffort?: CodexReasoningEffort): void {
+  try {
+    globalThis.localStorage?.setItem(
+      CODEX_LAST_SELECTION_STORAGE_KEY,
+      JSON.stringify({ modelId, reasoningEffort }),
+    )
+  } catch {}
 }
 
 // --- Store implementation ---
@@ -1005,16 +1155,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isOpen: false,
   corner: 'br',
   availableModels: [],
+  cachedCodexModels: [],
   account: {},
   globalSlashCommands: [],
   userSkills: [],
   userCommands: [],
   userAgents: [],
 
-  setGlobalResources: (models, account, slashCommands, userSkills, userCommands, userAgents) => {
+  setGlobalResources: (models, account, slashCommands, userSkills, userCommands, userAgents, codexModels) => {
     set((s) => {
+      const effectiveCodexModels = codexModels ?? s.cachedCodexModels
       const updates: Partial<ChatStore> = {
         availableModels: models,
+        cachedCodexModels: effectiveCodexModels,
         account,
         globalSlashCommands: slashCommands,
         userSkills,
@@ -1030,6 +1183,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
         if (patched._activeSessionId) {
           patched.slashCommands = buildSlashCommands(slashCommands, userSkills, userCommands, patched._projectSkills, patched._projectCommands)
+          projectChanged = true
+        }
+
+        if (effectiveCodexModels.length > 0 && patched.codexModels.length === 0) {
+          patched.codexModels = effectiveCodexModels
           projectChanged = true
         }
 
@@ -1088,11 +1246,50 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const targetSession = project._sessions[targetSid]
       const delta = applyEventToSession(targetSession, event)
       if (import.meta.env.DEV) {
+        const codexItemTrace = event.type === 'codex_item_delta'
+          ? {
+              codexPhase: event.phase,
+              codexItemId: event.item.id,
+              codexItemType: event.item.type,
+              codexTextLength: event.item.type === 'reasoning' || event.item.type === 'agent_message' || event.item.type === 'review'
+                ? event.item.text.length
+                : undefined,
+              codexTextPreview: event.item.type === 'reasoning' || event.item.type === 'agent_message' || event.item.type === 'review'
+                ? event.item.text.slice(0, 160)
+                : undefined,
+            }
+          : {}
         window.app.trace?.('agent.store', event.type, {
           deltaKeys: Object.keys(delta),
           ...('status' in delta ? { status: delta.status } : {}),
           ...('taskProgress' in delta ? { taskProgressKeys: Object.keys(delta.taskProgress ?? {}) } : {}),
+          ...codexItemTrace,
         }, (event as any).messageId)
+        if (event.type === 'message_usage' && event.codexUsage) {
+          const stepTokens = getCodexUsageStepTokens(event.codexUsage)
+          const footerTokens = accumulateCodexFooterTokens(targetSession.streamingTokens, event.codexUsage, targetSession.codexTurnLastUsage)
+          window.app.trace?.('codex.usage.computed', event.type, {
+            raw: {
+              total: {
+                inputTokens: event.codexUsage.totalInputTokens,
+                cachedInputTokens: event.codexUsage.totalCachedInputTokens,
+                outputTokens: event.codexUsage.totalOutputTokens,
+              },
+              last: {
+                inputTokens: event.codexUsage.lastInputTokens,
+                cachedInputTokens: event.codexUsage.lastCachedInputTokens,
+                outputTokens: event.codexUsage.lastOutputTokens,
+              },
+              reasoningOutputTokens: event.codexUsage.reasoningOutputTokens,
+              contextWindow: event.codexUsage.contextWindow,
+            },
+            computedStepTokens: stepTokens,
+            computedContextTokens: getCodexContextTokens(event.codexUsage),
+            computedTurnDeltaTokens: footerTokens,
+            displayFooterInput: footerTokens.input,
+            displayFooterOutput: footerTokens.output,
+          }, event.messageId)
+        }
       }
       const updatedSession = { ...targetSession, ...delta }
 
@@ -1281,9 +1478,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (s.projectSessions[projectPath]) return {}
       const project = createDefaultProjectState()
       project.agents = s.userAgents
+      project.codexModels = s.cachedCodexModels
       project._activeSessionId = DRAFT_SESSION_ID
       const newSession = createDefaultPerSessionState()
       applyDefaultModel(newSession, s.availableModels)
+      const rememberedCodexSelection = readLastCodexSelection()
+      const codexSelection = resolveCodexModelSelection(
+        project.codexModels,
+        rememberedCodexSelection.modelId || newSession.selectedCodexModel,
+        rememberedCodexSelection.reasoningEffort ?? newSession.selectedCodexReasoningEffort,
+      )
+      newSession.selectedCodexModel = codexSelection.modelId
+      newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
       project._sessions = { [DRAFT_SESSION_ID]: newSession }
       return {
         projectSessions: {
@@ -1442,20 +1648,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set((s) => updateActivePerSession(s,() => ({ _pendingSlashCommand: '' })))
 
       const assistantId = `codex_${Date.now()}`
+      const previousCodexTurnLastUsage = session.codexTurnLastUsage
       const appendAssistant = (message: ChatMessage) => {
         set((s) => updateActivePerSession(s,(sess) => ({
           messages: [...sess.messages, message],
         })))
       }
+      const getTargetAssistantId = () => getActivePerSession(get()).activeCodexMessageId ?? assistantId
       const updateAssistant = (
         status: 'streaming' | 'complete' | 'interrupted' | 'error',
         text: string,
         metadata?: ChatMessage['metadata'],
+        sessionUpdates?: Partial<PerSessionState>,
       ) => {
+        const targetAssistantId = getTargetAssistantId()
         set((s) => updateActivePerSession(s,(sess) => ({
           status: status === 'streaming' ? 'streaming' : 'idle',
+          ...(status === 'streaming' ? { activeCodexMessageId: targetAssistantId } : { activeCodexMessageId: null }),
+          ...(sessionUpdates ?? {}),
           messages: sess.messages.map((m) => (
-            m.id !== assistantId
+            m.id !== targetAssistantId
               ? m
               : {
                   ...m,
@@ -1469,9 +1681,31 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       // Steer: if streaming and command is 'run', send as steer input instead of starting a new run
       if (session.status === 'streaming' && resolvedCodexCommand.kind === 'run') {
+        const steerAssistantId = `codex_${Date.now()}`
+        const previousActiveCodexMessageId = session.activeCodexMessageId
+        appendAssistant({
+          id: steerAssistantId,
+          role: 'assistant',
+          status: 'streaming',
+          content: [],
+          createdAt: new Date().toISOString(),
+          providerId: 'codex',
+        })
+        set((s) => updateActivePerSession(s,() => ({
+          status: 'streaming',
+          activeCodexMessageId: steerAssistantId,
+          codexTurnLastUsage: null,
+          streamingTokens: { input: 0, output: 0 },
+        })))
         try {
-          await window.app.codexSteer(activeProject, resolvedCodexCommand.prompt)
+          await window.app.codexSteer(activeProject, resolvedCodexCommand.prompt, steerAssistantId)
         } catch (error) {
+          set((s) => updateActivePerSession(s,(sess) => ({
+            status: 'streaming',
+            activeCodexMessageId: previousActiveCodexMessageId ?? null,
+            codexTurnLastUsage: previousCodexTurnLastUsage,
+            messages: sess.messages.filter((m) => m.id !== steerAssistantId),
+          })))
           console.warn('[sendMessage] Codex steer failed:', error)
         }
         return
@@ -1485,7 +1719,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         createdAt: new Date().toISOString(),
         providerId: 'codex',
       })
-      set((s) => updateActivePerSession(s,() => ({ status: 'streaming' })))
+      set((s) => updateActivePerSession(s,() => ({
+        status: 'streaming',
+        activeCodexMessageId: assistantId,
+        codexTurnLastUsage: null,
+        streamingTokens: { input: 0, output: 0 },
+      })))
 
       try {
         const runStart = Date.now()
@@ -1528,18 +1767,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             : 'Codex completed without returning text.'
         )
         const renderedItems = pruneTransientCodexItems(result.items)
+        const activeSession = getActivePerSession(get())
+        const footerTokens = result.usage
+          ? accumulateCodexFooterTokens(activeSession.streamingTokens, result.usage, activeSession.codexTurnLastUsage)
+          : activeSession.streamingTokens
+        const consumedTokens = footerTokens.input > 0 || footerTokens.output > 0 ? footerTokens : undefined
         updateAssistant('complete', text, result.usage ? {
           durationMs: Date.now() - runStart,
           usage: {
-            inputTokens: result.usage.inputTokens,
-            outputTokens: result.usage.outputTokens,
-            cacheReadInputTokens: result.usage.cachedInputTokens,
+            inputTokens: result.usage.lastInputTokens,
+            outputTokens: result.usage.lastOutputTokens,
+            cacheReadInputTokens: result.usage.lastCachedInputTokens,
             cacheCreationInputTokens: 0,
           },
-          consumedTokens: {
-            input: result.usage.inputTokens,
-            output: result.usage.outputTokens,
-          },
+          ...(consumedTokens ? { consumedTokens } : {}),
           codex: {
             threadId: result.threadId,
             usage: result.usage,
@@ -1552,6 +1793,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             usage: null,
             items: renderedItems,
           },
+        }, {
+          contextTokens: result.usage
+            ? (() => {
+                const total = getCodexContextTokens(result.usage)
+                return total > 0 ? total : activeSession.contextTokens
+              })()
+            : activeSession.contextTokens,
+          contextWindow: result.usage?.contextWindow && result.usage.contextWindow > 0
+            ? result.usage.contextWindow
+            : activeSession.contextWindow,
+          codexUsageSnapshot: result.usage ?? activeSession.codexUsageSnapshot,
+          codexTurnLastUsage: null,
+          streamingTokens: { input: 0, output: 0 },
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -1559,6 +1813,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         updateAssistant(
           interrupted ? 'interrupted' : 'error',
           interrupted ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
+          undefined,
+          { codexTurnLastUsage: null, streamingTokens: { input: 0, output: 0 } },
         )
       }
       _saveSessionState(get, activeProject)
@@ -1657,6 +1913,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const proj = getProject(s, projectPath)
       const newSession = createDefaultPerSessionState()
       applyDefaultModel(newSession, s.availableModels)
+      const rememberedCodexSelection = readLastCodexSelection()
+      const codexSelection = resolveCodexModelSelection(
+        proj.codexModels,
+        rememberedCodexSelection.modelId || newSession.selectedCodexModel,
+        rememberedCodexSelection.reasoningEffort ?? newSession.selectedCodexReasoningEffort,
+      )
+      newSession.selectedCodexModel = codexSelection.modelId
+      newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
       return {
         projectSessions: {
           ...s.projectSessions,
@@ -1689,6 +1953,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const proj = getProject(s, activeProject)
       const newSession = createDefaultPerSessionState()
       applyDefaultModel(newSession, s.availableModels)
+      const rememberedCodexSelection = readLastCodexSelection()
+      const codexSelection = resolveCodexModelSelection(
+        proj.codexModels,
+        rememberedCodexSelection.modelId || newSession.selectedCodexModel,
+        rememberedCodexSelection.reasoningEffort ?? newSession.selectedCodexReasoningEffort,
+      )
+      newSession.selectedCodexModel = codexSelection.modelId
+      newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
       return {
         projectSessions: {
           ...s.projectSessions,
@@ -1860,9 +2132,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     const proj = getProject(get(), activeProject)
     const selectedModel = proj.codexModels.find((entry) => entry.id === model)
+    const selectedEffort = resolveCodexReasoningEffort(selectedModel)
+    saveLastCodexSelection(model, selectedEffort)
     set((s) => updateActivePerSession(s, () => ({
       selectedCodexModel: model,
-      selectedCodexReasoningEffort: resolveCodexReasoningEffort(selectedModel),
+      selectedCodexReasoningEffort: selectedEffort,
     })))
   },
 
@@ -1872,8 +2146,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const proj = getProject(get(), activeProject)
     const sess = getActivePerSession(get())
     const selectedModel = proj.codexModels.find((entry) => entry.id === sess.selectedCodexModel)
+    const selectedEffort = resolveCodexReasoningEffort(selectedModel, effort)
+    saveLastCodexSelection(sess.selectedCodexModel, selectedEffort)
     set((s) => updateActivePerSession(s, () => ({
-      selectedCodexReasoningEffort: resolveCodexReasoningEffort(selectedModel, effort),
+      selectedCodexReasoningEffort: selectedEffort,
     })))
   },
 
@@ -1890,7 +2166,43 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
 
     const current = getProject(get(), activeProject)
-    if (!force && (current.codexModelsLoading || current.codexModels.length > 0)) return
+    if (!force && current.codexModelsLoading) return
+    if (!force && current.codexModels.length > 0) {
+      set((s) => {
+        const proj = getProject(s, activeProject)
+        const activeSid = proj._activeSessionId
+        if (!activeSid) return {}
+        const sess = proj._sessions[activeSid] ?? createDefaultPerSessionState()
+        const next = resolveCodexModelSelection(
+          proj.codexModels,
+          sess.selectedCodexModel,
+          sess.selectedCodexReasoningEffort,
+        )
+        if (
+          next.modelId === sess.selectedCodexModel
+          && next.reasoningEffort === sess.selectedCodexReasoningEffort
+        ) {
+          return {}
+        }
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [activeProject]: {
+              ...proj,
+              _sessions: {
+                ...proj._sessions,
+                [activeSid]: {
+                  ...sess,
+                  selectedCodexModel: next.modelId,
+                  selectedCodexReasoningEffort: next.reasoningEffort,
+                },
+              },
+            },
+          },
+        }
+      })
+      return
+    }
 
     set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: true })))
     try {
@@ -1899,19 +2211,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const proj = getProject(s, activeProject)
         const activeSid = proj._activeSessionId
         const sess = activeSid ? (proj._sessions[activeSid] ?? createDefaultPerSessionState()) : createDefaultPerSessionState()
-        const hasCurrent = sess.selectedCodexModel.length > 0 && models.some((m) => m.id === sess.selectedCodexModel)
-        const selected = hasCurrent
-          ? sess.selectedCodexModel
-          : models.find((m) => m.isDefault)?.id ?? models[0]?.id ?? ''
-        const selectedModel = models.find((m) => m.id === selected)
+        const selected = resolveCodexModelSelection(
+          models,
+          sess.selectedCodexModel,
+          sess.selectedCodexReasoningEffort,
+        )
         const updatedSessions = activeSid
-          ? { ...proj._sessions, [activeSid]: { ...sess, selectedCodexModel: selected, selectedCodexReasoningEffort: resolveCodexReasoningEffort(selectedModel, sess.selectedCodexReasoningEffort) } }
+          ? {
+              ...proj._sessions,
+              [activeSid]: {
+                ...sess,
+                selectedCodexModel: selected.modelId,
+                selectedCodexReasoningEffort: selected.reasoningEffort,
+              },
+            }
           : proj._sessions
         return {
           projectSessions: {
             ...s.projectSessions,
             [activeProject]: { ...proj, codexModels: models, codexModelsLoading: false, _sessions: updatedSessions },
           },
+          cachedCodexModels: models,
         }
       })
     } catch (error) {
@@ -1927,6 +2247,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (session.sessionProvider && session.messages.length > 0) return
     set((s) => updateActivePerSession(s, () => ({ preferredProvider: provider, slashCommandOutput: null })))
     if (provider === 'codex') {
+      const project = getProject(get(), activeProject)
+      const session = getActivePerSession(get())
+      const selected = resolveCodexModelSelection(
+        project.codexModels,
+        session.selectedCodexModel,
+        session.selectedCodexReasoningEffort,
+      )
+      if (
+        selected.modelId !== session.selectedCodexModel
+        || selected.reasoningEffort !== session.selectedCodexReasoningEffort
+      ) {
+        set((s) => updateActivePerSession(s, () => ({
+          selectedCodexModel: selected.modelId,
+          selectedCodexReasoningEffort: selected.reasoningEffort,
+        })))
+      }
       void get().refreshCodexModels()
     }
   },
@@ -2230,6 +2566,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } catch (err) { console.warn('[chat] loadSessionState failed:', err) }
 
     const restoredProvider: ChatProvider = (savedProvider as ChatProvider) ?? DEFAULT_PROVIDER
+    const restoredCodexUsage = findLatestCodexUsage(savedMessages)
 
     const freshProject = getProject(get())
     const freshActiveSession = getActivePerSession(get())
@@ -2244,12 +2581,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messages: savedMessages,
       totalCostUsd: savedCost,
       contextTokens: savedTokens,
+      contextWindow: restoredCodexUsage?.contextWindow && restoredCodexUsage.contextWindow > 0
+        ? restoredCodexUsage.contextWindow
+        : null,
+      codexUsageSnapshot: restoredCodexUsage,
       _worktreeBaseBranch: savedWorktreeBranch,
       preferredProvider: restoredProvider,
       sessionProvider: restoredProvider,
     }
     if (restoredProvider !== 'codex') {
       applyDefaultModel(restoredSession, get().availableModels)
+    } else {
+      const rememberedCodexSelection = readLastCodexSelection()
+      const codexSelection = resolveCodexModelSelection(
+        freshProject.codexModels,
+        rememberedCodexSelection.modelId || restoredSession.selectedCodexModel,
+        rememberedCodexSelection.reasoningEffort ?? restoredSession.selectedCodexReasoningEffort,
+      )
+      restoredSession.selectedCodexModel = codexSelection.modelId
+      restoredSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
     }
 
     set((s) => {

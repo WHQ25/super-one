@@ -314,6 +314,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         startupData.userSkills,
         startupData.userCommands,
         startupData.userAgents,
+        startupData.cached.codexModels,
       )
     } else {
       console.info('[continueToMain] No cache, using empty models')

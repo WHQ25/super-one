@@ -40,7 +40,7 @@ interface AppAPI {
   checkClaude(): Promise<boolean>
   installClaude(): Promise<void>
   codexRun(projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, images?: ImageAttachment[]): Promise<CodexRunResult>
-  codexSteer(projectPath: string, input: string): Promise<void>
+  codexSteer(projectPath: string, input: string, messageId?: string): Promise<void>
   codexReview(projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string): Promise<CodexRunResult>
   codexCompact(projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string): Promise<CodexRunResult>
   codexListModels(projectPath: string): Promise<ModelOption[]>

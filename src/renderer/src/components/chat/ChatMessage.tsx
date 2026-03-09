@@ -580,8 +580,12 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
   const durationMs = isStreaming ? elapsed : (message.metadata?.durationMs ?? (elapsed || undefined))
   const ct = message.metadata?.consumedTokens
   const codexUsage = message.metadata?.codex?.usage
-  const tokenInput = isStreaming ? streamingTokens.input : (ct?.input ?? codexUsage?.inputTokens ?? frozenTokensRef.current.input)
-  const tokenOutput = isStreaming ? streamingTokens.output : (ct?.output ?? codexUsage?.outputTokens ?? frozenTokensRef.current.output)
+  const tokenInput = isStreaming
+    ? streamingTokens.input
+    : (ct?.input ?? (codexUsage ? Math.max(0, codexUsage.lastInputTokens - codexUsage.lastCachedInputTokens) : undefined) ?? frozenTokensRef.current.input)
+  const tokenOutput = isStreaming
+    ? streamingTokens.output
+    : (ct?.output ?? codexUsage?.lastOutputTokens ?? frozenTokensRef.current.output)
   const hasTokens = tokenInput > 0 || tokenOutput > 0
 
   const showDuration = durationMs && (isStreaming ? durationMs >= 1000 : durationMs >= 20000)

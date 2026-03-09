@@ -4,7 +4,7 @@ import type { RecentFolder, SetupEvent, SettingsProvider, UpdateEvent } from '..
 type AppView = 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
-type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins'
+export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'remote'
 export type LayoutMode = 'canvas' | 'coding'
 export type SidebarTab = 'sessions' | 'files'
 export type FilePanelView = 'file' | 'history'
@@ -13,6 +13,13 @@ interface WorktreeState {
   pendingBaseBranch: string | null
   activePath: string | null
   carryLocalChanges: boolean
+}
+
+export interface RemoteDeviceConfig {
+  enabled: boolean
+  masterSecret: string
+  deviceId: string
+  preventSleep: boolean
 }
 
 interface AppState {
@@ -74,6 +81,11 @@ interface AppState {
   // Multi-session: switch to a project that already has an agent
   switchToProject: (folderPath: string) => void
 
+  // Remote control
+  remoteConfig: RemoteDeviceConfig | null
+  loadRemoteConfig: () => Promise<void>
+  setRemoteConfig: (config: RemoteDeviceConfig) => void
+
   // Worktree management
   setPendingWorktree: (projectPath: string, baseBranch: string) => void
   setCarryLocalChanges: (projectPath: string, carry: boolean) => void
@@ -121,6 +133,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateProgress: 0,
   installStatus: 'idle',
   installOutput: '',
+  remoteConfig: null,
   settingsProvider: 'claude',
   settingsTab: 'skills',
   layoutMode: 'coding',
@@ -389,6 +402,29 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   getWorktreeState: (projectPath) => {
     return get()._worktrees[projectPath] ?? defaultWorktreeState
+  },
+
+  loadRemoteConfig: async () => {
+    const saved = await window.app.getRemoteConfig()
+    if (saved) {
+      set({ remoteConfig: { ...saved, preventSleep: saved.preventSleep ?? false } })
+    } else {
+      const initial: RemoteDeviceConfig = {
+        enabled: false,
+        masterSecret: Array.from(crypto.getRandomValues(new Uint8Array(32)))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join(''),
+        deviceId: crypto.randomUUID(),
+        preventSleep: false,
+      }
+      await window.app.saveRemoteConfig(initial)
+      set({ remoteConfig: initial })
+    }
+  },
+
+  setRemoteConfig: (config) => {
+    set({ remoteConfig: config })
+    window.app.saveRemoteConfig(config)
   },
 }))
 

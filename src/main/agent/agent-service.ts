@@ -33,6 +33,14 @@ export class AgentService {
   private bgAgents = new Map<string, { agent: ClaudeAgent; projectPath: string; gitRoot: string }>()
   private mainWindow: BrowserWindow | null = null
   private pendingParkCounter = 0
+  private eventSubscribers: Array<(event: AgentEvent) => void> = []
+
+  addEventSubscriber(cb: (event: AgentEvent) => void): () => void {
+    this.eventSubscribers.push(cb)
+    return () => {
+      this.eventSubscribers = this.eventSubscribers.filter((s) => s !== cb)
+    }
+  }
 
   private getAgent(projectPath: string): ClaudeAgent {
     const agent = this.agents.get(projectPath)
@@ -42,7 +50,9 @@ export class AgentService {
 
   private createEventEmitter(projectPath: string): (event: AgentEvent) => void {
     return (event: AgentEvent) => {
-      this.mainWindow?.webContents.send(AgentIpcChannels.EVENT, { ...event, projectPath })
+      const eventWithPath = { ...event, projectPath }
+      this.mainWindow?.webContents.send(AgentIpcChannels.EVENT, eventWithPath)
+      this.eventSubscribers.forEach((cb) => cb(eventWithPath))
 
       // Re-key pending background agents when session_init provides the real session ID
       if (event.type === 'session_init' && event.session?.sessionId) {

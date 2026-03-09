@@ -1,20 +1,12 @@
-import { useState } from 'react'
 import type { ChatMessage as ChatMessageType, CodexThreadItem } from '../../../../shared/agent-types'
-import { cn } from '@/lib/utils'
-import { Streamdown } from 'streamdown'
 import {
-  streamdownPlugins,
-  streamdownControls,
-  streamdownComponents,
-  streamdownLinkSafety,
-} from './chat-shared'
-import {
-  Copy,
   Check,
   Loader2,
   TriangleAlert,
 } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
+import { CopyableMarkdown } from './CopyableMarkdown'
+import { ReasoningBlock } from './ReasoningBlock'
 
 interface CodexTurnViewProps {
   message: ChatMessageType
@@ -35,44 +27,6 @@ function safeStringify(value: unknown): string {
   }
 }
 
-function CopyButton({ text, className }: { text: string; className?: string }) {
-  const [copied, setCopied] = useState(false)
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
-  return (
-    <button
-      onClick={handleCopy}
-      className={cn('cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/copy:opacity-100', className)}
-    >
-      {copied ? <Check className="size-3 text-green-400" /> : <Copy className="size-3" />}
-    </button>
-  )
-}
-
-function CopyableMarkdown({ text, isStreaming }: { text: string; isStreaming: boolean }) {
-  return (
-    <div className="group/copy relative">
-      <Streamdown
-        className="chat-md"
-        plugins={streamdownPlugins}
-        components={streamdownComponents}
-        controls={streamdownControls}
-        linkSafety={streamdownLinkSafety}
-        isAnimating={isStreaming}
-      >
-        {text}
-      </Streamdown>
-      {!isStreaming && text.length > 0 && (
-        <CopyButton text={text} className="absolute right-0 top-0" />
-      )}
-    </div>
-  )
-}
-
 function StreamingAgentMessage({
   text,
   isStreaming,
@@ -87,6 +41,7 @@ function renderItem(
   item: CodexThreadItem,
   index: number,
   isStreaming: boolean,
+  nextItem?: CodexThreadItem,
 ) {
   switch (item.type) {
     case 'agent_message':
@@ -98,10 +53,7 @@ function renderItem(
 
     case 'reasoning':
       return (
-        <div key={`${item.id}-${index}`} className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
-          <span>Thinking</span>
-        </div>
+        <ReasoningBlock key={`${item.id}-${index}`} text={item.text} blockDone={!isStreaming || !!nextItem} showContent={false} />
       )
 
     case 'command_execution':
@@ -246,7 +198,7 @@ export function CodexTurnView({ message, isStreaming }: CodexTurnViewProps) {
 
   return (
     <div className="codex-turn space-y-2">
-      {codex.items.map((item, idx) => renderItem(item, idx, isStreaming))}
+      {codex.items.map((item, idx) => renderItem(item, idx, isStreaming, codex.items[idx + 1]))}
 
       {!isStreaming && !hasAssistantMessage && fallbackText && (
         <div className="my-0.5">

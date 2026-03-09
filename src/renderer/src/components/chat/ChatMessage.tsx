@@ -1,8 +1,7 @@
 import type { ChatMessage as ChatMessageType, ContentBlock } from '../../../../shared/agent-types'
 import { useState, useEffect, useRef, useMemo, memo } from 'react'
 import { cn } from '@/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, Brain, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X } from 'lucide-react'
-import { Streamdown } from 'streamdown'
+import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { parseToolInput } from './tool-display'
@@ -12,14 +11,12 @@ import { AttachmentBar } from './AttachmentBar'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { useActiveSession } from '@/stores/chat'
 import {
-  streamdownPlugins,
-  streamdownControls,
-  streamdownComponents,
-  streamdownLinkSafety,
   formatTokens,
 } from './chat-shared'
 import { RewindButton } from './RewindButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
+import { CopyableMarkdown } from './CopyableMarkdown'
+import { ReasoningBlock } from './ReasoningBlock'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -146,24 +143,6 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
   )
 }
 
-function CopyableText({ text, isStreaming }: { text: string; isStreaming: boolean }) {
-  return (
-    <div className="group/copy relative">
-      <Streamdown
-        className="chat-md"
-        plugins={streamdownPlugins}
-        components={streamdownComponents}
-        controls={streamdownControls}
-        linkSafety={streamdownLinkSafety}
-        isAnimating={isStreaming}
-      >
-        {text}
-      </Streamdown>
-      {!isStreaming && text.length > 0 && <CopyButton text={text} />}
-    </div>
-  )
-}
-
 function renderBlock(
   block: ContentBlock,
   index: number,
@@ -178,7 +157,7 @@ function renderBlock(
     case 'text':
       return (
         <div key={index} className={prevBlockType === 'thinking' ? 'mt-1 after-thinking' : undefined}>
-          <CopyableText text={block.text} isStreaming={isStreaming} />
+          <CopyableMarkdown text={block.text} isStreaming={isStreaming} />
         </div>
       )
     case 'image':
@@ -219,7 +198,7 @@ function renderBlock(
       )
     }
     case 'thinking':
-      return <ThinkingBlock key={index} thinking={block.thinking} isStreaming={isStreaming} blockDone={!isStreaming || !!nextBlockType} />
+      return <ReasoningBlock key={index} text={block.thinking} blockDone={!isStreaming || !!nextBlockType} />
     case 'tool_result':
       // Normally rendered inside the parent ToolBlock via toolResultMap.
       // If orphaned (no matching tool_use), show a compact fallback.
@@ -231,67 +210,6 @@ function renderBlock(
         </div>
       )
   }
-}
-
-function ThinkingBlock({ thinking, isStreaming, blockDone }: { thinking: string; isStreaming: boolean; blockDone: boolean }) {
-  const [elapsed, setElapsed] = useState(0)
-  const startRef = useRef(!blockDone ? Date.now() : 0)
-  const [expanded, setExpanded] = useState(!blockDone)
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (blockDone || !startRef.current) return
-    const id = setInterval(() => {
-      setElapsed(Math.round((Date.now() - startRef.current) / 1000))
-    }, 1000)
-    return () => clearInterval(id)
-  }, [blockDone])
-
-  useEffect(() => {
-    if (blockDone) {
-      if (startRef.current) setElapsed(Math.round((Date.now() - startRef.current) / 1000))
-      setExpanded(false)
-    }
-  }, [blockDone])
-
-  const rafRef = useRef(0)
-  useEffect(() => {
-    if (!expanded) return
-    cancelAnimationFrame(rafRef.current)
-    rafRef.current = requestAnimationFrame(() => {
-      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    })
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [thinking, expanded])
-
-  const active = !blockDone
-  const label = active
-    ? (elapsed >= 1 ? `Thinking for ${elapsed}s...` : 'Thinking...')
-    : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')
-
-  return (
-    <div className="thinking-node mt-3 mb-2">
-      <button
-        onClick={() => setExpanded((e) => !e)}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-      >
-        {active
-          ? <Brain className="size-3 animate-pulse" />
-          : <Brain className="size-3" />
-        }
-        <span>{label}</span>
-        <ChevronRight className={cn('size-3 transition-transform duration-200', expanded && 'rotate-90')} />
-      </button>
-      {expanded && (
-        <div
-          ref={scrollRef}
-          className="thinking-content mt-1 max-h-32 overflow-y-auto pl-2 text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap"
-        >
-          {thinking}
-        </div>
-      )}
-    </div>
-  )
 }
 
 /** Extract leading @mention tokens from user text. */

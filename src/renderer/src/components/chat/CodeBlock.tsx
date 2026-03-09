@@ -137,7 +137,7 @@ export function HighlightedCodeBlock({ code, language, codePlugin }: Highlighted
   }, [code])
 
   return (
-    <div className="my-1.5 overflow-hidden rounded-md" style={{ backgroundColor: colors.bg }}>
+    <div data-chat-codeblock className="my-1.5 overflow-hidden rounded-md" style={{ backgroundColor: colors.bg }}>
       <div className="flex items-center justify-between px-3 py-1.5 text-[11px]" style={{ color: colors.fg }}>
         <span className="opacity-50">{language}</span>
         <button

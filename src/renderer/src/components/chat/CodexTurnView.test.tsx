@@ -5,15 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '../../../../shared/agent-types'
 import { CodexTurnView } from './CodexTurnView'
 
-vi.mock('streamdown', () => ({
-  Streamdown: ({ children, className }: { children: string; className?: string }) => <div className={className}>{children}</div>,
-}))
-
-vi.mock('./chat-shared', () => ({
-  streamdownPlugins: [],
-  streamdownControls: {},
-  streamdownComponents: {},
-  streamdownLinkSafety: undefined,
+vi.mock('./CopyableMarkdown', () => ({
+  CopyableMarkdown: ({ text }: { text: string }) => <div>{text}</div>,
 }))
 
 vi.mock('./ToolBlock', () => ({
@@ -58,7 +51,7 @@ describe('CodexTurnView', () => {
     expect(screen.queryByText('Thinking')).toBeNull()
   })
 
-  it('still shows reasoning items from codex', () => {
+  it('shows codex reasoning as a status indicator only', () => {
     render(
       <CodexTurnView
         message={createMessage({
@@ -80,7 +73,8 @@ describe('CodexTurnView', () => {
       />,
     )
 
-    expect(screen.getByText('Thinking')).toBeTruthy()
+    expect(screen.getByText('Thinking...')).toBeTruthy()
+    expect(screen.queryByText('working')).toBeNull()
   })
 
   it('renders recent codex text immediately when not streaming', () => {

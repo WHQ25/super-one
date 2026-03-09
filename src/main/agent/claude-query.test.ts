@@ -290,7 +290,7 @@ describe('createSessionQuery', () => {
     expect(lastTopLevelUsage.inputTokens).toBe(12)
   })
 
-  it('reports latest step input tokens instead of accumulating across steps', async () => {
+  it('accumulates input tokens across steps', async () => {
     state.messages = [
       {
         type: 'assistant',
@@ -329,8 +329,8 @@ describe('createSessionQuery', () => {
     const usageEvents = events.filter((e) => e.type === 'message_usage')
     expect(usageEvents).toHaveLength(3)
     expect(usageEvents[0]).toMatchObject({ inputTokens: 105, outputTokens: 0 })
-    expect(usageEvents[1]).toMatchObject({ inputTokens: 113, outputTokens: 0 })
-    expect(usageEvents[2]).toMatchObject({ inputTokens: 113, outputTokens: 20 })
+    expect(usageEvents[1]).toMatchObject({ inputTokens: 218, outputTokens: 0 })
+    expect(usageEvents[2]).toMatchObject({ inputTokens: 218, outputTokens: 20 })
   })
 
   it('emits message_error on non-success result subtype and stays idle', async () => {

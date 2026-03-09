@@ -447,7 +447,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             const isDupe = stepId && processedStepIds.has(stepId)
             if (!isDupe) {
               if (stepId) processedStepIds.add(stepId)
-              messageInputTokens = stepInput
+              messageInputTokens += stepInput
               // output_tokens from assistant messages are incomplete (partial emit);
               // accurate output comes from message_delta stream events below.
             }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { ChatMessage as ChatMessageType, CodexThreadItem } from '../../../../shared/agent-types'
 import { cn } from '@/lib/utils'
 import { Streamdown } from 'streamdown'
@@ -76,111 +76,23 @@ function CopyableMarkdown({ text, isStreaming }: { text: string; isStreaming: bo
 function StreamingAgentMessage({
   text,
   isStreaming,
-  preferTypewriter = false,
 }: {
   text: string
   isStreaming: boolean
-  preferTypewriter?: boolean
 }) {
-  const shouldTypeFromStart = isStreaming || preferTypewriter
-  const [displayText, setDisplayText] = useState(() => (shouldTypeFromStart ? '' : text))
-  const displayRef = useRef(shouldTypeFromStart ? '' : text)
-  const targetRef = useRef(text)
-  const typingEnabledRef = useRef(shouldTypeFromStart)
-  const rafIdRef = useRef<number | null>(null)
-  const lastTickRef = useRef<number>(0)
-
-  const stopAnimation = () => {
-    if (rafIdRef.current != null) {
-      cancelAnimationFrame(rafIdRef.current)
-      rafIdRef.current = null
-    }
-  }
-
-  useEffect(() => {
-    displayRef.current = displayText
-  }, [displayText])
-
-  useEffect(() => {
-    if (isStreaming || preferTypewriter) typingEnabledRef.current = true
-
-    targetRef.current = text
-    if (!typingEnabledRef.current) {
-      stopAnimation()
-      lastTickRef.current = 0
-      if (displayRef.current !== text) {
-        displayRef.current = text
-        setDisplayText(text)
-      }
-      return
-    }
-
-    if (!text.startsWith(displayRef.current)) {
-      displayRef.current = ''
-      setDisplayText('')
-    }
-
-    if (rafIdRef.current != null) return
-
-    const tick = (now: number) => {
-      const current = displayRef.current
-      const target = targetRef.current
-
-      if (current === target) {
-        stopAnimation()
-        lastTickRef.current = 0
-        return
-      }
-
-      if (!target.startsWith(current)) {
-        displayRef.current = target
-        setDisplayText(target)
-        stopAnimation()
-        lastTickRef.current = 0
-        return
-      }
-
-      const last = lastTickRef.current || now
-      const dt = Math.max(0, now - last)
-      lastTickRef.current = now
-
-      const remaining = target.length - current.length
-      const charsPerSecond = Math.min(180, Math.max(24, remaining * 1.8))
-      const step = Math.max(1, Math.floor((dt / 1000) * charsPerSecond))
-      const next = target.slice(0, current.length + step)
-
-      displayRef.current = next
-      setDisplayText(next)
-      rafIdRef.current = requestAnimationFrame(tick)
-    }
-
-    rafIdRef.current = requestAnimationFrame(tick)
-    return () => {
-      if (!isStreaming && !preferTypewriter) stopAnimation()
-    }
-  }, [text, isStreaming, preferTypewriter])
-
-  useEffect(() => () => stopAnimation(), [])
-
-  const visualStreaming = isStreaming || (typingEnabledRef.current && displayText !== text)
-  return <CopyableMarkdown text={displayText} isStreaming={visualStreaming} />
+  return <CopyableMarkdown text={text} isStreaming={isStreaming} />
 }
 
 function renderItem(
   item: CodexThreadItem,
   index: number,
   isStreaming: boolean,
-  preferTypewriter: boolean,
 ) {
   switch (item.type) {
     case 'agent_message':
       return (
         <div key={`${item.id}-${index}`} className="my-0.5">
-          <StreamingAgentMessage
-            text={item.text}
-            isStreaming={isStreaming}
-            preferTypewriter={preferTypewriter}
-          />
+          <StreamingAgentMessage text={item.text} isStreaming={isStreaming} />
         </div>
       )
 
@@ -309,18 +221,9 @@ function renderItem(
 
 export function CodexTurnView({ message, isStreaming }: CodexTurnViewProps) {
   const codex = message.metadata?.codex
-  const createdAtMs = Date.parse(message.createdAt)
-  const preferTypewriter = Number.isFinite(createdAtMs) && Date.now() - createdAtMs < 5 * 60 * 1000
 
   if (!codex) {
-    if (isStreaming) {
-      return (
-        <div className="codex-turn my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
-          <span>Thinking</span>
-        </div>
-      )
-    }
+    if (isStreaming) return null
 
     return (
       <div className="codex-turn my-0.5">
@@ -343,14 +246,7 @@ export function CodexTurnView({ message, isStreaming }: CodexTurnViewProps) {
 
   return (
     <div className="codex-turn space-y-2">
-      {isStreaming && codex.items.length === 0 && (
-        <div className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
-          <span>Thinking</span>
-        </div>
-      )}
-
-      {codex.items.map((item, idx) => renderItem(item, idx, isStreaming, preferTypewriter))}
+      {codex.items.map((item, idx) => renderItem(item, idx, isStreaming))}
 
       {!isStreaming && !hasAssistantMessage && fallbackText && (
         <div className="my-0.5">

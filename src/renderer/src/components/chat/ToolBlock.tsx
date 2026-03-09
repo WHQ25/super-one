@@ -234,7 +234,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   )
 })
 
-function FileChip({ name, title, filePath }: { name: string; title: string; filePath?: string }) {
+export function FileChip({ name, title, filePath, className }: { name: string; title: string; filePath?: string; className?: string }) {
   const handleClick = (e: React.MouseEvent): void => {
     e.stopPropagation()
     if (!filePath) return
@@ -253,7 +253,7 @@ function FileChip({ name, title, filePath }: { name: string; title: string; file
       className="inline-flex cursor-pointer items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground whitespace-nowrap hover:bg-muted/80 transition-colors"
     >
       <FileIcon name={name} size={12} />
-      <span className="max-w-[160px] truncate">{name}</span>
+      <span className={cn('truncate', className ?? 'max-w-[160px]')}>{name}</span>
     </span>
   )
 }

@@ -31,8 +31,9 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
   )
 }
 
-export function CopyableMarkdown({ text, isStreaming }: { text: string; isStreaming: boolean }) {
+export function CopyableMarkdown({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
   const [isCodeBlockHovered, setIsCodeBlockHovered] = useState(false)
+  const merged = components ? { ...streamdownComponents, ...components } : streamdownComponents
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     setIsCodeBlockHovered(Boolean((event.target as HTMLElement | null)?.closest('[data-chat-codeblock]')))
@@ -47,7 +48,7 @@ export function CopyableMarkdown({ text, isStreaming }: { text: string; isStream
       <Streamdown
         className="chat-md"
         plugins={streamdownPlugins}
-        components={streamdownComponents}
+        components={merged}
         controls={streamdownControls}
         linkSafety={streamdownLinkSafety}
         isAnimating={isStreaming}

@@ -19,6 +19,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
 
   const isNearBottomRef = useRef(true)
   const lastScrollTopRef = useRef(0)
+  const userScrollIntentRef = useRef(false)
   const [showScrollButton, setShowScrollButton] = useState(false)
 
   useLayoutEffect(() => {
@@ -34,20 +35,28 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   useEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
+    const markUserScroll = (): void => { userScrollIntentRef.current = true }
     const handleScroll = (): void => {
       const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
       const scrolledUp = el.scrollTop < lastScrollTopRef.current
       lastScrollTopRef.current = el.scrollTop
 
-      if (scrolledUp && statusRef.current === 'streaming') {
+      if (scrolledUp && statusRef.current === 'streaming' && userScrollIntentRef.current) {
         isNearBottomRef.current = false
       } else {
         isNearBottomRef.current = remaining < el.clientHeight / 2
       }
+      userScrollIntentRef.current = false
       setShowScrollButton(remaining > el.clientHeight)
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
-    return () => el.removeEventListener('scroll', handleScroll)
+    el.addEventListener('wheel', markUserScroll, { passive: true })
+    el.addEventListener('pointerdown', markUserScroll)
+    return () => {
+      el.removeEventListener('scroll', handleScroll)
+      el.removeEventListener('wheel', markUserScroll)
+      el.removeEventListener('pointerdown', markUserScroll)
+    }
   }, [sessionId, messages.length > 0, scrollViewportRef])
 
   useLayoutEffect(() => {

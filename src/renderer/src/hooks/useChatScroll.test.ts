@@ -119,7 +119,7 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(0)
   })
 
-  it('disables auto-scroll immediately on any upward scroll during streaming', () => {
+  it('disables auto-scroll on user-initiated upward scroll during streaming', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }
 
@@ -127,6 +127,7 @@ describe('useChatScroll', () => {
 
     const scrolledPos = state.scrollHeight - state.clientHeight - 10
     act(() => {
+      el.dispatchEvent(new Event('wheel'))
       state.scrollTop = scrolledPos
       el.dispatchEvent(new Event('scroll'))
     })

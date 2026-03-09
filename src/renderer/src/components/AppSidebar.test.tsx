@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 
@@ -305,5 +305,30 @@ describe('AppSidebar interactions', () => {
     render(<AppSidebar />)
 
     await screen.findByText('Pending first reply')
+  })
+
+  it('does not submit session rename while IME composition is active', async () => {
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    fireEvent.click(screen.getByText('project-a'))
+    await screen.findByText('Old Session')
+
+    fireEvent.click(screen.getAllByText('Rename')[0] as HTMLButtonElement)
+
+    const input = screen.getByDisplayValue('Old Session')
+    fireEvent.change(input, { target: { value: '新标题' } })
+
+    const composingEnter = createEvent.keyDown(input, { key: 'Enter' })
+    Object.defineProperty(composingEnter, 'isComposing', { value: true })
+    fireEvent(input, composingEnter)
+
+    expect(mockWindowApp.renameSession).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(mockWindowApp.renameSession).toHaveBeenCalledWith('sid-1', '新标题')
+    })
   })
 })

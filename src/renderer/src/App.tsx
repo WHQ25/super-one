@@ -12,6 +12,7 @@ import { SetupPage } from '@/components/SetupPage'
 import { SettingsLayout } from '@/components/SettingsLayout'
 import { UpdateNotification } from '@/components/UpdateNotification'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
+import { useRemoteControl } from '@/hooks/useRemoteControl'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
@@ -23,9 +24,14 @@ import { cn } from '@/lib/utils'
 
 function App(): React.JSX.Element {
   useAgentEvents()
+  useRemoteControl()
   const theme = useTheme()
   const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, showFilePanel, setShowFilePanel, filePanelView, filePanelWidth, setFilePanelWidth, layoutMode, setLayoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, setShowSidebar: s.setShowSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, showFilePanel: s.showFilePanel, setShowFilePanel: s.setShowFilePanel, filePanelView: s.filePanelView, filePanelWidth: s.filePanelWidth, setFilePanelWidth: s.setFilePanelWidth, layoutMode: s.layoutMode, setLayoutMode: s.setLayoutMode })))
   const isFullscreen = useFullscreen()
+
+  useEffect(() => {
+    useAppStore.getState().loadRemoteConfig()
+  }, [])
 
   useEffect(() => {
     return window.app.onUpdateEvent((event) => {

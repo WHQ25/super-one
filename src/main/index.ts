@@ -1,6 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, powerMonitor, protocol, shell } from 'electron'
 import { join, dirname, basename, resolve, extname, relative } from 'path'
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
 import { homedir } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-security'
@@ -32,10 +32,16 @@ import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as 
 import { parseGitStatusOutput, parseGitStatusFiles } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
-import { getDb, closeDb, getCachedResources, setCachedResources } from './database'
+import { getDb, closeDb, getCachedResources, setCachedResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
 import { trace, closeTraceDb } from './agent/event-trace'
+import { RemoteControlService } from './remote-control-service'
+import type { RemoteCommand, PairedDevice } from '../shared/agent-types'
+import type { RemoteControlCallbacks } from './remote-control-service'
+
+declare const __SUPABASE_URL__: string
+declare const __SUPABASE_PUBLISHABLE_KEY__: string
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -50,6 +56,33 @@ if (process.env.SUPERONE_INSTANCE) {
 
 const agentService = new AgentService()
 const codexService = new CodexExperimentService()
+const remoteCallbacks: RemoteControlCallbacks = {
+  onCommand: (command) => {
+    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_COMMAND, command)
+  },
+  onClientRegistered: ({ deviceName, deviceId }) => {
+    upsertPairedDevice(deviceId, deviceName)
+    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true })
+  },
+  onClientDisconnected: ({ deviceId }) => {
+    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
+  },
+  onPairingCodeReceived: ({ code, deviceName }) => {
+    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_PAIRING_CODE_RECEIVED, { code, deviceName })
+  },
+  onPairingExpired: () => {
+    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_PAIRING_EXPIRED)
+  },
+  onPairingConfirmed: ({ mobileDeviceId, deviceName }) => {
+    upsertPairedDevice(mobileDeviceId, deviceName)
+    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: mobileDeviceId, online: false })
+  },
+  onPairingAlreadyPaired: ({ deviceName }) => {
+    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_PAIRING_ALREADY_PAIRED, { deviceName })
+  },
+  isPairedDevice: (deviceId) => isPairedDevice(deviceId),
+}
+const remoteControlService = new RemoteControlService(__SUPABASE_URL__, __SUPABASE_PUBLISHABLE_KEY__, remoteCallbacks)
 let mainWindow: BrowserWindow | null = null
 
 function getMainWindow(): BrowserWindow {
@@ -752,6 +785,59 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GET_LOG_PATH, () => {
     return log.transports.file.getFile().path
+  })
+
+  const remoteConfigPath = join(app.getPath('userData'), 'remote-config.json')
+  function readRemoteConfig(): { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean } | null {
+    try {
+      const raw = JSON.parse(readFileSync(remoteConfigPath, 'utf-8'))
+      return { preventSleep: false, ...raw }
+    } catch {
+      return null
+    }
+  }
+  ipcMain.handle('remote:get-config', readRemoteConfig)
+  ipcMain.handle('remote:save-config', (_, config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean }) => {
+    writeFileSync(remoteConfigPath, JSON.stringify(config))
+    remoteControlService.start(config)
+  })
+  ipcMain.handle(AgentIpcChannels.REMOTE_LIST_PAIRED, (): PairedDevice[] => {
+    const onlineIds = remoteControlService.getOnlineDeviceIds()
+    return listPairedDevices().map((row) => ({
+      id: row.id,
+      name: row.name,
+      pairedAt: row.paired_at,
+      lastSeenAt: row.last_seen_at,
+      online: onlineIds.has(row.id),
+    }))
+  })
+  ipcMain.handle(AgentIpcChannels.REMOTE_REMOVE_PAIRED, (_, id: string) => {
+    deletePairedDevice(id)
+  })
+  ipcMain.handle(AgentIpcChannels.REMOTE_START_PAIRING, async () => {
+    const config = readRemoteConfig()
+    if (!config) throw new Error('Remote control not configured')
+    return remoteControlService.startPairing()
+  })
+  ipcMain.handle(AgentIpcChannels.REMOTE_CONFIRM_PAIRING, async (_, code: string) => {
+    const config = readRemoteConfig()
+    if (!config) throw new Error('Remote control not configured')
+    await remoteControlService.confirmPairing(code, config.masterSecret)
+  })
+  ipcMain.handle(AgentIpcChannels.REMOTE_CANCEL_PAIRING, async () => {
+    await remoteControlService.cancelPairing()
+  })
+
+  agentService.addEventSubscriber((event) => {
+    remoteControlService.broadcastAgentEvent(event)
+  })
+
+  const savedRemoteConfig = readRemoteConfig()
+  if (savedRemoteConfig) remoteControlService.start(savedRemoteConfig)
+
+  powerMonitor.on('resume', () => {
+    log.info('[RemoteControl] System resumed, restarting channel')
+    remoteControlService.resume()
   })
 
   ipcMain.handle('get-fullscreen', () => getMainWindow().isFullScreen())

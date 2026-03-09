@@ -459,6 +459,72 @@ const appAPI = {
   trace: (source: string, type: string, data: unknown, tag?: string) => {
     ipcRenderer.send('app:trace', source, type, data, tag)
   },
+
+  // Remote control
+  getRemoteConfig: () =>
+    ipcRenderer.invoke('remote:get-config'),
+  saveRemoteConfig: (config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean }) =>
+    ipcRenderer.invoke('remote:save-config', config),
+  onRemoteCommand: (callback: (command: unknown) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, command: unknown): void => {
+      callback(command)
+    }
+    ipcRenderer.on(AgentIpcChannels.REMOTE_COMMAND, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.REMOTE_COMMAND, handler)
+    }
+  },
+  onClientRegistered: (callback: (info: { deviceName: string }) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, info: { deviceName: string }): void => {
+      callback(info)
+    }
+    ipcRenderer.on(AgentIpcChannels.REMOTE_CLIENT_REGISTERED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.REMOTE_CLIENT_REGISTERED, handler)
+    }
+  },
+  listPairedDevices: () =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_LIST_PAIRED),
+  removePairedDevice: (id: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_REMOVE_PAIRED, id),
+  onDeviceStatusChanged: (callback: (device: { id: string; online: boolean }) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, device: { id: string; online: boolean }): void => {
+      callback(device)
+    }
+    ipcRenderer.on(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, handler)
+    }
+  },
+  startPairing: (): Promise<{ channelId: string; tempKeyHex: string }> =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_START_PAIRING),
+  confirmPairing: (code: string): Promise<void> =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_CONFIRM_PAIRING, code),
+  cancelPairing: (): Promise<void> =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_CANCEL_PAIRING),
+  onPairingCodeReceived: (callback: (info: { code: string; deviceName: string }) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, info: { code: string; deviceName: string }): void => {
+      callback(info)
+    }
+    ipcRenderer.on(AgentIpcChannels.REMOTE_PAIRING_CODE_RECEIVED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.REMOTE_PAIRING_CODE_RECEIVED, handler)
+    }
+  },
+  onPairingExpired: (callback: () => void) => {
+    const handler = (): void => { callback() }
+    ipcRenderer.on(AgentIpcChannels.REMOTE_PAIRING_EXPIRED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.REMOTE_PAIRING_EXPIRED, handler)
+    }
+  },
+  onPairingAlreadyPaired: (callback: (info: { deviceName: string }) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, info: { deviceName: string }): void => { callback(info) }
+    ipcRenderer.on(AgentIpcChannels.REMOTE_PAIRING_ALREADY_PAIRED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.REMOTE_PAIRING_ALREADY_PAIRED, handler)
+    }
+  },
 }
 
 if (process.contextIsolated) {

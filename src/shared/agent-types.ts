@@ -973,4 +973,30 @@ export const AgentIpcChannels = {
   BASH_OUTPUT_EVENT: 'app:bash-output-event',
   BASH_OUTPUT_READ_MORE: 'app:bash-output-read-more',
   BASH_OUTPUT_READ_FILE: 'app:bash-output-read-file',
+
+  // Remote control
+  REMOTE_COMMAND: 'remote:command',
+  REMOTE_CLIENT_REGISTERED: 'remote:client-registered',
+  REMOTE_LIST_PAIRED: 'remote:list-paired',
+  REMOTE_REMOVE_PAIRED: 'remote:remove-paired',
+  REMOTE_DEVICE_STATUS_CHANGED: 'remote:device-status-changed',
+  REMOTE_START_PAIRING: 'remote:start-pairing',
+  REMOTE_CONFIRM_PAIRING: 'remote:confirm-pairing',
+  REMOTE_CANCEL_PAIRING: 'remote:cancel-pairing',
+  REMOTE_PAIRING_CODE_RECEIVED: 'remote:pairing-code-received',
+  REMOTE_PAIRING_EXPIRED: 'remote:pairing-expired',
+  REMOTE_PAIRING_ALREADY_PAIRED: 'remote:pairing-already-paired',
 } as const
+
+export type RemoteCommand =
+  | { type: 'send_message'; content: string }
+  | { type: 'interrupt' }
+  | { type: 'respond_permission'; requestId: string; decision: boolean }
+
+export interface PairedDevice {
+  id: string
+  name: string
+  pairedAt: string
+  lastSeenAt: string | null
+  online: boolean
+}

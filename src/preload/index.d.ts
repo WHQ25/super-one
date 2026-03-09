@@ -157,6 +157,21 @@ interface AppAPI {
   listPinnedSessions(): Promise<PinnedSessionEntry[]>
 
   trace(source: string, type: string, data: unknown, tag?: string): void
+
+  // Remote control
+  getRemoteConfig(): Promise<{ masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean } | null>
+  saveRemoteConfig(config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean }): Promise<void>
+  onRemoteCommand(callback: (command: unknown) => void): () => void
+  onClientRegistered(callback: (info: { deviceName: string }) => void): () => void
+  listPairedDevices(): Promise<import('../shared/agent-types').PairedDevice[]>
+  removePairedDevice(id: string): Promise<void>
+  onDeviceStatusChanged(callback: (device: { id: string; online: boolean }) => void): () => void
+  startPairing(): Promise<{ channelId: string; tempKeyHex: string }>
+  confirmPairing(code: string): Promise<void>
+  cancelPairing(): Promise<void>
+  onPairingCodeReceived(callback: (info: { code: string; deviceName: string }) => void): () => void
+  onPairingExpired(callback: () => void): () => void
+  onPairingAlreadyPaired(callback: (info: { deviceName: string }) => void): () => void
 }
 
 declare global {

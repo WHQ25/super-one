@@ -145,6 +145,15 @@ function migrate(db: Database.Database): void {
     );
   `)
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS paired_devices (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      paired_at TEXT NOT NULL,
+      last_seen_at TEXT
+    );
+  `)
+
   if (is.dev) seedDevProviders(db)
 }
 
@@ -315,4 +324,31 @@ export function closeDb(): void {
     db.close()
     db = null
   }
+}
+
+export interface PairedDeviceRow {
+  id: string
+  name: string
+  paired_at: string
+  last_seen_at: string | null
+}
+
+export function upsertPairedDevice(id: string, name: string): void {
+  getDb().prepare(`
+    INSERT INTO paired_devices (id, name, paired_at, last_seen_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, last_seen_at = excluded.last_seen_at
+  `).run(id, name, new Date().toISOString(), new Date().toISOString())
+}
+
+export function listPairedDevices(): PairedDeviceRow[] {
+  return getDb().prepare('SELECT * FROM paired_devices ORDER BY paired_at DESC').all() as PairedDeviceRow[]
+}
+
+export function deletePairedDevice(id: string): void {
+  getDb().prepare('DELETE FROM paired_devices WHERE id = ?').run(id)
+}
+
+export function isPairedDevice(id: string): boolean {
+  return !!getDb().prepare('SELECT 1 FROM paired_devices WHERE id = ?').get(id)
 }

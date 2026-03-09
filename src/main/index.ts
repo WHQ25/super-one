@@ -8,7 +8,7 @@ import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { fixPath } from './agent/resolve-cli'
+import { fixPath, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import {
   AgentIpcChannels,
@@ -854,9 +854,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ConnectResult> => {
     log.info('[CONNECT_CLAUDE] cwd:', app.getPath('userData'))
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
+    const cliPath = resolveSdkCli()
+    log.info('[CONNECT_CLAUDE] SDK CLI path=%s', cliPath ?? 'none')
     const q = query({
       prompt: 'hi',
-      options: { cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
+      options: { pathToClaudeCodeExecutable: cliPath, cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')

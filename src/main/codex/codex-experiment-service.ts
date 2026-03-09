@@ -410,6 +410,19 @@ function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadItem): C
         ?? prevCommand?.aggregatedOutput
         ?? ''
       const exitCode = readNumber(rec.exitCode) ?? readNumber(rec.exit_code)
+      const commandActions = Array.isArray(rec.commandActions)
+        ? rec.commandActions.map((a) => {
+            const r = asRecord(a)
+            if (!r) return null
+            return {
+              type: readString(r.type) ?? 'unknown',
+              ...(r.command != null ? { command: readString(r.command) ?? undefined } : {}),
+              ...(r.name != null ? { name: readString(r.name) ?? undefined } : {}),
+              ...(r.path != null ? { path: readString(r.path) ?? undefined } : {}),
+              ...(r.query != null ? { query: readString(r.query) ?? undefined } : {}),
+            }
+          }).filter((a): a is NonNullable<typeof a> => a !== null)
+        : undefined
       return {
         id,
         type: 'command_execution',
@@ -417,6 +430,7 @@ function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadItem): C
         aggregatedOutput,
         ...(exitCode !== null ? { exitCode } : {}),
         status: mapCommandExecutionStatus(rec.status ?? prevCommand?.status),
+        ...(commandActions ? { commandActions } : prevCommand?.commandActions ? { commandActions: prevCommand.commandActions } : {}),
       }
     }
 
@@ -1460,6 +1474,7 @@ export class CodexExperimentService {
             aggregatedOutput: `${previousCommand?.aggregatedOutput ?? ''}${delta}`,
             ...(previousCommand?.exitCode !== undefined ? { exitCode: previousCommand.exitCode } : {}),
             status: previousCommand?.status ?? 'in_progress',
+            ...(previousCommand?.commandActions ? { commandActions: previousCommand.commandActions } : {}),
           }
           upsertItem(itemOrder, itemMap, updated)
           callbacks?.onItemDelta?.('updated', updated)

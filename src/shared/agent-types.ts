@@ -95,6 +95,14 @@ export interface CodexReasoningItem {
   text: string
 }
 
+export interface CodexCommandAction {
+  type: string
+  command?: string
+  name?: string
+  path?: string
+  query?: string
+}
+
 export interface CodexCommandExecutionItem {
   id: string
   type: 'command_execution'
@@ -102,6 +110,7 @@ export interface CodexCommandExecutionItem {
   aggregatedOutput: string
   exitCode?: number
   status: CodexCommandExecutionStatus
+  commandActions?: CodexCommandAction[]
 }
 
 export interface CodexFileUpdateChange {

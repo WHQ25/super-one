@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, CreateProviderRequest, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, CreateProviderRequest, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -22,6 +22,8 @@ interface AgentAPI {
   getMcpServerStatus(projectPath: string): Promise<McpServerInfo[]>
   listDirectory(projectPath: string, relativePath: string): Promise<ListDirEntry[]>
   findLineNumber(projectPath: string, filePath: string, text: string): Promise<number | null>
+  searchFiles(projectPath: string, query: string, additionalDirs?: string[]): Promise<FileSearchResult[]>
+  searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[]): Promise<MentionSearchItem[]>
   readProjectAdditionalDirs(projectPath: string): Promise<string[]>
   writeProjectAdditionalDirs(projectPath: string, dirs: string[]): Promise<void>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void

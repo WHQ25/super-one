@@ -876,6 +876,8 @@ export const AgentIpcChannels = {
   MCP_SERVER_STATUS: 'agent:mcp-server-status',
   LIST_DIRECTORY: 'agent:list-directory',
   FIND_LINE_NUMBER: 'agent:find-line-number',
+  SEARCH_FILES: 'agent:search-files',
+  SEARCH_MENTIONS: 'agent:search-mentions',
 
   // Plugins
   PLUGINS_LIST: 'plugins:list',
@@ -1001,6 +1003,17 @@ export const AgentIpcChannels = {
   REMOTE_PAIRING_EXPIRED: 'remote:pairing-expired',
   REMOTE_PAIRING_ALREADY_PAIRED: 'remote:pairing-already-paired',
 } as const
+
+export interface FileSearchResult {
+  path: string
+  isDirectory: boolean
+  matchIndices: number[]
+  score: number
+}
+
+export type MentionSearchItem =
+  | { kind: 'file'; path: string; isDirectory: boolean; matchIndices: number[]; score: number }
+  | { kind: 'agent'; name: string; model: string; matchIndices: number[]; score: number }
 
 export type RemoteCommand =
   | { type: 'send_message'; content: string }

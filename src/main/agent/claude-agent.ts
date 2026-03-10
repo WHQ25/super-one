@@ -62,7 +62,7 @@ export function writeProjectAdditionalDirs(cwd: string, dirs: string[]): void {
   writeFileSync(settingsPath, JSON.stringify(data, null, 2))
 }
 
-const EXCLUDED_DIRS = new Set(['.', 'node_modules', 'dist', 'build', '__pycache__'])
+import { EXCLUDED_DIRS } from './fuzzy-file-search'
 
 export interface ClaudeAgentConfig {
   cwd: string

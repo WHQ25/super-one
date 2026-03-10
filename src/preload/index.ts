@@ -60,6 +60,12 @@ const agentAPI = {
   findLineNumber: (projectPath: string, filePath: string, text: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FIND_LINE_NUMBER, projectPath, filePath, text),
 
+  searchFiles: (projectPath: string, query: string, additionalDirs?: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.SEARCH_FILES, projectPath, query, additionalDirs),
+
+  searchMentions: (projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.SEARCH_MENTIONS, projectPath, query, agents, additionalDirs),
+
   readProjectAdditionalDirs: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, projectPath) as Promise<string[]>,
 

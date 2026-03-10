@@ -4,6 +4,7 @@ import { resolve } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, type ClaudeAgentConfig } from './claude-agent'
 import { AgentIpcChannels, type AgentEvent, type PermissionMode, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
+import { searchFiles, searchMentions, type AgentEntry } from './fuzzy-file-search'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -210,6 +211,20 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.FIND_LINE_NUMBER, async (_event, projectPath: string, filePath: string, text: string) => {
       return this.getAgent(projectPath).findLineNumber(filePath, text)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SEARCH_FILES, async (_event, projectPath: string, query: string, additionalDirs?: string[]) => {
+      const agent = this.agents.get(projectPath)
+      const cwd = agent?.getCwd() ?? projectPath
+      const roots = [cwd, ...(additionalDirs || [])]
+      return searchFiles(roots, query, 20)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SEARCH_MENTIONS, async (_event, projectPath: string, query: string, agents: AgentEntry[], additionalDirs?: string[]) => {
+      const agent = this.agents.get(projectPath)
+      const cwd = agent?.getCwd() ?? projectPath
+      const roots = [cwd, ...(additionalDirs || [])]
+      return searchMentions(roots, query, agents, 20)
     })
 
     // --- Additional directories ---
@@ -640,6 +655,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_STATUS)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
     ipcMain.removeHandler(AgentIpcChannels.FIND_LINE_NUMBER)
+    ipcMain.removeHandler(AgentIpcChannels.SEARCH_FILES)
+    ipcMain.removeHandler(AgentIpcChannels.SEARCH_MENTIONS)
     ipcMain.removeHandler(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS)
     ipcMain.removeHandler(AgentIpcChannels.WRITE_PROJECT_ADDITIONAL_DIRS)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_LIST)

@@ -675,7 +675,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           isCoding
             ? 'mx-3 mb-1 rounded-xl border border-border px-4 py-3'
             : 'border-t border-border px-3 py-2',
-          isDragging && 'ring-2 ring-blue-500/50'
+          isDragging && 'ring-2 ring-inset ring-blue-500/50'
         )}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}

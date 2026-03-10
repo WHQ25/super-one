@@ -44,7 +44,7 @@ export interface PerSessionState {
   promptSuggestion: string | null
   attachments: ImageAttachment[]
   mentions: Mention[]
-  pendingPermission: PermissionRequest | null
+  pendingPermissions: PermissionRequest[]
   permissionMode: PermissionMode
   pendingQuestion: AskUserQuestionRequest | null
   pendingPlanApproval: PlanApprovalRequest | null
@@ -114,7 +114,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     promptSuggestion: null,
     attachments: [],
     mentions: [],
-    pendingPermission: null,
+    pendingPermissions: [],
     permissionMode: 'default',
     pendingQuestion: null,
     pendingPlanApproval: null,
@@ -612,7 +612,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
             metadata: event.metadata ? { ...msg.metadata, ...event.metadata } : msg.metadata,
           }
         }),
-        pendingPermission: null,
+        pendingPermissions: [],
         pendingQuestion: null,
         pendingPlanApproval: null,
         awaitingAssistantReply: false,
@@ -640,7 +640,8 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       return { promptSuggestion: event.suggestion }
 
     case 'permission_request':
-      return { pendingPermission: event.request }
+      if (session.pendingPermissions.some((p) => p.requestId === event.request.requestId)) return {}
+      return { pendingPermissions: [...session.pendingPermissions, event.request] }
 
     case 'permission_mode_change':
       return { permissionMode: event.mode }
@@ -954,14 +955,14 @@ function _savePerSessionSnapshot(projectPath: string, sessionId: string, session
 
 function _computeHasPendingInteraction(project: ProjectState): boolean {
   return Object.values(project._sessions).some(
-    (s) => !!s.pendingPermission || !!s.pendingQuestion || !!s.pendingPlanApproval,
+    (s) => s.pendingPermissions.length > 0 || !!s.pendingQuestion || !!s.pendingPlanApproval,
   )
 }
 
 function _isLiveSession(session: PerSessionState | undefined): boolean {
   return !!session && (
     session.status === 'streaming'
-    || !!session.pendingPermission
+    || session.pendingPermissions.length > 0
     || !!session.pendingQuestion
     || !!session.pendingPlanApproval
     || !!session.awaitingAssistantReply
@@ -969,7 +970,7 @@ function _isLiveSession(session: PerSessionState | undefined): boolean {
 }
 
 function _needsForegroundActivation(session: PerSessionState): boolean {
-  return session.status === 'streaming' || !!session.pendingPermission || !!session.pendingQuestion || !!session.pendingPlanApproval
+  return session.status === 'streaming' || session.pendingPermissions.length > 0 || !!session.pendingQuestion || !!session.pendingPlanApproval
 }
 
 async function _ensureClaudeSessionReadyForSend(get: () => ChatStore, projectPath: string): Promise<void> {
@@ -1853,7 +1854,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (claudeFailed) {
       set((s) => updateActivePerSession(s, () => ({
         status: 'idle',
-        pendingPermission: null,
+        pendingPermissions: [],
         pendingQuestion: null,
         pendingPlanApproval: null,
       })))
@@ -1886,7 +1887,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => ({ ...updateActivePerSession(s,() => ({
       messages: [], session: null, totalCostUsd: 0, contextTokens: 0,
       sessionProvider: null, slashCommandOutput: null,
-      pendingPermission: null, pendingQuestion: null, pendingPlanApproval: null,
+      pendingPermissions: [], pendingQuestion: null, pendingPlanApproval: null,
       planApprovalOutcome: null, mentions: [], subagentTokens: {},
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
       awaitingAssistantReply: false,
@@ -2294,14 +2295,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     const session = getActivePerSession(get(), activeProject)
+    const respondedRequest = session.pendingPermissions.find((p) => p.requestId === requestId)
+    if (!respondedRequest) return
     if (session.sessionProvider === 'codex') {
       void window.app.codexRespondToPermission(activeProject, requestId, allow, alwaysAllow, reason)
     } else {
       void window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions)
     }
-    const updates: Partial<PerSessionState> = { pendingPermission: null }
+    const updates: Partial<PerSessionState> = {
+      pendingPermissions: session.pendingPermissions.filter((p) => p.requestId !== requestId),
+    }
     if (allow && selectedSuggestions) {
-      const mode = extractModeFromSuggestions(session.pendingPermission?.suggestions, selectedSuggestions)
+      const mode = extractModeFromSuggestions(respondedRequest?.suggestions, selectedSuggestions)
       if (mode) updates.permissionMode = mode as PermissionMode
     }
     set((s) => {

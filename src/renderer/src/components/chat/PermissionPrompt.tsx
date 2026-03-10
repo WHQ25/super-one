@@ -78,7 +78,7 @@ function SuggestionContent({ s }: { s: Record<string, unknown> }) {
 }
 
 export function PermissionPrompt() {
-  const pendingPermission = useActiveSession((s) => s.pendingPermission)
+  const pendingPermission = useActiveSession((s) => s.pendingPermissions[0] ?? null)
   const respondToPermission = useChatStore((s) => s.respondToPermission)
   const setPermissionMode = useChatStore((s) => s.setPermissionMode)
   const cwd = useActiveSession((s) => s.cwd)

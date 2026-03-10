@@ -387,7 +387,7 @@ describe('hasPendingInteraction', () => {
 
     const sessionWithPermission = {
       ...createDefaultPerSessionState(),
-      pendingPermission: { requestId: 'r1', toolName: 'Bash', description: 'run ls' } as never,
+      pendingPermissions: [{ requestId: 'r1', toolName: 'Bash', description: 'run ls' } as never],
     }
 
     useChatStore.setState({
@@ -408,7 +408,7 @@ describe('hasPendingInteraction', () => {
     }))
 
     const after = useChatStore.getState().projectSessions['/test']
-    expect(after._sessions['a'].pendingPermission).toBeTruthy()
+    expect(after._sessions['a'].pendingPermissions.length).toBeGreaterThan(0)
     expect(after.hasPendingInteraction).toBe(true)
   })
 })
@@ -1155,7 +1155,7 @@ describe('message_interrupted clears pending states', () => {
               ...createDefaultPerSessionState(),
               status: 'streaming' as const,
               messages: [{ id: msgId, role: 'assistant' as const, content: [], status: 'streaming' as const, createdAt: '', providerId: 'claude' }],
-              pendingPermission: { requestId: 'r1', toolName: 'Bash', description: 'run ls' } as never,
+              pendingPermissions: [{ requestId: 'r1', toolName: 'Bash', description: 'run ls' } as never],
               pendingQuestion: { requestId: 'q1', questions: [] } as never,
               pendingPlanApproval: { requestId: 'p1', planContent: '' } as never,
             },
@@ -1172,7 +1172,7 @@ describe('message_interrupted clears pending states', () => {
 
     const after = useChatStore.getState().projectSessions['/test']
     const session = after._sessions['a']
-    expect(session.pendingPermission).toBeNull()
+    expect(session.pendingPermissions).toEqual([])
     expect(session.pendingQuestion).toBeNull()
     expect(session.pendingPlanApproval).toBeNull()
     expect(session.messages[0].status).toBe('interrupted')
@@ -1192,7 +1192,7 @@ describe('hasPendingInteraction across multiple sessions', () => {
           _activeSessionId: 'a',
           hasPendingInteraction: true,
           _sessions: {
-            a: { ...createDefaultPerSessionState(), pendingPermission: { requestId: 'r1', toolName: 'Bash', description: 'ls' } as never },
+            a: { ...createDefaultPerSessionState(), pendingPermissions: [{ requestId: 'r1', toolName: 'Bash', description: 'ls' } as never] },
             b: { ...createDefaultPerSessionState(), pendingQuestion: { requestId: 'q1', question: 'pick' } as never },
           },
         },

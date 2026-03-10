@@ -1,5 +1,12 @@
 import '@testing-library/jest-dom/vitest'
 
+if (typeof globalThis.window !== 'undefined' && !(globalThis.window as unknown as Record<string, unknown>).app) {
+  const noop = () => Promise.resolve(undefined)
+  const w = globalThis.window as unknown as Record<string, unknown>
+  w.app = new Proxy({}, { get: () => noop })
+  w.agent = new Proxy({}, { get: () => noop })
+}
+
 if (typeof globalThis.localStorage === 'undefined') {
   const store = new Map<string, string>()
   const localStorage = {

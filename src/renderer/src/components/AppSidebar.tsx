@@ -42,11 +42,11 @@ type SortMode = 'recent' | 'added'
 
 /** Extract a short pending-reason string from the pending request objects. */
 function getPendingReason(
-  permission: PermissionRequest | null | undefined,
+  permissions: PermissionRequest[] | undefined,
   question: AskUserQuestionRequest | null | undefined,
   planApproval: PlanApprovalRequest | null | undefined,
 ): string | null {
-  if (permission) return `Allow ${permission.toolName}?`
+  if (permissions && permissions.length > 0) return `Allow ${permissions[0].toolName}?`
   if (question) return question.questions[0]?.question ?? 'Waiting for input'
   if (planApproval) return 'Review plan'
   return null
@@ -56,7 +56,7 @@ function isLiveSession(
   session:
     | {
       status?: string
-      pendingPermission?: PermissionRequest | null
+      pendingPermissions?: PermissionRequest[]
       pendingQuestion?: AskUserQuestionRequest | null
       pendingPlanApproval?: PlanApprovalRequest | null
       awaitingAssistantReply?: boolean
@@ -66,7 +66,7 @@ function isLiveSession(
 ): boolean {
   return !!isUnseen
     || session?.status === 'streaming'
-    || !!session?.pendingPermission
+    || (session?.pendingPermissions?.length ?? 0) > 0
     || !!session?.pendingQuestion
     || !!session?.pendingPlanApproval
     || !!session?.awaitingAssistantReply
@@ -485,7 +485,7 @@ export function AppSidebar() {
                                 const sessionEntry = projectSession?._sessions?.[session.sessionId]
                                 const isRunning = sessionEntry?.status === 'streaming'
                                 const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
-                                const pendingReason = getPendingReason(sessionEntry?.pendingPermission, sessionEntry?.pendingQuestion, sessionEntry?.pendingPlanApproval)
+                                const pendingReason = getPendingReason(sessionEntry?.pendingPermissions, sessionEntry?.pendingQuestion, sessionEntry?.pendingPlanApproval)
                                 return (
                                   <div key={session.sessionId}>
                                     <ContextMenu>

@@ -293,7 +293,7 @@ function BashTerminalView({
   const sentinelRef = useRef<HTMLDivElement>(null)
   const isLiveRunning = !!bashOutput && !bashOutput.finished
   const taskProgress = useActiveSession((s) => s.taskProgress[toolUseId])
-  const isPendingPermission = useActiveSession((s) => s.pendingPermission?.toolUseId === toolUseId)
+  const isPendingPermission = useActiveSession((s) => s.pendingPermissions.some((p) => p.toolUseId === toolUseId))
   const hasResult = !!fallbackResult || isDenied
   const isRunning = (isStreaming && !hasResult && !isPendingPermission) || isLiveRunning
   const hasTaskState = !!taskProgress

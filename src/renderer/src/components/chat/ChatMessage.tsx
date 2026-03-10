@@ -536,7 +536,7 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
     frozenTokensRef.current = streamingTokens
   }
   const pendingApproval = useActiveSession((s) =>
-    isStreaming && (!!s.pendingPermission || !!s.pendingQuestion || !!s.pendingPlanApproval),
+    isStreaming && (s.pendingPermissions.length > 0 || !!s.pendingQuestion || !!s.pendingPlanApproval),
   )
   const stallLevel = useStallLevel(isStreaming)
   const pausedMsRef = useRef(0)

@@ -135,7 +135,7 @@ beforeEach(() => {
         'sid-1': {
           messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
           status: 'idle',
-          pendingPermission: null,
+          pendingPermissions: [],
           pendingQuestion: null,
           pendingPlanApproval: null,
           awaitingAssistantReply: false,
@@ -199,7 +199,7 @@ describe('AppSidebar interactions', () => {
           'sid-a': {
             messages: [{ role: 'user', content: [{ type: 'text', text: 'a' }] }],
             status: 'idle',
-            pendingPermission: null,
+            pendingPermissions: [],
             pendingQuestion: null,
             pendingPlanApproval: null,
             awaitingAssistantReply: false,
@@ -209,7 +209,7 @@ describe('AppSidebar interactions', () => {
           'sid-b': {
             messages: [{ role: 'user', content: [{ type: 'text', text: 'b' }] }],
             status: 'idle',
-            pendingPermission: null,
+            pendingPermissions: [],
             pendingQuestion: null,
             pendingPlanApproval: null,
             awaitingAssistantReply: false,
@@ -263,7 +263,7 @@ describe('AppSidebar interactions', () => {
           'sid-1': {
             messages: [{ role: 'user', content: [{ type: 'text', text: 'old' }] }],
             status: 'idle',
-            pendingPermission: null,
+            pendingPermissions: [],
             pendingQuestion: null,
             pendingPlanApproval: null,
             awaitingAssistantReply: false,
@@ -273,7 +273,7 @@ describe('AppSidebar interactions', () => {
           '__draft__': {
             messages: [{ role: 'user', content: [{ type: 'text', text: 'Pending first reply' }] }],
             status: 'idle',
-            pendingPermission: null,
+            pendingPermissions: [],
             pendingQuestion: null,
             pendingPlanApproval: null,
             awaitingAssistantReply: true,
@@ -289,7 +289,7 @@ describe('AppSidebar interactions', () => {
           'sid-b': {
             messages: [{ role: 'user', content: [{ type: 'text', text: 'current project' }] }],
             status: 'idle',
-            pendingPermission: null,
+            pendingPermissions: [],
             pendingQuestion: null,
             pendingPlanApproval: null,
             awaitingAssistantReply: false,

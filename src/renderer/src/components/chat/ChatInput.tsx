@@ -15,7 +15,8 @@ import { SlashDecoration } from './slash-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
 import type { MentionNodeAttrs } from './mention-node'
 import type { SlashCommandInfo } from '../../../../shared/agent-types'
-import type { ImageAttachment } from '../../../../shared/agent-types'
+import { fuzzyMatch } from '@/lib/fuzzy-match'
+import { HighlightedText } from '@/components/ui/HighlightedText'
 import { toMentionPath } from './chat-input-utils'
 import { AttachmentBar } from './AttachmentBar'
 import { ModelSelector } from './ModelSelector'
@@ -127,13 +128,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       if (activeProviderForResources === 'codex') {
         if (!text.startsWith('/')) return []
         const query = text.slice(1).toLowerCase()
-        return activeSlashCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(query))
+        return activeSlashCommands
+          .map((cmd) => {
+            const r = fuzzyMatch(query, cmd.name)
+            return { ...cmd, matchIndices: r.indices, score: r.score, matched: r.match }
+          })
+          .filter((cmd) => cmd.matched)
+          .sort((a, b) => b.score - a.score)
       }
       if (!text.startsWith('/') || text.includes(' ')) return []
       const query = text.slice(1).toLowerCase()
-      return activeSlashCommands.filter(
-        (cmd) => cmd.name.toLowerCase().startsWith(query) && !HIDDEN_COMMANDS.has(cmd.name)
-      )
+      return activeSlashCommands
+        .filter((cmd) => !HIDDEN_COMMANDS.has(cmd.name))
+        .map((cmd) => {
+          const nameResult = fuzzyMatch(query, cmd.name)
+          const descResult = cmd.description ? fuzzyMatch(query, cmd.description) : null
+          const bestScore = descResult && descResult.match && descResult.score > nameResult.score
+            ? descResult.score : nameResult.score
+          const matched = nameResult.match || (descResult?.match ?? false)
+          return { ...cmd, matchIndices: nameResult.indices, score: bestScore, matched }
+        })
+        .filter((cmd) => cmd.matched)
+        .sort((a, b) => b.score - a.score)
     }, [activeProviderForResources, text, activeSlashCommands])
     matchingCommandsRef.current = matchingCommands
     slashDismissedRef.current = slashDismissed
@@ -164,20 +180,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     )
 
     const handleMentionSelect = useCallback(
-      (value: string, action: 'navigate' | 'select') => {
+      (value: string, _action: 'navigate' | 'select') => {
         const info = mentionInfoRef.current
         const ed = editorRef.current
         if (!info || !ed) return
-
-        if (action === 'navigate') {
-          ed.chain()
-            .focus()
-            .deleteRange({ from: info.atPos, to: info.atPos + 1 + info.query.length })
-            .insertContentAt(info.atPos, '@' + value)
-            .run()
-          setMentionIndex(0)
-          return
-        }
 
         const isAgent = showAgentMentions && agents.some((a) => a.name === value)
         const kind: MentionKind = isAgent ? 'agent' : value.endsWith('/') ? 'directory' : 'file'
@@ -683,12 +689,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   }`}
                 >
                   <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                    <span className="text-blue-400">/{cmd.name}</span>
+                    <span className="text-blue-400">/<HighlightedText text={cmd.name} indices={cmd.matchIndices} highlightClassName="text-orange-400 font-medium" /></span>
                     {cmd.argumentHint && (
                       <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
                     )}
                     {cmd.isSkill && (
-                      <span className="rounded bg-emerald-900/50 px-1 py-px text-[10px] font-normal text-emerald-400">
+                      <span className="rounded bg-emerald-100 px-1 py-px text-[10px] font-normal text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400">
                         skill
                       </span>
                     )}

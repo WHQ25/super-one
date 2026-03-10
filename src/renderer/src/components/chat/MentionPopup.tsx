@@ -1,17 +1,15 @@
-import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
+import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
 import { Bot, Folder } from 'lucide-react'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/ui/kbd'
+import { HighlightedText } from '@/components/ui/HighlightedText'
 import { useChatStore, useActiveSession } from '@/stores/chat'
-import type { AgentInfo, ListDirEntry } from '../../../../shared/agent-types'
+import type { ListDirEntry, MentionSearchItem } from '../../../../shared/agent-types'
 
 export interface MentionPopupHandle {
-  /** Tab: directory → navigate into; file/agent → select */
   confirmTab: () => void
-  /** Enter: always select (directory also selected directly) */
   confirmEnter: () => void
-  /** Get current item count */
   getItemCount: () => number
 }
 
@@ -26,64 +24,80 @@ interface MentionPopupProps {
 }
 
 type FlatItem =
-  | { kind: 'file'; entry: ListDirEntry }
-  | { kind: 'agent'; agent: AgentInfo }
+  | { kind: 'file'; path: string; isDirectory: boolean; matchIndices: number[] }
+  | { kind: 'dir-entry'; entry: ListDirEntry }
+  | { kind: 'agent'; name: string; model: string; matchIndices: number[] }
+
+function HighlightedPath({ path, indices }: { path: string; indices: number[] }) {
+  return <HighlightedText text={path} indices={indices} className="truncate" />
+}
 
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
-  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onClose, showAgents = true, rounded }, ref) {
+  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, showAgents = true, rounded }, ref) {
     const activeProject = useChatStore((s) => s.activeProject)
     const agents = useActiveSession((s) => s.agents)
+    const additionalDirs = useActiveSession((s) => s.additionalDirs)
     const [dirEntries, setDirEntries] = useState<ListDirEntry[]>([])
-    const [currentPath, setCurrentPath] = useState('')
+    const [searchResults, setSearchResults] = useState<MentionSearchItem[]>([])
     const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
+    const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-    const { dirPath, filter } = parseMentionQuery(query)
+    const agentEntries = useMemo(
+      () => showAgents ? agents.map((a) => ({ name: a.name, model: a.model || '' })) : [],
+      [agents, showAgents]
+    )
 
-    // Fetch directory contents when dirPath changes
     useEffect(() => {
-      const pathToList = dirPath || ''
-      setCurrentPath(pathToList)
+      if (query) {
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        debounceRef.current = setTimeout(() => {
+          if (!activeProject) return
+          window.agent.searchMentions(activeProject, query, agentEntries, additionalDirs)
+            .then(setSearchResults).catch(() => setSearchResults([]))
+        }, 150)
+        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+      }
+      setSearchResults([])
       if (!activeProject) return
-      window.agent.listDirectory(activeProject, pathToList).then(setDirEntries).catch(() => setDirEntries([]))
-    }, [dirPath, activeProject])
+      window.agent.listDirectory(activeProject, '').then(setDirEntries).catch(() => setDirEntries([]))
+    }, [query, activeProject, additionalDirs, agentEntries])
 
-    // Scroll selected into view
     useEffect(() => {
       if (selectedIndex >= 0) {
         itemRefs.current.get(selectedIndex)?.scrollIntoView({ block: 'nearest' })
       }
     }, [selectedIndex])
 
-    // Filter files
-    const filteredFiles = filter
-      ? dirEntries.filter((e) => e.name.toLowerCase().includes(filter.toLowerCase()))
-      : dirEntries
+    const isSearchMode = !!query
 
-    // Filter agents (only when not navigating into a subdirectory)
-    const filteredAgents = !showAgents
-      ? []
-      : dirPath
-      ? [] // Inside a subdirectory — don't show agents
-      : filter
-        ? agents.filter((a) => a.name.toLowerCase().includes(filter.toLowerCase()))
-        : agents
+    const flatItems: FlatItem[] = useMemo(() => {
+      if (!isSearchMode) {
+        const items: FlatItem[] = dirEntries.map((entry): FlatItem => ({ kind: 'dir-entry', entry }))
+        for (const a of agentEntries) {
+          items.push({ kind: 'agent', name: a.name, model: a.model, matchIndices: [] })
+        }
+        return items
+      }
 
-    // Build flat item list: files first, then agents
-    const flatItems: FlatItem[] = [
-      ...filteredFiles.map((entry): FlatItem => ({ kind: 'file', entry })),
-      ...filteredAgents.map((agent): FlatItem => ({ kind: 'agent', agent })),
-    ]
+      return searchResults.map((item): FlatItem => {
+        if (item.kind === 'agent') {
+          return { kind: 'agent', name: item.name, model: item.model, matchIndices: item.matchIndices }
+        }
+        return { kind: 'file', path: item.path, isDirectory: item.isDirectory, matchIndices: item.matchIndices }
+      })
+    }, [isSearchMode, searchResults, dirEntries, agentEntries])
 
-    const handleFileClick = useCallback(
-      (entry: ListDirEntry, action: 'navigate' | 'select') => {
-        const fullPath = currentPath ? `${currentPath}/${entry.name}` : entry.name
-        if (entry.isDirectory) {
-          onSelect(fullPath + '/', action)
+    const handleItemClick = useCallback(
+      (item: FlatItem) => {
+        if (item.kind === 'file') {
+          onSelect(item.path, 'select')
+        } else if (item.kind === 'dir-entry') {
+          onSelect(item.entry.isDirectory ? item.entry.name + '/' : item.entry.name, 'select')
         } else {
-          onSelect(fullPath, 'select')
+          onSelect(item.name, 'select')
         }
       },
-      [currentPath, onSelect]
+      [onSelect]
     )
 
     const getSelectedItem = useCallback(() => {
@@ -92,145 +106,117 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       return flatItems[idx]
     }, [flatItems, selectedIndex])
 
-    // Expose imperative methods for parent keyboard handling
     useImperativeHandle(
       ref,
       () => ({
         confirmTab: () => {
           const item = getSelectedItem()
-          if (!item) return
-          if (item.kind === 'file') {
-            // Directory → navigate into; file → select
-            handleFileClick(item.entry, item.entry.isDirectory ? 'navigate' : 'select')
-          } else {
-            onSelect(item.agent.name, 'select')
-          }
+          if (item) handleItemClick(item)
         },
         confirmEnter: () => {
           const item = getSelectedItem()
-          if (!item) return
-          if (item.kind === 'file') {
-            handleFileClick(item.entry, 'select')
-          } else {
-            onSelect(item.agent.name, 'select')
-          }
+          if (item) handleItemClick(item)
         },
         getItemCount: () => flatItems.length,
       }),
-      [getSelectedItem, handleFileClick, onSelect]
+      [getSelectedItem, handleItemClick, flatItems.length]
     )
-
-    const breadcrumbs = currentPath ? currentPath.split('/').filter(Boolean) : []
-
-    // Find where agents section starts (for the section header)
-    const agentStartIdx = filteredFiles.length
 
     return (
       <div className={cn("absolute bottom-full left-0 right-0 z-10 max-h-72 overflow-hidden border border-border bg-card flex flex-col", rounded ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg')}>
-        {/* Content */}
         <div className="overflow-y-auto p-1 flex-1 min-h-0">
-          {/* Breadcrumbs */}
-          {breadcrumbs.length > 0 && (
-            <div className="flex items-center gap-0.5 px-2 py-1 text-[10px] text-muted-foreground">
+          {flatItems.map((item, i) => {
+            if (item.kind === 'agent') {
+              return (
+                <button
+                  key={`a-${item.name}`}
+                  ref={(el) => {
+                    if (el) itemRefs.current.set(i, el)
+                    else itemRefs.current.delete(i)
+                  }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onSelect(item.name, 'select')}
+                  onMouseEnter={() => onSetSelectedIndex(i)}
+                  className={cn(
+                    'flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs transition-colors',
+                    i === selectedIndex
+                      ? 'bg-muted text-foreground'
+                      : 'text-foreground hover:bg-muted/50'
+                  )}
+                >
+                  <Bot className="size-3.5 shrink-0 text-purple-400" />
+                  <span className="shrink-0 font-medium text-purple-400">
+                    <HighlightedPath path={item.name} indices={item.matchIndices} />
+                  </span>
+                  <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
+                    {item.model || 'inherit'}
+                  </span>
+                </button>
+              )
+            }
+
+            if (item.kind === 'file') {
+              const fileName = item.path.split('/').pop() || item.path
+              return (
+                <button
+                  key={`s-${item.path}`}
+                  ref={(el) => {
+                    if (el) itemRefs.current.set(i, el)
+                    else itemRefs.current.delete(i)
+                  }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onSelect(item.path, 'select')}
+                  onMouseEnter={() => onSetSelectedIndex(i)}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
+                    i === selectedIndex
+                      ? 'bg-muted text-foreground'
+                      : 'text-foreground hover:bg-muted/50'
+                  )}
+                >
+                  {item.isDirectory ? (
+                    <Folder className="size-3.5 shrink-0 text-blue-500" />
+                  ) : (
+                    <FileIcon name={fileName} size={14} />
+                  )}
+                  <HighlightedPath path={item.path} indices={item.matchIndices} />
+                </button>
+              )
+            }
+
+            return (
               <button
+                key={`f-${item.entry.name}`}
+                ref={(el) => {
+                  if (el) itemRefs.current.set(i, el)
+                  else itemRefs.current.delete(i)
+                }}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => onSelect('', 'navigate')}
-                className="hover:text-foreground"
+                onClick={() => onSelect(item.entry.isDirectory ? item.entry.name + '/' : item.entry.name, 'select')}
+                onMouseEnter={() => onSetSelectedIndex(i)}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
+                  i === selectedIndex
+                    ? 'bg-muted text-foreground'
+                    : 'text-foreground hover:bg-muted/50'
+                )}
               >
-                root
+                {item.entry.isDirectory ? (
+                  <Folder className="size-3.5 shrink-0 text-blue-500" />
+                ) : (
+                  <FileIcon name={item.entry.name} size={14} />
+                )}
+                <span className="truncate">{item.entry.name}</span>
               </button>
-              {breadcrumbs.map((seg, i) => (
-                <span key={i} className="flex items-center gap-0.5">
-                  <span>/</span>
-                  <button
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => onSelect(breadcrumbs.slice(0, i + 1).join('/') + '/', 'navigate')}
-                    className="hover:text-foreground"
-                  >
-                    {seg}
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Files section */}
-          {filteredFiles.length > 0 && filteredAgents.length > 0 && (
-            <div className="px-2 pt-1 pb-0.5 text-[10px] font-medium uppercase text-muted-foreground">
-              Files
-            </div>
-          )}
-          {filteredFiles.map((entry, i) => (
-            <button
-              key={`f-${entry.name}`}
-              ref={(el) => {
-                if (el) itemRefs.current.set(i, el)
-                else itemRefs.current.delete(i)
-              }}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => handleFileClick(entry, entry.isDirectory ? 'navigate' : 'select')}
-              onMouseEnter={() => onSetSelectedIndex(i)}
-              className={cn(
-                'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-                i === selectedIndex
-                  ? 'bg-muted text-foreground'
-                  : 'text-foreground hover:bg-muted/50'
-              )}
-            >
-              {entry.isDirectory ? (
-                <Folder className="size-3.5 shrink-0 text-blue-500" />
-              ) : (
-                <FileIcon name={entry.name} size={14} />
-              )}
-              <span className="truncate">{entry.name}</span>
-            </button>
-          ))}
-
-          {/* Agents section */}
-          {filteredAgents.length > 0 && (
-            <>
-              <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium uppercase text-muted-foreground">
-                Agents
-              </div>
-              {filteredAgents.map((agent, ai) => {
-                const flatIdx = agentStartIdx + ai
-                return (
-                  <button
-                    key={`a-${agent.name}`}
-                    ref={(el) => {
-                      if (el) itemRefs.current.set(flatIdx, el)
-                      else itemRefs.current.delete(flatIdx)
-                    }}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => onSelect(agent.name, 'select')}
-                    onMouseEnter={() => onSetSelectedIndex(flatIdx)}
-                    className={cn(
-                      'flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs transition-colors',
-                      flatIdx === selectedIndex
-                        ? 'bg-muted text-foreground'
-                        : 'text-foreground hover:bg-muted/50'
-                    )}
-                  >
-                    <Bot className="size-3.5 shrink-0 text-purple-400" />
-                    <span className="shrink-0 font-medium text-purple-400">{agent.name}</span>
-                    <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
-                      {agent.model || 'inherit'}
-                    </span>
-                  </button>
-                )
-              })}
-            </>
-          )}
+            )
+          })}
 
           {flatItems.length === 0 && (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">No matches</div>
           )}
         </div>
 
-        {/* Footer hint */}
         <div className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground shrink-0">
-          <Kbd>⇥</Kbd> autocomplete
-          <span className="mx-1.5">&middot;</span>
           <Kbd>↵</Kbd> select
           <span className="mx-1.5">&middot;</span>
           <Kbd>↑↓</Kbd> navigate
@@ -241,13 +227,3 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     )
   }
 )
-
-function parseMentionQuery(query: string): { dirPath: string; filter: string } {
-  if (!query) return { dirPath: '', filter: '' }
-  const lastSlash = query.lastIndexOf('/')
-  if (lastSlash === -1) return { dirPath: '', filter: query }
-  return {
-    dirPath: query.slice(0, lastSlash) || '',
-    filter: query.slice(lastSlash + 1),
-  }
-}

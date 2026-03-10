@@ -1,80 +1,67 @@
-import { useEffect, useCallback, useRef, memo } from 'react'
+import { useEffect, useCallback, useRef, useState, type DragEvent, type RefObject } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ChevronRight } from 'lucide-react'
-import { FileIcon, FolderIcon } from '@/components/ui/FileIcon'
-import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
-import type { GitFileStatus } from '../../../../shared/agent-types'
+import { TreeRow, TREE_DND_MIME } from './TreeRow'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
-const STATUS_COLOR: Record<string, string> = {
-  M: 'text-yellow-400',
-  A: 'text-green-400',
-  D: 'text-red-400',
-  R: 'text-blue-400',
-  C: 'text-blue-400',
-  '?': 'text-sidebar-foreground/50',
-  U: 'text-orange-400',
-  '!': 'text-sidebar-foreground/30',
-}
+const EDGE_SCROLL_ZONE = 40
+const EDGE_SCROLL_SPEED = 8
 
-function getStatusColor(status: GitFileStatus | null | undefined): string {
-  if (!status) return 'text-sidebar-foreground'
-  return STATUS_COLOR[status] ?? 'text-sidebar-foreground'
-}
+function useAutoScroll(scrollRef: RefObject<HTMLDivElement | null>) {
+  const rafRef = useRef(0)
+  const speedRef = useRef(0)
 
-const TreeRow = memo(function TreeRow({
-  item,
-  currentFolder,
-  isSelected,
-}: {
-  item: VisibleItem
-  currentFolder: string
-  isSelected: boolean
-}) {
-  const toggleDir = useFileTreeStore((s) => s.toggleDir)
-  const colorClass = getStatusColor(item.gitStatus)
+  const tick = useCallback(() => {
+    const el = scrollRef.current
+    if (!el || speedRef.current === 0) return
+    el.scrollTop += speedRef.current
+    rafRef.current = requestAnimationFrame(tick)
+  }, [scrollRef])
 
-  const handleClick = useCallback(() => {
-    if (item.isDirectory) {
-      toggleDir(currentFolder, item.path)
+  const update = useCallback((clientY: number) => {
+    const el = scrollRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const top = clientY - rect.top
+    const bottom = rect.bottom - clientY
+
+    let speed = 0
+    if (top < EDGE_SCROLL_ZONE) speed = -EDGE_SCROLL_SPEED
+    else if (bottom < EDGE_SCROLL_ZONE) speed = EDGE_SCROLL_SPEED
+
+    if (speed !== 0 && speedRef.current === 0) {
+      speedRef.current = speed
+      rafRef.current = requestAnimationFrame(tick)
     } else {
-      useSourceControlStore.getState().selectFile(currentFolder, item.path)
-      useAppStore.getState().setShowFilePanel(true)
-      useAppStore.getState().setFilePanelView('file')
+      speedRef.current = speed
     }
-  }, [item.path, item.isDirectory, currentFolder, toggleDir])
+  }, [scrollRef, tick])
 
-  return (
-    <button
-      onClick={handleClick}
-      className={cn(
-        'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors hover:bg-sidebar-accent',
-        !item.isDirectory && isSelected && 'bg-sidebar-accent',
-      )}
-      style={{ paddingLeft: `${item.depth * 16 + 8}px` }}
-    >
-      {item.isDirectory ? (
-        <ChevronRight className={cn(
-          'size-3.5 shrink-0 text-sidebar-foreground/70 transition-transform duration-150',
-          item.isExpanded && 'rotate-90',
-        )} />
-      ) : (
-        <span className="w-3.5 shrink-0" />
-      )}
-      {item.isDirectory ? <FolderIcon name={item.name} size={15} /> : <FileIcon name={item.name} size={15} />}
-      <span className={cn('min-w-0 truncate', colorClass)}>{item.name}</span>
-    </button>
-  )
-}, (prev, next) =>
-  prev.item.path === next.item.path &&
-  prev.item.isExpanded === next.item.isExpanded &&
-  prev.item.gitStatus === next.item.gitStatus &&
-  prev.item.hasChildren === next.item.hasChildren &&
-  prev.isSelected === next.isSelected &&
-  prev.currentFolder === next.currentFolder
-)
+  const stop = useCallback(() => {
+    speedRef.current = 0
+    cancelAnimationFrame(rafRef.current)
+  }, [])
+
+  useEffect(() => () => { cancelAnimationFrame(rafRef.current) }, [])
+
+  return { update, stop }
+}
+
+interface DeleteTarget {
+  path: string
+  name: string
+  isDirectory: boolean
+}
 
 export function FileTree() {
   const currentFolder = useAppStore((s) => s.currentFolder)
@@ -82,10 +69,18 @@ export function FileTree() {
   const visibleList = useFileTreeStore((s) => s._visibleList)
   const visibleVersion = useFileTreeStore((s) => s._visibleVersion)
   const fetchTree = useFileTreeStore((s) => s.fetchTree)
+  const renamingPath = useFileTreeStore((s) => s.renamingPath)
+  const moveFile = useFileTreeStore((s) => s.moveFile)
+  const copyFilesIn = useFileTreeStore((s) => s.copyFilesIn)
+  const deleteFile = useFileTreeStore((s) => s.deleteFile)
   const selectedFile = useSourceControlStore((s) => s.selectedFile)
   const folderName = currentFolder?.split('/').pop() ?? 'Project'
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  const dragCounterRef = useRef(0)
+  const [externalDragOver, setExternalDragOver] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const autoScroll = useAutoScroll(scrollRef)
 
   const virtualizer = useVirtualizer({
     count: visibleList.length,
@@ -103,6 +98,71 @@ export function FileTree() {
     if (currentFolder) fetchTree(currentFolder)
   }, [currentFolder, fetchTree])
 
+  const isExternalFileDrag = useCallback((e: DragEvent) => {
+    return e.dataTransfer.types.includes('Files') && !e.dataTransfer.types.includes(TREE_DND_MIME)
+  }, [])
+
+  const handleContainerDragEnter = useCallback((e: DragEvent) => {
+    if (isExternalFileDrag(e)) {
+      e.preventDefault()
+      dragCounterRef.current++
+      if (dragCounterRef.current === 1) setExternalDragOver(true)
+    }
+  }, [isExternalFileDrag])
+
+  const handleContainerDragLeave = useCallback((e: DragEvent) => {
+    if (isExternalFileDrag(e)) {
+      dragCounterRef.current--
+      if (dragCounterRef.current === 0) {
+        setExternalDragOver(false)
+        autoScroll.stop()
+      }
+    }
+  }, [isExternalFileDrag, autoScroll])
+
+  const handleContainerDragOver = useCallback((e: DragEvent) => {
+    autoScroll.update(e.clientY)
+    if (isExternalFileDrag(e)) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    } else if (e.dataTransfer.types.includes(TREE_DND_MIME)) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move'
+    }
+  }, [isExternalFileDrag, autoScroll])
+
+  const handleContainerDrop = useCallback((e: DragEvent) => {
+    autoScroll.stop()
+    dragCounterRef.current = 0
+    setExternalDragOver(false)
+
+    const treePath = e.dataTransfer.getData(TREE_DND_MIME)
+    if (treePath) {
+      e.preventDefault()
+      if (currentFolder) moveFile(currentFolder, treePath, '')
+      return
+    }
+
+    if (!currentFolder || !e.dataTransfer.files.length || e.defaultPrevented) return
+    e.preventDefault()
+    const paths: string[] = []
+    for (const file of e.dataTransfer.files) {
+      const p = window.app.getPathForFile(file)
+      if (p) paths.push(p)
+    }
+    if (paths.length > 0) copyFilesIn(currentFolder, '', paths)
+  }, [currentFolder, copyFilesIn, moveFile, autoScroll])
+
+  const handleDeleteRequest = useCallback((item: VisibleItem) => {
+    setDeleteTarget({ path: item.path, name: item.name, isDirectory: item.isDirectory })
+  }, [])
+
+  const confirmDelete = useCallback(() => {
+    if (!currentFolder || !deleteTarget) return
+    deleteFile(currentFolder, deleteTarget.path)
+    setDeleteTarget(null)
+  }, [currentFolder, deleteTarget, deleteFile])
+
   const isEmpty = visibleList.length === 0 && !loading
 
   return (
@@ -111,15 +171,22 @@ export function FileTree() {
         <span className="text-xs font-medium text-sidebar-foreground/70">{folderName}</span>
       </div>
 
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
         {isEmpty ? (
           <div className="flex items-center justify-center p-4 text-xs text-sidebar-foreground/50">
             No files
           </div>
         ) : (
-          <div ref={scrollRef} className="h-full overflow-auto">
+          <div
+            ref={scrollRef}
+            className="h-full overflow-auto"
+            onDragEnter={handleContainerDragEnter}
+            onDragLeave={handleContainerDragLeave}
+            onDragOver={handleContainerDragOver}
+            onDrop={handleContainerDrop}
+          >
             <div
-              style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}
+              style={{ height: `${virtualizer.getTotalSize() + 40}px`, position: 'relative' }}
             >
               {virtualizer.getVirtualItems().map((vRow) => {
                 const item = visibleList[vRow.index]
@@ -140,14 +207,41 @@ export function FileTree() {
                       item={item}
                       currentFolder={currentFolder!}
                       isSelected={selectedFile === item.path}
+                      isRenaming={renamingPath === item.path}
+                      onDeleteRequest={handleDeleteRequest}
                     />
                   </div>
                 )
               })}
             </div>
+
+            {externalDragOver && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-md border-2 border-dashed border-primary/50 bg-primary/5">
+                <span className="text-sm font-medium text-primary/70">Drop files here</span>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Move to Trash</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to move &quot;{deleteTarget?.name}&quot; to the trash?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Move to Trash
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

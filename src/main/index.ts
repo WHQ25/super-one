@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, powerMonitor, protocol, shell } from 'electron'
 import { join, dirname, basename, resolve, extname, relative } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { readFile, readdir } from 'fs/promises'
+import { readFile, readdir, rename, cp, access } from 'fs/promises'
 import { homedir } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-security'
 import { execFile, execFileSync, spawn } from 'child_process'
@@ -25,6 +25,7 @@ import {
   type StartupData,
   type FileTreeEntry,
   type GitFileStatus,
+  type FileOpResult,
 } from '../shared/agent-types'
 import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
@@ -765,6 +766,80 @@ function registerIpcHandlers(): void {
       log.error('[GIT_LIST_DIR] error:', err)
       return []
     }
+  })
+
+  function validatePathInProject(folderPath: string, relPath: string): string {
+    const absPath = resolve(folderPath, relPath)
+    if (!absPath.startsWith(folderPath + '/') && absPath !== folderPath) {
+      throw new Error('Path escapes project directory')
+    }
+    return absPath
+  }
+
+  ipcMain.handle(AgentIpcChannels.FILE_MOVE, async (_event, folderPath: string, srcRelPath: string, destDirRelPath: string): Promise<FileOpResult> => {
+    try {
+      const srcAbs = validatePathInProject(folderPath, srcRelPath)
+      const destDirAbs = validatePathInProject(folderPath, destDirRelPath)
+      const destAbs = join(destDirAbs, basename(srcAbs))
+      try {
+        await access(destAbs)
+        return { ok: false, error: `Target already exists: ${basename(srcAbs)}` }
+      } catch { /* target doesn't exist, good */ }
+      await rename(srcAbs, destAbs)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.FILE_COPY_IN, async (_event, folderPath: string, destDirRelPath: string, absolutePaths: string[]): Promise<FileOpResult> => {
+    try {
+      const destDirAbs = validatePathInProject(folderPath, destDirRelPath)
+      for (const srcPath of absolutePaths) {
+        const name = basename(srcPath)
+        const destAbs = join(destDirAbs, name)
+        await cp(srcPath, destAbs, { recursive: true })
+      }
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.FILE_DELETE, async (_event, folderPath: string, relPath: string): Promise<FileOpResult> => {
+    try {
+      const absPath = validatePathInProject(folderPath, relPath)
+      await shell.trashItem(absPath)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.FILE_RENAME, async (_event, folderPath: string, relPath: string, newName: string): Promise<FileOpResult> => {
+    try {
+      if (newName.includes('/') || newName.includes('\\')) {
+        return { ok: false, error: 'Name cannot contain path separators' }
+      }
+      const oldAbs = validatePathInProject(folderPath, relPath)
+      const newAbs = join(dirname(oldAbs), newName)
+      if (!newAbs.startsWith(folderPath + '/')) {
+        return { ok: false, error: 'Renamed path escapes project directory' }
+      }
+      try {
+        await access(newAbs)
+        return { ok: false, error: `Target already exists: ${newName}` }
+      } catch { /* target doesn't exist, good */ }
+      await rename(oldAbs, newAbs)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.FILE_SHOW_IN_FOLDER, (_event, folderPath: string, relPath: string) => {
+    const absPath = validatePathInProject(folderPath, relPath)
+    shell.showItemInFolder(absPath)
   })
 
   const testInstall = process.env.TEST_INSTALL_CLAUDE === '1'

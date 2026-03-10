@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { FileTreeEntry, GitFileStatus } from '../../../shared/agent-types'
+import type { FileOpResult, FileTreeEntry, GitFileStatus } from '../../../shared/agent-types'
 
 export interface FlatNode {
   entry: FileTreeEntry
@@ -25,6 +25,8 @@ interface FileTreeState {
   expandedDirs: Set<string>
   loadingDirs: Set<string>
   loading: boolean
+  renamingPath: string | null
+  dragOverPath: string | null
   _visibleList: VisibleItem[]
   _visibleVersion: number
 
@@ -32,6 +34,12 @@ interface FileTreeState {
   refreshTree: (projectPath: string) => Promise<void>
   toggleDir: (projectPath: string, path: string) => void
   reset: () => void
+  setRenamingPath: (path: string | null) => void
+  setDragOverPath: (path: string | null) => void
+  moveFile: (projectPath: string, srcPath: string, destDirPath: string) => Promise<FileOpResult>
+  copyFilesIn: (projectPath: string, destDirPath: string, absolutePaths: string[]) => Promise<FileOpResult>
+  deleteFile: (projectPath: string, relPath: string) => Promise<FileOpResult>
+  renameFile: (projectPath: string, oldPath: string, newName: string) => Promise<FileOpResult>
 }
 
 function entriesToNodes(
@@ -148,6 +156,8 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   expandedDirs: new Set(),
   loadingDirs: new Set(),
   loading: false,
+  renamingPath: null,
+  dragOverPath: null,
   _visibleList: [],
   _visibleVersion: 0,
 
@@ -247,8 +257,40 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
       expandedDirs: new Set(),
       loadingDirs: new Set(),
       loading: false,
+      renamingPath: null,
+      dragOverPath: null,
       _visibleList: [],
       _visibleVersion: get()._visibleVersion + 1,
     })
+  },
+
+  setRenamingPath: (path) => set({ renamingPath: path }),
+  setDragOverPath: (path) => set({ dragOverPath: path }),
+
+  moveFile: async (projectPath, srcPath, destDirPath) => {
+    const result = await window.app.moveFile(projectPath, srcPath, destDirPath)
+    if (result.ok) await get().refreshTree(projectPath)
+    return result
+  },
+
+  copyFilesIn: async (projectPath, destDirPath, absolutePaths) => {
+    const result = await window.app.copyFilesIn(projectPath, destDirPath, absolutePaths)
+    if (result.ok) await get().refreshTree(projectPath)
+    return result
+  },
+
+  deleteFile: async (projectPath, relPath) => {
+    const result = await window.app.deleteFile(projectPath, relPath)
+    if (result.ok) await get().refreshTree(projectPath)
+    return result
+  },
+
+  renameFile: async (projectPath, oldPath, newName) => {
+    const result = await window.app.renameFile(projectPath, oldPath, newName)
+    if (result.ok) {
+      set({ renamingPath: null })
+      await get().refreshTree(projectPath)
+    }
+    return result
   },
 }))

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type BashOutputEvent, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type SandboxMode } from '../shared/agent-types'
 
@@ -340,6 +340,19 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL, agentType),
   testProvider: (data: { api_key: string; base_url: string; extra_env: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST, data) as Promise<{ success: boolean; models: number; error?: string }>,
+
+  // File operations
+  moveFile: (folderPath: string, srcRelPath: string, destDirRelPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.FILE_MOVE, folderPath, srcRelPath, destDirRelPath),
+  copyFilesIn: (folderPath: string, destDirRelPath: string, absolutePaths: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.FILE_COPY_IN, folderPath, destDirRelPath, absolutePaths),
+  deleteFile: (folderPath: string, relPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.FILE_DELETE, folderPath, relPath),
+  renameFile: (folderPath: string, relPath: string, newName: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.FILE_RENAME, folderPath, relPath, newName),
+  showInFolder: (folderPath: string, relPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.FILE_SHOW_IN_FOLDER, folderPath, relPath),
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
 
   // File watcher
   startFileWatch: (folderPath: string) =>

@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, CreateProviderRequest, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -107,6 +107,14 @@ interface AppAPI {
   activateProvider(id: string, agentType: string): Promise<boolean>
   deactivateAllProviders(agentType: string): Promise<void>
   testProvider(data: { api_key: string; base_url: string; extra_env: string }): Promise<{ success: boolean; models: number; error?: string }>
+
+  // File operations
+  moveFile(folderPath: string, srcRelPath: string, destDirRelPath: string): Promise<FileOpResult>
+  copyFilesIn(folderPath: string, destDirRelPath: string, absolutePaths: string[]): Promise<FileOpResult>
+  deleteFile(folderPath: string, relPath: string): Promise<FileOpResult>
+  renameFile(folderPath: string, relPath: string, newName: string): Promise<FileOpResult>
+  showInFolder(folderPath: string, relPath: string): Promise<void>
+  getPathForFile(file: File): string
 
   // File watcher
   startFileWatch(folderPath: string): Promise<void>

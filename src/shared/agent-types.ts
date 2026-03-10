@@ -362,6 +362,8 @@ export interface GitInfo {
 
 export type GitResult = { ok: true } | { ok: false; error: string }
 
+export type FileOpResult = { ok: true } | { ok: false; error: string }
+
 export type GitFileStatus = 'M' | 'A' | 'D' | 'R' | 'C' | 'U' | '?' | '!'
 
 export interface FileTreeEntry {
@@ -931,6 +933,11 @@ export const AgentIpcChannels = {
   GIT_STATUS_FILES: 'app:git-status-files',
   GIT_FILE_TREE: 'app:git-file-tree',
   GIT_LIST_DIR: 'app:git-list-dir',
+  FILE_MOVE: 'app:file-move',
+  FILE_COPY_IN: 'app:file-copy-in',
+  FILE_DELETE: 'app:file-delete',
+  FILE_RENAME: 'app:file-rename',
+  FILE_SHOW_IN_FOLDER: 'app:file-show-in-folder',
   GIT_DIFF_FILE: 'app:git-diff-file',
   GIT_READ_FILE: 'app:git-read-file',
 

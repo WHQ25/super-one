@@ -26,6 +26,10 @@ export interface ChatInputHandle {
   send: () => void
 }
 
+export const chatInputAPI: {
+  insertMention: ((kind: MentionKind, value: string, displayName: string) => void) | null
+} = { insertMention: null }
+
 interface ChatInputProps {
   compact?: boolean
 }
@@ -371,29 +375,35 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     handleKeyDownRef.current = handleKeyDownCore
 
-    const insertFileMention = useCallback(
-      (rawPath: string) => {
-        const mentionValue = toMentionPath(rawPath, activeProject)
-        const displayName = mentionValue.split('/').filter(Boolean).pop() || mentionValue
-        addMention({ kind: 'file', value: mentionValue, displayName })
-
+    const insertMention = useCallback(
+      (kind: MentionKind, value: string, displayName: string) => {
+        addMention({ kind, value, displayName })
         const ed = editorRef.current
         if (ed) {
           const cursor = ed.state.selection.from
           ed.chain()
             .focus()
             .insertContentAt(cursor, [
-              { type: 'mention', attrs: { kind: 'file', value: mentionValue, displayName } },
+              { type: 'mention', attrs: { kind, value, displayName } },
               { type: 'text', text: ' ' },
             ])
             .run()
           return
         }
-
         const suffix = text.length > 0 && !text.endsWith(' ') ? ' ' : ''
-        setText(`${text}${suffix}@${mentionValue} `)
+        setText(`${text}${suffix}@${value} `)
       },
-      [activeProject, addMention, setText, text]
+      [addMention, setText, text],
+    )
+    chatInputAPI.insertMention = insertMention
+
+    const insertFileMention = useCallback(
+      (rawPath: string) => {
+        const mentionValue = toMentionPath(rawPath, activeProject)
+        const displayName = mentionValue.split('/').filter(Boolean).pop() || mentionValue
+        insertMention('file', mentionValue, displayName)
+      },
+      [activeProject, insertMention]
     )
 
     const processSelectedFiles = useCallback(
@@ -412,7 +422,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             continue
           }
 
-          const filePath = (file as File & { path?: string }).path
+          const filePath = window.app.getPathForFile(file)
           if (!filePath) continue
           insertFileMention(filePath)
         }
@@ -433,7 +443,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       e.preventDefault()
       e.stopPropagation()
       dragCounterRef.current++
-      if (e.dataTransfer.types.includes('Files')) {
+      if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-tree-path')) {
         setIsDragging(true)
       }
     }, [])
@@ -458,11 +468,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         e.stopPropagation()
         dragCounterRef.current = 0
         setIsDragging(false)
+        const treePath = e.dataTransfer.getData('application/x-tree-path')
+        if (treePath) {
+          const isDir = e.dataTransfer.getData('application/x-tree-is-dir') === '1'
+          const displayName = treePath.split('/').pop() || treePath
+          insertMention(isDir ? 'directory' : 'file', treePath, displayName)
+          return
+        }
         if (e.dataTransfer.files.length > 0) {
           processSelectedFiles(e.dataTransfer.files)
         }
       },
-      [processSelectedFiles]
+      [processSelectedFiles, insertMention]
     )
 
     const placeholderText = mentions.length > 0

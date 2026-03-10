@@ -2,9 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { FileTreeEntry } from '../../../shared/agent-types'
 
 const listDirMock = vi.fn<(folder: string, rel: string) => Promise<FileTreeEntry[]>>()
+const moveFileMock = vi.fn()
+const copyFilesInMock = vi.fn()
+const deleteFileMock = vi.fn()
+const renameFileMock = vi.fn()
 
 vi.stubGlobal('window', {
-  app: { listDir: listDirMock },
+  app: {
+    listDir: listDirMock,
+    moveFile: moveFileMock,
+    copyFilesIn: copyFilesInMock,
+    deleteFile: deleteFileMock,
+    renameFile: renameFileMock,
+  },
 })
 
 const { useFileTreeStore } = await import('./file-tree')
@@ -71,5 +81,87 @@ describe('fetchTree', () => {
     await useFileTreeStore.getState().fetchTree('/projB')
 
     expect(useFileTreeStore.getState().expandedDirs.size).toBe(0)
+  })
+})
+
+describe('moveFile', () => {
+  it('should refresh tree on success', async () => {
+    listDirMock.mockResolvedValue(makeEntries(['a.ts']))
+    await useFileTreeStore.getState().fetchTree('/proj')
+    moveFileMock.mockResolvedValueOnce({ ok: true })
+    listDirMock.mockResolvedValueOnce(makeEntries(['a.ts']))
+
+    const result = await useFileTreeStore.getState().moveFile('/proj', 'a.ts', 'src')
+    expect(result.ok).toBe(true)
+    expect(moveFileMock).toHaveBeenCalledWith('/proj', 'a.ts', 'src')
+  })
+
+  it('should not refresh tree on failure', async () => {
+    moveFileMock.mockResolvedValueOnce({ ok: false, error: 'fail' })
+    const result = await useFileTreeStore.getState().moveFile('/proj', 'a.ts', 'src')
+    expect(result.ok).toBe(false)
+    expect(listDirMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('copyFilesIn', () => {
+  it('should refresh tree on success', async () => {
+    listDirMock.mockResolvedValue(makeEntries(['a.ts']))
+    await useFileTreeStore.getState().fetchTree('/proj')
+    copyFilesInMock.mockResolvedValueOnce({ ok: true })
+    listDirMock.mockResolvedValueOnce(makeEntries(['a.ts', 'b.ts']))
+
+    const result = await useFileTreeStore.getState().copyFilesIn('/proj', '', ['/tmp/b.ts'])
+    expect(result.ok).toBe(true)
+    expect(copyFilesInMock).toHaveBeenCalledWith('/proj', '', ['/tmp/b.ts'])
+  })
+
+  it('should not refresh tree on failure', async () => {
+    copyFilesInMock.mockResolvedValueOnce({ ok: false, error: 'fail' })
+    const result = await useFileTreeStore.getState().copyFilesIn('/proj', '', ['/tmp/b.ts'])
+    expect(result.ok).toBe(false)
+  })
+})
+
+describe('deleteFile', () => {
+  it('should refresh tree on success', async () => {
+    listDirMock.mockResolvedValue(makeEntries(['a.ts']))
+    await useFileTreeStore.getState().fetchTree('/proj')
+    deleteFileMock.mockResolvedValueOnce({ ok: true })
+    listDirMock.mockResolvedValueOnce(makeEntries([]))
+
+    const result = await useFileTreeStore.getState().deleteFile('/proj', 'a.ts')
+    expect(result.ok).toBe(true)
+    expect(deleteFileMock).toHaveBeenCalledWith('/proj', 'a.ts')
+  })
+
+  it('should not refresh tree on failure', async () => {
+    deleteFileMock.mockResolvedValueOnce({ ok: false, error: 'fail' })
+    const result = await useFileTreeStore.getState().deleteFile('/proj', 'a.ts')
+    expect(result.ok).toBe(false)
+  })
+})
+
+describe('renameFile', () => {
+  it('should clear renamingPath and refresh on success', async () => {
+    listDirMock.mockResolvedValue(makeEntries(['a.ts']))
+    await useFileTreeStore.getState().fetchTree('/proj')
+    useFileTreeStore.setState({ renamingPath: 'a.ts' })
+    renameFileMock.mockResolvedValueOnce({ ok: true })
+    listDirMock.mockResolvedValueOnce(makeEntries(['b.ts']))
+
+    const result = await useFileTreeStore.getState().renameFile('/proj', 'a.ts', 'b.ts')
+    expect(result.ok).toBe(true)
+    expect(useFileTreeStore.getState().renamingPath).toBeNull()
+    expect(renameFileMock).toHaveBeenCalledWith('/proj', 'a.ts', 'b.ts')
+  })
+
+  it('should keep renamingPath on failure', async () => {
+    useFileTreeStore.setState({ renamingPath: 'a.ts' })
+    renameFileMock.mockResolvedValueOnce({ ok: false, error: 'fail' })
+
+    const result = await useFileTreeStore.getState().renameFile('/proj', 'a.ts', 'b.ts')
+    expect(result.ok).toBe(false)
+    expect(useFileTreeStore.getState().renamingPath).toBe('a.ts')
   })
 })

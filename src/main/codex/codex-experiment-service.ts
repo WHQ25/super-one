@@ -55,7 +55,7 @@ interface CodexRunStreamCallbacks {
   onPermissionRequest?: (request: PermissionRequest) => void
 }
 
-type CodexApprovalDecision = 'accept' | 'acceptForSession' | 'decline'
+type CodexApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel'
 
 type PendingCodexApprovalResponse =
   | { decision: CodexApprovalDecision }
@@ -1771,6 +1771,7 @@ export class CodexExperimentService {
     allow: boolean,
     alwaysAllow?: boolean,
     reason?: string,
+    decision?: 'cancel',
   ): boolean {
     const session = this.sessions.get(projectPath)
     if (!session) return false
@@ -1783,10 +1784,12 @@ export class CodexExperimentService {
       return true
     }
 
-    const decision: CodexApprovalDecision = allow
-      ? (alwaysAllow ? 'acceptForSession' : 'accept')
-      : 'decline'
-    pending.resolve({ decision })
+    const resolvedDecision: CodexApprovalDecision = decision === 'cancel'
+      ? 'cancel'
+      : allow
+        ? (alwaysAllow ? 'acceptForSession' : 'accept')
+        : 'decline'
+    pending.resolve({ decision: resolvedDecision })
     return true
   }
 

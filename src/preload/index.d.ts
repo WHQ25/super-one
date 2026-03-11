@@ -48,7 +48,7 @@ interface AppAPI {
   codexListModels(projectPath: string): Promise<ModelOption[]>
   codexReset(projectPath: string): Promise<void>
   codexInterrupt(projectPath: string): Promise<boolean>
-  codexRespondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string): Promise<boolean>
+  codexRespondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel'): Promise<boolean>
   codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>
   codexSetAuth(projectPath: string, request: CodexSetAuthRequest): Promise<CodexAuthStatus>
   installUpdate(): Promise<void>

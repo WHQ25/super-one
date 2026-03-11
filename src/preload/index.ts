@@ -154,6 +154,7 @@ const appAPI = {
     allow: boolean,
     alwaysAllow?: boolean,
     reason?: string,
+    decision?: 'cancel',
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
@@ -162,6 +163,7 @@ const appAPI = {
       allow,
       alwaysAllow,
       reason,
+      decision,
     ),
 
   codexSteer: (projectPath: string, input: string, messageId?: string) =>

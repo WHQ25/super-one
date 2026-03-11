@@ -79,6 +79,7 @@ function SuggestionContent({ s }: { s: Record<string, unknown> }) {
 
 export function PermissionPrompt() {
   const pendingPermission = useActiveSession((s) => s.pendingPermissions[0] ?? null)
+  const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const respondToPermission = useChatStore((s) => s.respondToPermission)
   const setPermissionMode = useChatStore((s) => s.setPermissionMode)
   const cwd = useActiveSession((s) => s.cwd)
@@ -93,31 +94,34 @@ export function PermissionPrompt() {
   const requestId = pendingPermission?.requestId
   const toolName = pendingPermission?.toolName
   const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow
+  const isCodexDecisionPrompt = sessionProvider === 'codex' && allowAlwaysAllow
   const isEditTool = toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit'
   const suggestionsCount = pendingPermission?.suggestions?.length ?? 0
 
-  // Reset state when a new permission request comes in
   useEffect(() => {
     setFeedback('')
     setFocusedIdx(0)
     setSelectedSuggestions(new Set())
+    setIsFeedbackFocused(false)
   }, [requestId, suggestionsCount])
 
-  // Auto-focus first button when prompt appears
   useEffect(() => {
     if (requestId) {
-      // Small delay to ensure refs are populated after render
       requestAnimationFrame(() => btnRefs.current[0]?.focus())
     }
   }, [requestId])
 
-  // Number of action buttons
-  const btnCount = 2
+  const btnCount = isCodexDecisionPrompt ? 4 : 2
 
   const handleDeny = useCallback(() => {
     if (!requestId) return
-    respondToPermission(requestId, false, undefined, feedback.trim() || undefined)
-  }, [requestId, respondToPermission, feedback])
+    respondToPermission(
+      requestId,
+      false,
+      undefined,
+      isCodexDecisionPrompt ? undefined : (feedback.trim() || undefined),
+    )
+  }, [requestId, respondToPermission, feedback, isCodexDecisionPrompt])
 
   const handleAcceptEdit = useCallback(() => {
     if (!requestId) return
@@ -128,6 +132,11 @@ export function PermissionPrompt() {
   const handleAlwaysAllow = useCallback(() => {
     if (!requestId) return
     respondToPermission(requestId, true, true)
+  }, [requestId, respondToPermission])
+
+  const handleCancel = useCallback(() => {
+    if (!requestId) return
+    respondToPermission(requestId, false, undefined, undefined, undefined, 'cancel')
   }, [requestId, respondToPermission])
 
   const toggleSuggestion = useCallback((idx: number) => {
@@ -148,21 +157,18 @@ export function PermissionPrompt() {
     }
   }, [requestId, respondToPermission, selectedSuggestions])
 
-  // Keyboard navigation
   useEffect(() => {
     if (!requestId) return
 
     function onKeyDown(e: KeyboardEvent) {
-      // Shift+Tab on Write/Edit tools → Accept Edit (always)
-      if (e.key === 'Tab' && e.shiftKey && isEditTool) {
+      if (e.key === 'Tab' && e.shiftKey && isEditTool && !isCodexDecisionPrompt) {
         e.preventDefault()
         e.stopImmediatePropagation()
         handleAcceptEdit()
         return
       }
 
-      // When feedback is focused: Enter → deny with reason, Escape → blur
-      if (document.activeElement === feedbackRef.current) {
+      if (!isCodexDecisionPrompt && document.activeElement === feedbackRef.current) {
         if (e.key === 'Enter' && !e.isComposing) {
           e.preventDefault()
           handleDeny()
@@ -173,21 +179,28 @@ export function PermissionPrompt() {
         return
       }
 
-      // Enter → allow (with selected suggestions)
+      if (isCodexDecisionPrompt && e.key === 'Enter' && e.shiftKey && !e.isComposing) {
+        e.preventDefault()
+        handleAlwaysAllow()
+        return
+      }
+
       if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault()
         handleAllow()
         return
       }
 
-      // Escape → deny
       if (e.key === 'Escape') {
         e.preventDefault()
-        handleDeny()
+        if (isCodexDecisionPrompt) {
+          handleDeny()
+        } else {
+          handleDeny()
+        }
         return
       }
 
-      // Number keys 1-9 to toggle suggestion selection
       if (e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key) - 1
         if (idx < suggestionsCount) {
@@ -197,7 +210,6 @@ export function PermissionPrompt() {
         return
       }
 
-      // Arrow left/right to navigate between buttons
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault()
         const delta = e.key === 'ArrowLeft' ? -1 : 1
@@ -209,15 +221,14 @@ export function PermissionPrompt() {
         return
       }
 
-      // Tab → focus feedback input
-      if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!isCodexDecisionPrompt && e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault()
         feedbackRef.current?.focus()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleDeny, handleAcceptEdit, handleAllow, isEditTool, suggestionsCount, toggleSuggestion])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, suggestionsCount, toggleSuggestion])
 
   if (!pendingPermission) return null
 
@@ -225,7 +236,7 @@ export function PermissionPrompt() {
   const display = getToolDisplay(toolName ?? '', input, cwd, homedir)
   const isBash = toolName === 'Bash'
   const isSandboxNetwork = toolName === 'SandboxNetworkAccess'
-  const hasSuggestionRow = allowAlwaysAllow || (suggestions && suggestions.length > 0)
+  const hasSuggestionRow = !isCodexDecisionPrompt && (allowAlwaysAllow || (suggestions && suggestions.length > 0))
 
   const isDebug = DEBUG_TOOL_NAMES.length > 0 &&
     DEBUG_TOOL_NAMES.some((n) => (toolName ?? '').toLowerCase().includes(n))
@@ -295,45 +306,85 @@ export function PermissionPrompt() {
         </div>
       )}
       <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            ref={(el) => { btnRefs.current[btnIdx++] = el }}
-            size="sm"
-            className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
-            onClick={handleAllow}
-          >
-            Allow
-            {selectedSuggestions.size > 0 && (
-              <span className="ml-1 text-[10px] text-green-200/80">+{selectedSuggestions.size}</span>
-            )}
-            {!isFeedbackFocused && (
+        {isCodexDecisionPrompt ? (
+          <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
+            <Button
+              ref={(el) => { btnRefs.current[btnIdx++] = el }}
+              size="sm"
+              className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
+              onClick={handleAllow}
+            >
+              Allow
               <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
-            )}
-          </Button>
-          <Button
-            ref={(el) => { btnRefs.current[btnIdx++] = el }}
-            size="sm"
-            className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
-            onClick={handleDeny}
-          >
-            Deny
-            <Kbd variant="inline" className="ml-1 text-red-200/80">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
-          </Button>
-          <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
-            <input
-              ref={feedbackRef}
-              data-feedback
-              type="text"
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              onFocus={() => setIsFeedbackFocused(true)}
-              onBlur={() => setIsFeedbackFocused(false)}
-              placeholder="Deny reason (optional, Enter to submit)"
-              className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
+            </Button>
+            <Button
+              ref={(el) => { btnRefs.current[btnIdx++] = el }}
+              size="sm"
+              className="h-7 cursor-pointer bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
+              onClick={handleAlwaysAllow}
+            >
+              Allow for this session
+              <Kbd variant="inline" className="ml-1 text-blue-200/80">⇧↵</Kbd>
+            </Button>
+            <Button
+              ref={(el) => { btnRefs.current[btnIdx++] = el }}
+              size="sm"
+              className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
+              onClick={handleDeny}
+            >
+              Decline
+              <Kbd variant="inline" className="ml-1 text-red-200/80">esc</Kbd>
+            </Button>
+            <Button
+              ref={(el) => { btnRefs.current[btnIdx++] = el }}
+              size="sm"
+              className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-slate-400 focus:outline-none"
+              onClick={handleCancel}
+            >
+              Cancel
+            </Button>
           </div>
-        </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              ref={(el) => { btnRefs.current[btnIdx++] = el }}
+              size="sm"
+              className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
+              onClick={handleAllow}
+            >
+              Allow
+              {selectedSuggestions.size > 0 && (
+                <span className="ml-1 text-[10px] text-green-200/80">+{selectedSuggestions.size}</span>
+              )}
+              {!isFeedbackFocused && (
+                <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
+              )}
+            </Button>
+            <Button
+              ref={(el) => { btnRefs.current[btnIdx++] = el }}
+              size="sm"
+              className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
+              onClick={handleDeny}
+            >
+              Deny
+              <Kbd variant="inline" className="ml-1 text-red-200/80">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
+            </Button>
+            <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
+              <input
+                ref={feedbackRef}
+                data-feedback
+                type="text"
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                onFocus={() => setIsFeedbackFocused(true)}
+                onBlur={() => setIsFeedbackFocused(false)}
+                placeholder="Deny reason (optional, Enter to submit)"
+                className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
+            </div>
+          </div>
+        )}
         {hasSuggestionRow && (
           <div className="grid grid-cols-1 gap-1.5">
             {allowAlwaysAllow && !isEditTool && (!suggestions || suggestions.length === 0) && (

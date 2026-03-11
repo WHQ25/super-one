@@ -326,8 +326,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
-    (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) => {
-      return codexService.respondToPermission(projectPath, requestId, allow, alwaysAllow, reason)
+    (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel') => {
+      return codexService.respondToPermission(projectPath, requestId, allow, alwaysAllow, reason, decision)
     },
   )
 

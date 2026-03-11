@@ -937,13 +937,13 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
     .catch((err) => console.warn('[saveSessionState] failed:', err))
 }
 
-function _savePerSessionSnapshot(projectPath: string, sessionId: string, session: PerSessionState): void {
-  if (!sessionId || sessionId === DRAFT_SESSION_ID || session.messages.length === 0) return
+function _savePerSessionSnapshot(projectPath: string, sessionId: string, session: PerSessionState): Promise<void> {
+  if (!sessionId || sessionId === DRAFT_SESSION_ID || session.messages.length === 0) return Promise.resolve()
 
   const branch = _getWorktreeBranch(projectPath, session)
   const wtPath = session._worktreePath ?? undefined
   const title = _extractTitle(session.messages)
-  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath, title)
+  return window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath, title)
     .then(() => window.app.saveSessionState(sessionId, {
       messages: session.messages,
       totalCostUsd: session.totalCostUsd,
@@ -951,6 +951,7 @@ function _savePerSessionSnapshot(projectPath: string, sessionId: string, session
       title,
       provider: session.sessionProvider ?? undefined,
     }))
+    .then(() => {})
     .catch((err) => console.warn('[saveSessionSnapshot] failed:', err))
 }
 
@@ -1390,16 +1391,30 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      // Non-active session went idle → save, mark unseen, and evict from _sessions
+      // Non-active session went idle → save, mark unseen, and evict from _sessions after save completes
       if (event.type === 'status_change' && event.status === 'idle' && targetSid !== updatedProject._activeSessionId) {
         if (!_isLiveSession(updatedSession)) {
           if (effectiveSid) {
             updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
             const snapshot = updatedSession
-            setTimeout(() => _savePerSessionSnapshot(projectPath, effectiveSid, snapshot), 0)
+            const evictSid = targetSid
+            const evictProjectPath = projectPath
+            setTimeout(() => {
+              _savePerSessionSnapshot(evictProjectPath, effectiveSid, snapshot).then(() => {
+                set((s) => {
+                  const proj = s.projectSessions[evictProjectPath]
+                  if (!proj?._sessions[evictSid]) return {}
+                  if (proj._activeSessionId === evictSid) return {}
+                  if (_isLiveSession(proj._sessions[evictSid])) return {}
+                  const { [evictSid]: _, ...rest } = proj._sessions
+                  return { projectSessions: { ...s.projectSessions, [evictProjectPath]: { ...proj, _sessions: rest } } }
+                })
+              })
+            }, 0)
+          } else {
+            const { [targetSid]: _, ...restSessions } = updatedProject._sessions
+            updatedProject._sessions = restSessions
           }
-          const { [targetSid]: _, ...restSessions } = updatedProject._sessions
-          updatedProject._sessions = restSessions
         }
       }
 

@@ -270,7 +270,7 @@ describe('concurrent streaming sessions', () => {
 })
 
 describe('idle eviction', () => {
-  it('evicts non-active session from _sessions when it goes idle', () => {
+  it('evicts non-active session from _sessions when it goes idle', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -292,6 +292,9 @@ describe('idle eviction', () => {
       sessionId: 'b',
       status: 'idle',
     }))
+
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['b']).toBeUndefined()

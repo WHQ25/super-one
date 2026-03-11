@@ -472,7 +472,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         if (treePath) {
           const isDir = e.dataTransfer.getData('application/x-tree-is-dir') === '1'
           const displayName = treePath.split('/').pop() || treePath
-          insertMention(isDir ? 'directory' : 'file', treePath, displayName)
+          const mentionValue = isDir ? `${treePath}/` : treePath
+          insertMention(isDir ? 'directory' : 'file', mentionValue, displayName)
           return
         }
         if (e.dataTransfer.files.length > 0) {

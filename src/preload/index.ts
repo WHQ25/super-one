@@ -346,6 +346,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.FILE_MOVE, folderPath, srcRelPath, destDirRelPath),
   copyFilesIn: (folderPath: string, destDirRelPath: string, absolutePaths: string[]) =>
     ipcRenderer.invoke(AgentIpcChannels.FILE_COPY_IN, folderPath, destDirRelPath, absolutePaths),
+  moveFilesIn: (folderPath: string, destDirRelPath: string, absolutePaths: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.FILE_MOVE_IN, folderPath, destDirRelPath, absolutePaths),
   deleteFile: (folderPath: string, relPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FILE_DELETE, folderPath, relPath),
   renameFile: (folderPath: string, relPath: string, newName: string) =>

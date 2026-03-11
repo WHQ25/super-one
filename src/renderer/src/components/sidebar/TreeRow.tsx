@@ -83,18 +83,26 @@ export const TREE_DND_MIME = 'application/x-tree-path'
 export const TREE_DND_DIR_MIME = 'application/x-tree-is-dir'
 
 const EXPAND_HOVER_DELAY = 500
+export const autoExpandedDirs = new Set<string>()
 
-function createDragImage(name: string): HTMLElement {
+function createDragImage(name: string, button: HTMLElement): HTMLElement {
   const el = document.createElement('div')
-  el.textContent = name
-  el.style.cssText = 'position:fixed;left:-9999px;padding:2px 8px;border-radius:10px;font-size:13px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--sidebar-accent);color:var(--sidebar-foreground);border:1px solid var(--sidebar-border);'
+  el.style.cssText = 'position:fixed;left:-9999px;display:flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:13px;max-width:160px;background:var(--sidebar-accent);color:var(--sidebar-foreground);border:1px solid var(--sidebar-border);'
+  const iconEl = button.children[1]
+  if (iconEl) {
+    const cloned = iconEl.cloneNode(true) as HTMLElement
+    cloned.style.flexShrink = '0'
+    el.appendChild(cloned)
+  }
+  const text = document.createElement('span')
+  text.textContent = name
+  text.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+  el.appendChild(text)
   document.body.appendChild(el)
   return el
 }
 
-function isChildPath(parentPath: string, childPath: string): boolean {
-  return childPath.startsWith(parentPath + '/')
-}
+import { getDropAction, getTargetDir, isChildPath } from './drag-drop-utils'
 
 export const TreeRow = memo(function TreeRow({
   item,
@@ -113,11 +121,16 @@ export const TreeRow = memo(function TreeRow({
   const setRenamingPath = useFileTreeStore((s) => s.setRenamingPath)
   const moveFile = useFileTreeStore((s) => s.moveFile)
   const copyFilesIn = useFileTreeStore((s) => s.copyFilesIn)
+  const moveFilesIn = useFileTreeStore((s) => s.moveFilesIn)
+  const setDragOverPath = useFileTreeStore((s) => s.setDragOverPath)
   const colorClass = getStatusColor(item.gitStatus)
+
+  const targetDir = getTargetDir(item.path, item.isDirectory)
 
   const [isDragging, setIsDragging] = useState(false)
   const [isDropTarget, setIsDropTarget] = useState(false)
   const dragCounterRef = useRef(0)
+  const isDraggingRef = useRef(false)
   const expandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragImageRef = useRef<HTMLElement | null>(null)
 
@@ -144,7 +157,7 @@ export const TreeRow = memo(function TreeRow({
     e.dataTransfer.setData(TREE_DND_DIR_MIME, item.isDirectory ? '1' : '0')
     e.dataTransfer.effectAllowed = 'copyMove'
 
-    const img = createDragImage(item.name)
+    const img = createDragImage(item.name, e.currentTarget as HTMLElement)
     dragImageRef.current = img
     e.dataTransfer.setDragImage(img, -10, -10)
     requestAnimationFrame(() => {
@@ -152,10 +165,12 @@ export const TreeRow = memo(function TreeRow({
       dragImageRef.current = null
     })
 
+    isDraggingRef.current = true
     setIsDragging(true)
   }, [item.path, item.isDirectory, item.name])
 
   const handleDragEnd = useCallback(() => {
+    isDraggingRef.current = false
     setIsDragging(false)
   }, [])
 
@@ -171,64 +186,73 @@ export const TreeRow = memo(function TreeRow({
   }, [])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!item.isDirectory) return
+    if (isDraggingRef.current) return
     if (!isAcceptedDrag(e)) return
     e.preventDefault()
     dragCounterRef.current++
     if (dragCounterRef.current === 1) {
-      setIsDropTarget(true)
-      if (!item.isExpanded) {
-        expandTimerRef.current = setTimeout(() => {
-          toggleDir(currentFolder, item.path)
-        }, EXPAND_HOVER_DELAY)
+      setDragOverPath(targetDir)
+      if (item.isDirectory) {
+        setIsDropTarget(true)
+        if (!item.isExpanded) {
+          expandTimerRef.current = setTimeout(() => {
+            autoExpandedDirs.add(item.path)
+            toggleDir(currentFolder, item.path)
+          }, EXPAND_HOVER_DELAY)
+        }
       }
     }
-  }, [item.isDirectory, item.isExpanded, item.path, currentFolder, toggleDir, isAcceptedDrag])
+  }, [item.isDirectory, item.isExpanded, item.path, targetDir, currentFolder, toggleDir, isAcceptedDrag, setDragOverPath])
 
   const handleDragLeave = useCallback(() => {
     dragCounterRef.current--
     if (dragCounterRef.current === 0) {
+      if (item.isDirectory) {
+        setIsDropTarget(false)
+        clearExpandTimer()
+      }
+    }
+  }, [item.isDirectory, clearExpandTimer])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!isAcceptedDrag(e)) return
+    e.preventDefault()
+    const isInternal = e.dataTransfer.types.includes(TREE_DND_MIME)
+    e.dataTransfer.dropEffect = getDropAction(isInternal, e.altKey)
+  }, [isAcceptedDrag])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    dragCounterRef.current = 0
+    setDragOverPath(null)
+    if (item.isDirectory) {
       setIsDropTarget(false)
       clearExpandTimer()
     }
-  }, [clearExpandTimer])
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!item.isDirectory) return
-    if (!isAcceptedDrag(e)) return
-    e.preventDefault()
-    if (e.dataTransfer.types.includes(TREE_DND_MIME)) {
-      e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move'
-    } else {
-      e.dataTransfer.dropEffect = 'copy'
-    }
-  }, [item.isDirectory, isAcceptedDrag])
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    if (!item.isDirectory) return
-    dragCounterRef.current = 0
-    setIsDropTarget(false)
-    clearExpandTimer()
 
     const srcPath = e.dataTransfer.getData(TREE_DND_MIME)
     if (srcPath) {
       e.preventDefault()
       e.stopPropagation()
-      if (srcPath === item.path || isChildPath(srcPath, item.path)) return
-      moveFile(currentFolder, srcPath, item.path)
+      if (srcPath === targetDir || isChildPath(srcPath, targetDir)) return
+      moveFile(currentFolder, srcPath, targetDir)
       return
     }
 
     if (e.dataTransfer.types.includes('Files') && e.dataTransfer.files.length) {
       e.preventDefault()
+      e.stopPropagation()
       const paths: string[] = []
       for (const file of e.dataTransfer.files) {
         const p = window.app.getPathForFile(file)
         if (p) paths.push(p)
       }
-      if (paths.length > 0) copyFilesIn(currentFolder, item.path, paths)
+      if (paths.length > 0) {
+        const action = getDropAction(false, e.altKey)
+        if (action === 'move') moveFilesIn(currentFolder, targetDir, paths)
+        else copyFilesIn(currentFolder, targetDir, paths)
+      }
     }
-  }, [item.path, item.isDirectory, currentFolder, moveFile, copyFilesIn, clearExpandTimer])
+  }, [targetDir, item.isDirectory, currentFolder, moveFile, copyFilesIn, moveFilesIn, clearExpandTimer, setDragOverPath])
 
   const rowContent = (
     <button
@@ -243,7 +267,7 @@ export const TreeRow = memo(function TreeRow({
       className={cn(
         'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors hover:bg-sidebar-accent',
         !item.isDirectory && isSelected && 'bg-sidebar-accent',
-        isDropTarget && 'bg-sidebar-accent outline outline-1 outline-primary/50',
+        isDropTarget && 'bg-sidebar-accent',
         isDragging && 'opacity-40',
       )}
       style={{ paddingLeft: `${item.depth * 16 + 8}px` }}
@@ -278,7 +302,7 @@ export const TreeRow = memo(function TreeRow({
         <ContextMenuItem onClick={() => {
           chatInputAPI.insertMention?.(
             item.isDirectory ? 'directory' : 'file',
-            item.path,
+            item.isDirectory ? `${item.path}/` : item.path,
             item.name,
           )
         }}>

@@ -935,6 +935,7 @@ export const AgentIpcChannels = {
   GIT_LIST_DIR: 'app:git-list-dir',
   FILE_MOVE: 'app:file-move',
   FILE_COPY_IN: 'app:file-copy-in',
+  FILE_MOVE_IN: 'app:file-move-in',
   FILE_DELETE: 'app:file-delete',
   FILE_RENAME: 'app:file-rename',
   FILE_SHOW_IN_FOLDER: 'app:file-show-in-folder',

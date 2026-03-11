@@ -1,9 +1,11 @@
-import { useEffect, useCallback, useRef, useState, type DragEvent, type RefObject } from 'react'
+import { useEffect, useCallback, useRef, useState, useMemo, type DragEvent, type RefObject } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAppStore } from '@/stores/app'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
-import { TreeRow, TREE_DND_MIME } from './TreeRow'
+import { TreeRow, TREE_DND_MIME, autoExpandedDirs } from './TreeRow'
+import { getDropAction, shouldCollapseAutoExpanded, computeDropOverlay } from './drag-drop-utils'
+import { Kbd } from '@/components/ui/kbd'
 import {
   Dialog,
   DialogContent,
@@ -70,8 +72,12 @@ export function FileTree() {
   const visibleVersion = useFileTreeStore((s) => s._visibleVersion)
   const fetchTree = useFileTreeStore((s) => s.fetchTree)
   const renamingPath = useFileTreeStore((s) => s.renamingPath)
+  const toggleDir = useFileTreeStore((s) => s.toggleDir)
   const moveFile = useFileTreeStore((s) => s.moveFile)
   const copyFilesIn = useFileTreeStore((s) => s.copyFilesIn)
+  const moveFilesIn = useFileTreeStore((s) => s.moveFilesIn)
+  const setDragOverPath = useFileTreeStore((s) => s.setDragOverPath)
+  const dragOverPath = useFileTreeStore((s) => s.dragOverPath)
   const deleteFile = useFileTreeStore((s) => s.deleteFile)
   const selectedFile = useSourceControlStore((s) => s.selectedFile)
   const folderName = currentFolder?.split('/').pop() ?? 'Project'
@@ -79,6 +85,7 @@ export function FileTree() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragCounterRef = useRef(0)
   const [externalDragOver, setExternalDragOver] = useState(false)
+  const [altKeyHeld, setAltKeyHeld] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const autoScroll = useAutoScroll(scrollRef)
 
@@ -98,6 +105,21 @@ export function FileTree() {
     if (currentFolder) fetchTree(currentFolder)
   }, [currentFolder, fetchTree])
 
+  useEffect(() => {
+    if (!currentFolder || autoExpandedDirs.size === 0) return
+    for (const dir of autoExpandedDirs) {
+      if (shouldCollapseAutoExpanded(dir, dragOverPath)) {
+        toggleDir(currentFolder, dir)
+        autoExpandedDirs.delete(dir)
+      }
+    }
+  }, [dragOverPath, currentFolder, toggleDir])
+
+  const dropOverlay = useMemo(
+    () => computeDropOverlay(dragOverPath, visibleList.map((v) => v.path), 28),
+    [dragOverPath, visibleList],
+  )
+
   const isExternalFileDrag = useCallback((e: DragEvent) => {
     return e.dataTransfer.types.includes('Files') && !e.dataTransfer.types.includes(TREE_DND_MIME)
   }, [])
@@ -115,19 +137,22 @@ export function FileTree() {
       dragCounterRef.current--
       if (dragCounterRef.current === 0) {
         setExternalDragOver(false)
+        setDragOverPath(null)
+        autoExpandedDirs.clear()
         autoScroll.stop()
       }
     }
-  }, [isExternalFileDrag, autoScroll])
+  }, [isExternalFileDrag, autoScroll, setDragOverPath])
 
   const handleContainerDragOver = useCallback((e: DragEvent) => {
     autoScroll.update(e.clientY)
     if (isExternalFileDrag(e)) {
       e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
+      e.dataTransfer.dropEffect = getDropAction(false, e.altKey)
+      setAltKeyHeld(e.altKey)
     } else if (e.dataTransfer.types.includes(TREE_DND_MIME)) {
       e.preventDefault()
-      e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move'
+      e.dataTransfer.dropEffect = getDropAction(true, e.altKey)
     }
   }, [isExternalFileDrag, autoScroll])
 
@@ -135,6 +160,8 @@ export function FileTree() {
     autoScroll.stop()
     dragCounterRef.current = 0
     setExternalDragOver(false)
+    setDragOverPath(null)
+    autoExpandedDirs.clear()
 
     const treePath = e.dataTransfer.getData(TREE_DND_MIME)
     if (treePath) {
@@ -150,8 +177,12 @@ export function FileTree() {
       const p = window.app.getPathForFile(file)
       if (p) paths.push(p)
     }
-    if (paths.length > 0) copyFilesIn(currentFolder, '', paths)
-  }, [currentFolder, copyFilesIn, moveFile, autoScroll])
+    if (paths.length > 0) {
+      const action = getDropAction(false, e.altKey)
+      if (action === 'move') moveFilesIn(currentFolder, '', paths)
+      else copyFilesIn(currentFolder, '', paths)
+    }
+  }, [currentFolder, copyFilesIn, moveFilesIn, moveFile, autoScroll, setDragOverPath])
 
   const handleDeleteRequest = useCallback((item: VisibleItem) => {
     setDeleteTarget({ path: item.path, name: item.name, isDirectory: item.isDirectory })
@@ -213,11 +244,25 @@ export function FileTree() {
                   </div>
                 )
               })}
+
+              {dropOverlay && (
+                <div
+                  className="pointer-events-none absolute left-0 right-0 rounded-sm border border-primary/40 bg-primary/5"
+                  style={{ top: dropOverlay.top, height: dropOverlay.height }}
+                />
+              )}
             </div>
 
             {externalDragOver && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-md border-2 border-dashed border-primary/50 bg-primary/5">
-                <span className="text-sm font-medium text-primary/70">Drop files here</span>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-primary/50 bg-sidebar/90 backdrop-blur-sm">
+                <span className="text-sm font-medium text-primary/70">
+                  {altKeyHeld ? 'Move files here' : 'Copy files here'}
+                </span>
+                {!altKeyHeld && (
+                  <span className="flex items-center gap-1 text-xs text-primary/40">
+                    Hold <Kbd>{navigator.platform.startsWith('Mac') ? 'option' : 'alt'}</Kbd> to move
+                  </span>
+                )}
               </div>
             )}
           </div>

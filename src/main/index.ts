@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, powerMonitor, protocol, shell } from 'electron'
 import { join, dirname, basename, resolve, extname, relative } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { readFile, readdir, rename, cp, access } from 'fs/promises'
+import { readFile, readdir, rename, cp, rm, access, stat } from 'fs/promises'
 import { homedir } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-security'
 import { execFile, execFileSync, spawn } from 'child_process'
@@ -798,7 +798,30 @@ function registerIpcHandlers(): void {
       for (const srcPath of absolutePaths) {
         const name = basename(srcPath)
         const destAbs = join(destDirAbs, name)
+        try {
+          await access(destAbs)
+          return { ok: false, error: `Target already exists: ${name}` }
+        } catch { /* doesn't exist, good */ }
         await cp(srcPath, destAbs, { recursive: true })
+      }
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.FILE_MOVE_IN, async (_event, folderPath: string, destDirRelPath: string, absolutePaths: string[]): Promise<FileOpResult> => {
+    try {
+      const destDirAbs = validatePathInProject(folderPath, destDirRelPath)
+      for (const srcPath of absolutePaths) {
+        const name = basename(srcPath)
+        const destAbs = join(destDirAbs, name)
+        try {
+          await access(destAbs)
+          return { ok: false, error: `Target already exists: ${name}` }
+        } catch { /* doesn't exist, good */ }
+        await cp(srcPath, destAbs, { recursive: true })
+        await rm(srcPath, { recursive: true })
       }
       return { ok: true }
     } catch (err) {
@@ -828,7 +851,10 @@ function registerIpcHandlers(): void {
       }
       try {
         await access(newAbs)
-        return { ok: false, error: `Target already exists: ${newName}` }
+        const [oldStat, newStat] = await Promise.all([stat(oldAbs), stat(newAbs)])
+        if (oldStat.ino !== newStat.ino) {
+          return { ok: false, error: `Target already exists: ${newName}` }
+        }
       } catch { /* target doesn't exist, good */ }
       await rename(oldAbs, newAbs)
       return { ok: true }

@@ -111,6 +111,7 @@ interface AppAPI {
   // File operations
   moveFile(folderPath: string, srcRelPath: string, destDirRelPath: string): Promise<FileOpResult>
   copyFilesIn(folderPath: string, destDirRelPath: string, absolutePaths: string[]): Promise<FileOpResult>
+  moveFilesIn(folderPath: string, destDirRelPath: string, absolutePaths: string[]): Promise<FileOpResult>
   deleteFile(folderPath: string, relPath: string): Promise<FileOpResult>
   renameFile(folderPath: string, relPath: string, newName: string): Promise<FileOpResult>
   showInFolder(folderPath: string, relPath: string): Promise<void>

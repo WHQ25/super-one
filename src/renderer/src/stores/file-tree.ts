@@ -38,6 +38,7 @@ interface FileTreeState {
   setDragOverPath: (path: string | null) => void
   moveFile: (projectPath: string, srcPath: string, destDirPath: string) => Promise<FileOpResult>
   copyFilesIn: (projectPath: string, destDirPath: string, absolutePaths: string[]) => Promise<FileOpResult>
+  moveFilesIn: (projectPath: string, destDirPath: string, absolutePaths: string[]) => Promise<FileOpResult>
   deleteFile: (projectPath: string, relPath: string) => Promise<FileOpResult>
   renameFile: (projectPath: string, oldPath: string, newName: string) => Promise<FileOpResult>
 }
@@ -275,6 +276,12 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
 
   copyFilesIn: async (projectPath, destDirPath, absolutePaths) => {
     const result = await window.app.copyFilesIn(projectPath, destDirPath, absolutePaths)
+    if (result.ok) await get().refreshTree(projectPath)
+    return result
+  },
+
+  moveFilesIn: async (projectPath, destDirPath, absolutePaths) => {
+    const result = await window.app.moveFilesIn(projectPath, destDirPath, absolutePaths)
     if (result.ok) await get().refreshTree(projectPath)
     return result
   },

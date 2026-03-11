@@ -88,6 +88,8 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       const completed = Number(input.completed ?? 0)
       return { icon: 'clipboard-list', summary: total > 0 ? `${completed}/${total} completed` : '' }
     }
+    case 'SandboxNetworkAccess':
+      return { icon: 'globe', summary: String(input.host ?? '') }
     case 'EnterPlanMode':
       return { icon: 'wrench', summary: 'Entered plan mode' }
     case 'ExitPlanMode':

@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { useChatStore, useActiveSession } from '@/stores/chat'
-import { Circle, CheckCircle2 } from 'lucide-react'
+import { Circle, CheckCircle2, ShieldAlert } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay } from './tool-display'
 import { modes as permissionModes } from './PermissionModeSelector'
@@ -224,6 +224,7 @@ export function PermissionPrompt() {
   const { input, decisionReason, blockedPath, suggestions } = pendingPermission
   const display = getToolDisplay(toolName ?? '', input, cwd, homedir)
   const isBash = toolName === 'Bash'
+  const isSandboxNetwork = toolName === 'SandboxNetworkAccess'
   const hasSuggestionRow = allowAlwaysAllow || (suggestions && suggestions.length > 0)
 
   const isDebug = DEBUG_TOOL_NAMES.length > 0 &&
@@ -233,11 +234,36 @@ export function PermissionPrompt() {
 
   return (
     <div className="mx-3 mb-2 rounded-lg border border-border bg-muted/60 p-3">
-      <div className="mb-2 flex items-center gap-1.5 text-xs">
-        <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="font-medium text-foreground">{toolName}</span>
-      </div>
-      {display.summary && (
+      {isSandboxNetwork ? (
+        <>
+          <div className="mb-2 flex items-center gap-1.5 text-xs">
+            <ShieldAlert className="size-3.5 shrink-0 text-amber-500" />
+            <span className="font-medium text-amber-500">Allow Sandbox Network Access</span>
+          </div>
+          {typeof input.host === 'string' && input.host && (
+            <p className="mb-2 font-mono text-xs text-muted-foreground">{input.host}</p>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="mb-2 flex items-center gap-1.5 text-xs">
+            <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="font-medium text-foreground">{toolName}</span>
+          </div>
+          {isBash && !!input.dangerouslyDisableSandbox && (
+            <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
+              <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+              <div className="min-w-0 text-xs">
+                <span className="font-medium text-amber-500">Sandbox Override</span>
+                {typeof input.description === 'string' && input.description && (
+                  <p className="mt-0.5 break-words text-muted-foreground">{input.description}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {!isSandboxNetwork && display.summary && (
         <p
           className={`mb-2 text-xs text-muted-foreground ${isBash ? 'whitespace-pre-wrap break-all font-mono' : 'truncate'}`}
         >

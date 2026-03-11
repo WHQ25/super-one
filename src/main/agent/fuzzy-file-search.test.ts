@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fuzzyMatch, searchFiles, EXCLUDED_DIRS } from './fuzzy-file-search'
+import { fuzzyMatch, searchFiles, searchMentions, collectFiles, EXCLUDED_DIRS } from './fuzzy-file-search'
 
 describe('fuzzyMatch', () => {
   it('should match basic subsequence', () => {
@@ -110,6 +110,57 @@ describe('searchFiles', () => {
     const results = searchFiles([process.cwd()], '', 10)
     for (const r of results) {
       expect(r.matchIndices).toEqual([])
+    }
+  })
+
+  it('should not include rootPath when using a single root', () => {
+    const results = searchFiles([process.cwd()], 'fuzzy', 5)
+    for (const r of results) {
+      expect(r.rootPath).toBeUndefined()
+    }
+  })
+
+  it('should include rootPath when using multiple roots', () => {
+    const results = searchFiles([process.cwd(), process.cwd()], 'fuzzy', 5)
+    for (const r of results) {
+      expect(r.rootPath).toBe(process.cwd())
+    }
+  })
+})
+
+describe('collectFiles', () => {
+  it('should track root for each collected file', () => {
+    const files = collectFiles([process.cwd()])
+    expect(files.length).toBeGreaterThan(0)
+    for (const f of files.slice(0, 10)) {
+      expect(f.root).toBe(process.cwd())
+    }
+  })
+})
+
+describe('searchMentions', () => {
+  it('should include rootPath for file items with multiple roots', () => {
+    const results = searchMentions([process.cwd(), process.cwd()], 'fuzzy', [], 5)
+    const fileItems = results.filter((r) => r.kind === 'file')
+    expect(fileItems.length).toBeGreaterThan(0)
+    for (const r of fileItems) {
+      expect(r.rootPath).toBe(process.cwd())
+    }
+  })
+
+  it('should not include rootPath for file items with single root', () => {
+    const results = searchMentions([process.cwd()], 'fuzzy', [], 5)
+    const fileItems = results.filter((r) => r.kind === 'file')
+    for (const r of fileItems) {
+      expect(r.rootPath).toBeUndefined()
+    }
+  })
+
+  it('should not include rootPath for agent items', () => {
+    const results = searchMentions([process.cwd(), process.cwd()], 'test', [{ name: 'test-agent', model: 'opus' }], 10)
+    const agentItems = results.filter((r) => r.kind === 'agent')
+    for (const r of agentItems) {
+      expect('rootPath' in r).toBe(false)
     }
   })
 })

@@ -72,6 +72,7 @@ export function fuzzyMatch(query: string, filePath: string): FuzzyMatchResult {
 interface CollectedFile {
   path: string
   isDirectory: boolean
+  root: string
 }
 
 export function collectFiles(
@@ -101,7 +102,7 @@ export function collectFiles(
       if (seen.has(fullPath)) continue
       seen.add(fullPath)
 
-      result.push({ path: relPath, isDirectory: entry.isDirectory() })
+      result.push({ path: relPath, isDirectory: entry.isDirectory(), root })
       if (entry.isDirectory()) {
         walk(fullPath, root, depth + 1)
       }
@@ -127,12 +128,15 @@ export function searchFiles(
 ): FileSearchResult[] {
   const files = collectFiles(roots)
 
+  const hasMultipleRoots = roots.length > 1
+
   if (!query) {
     return files.slice(0, limit).map((f) => ({
       path: f.path,
       isDirectory: f.isDirectory,
       matchIndices: [],
       score: 0,
+      rootPath: hasMultipleRoots ? f.root : undefined,
     }))
   }
 
@@ -145,6 +149,7 @@ export function searchFiles(
         isDirectory: file.isDirectory,
         matchIndices: result.indices,
         score: result.score,
+        rootPath: hasMultipleRoots ? file.root : undefined,
       })
     }
   }
@@ -165,11 +170,13 @@ export function searchMentions(
   agents: AgentEntry[],
   limit = 20
 ): MentionSearchItem[] {
+  const hasMultipleRoots = roots.length > 1
+
   if (!query) {
     const items: MentionSearchItem[] = []
     const files = collectFiles(roots)
     for (const f of files.slice(0, limit)) {
-      items.push({ kind: 'file', path: f.path, isDirectory: f.isDirectory, matchIndices: [], score: 0 })
+      items.push({ kind: 'file', path: f.path, isDirectory: f.isDirectory, matchIndices: [], score: 0, rootPath: hasMultipleRoots ? f.root : undefined })
     }
     for (const a of agents) {
       items.push({ kind: 'agent', name: a.name, model: a.model, matchIndices: [], score: 0 })
@@ -183,7 +190,7 @@ export function searchMentions(
   for (const file of files) {
     const m = fuzzyMatch(query, file.path)
     if (m.match) {
-      results.push({ kind: 'file', path: file.path, isDirectory: file.isDirectory, matchIndices: m.indices, score: m.score })
+      results.push({ kind: 'file', path: file.path, isDirectory: file.isDirectory, matchIndices: m.indices, score: m.score, rootPath: hasMultipleRoots ? file.root : undefined })
     }
   }
 

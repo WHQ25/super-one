@@ -1016,10 +1016,11 @@ export interface FileSearchResult {
   isDirectory: boolean
   matchIndices: number[]
   score: number
+  rootPath?: string
 }
 
 export type MentionSearchItem =
-  | { kind: 'file'; path: string; isDirectory: boolean; matchIndices: number[]; score: number }
+  | { kind: 'file'; path: string; isDirectory: boolean; matchIndices: number[]; score: number; rootPath?: string }
   | { kind: 'agent'; name: string; model: string; matchIndices: number[]; score: number }
 
 export type RemoteCommand =

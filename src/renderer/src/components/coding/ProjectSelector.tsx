@@ -66,29 +66,31 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
           </button>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="max-h-80 w-64 overflow-y-auto">
+      <DropdownMenuContent align={align} className="w-64 overflow-hidden">
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Select Project</DropdownMenuLabel>
-        {recentFolders.map((folder) => (
-          <DropdownMenuItem
-            key={folder.path}
-            onClick={() => {
-              if (mode === 'switch') {
-                switchToProject(folder.path)
-              } else {
-                void openFolder(folder.path)
-              }
-            }}
-            className="flex items-center justify-between"
-          >
-            <div className="flex items-center gap-2 truncate">
-              <Folder className="size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate">{folder.path.split('/').pop()}</span>
-            </div>
-            {folder.path === currentFolder && (
-              <Check className="size-4 shrink-0 text-muted-foreground" />
-            )}
-          </DropdownMenuItem>
-        ))}
+        <div className="max-h-48 overflow-y-auto">
+          {recentFolders.map((folder) => (
+            <DropdownMenuItem
+              key={folder.path}
+              onClick={() => {
+                if (mode === 'switch') {
+                  switchToProject(folder.path)
+                } else {
+                  void openFolder(folder.path)
+                }
+              }}
+              className="flex items-center justify-between"
+            >
+              <div className="flex items-center gap-2 truncate">
+                <Folder className="size-4 shrink-0 text-muted-foreground" />
+                <span className="truncate">{folder.path.split('/').pop()}</span>
+              </div>
+              {folder.path === currentFolder && (
+                <Check className="size-4 shrink-0 text-muted-foreground" />
+              )}
+            </DropdownMenuItem>
+          ))}
+        </div>
         {recentFolders.length > 0 && <DropdownMenuSeparator />}
         <DropdownMenuItem
           onClick={() => {

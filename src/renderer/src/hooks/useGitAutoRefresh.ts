@@ -9,6 +9,8 @@ export function GitAutoRefresh() {
   const showFilePanel = useAppStore((s) => s.showFilePanel)
   const sidebarTab = useAppStore((s) => s.sidebarTab)
   const currentFolder = useAppStore((s) => s.currentFolder)
+  const wtActivePath = useAppStore((s) => currentFolder ? s._worktrees[currentFolder]?.activePath : null)
+  const fileRoot = wtActivePath ?? currentFolder
   const prevStatusRef = useRef(status)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -16,7 +18,7 @@ export function GitAutoRefresh() {
     const prev = prevStatusRef.current
     prevStatusRef.current = status
 
-    if (!currentFolder) return
+    if (!fileRoot) return
 
     const needsRefresh = showFilePanel || sidebarTab === 'files'
     if (!needsRefresh) return
@@ -26,43 +28,44 @@ export function GitAutoRefresh() {
 
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      if (showFilePanel) useSourceControlStore.getState().refresh(currentFolder)
-      if (sidebarTab === 'files') useFileTreeStore.getState().refreshTree(currentFolder)
+      if (showFilePanel) useSourceControlStore.getState().refresh(fileRoot)
+      if (sidebarTab === 'files') useFileTreeStore.getState().refreshTree(fileRoot)
     }, 500)
 
     return () => clearTimeout(debounceRef.current)
-  }, [status, showFilePanel, sidebarTab, currentFolder])
+  }, [status, showFilePanel, sidebarTab, fileRoot])
 
   useEffect(() => {
-    if (showFilePanel && currentFolder) {
-      useSourceControlStore.getState().fetchFiles(currentFolder)
+    if (showFilePanel && fileRoot) {
+      useSourceControlStore.getState().fetchFiles(fileRoot)
     }
-  }, [showFilePanel, currentFolder])
+  }, [showFilePanel, fileRoot])
 
   useEffect(() => {
-    if (sidebarTab === 'files' && currentFolder) {
-      useFileTreeStore.getState().refreshTree(currentFolder)
+    if (sidebarTab === 'files' && fileRoot) {
+      useFileTreeStore.getState().refreshTree(fileRoot)
     }
-  }, [sidebarTab, currentFolder])
+  }, [sidebarTab, fileRoot])
 
   const needsWatch = showFilePanel || sidebarTab === 'files'
 
   useEffect(() => {
-    if (!currentFolder || !needsWatch) {
+    if (!fileRoot || !needsWatch) {
       window.app.stopFileWatch()
       return
     }
 
-    window.app.startFileWatch(currentFolder)
+    window.app.startFileWatch(fileRoot)
 
     const scheduleRefresh = () => {
       clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
-        const folder = useAppStore.getState().currentFolder
-        if (!folder) return
+        const { currentFolder: cf, _worktrees: wts } = useAppStore.getState()
+        const root = cf ? (wts[cf]?.activePath ?? cf) : null
+        if (!root) return
         const { showFilePanel: fp, sidebarTab: tab } = useAppStore.getState()
-        if (fp) useSourceControlStore.getState().refresh(folder)
-        if (tab === 'files') useFileTreeStore.getState().refreshTree(folder)
+        if (fp) useSourceControlStore.getState().refresh(root)
+        if (tab === 'files') useFileTreeStore.getState().refreshTree(root)
       }, 500)
     }
 
@@ -74,7 +77,7 @@ export function GitAutoRefresh() {
       unsubHead()
       window.app.stopFileWatch()
     }
-  }, [currentFolder, needsWatch])
+  }, [fileRoot, needsWatch])
 
   return null
 }

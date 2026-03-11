@@ -1398,6 +1398,75 @@ describe('task_started event', () => {
   })
 })
 
+describe('worktree session save isolation', () => {
+  it('saves each worktree session with its own _worktreePath on re-key', () => {
+    setupProject('/test')
+
+    useChatStore.setState((s) => {
+      const project = s.projectSessions['/test']
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          '/test': {
+            ...project,
+            _activeSessionId: DRAFT_SESSION_ID,
+            _sessions: {
+              [DRAFT_SESSION_ID]: {
+                ...createDefaultPerSessionState(),
+                messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: 'hello' }], status: 'complete', createdAt: '' }] as never[],
+                _worktreeBaseBranch: 'feature-a',
+                _worktreePath: '/worktrees/project/wt-A',
+              },
+            },
+          },
+        },
+      }
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'session_init',
+      session: { sessionId: 'wt-session-A' } as never,
+    }))
+
+    expect(mockWindowApp.createSession).toHaveBeenCalledWith(
+      '/test', 'wt-session-A', true, 'feature-a', '/worktrees/project/wt-A', expect.any(String),
+    )
+
+    mockWindowApp.createSession.mockClear()
+
+    useChatStore.setState((s) => {
+      const project = s.projectSessions['/test']
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          '/test': {
+            ...project,
+            _activeSessionId: DRAFT_SESSION_ID,
+            _sessions: {
+              ...project._sessions,
+              [DRAFT_SESSION_ID]: {
+                ...createDefaultPerSessionState(),
+                messages: [{ id: 'm2', role: 'user', content: [{ type: 'text', text: 'world' }], status: 'complete', createdAt: '' }] as never[],
+                _worktreeBaseBranch: 'feature-b',
+                _worktreePath: '/worktrees/project/wt-B',
+              },
+            },
+          },
+        },
+      }
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'session_init',
+      session: { sessionId: 'wt-session-B' } as never,
+    }))
+
+    expect(mockWindowApp.createSession).toHaveBeenCalledWith(
+      '/test', 'wt-session-B', true, 'feature-b', '/worktrees/project/wt-B', expect.any(String),
+    )
+  })
+})
+
 describe('switchSession Case B codex usage restore', () => {
   it('restores codex context window from saved message metadata', async () => {
     setupProject('/test')

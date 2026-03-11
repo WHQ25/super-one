@@ -143,6 +143,7 @@ interface AppAPI {
   getGitBranches(folderPath: string): Promise<string[]>
   switchGitBranch(folderPath: string, branch: string): Promise<GitResult>
   createBranch(folderPath: string, branch: string): Promise<GitResult>
+  pathExists(p: string): Promise<boolean>
   getWorktreeInfo(folderPath: string): Promise<WorktreeInfo | null>
   activateWorktree(folderPath: string, baseBranch: string | null, carryLocalChanges?: boolean): Promise<{ ok: true; path: string } | { ok: false; error: string }>
   getGitStatusFiles(folderPath: string): Promise<GitStatusFile[]>

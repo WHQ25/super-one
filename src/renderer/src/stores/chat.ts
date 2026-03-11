@@ -58,6 +58,8 @@ export interface PerSessionState {
   isCompacting: boolean
   rateLimitInfo: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number } | null
   _worktreeBaseBranch: string | null
+  _worktreePath: string | null
+  _worktreeRemoved: boolean
   additionalDirs: string[]
   lastEventAt: number
   prefireMessage: { content: string; attachments: ImageAttachment[]; mentions: Mention[] } | null
@@ -128,6 +130,8 @@ export function createDefaultPerSessionState(): PerSessionState {
     isCompacting: false,
     rateLimitInfo: null,
     _worktreeBaseBranch: null,
+    _worktreePath: null,
+    _worktreeRemoved: false,
     additionalDirs: [],
     lastEventAt: 0,
     prefireMessage: null,
@@ -911,10 +915,6 @@ function _getWorktreeBranch(_projectPath: string, session: PerSessionState): str
   return session._worktreeBaseBranch ?? undefined
 }
 
-function _getWorktreePath(projectPath: string): string | undefined {
-  return useAppStore.getState().getWorktreeState(projectPath).activePath ?? undefined
-}
-
 function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   const project = get().projectSessions[projectPath]
   if (!project) return
@@ -924,7 +924,7 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   if (!session || session.messages.length === 0) return
 
   const branch = _getWorktreeBranch(projectPath, session)
-  const wtPath = branch ? _getWorktreePath(projectPath) : undefined
+  const wtPath = session._worktreePath ?? undefined
   const title = _extractTitle(session.messages)
   window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath, title)
     .then(() => window.app.saveSessionState(sessionId, {
@@ -941,7 +941,7 @@ function _savePerSessionSnapshot(projectPath: string, sessionId: string, session
   if (!sessionId || sessionId === DRAFT_SESSION_ID || session.messages.length === 0) return
 
   const branch = _getWorktreeBranch(projectPath, session)
-  const wtPath = branch ? _getWorktreePath(projectPath) : undefined
+  const wtPath = session._worktreePath ?? undefined
   const title = _extractTitle(session.messages)
   window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath, title)
     .then(() => window.app.saveSessionState(sessionId, {
@@ -992,7 +992,7 @@ async function _ensureClaudeSessionReadyForSend(get: () => ChatStore, projectPat
     return
   } catch {}
 
-  const worktreePath = session._worktreeBaseBranch ? _getWorktreePath(projectPath) : undefined
+  const worktreePath = session._worktreePath ?? undefined
   await window.app.resumeSession(projectPath, sessionId, worktreePath)
 }
 
@@ -1523,6 +1523,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         session: null,
         sessionProvider: null,
         _worktreeBaseBranch: baseBranch,
+        _worktreePath: result.path,
         todos: {},
         _nextTodoId: 1,
         showTodos: false,
@@ -2532,7 +2533,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (targetSession.sessionProvider === 'codex') return
       if (sessionId === DRAFT_SESSION_ID) return
 
-      if (!targetSession._worktreeBaseBranch) {
+      window.app.trace?.('agent.store', 'switchSession:A', {
+        sessionId,
+        _worktreePath: targetSession._worktreePath,
+        _worktreeBaseBranch: targetSession._worktreeBaseBranch,
+        _worktreeRemoved: targetSession._worktreeRemoved,
+      })
+      if (targetSession._worktreePath) {
+        const exists = await window.app.pathExists(targetSession._worktreePath)
+        window.app.trace?.('agent.store', 'switchSession:A:pathExists', { path: targetSession._worktreePath, exists })
+        if (exists) {
+          useAppStore.getState().setActiveWorktree(activeProject, targetSession._worktreePath)
+        } else {
+          window.app.trace?.('agent.store', 'switchSession:A:worktreeRemoved', { sessionId })
+          set((s) => updatePerSession(s, activeProject, sessionId, () => ({ _worktreeRemoved: true })))
+          useAppStore.getState().setActiveWorktree(activeProject, null)
+        }
+      } else if (!targetSession._worktreeBaseBranch) {
         useAppStore.getState().setActiveWorktree(activeProject, null)
       }
 
@@ -2596,6 +2613,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         : null,
       codexUsageSnapshot: restoredCodexUsage,
       _worktreeBaseBranch: savedWorktreeBranch,
+      _worktreePath: savedWorktreePath ?? null,
       preferredProvider: restoredProvider,
       sessionProvider: restoredProvider,
     }
@@ -2627,8 +2645,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     })
 
+    window.app.trace?.('agent.store', 'switchSession:B', {
+      sessionId,
+      savedWorktreePath,
+      savedWorktreeBranch,
+    })
     if (savedWorktreePath) {
-      useAppStore.getState().setActiveWorktree(activeProject, savedWorktreePath)
+      const exists = await window.app.pathExists(savedWorktreePath)
+      window.app.trace?.('agent.store', 'switchSession:B:pathExists', { path: savedWorktreePath, exists })
+      if (exists) {
+        useAppStore.getState().setActiveWorktree(activeProject, savedWorktreePath)
+      } else {
+        window.app.trace?.('agent.store', 'switchSession:B:worktreeRemoved', { sessionId })
+        set((s) => updatePerSession(s, activeProject, sessionId, () => ({ _worktreeRemoved: true })))
+        useAppStore.getState().setActiveWorktree(activeProject, null)
+      }
     } else {
       useAppStore.getState().setActiveWorktree(activeProject, null)
     }

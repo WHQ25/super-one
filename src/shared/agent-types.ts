@@ -928,6 +928,7 @@ export const AgentIpcChannels = {
   GIT_LIST_BRANCHES: 'app:git-list-branches',
   GIT_SWITCH_BRANCH: 'app:git-switch-branch',
   GIT_CREATE_BRANCH: 'app:git-create-branch',
+  PATH_EXISTS: 'app:path-exists',
   GIT_WORKTREE_INFO: 'app:git-worktree-info',
   GIT_ACTIVATE_WORKTREE: 'app:git-activate-worktree',
   GIT_STATUS_FILES: 'app:git-status-files',

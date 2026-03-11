@@ -67,6 +67,8 @@ interface DeleteTarget {
 
 export function FileTree() {
   const currentFolder = useAppStore((s) => s.currentFolder)
+  const wtActivePath = useAppStore((s) => currentFolder ? s._worktrees[currentFolder]?.activePath : null)
+  const fileRoot = wtActivePath ?? currentFolder
   const loading = useFileTreeStore((s) => s.loading)
   const visibleList = useFileTreeStore((s) => s._visibleList)
   const visibleVersion = useFileTreeStore((s) => s._visibleVersion)
@@ -102,18 +104,19 @@ export function FileTree() {
   }, [visibleVersion, virtualizer])
 
   useEffect(() => {
-    if (currentFolder) fetchTree(currentFolder)
-  }, [currentFolder, fetchTree])
+    window.app.trace?.('agent.store', 'FileTree:fetchTree', { currentFolder, wtActivePath, fileRoot })
+    if (fileRoot) fetchTree(fileRoot)
+  }, [fileRoot, fetchTree])
 
   useEffect(() => {
-    if (!currentFolder || autoExpandedDirs.size === 0) return
+    if (!fileRoot || autoExpandedDirs.size === 0) return
     for (const dir of autoExpandedDirs) {
       if (shouldCollapseAutoExpanded(dir, dragOverPath)) {
-        toggleDir(currentFolder, dir)
+        toggleDir(fileRoot, dir)
         autoExpandedDirs.delete(dir)
       }
     }
-  }, [dragOverPath, currentFolder, toggleDir])
+  }, [dragOverPath, fileRoot, toggleDir])
 
   const dropOverlay = useMemo(
     () => computeDropOverlay(dragOverPath, visibleList.map((v) => v.path), 28),
@@ -166,11 +169,11 @@ export function FileTree() {
     const treePath = e.dataTransfer.getData(TREE_DND_MIME)
     if (treePath) {
       e.preventDefault()
-      if (currentFolder) moveFile(currentFolder, treePath, '')
+      if (fileRoot) moveFile(fileRoot, treePath, '')
       return
     }
 
-    if (!currentFolder || !e.dataTransfer.files.length || e.defaultPrevented) return
+    if (!fileRoot || !e.dataTransfer.files.length || e.defaultPrevented) return
     e.preventDefault()
     const paths: string[] = []
     for (const file of e.dataTransfer.files) {
@@ -179,20 +182,20 @@ export function FileTree() {
     }
     if (paths.length > 0) {
       const action = getDropAction(false, e.altKey)
-      if (action === 'move') moveFilesIn(currentFolder, '', paths)
-      else copyFilesIn(currentFolder, '', paths)
+      if (action === 'move') moveFilesIn(fileRoot, '', paths)
+      else copyFilesIn(fileRoot, '', paths)
     }
-  }, [currentFolder, copyFilesIn, moveFilesIn, moveFile, autoScroll, setDragOverPath])
+  }, [fileRoot, copyFilesIn, moveFilesIn, moveFile, autoScroll, setDragOverPath])
 
   const handleDeleteRequest = useCallback((item: VisibleItem) => {
     setDeleteTarget({ path: item.path, name: item.name, isDirectory: item.isDirectory })
   }, [])
 
   const confirmDelete = useCallback(() => {
-    if (!currentFolder || !deleteTarget) return
-    deleteFile(currentFolder, deleteTarget.path)
+    if (!fileRoot || !deleteTarget) return
+    deleteFile(fileRoot, deleteTarget.path)
     setDeleteTarget(null)
-  }, [currentFolder, deleteTarget, deleteFile])
+  }, [fileRoot, deleteTarget, deleteFile])
 
   const isEmpty = visibleList.length === 0 && !loading
 
@@ -236,7 +239,7 @@ export function FileTree() {
                   >
                     <TreeRow
                       item={item}
-                      currentFolder={currentFolder!}
+                      currentFolder={fileRoot!}
                       isSelected={selectedFile === item.path}
                       isRenaming={renamingPath === item.path}
                       onDeleteRequest={handleDeleteRequest}

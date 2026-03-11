@@ -432,6 +432,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_SWITCH_BRANCH, folderPath, branch),
   createBranch: (folderPath: string, branch: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_CREATE_BRANCH, folderPath, branch),
+  pathExists: (p: string): Promise<boolean> =>
+    ipcRenderer.invoke(AgentIpcChannels.PATH_EXISTS, p),
   getWorktreeInfo: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_WORKTREE_INFO, folderPath),
   activateWorktree: (folderPath: string, baseBranch: string | null, carryLocalChanges?: boolean) =>

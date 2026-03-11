@@ -474,6 +474,11 @@ function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle(AgentIpcChannels.PATH_EXISTS, async (_event, p: string) => {
+    const { existsSync } = await import('node:fs')
+    return existsSync(p)
+  })
+
   ipcMain.handle(AgentIpcChannels.GIT_WORKTREE_INFO, async (_event, folderPath: string) => {
     try {
       const raw = await gitRun(folderPath, ['worktree', 'list', '--porcelain'])

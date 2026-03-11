@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ArrowDown, PenLine, Trash2 } from 'lucide-react'
+import { ArrowDown, GitFork, PenLine, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
@@ -32,6 +32,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const showHistory = useActiveSession((s) => s.showHistory)
   const historySessionId = useActiveSession((s) => s._activeSessionId)
   const hasActiveSession = useActiveSession((s) => !!s.session)
+  const worktreeRemoved = useActiveSession((s) => s._worktreeRemoved)
   const prefireMessage = useActiveSession((s) => s.prefireMessage)
   const cancelPrefireMessage = useChatStore((s) => s.cancelPrefireMessage)
   const discardPrefireMessage = useChatStore((s) => s.discardPrefireMessage)
@@ -171,11 +172,21 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             </AnimatePresence>
           </div>
           <div className="mx-auto w-full max-w-3xl">
-            <PermissionPrompt />
-            <AskUserQuestionPrompt />
-            <TodoPopup />
-            <ChatInput />
-            {externalHistory && <ChatStatusBar />}
+            {worktreeRemoved ? (
+              <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
+                <GitFork className="size-3.5 shrink-0" />
+                <span>Worktree has been removed.</span>
+                <span>This session is now <em>READ ONLY</em>.</span>
+              </div>
+            ) : (
+              <>
+                <PermissionPrompt />
+                <AskUserQuestionPrompt />
+                <TodoPopup />
+                <ChatInput />
+                {externalHistory && <ChatStatusBar />}
+              </>
+            )}
           </div>
         </>
       )}

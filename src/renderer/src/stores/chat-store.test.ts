@@ -18,6 +18,7 @@ const mockWindowAgent = {
   getSessionId: vi.fn().mockResolvedValue(''),
   sendMessage: vi.fn().mockResolvedValue(undefined),
   readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
+  respondToPermission: vi.fn().mockResolvedValue(undefined),
 }
 
 const mockWindowApp = {
@@ -410,6 +411,92 @@ describe('hasPendingInteraction', () => {
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['a'].pendingPermissions.length).toBeGreaterThan(0)
     expect(after.hasPendingInteraction).toBe(true)
+  })
+
+  it('queues multiple permission_request events and respondToPermission dequeues by FIFO', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: {
+            a: { ...createDefaultPerSessionState(), status: 'streaming' as const },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'permission_request',
+      sessionId: 'a',
+      request: { requestId: 'r1', toolName: 'Bash', description: 'run ls' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'permission_request',
+      sessionId: 'a',
+      request: { requestId: 'r2', toolName: 'Edit', description: 'edit file' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'permission_request',
+      sessionId: 'a',
+      request: { requestId: 'r3', toolName: 'Write', description: 'write file' } as never,
+    }))
+
+    const mid = useChatStore.getState().projectSessions['/test']
+    expect(mid._sessions['a'].pendingPermissions).toHaveLength(3)
+    expect(mid._sessions['a'].pendingPermissions.map((p: { requestId: string }) => p.requestId)).toEqual(['r1', 'r2', 'r3'])
+
+    useChatStore.getState().respondToPermission('r1', true)
+
+    const after1 = useChatStore.getState().projectSessions['/test']
+    expect(after1._sessions['a'].pendingPermissions).toHaveLength(2)
+    expect(after1._sessions['a'].pendingPermissions[0].requestId).toBe('r2')
+
+    useChatStore.getState().respondToPermission('r2', false)
+
+    const after2 = useChatStore.getState().projectSessions['/test']
+    expect(after2._sessions['a'].pendingPermissions).toHaveLength(1)
+    expect(after2._sessions['a'].pendingPermissions[0].requestId).toBe('r3')
+
+    useChatStore.getState().respondToPermission('r3', true)
+
+    const after3 = useChatStore.getState().projectSessions['/test']
+    expect(after3._sessions['a'].pendingPermissions).toHaveLength(0)
+    expect(after3.hasPendingInteraction).toBe(false)
+  })
+
+  it('does not duplicate permission_request with same requestId', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: {
+            a: { ...createDefaultPerSessionState(), status: 'streaming' as const },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'permission_request',
+      sessionId: 'a',
+      request: { requestId: 'r1', toolName: 'Bash', description: 'run ls' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'permission_request',
+      sessionId: 'a',
+      request: { requestId: 'r1', toolName: 'Bash', description: 'run ls' } as never,
+    }))
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['a'].pendingPermissions).toHaveLength(1)
   })
 })
 

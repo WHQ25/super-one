@@ -2531,6 +2531,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (targetSession.sessionProvider === 'codex') return
       if (sessionId === DRAFT_SESSION_ID) return
 
+      if (!targetSession._worktreeBaseBranch) {
+        useAppStore.getState().setActiveWorktree(activeProject, null)
+      }
+
       if (!targetSession.selectedModel) {
         const defaultModel = get().availableModels[0]
         if (defaultModel) {

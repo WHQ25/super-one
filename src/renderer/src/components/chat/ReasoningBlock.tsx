@@ -49,19 +49,20 @@ export function ReasoningBlock({
 
   return (
     <div className="thinking-node mt-3 mb-2">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div
+        className={cn(
+          'flex items-center gap-1.5 text-xs text-muted-foreground',
+          showContent && 'cursor-pointer select-none transition-colors hover:text-foreground',
+        )}
+        onClick={showContent ? () => setExpanded((v) => !v) : undefined}
+      >
         {active
           ? <Brain className="size-3 animate-pulse" />
           : <Brain className="size-3" />
         }
         <span>{label}</span>
         {showContent && (
-          <button
-            onClick={() => setExpanded((value) => !value)}
-            className="flex items-center text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ChevronRight className={cn('size-3 transition-transform duration-200', expanded && 'rotate-90')} />
-          </button>
+          <ChevronRight className={cn('size-3 transition-transform duration-200', expanded && 'rotate-90')} />
         )}
       </div>
       {showContent && expanded && (

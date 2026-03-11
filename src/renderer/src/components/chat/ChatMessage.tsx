@@ -181,7 +181,7 @@ function renderBlock(
         </div>
       )
     case 'tool_use': {
-      const isBg = block.toolName === 'Bash' && (() => { const p = parseToolInput(block.input); return p.run_in_background === true || p.background === true })()
+      const isBg = block.toolName === 'Bash' && (() => { const p = parseToolInput(block.input, block.toolName); return p.run_in_background === true || p.background === true })()
       return (
         <ToolBlock
           key={index}

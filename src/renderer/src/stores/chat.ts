@@ -840,7 +840,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           [event.toolUseId]: {
             ...(prev ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
             description: event.description,
-            completed: false,
+            completed: prev?.completed === true ? true : false,
           },
         },
       }
@@ -857,6 +857,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         taskProgress: {
           ...session.taskProgress,
           [event.toolUseId]: {
+            ...(prev ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
             description: event.description,
             lastToolName: event.lastToolName,
             totalTokens: event.usage.totalTokens,

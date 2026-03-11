@@ -1362,6 +1362,40 @@ describe('task_started event', () => {
     expect(progress.totalTokens).toBe(100)
     expect(progress.toolUses).toBe(2)
   })
+
+  it('preserves completed background task state across late progress updates', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_started',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'starting',
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_notification',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      taskStatus: 'completed',
+      outputFile: '/tmp/out.log',
+      usage: { totalTokens: 50, toolUses: 1, durationMs: 300 },
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_progress',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'late progress',
+      lastToolName: 'Bash',
+      usage: { totalTokens: 100, toolUses: 2, durationMs: 500 },
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const progress = session.taskProgress['tool-abc']
+    expect(progress.description).toBe('late progress')
+    expect(progress.totalTokens).toBe(100)
+    expect(progress.toolUses).toBe(2)
+    expect(progress.completed).toBe(true)
+    expect(progress.outputFile).toBe('/tmp/out.log')
+  })
 })
 
 describe('switchSession Case B codex usage restore', () => {

@@ -100,6 +100,12 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
 }
 
 /** Parse a JSON string into a Record for tool display. */
-export function parseToolInput(input: string): Record<string, unknown> {
-  try { return JSON.parse(input) } catch { return {} }
+export function parseToolInput(input: string, toolName?: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(input)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+  } catch {
+    if (toolName === 'Bash' && input.trim()) return { command: input }
+    return {}
+  }
 }

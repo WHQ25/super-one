@@ -214,7 +214,7 @@ export function ChatStatusBar() {
         if (block.type !== 'tool_use') continue
 
         if (block.toolName === 'Bash') {
-          const params = parseToolInput(block.input)
+          const params = parseToolInput(block.input, block.toolName)
           const result = results.get(block.toolUseId)
           const progress = taskProgress[block.toolUseId]
           const runInBackground = params.run_in_background === true || params.background === true
@@ -236,7 +236,7 @@ export function ChatStatusBar() {
         }
 
         if (block.toolName === 'Agent') {
-          const params = parseToolInput(block.input)
+          const params = parseToolInput(block.input, block.toolName)
           if (params.run_in_background !== true) continue
           const progress = taskProgress[block.toolUseId]
           const hasTaskState = !!progress
@@ -310,6 +310,7 @@ export function ChatStatusBar() {
                       isTimedOut={item.result?.isTimedOut}
                       resultOutputPath={item.result?.outputPath}
                       autoExpand={i === 0}
+                      backgroundActivity
                     />
                   ))}
                 </div>

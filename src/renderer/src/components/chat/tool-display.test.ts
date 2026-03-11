@@ -61,4 +61,8 @@ describe('parseToolInput', () => {
     expect(parseToolInput('{"a":1}')).toEqual({ a: 1 })
     expect(parseToolInput('{invalid')).toEqual({})
   })
+
+  it('treats raw bash input as a command', () => {
+    expect(parseToolInput('ls -la', 'Bash')).toEqual({ command: 'ls -la' })
+  })
 })

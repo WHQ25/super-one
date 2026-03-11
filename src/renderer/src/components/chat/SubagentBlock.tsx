@@ -22,7 +22,7 @@ interface SubagentBlockProps {
 
 /** Parse Task tool input to extract display info. */
 function parseTaskInput(input: string) {
-  const params = parseToolInput(input)
+  const params = parseToolInput(input, 'Task')
   return {
     name: String(params.name ?? ''),
     description: String(params.description ?? ''),

@@ -31,6 +31,7 @@ interface ToolBlockProps {
   isTimedOut?: boolean
   resultOutputPath?: string
   autoExpand?: boolean
+  backgroundActivity?: boolean
 }
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
@@ -38,10 +39,10 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 
-export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, resultOutputPath, autoExpand = true }: ToolBlockProps) {
+export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, resultOutputPath, autoExpand = true, backgroundActivity = false }: ToolBlockProps) {
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
-  const params = useMemo(() => parseToolInput(input), [input])
+  const params = useMemo(() => parseToolInput(input, toolName), [input, toolName])
   const display = useMemo(() => getToolDisplay(toolName, params, cwd, homedir), [toolName, params, cwd, homedir])
   const mcpInfo = parseMcpToolName(toolName)
   const isMcp = mcpInfo !== null
@@ -85,6 +86,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         resultOutputPath={resultOutputPath}
         runInBackground={runInBackground}
         autoExpand={autoExpand}
+        backgroundActivity={backgroundActivity}
       />
     )
   }
@@ -273,6 +275,7 @@ function BashTerminalView({
   resultOutputPath,
   runInBackground,
   autoExpand,
+  backgroundActivity,
 }: {
   toolUseId: string
   command: string
@@ -286,6 +289,7 @@ function BashTerminalView({
   resultOutputPath?: string
   runInBackground?: boolean
   autoExpand?: boolean
+  backgroundActivity?: boolean
 }) {
   const bashOutput = useBashOutput(toolUseId)
   const outputExpired = !!resultOutputPath && !bashOutput && !isStreaming
@@ -297,8 +301,9 @@ function BashTerminalView({
   const hasResult = !!fallbackResult || isDenied
   const isRunning = (isStreaming && !hasResult && !isPendingPermission) || isLiveRunning
   const hasTaskState = !!taskProgress
-  const holdOpenForBackgroundTask = runInBackground
-    ? (hasTaskState ? taskProgress.completed !== true : isStreaming)
+  const treatAsBackground = backgroundActivity || runInBackground
+  const holdOpenForBackgroundTask = treatAsBackground
+    ? (hasTaskState ? taskProgress.completed !== true : isRunning)
     : false
   const autoExpanded = holdOpenForBackgroundTask || isRunning
   const [expanded, setExpanded] = useState(autoExpand ? autoExpanded : false)

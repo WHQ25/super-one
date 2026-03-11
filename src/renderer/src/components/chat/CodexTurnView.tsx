@@ -249,19 +249,7 @@ function renderItem(
       )
 
     case 'todo_list':
-      {
-        const completed = item.items.filter((todo) => todo.completed).length
-        const result = item.items.map((todo) => `- [${todo.completed ? 'x' : ' '}] ${todo.text}`).join('\n')
-        return (
-          <ToolBlock
-            key={`${item.id}-${index}`}
-            toolName="TodoList"
-            input={JSON.stringify({ total: item.items.length, completed })}
-            status="complete"
-            result={result || undefined}
-          />
-        )
-      }
+      return null
 
     case 'error':
       return (

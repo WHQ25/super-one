@@ -1,16 +1,32 @@
-import { useEffect, useCallback, useRef } from 'react'
+import { useEffect, useCallback, useMemo, useState } from 'react'
+import type { ChatMessage, CodexTodoListItem } from '../../../../shared/agent-types'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
-import { ListTodo, Circle, CircleDashed, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/ui/kbd'
+import { TodoListPanel } from './TodoListPanel'
+
+function findLatestCodexTodoList(messages: ChatMessage[]): CodexTodoListItem | null {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
+    const message = messages[messageIndex]
+    const items = message.metadata?.codex?.items
+    if (!items) continue
+    for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex--) {
+      const item = items[itemIndex]
+      if (item.type === 'todo_list') return item
+    }
+  }
+  return null
+}
 
 export function TodoPopup() {
   const todos = useActiveSession((s) => s.todos)
+  const messages = useActiveSession((s) => s.messages)
   const showTodos = useActiveSession((s) => s.showTodos)
+  const todosUserDismissed = useActiveSession((s) => s._todosUserDismissed)
   const toggleTodos = useChatStore((s) => s.toggleTodos)
-  const activeRef = useRef<HTMLDivElement>(null)
   const isCoding = useAppStore((s) => s.layoutMode) === 'coding'
+  const [dismissedCodexTodoId, setDismissedCodexTodoId] = useState<string | null>(null)
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -28,16 +44,34 @@ export function TodoPopup() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [showTodos, handleKeyDown])
 
+  const sessionTodoList = Object.values(todos)
+  const codexTodoList = useMemo(() => findLatestCodexTodoList(messages), [messages])
+  const usingSessionTodos = sessionTodoList.length > 0
+  const usingCodexTodos = !usingSessionTodos && codexTodoList !== null
+  const codexTodoDismissed = codexTodoList !== null && dismissedCodexTodoId === codexTodoList.id
+
   useEffect(() => {
-    if (showTodos && activeRef.current) {
-      activeRef.current.scrollIntoView({ block: 'center' })
+    if (!codexTodoList || dismissedCodexTodoId !== codexTodoList.id) return
+    if (codexTodoList.items.some((item) => !item.completed)) {
+      setDismissedCodexTodoId(null)
     }
-  }, [showTodos, todos])
+  }, [codexTodoList, dismissedCodexTodoId])
 
-  const todoList = Object.values(todos)
+  useEffect(() => {
+    if (!usingCodexTodos || codexTodoDismissed || showTodos || todosUserDismissed) return
+    toggleTodos()
+  }, [codexTodoDismissed, showTodos, todosUserDismissed, toggleTodos, usingCodexTodos])
 
-  // Auto-clear 3s after all todos completed
-  const allDone = todoList.length > 0 && todoList.every((t) => t.status === 'completed')
+  const codexAllDone = usingCodexTodos && (codexTodoList?.items.length ?? 0) > 0 && codexTodoList!.items.every((item) => item.completed)
+  useEffect(() => {
+    if (!codexAllDone || !codexTodoList || codexTodoDismissed) return
+    const timer = setTimeout(() => {
+      setDismissedCodexTodoId(codexTodoList.id)
+    }, 3000)
+    return () => clearTimeout(timer)
+  }, [codexAllDone, codexTodoDismissed, codexTodoList])
+
+  const allDone = usingSessionTodos && sessionTodoList.length > 0 && sessionTodoList.every((t) => t.status === 'completed')
   useEffect(() => {
     if (!allDone) return
     const timer = setTimeout(() => {
@@ -68,57 +102,31 @@ export function TodoPopup() {
     return () => clearTimeout(timer)
   }, [allDone])
 
-  if (todoList.length === 0) return null
+  if (!usingSessionTodos && (!usingCodexTodos || codexTodoDismissed)) return null
 
-  const completed = todoList.filter((t) => t.status === 'completed').length
+  const panelItems = usingSessionTodos
+    ? sessionTodoList.map((todo) => ({
+        id: todo.id,
+        text: todo.status === 'in_progress' && todo.activeForm ? todo.activeForm : todo.subject,
+        status: todo.status,
+      }))
+    : (codexTodoList?.items ?? []).map((todo, index) => ({
+        id: `${codexTodoList?.id ?? 'todo'}-${index}`,
+        text: todo.text,
+        status: todo.completed ? 'completed' as const : 'pending' as const,
+      }))
 
   return (
-    <div className={cn(
-      'flex shrink-0 flex-col overflow-hidden',
-      isCoding
-        ? 'mx-3 mb-1 rounded-lg border border-border'
-        : 'border-t border-border'
-    )}>
-      {/* Header — always visible */}
-      <div
-        className="flex shrink-0 cursor-pointer items-center gap-1.5 px-3 py-1.5 hover:bg-muted/30"
-        onClick={toggleTodos}
-      >
-        <ListTodo className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className={cn('text-xs font-medium text-muted-foreground', !showTodos && todoList.some((t) => t.status === 'in_progress') && 'animate-pulse')}>
-          Todos ({completed}/{todoList.length})
-        </span>
-        <Kbd className="ml-auto">{showTodos ? 'esc' : '⌃T'}</Kbd>
-      </div>
-
-      {/* List — only when expanded */}
-      {showTodos && (
-        <div className="max-h-[100px] overflow-y-auto border-t border-border p-1">
-          {todoList.map((todo) => (
-            <div
-              key={todo.id}
-              ref={todo.status === 'in_progress' ? activeRef : undefined}
-              className="flex items-start gap-2 rounded px-2 py-1 text-xs"
-            >
-              {todo.status === 'completed' ? (
-                <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-green-500" />
-              ) : todo.status === 'in_progress' ? (
-                <CircleDashed className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary [animation-duration:3s]" />
-              ) : (
-                <Circle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-              )}
-              <span
-                className={cn(
-                  'min-w-0 flex-1 leading-snug',
-                  todo.status === 'completed' && 'text-muted-foreground line-through'
-                )}
-              >
-                {todo.status === 'in_progress' && todo.activeForm ? todo.activeForm : todo.subject}
-              </span>
-            </div>
-          ))}
-        </div>
+    <TodoListPanel
+      items={panelItems}
+      expanded={showTodos}
+      onToggle={toggleTodos}
+      trailing={<Kbd className="ml-auto">{showTodos ? 'esc' : '⌃T'}</Kbd>}
+      className={cn(
+        isCoding
+          ? 'mx-3 mb-1 rounded-lg border border-border'
+          : 'border-t border-border',
       )}
-    </div>
+    />
   )
 }

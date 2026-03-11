@@ -103,4 +103,35 @@ describe('CodexTurnView', () => {
 
     expect(screen.getByText('done')).toBeTruthy()
   })
+
+  it('does not render codex todo lists inline', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'todo-1',
+                  type: 'todo_list',
+                  items: [
+                    { text: 'first task', completed: false },
+                    { text: 'second task', completed: true },
+                  ],
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+      />,
+    )
+
+    expect(screen.queryByText('Todos (1/2)')).toBeNull()
+    expect(screen.queryByText('first task')).toBeNull()
+    expect(screen.queryByText('second task')).toBeNull()
+  })
 })

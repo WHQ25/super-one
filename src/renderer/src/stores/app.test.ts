@@ -9,6 +9,7 @@ vi.mock('./source-control', () => ({
 
 vi.mock('./chat', () => {
   const state = { projectSessions: {} as Record<string, unknown>, activeProject: null as string | null }
+  const resetSessionForWorktreeSwitch = vi.fn()
   return {
     useChatStore: Object.assign(
       () => state,
@@ -17,6 +18,7 @@ vi.mock('./chat', () => {
           setGlobalResources: vi.fn(),
           ensureSession: vi.fn(),
           switchProject: vi.fn(),
+          resetSessionForWorktreeSwitch,
         }),
         setState: (fn: (s: typeof state) => Partial<typeof state>) => {
           Object.assign(state, fn(state))
@@ -30,6 +32,7 @@ const mockWindowApp = {
   closeProject: vi.fn().mockResolvedValue(undefined),
   removeRecentFolder: vi.fn(),
   openFolder: vi.fn().mockResolvedValue(true),
+  activateWorktree: vi.fn().mockResolvedValue({ ok: true, path: '/proj' }),
   selectFolder: vi.fn(),
   getRecentFolders: vi.fn().mockResolvedValue([]),
   getStartupData: vi.fn().mockResolvedValue({ userSkills: [], userCommands: [], userAgents: [] }),
@@ -166,5 +169,19 @@ describe('currentFolder subscription', () => {
 
     expect(useAppStore.getState().showFilePanel).toBe(true)
     expect(mockSourceControlReset).not.toHaveBeenCalled()
+  })
+})
+
+describe('clearWorktree', () => {
+  it('switches runtime back to project root even when activePath is already empty', async () => {
+    useAppStore.setState({
+      _worktrees: {
+        '/proj': { pendingBaseBranch: null, activePath: null, carryLocalChanges: false },
+      },
+    })
+
+    await useAppStore.getState().clearWorktree('/proj')
+
+    expect(mockWindowApp.activateWorktree).toHaveBeenCalledWith('/proj', null)
   })
 })

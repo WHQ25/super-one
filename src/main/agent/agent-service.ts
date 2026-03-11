@@ -136,6 +136,43 @@ export class AgentService {
     this.mainWindow = mainWindow
   }
 
+  private async replaceAgent(projectPath: string, cwd: string, sessionId?: string): Promise<void> {
+    const existing = this.agents.get(projectPath)
+    if (existing) {
+      await existing.dispose()
+      this.agents.delete(projectPath)
+    }
+    const agent = new ClaudeAgent()
+    await agent.initialize({ cwd }, this.createEventEmitter(projectPath), sessionId)
+    this.agents.set(projectPath, agent)
+  }
+
+  async resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string): Promise<void> {
+    const effectiveCwd = worktreeCwd ?? projectPath
+
+    if (this.hasBgSession(projectPath, sessionId)) {
+      await this.activateSession(projectPath, sessionId)
+      return
+    }
+
+    const current = this.agents.get(projectPath)
+    if (current && current.getSessionId() === sessionId && current.getCwd() === effectiveCwd) {
+      return
+    }
+    if (current && current.isStreaming()) {
+      await this.parkSession(projectPath)
+      await this.replaceAgent(projectPath, effectiveCwd, sessionId)
+      return
+    }
+
+    if (!current || current.getCwd() !== effectiveCwd) {
+      await this.replaceAgent(projectPath, effectiveCwd, sessionId)
+      return
+    }
+
+    await current.resumeSession(sessionId)
+  }
+
   setup(): void {
 
     // --- Session-scoped handlers (projectPath as first arg) ---
@@ -487,35 +524,7 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string) => {
-      const effectiveCwd = worktreeCwd ?? projectPath
-
-      // Case 1: Target is in background (same git project) — activate it directly
-      if (this.hasBgSession(projectPath, sessionId)) {
-        await this.activateSession(projectPath, sessionId)
-        return
-      }
-
-      const current = this.agents.get(projectPath)
-      // Case 2: Current agent is streaming — park it, create new agent to resume target
-      if (current && current.isStreaming()) {
-        await this.parkSession(projectPath)
-        const agent = new ClaudeAgent()
-        await agent.initialize({ cwd: effectiveCwd }, this.createEventEmitter(projectPath), sessionId)
-        this.agents.set(projectPath, agent)
-        return
-      }
-
-      // Case 3: Current idle — resume on existing agent
-      if (worktreeCwd) {
-        // cwd change requires a new agent (can't change cwd of existing process)
-        const existing = this.agents.get(projectPath)
-        if (existing) await existing.dispose()
-        const agent = new ClaudeAgent()
-        await agent.initialize({ cwd: worktreeCwd }, this.createEventEmitter(projectPath), sessionId)
-        this.agents.set(projectPath, agent)
-      } else {
-        await this.getAgent(projectPath).resumeSession(sessionId)
-      }
+      await this.resumeSession(projectPath, sessionId, worktreeCwd)
     })
 
     ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
@@ -582,14 +591,7 @@ export class AgentService {
   /** Dispose the current agent for projectPath and recreate it with a new cwd.
    *  The agent is still keyed by projectPath, and events are tagged with projectPath. */
   async switchCwd(projectPath: string, newCwd: string): Promise<void> {
-    const existing = this.agents.get(projectPath)
-    if (existing) {
-      await existing.dispose()
-      this.agents.delete(projectPath)
-    }
-    const agent = new ClaudeAgent()
-    await agent.initialize({ cwd: newCwd }, this.createEventEmitter(projectPath))
-    this.agents.set(projectPath, agent)
+    await this.replaceAgent(projectPath, newCwd)
   }
 
   async openFolder(cwd: string): Promise<void> {

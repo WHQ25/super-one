@@ -387,12 +387,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   clearWorktree: async (projectPath) => {
-    const wt = get()._worktrees[projectPath]
-    if (wt?.activePath) {
-      await window.app.activateWorktree(projectPath, null)
-      const { useChatStore } = await import('./chat')
-      useChatStore.getState().resetSessionForWorktreeSwitch(projectPath)
-    }
+    await window.app.activateWorktree(projectPath, null)
+    const { useChatStore } = await import('./chat')
+    useChatStore.getState().resetSessionForWorktreeSwitch(projectPath)
     set((s) => ({
       _worktrees: {
         ...s._worktrees,

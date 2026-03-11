@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AgentEvent } from '../../../shared/agent-types'
 
+const mockSetActiveWorktree = vi.fn()
+const mockClearWorktree = vi.fn().mockResolvedValue(undefined)
+
 vi.mock('./app', () => ({
   useAppStore: {
     getState: () => ({
       getWorktreeState: () => ({}),
-      setActiveWorktree: vi.fn(),
-      clearWorktree: vi.fn().mockResolvedValue(undefined),
+      setActiveWorktree: mockSetActiveWorktree,
+      clearWorktree: mockClearWorktree,
     }),
   },
 }))
@@ -25,6 +28,7 @@ const mockWindowApp = {
   createSession: vi.fn().mockResolvedValue(undefined),
   saveSessionState: vi.fn().mockResolvedValue(undefined),
   loadSessionState: vi.fn().mockResolvedValue(null),
+  pathExists: vi.fn().mockResolvedValue(true),
   resumeSession: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   codexListModels: vi.fn().mockResolvedValue([]),
@@ -536,8 +540,8 @@ describe('resetSession', () => {
   })
 })
 
-describe('init_ready updates project-level fields', () => {
-  it('sets cwd, homedir, sandboxInfo on project', () => {
+describe('init_ready updates session fields', () => {
+  it('sets cwd on the active session and updates project metadata', () => {
     setupProject('/test')
 
     useChatStore.getState().handleAgentEvent({
@@ -553,7 +557,7 @@ describe('init_ready updates project-level fields', () => {
     } as never)
 
     const proj = useChatStore.getState().projectSessions['/test']
-    expect(proj.cwd).toBe('/home/user/project')
+    expect(proj._sessions[DRAFT_SESSION_ID].cwd).toBe('/home/user/project')
     expect(proj.homedir).toBe('/home/user')
     expect(proj.sandboxInfo).toEqual({ enabled: false, autoAllowBash: true })
   })
@@ -581,7 +585,7 @@ describe('lazy session creation on early events', () => {
     const proj = useChatStore.getState().projectSessions['/early']
     expect(proj._activeSessionId).toBe(DRAFT_SESSION_ID)
     expect(proj._sessions[DRAFT_SESSION_ID]).toBeDefined()
-    expect(proj.cwd).toBe('/home/user')
+    expect(proj._sessions[DRAFT_SESSION_ID].cwd).toBe('/home/user')
   })
 
   it('creates DRAFT session on session_init when project has no sessions', () => {
@@ -621,7 +625,7 @@ describe('lazy session creation on early events', () => {
 })
 
 describe('switchProject restores parked session', () => {
-  it('calls activateSession when switching back to a project with active session', async () => {
+  it('calls resumeSession when switching back to a project with active session', async () => {
     setupProject('/proj-a')
     useChatStore.getState().handleAgentEvent(makeEvent({
       type: 'session_init',
@@ -647,21 +651,21 @@ describe('switchProject restores parked session', () => {
     setupProject('/proj-b')
 
     await useChatStore.getState().switchProject('/proj-b')
-    mockWindowAgent.activateSession.mockClear()
+    mockWindowApp.resumeSession.mockClear()
 
     await useChatStore.getState().switchProject('/proj-a')
-    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/proj-a', 'sid-a')
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/proj-a', 'sid-a', '/proj-a')
   })
 
-  it('does NOT call activateSession for DRAFT session', async () => {
+  it('does NOT call resumeSession for DRAFT session', async () => {
     setupProject('/proj-c')
     setupProject('/proj-d')
 
     await useChatStore.getState().switchProject('/proj-d')
-    mockWindowAgent.activateSession.mockClear()
+    mockWindowApp.resumeSession.mockClear()
 
     await useChatStore.getState().switchProject('/proj-c')
-    expect(mockWindowAgent.activateSession).not.toHaveBeenCalled()
+    expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
   })
 })
 
@@ -813,7 +817,7 @@ describe('codex model cache + defaults', () => {
 })
 
 describe('switchSession Case A (in _sessions)', () => {
-  it('switches pointer to target session and calls activateSession', async () => {
+  it('switches pointer to target session and calls resumeSession', async () => {
     setupProject('/test')
 
     useChatStore.getState().handleAgentEvent(makeEvent({
@@ -834,15 +838,15 @@ describe('switchSession Case A (in _sessions)', () => {
       },
     })
 
-    mockWindowAgent.activateSession.mockResolvedValue(undefined)
+    mockWindowApp.resumeSession.mockResolvedValue(undefined)
     await useChatStore.getState().switchSession('ses-b')
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('ses-b')
-    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', 'ses-b')
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
   })
 
-  it('switches pointer without activateSession for non-running target session', async () => {
+  it('switches pointer and resumes runtime for non-running target session', async () => {
     setupProject('/test')
     useChatStore.setState({
       availableModels: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[],
@@ -862,14 +866,37 @@ describe('switchSession Case A (in _sessions)', () => {
       },
     })
 
-    mockWindowAgent.activateSession.mockClear()
+    mockWindowApp.resumeSession.mockClear()
     await useChatStore.getState().switchSession('ses-b')
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('ses-b')
-    expect(mockWindowAgent.activateSession).not.toHaveBeenCalled()
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
     expect(after._sessions['ses-b'].selectedModel).toBe('claude-sonnet-4-6')
     expect(after._sessions['ses-b'].selectedEffort).toBe('medium')
+  })
+
+  it('realigns project cwd when switching from worktree session to local session', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'wt',
+          _sessions: {
+            wt: { ...createDefaultPerSessionState(), cwd: '/tmp/worktree', sessionProvider: 'claude', _worktreePath: '/tmp/worktree' },
+            local: { ...createDefaultPerSessionState(), cwd: '/tmp/worktree', sessionProvider: 'claude' },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().switchSession('local')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions.local.cwd).toBe('/test')
   })
 })
 
@@ -900,7 +927,7 @@ describe('switchSession Case B (from DB)', () => {
     expect(after._sessions['db-session'].selectedModel).toBe('claude-sonnet-4-6')
     expect(after._sessions['db-session'].selectedEffort).toBe('medium')
     expect(after.showHistory).toBe(false)
-    expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
   })
 
   it('handles null loadSessionState gracefully', async () => {
@@ -945,7 +972,7 @@ describe('deferred resume on sendMessage', () => {
 
     await useChatStore.getState().sendMessage('hello')
 
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', undefined)
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
     expect(mockWindowAgent.sendMessage).toHaveBeenCalled()
   })
 })

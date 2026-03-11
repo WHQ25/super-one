@@ -43,7 +43,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
 
       if (scrolledUp && statusRef.current === 'streaming' && userScrollIntentRef.current) {
         isNearBottomRef.current = false
-      } else {
+      } else if (userScrollIntentRef.current || remaining < el.clientHeight / 2) {
         isNearBottomRef.current = remaining < el.clientHeight / 2
       }
       userScrollIntentRef.current = false

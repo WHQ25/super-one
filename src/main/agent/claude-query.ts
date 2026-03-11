@@ -443,7 +443,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const stepId = (msg.message as any)?.id ?? ''
             const u = msg.message.usage
-            const stepInput = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+            const stepInput = u.input_tokens ?? 0
             const isDupe = stepId && processedStepIds.has(stepId)
             if (!isDupe) {
               if (stepId) processedStepIds.add(stepId)
@@ -468,11 +468,11 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const stepId = (msg.message as any)?.id ?? ''
             const u = msg.message.usage
-            const stepInput = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+            const stepInput = u.input_tokens ?? 0
             const isDupe = stepId && tracker.stepIds.has(stepId)
             if (!isDupe) {
               if (stepId) tracker.stepIds.add(stepId)
-              tracker.input = stepInput
+              tracker.input += stepInput
             }
             emit({
               type: 'subagent_usage',

@@ -118,6 +118,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SETUP_INSTALL_CLAUDE),
 
   codexRun: (
+    sessionId: string,
     projectPath: string,
     prompt: string,
     model?: string,
@@ -127,9 +128,11 @@ const appAPI = {
     threadId?: string,
     messageId?: string,
     images?: { mimeType: string; base64: string; name: string }[],
+    cwd?: string,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_RUN,
+      sessionId,
       projectPath,
       prompt,
       model,
@@ -139,19 +142,20 @@ const appAPI = {
       threadId,
       messageId,
       images,
+      cwd,
     ),
 
   codexListModels: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_LIST_MODELS, projectPath),
 
-  codexReset: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_RESET, projectPath),
+  codexReset: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_RESET, sessionId),
 
-  codexInterrupt: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_INTERRUPT, projectPath),
+  codexInterrupt: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_INTERRUPT, sessionId),
 
   codexRespondToPermission: (
-    projectPath: string,
+    sessionId: string,
     requestId: string,
     allow: boolean,
     alwaysAllow?: boolean,
@@ -160,7 +164,7 @@ const appAPI = {
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
-      projectPath,
+      sessionId,
       requestId,
       allow,
       alwaysAllow,
@@ -169,31 +173,32 @@ const appAPI = {
     ),
 
   codexAnswerQuestion: (
-    projectPath: string,
+    sessionId: string,
     requestId: string,
     answers: Record<string, string>,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_ANSWER_QUESTION,
-      projectPath,
+      sessionId,
       requestId,
       answers,
     ),
 
   codexDismissQuestion: (
-    projectPath: string,
+    sessionId: string,
     requestId: string,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_DISMISS_QUESTION,
-      projectPath,
+      sessionId,
       requestId,
     ),
 
-  codexSteer: (projectPath: string, input: string, messageId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, projectPath, input, messageId),
+  codexSteer: (sessionId: string, input: string, messageId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, sessionId, input, messageId),
 
   codexReview: (
+    sessionId: string,
     projectPath: string,
     target: CodexReviewTarget,
     model?: string,
@@ -201,9 +206,11 @@ const appAPI = {
     permissionPreset?: CodexPermissionPreset,
     threadId?: string,
     messageId?: string,
+    cwd?: string,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_REVIEW,
+      sessionId,
       projectPath,
       target,
       model,
@@ -211,22 +218,27 @@ const appAPI = {
       permissionPreset,
       threadId,
       messageId,
+      cwd,
     ),
 
   codexCompact: (
+    sessionId: string,
     projectPath: string,
     model?: string,
     permissionPreset?: CodexPermissionPreset,
     threadId?: string,
     messageId?: string,
+    cwd?: string,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_COMPACT,
+      sessionId,
       projectPath,
       model,
       permissionPreset,
       threadId,
       messageId,
+      cwd,
     ),
 
   codexGetAuthStatus: (projectPath: string) =>

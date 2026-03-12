@@ -764,6 +764,7 @@ export interface CodexRunRequest {
   images?: ImageAttachment[]
   threadId?: string
   messageId?: string
+  cwd?: string
 }
 
 export interface CodexRunResult {
@@ -785,6 +786,7 @@ export interface CodexReviewRequest {
   permissionPreset?: CodexPermissionPreset
   threadId?: string
   messageId?: string
+  cwd?: string
 }
 
 export interface CodexCompactRequest {
@@ -792,6 +794,7 @@ export interface CodexCompactRequest {
   permissionPreset?: CodexPermissionPreset
   threadId?: string
   messageId?: string
+  cwd?: string
 }
 
 // --- Update events ---

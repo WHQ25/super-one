@@ -1641,6 +1641,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const slashMatch = finalContent.match(/^\/(\S+)/)
     set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: slashMatch ? slashMatch[1] : '' })))
 
+    const codexSessionId = resolvedCodexCommand ? _getEffectiveSessionId(getProject(get(), activeProject)) : null
+
     // Utility codex commands → popup overlay (no chat messages)
     if (resolvedCodexCommand) {
       const utilityKind = resolvedCodexCommand.kind
@@ -1651,7 +1653,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (utilityKind === 'help') {
             popupContent = getCodexHelpText()
           } else if (utilityKind === 'reset') {
-            await window.app.codexReset(activeProject)
+            if (codexSessionId) await window.app.codexReset(codexSessionId)
             popupContent = 'Codex thread has been reset.'
           } else if (utilityKind === 'auth-status') {
             const status = await window.app.codexGetAuthStatus(activeProject)
@@ -1756,7 +1758,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           streamingTokens: { input: 0, output: 0 },
         })))
         try {
-          await window.app.codexSteer(activeProject, resolvedCodexCommand.prompt, steerAssistantId)
+          await window.app.codexSteer(codexSessionId!, resolvedCodexCommand.prompt, steerAssistantId)
         } catch (error) {
           set((s) => updateActivePerSession(s,(sess) => ({
             status: 'streaming',
@@ -1787,9 +1789,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       try {
         const runStart = Date.now()
         let result: Awaited<ReturnType<typeof window.app.codexRun>>
+        const codexCwd = _getSessionCwd(activeProject, session)
 
         if (resolvedCodexCommand.kind === 'review') {
           result = await window.app.codexReview(
+            codexSessionId!,
             activeProject,
             resolvedCodexCommand.target,
             resolvedCodexModel,
@@ -1797,17 +1801,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             selectedCodexPermissionPreset,
             codexThreadId,
             assistantId,
+            codexCwd,
           )
         } else if (resolvedCodexCommand.kind === 'compact') {
           result = await window.app.codexCompact(
+            codexSessionId!,
             activeProject,
             resolvedCodexModel,
             selectedCodexPermissionPreset,
             codexThreadId,
             assistantId,
+            codexCwd,
           )
         } else {
           result = await window.app.codexRun(
+            codexSessionId!,
             activeProject,
             resolvedCodexCommand.prompt,
             resolvedCodexModel,
@@ -1817,6 +1825,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             codexThreadId,
             assistantId,
             attachments.length > 0 ? attachments : undefined,
+            codexCwd,
           )
         }
 
@@ -1903,10 +1912,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   interrupt: async () => {
     const { activeProject } = get()
     if (!activeProject) return
+    const codexSid = _getEffectiveSessionId(getProject(get(), activeProject))
     set((s) => updateActivePerSession(s, () => ({ prefireMessage: null, awaitingAssistantReply: false })))
     const [claudeResult] = await Promise.allSettled([
       window.agent.interrupt(activeProject),
-      window.app.codexInterrupt(activeProject),
+      codexSid ? window.app.codexInterrupt(codexSid) : Promise.resolve(false),
     ])
     const claudeFailed = claudeResult.status === 'rejected' || claudeResult.value === false
     if (claudeFailed) {
@@ -2366,7 +2376,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const respondedRequest = session.pendingPermissions.find((p) => p.requestId === requestId)
     if (!respondedRequest) return
     if (session.sessionProvider === 'codex') {
-      void window.app.codexRespondToPermission(activeProject, requestId, allow, alwaysAllow, reason, decision)
+      const sid = _getEffectiveSessionId(getProject(get(), activeProject))
+      if (sid) void window.app.codexRespondToPermission(sid, requestId, allow, alwaysAllow, reason, decision)
     } else {
       void window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions)
     }
@@ -2404,7 +2415,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     const session = getActivePerSession(get(), activeProject)
     if (session.sessionProvider === 'codex') {
-      void window.app.codexAnswerQuestion(activeProject, requestId, answers)
+      const sid = _getEffectiveSessionId(getProject(get(), activeProject))
+      if (sid) void window.app.codexAnswerQuestion(sid, requestId, answers)
     } else {
       void window.agent.answerQuestion(activeProject, requestId, answers)
     }
@@ -2445,7 +2457,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     const session = getActivePerSession(get(), activeProject)
     if (session.sessionProvider === 'codex') {
-      void window.app.codexDismissQuestion(activeProject, requestId)
+      const sid = _getEffectiveSessionId(getProject(get(), activeProject))
+      if (sid) void window.app.codexDismissQuestion(sid, requestId)
     } else {
       void window.agent.dismissQuestion(activeProject, requestId)
     }

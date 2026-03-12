@@ -1037,9 +1037,9 @@ describe('codex plan mode', () => {
 
     const call = mockWindowApp.codexRun.mock.calls.at(-1)
     expect(call).toBeTruthy()
-    expect(call?.[0]).toBe('/test')
-    expect(call?.[1]).toBe('hello')
-    expect(call?.[5]).toBe('plan')
+    expect(call?.[1]).toBe('/test')
+    expect(call?.[2]).toBe('hello')
+    expect(call?.[6]).toBe('plan')
   })
 })
 
@@ -1168,14 +1168,15 @@ describe('codex steer routing', () => {
   it('creates a new assistant placeholder for steer and retargets codex events to it', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
+    const codexSid = 'codex_local_steer_test'
 
     useChatStore.setState({
       projectSessions: {
         '/test': {
           ...proj,
+          _activeSessionId: codexSid,
           _sessions: {
-            ...proj._sessions,
-            [DRAFT_SESSION_ID]: {
+            [codexSid]: {
               ...proj._sessions[DRAFT_SESSION_ID],
               status: 'streaming',
               sessionProvider: 'codex',
@@ -1209,7 +1210,7 @@ describe('codex steer routing', () => {
     expect(lastMessage?.providerId).toBe('codex')
     expect(lastMessage?.status).toBe('streaming')
     expect(lastMessage?.id).toBe(session.activeCodexMessageId)
-    expect(mockWindowApp.codexSteer).toHaveBeenCalledWith('/test', 'steer follow-up', lastMessage?.id)
+    expect(mockWindowApp.codexSteer).toHaveBeenCalledWith(codexSid, 'steer follow-up', lastMessage?.id)
   })
 })
 
@@ -1325,14 +1326,15 @@ describe('codex question routing', () => {
   it('routes answerQuestion through codex IPC for codex sessions', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
+    const codexSid = 'codex_local_q_test'
 
     useChatStore.setState({
       projectSessions: {
         '/test': {
           ...proj,
+          _activeSessionId: codexSid,
           _sessions: {
-            ...proj._sessions,
-            [DRAFT_SESSION_ID]: {
+            [codexSid]: {
               ...proj._sessions[DRAFT_SESSION_ID],
               sessionProvider: 'codex',
               preferredProvider: 'codex',
@@ -1348,22 +1350,23 @@ describe('codex question routing', () => {
 
     useChatStore.getState().answerQuestion('q1', { q1: 'Answer' })
 
-    expect(mockWindowApp.codexAnswerQuestion).toHaveBeenCalledWith('/test', 'q1', { q1: 'Answer' })
+    expect(mockWindowApp.codexAnswerQuestion).toHaveBeenCalledWith(codexSid, 'q1', { q1: 'Answer' })
     expect(mockWindowAgent.answerQuestion).not.toHaveBeenCalled()
-    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].pendingQuestion).toBeNull()
+    expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingQuestion).toBeNull()
   })
 
   it('routes dismissQuestion through codex IPC for codex sessions', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
+    const codexSid = 'codex_local_d_test'
 
     useChatStore.setState({
       projectSessions: {
         '/test': {
           ...proj,
+          _activeSessionId: codexSid,
           _sessions: {
-            ...proj._sessions,
-            [DRAFT_SESSION_ID]: {
+            [codexSid]: {
               ...proj._sessions[DRAFT_SESSION_ID],
               sessionProvider: 'codex',
               preferredProvider: 'codex',
@@ -1379,9 +1382,9 @@ describe('codex question routing', () => {
 
     useChatStore.getState().dismissQuestion('q1')
 
-    expect(mockWindowApp.codexDismissQuestion).toHaveBeenCalledWith('/test', 'q1')
+    expect(mockWindowApp.codexDismissQuestion).toHaveBeenCalledWith(codexSid, 'q1')
     expect(mockWindowAgent.dismissQuestion).not.toHaveBeenCalled()
-    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].pendingQuestion).toBeNull()
+    expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingQuestion).toBeNull()
   })
 })
 

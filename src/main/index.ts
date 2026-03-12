@@ -102,26 +102,26 @@ const activeCodexEventTargets = new Map<string, {
   dispose: () => void
 }>()
 
-function createCodexCallbacks(messageId: string | undefined, projectPath: string) {
+function createCodexCallbacks(messageId: string | undefined, sessionId: string, projectPath: string) {
   let currentMessageId = messageId
   const route = {
     setMessageId: (nextMessageId?: string) => {
       currentMessageId = nextMessageId
     },
     dispose: () => {
-      if (activeCodexEventTargets.get(projectPath) === route) {
-        activeCodexEventTargets.delete(projectPath)
+      if (activeCodexEventTargets.get(sessionId) === route) {
+        activeCodexEventTargets.delete(sessionId)
       }
     },
   }
-  activeCodexEventTargets.set(projectPath, route)
+  activeCodexEventTargets.set(sessionId, route)
 
   if (!messageId) return { callbacks: undefined, route }
   return {
     callbacks: {
       onThreadStarted: (resolvedThreadId: string) => {
         if (!currentMessageId) return
-        emitAgentEvent({ type: 'codex_thread_started', messageId: currentMessageId, threadId: resolvedThreadId, projectPath })
+        emitAgentEvent({ type: 'codex_thread_started', messageId: currentMessageId, threadId: resolvedThreadId, projectPath, sessionId })
       },
       onItemDelta: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
         if (!currentMessageId) return
@@ -150,7 +150,7 @@ function createCodexCallbacks(messageId: string | undefined, projectPath: string
             ...collabTrace,
           }, currentMessageId)
         }
-        emitAgentEvent({ type: 'codex_item_delta', messageId: currentMessageId, phase, item, projectPath })
+        emitAgentEvent({ type: 'codex_item_delta', messageId: currentMessageId, phase, item, projectPath, sessionId })
       },
       onUsageDelta: (usage: CodexUsageInfo) => {
         if (!currentMessageId) return
@@ -174,13 +174,14 @@ function createCodexCallbacks(messageId: string | undefined, projectPath: string
           outputTokens: usage.lastOutputTokens,
           codexUsage: usage,
           projectPath,
+          sessionId,
         })
       },
       onPermissionRequest: (request: PermissionRequest) => {
-        emitAgentEvent({ type: 'permission_request', request, projectPath })
+        emitAgentEvent({ type: 'permission_request', request, projectPath, sessionId })
       },
       onAskUserQuestion: (request: AskUserQuestionRequest) => {
-        emitAgentEvent({ type: 'ask_user_question', request, projectPath })
+        emitAgentEvent({ type: 'ask_user_question', request, projectPath, sessionId })
       },
     },
     route,
@@ -301,6 +302,7 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.CODEX_RUN,
     async (
       _event,
+      sessionId: string,
       projectPath: string,
       prompt: string,
       model?: string,
@@ -310,12 +312,14 @@ function registerIpcHandlers(): void {
       threadId?: string,
       messageId?: string,
       images?: ImageAttachment[],
+      cwd?: string,
     ) => {
-      const { callbacks, route } = createCodexCallbacks(messageId, projectPath)
+      const { callbacks, route } = createCodexCallbacks(messageId, sessionId, projectPath)
       try {
         return await codexService.run(
+          sessionId,
           projectPath,
-          { prompt, model, reasoningEffort, permissionPreset, collaborationMode, threadId, messageId, images },
+          { prompt, model, reasoningEffort, permissionPreset, collaborationMode, threadId, messageId, images, cwd },
           callbacks,
         )
       } finally {
@@ -337,32 +341,32 @@ function registerIpcHandlers(): void {
     return models
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_RESET, (_event, projectPath: string) => {
-    codexService.reset(projectPath)
+  ipcMain.handle(AgentIpcChannels.CODEX_RESET, (_event, sessionId: string) => {
+    codexService.reset(sessionId)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_INTERRUPT, (_event, projectPath: string) => {
-    return codexService.interrupt(projectPath)
+  ipcMain.handle(AgentIpcChannels.CODEX_INTERRUPT, (_event, sessionId: string) => {
+    return codexService.interrupt(sessionId)
   })
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
-    (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel') => {
-      return codexService.respondToPermission(projectPath, requestId, allow, alwaysAllow, reason, decision)
+    (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel') => {
+      return codexService.respondToPermission(sessionId, requestId, allow, alwaysAllow, reason, decision)
     },
   )
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_ANSWER_QUESTION,
-    (_event, projectPath: string, requestId: string, answers: Record<string, string>) => {
-      return codexService.respondToQuestion(projectPath, requestId, answers)
+    (_event, sessionId: string, requestId: string, answers: Record<string, string>) => {
+      return codexService.respondToQuestion(sessionId, requestId, answers)
     },
   )
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_DISMISS_QUESTION,
-    (_event, projectPath: string, requestId: string) => {
-      return codexService.dismissQuestion(projectPath, requestId)
+    (_event, sessionId: string, requestId: string) => {
+      return codexService.dismissQuestion(sessionId, requestId)
     },
   )
 
@@ -374,17 +378,18 @@ function registerIpcHandlers(): void {
     return codexService.setAuth(projectPath, request)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_STEER, (_event, projectPath: string, input: string, messageId?: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_STEER, (_event, sessionId: string, input: string, messageId?: string) => {
     if (messageId) {
-      activeCodexEventTargets.get(projectPath)?.setMessageId(messageId)
+      activeCodexEventTargets.get(sessionId)?.setMessageId(messageId)
     }
-    return codexService.steer(projectPath, input)
+    return codexService.steer(sessionId, input)
   })
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_REVIEW,
     async (
       _event,
+      sessionId: string,
       projectPath: string,
       target: CodexReviewTarget,
       model?: string,
@@ -392,12 +397,14 @@ function registerIpcHandlers(): void {
       permissionPreset?: CodexPermissionPreset,
       threadId?: string,
       messageId?: string,
+      cwd?: string,
     ) => {
-      const { callbacks, route } = createCodexCallbacks(messageId, projectPath)
+      const { callbacks, route } = createCodexCallbacks(messageId, sessionId, projectPath)
       try {
         return await codexService.review(
+          sessionId,
           projectPath,
-          { target, model, reasoningEffort, permissionPreset, threadId, messageId },
+          { target, model, reasoningEffort, permissionPreset, threadId, messageId, cwd },
           callbacks,
         )
       } finally {
@@ -410,17 +417,20 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.CODEX_COMPACT,
     async (
       _event,
+      sessionId: string,
       projectPath: string,
       model?: string,
       permissionPreset?: CodexPermissionPreset,
       threadId?: string,
       messageId?: string,
+      cwd?: string,
     ) => {
-      const { callbacks, route } = createCodexCallbacks(messageId, projectPath)
+      const { callbacks, route } = createCodexCallbacks(messageId, sessionId, projectPath)
       try {
         return await codexService.compact(
+          sessionId,
           projectPath,
-          { model, permissionPreset, threadId, messageId },
+          { model, permissionPreset, threadId, messageId, cwd },
           callbacks,
         )
       } finally {

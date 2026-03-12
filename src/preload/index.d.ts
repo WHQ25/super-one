@@ -41,16 +41,16 @@ interface AppAPI {
   closeProject(folderPath: string): Promise<void>
   checkClaude(): Promise<boolean>
   installClaude(): Promise<void>
-  codexRun(projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, collaborationMode?: CodexCollaborationMode, threadId?: string, messageId?: string, images?: ImageAttachment[]): Promise<CodexRunResult>
-  codexSteer(projectPath: string, input: string, messageId?: string): Promise<void>
-  codexReview(projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string): Promise<CodexRunResult>
-  codexCompact(projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string): Promise<CodexRunResult>
+  codexRun(sessionId: string, projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, collaborationMode?: CodexCollaborationMode, threadId?: string, messageId?: string, images?: ImageAttachment[], cwd?: string): Promise<CodexRunResult>
+  codexSteer(sessionId: string, input: string, messageId?: string): Promise<void>
+  codexReview(sessionId: string, projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string): Promise<CodexRunResult>
+  codexCompact(sessionId: string, projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string): Promise<CodexRunResult>
   codexListModels(projectPath: string): Promise<ModelOption[]>
-  codexReset(projectPath: string): Promise<void>
-  codexInterrupt(projectPath: string): Promise<boolean>
-  codexRespondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel'): Promise<boolean>
-  codexAnswerQuestion(projectPath: string, requestId: string, answers: Record<string, string>): Promise<boolean>
-  codexDismissQuestion(projectPath: string, requestId: string): Promise<boolean>
+  codexReset(sessionId: string): Promise<void>
+  codexInterrupt(sessionId: string): Promise<boolean>
+  codexRespondToPermission(sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel'): Promise<boolean>
+  codexAnswerQuestion(sessionId: string, requestId: string, answers: Record<string, string>): Promise<boolean>
+  codexDismissQuestion(sessionId: string, requestId: string): Promise<boolean>
   codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>
   codexSetAuth(projectPath: string, request: CodexSetAuthRequest): Promise<CodexAuthStatus>
   installUpdate(): Promise<void>

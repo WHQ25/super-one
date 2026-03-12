@@ -41,13 +41,18 @@ import type {
   CodexSetAuthRequest,
 } from '../../shared/agent-types'
 
-interface CodexSession {
+interface CodexProjectAuth {
   mode: CodexAuthMode
   apiKey?: string
+}
+
+interface CodexSession {
+  projectPath: string
   model?: string
   modelReasoningEffort?: CodexReasoningEffort
   permissionPreset: CodexPermissionPreset
   threadId: string | null
+  effectiveCwd: string | null
   runningController: AbortController | null
   pendingApprovals: Map<string, PendingCodexApproval>
   activeTurnId: string | null
@@ -888,7 +893,8 @@ function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
 }
 
 export class CodexExperimentService {
-  private sessions = new Map<string, CodexSession>()
+  private sessions = new Map<string, CodexSession>()  // key = sessionId
+  private projectAuth = new Map<string, CodexProjectAuth>()  // key = projectPath
   private codexCliScriptPath: string | null = null
 
   private rejectPendingApprovals(session: CodexSession, message: string): void {
@@ -900,10 +906,17 @@ export class CodexExperimentService {
     session.pendingApprovals.clear()
   }
 
+  private getProjectAuth(projectPath: string): CodexProjectAuth {
+    let auth = this.projectAuth.get(projectPath)
+    if (!auth) {
+      auth = { mode: 'auto' }
+      this.projectAuth.set(projectPath, auth)
+    }
+    return auth
+  }
+
   private createSession(
-    _projectPath: string,
-    mode: CodexAuthMode,
-    apiKey?: string,
+    projectPath: string,
     model?: string,
     threadId?: string,
     modelReasoningEffort?: CodexReasoningEffort,
@@ -911,12 +924,12 @@ export class CodexExperimentService {
   ): CodexSession {
     const resolvedPermissionProfile = resolvePermissionProfile(permissionPreset)
     return {
-      mode,
-      apiKey: normalizeApiKey(apiKey),
+      projectPath,
       model,
       modelReasoningEffort,
       permissionPreset: resolvedPermissionProfile.permissionPreset,
       threadId: threadId ?? null,
+      effectiveCwd: null,
       runningController: null,
       pendingApprovals: new Map<string, PendingCodexApproval>(),
       activeTurnId: null,
@@ -924,25 +937,33 @@ export class CodexExperimentService {
     }
   }
 
+  private resolveCwd(session: CodexSession, projectPath: string, requestedCwd?: string): string {
+    const cwd = requestedCwd || session.effectiveCwd || projectPath
+    if (session.effectiveCwd && session.effectiveCwd !== cwd) {
+      session.threadId = null
+    }
+    session.effectiveCwd = cwd
+    return cwd
+  }
+
   private ensureSession(
+    sessionId: string,
     projectPath: string,
     requestedModel?: string,
     requestedThreadId?: string,
     requestedReasoningEffort?: CodexReasoningEffort,
     requestedPermissionPreset?: CodexPermissionPreset,
   ): CodexSession {
-    const existing = this.sessions.get(projectPath)
+    const existing = this.sessions.get(sessionId)
     if (!existing) {
       const created = this.createSession(
         projectPath,
-        'auto',
-        undefined,
         requestedModel,
         requestedThreadId,
         requestedReasoningEffort,
         requestedPermissionPreset,
       )
-      this.sessions.set(projectPath, created)
+      this.sessions.set(sessionId, created)
       return created
     }
 
@@ -967,14 +988,12 @@ export class CodexExperimentService {
       if (existing.runningController) existing.runningController.abort()
       const recreated = this.createSession(
         projectPath,
-        existing.mode,
-        existing.apiKey,
         requestedModel ?? existing.model,
         requestedThreadId ?? existing.threadId ?? undefined,
         requestedReasoningEffort ?? existing.modelReasoningEffort,
         requestedPermissionPreset ?? existing.permissionPreset,
       )
-      this.sessions.set(projectPath, recreated)
+      this.sessions.set(sessionId, recreated)
       return recreated
     }
 
@@ -990,10 +1009,8 @@ export class CodexExperimentService {
     return this.codexCliScriptPath
   }
 
-  private buildAppServerEnv(session: CodexSession): NodeJS.ProcessEnv {
+  private buildAppServerEnv(auth: CodexProjectAuth): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...process.env }
-    // In Electron, process.execPath points to the app binary.
-    // Force child process to run in Node mode so it doesn't create a second app instance/Dock icon.
     if (process.versions.electron) {
       env.ELECTRON_RUN_AS_NODE = '1'
     }
@@ -1006,11 +1023,11 @@ export class CodexExperimentService {
       try { Object.assign(env, JSON.parse(cc?.extra_env || '{}')) } catch {}
       return env
     }
-    if (session.mode === 'chatgpt') {
+    if (auth.mode === 'chatgpt') {
       delete env.CODEX_API_KEY
       return env
     }
-    const apiKey = resolveApiKey(session.mode, session.apiKey)
+    const apiKey = resolveApiKey(auth.mode, auth.apiKey)
     if (apiKey) env.CODEX_API_KEY = apiKey
     return env
   }
@@ -1041,7 +1058,7 @@ export class CodexExperimentService {
   }
 
   private buildTurnSandboxPolicy(
-    projectPath: string,
+    cwd: string,
     permissionProfile: {
       sandboxMode: CodexSandboxMode
       networkAccessEnabled: boolean
@@ -1060,7 +1077,7 @@ export class CodexExperimentService {
 
     return {
       type: 'workspaceWrite',
-      writableRoots: [projectPath],
+      writableRoots: [cwd],
       readOnlyAccess: { type: 'fullAccess' },
       networkAccess: permissionProfile.networkAccessEnabled,
       excludeTmpdirEnvVar: false,
@@ -1069,7 +1086,7 @@ export class CodexExperimentService {
   }
 
   private async withAppServerConnection<T>(
-    session: CodexSession,
+    auth: CodexProjectAuth,
     signal: AbortSignal | undefined,
     fn: (connection: AppServerConnection) => Promise<T>,
   ): Promise<T> {
@@ -1078,7 +1095,7 @@ export class CodexExperimentService {
     }
 
     const codexScript = this.resolveCodexCliScriptPath()
-    const env = this.buildAppServerEnv(session)
+    const env = this.buildAppServerEnv(auth)
     const expectedPackage = resolveCodexPlatformPackage()
     const hasBundledPackage = expectedPackage ? hasCodexPlatformPackage(expectedPackage) : false
     const systemCodexCli = !hasBundledPackage ? findSystemCodexCli() : null
@@ -1086,7 +1103,7 @@ export class CodexExperimentService {
       '[codex] app-server launch platform=%s arch=%s mode=%s script=%s expectedPackage=%s bundledPackage=%s systemCodex=%s',
       process.platform,
       process.arch,
-      session.mode,
+      auth.mode,
       codexScript,
       expectedPackage ?? 'unknown',
       hasBundledPackage,
@@ -1280,8 +1297,8 @@ export class CodexExperimentService {
     }
   }
 
-  private async fetchModelsFromAppServer(session: CodexSession): Promise<ModelOption[]> {
-    return this.withAppServerConnection(session, undefined, async (connection) => {
+  private async fetchModelsFromAppServer(auth: CodexProjectAuth): Promise<ModelOption[]> {
+    return this.withAppServerConnection(auth, undefined, async (connection) => {
       const models: CodexAppServerModel[] = []
       let cursor: string | null = null
 
@@ -1312,9 +1329,9 @@ export class CodexExperimentService {
   }
 
   async listModels(projectPath: string): Promise<ModelOption[]> {
-    const session = this.ensureSession(projectPath)
-    log.info('[codex] listModels: mode=%s, hasApiKey=%s', session.mode, Boolean(session.apiKey || process.env.CODEX_API_KEY))
-    const models = await this.fetchModelsFromAppServer(session)
+    const auth = this.getProjectAuth(projectPath)
+    log.info('[codex] listModels: mode=%s, hasApiKey=%s', auth.mode, Boolean(auth.apiKey || process.env.CODEX_API_KEY))
+    const models = await this.fetchModelsFromAppServer(auth)
     log.info('[codex] listModels: fetched %d models', models.length)
     return models
   }
@@ -1322,7 +1339,7 @@ export class CodexExperimentService {
   private async resolveThread(
     connection: AppServerConnection,
     session: CodexSession,
-    projectPath: string,
+    cwd: string,
     permissionProfile: ReturnType<typeof resolvePermissionProfile>,
   ): Promise<string> {
     const threadConfig = this.buildThreadConfig(permissionProfile)
@@ -1333,7 +1350,7 @@ export class CodexExperimentService {
           compactRecord({
             threadId: session.threadId,
             model: session.model,
-            cwd: projectPath,
+            cwd,
             approvalPolicy: permissionProfile.approvalPolicy,
             sandbox: permissionProfile.sandboxMode,
             config: threadConfig,
@@ -1344,7 +1361,7 @@ export class CodexExperimentService {
           'thread/start',
           compactRecord({
             model: session.model,
-            cwd: projectPath,
+            cwd,
             approvalPolicy: permissionProfile.approvalPolicy,
             sandbox: permissionProfile.sandboxMode,
             config: threadConfig,
@@ -1874,6 +1891,7 @@ export class CodexExperimentService {
   }
 
   async run(
+    sessionId: string,
     projectPath: string,
     request: CodexRunRequest,
     callbacks?: CodexRunStreamCallbacks,
@@ -1886,6 +1904,7 @@ export class CodexExperimentService {
     }
 
     const session = this.ensureSession(
+      sessionId,
       projectPath,
       request.model,
       request.threadId,
@@ -1901,14 +1920,16 @@ export class CodexExperimentService {
 
     try {
       const permissionProfile = resolvePermissionProfile(session.permissionPreset)
+      const effectiveCwd = this.resolveCwd(session, projectPath, request.cwd)
       const collaborationMode = buildCollaborationMode(
         request.collaborationMode,
         session.model,
         session.modelReasoningEffort,
       )
 
-      const streamed = await this.withAppServerConnection(session, controller.signal, async (connection) => {
-        const resolvedThreadId = await this.resolveThread(connection, session, projectPath, permissionProfile)
+      const auth = this.getProjectAuth(projectPath)
+      const streamed = await this.withAppServerConnection(auth, controller.signal, async (connection) => {
+        const resolvedThreadId = await this.resolveThread(connection, session, effectiveCwd, permissionProfile)
 
         const turnStartResult = await connection.request(
           'turn/start',
@@ -1925,7 +1946,7 @@ export class CodexExperimentService {
             model: session.model,
             effort: session.modelReasoningEffort,
             approvalPolicy: permissionProfile.approvalPolicy,
-            sandboxPolicy: this.buildTurnSandboxPolicy(projectPath, permissionProfile),
+            sandboxPolicy: this.buildTurnSandboxPolicy(effectiveCwd, permissionProfile),
             ...(collaborationMode ? { collaborationMode } : {}),
           }),
         )
@@ -1973,8 +1994,8 @@ export class CodexExperimentService {
     }
   }
 
-  async steer(projectPath: string, input: string): Promise<void> {
-    const session = this.sessions.get(projectPath)
+  async steer(sessionId: string, input: string): Promise<void> {
+    const session = this.sessions.get(sessionId)
     if (!session?.steerFn) {
       throw new Error('No active Codex turn to steer')
     }
@@ -1982,11 +2003,13 @@ export class CodexExperimentService {
   }
 
   async review(
+    sessionId: string,
     projectPath: string,
     request: CodexReviewRequest,
     callbacks?: CodexRunStreamCallbacks,
   ): Promise<CodexRunResult> {
     const session = this.ensureSession(
+      sessionId,
       projectPath,
       request.model,
       request.threadId,
@@ -2002,9 +2025,11 @@ export class CodexExperimentService {
 
     try {
       const permissionProfile = resolvePermissionProfile(session.permissionPreset)
+      const effectiveCwd = this.resolveCwd(session, projectPath, request.cwd)
+      const auth = this.getProjectAuth(projectPath)
 
-      const streamed = await this.withAppServerConnection(session, controller.signal, async (connection) => {
-        const resolvedThreadId = await this.resolveThread(connection, session, projectPath, permissionProfile)
+      const streamed = await this.withAppServerConnection(auth, controller.signal, async (connection) => {
+        const resolvedThreadId = await this.resolveThread(connection, session, effectiveCwd, permissionProfile)
 
         await connection.request('review/start', compactRecord({
           threadId: resolvedThreadId,
@@ -2035,11 +2060,13 @@ export class CodexExperimentService {
   }
 
   async compact(
+    sessionId: string,
     projectPath: string,
     request: CodexCompactRequest,
     callbacks?: CodexRunStreamCallbacks,
   ): Promise<CodexRunResult> {
     const session = this.ensureSession(
+      sessionId,
       projectPath,
       request.model,
       request.threadId,
@@ -2055,9 +2082,11 @@ export class CodexExperimentService {
 
     try {
       const permissionProfile = resolvePermissionProfile(session.permissionPreset)
+      const effectiveCwd = this.resolveCwd(session, projectPath, request.cwd)
+      const auth = this.getProjectAuth(projectPath)
 
-      const streamed = await this.withAppServerConnection(session, controller.signal, async (connection) => {
-        const resolvedThreadId = await this.resolveThread(connection, session, projectPath, permissionProfile)
+      const streamed = await this.withAppServerConnection(auth, controller.signal, async (connection) => {
+        const resolvedThreadId = await this.resolveThread(connection, session, effectiveCwd, permissionProfile)
 
         await connection.request('thread/compact/start', { threadId: resolvedThreadId })
 
@@ -2083,22 +2112,22 @@ export class CodexExperimentService {
     }
   }
 
-  interrupt(projectPath: string): boolean {
-    const session = this.sessions.get(projectPath)
+  interrupt(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId)
     if (!session?.runningController) return false
     session.runningController.abort()
     return true
   }
 
   respondToPermission(
-    projectPath: string,
+    sessionId: string,
     requestId: string,
     allow: boolean,
     alwaysAllow?: boolean,
     reason?: string,
     decision?: 'cancel',
   ): boolean {
-    const session = this.sessions.get(projectPath)
+    const session = this.sessions.get(sessionId)
     if (!session) return false
     const pending = session.pendingApprovals.get(requestId)
     if (!pending) return false
@@ -2116,11 +2145,11 @@ export class CodexExperimentService {
   }
 
   respondToQuestion(
-    projectPath: string,
+    sessionId: string,
     requestId: string,
     answers: Record<string, string>,
   ): boolean {
-    const session = this.sessions.get(projectPath)
+    const session = this.sessions.get(sessionId)
     if (!session) return false
     const pending = session.pendingApprovals.get(requestId)
     if (!pending || pending.responseKind !== 'user_input') return false
@@ -2130,8 +2159,8 @@ export class CodexExperimentService {
     return true
   }
 
-  dismissQuestion(projectPath: string, requestId: string): boolean {
-    const session = this.sessions.get(projectPath)
+  dismissQuestion(sessionId: string, requestId: string): boolean {
+    const session = this.sessions.get(sessionId)
     if (!session) return false
     const pending = session.pendingApprovals.get(requestId)
     if (!pending || pending.responseKind !== 'user_input') return false
@@ -2141,63 +2170,70 @@ export class CodexExperimentService {
     return true
   }
 
-  reset(projectPath: string): void {
-    const session = this.sessions.get(projectPath)
+  reset(sessionId: string): void {
+    const session = this.sessions.get(sessionId)
     if (!session) return
     this.rejectPendingApprovals(session, 'Codex run interrupted')
     if (session.runningController) session.runningController.abort()
     session.threadId = null
+    session.effectiveCwd = null
     session.runningController = null
   }
 
   setAuth(projectPath: string, request: CodexSetAuthRequest): CodexAuthStatus {
-    const current = this.sessions.get(projectPath)
+    const currentAuth = this.getProjectAuth(projectPath)
     const mode = request.mode
     const apiKey = mode === 'apiKey'
-      ? normalizeApiKey(request.apiKey) ?? current?.apiKey
+      ? normalizeApiKey(request.apiKey) ?? currentAuth.apiKey
       : undefined
 
     if (mode === 'apiKey' && !resolveApiKey('apiKey', apiKey)) {
       throw new Error('API key mode requires apiKey or CODEX_API_KEY')
     }
 
-    if (current) this.rejectPendingApprovals(current, 'Codex run interrupted')
-    if (current?.runningController) current.runningController.abort()
-    const recreated = this.createSession(
-      projectPath,
-      mode,
-      apiKey,
-      current?.model,
-      current?.threadId ?? undefined,
-      current?.modelReasoningEffort,
-      current?.permissionPreset,
-    )
-    this.sessions.set(projectPath, recreated)
+    for (const session of this.sessions.values()) {
+      if (session.projectPath !== projectPath) continue
+      this.rejectPendingApprovals(session, 'Codex run interrupted')
+      if (session.runningController) session.runningController.abort()
+      session.runningController = null
+      session.activeTurnId = null
+      session.steerFn = null
+    }
+
+    this.projectAuth.set(projectPath, { mode, apiKey: normalizeApiKey(apiKey) })
     return this.getAuthStatus(projectPath)
   }
 
   getAuthStatus(projectPath: string): CodexAuthStatus {
-    const session = this.ensureSession(projectPath)
+    const auth = this.getProjectAuth(projectPath)
+    const isRunning = Array.from(this.sessions.values()).some(
+      (session) => session.projectPath === projectPath && Boolean(session.runningController),
+    )
     return {
-      mode: session.mode,
-      resolvedMode: resolveMode(session.mode, session.apiKey),
+      mode: auth.mode,
+      resolvedMode: resolveMode(auth.mode, auth.apiKey),
       hasEnvApiKey: Boolean(normalizeApiKey(process.env.CODEX_API_KEY)),
-      hasSessionApiKey: Boolean(normalizeApiKey(session.apiKey)),
-      isRunning: Boolean(session.runningController),
+      hasSessionApiKey: Boolean(normalizeApiKey(auth.apiKey)),
+      isRunning,
     }
   }
 
   closeProject(projectPath: string): void {
-    const session = this.sessions.get(projectPath)
-    if (!session) return
-    this.rejectPendingApprovals(session, 'Codex run interrupted')
-    if (session.runningController) session.runningController.abort()
-    this.sessions.delete(projectPath)
+    for (const [sessionId, session] of this.sessions) {
+      if (session.projectPath !== projectPath) continue
+      this.rejectPendingApprovals(session, 'Codex run interrupted')
+      if (session.runningController) session.runningController.abort()
+      this.sessions.delete(sessionId)
+    }
+    this.projectAuth.delete(projectPath)
   }
 
   dispose(): void {
-    for (const [projectPath] of this.sessions) {
-      this.closeProject(projectPath)
+    for (const [, session] of this.sessions) {
+      this.rejectPendingApprovals(session, 'Codex run interrupted')
+      if (session.runningController) session.runningController.abort()
     }
+    this.sessions.clear()
+    this.projectAuth.clear()
   }
 }

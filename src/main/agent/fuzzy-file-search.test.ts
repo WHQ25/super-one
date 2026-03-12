@@ -71,11 +71,9 @@ describe('fuzzyMatch', () => {
 
 describe('collectFiles', () => {
   it('should have standard excluded dirs', () => {
-    expect(EXCLUDED_DIRS.has('.git')).toBe(true)
-    expect(EXCLUDED_DIRS.has('node_modules')).toBe(true)
-    expect(EXCLUDED_DIRS.has('dist')).toBe(true)
-    expect(EXCLUDED_DIRS.has('build')).toBe(true)
-    expect(EXCLUDED_DIRS.has('__pycache__')).toBe(true)
+    for (const dir of ['.git', '.next', '.nuxt', '.turbo', '.cache', '.venv', '.gradle', '.cargo', '.tox', '.mypy_cache', 'node_modules', 'dist', 'build', '__pycache__']) {
+      expect(EXCLUDED_DIRS.has(dir)).toBe(true)
+    }
   })
 })
 

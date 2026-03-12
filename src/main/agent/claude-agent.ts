@@ -516,7 +516,6 @@ export class ClaudeAgent {
       const entries = readdirSync(target, { withFileTypes: true })
       const result: ListDirEntry[] = []
       for (const entry of entries) {
-        // Skip hidden dirs/files and common build directories
         if (EXCLUDED_DIRS.has(entry.name)) continue
         result.push({ name: entry.name, isDirectory: entry.isDirectory() })
       }

@@ -2,7 +2,11 @@ import { readdirSync, statSync } from 'fs'
 import { join, relative, basename } from 'path'
 import type { FileSearchResult, MentionSearchItem } from '../../shared/agent-types'
 
-export const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '__pycache__'])
+export const EXCLUDED_DIRS = new Set([
+  '.git', '.next', '.nuxt', '.turbo', '.cache', '.venv',
+  '.gradle', '.cargo', '.tox', '.mypy_cache',
+  'node_modules', 'dist', 'build', '__pycache__',
+])
 
 export interface FuzzyMatchResult {
   match: boolean

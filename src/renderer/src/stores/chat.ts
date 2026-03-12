@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAuthMode, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, StartupData, TodoItem } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
@@ -40,6 +40,7 @@ export interface PerSessionState {
   selectedCodexModel: string
   selectedCodexReasoningEffort?: CodexReasoningEffort
   selectedCodexPermissionPreset: CodexPermissionPreset
+  selectedCodexCollaborationMode: CodexCollaborationMode
   preferredProvider: ChatProvider
   draftText: string
   promptSuggestion: string | null
@@ -112,6 +113,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     selectedCodexModel: '',
     selectedCodexReasoningEffort: undefined,
     selectedCodexPermissionPreset: 'default',
+    selectedCodexCollaborationMode: 'default',
     preferredProvider: 'claude',
     draftText: '',
     promptSuggestion: null,
@@ -242,6 +244,7 @@ interface ChatStore {
   setSelectedCodexModel: (model: string) => void
   setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void
+  setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode) => void
   refreshCodexModels: (force?: boolean) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void
 
@@ -254,6 +257,7 @@ interface ChatStore {
   respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel') => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   cyclePermissionMode: () => void
+  togglePlanModeShortcut: () => void
   setSandboxMode: (mode: SandboxMode) => Promise<void>
 
   // Question actions
@@ -959,6 +963,22 @@ function _savePerSessionSnapshot(projectPath: string, sessionId: string, session
     .catch((err) => console.warn('[saveSessionSnapshot] failed:', err))
 }
 
+function _buildQuestionAnswerItem(
+  questions: UserQuestion[],
+  answers: Record<string, string>,
+): CodexAgentMessageItem {
+  const lines = questions.map((q) => {
+    const key = q.id ?? q.question
+    const answer = answers[key]?.trim()
+    return `**${q.question}**\n${answer || '_(dismissed)_'}`
+  })
+  return {
+    id: `qa-${Date.now()}`,
+    type: 'agent_message',
+    text: lines.join('\n\n'),
+  }
+}
+
 function _computeHasPendingInteraction(project: ProjectState): boolean {
   return Object.values(project._sessions).some(
     (s) => s.pendingPermissions.length > 0 || !!s.pendingQuestion || !!s.pendingPlanApproval,
@@ -1246,12 +1266,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               codexPhase: event.phase,
               codexItemId: event.item.id,
               codexItemType: event.item.type,
-              codexTextLength: event.item.type === 'reasoning' || event.item.type === 'agent_message' || event.item.type === 'review'
+              codexTextLength: event.item.type === 'reasoning' || event.item.type === 'plan' || event.item.type === 'agent_message' || event.item.type === 'review'
                 ? event.item.text.length
                 : undefined,
-              codexTextPreview: event.item.type === 'reasoning' || event.item.type === 'agent_message' || event.item.type === 'review'
+              codexTextPreview: event.item.type === 'reasoning' || event.item.type === 'plan' || event.item.type === 'agent_message' || event.item.type === 'review'
                 ? event.item.text.slice(0, 160)
                 : undefined,
+              ...(event.item.type === 'collab_tool_call' ? {
+                collabTool: event.item.tool,
+                collabStatus: event.item.status,
+                agentIds: Object.keys(event.item.agentsStates),
+                agentStatuses: Object.fromEntries(Object.entries(event.item.agentsStates).map(([k, v]) => [k, v.status])),
+                childThreadCount: event.item.childItems ? Object.keys(event.item.childItems).length : 0,
+                childItemCounts: event.item.childItems
+                  ? Object.fromEntries(Object.entries(event.item.childItems).map(([k, v]) => [k, v.length]))
+                  : undefined,
+              } : {}),
             }
           : {}
         window.app.trace?.('agent.store', event.type, {
@@ -1558,6 +1588,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       selectedCodexModel,
       selectedCodexReasoningEffort,
       selectedCodexPermissionPreset,
+      selectedCodexCollaborationMode,
       attachments,
       mentions,
     } = session
@@ -1570,6 +1601,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
       ? (codexCommand ?? { kind: 'run', prompt: finalContent })
       : null
+    const resolvedCodexSelection = resolveCodexModelSelection(
+      project.codexModels,
+      selectedCodexModel,
+      selectedCodexReasoningEffort,
+    )
+    const resolvedCodexModel = resolvedCodexSelection.modelId || undefined
+    const resolvedCodexReasoningEffort = resolvedCodexSelection.reasoningEffort
 
     if (!session.sessionProvider) {
       set((s) => updateActivePerSession(s, () => ({
@@ -1754,8 +1792,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           result = await window.app.codexReview(
             activeProject,
             resolvedCodexCommand.target,
-            selectedCodexModel || undefined,
-            selectedCodexReasoningEffort,
+            resolvedCodexModel,
+            resolvedCodexReasoningEffort,
             selectedCodexPermissionPreset,
             codexThreadId,
             assistantId,
@@ -1763,7 +1801,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         } else if (resolvedCodexCommand.kind === 'compact') {
           result = await window.app.codexCompact(
             activeProject,
-            selectedCodexModel || undefined,
+            resolvedCodexModel,
             selectedCodexPermissionPreset,
             codexThreadId,
             assistantId,
@@ -1772,9 +1810,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           result = await window.app.codexRun(
             activeProject,
             resolvedCodexCommand.prompt,
-            selectedCodexModel || undefined,
-            selectedCodexReasoningEffort,
+            resolvedCodexModel,
+            resolvedCodexReasoningEffort,
             selectedCodexPermissionPreset,
+            selectedCodexCollaborationMode,
             codexThreadId,
             assistantId,
             attachments.length > 0 ? attachments : undefined,
@@ -2183,6 +2222,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })))
   },
 
+  setSelectedCodexCollaborationMode: (mode) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateActivePerSession(s, () => ({
+      selectedCodexCollaborationMode: mode,
+    })))
+  },
+
   refreshCodexModels: async (force = false) => {
     const { activeProject } = get()
     if (!activeProject) return
@@ -2361,8 +2408,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } else {
       void window.agent.answerQuestion(activeProject, requestId, answers)
     }
+    const codexQaItem = session.sessionProvider === 'codex' && session.pendingQuestion
+      ? _buildQuestionAnswerItem(session.pendingQuestion.questions, answers)
+      : null
     set((s) => {
-      const perSessionUpdate = updateActivePerSession(s, () => ({ pendingQuestion: null }))
+      const perSessionUpdate = updateActivePerSession(s, (prev) => {
+        if (!codexQaItem) return { pendingQuestion: null }
+        const lastMsg = prev.messages[prev.messages.length - 1]
+        if (!lastMsg?.metadata?.codex) return { pendingQuestion: null }
+        const prevCodex = lastMsg.metadata.codex
+        return {
+          pendingQuestion: null,
+          messages: prev.messages.map((msg, i) =>
+            i !== prev.messages.length - 1 ? msg : {
+              ...msg,
+              metadata: { ...msg.metadata, codex: { ...prevCodex, items: [...prevCodex.items, codexQaItem] } },
+            },
+          ),
+        }
+      })
       const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
       if (proj) {
         return {
@@ -2435,6 +2499,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const session = getActivePerSession(get())
     const next = modes[(modes.indexOf(session.permissionMode) + 1) % modes.length]
     get().setPermissionMode(next)
+  },
+
+  togglePlanModeShortcut: () => {
+    const session = getActivePerSession(get())
+    const provider = session.sessionProvider ?? session.preferredProvider
+    if (provider === 'codex') {
+      const next: CodexCollaborationMode = session.selectedCodexCollaborationMode === 'plan' ? 'default' : 'plan'
+      get().setSelectedCodexCollaborationMode(next)
+      return
+    }
+    get().cyclePermissionMode()
   },
 
 

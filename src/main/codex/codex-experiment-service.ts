@@ -16,6 +16,11 @@ import type {
   CodexApprovalMode,
   CodexAuthMode,
   CodexAuthStatus,
+  CodexCollaborationMode,
+  CodexCollabAgentState,
+  CodexCollabAgentStatus,
+  CodexCollabTool,
+  CodexCollabToolCallItem,
   CodexCommandExecutionStatus,
   CodexCompactRequest,
   CodexMcpToolCallStatus,
@@ -327,6 +332,22 @@ function resolvePermissionProfile(
   }
 }
 
+function buildCollaborationMode(
+  collaborationMode: CodexCollaborationMode | undefined,
+  model?: string,
+  reasoningEffort?: CodexReasoningEffort,
+): Record<string, unknown> | undefined {
+  if (collaborationMode !== 'plan' || !model) return undefined
+  return {
+    mode: 'plan',
+    settings: {
+      model,
+      reasoning_effort: reasoningEffort ?? null,
+      developer_instructions: null,
+    },
+  }
+}
+
 function mapPatchChangeKind(raw: unknown): CodexPatchChangeKind {
   const direct = readString(raw)
   if (direct === 'add' || direct === 'delete' || direct === 'update') return direct
@@ -552,6 +573,45 @@ function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadItem): C
 
     case 'contextCompaction':
       return { id, type: 'compaction' }
+
+    case 'collabAgentToolCall': {
+      const prevCollab = previous?.type === 'collab_tool_call' ? previous : null
+      const tool = (readString(rec.tool) ?? prevCollab?.tool ?? 'spawnAgent') as CodexCollabTool
+      const statusStr = readString(rec.status)
+      const status: 'in_progress' | 'completed' = statusStr === 'completed' ? 'completed' : 'in_progress'
+      const senderThreadId = readString(rec.senderThreadId) ?? readString(rec.sender_thread_id) ?? prevCollab?.senderThreadId
+      const receiverThreadIds = readStringArray(rec.receiverThreadIds ?? rec.receiver_thread_ids)
+      const prompt = readString(rec.prompt) ?? prevCollab?.prompt
+
+      const agentsStates: Record<string, CodexCollabAgentState> = { ...(prevCollab?.agentsStates ?? {}) }
+      const rawStates = asRecord(rec.agentsStates ?? rec.agents_states)
+      if (rawStates) {
+        for (const [agentId, stateVal] of Object.entries(rawStates)) {
+          const stateRec = asRecord(stateVal)
+          if (!stateRec) continue
+          const prevAgentState = prevCollab?.agentsStates?.[agentId]
+          agentsStates[agentId] = {
+            ...prevAgentState,
+            status: (readString(stateRec.status) ?? 'running') as CodexCollabAgentStatus,
+            ...(stateRec.nickname != null ? { nickname: readString(stateRec.nickname) ?? undefined } : {}),
+            ...(stateRec.role != null ? { role: readString(stateRec.role) ?? undefined } : {}),
+            ...(stateRec.message != null ? { message: readString(stateRec.message) ?? undefined } : {}),
+          }
+        }
+      }
+
+      return {
+        id,
+        type: 'collab_tool_call',
+        tool,
+        status,
+        ...(senderThreadId ? { senderThreadId } : {}),
+        receiverThreadIds: receiverThreadIds.length > 0 ? receiverThreadIds : (prevCollab?.receiverThreadIds ?? []),
+        ...(prompt ? { prompt } : {}),
+        agentsStates,
+        ...(prevCollab?.childItems ? { childItems: prevCollab.childItems } : {}),
+      }
+    }
 
     default:
       return null
@@ -1324,6 +1384,82 @@ export class CodexExperimentService {
     let usage: CodexUsageInfo | null = null
     let turnCompleted = false
 
+    const subscribedChildThreads = new Set<string>()
+    const childItemMaps = new Map<string, { order: string[]; map: Map<string, CodexThreadItem> }>()
+    const childThreadToCollabId = new Map<string, string>()
+
+    const getChildItems = (threadId: string): CodexThreadItem[] => {
+      const data = childItemMaps.get(threadId)
+      if (!data) return []
+      return data.order.map((id) => data.map.get(id)).filter((i): i is CodexThreadItem => Boolean(i))
+    }
+
+    const upsertChildItem = (threadId: string, item: CodexThreadItem): void => {
+      let data = childItemMaps.get(threadId)
+      if (!data) {
+        data = { order: [], map: new Map() }
+        childItemMaps.set(threadId, data)
+      }
+      if (!data.map.has(item.id)) data.order.push(item.id)
+      data.map.set(item.id, item)
+    }
+
+    const emitCollabUpdate = (collabId: string, trigger?: string): void => {
+      const collab = itemMap.get(collabId)
+      if (!collab || collab.type !== 'collab_tool_call') return
+      const updatedChildItems: Record<string, CodexThreadItem[]> = {}
+      for (const tid of collab.receiverThreadIds) {
+        const items = getChildItems(tid)
+        if (items.length > 0) updatedChildItems[tid] = items
+      }
+      const updated: CodexCollabToolCallItem = { ...collab, childItems: updatedChildItems }
+      itemMap.set(collabId, updated)
+      if (process.env.NODE_ENV === 'development') {
+        const childCounts: Record<string, number> = {}
+        for (const [tid, items] of Object.entries(updatedChildItems)) childCounts[tid] = items.length
+        trace('codex.collab', 'emit_update', {
+          collabId,
+          trigger,
+          tool: collab.tool,
+          status: collab.status,
+          agentIds: Object.keys(collab.agentsStates),
+          receiverThreadIds: collab.receiverThreadIds,
+          childItemCounts: childCounts,
+        }, collabId)
+      }
+      callbacks?.onItemDelta?.('updated', updated)
+    }
+
+    const subscribeChildThread = async (threadId: string, collabId: string): Promise<void> => {
+      if (subscribedChildThreads.has(threadId)) return
+      subscribedChildThreads.add(threadId)
+      childThreadToCollabId.set(threadId, collabId)
+      childItemMaps.set(threadId, { order: [], map: new Map() })
+      try {
+        await connection.request('thread/resume', { threadId, persistExtendedHistory: false })
+        log.info('[codex] Subscribed to child thread %s for collab %s', threadId, collabId)
+      } catch (err) {
+        log.info('[codex] thread/resume skipped for child %s (events still tracked): %s', threadId, err)
+      }
+      if (process.env.NODE_ENV === 'development') {
+        trace('codex.collab', 'subscribe_child', { threadId, collabId }, collabId)
+      }
+    }
+
+    const unsubscribeChildThread = async (threadId: string): Promise<void> => {
+      if (!subscribedChildThreads.has(threadId)) return
+      const collabId = childThreadToCollabId.get(threadId)
+      try {
+        await connection.notify('thread/unsubscribe', { threadId })
+      } catch {}
+      if (process.env.NODE_ENV === 'development') {
+        trace('codex.collab', 'unsubscribe_child', { threadId, collabId }, collabId ?? undefined)
+      }
+      subscribedChildThreads.delete(threadId)
+      childItemMaps.delete(threadId)
+      childThreadToCollabId.delete(threadId)
+    }
+
     const handleServerRequest = async (notification: AppServerNotification): Promise<boolean> => {
       if (notification.requestIdRaw === undefined) return false
 
@@ -1372,7 +1508,9 @@ export class CodexExperimentService {
       return true
     }
 
-    const isRelevantTurn = (params: Record<string, unknown>): boolean => {
+    const isRelevantEvent = (params: Record<string, unknown>): boolean => {
+      const notifThreadId = readString(params.threadId)
+      if (notifThreadId && subscribedChildThreads.has(notifThreadId)) return true
       if (!activeTurnId) return true
       const turnId = readString(params.turnId) ?? readString(asRecord(params.turn)?.id)
       return !turnId || turnId === activeTurnId
@@ -1399,14 +1537,111 @@ export class CodexExperimentService {
 
       if (method === 'thread/started') {
         const startedThreadId = readString(asRecord(params.thread)?.id)
-        if (startedThreadId) {
+        if (startedThreadId && !subscribedChildThreads.has(startedThreadId)) {
           session.threadId = startedThreadId
           emitThreadStarted(startedThreadId)
         }
         continue
       }
 
-      if (!isRelevantTurn(params)) {
+      if (!isRelevantEvent(params)) {
+        continue
+      }
+
+      const notifThreadId = readString(params.threadId)
+      const isChildThreadEvent = notifThreadId ? subscribedChildThreads.has(notifThreadId) : false
+
+      if (isChildThreadEvent && notifThreadId) {
+        const collabId = childThreadToCollabId.get(notifThreadId)
+        if (!collabId) continue
+
+        if (process.env.NODE_ENV === 'development') {
+          trace('codex.collab', `child:${method}`, {
+            childThreadId: notifThreadId,
+            collabId,
+            itemId: readItemId(params),
+            itemType: readString(asRecord(params.item)?.type),
+          }, collabId)
+        }
+
+        switch (method) {
+          case 'item/started':
+          case 'item/completed': {
+            const rawItem = asRecord(params.item)
+            if (!rawItem) break
+            const itemId = readString(rawItem.id)
+            const childData = childItemMaps.get(notifThreadId)
+            const previous = itemId ? childData?.map.get(itemId) : undefined
+            if (previous?.type === 'plan' && method === 'item/completed') {
+              emitCollabUpdate(collabId, `child:${method}:plan`)
+              break
+            }
+            const mapped = mapThreadItemFromAppServer(rawItem, previous)
+            if (mapped) {
+              upsertChildItem(notifThreadId, mapped)
+              emitCollabUpdate(collabId, `child:${method}:${mapped.type}`)
+            }
+            break
+          }
+
+          case 'item/agentMessage/delta': {
+            const itemId = readString(params.itemId)
+            const delta = readString(params.delta) ?? ''
+            if (!itemId) break
+            const childData = childItemMaps.get(notifThreadId)
+            const prev = childData?.map.get(itemId)
+            const prevText = prev?.type === 'agent_message' ? prev.text : ''
+            upsertChildItem(notifThreadId, { id: itemId, type: 'agent_message', text: `${prevText}${delta}` })
+            emitCollabUpdate(collabId, 'child:agentMessage/delta')
+            break
+          }
+
+          case 'item/reasoning/summaryTextDelta':
+          case 'item/reasoning/summary_text_delta':
+          case 'item/reasoning/summaryDelta':
+          case 'item/reasoning/summary_delta':
+          case 'item/reasoning/summaryPartAdded':
+          case 'item/reasoning/summary_part_added':
+          case 'item/reasoning/textDelta':
+          case 'item/reasoning/text_delta':
+          case 'item/reasoning/delta': {
+            const itemId = readItemId(params)
+            const delta = readDeltaText(params)
+            if (!itemId) break
+            const childData = childItemMaps.get(notifThreadId)
+            const prev = childData?.map.get(itemId)
+            const prevText = prev?.type === 'reasoning' ? prev.text : ''
+            const nextText = (method === 'item/reasoning/summaryPartAdded' || method === 'item/reasoning/summary_part_added')
+              ? (prevText && !prevText.endsWith('\n\n') ? `${prevText}\n\n` : prevText)
+              : `${prevText}${delta}`
+            upsertChildItem(notifThreadId, { id: itemId, type: 'reasoning', text: nextText })
+            emitCollabUpdate(collabId, `child:reasoning/delta`)
+            break
+          }
+
+          case 'item/commandExecution/outputDelta': {
+            const itemId = readString(params.itemId)
+            const delta = readString(params.delta) ?? ''
+            if (!itemId) break
+            const childData = childItemMaps.get(notifThreadId)
+            const prev = childData?.map.get(itemId)
+            const prevCmd = prev?.type === 'command_execution' ? prev : null
+            upsertChildItem(notifThreadId, {
+              id: itemId,
+              type: 'command_execution',
+              command: prevCmd?.command ?? '',
+              aggregatedOutput: `${prevCmd?.aggregatedOutput ?? ''}${delta}`,
+              ...(prevCmd?.exitCode !== undefined ? { exitCode: prevCmd.exitCode } : {}),
+              status: prevCmd?.status ?? 'in_progress',
+              ...(prevCmd?.commandActions ? { commandActions: prevCmd.commandActions } : {}),
+            })
+            emitCollabUpdate(collabId, 'child:commandExecution/outputDelta')
+            break
+          }
+
+          default:
+            break
+        }
         continue
       }
 
@@ -1418,11 +1653,39 @@ export class CodexExperimentService {
 
           const itemId = readString(rawItem.id)
           const previous = itemId ? itemMap.get(itemId) : undefined
+          if (previous?.type === 'plan' && method === 'item/completed') {
+            callbacks?.onItemDelta?.('completed', previous)
+            break
+          }
           const mapped = mapThreadItemFromAppServer(rawItem, previous)
           if (!mapped) break
 
           upsertItem(itemOrder, itemMap, mapped)
           callbacks?.onItemDelta?.(method === 'item/started' ? 'started' : 'completed', mapped)
+
+          if (mapped.type === 'collab_tool_call') {
+            if (process.env.NODE_ENV === 'development') {
+              trace('codex.collab', `${method === 'item/started' ? 'started' : 'completed'}:${mapped.tool}`, {
+                collabId: mapped.id,
+                tool: mapped.tool,
+                status: mapped.status,
+                prompt: mapped.prompt?.slice(0, 200),
+                agentIds: Object.keys(mapped.agentsStates),
+                agentStatuses: Object.fromEntries(Object.entries(mapped.agentsStates).map(([k, v]) => [k, v.status])),
+                receiverThreadIds: mapped.receiverThreadIds,
+              }, mapped.id)
+            }
+            if (method === 'item/completed' && mapped.tool === 'spawnAgent') {
+              for (const tid of mapped.receiverThreadIds) {
+                await subscribeChildThread(tid, mapped.id)
+              }
+            }
+            if (method === 'item/completed' && mapped.tool === 'closeAgent' && mapped.status === 'completed') {
+              for (const tid of mapped.receiverThreadIds) {
+                await unsubscribeChildThread(tid)
+              }
+            }
+          }
           break
         }
 
@@ -1480,10 +1743,10 @@ export class CodexExperimentService {
           if (!itemId) break
 
           const previous = itemMap.get(itemId)
-          const previousText = previous?.type === 'reasoning' ? previous.text : ''
+          const previousText = previous?.type === 'plan' ? previous.text : ''
           const updated: CodexThreadItem = {
             id: itemId,
-            type: 'reasoning',
+            type: 'plan',
             text: `${previousText}${delta}`,
           }
           upsertItem(itemOrder, itemMap, updated)
@@ -1569,6 +1832,31 @@ export class CodexExperimentService {
           break
         }
 
+        case 'codex/event/collab_agent_spawn_end': {
+          const msg = asRecord(params.msg)
+          if (!msg) break
+          const callId = readString(msg.call_id)
+          const newThreadId = readString(msg.new_thread_id)
+          const nickname = readString(msg.new_agent_nickname)
+          const role = readString(msg.new_agent_role)
+          if (!callId) break
+          const collab = itemMap.get(callId)
+          if (!collab || collab.type !== 'collab_tool_call') break
+          if (newThreadId && (nickname || role)) {
+            const prev = collab.agentsStates[newThreadId] ?? {
+              status: 'pendingInit' as CodexCollabAgentStatus,
+            }
+            collab.agentsStates[newThreadId] = {
+              ...prev,
+              ...(nickname ? { nickname } : {}),
+              ...(role ? { role } : {}),
+            }
+            upsertItem(itemOrder, itemMap, collab)
+            callbacks?.onItemDelta?.('updated', collab)
+          }
+          break
+        }
+
         default:
           break
       }
@@ -1613,6 +1901,11 @@ export class CodexExperimentService {
 
     try {
       const permissionProfile = resolvePermissionProfile(session.permissionPreset)
+      const collaborationMode = buildCollaborationMode(
+        request.collaborationMode,
+        session.model,
+        session.modelReasoningEffort,
+      )
 
       const streamed = await this.withAppServerConnection(session, controller.signal, async (connection) => {
         const resolvedThreadId = await this.resolveThread(connection, session, projectPath, permissionProfile)
@@ -1633,6 +1926,7 @@ export class CodexExperimentService {
             effort: session.modelReasoningEffort,
             approvalPolicy: permissionProfile.approvalPolicy,
             sandboxPolicy: this.buildTurnSandboxPolicy(projectPath, permissionProfile),
+            ...(collaborationMode ? { collaborationMode } : {}),
           }),
         )
 

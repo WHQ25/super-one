@@ -59,6 +59,7 @@ export interface ModelUsageInfo {
 }
 
 export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+export type CodexCollaborationMode = 'default' | 'plan'
 
 export interface ReasoningEffortOption {
   value: CodexReasoningEffort
@@ -92,6 +93,12 @@ export interface CodexAgentMessageItem {
 export interface CodexReasoningItem {
   id: string
   type: 'reasoning'
+  text: string
+}
+
+export interface CodexPlanItem {
+  id: string
+  type: 'plan'
   text: string
 }
 
@@ -167,9 +174,32 @@ export interface CodexCompactionItem {
   type: 'compaction'
 }
 
+export type CodexCollabTool = 'spawnAgent' | 'sendInput' | 'wait' | 'closeAgent' | 'resumeAgent'
+export type CodexCollabAgentStatus = 'pendingInit' | 'running' | 'completed' | 'errored' | 'shutdown' | 'notFound'
+
+export interface CodexCollabAgentState {
+  status: CodexCollabAgentStatus
+  nickname?: string
+  role?: string
+  message?: string
+}
+
+export interface CodexCollabToolCallItem {
+  id: string
+  type: 'collab_tool_call'
+  tool: CodexCollabTool
+  status: 'in_progress' | 'completed'
+  senderThreadId?: string
+  receiverThreadIds: string[]
+  prompt?: string
+  agentsStates: Record<string, CodexCollabAgentState>
+  childItems?: Record<string, CodexThreadItem[]>
+}
+
 export type CodexThreadItem =
   | CodexAgentMessageItem
   | CodexReasoningItem
+  | CodexPlanItem
   | CodexCommandExecutionItem
   | CodexFileChangeItem
   | CodexMcpToolCallItem
@@ -178,6 +208,7 @@ export type CodexThreadItem =
   | CodexErrorItem
   | CodexReviewItem
   | CodexCompactionItem
+  | CodexCollabToolCallItem
 
 export interface CodexTurnInfo {
   threadId: string | null
@@ -729,6 +760,7 @@ export interface CodexRunRequest {
   model?: string
   reasoningEffort?: CodexReasoningEffort
   permissionPreset?: CodexPermissionPreset
+  collaborationMode?: CodexCollaborationMode
   images?: ImageAttachment[]
   threadId?: string
   messageId?: string

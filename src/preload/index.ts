@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type BashOutputEvent, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type SandboxMode } from '../shared/agent-types'
+import { AgentIpcChannels, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type SandboxMode } from '../shared/agent-types'
 
 const agentAPI = {
   sendMessage: (projectPath: string, request: { content: string; model?: string; images?: { mimeType: string; base64: string; name: string }[]; additionalDirs?: string[] }) =>
@@ -123,6 +123,7 @@ const appAPI = {
     model?: string,
     reasoningEffort?: CodexReasoningEffort,
     permissionPreset?: CodexPermissionPreset,
+    collaborationMode?: CodexCollaborationMode,
     threadId?: string,
     messageId?: string,
     images?: { mimeType: string; base64: string; name: string }[],
@@ -134,6 +135,7 @@ const appAPI = {
       model,
       reasoningEffort,
       permissionPreset,
+      collaborationMode,
       threadId,
       messageId,
       images,
@@ -412,8 +414,8 @@ const appAPI = {
   },
 
   // Bash output watcher
-  watchBashOutput: (toolUseId: string, filePath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.BASH_OUTPUT_WATCH, toolUseId, filePath),
+  watchBashOutput: (toolUseId: string, filePath: string, tailLines?: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.BASH_OUTPUT_WATCH, toolUseId, filePath, tailLines),
   unwatchBashOutput: (toolUseId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.BASH_OUTPUT_UNWATCH, toolUseId),
   readBashOutputMore: (toolUseId: string, tailLines: number): Promise<string> =>

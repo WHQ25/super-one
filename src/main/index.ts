@@ -12,6 +12,7 @@ import { fixPath, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import {
   AgentIpcChannels,
+  type CodexCollaborationMode,
   type CodexPermissionPreset,
   type CodexReasoningEffort,
   type CodexReviewTarget,
@@ -125,6 +126,20 @@ function createCodexCallbacks(messageId: string | undefined, projectPath: string
       onItemDelta: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
         if (!currentMessageId) return
         if (is.dev) {
+          const collabTrace = item.type === 'collab_tool_call'
+            ? {
+                collabTool: item.tool,
+                collabStatus: item.status,
+                agentIds: Object.keys(item.agentsStates),
+                agentStatuses: Object.fromEntries(Object.entries(item.agentsStates).map(([k, v]) => [k, v.status])),
+                receiverThreadIds: item.receiverThreadIds,
+                childThreadCount: item.childItems ? Object.keys(item.childItems).length : 0,
+                childItemCounts: item.childItems
+                  ? Object.fromEntries(Object.entries(item.childItems).map(([k, v]) => [k, v.length]))
+                  : undefined,
+                prompt: item.prompt?.slice(0, 200),
+              }
+            : {}
           trace('codex.emit', 'codex_item_delta', {
             messageId: currentMessageId,
             phase,
@@ -132,6 +147,7 @@ function createCodexCallbacks(messageId: string | undefined, projectPath: string
             itemType: item.type,
             textLength: 'text' in item && typeof item.text === 'string' ? item.text.length : undefined,
             textPreview: 'text' in item && typeof item.text === 'string' ? item.text.slice(0, 160) : undefined,
+            ...collabTrace,
           }, currentMessageId)
         }
         emitAgentEvent({ type: 'codex_item_delta', messageId: currentMessageId, phase, item, projectPath })
@@ -290,6 +306,7 @@ function registerIpcHandlers(): void {
       model?: string,
       reasoningEffort?: CodexReasoningEffort,
       permissionPreset?: CodexPermissionPreset,
+      collaborationMode?: CodexCollaborationMode,
       threadId?: string,
       messageId?: string,
       images?: ImageAttachment[],
@@ -298,7 +315,7 @@ function registerIpcHandlers(): void {
       try {
         return await codexService.run(
           projectPath,
-          { prompt, model, reasoningEffort, permissionPreset, threadId, messageId, images },
+          { prompt, model, reasoningEffort, permissionPreset, collaborationMode, threadId, messageId, images },
           callbacks,
         )
       } finally {
@@ -967,8 +984,8 @@ function registerIpcHandlers(): void {
     stopWatching()
   })
 
-  ipcMain.handle(AgentIpcChannels.BASH_OUTPUT_WATCH, (_e, toolUseId: string, filePath: string) => {
-    watchBashOutput(toolUseId, filePath)
+  ipcMain.handle(AgentIpcChannels.BASH_OUTPUT_WATCH, (_e, toolUseId: string, filePath: string, tailLines?: number) => {
+    watchBashOutput(toolUseId, filePath, tailLines)
   })
 
   ipcMain.handle(AgentIpcChannels.BASH_OUTPUT_UNWATCH, (_e, toolUseId: string) => {

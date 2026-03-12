@@ -190,10 +190,11 @@ export function ChatStatusBar() {
     && normalizedTrimmed !== currentBranchLower
     && !branches.some((b) => b.toLowerCase() === normalizedTrimmed)
 
-  const backgroundActivities = useMemo(() => {
+  const { bashActivities, agentActivities } = useMemo(() => {
     const results = new Map<string, ContentBlock & { type: 'tool_result' }>()
     const children = new Map<string, ContentBlock[]>()
-    const items: BackgroundActivityItem[] = []
+    const bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[] = []
+    const agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[] = []
 
     for (const message of messages) {
       for (const block of message.content) {
@@ -225,7 +226,7 @@ export function ChatStatusBar() {
           if (!hasBackgroundSignal || !isRunning) continue
 
           const command = typeof params.command === 'string' ? params.command.trim() : ''
-          items.push({
+          bashActivities.push({
             id: block.toolUseId,
             kind: 'bash',
             title: command || 'Bash',
@@ -245,7 +246,7 @@ export function ChatStatusBar() {
           const resultBlock = results.get(block.toolUseId)
           const childBlocks = children.get(block.toolUseId) ?? []
           const title = String(params.description ?? params.name ?? params.subagent_type ?? 'Async Agent').trim() || 'Async Agent'
-          items.push({
+          agentActivities.push({
             id: block.toolUseId,
             kind: 'agent',
             title,
@@ -257,18 +258,8 @@ export function ChatStatusBar() {
       }
     }
 
-    return items
+    return { bashActivities, agentActivities }
   }, [messages, taskProgress])
-
-  const bashActivities = useMemo(
-    () => backgroundActivities.filter((item): item is Extract<BackgroundActivityItem, { kind: 'bash' }> => item.kind === 'bash'),
-    [backgroundActivities],
-  )
-
-  const agentActivities = useMemo(
-    () => backgroundActivities.filter((item): item is Extract<BackgroundActivityItem, { kind: 'agent' }> => item.kind === 'agent'),
-    [backgroundActivities],
-  )
   const bashLabel = bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'
   const agentLabel = agentActivities.length > 1 ? `${agentActivities.length} Agents` : 'Agent'
   const bashPanelTitle = `Background ${bashActivities.length > 1 ? 'Bashes' : 'Bash'}`

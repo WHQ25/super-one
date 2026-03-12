@@ -33,6 +33,9 @@ const mockWindowApp = {
   pathExists: vi.fn().mockResolvedValue(true),
   resumeSession: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
+  codexRun: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
+  codexReview: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
+  codexCompact: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
   codexListModels: vi.fn().mockResolvedValue([]),
   codexSteer: vi.fn().mockResolvedValue(undefined),
   codexAnswerQuestion: vi.fn().mockResolvedValue(true),
@@ -978,6 +981,65 @@ describe('deferred resume on sendMessage', () => {
 
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
     expect(mockWindowAgent.sendMessage).toHaveBeenCalled()
+  })
+})
+
+describe('codex plan mode', () => {
+  it('toggles codex plan mode via the shortcut action', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [DRAFT_SESSION_ID]: {
+              ...proj._sessions[DRAFT_SESSION_ID],
+              preferredProvider: 'codex',
+              selectedCodexCollaborationMode: 'default',
+            },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().togglePlanModeShortcut()
+    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].selectedCodexCollaborationMode).toBe('plan')
+
+    useChatStore.getState().togglePlanModeShortcut()
+    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].selectedCodexCollaborationMode).toBe('default')
+  })
+
+  it('passes plan collaboration mode to codex runs', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [DRAFT_SESSION_ID]: {
+              ...proj._sessions[DRAFT_SESSION_ID],
+              preferredProvider: 'codex',
+              selectedCodexModel: 'gpt-5.1-codex',
+              selectedCodexCollaborationMode: 'plan',
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().sendMessage('hello')
+
+    const call = mockWindowApp.codexRun.mock.calls.at(-1)
+    expect(call).toBeTruthy()
+    expect(call?.[0]).toBe('/test')
+    expect(call?.[1]).toBe('hello')
+    expect(call?.[5]).toBe('plan')
   })
 })
 

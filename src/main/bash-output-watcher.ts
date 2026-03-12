@@ -4,11 +4,12 @@ import type { BrowserWindow } from 'electron'
 import log from './logger'
 import { AgentIpcChannels, type BashOutputEvent } from '../shared/agent-types'
 
-const MAX_TAIL_LINES = 50
+const DEFAULT_TAIL_LINES = 50
 const STABLE_TIMEOUT_MS = 5000
 
 interface WatchEntry {
   filePath: string
+  tailLines: number
   watcher: FSWatcher | null
   lastSize: number
   finished: boolean
@@ -24,17 +25,18 @@ export function setBashOutputWindow(mainWindow: BrowserWindow): void {
   win = mainWindow
 }
 
-function tailLines(text: string): string {
+function tailLines(text: string, maxLines: number): string {
   const lines = text.split('\n')
-  if (lines.length <= MAX_TAIL_LINES) return text
-  return lines.slice(-MAX_TAIL_LINES).join('\n')
+  if (lines.length <= maxLines) return text
+  return lines.slice(-maxLines).join('\n')
 }
 
-export function watchBashOutput(toolUseId: string, filePath: string): void {
+export function watchBashOutput(toolUseId: string, filePath: string, tailLinesCount: number = DEFAULT_TAIL_LINES): void {
   unwatchBashOutput(toolUseId)
 
   const entry: WatchEntry = {
     filePath,
+    tailLines: tailLinesCount,
     watcher: null,
     lastSize: -1,
     finished: false,
@@ -51,7 +53,7 @@ export function watchBashOutput(toolUseId: string, filePath: string): void {
       entry.lastSize = info.size
       const raw = await readFile(filePath, 'utf-8')
       if (!watchers.has(toolUseId)) return
-      const content = tailLines(raw)
+      const content = tailLines(raw, entry.tailLines)
       entry.finished = false
       send(toolUseId, content, false)
 

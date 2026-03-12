@@ -3,6 +3,7 @@ import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ChevronDown, Loader2, Check } from 'lucide-react'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from './chat-input-utils'
+import { CodexModeSelector } from './CodexModeSelector'
 import type { EffortLevel } from '../../../../shared/agent-types'
 
 const EFFORT_LABELS: Record<EffortLevel, string> = {
@@ -197,6 +198,8 @@ export function ModelSelector() {
           </PopoverContent>
         </Popover>
       )}
+
+      {activeProvider === 'codex' && <CodexModeSelector />}
     </div>
   )
 }

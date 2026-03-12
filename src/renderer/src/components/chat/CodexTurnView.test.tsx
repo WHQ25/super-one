@@ -104,6 +104,60 @@ describe('CodexTurnView', () => {
     expect(screen.getByText('done')).toBeTruthy()
   })
 
+  it('renders plan item as Plan block, not as reasoning', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'plan-1',
+                  type: 'plan',
+                  text: '## Step 1\nDo something',
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming
+      />,
+    )
+
+    expect(screen.getByText('Plan')).toBeTruthy()
+    expect(screen.queryByText('Thinking...')).toBeNull()
+  })
+
+  it('does not show fallback text when plan items exist', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          content: [{ type: 'text', text: 'Codex completed without returning text.' }],
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'plan-1',
+                  type: 'plan',
+                  text: '## My plan',
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+      />,
+    )
+
+    expect(screen.getByText('Plan')).toBeTruthy()
+    expect(screen.queryByText('Codex completed without returning text.')).toBeNull()
+  })
+
   it('does not render codex todo lists inline', () => {
     render(
       <CodexTurnView

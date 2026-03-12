@@ -44,21 +44,15 @@ function groupContent(content: ContentBlock[]): GroupResult {
   const toolResultMap = new Map<string, string>()
   const timedOutToolIds = new Set<string>()
   const outputPathMap = new Map<string, string>()
+  const taskToolUseIds = new Set<string>()
   for (const block of content) {
     if (block.type === 'tool_use') {
       toolNameMap.set(block.toolUseId, block.toolName)
+      if (block.toolName === 'Agent') taskToolUseIds.add(block.toolUseId)
     } else if (block.type === 'tool_result') {
       if (block.summary) toolResultMap.set(block.toolUseId, block.summary)
       if (block.isTimedOut) timedOutToolIds.add(block.toolUseId)
       if (block.outputPath) outputPathMap.set(block.toolUseId, block.outputPath)
-    }
-  }
-
-  // Collect Task tool_use ids for subagent grouping
-  const taskToolUseIds = new Set<string>()
-  for (const block of content) {
-    if (block.type === 'tool_use' && block.toolName === 'Agent') {
-      taskToolUseIds.add(block.toolUseId)
     }
   }
 
@@ -393,31 +387,33 @@ export const ChatMessage = memo(function ChatMessage({ message }: ChatMessagePro
   )
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
   const isCodexMessage = !isUser && message.providerId === 'codex'
-  const assistantCopyText = !isUser
-    ? (() => {
-        if (isCodexMessage) {
-          const codexText = message.metadata?.codex?.items
-            ?.filter((item) => item.type === 'agent_message')
-            .map((item) => item.text)
-            .join('\n\n')
-            .trim()
-          if (codexText) return codexText
-        }
-        return message.content
-          .filter((b) => b.type === 'text')
-          .map((b) => (b.type === 'text' ? b.text : ''))
-          .join('\n')
-      })()
-    : undefined
+  const assistantCopyText = useMemo(() => {
+    if (isUser) return undefined
+    if (isCodexMessage) {
+      const codexText = message.metadata?.codex?.items
+        ?.filter((item) => item.type === 'agent_message')
+        .map((item) => item.text)
+        .join('\n\n')
+        .trim()
+      if (codexText) return codexText
+    }
+    return message.content
+      .filter((b) => b.type === 'text')
+      .map((b) => (b.type === 'text' ? b.text : ''))
+      .join('\n')
+  }, [isCodexMessage, isUser, message.content, message.metadata?.codex?.items])
 
   const grouped = useMemo(
     () => (isUser || isCodexMessage) ? null : groupContent(message.content),
     [isUser, isCodexMessage, message.content],
   )
 
-  const userText = isUser
-    ? message.content.filter((b) => b.type === 'text').map((b) => b.type === 'text' ? b.text : '').join('\n')
-    : ''
+  const userText = useMemo(
+    () => (isUser
+      ? message.content.filter((b) => b.type === 'text').map((b) => b.type === 'text' ? b.text : '').join('\n')
+      : ''),
+    [isUser, message.content],
+  )
   return (
     <div className={cn('w-0 min-w-full flex', isUser ? 'justify-end' : 'mb-2 justify-start')}>
       <div className={cn(isUser ? 'group/copy relative mb-0 flex min-w-0 max-w-[85%] flex-col items-end' : 'w-full')}>

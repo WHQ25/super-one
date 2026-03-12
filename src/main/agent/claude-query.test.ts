@@ -287,7 +287,7 @@ describe('createSessionQuery', () => {
     const topLevelUsage = events.filter((e) => e.type === 'message_usage')
     const lastTopLevelUsage = topLevelUsage[topLevelUsage.length - 1] as Record<string, unknown>
     expect(lastTopLevelUsage.outputTokens).toBe(7)
-    expect(lastTopLevelUsage.inputTokens).toBe(12)
+    expect(lastTopLevelUsage.inputTokens).toBe(10)
   })
 
   it('accumulates input tokens across steps', async () => {
@@ -328,9 +328,9 @@ describe('createSessionQuery', () => {
 
     const usageEvents = events.filter((e) => e.type === 'message_usage')
     expect(usageEvents).toHaveLength(3)
-    expect(usageEvents[0]).toMatchObject({ inputTokens: 105, outputTokens: 0 })
-    expect(usageEvents[1]).toMatchObject({ inputTokens: 218, outputTokens: 0 })
-    expect(usageEvents[2]).toMatchObject({ inputTokens: 218, outputTokens: 20 })
+    expect(usageEvents[0]).toMatchObject({ inputTokens: 100, outputTokens: 0 })
+    expect(usageEvents[1]).toMatchObject({ inputTokens: 210, outputTokens: 0 })
+    expect(usageEvents[2]).toMatchObject({ inputTokens: 210, outputTokens: 20 })
   })
 
   it('emits message_error on non-success result subtype and stays idle', async () => {

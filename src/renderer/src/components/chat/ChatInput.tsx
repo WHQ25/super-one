@@ -59,6 +59,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const removeMention = useChatStore((s) => s.removeMention)
     const agents = useActiveSession((s) => s.agents)
     const permissionMode = useActiveSession((s) => s.permissionMode)
+    const selectedCodexCollaborationMode = useActiveSession((s) => s.selectedCodexCollaborationMode)
     const commandPopup = useActiveSession((s) =>
       s.slashCommandOutput?.mode === 'popup' ? s.slashCommandOutput : null
     )
@@ -107,6 +108,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const isStreaming = status === 'streaming'
     const activeProviderForResources = sessionProvider ?? preferredProvider
+    const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || mentions.length > 0
     const canSend = hasContent && (!isStreaming || activeProviderForResources === 'codex')
     const canPrefire = isStreaming && !prefireMessage && hasContent && activeProviderForResources !== 'codex'
@@ -485,11 +487,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const placeholderText = mentions.length > 0
       ? 'Add instructions...'
-      : activeProviderForResources === 'codex'
-        ? 'Ask Codex...'
-        : permissionMode === 'plan'
+      : isCodexPlanMode
         ? 'Plan mode — describe your intent...'
-        : 'Ask anything, @ to add files, / for commands'
+        : activeProviderForResources === 'codex'
+          ? 'Ask Codex...'
+        : permissionMode === 'plan'
+          ? 'Plan mode — describe your intent...'
+          : 'Ask anything, @ to add files, / for commands'
     placeholderTextRef.current = placeholderText
 
     const editor = useEditor({
@@ -657,11 +661,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             }
           }}
           onKeyDown={handleKeyDownCore}
-          placeholder={activeProviderForResources === 'codex'
-            ? 'Ask Codex...'
-            : permissionMode === 'plan'
-              ? 'Plan mode — describe your intent...'
-              : 'Ask anything...'}
+          placeholder={isCodexPlanMode
+            ? 'Plan mode — describe your intent...'
+            : activeProviderForResources === 'codex'
+              ? 'Ask Codex...'
+              : permissionMode === 'plan'
+                ? 'Plan mode — describe your intent...'
+                : 'Ask anything...'}
           className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none"
         />
       )

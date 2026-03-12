@@ -4,13 +4,14 @@ import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
 import { getToolDisplay, getToolVerb, parseToolInput } from './tool-display'
 import { ToolIcon } from './ToolIcon'
-import { useActiveSession } from '@/stores/chat'
+import { useActiveSession, useBashOutput, useChatStore } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '../../../../shared/agent-types'
 import { streamdownPlugins, streamdownControls, streamdownComponents, streamdownLinkSafety, formatTokens } from './chat-shared'
 import { parseJsonlOutput, type JsonlEntry } from './subagent-utils'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
+const SUBAGENT_OUTPUT_TAIL_LINES = 400
 
 interface SubagentBlockProps {
   taskBlock: ContentBlock & { type: 'tool_use' }
@@ -73,7 +74,8 @@ function buildToolResultMap(blocks: ContentBlock[]) {
 export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming, defaultExpanded }: SubagentBlockProps) {
   const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
   const progress = useActiveSession((s) => s.taskProgress[taskBlock.toolUseId])
-  const taskInput = parseTaskInput(taskBlock.input)
+  const bashOutput = useBashOutput(taskBlock.toolUseId)
+  const taskInput = useMemo(() => parseTaskInput(taskBlock.input), [taskBlock.input])
   const showSpawningPlaceholder = !taskInput.subagentType && !taskInput.description
   const isAsync = taskInput.runInBackground
   const isRunning = isAsync
@@ -123,41 +125,51 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   const outputFile = asyncOutputPath ?? progress?.outputFile
   const [jsonlEntries, setJsonlEntries] = useState<JsonlEntry[]>([])
   const [jsonlResultText, setJsonlResultText] = useState<string>()
-  const lastLineCountRef = useRef(0)
+  const watchedContent = bashOutput && bashOutput.outputPath === outputFile ? bashOutput.content : ''
+
+  useEffect(() => {
+    setJsonlEntries([])
+    setJsonlResultText(undefined)
+  }, [outputFile])
 
   useEffect(() => {
     if (!outputFile) {
       window.app.trace?.('subagent.output', 'no_output_file', { asyncOutputPath, progressFile: progress?.outputFile, resultSummary: rawResultText?.slice(0, 200) }, taskBlock.toolUseId)
       return
     }
-    window.app.trace?.('subagent.output', 'start_reading', { outputFile, isRunning }, taskBlock.toolUseId)
-    let cancelled = false
+    if (!expanded) return
+    useChatStore.setState((s) => ({
+      _bashOutputs: {
+        ...s._bashOutputs,
+        [taskBlock.toolUseId]: {
+          content: s._bashOutputs[taskBlock.toolUseId]?.outputPath === outputFile ? s._bashOutputs[taskBlock.toolUseId]?.content ?? '' : '',
+          finished: s._bashOutputs[taskBlock.toolUseId]?.outputPath === outputFile ? s._bashOutputs[taskBlock.toolUseId]?.finished ?? false : false,
+          outputPath: outputFile,
+        },
+      },
+    }))
+    window.app.trace?.('subagent.output', 'start_watching', { outputFile, isRunning }, taskBlock.toolUseId)
+    window.app.watchBashOutput(taskBlock.toolUseId, outputFile, SUBAGENT_OUTPUT_TAIL_LINES).catch((err) => {
+      window.app.trace?.('subagent.output', 'watch_error', { outputFile, error: String(err) }, taskBlock.toolUseId)
+    })
+    return () => { window.app.unwatchBashOutput(taskBlock.toolUseId).catch(() => {}) }
+  }, [expanded, isRunning, outputFile, taskBlock.toolUseId])
 
-    const readAndParse = async () => {
-      try {
-        const raw = await window.app.readBashOutputFile(outputFile, 10000)
-        if (cancelled) return
-        window.app.trace?.('subagent.output', 'read_result', { outputFile, rawLen: raw.length, first100: raw.slice(0, 100) }, taskBlock.toolUseId)
-        const lineCount = raw.split('\n').length
-        if (lineCount === lastLineCountRef.current) return
-        lastLineCountRef.current = lineCount
-        const parsed = parseJsonlOutput(raw)
-        window.app.trace?.('subagent.output', 'parsed', { entries: parsed.entries.length, hasResultText: !!parsed.resultText }, taskBlock.toolUseId)
-        if (parsed.entries.length > 0 || parsed.resultText) {
-          setJsonlEntries(parsed.entries)
-          if (parsed.resultText) setJsonlResultText(parsed.resultText)
-        }
-      } catch (err) { window.app.trace?.('subagent.output', 'read_error', { outputFile, error: String(err) }, taskBlock.toolUseId) }
+  useEffect(() => {
+    if (!expanded || !outputFile || !watchedContent) return
+    window.app.trace?.('subagent.output', 'read_result', { outputFile, rawLen: watchedContent.length, first100: watchedContent.slice(0, 100) }, taskBlock.toolUseId)
+    const parsed = parseJsonlOutput(watchedContent)
+    window.app.trace?.('subagent.output', 'parsed', { entries: parsed.entries.length, hasResultText: !!parsed.resultText }, taskBlock.toolUseId)
+    if (parsed.entries.length > 0 || parsed.resultText) {
+      setJsonlEntries(parsed.entries)
+      setJsonlResultText(parsed.resultText)
     }
+  }, [expanded, outputFile, taskBlock.toolUseId, watchedContent])
 
-    readAndParse()
-
-    if (isRunning) {
-      const timer = setInterval(readAndParse, 3000)
-      return () => { cancelled = true; clearInterval(timer) }
-    }
-    return () => { cancelled = true }
-  }, [outputFile, isRunning])
+  useEffect(() => {
+    if (!expanded || isRunning || bashOutput?.outputPath !== outputFile || bashOutput?.finished !== true) return
+    window.app.unwatchBashOutput(taskBlock.toolUseId).catch(() => {})
+  }, [bashOutput?.finished, bashOutput?.outputPath, expanded, isRunning, outputFile, taskBlock.toolUseId])
 
   const resultText = jsonlResultText ?? (asyncOutputPath ? undefined : rawResultText)
   const { toolCallCount, filesReadCount } = useMemo(() => {
@@ -280,8 +292,14 @@ function AgentActivity({ entries, fallbackTools, activeTool, isRunning }: {
   activeTool?: { toolName: string; description: string }
   isRunning: boolean
 }) {
-  const latestActivity = entries.findLast((e) => e.type === 'activity') as { type: 'activity'; text: string } | undefined
-  const tools = entries.filter((e): e is JsonlEntry & { type: 'tool' } => e.type === 'tool')
+  const latestActivity = useMemo(
+    () => entries.findLast((e) => e.type === 'activity') as { type: 'activity'; text: string } | undefined,
+    [entries],
+  )
+  const tools = useMemo(
+    () => entries.filter((e): e is JsonlEntry & { type: 'tool' } => e.type === 'tool'),
+    [entries],
+  )
   return (
     <div className="border-t border-border/30">
       {isRunning && latestActivity && (

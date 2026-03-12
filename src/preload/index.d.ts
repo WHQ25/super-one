@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -41,7 +41,7 @@ interface AppAPI {
   closeProject(folderPath: string): Promise<void>
   checkClaude(): Promise<boolean>
   installClaude(): Promise<void>
-  codexRun(projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, images?: ImageAttachment[]): Promise<CodexRunResult>
+  codexRun(projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, collaborationMode?: CodexCollaborationMode, threadId?: string, messageId?: string, images?: ImageAttachment[]): Promise<CodexRunResult>
   codexSteer(projectPath: string, input: string, messageId?: string): Promise<void>
   codexReview(projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string): Promise<CodexRunResult>
   codexCompact(projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string): Promise<CodexRunResult>
@@ -127,7 +127,7 @@ interface AppAPI {
   onSessionChanged(callback: () => void): () => void
 
   // Bash output watcher
-  watchBashOutput(toolUseId: string, filePath: string): Promise<void>
+  watchBashOutput(toolUseId: string, filePath: string, tailLines?: number): Promise<void>
   unwatchBashOutput(toolUseId: string): Promise<void>
   readBashOutputMore(toolUseId: string, tailLines: number): Promise<string>
   readBashOutputFile(filePath: string, tailLines: number): Promise<string>

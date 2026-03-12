@@ -166,6 +166,28 @@ const appAPI = {
       decision,
     ),
 
+  codexAnswerQuestion: (
+    projectPath: string,
+    requestId: string,
+    answers: Record<string, string>,
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.CODEX_ANSWER_QUESTION,
+      projectPath,
+      requestId,
+      answers,
+    ),
+
+  codexDismissQuestion: (
+    projectPath: string,
+    requestId: string,
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.CODEX_DISMISS_QUESTION,
+      projectPath,
+      requestId,
+    ),
+
   codexSteer: (projectPath: string, input: string, messageId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, projectPath, input, messageId),
 

@@ -2355,7 +2355,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   answerQuestion: (requestId, answers) => {
     const { activeProject } = get()
     if (!activeProject) return
-    window.agent.answerQuestion(activeProject, requestId, answers)
+    const session = getActivePerSession(get(), activeProject)
+    if (session.sessionProvider === 'codex') {
+      void window.app.codexAnswerQuestion(activeProject, requestId, answers)
+    } else {
+      void window.agent.answerQuestion(activeProject, requestId, answers)
+    }
     set((s) => {
       const perSessionUpdate = updateActivePerSession(s, () => ({ pendingQuestion: null }))
       const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
@@ -2374,7 +2379,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   dismissQuestion: (requestId) => {
     const { activeProject } = get()
     if (!activeProject) return
-    window.agent.dismissQuestion(activeProject, requestId)
+    const session = getActivePerSession(get(), activeProject)
+    if (session.sessionProvider === 'codex') {
+      void window.app.codexDismissQuestion(activeProject, requestId)
+    } else {
+      void window.agent.dismissQuestion(activeProject, requestId)
+    }
     set((s) => {
       const perSessionUpdate = updateActivePerSession(s, () => ({ pendingQuestion: null }))
       const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]

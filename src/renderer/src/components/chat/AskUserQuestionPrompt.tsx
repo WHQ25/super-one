@@ -4,6 +4,36 @@ import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Kbd } from '@/components/ui/kbd'
 import type { UserQuestion } from '../../../../shared/agent-types'
 
+function questionKey(q: UserQuestion): string {
+  return q.id ?? q.question
+}
+
+function showOtherInput(q: UserQuestion): boolean {
+  return q.allowOther !== false
+}
+
+function isAnswered(
+  q: UserQuestion,
+  selections: Record<string, string>,
+  otherTexts: Record<string, string>,
+): boolean {
+  const key = questionKey(q)
+  return !!(selections[key] || (showOtherInput(q) && otherTexts[key]))
+}
+
+function buildAnswers(
+  questions: UserQuestion[],
+  selections: Record<string, string>,
+  otherTexts: Record<string, string>,
+): Record<string, string> {
+  const answers: Record<string, string> = {}
+  for (const q of questions) {
+    const key = questionKey(q)
+    answers[key] = otherTexts[key] || selections[key] || ''
+  }
+  return answers
+}
+
 function QuestionPanel({
   q,
   selections,
@@ -19,14 +49,17 @@ function QuestionPanel({
   onOther: (q: UserQuestion, text: string) => void
   inputRef: React.RefObject<HTMLInputElement | null>
 }) {
+  const key = questionKey(q)
+  const allowOther = showOtherInput(q)
+
   return (
     <div>
       <p className="mb-2 text-xs font-medium text-foreground">{q.question}</p>
       <div className="flex flex-wrap gap-1.5">
         {q.options.map((opt, i) => {
           const selected = q.multiSelect
-            ? (selections[q.question] ?? '').split(', ').includes(opt.label)
-            : selections[q.question] === opt.label
+            ? (selections[key] ?? '').split(', ').includes(opt.label)
+            : selections[key] === opt.label
           return (
             <button
               key={opt.label}
@@ -44,19 +77,21 @@ function QuestionPanel({
           )
         })}
       </div>
-      <div className="relative mt-2">
-        <Kbd variant="square" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2">
-          {q.options.length + 1}
-        </Kbd>
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder="Other..."
-          value={otherTexts[q.question] ?? ''}
-          onChange={(e) => onOther(q, e.target.value)}
-          className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
-        />
-      </div>
+      {allowOther && (
+        <div className="relative mt-2">
+          <Kbd variant="square" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2">
+            {q.options.length + 1}
+          </Kbd>
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Other..."
+            value={otherTexts[key] ?? ''}
+            onChange={(e) => onOther(q, e.target.value)}
+            className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -72,18 +107,19 @@ export function AskUserQuestionPrompt() {
   const otherInputRef = useRef<HTMLInputElement>(null)
 
   const selectOption = useCallback((q: UserQuestion, label: string) => {
+    const key = questionKey(q)
     if (q.multiSelect) {
       setSelections((s) => {
-        const current = s[q.question] ?? ''
+        const current = s[key] ?? ''
         const labels = current ? current.split(', ') : []
         const idx = labels.indexOf(label)
         if (idx !== -1) labels.splice(idx, 1)
         else labels.push(label)
-        return { ...s, [q.question]: labels.join(', ') }
+        return { ...s, [key]: labels.join(', ') }
       })
     } else {
-      setSelections((s) => ({ ...s, [q.question]: label }))
-      setOtherTexts((s) => ({ ...s, [q.question]: '' }))
+      setSelections((s) => ({ ...s, [key]: label }))
+      setOtherTexts((s) => ({ ...s, [key]: '' }))
     }
   }, [])
 
@@ -105,7 +141,6 @@ export function AskUserQuestionPrompt() {
       return
     }
 
-    // Tab / Shift+Tab to switch tabs (works even when typing)
     if (e.key === 'Tab' && questions.length > 1) {
       e.preventDefault()
       otherInputRef.current?.blur()
@@ -117,18 +152,10 @@ export function AskUserQuestionPrompt() {
       return
     }
 
-    // Enter to submit (works even when typing in Other input)
     if (e.key === 'Enter' && !e.isComposing) {
-      const allAnswered = questions.every(
-        (q) => (selections[q.question] || otherTexts[q.question])
-      )
-      if (allAnswered) {
+      if (questions.every((q) => isAnswered(q, selections, otherTexts))) {
         e.preventDefault()
-        const answers: Record<string, string> = {}
-        for (const q of questions) {
-          answers[q.question] = otherTexts[q.question] || selections[q.question] || ''
-        }
-        answerQuestion(pendingQuestion.requestId, answers)
+        answerQuestion(pendingQuestion.requestId, buildAnswers(questions, selections, otherTexts))
         setSelections({})
         setOtherTexts({})
         setActiveTab(0)
@@ -136,19 +163,16 @@ export function AskUserQuestionPrompt() {
       return
     }
 
-    // Don't intercept keys when typing in the Other input
     if (isTyping) return
 
     const q = questions[activeTab] ?? questions[0]
-
-    // Number keys: 1-N select options, N+1 focuses Other input
     const num = parseInt(e.key)
     if (num >= 1 && num <= q.options.length) {
       e.preventDefault()
       selectOption(q, q.options[num - 1].label)
       return
     }
-    if (num === q.options.length + 1) {
+    if (showOtherInput(q) && num === q.options.length + 1) {
       e.preventDefault()
       otherInputRef.current?.focus()
       return
@@ -169,27 +193,19 @@ export function AskUserQuestionPrompt() {
   const { requestId, questions } = pendingQuestion
 
   function setOther(q: UserQuestion, text: string) {
-    setOtherTexts((s) => ({ ...s, [q.question]: text }))
-    setSelections((s) => ({ ...s, [q.question]: '' }))
+    const key = questionKey(q)
+    setOtherTexts((s) => ({ ...s, [key]: text }))
+    setSelections((s) => ({ ...s, [key]: '' }))
   }
 
   function handleSubmit() {
-    const answers: Record<string, string> = {}
-    for (const q of questions) {
-      answers[q.question] = otherTexts[q.question] || selections[q.question] || ''
-    }
-    answerQuestion(requestId, answers)
+    answerQuestion(requestId, buildAnswers(questions, selections, otherTexts))
     setSelections({})
     setOtherTexts({})
     setActiveTab(0)
   }
 
-  const allAnswered = questions.every(
-    (q) => (selections[q.question] || otherTexts[q.question])
-  )
-
-  const isAnswered = (q: UserQuestion) =>
-    !!(selections[q.question] || otherTexts[q.question])
+  const allAnswered = questions.every((q) => isAnswered(q, selections, otherTexts))
 
   const singleQuestion = questions.length === 1
 
@@ -209,7 +225,7 @@ export function AskUserQuestionPrompt() {
           <div className="mb-3 flex gap-1 border-b border-border/50 pb-2">
             {questions.map((q, i) => (
               <button
-                key={q.question}
+                key={questionKey(q)}
                 onClick={() => setActiveTab(i)}
                 className={`relative cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition ${
                   activeTab === i
@@ -218,7 +234,7 @@ export function AskUserQuestionPrompt() {
                 }`}
               >
                 {q.header}
-                {isAnswered(q) && (
+                {isAnswered(q, selections, otherTexts) && (
                   <span className="ml-1 text-[10px] text-green-500">&#10003;</span>
                 )}
               </button>
@@ -245,7 +261,8 @@ export function AskUserQuestionPrompt() {
           <Kbd variant="inline" className="ml-1 text-white/70">↵</Kbd>
         </Button>
         <span className="text-[10px] text-muted-foreground">
-          {!singleQuestion && <><Kbd>⇥</Kbd><span className="ml-0.5">switch</span><span className="mx-1 opacity-40">·</span></>}<Kbd>esc</Kbd><span className="ml-0.5">dismiss</span>
+          {!singleQuestion && <><Kbd>⇥</Kbd><span className="ml-0.5">switch</span><span className="mx-1 opacity-40">·</span></>}
+          <Kbd>esc</Kbd><span className="ml-0.5">dismiss</span>
         </span>
       </div>
     </div>

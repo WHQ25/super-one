@@ -20,6 +20,7 @@ import {
   type CodexUsageInfo,
   type CodexSetAuthRequest,
   type PermissionRequest,
+  type AskUserQuestionRequest,
   type ImageAttachment,
   type ConnectResult,
   type StartupData,
@@ -161,6 +162,9 @@ function createCodexCallbacks(messageId: string | undefined, projectPath: string
       },
       onPermissionRequest: (request: PermissionRequest) => {
         emitAgentEvent({ type: 'permission_request', request, projectPath })
+      },
+      onAskUserQuestion: (request: AskUserQuestionRequest) => {
+        emitAgentEvent({ type: 'ask_user_question', request, projectPath })
       },
     },
     route,
@@ -328,6 +332,20 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
     (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel') => {
       return codexService.respondToPermission(projectPath, requestId, allow, alwaysAllow, reason, decision)
+    },
+  )
+
+  ipcMain.handle(
+    AgentIpcChannels.CODEX_ANSWER_QUESTION,
+    (_event, projectPath: string, requestId: string, answers: Record<string, string>) => {
+      return codexService.respondToQuestion(projectPath, requestId, answers)
+    },
+  )
+
+  ipcMain.handle(
+    AgentIpcChannels.CODEX_DISMISS_QUESTION,
+    (_event, projectPath: string, requestId: string) => {
+      return codexService.dismissQuestion(projectPath, requestId)
     },
   )
 

@@ -22,6 +22,8 @@ const mockWindowAgent = {
   sendMessage: vi.fn().mockResolvedValue(undefined),
   readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
   respondToPermission: vi.fn().mockResolvedValue(undefined),
+  answerQuestion: vi.fn().mockResolvedValue(undefined),
+  dismissQuestion: vi.fn().mockResolvedValue(undefined),
 }
 
 const mockWindowApp = {
@@ -33,6 +35,8 @@ const mockWindowApp = {
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   codexListModels: vi.fn().mockResolvedValue([]),
   codexSteer: vi.fn().mockResolvedValue(undefined),
+  codexAnswerQuestion: vi.fn().mockResolvedValue(true),
+  codexDismissQuestion: vi.fn().mockResolvedValue(true),
 }
 
 vi.stubGlobal('window', { agent: mockWindowAgent, app: mockWindowApp })
@@ -1252,6 +1256,70 @@ describe('codex usage semantics', () => {
     const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
     expect(session.contextTokens).toBe(70)
     expect(session.streamingTokens).toEqual({ input: 1, output: 15 })
+  })
+})
+
+describe('codex question routing', () => {
+  it('routes answerQuestion through codex IPC for codex sessions', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [DRAFT_SESSION_ID]: {
+              ...proj._sessions[DRAFT_SESSION_ID],
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+              pendingQuestion: {
+                requestId: 'q1',
+                questions: [],
+              },
+            },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().answerQuestion('q1', { q1: 'Answer' })
+
+    expect(mockWindowApp.codexAnswerQuestion).toHaveBeenCalledWith('/test', 'q1', { q1: 'Answer' })
+    expect(mockWindowAgent.answerQuestion).not.toHaveBeenCalled()
+    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].pendingQuestion).toBeNull()
+  })
+
+  it('routes dismissQuestion through codex IPC for codex sessions', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [DRAFT_SESSION_ID]: {
+              ...proj._sessions[DRAFT_SESSION_ID],
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+              pendingQuestion: {
+                requestId: 'q1',
+                questions: [],
+              },
+            },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().dismissQuestion('q1')
+
+    expect(mockWindowApp.codexDismissQuestion).toHaveBeenCalledWith('/test', 'q1')
+    expect(mockWindowAgent.dismissQuestion).not.toHaveBeenCalled()
+    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].pendingQuestion).toBeNull()
   })
 })
 

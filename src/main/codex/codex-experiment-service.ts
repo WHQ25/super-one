@@ -12,6 +12,7 @@ import {
   DEFAULT_CODEX_PERMISSION_PROFILE,
 } from '../../shared/agent-types'
 import type {
+  AskUserQuestionRequest,
   CodexApprovalMode,
   CodexAuthMode,
   CodexAuthStatus,
@@ -53,6 +54,7 @@ interface CodexRunStreamCallbacks {
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
   onPermissionRequest?: (request: PermissionRequest) => void
+  onAskUserQuestion?: (request: AskUserQuestionRequest) => void
 }
 
 type CodexApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel'
@@ -102,11 +104,16 @@ interface AppServerConnection {
   nextNotification(): Promise<AppServerNotification>
 }
 
-interface ParsedApprovalRequest {
-  request: PermissionRequest
-  responseKind: 'decision' | 'user_input'
-  questions?: AppServerUserInputQuestion[]
-}
+type ParsedApprovalRequest =
+  | {
+    request: PermissionRequest
+    responseKind: 'decision'
+  }
+  | {
+    request: AskUserQuestionRequest
+    responseKind: 'user_input'
+    questions: AppServerUserInputQuestion[]
+  }
 
 const APP_SERVER_RESPONSE_TIMEOUT_MS = 15_000
 const moduleRequire = createRequire(import.meta.url)
@@ -674,6 +681,22 @@ function buildUserInputApprovalResponse(
   return { answers }
 }
 
+function buildUserInputAnswersResponse(
+  questions: AppServerUserInputQuestion[],
+  answersByQuestion: Record<string, string>,
+): { answers: Record<string, { answers: string[] }> } {
+  const answers: Record<string, { answers: string[] }> = {}
+
+  for (const question of questions) {
+    const answer = answersByQuestion[question.id]?.trim()
+    answers[question.id] = {
+      answers: answer ? [answer] : [],
+    }
+  }
+
+  return { answers }
+}
+
 function mapApprovalRequest(notification: AppServerNotification): ParsedApprovalRequest | null {
   const requestId = notification.requestId
   if (!requestId) return null
@@ -723,24 +746,23 @@ function mapApprovalRequest(notification: AppServerNotification): ParsedApproval
     || notification.method === 'tool/requestUserInput'
   ) {
     const questions = parseUserInputQuestions(notification.params.questions)
-    const serializedQuestions = questions.map((question) => ({
-      id: question.id,
-      header: question.header,
-      question: question.question,
-      isOther: question.isOther,
-      options: question.options,
-    }))
 
     return {
       responseKind: 'user_input',
       questions,
       request: {
         requestId,
-        toolName: 'ToolRequestUserInput',
-        toolUseId: requestId,
-        input: { questions: serializedQuestions },
-        decisionReason: questions[0]?.question,
-        allowAlwaysAllow: false,
+        questions: questions.map((question) => ({
+          id: question.id,
+          header: question.header,
+          question: question.question,
+          options: question.options.map((label) => ({
+            label,
+            description: '',
+          })),
+          multiSelect: false,
+          allowOther: question.isOther,
+        })),
       },
     }
   }
@@ -1308,14 +1330,17 @@ export class CodexExperimentService {
       const parsedApprovalRequest = mapApprovalRequest(notification)
       if (parsedApprovalRequest) {
         const fallbackResponse: PendingCodexApprovalResponse = parsedApprovalRequest.responseKind === 'user_input'
-          ? buildUserInputApprovalResponse(parsedApprovalRequest.questions ?? [], false)
+          ? buildUserInputApprovalResponse(parsedApprovalRequest.questions, false)
           : { decision: 'decline' }
 
         if (controller.signal.aborted) {
           await connection.respond(notification.requestIdRaw, fallbackResponse)
           return true
         }
-        if (!callbacks?.onPermissionRequest) {
+        const canHandleRequest = parsedApprovalRequest.responseKind === 'user_input'
+          ? callbacks?.onAskUserQuestion
+          : callbacks?.onPermissionRequest
+        if (!canHandleRequest) {
           await connection.respond(notification.requestIdRaw, fallbackResponse)
           return true
         }
@@ -1323,12 +1348,18 @@ export class CodexExperimentService {
           const responsePromise = new Promise<PendingCodexApprovalResponse>((resolve, reject) => {
             session.pendingApprovals.set(parsedApprovalRequest.request.requestId, {
               responseKind: parsedApprovalRequest.responseKind,
-              questions: parsedApprovalRequest.questions,
+              questions: parsedApprovalRequest.responseKind === 'user_input'
+                ? parsedApprovalRequest.questions
+                : undefined,
               resolve,
               reject,
             })
           })
-          callbacks?.onPermissionRequest?.(parsedApprovalRequest.request)
+          if (parsedApprovalRequest.responseKind === 'user_input') {
+            callbacks?.onAskUserQuestion?.(parsedApprovalRequest.request)
+          } else {
+            callbacks?.onPermissionRequest?.(parsedApprovalRequest.request)
+          }
           const response = await responsePromise
           await connection.respond(notification.requestIdRaw, response)
           return true
@@ -1778,18 +1809,41 @@ export class CodexExperimentService {
     const pending = session.pendingApprovals.get(requestId)
     if (!pending) return false
 
-    session.pendingApprovals.delete(requestId)
-    if (pending.responseKind === 'user_input') {
-      pending.resolve(buildUserInputApprovalResponse(pending.questions ?? [], allow, reason))
-      return true
-    }
+    if (pending.responseKind === 'user_input') return false
 
+    session.pendingApprovals.delete(requestId)
     const resolvedDecision: CodexApprovalDecision = decision === 'cancel'
       ? 'cancel'
       : allow
         ? (alwaysAllow ? 'acceptForSession' : 'accept')
         : 'decline'
     pending.resolve({ decision: resolvedDecision })
+    return true
+  }
+
+  respondToQuestion(
+    projectPath: string,
+    requestId: string,
+    answers: Record<string, string>,
+  ): boolean {
+    const session = this.sessions.get(projectPath)
+    if (!session) return false
+    const pending = session.pendingApprovals.get(requestId)
+    if (!pending || pending.responseKind !== 'user_input') return false
+
+    session.pendingApprovals.delete(requestId)
+    pending.resolve(buildUserInputAnswersResponse(pending.questions ?? [], answers))
+    return true
+  }
+
+  dismissQuestion(projectPath: string, requestId: string): boolean {
+    const session = this.sessions.get(projectPath)
+    if (!session) return false
+    const pending = session.pendingApprovals.get(requestId)
+    if (!pending || pending.responseKind !== 'user_input') return false
+
+    session.pendingApprovals.delete(requestId)
+    pending.resolve(buildUserInputApprovalResponse(pending.questions ?? [], false))
     return true
   }
 

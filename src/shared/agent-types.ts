@@ -259,10 +259,12 @@ export interface UserQuestionOption {
 }
 
 export interface UserQuestion {
+  id?: string
   question: string
   header: string
   options: UserQuestionOption[]
   multiSelect: boolean
+  allowOther?: boolean
 }
 
 export interface AskUserQuestionRequest {
@@ -853,6 +855,8 @@ export const AgentIpcChannels = {
   CODEX_RESET: 'codex:reset',
   CODEX_INTERRUPT: 'codex:interrupt',
   CODEX_PERMISSION_RESPONSE: 'codex:permission-response',
+  CODEX_ANSWER_QUESTION: 'codex:answer-question',
+  CODEX_DISMISS_QUESTION: 'codex:dismiss-question',
   CODEX_STEER: 'codex:steer',
   CODEX_REVIEW: 'codex:review',
   CODEX_COMPACT: 'codex:compact',

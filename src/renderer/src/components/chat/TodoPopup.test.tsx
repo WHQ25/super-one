@@ -87,18 +87,13 @@ describe('TodoPopup', () => {
     expect(screen.getByText('second task')).toBeTruthy()
   })
 
-  it('hides a completed codex todo list after 3 seconds', () => {
+  it('does not render when all codex todos are completed', () => {
     activeSessionState.messages = [createCodexTodoMessage(true)]
 
     render(<TodoPopup />)
 
-    expect(screen.getByText('Todos (2/2)')).toBeTruthy()
-
-    act(() => {
-      vi.advanceTimersByTime(3000)
-    })
-
-    expect(screen.queryByText('Todos (2/2)')).toBeNull()
+    expect(screen.queryByText('Todos')).toBeNull()
+    expect(screen.queryByText('first task')).toBeNull()
   })
 
   it('auto-opens when a codex todo list arrives while collapsed', () => {

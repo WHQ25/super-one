@@ -2,7 +2,7 @@ import { readdirSync, statSync } from 'fs'
 import { join, relative, basename } from 'path'
 import type { FileSearchResult, MentionSearchItem } from '../../shared/agent-types'
 
-export const EXCLUDED_DIRS = new Set(['.', 'node_modules', 'dist', 'build', '__pycache__'])
+export const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '__pycache__'])
 
 export interface FuzzyMatchResult {
   match: boolean
@@ -93,8 +93,7 @@ export function collectFiles(
     }
     for (const entry of entries) {
       if (result.length >= maxFiles) return
-      if (entry.name.startsWith('.')) continue
-      if (entry.isDirectory() && EXCLUDED_DIRS.has(entry.name)) continue
+      if (EXCLUDED_DIRS.has(entry.name)) continue
 
       const fullPath = join(dir, entry.name)
       const relPath = relative(root, fullPath)

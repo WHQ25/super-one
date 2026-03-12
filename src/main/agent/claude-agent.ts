@@ -517,8 +517,7 @@ export class ClaudeAgent {
       const result: ListDirEntry[] = []
       for (const entry of entries) {
         // Skip hidden dirs/files and common build directories
-        if (entry.name.startsWith('.') && entry.isDirectory()) continue
-        if (entry.isDirectory() && EXCLUDED_DIRS.has(entry.name)) continue
+        if (EXCLUDED_DIRS.has(entry.name)) continue
         result.push({ name: entry.name, isDirectory: entry.isDirectory() })
       }
       // Sort: directories first, then alphabetically

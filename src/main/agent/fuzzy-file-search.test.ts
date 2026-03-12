@@ -71,6 +71,7 @@ describe('fuzzyMatch', () => {
 
 describe('collectFiles', () => {
   it('should have standard excluded dirs', () => {
+    expect(EXCLUDED_DIRS.has('.git')).toBe(true)
     expect(EXCLUDED_DIRS.has('node_modules')).toBe(true)
     expect(EXCLUDED_DIRS.has('dist')).toBe(true)
     expect(EXCLUDED_DIRS.has('build')).toBe(true)

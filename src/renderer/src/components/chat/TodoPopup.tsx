@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo, useState } from 'react'
+import { useEffect, useCallback, useMemo } from 'react'
 import type { ChatMessage, CodexTodoListItem } from '../../../../shared/agent-types'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
@@ -13,7 +13,10 @@ function findLatestCodexTodoList(messages: ChatMessage[]): CodexTodoListItem | n
     if (!items) continue
     for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex--) {
       const item = items[itemIndex]
-      if (item.type === 'todo_list') return item
+      if (item.type === 'todo_list') {
+        if (item.items.length > 0 && item.items.every((i) => i.completed)) return null
+        return item
+      }
     }
   }
   return null
@@ -26,7 +29,6 @@ export function TodoPopup() {
   const todosUserDismissed = useActiveSession((s) => s._todosUserDismissed)
   const toggleTodos = useChatStore((s) => s.toggleTodos)
   const isCoding = useAppStore((s) => s.layoutMode) === 'coding'
-  const [dismissedCodexTodoId, setDismissedCodexTodoId] = useState<string | null>(null)
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -48,28 +50,11 @@ export function TodoPopup() {
   const codexTodoList = useMemo(() => findLatestCodexTodoList(messages), [messages])
   const usingSessionTodos = sessionTodoList.length > 0
   const usingCodexTodos = !usingSessionTodos && codexTodoList !== null
-  const codexTodoDismissed = codexTodoList !== null && dismissedCodexTodoId === codexTodoList.id
 
   useEffect(() => {
-    if (!codexTodoList || dismissedCodexTodoId !== codexTodoList.id) return
-    if (codexTodoList.items.some((item) => !item.completed)) {
-      setDismissedCodexTodoId(null)
-    }
-  }, [codexTodoList, dismissedCodexTodoId])
-
-  useEffect(() => {
-    if (!usingCodexTodos || codexTodoDismissed || showTodos || todosUserDismissed) return
+    if (!usingCodexTodos || showTodos || todosUserDismissed) return
     toggleTodos()
-  }, [codexTodoDismissed, showTodos, todosUserDismissed, toggleTodos, usingCodexTodos])
-
-  const codexAllDone = usingCodexTodos && (codexTodoList?.items.length ?? 0) > 0 && codexTodoList!.items.every((item) => item.completed)
-  useEffect(() => {
-    if (!codexAllDone || !codexTodoList || codexTodoDismissed) return
-    const timer = setTimeout(() => {
-      setDismissedCodexTodoId(codexTodoList.id)
-    }, 3000)
-    return () => clearTimeout(timer)
-  }, [codexAllDone, codexTodoDismissed, codexTodoList])
+  }, [showTodos, todosUserDismissed, toggleTodos, usingCodexTodos])
 
   const allDone = usingSessionTodos && sessionTodoList.length > 0 && sessionTodoList.every((t) => t.status === 'completed')
   useEffect(() => {
@@ -102,7 +87,7 @@ export function TodoPopup() {
     return () => clearTimeout(timer)
   }, [allDone])
 
-  if (!usingSessionTodos && (!usingCodexTodos || codexTodoDismissed)) return null
+  if (!usingSessionTodos && !usingCodexTodos) return null
 
   const panelItems = usingSessionTodos
     ? sessionTodoList.map((todo) => ({

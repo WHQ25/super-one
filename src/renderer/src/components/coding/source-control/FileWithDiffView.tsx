@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { DiffView, buildFullFileWithDiff, useHighlightedTokens, inferLanguage } from '@/lib/diff-utils'
 import { CodeMinimap } from '@/components/coding/CodeMinimap'
+import { useSourceControlStore } from '@/stores/source-control'
 
 interface FileWithDiffViewProps {
   filePath: string
@@ -22,13 +23,14 @@ export function FileWithDiffView({ filePath, content, diff }: FileWithDiffViewPr
 
 function FileWithDiffContent({ filePath, content, diff }: { filePath: string; content: string; diff: string }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollToLine = useSourceControlStore((s) => s.scrollToLine)
   const language = inferLanguage(filePath)
   const lines = useMemo(() => buildFullFileWithDiff(content, diff), [content, diff])
   const tokens = useHighlightedTokens(content, language)
 
   return (
     <div className="flex h-full">
-      <DiffView ref={scrollRef} lines={lines} newTokens={tokens} maxHeight="max-h-full" className="min-h-full flex-1 text-sm" hideScrollbar />
+      <DiffView ref={scrollRef} lines={lines} newTokens={tokens} maxHeight="max-h-full" className="min-h-full flex-1 text-sm" hideScrollbar scrollToLine={scrollToLine} />
       <CodeMinimap lines={lines} tokens={tokens} scrollRef={scrollRef} />
     </div>
   )

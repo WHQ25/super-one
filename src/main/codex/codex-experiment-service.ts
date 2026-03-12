@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from 'child_process'
 import { mkdirSync, unlinkSync, writeFileSync } from 'fs'
 import { createRequire } from 'module'
+import { tmpdir } from 'os'
 import { basename, extname, join } from 'path'
 import { createInterface } from 'readline'
 import log from '../logger'
@@ -287,7 +288,7 @@ function cleanupPersistedImageAttachments(paths: string[]): void {
 }
 
 function persistImageAttachments(projectPath: string, images: ImageAttachment[]): string[] {
-  const targetDir = join(projectPath, '.super-one', 'codex-attachments')
+  const targetDir = join(tmpdir(), 'super-one-codex-attachments')
   mkdirSync(targetDir, { recursive: true })
 
   const writtenPaths: string[] = []

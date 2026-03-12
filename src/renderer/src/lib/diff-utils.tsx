@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useMemo, memo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { cn } from '@/lib/utils'
 import { codePlugin, codePluginLight } from '@/components/chat/chat-shared'
@@ -222,6 +222,31 @@ export const LINE_STYLE: Record<DiffLine['kind'], { bg: string; marker: string; 
 
 const ESTIMATED_LINE_HEIGHT = 20
 
+const DiffLineRow = memo(function DiffLineRow({ line, tokens, gw, size, start, isHighlighted }: {
+  line: DiffLine
+  tokens: HLToken[] | undefined
+  gw: number
+  size: number
+  start: number
+  isHighlighted: boolean
+}) {
+  const s = LINE_STYLE[line.kind]
+  return (
+    <div
+      className={cn('absolute left-0 right-0 whitespace-pre px-2', isHighlighted ? 'bg-yellow-400/25' : cn('transition-colors duration-1000', s.bg))}
+      style={{ height: size, transform: `translateY(${start}px)` }}
+    >
+      <span className="inline-block select-none text-right text-muted-foreground/50 mr-1" style={{ width: `${gw}ch` }}>
+        {line.lineNum}
+      </span>
+      <span className={cn('inline-block w-[1ch] select-none text-center mr-1', s.markerColor)}>{s.marker}</span>
+      {tokens
+        ? tokens.map((t, j) => <span key={j} style={t.style}>{t.content}</span>)
+        : (line.text || ' ')}
+    </div>
+  )
+})
+
 export const DiffView = forwardRef<HTMLDivElement, {
   lines: DiffLine[]
   oldTokens?: HLToken[][] | null
@@ -229,7 +254,8 @@ export const DiffView = forwardRef<HTMLDivElement, {
   maxHeight?: string
   className?: string
   hideScrollbar?: boolean
-}>(function DiffView({ lines, oldTokens, newTokens, maxHeight, className, hideScrollbar }, ref) {
+  scrollToLine?: { line: number; seq: number } | null
+}>(function DiffView({ lines, oldTokens, newTokens, maxHeight, className, hideScrollbar, scrollToLine }, ref) {
   const maxLine = lines.reduce((m, l) => Math.max(m, l.lineNum), 0)
   const gw = gutterWidth(maxLine)
   const minContentWidth = useMemo(() => {
@@ -250,39 +276,42 @@ export const DiffView = forwardRef<HTMLDivElement, {
     overscan: 20,
   })
 
-  const renderLine = useCallback((line: DiffLine, _index: number) => {
-    const s = LINE_STYLE[line.kind]
-    const tokens = line.kind === 'removed'
-      ? oldTokens?.[line.sourceIdx]
-      : (newTokens ?? oldTokens)?.[line.sourceIdx]
-    return (
-      <>
-        <span className="inline-block select-none text-right text-muted-foreground/50 mr-1" style={{ width: `${gw}ch` }}>
-          {line.lineNum}
-        </span>
-        <span className={cn('inline-block w-[1ch] select-none text-center mr-1', s.markerColor)}>{s.marker}</span>
-        {tokens
-          ? tokens.map((t, j) => (
-              <span key={j} style={t.style}>{t.content}</span>
-            ))
-          : (line.text || ' ')}
-      </>
-    )
-  }, [gw, oldTokens, newTokens])
+  const [highlightIdx, setHighlightIdx] = useState<number | null>(null)
+  const linesRef = useRef(lines)
+  linesRef.current = lines
+  const virtualizerRef = useRef(virtualizer)
+  virtualizerRef.current = virtualizer
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  useEffect(() => {
+    clearTimeout(highlightTimer.current)
+    if (scrollToLine == null) { setHighlightIdx(null); return }
+    const idx = linesRef.current.findIndex((l) => l.lineNum >= scrollToLine.line)
+    if (idx >= 0) {
+      virtualizerRef.current.scrollToIndex(idx, { align: 'center' })
+      setHighlightIdx(idx)
+      highlightTimer.current = setTimeout(() => setHighlightIdx(null), 5000)
+    }
+  }, [scrollToLine])
 
   return (
     <div ref={scrollRef} className={cn('overflow-auto rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground', maxHeight ?? 'max-h-[300px]', hideScrollbar && 'hide-scrollbar', className)}>
       <div className="relative min-w-full" style={{ height: virtualizer.getTotalSize(), minWidth: minContentWidth }}>
         {virtualizer.getVirtualItems().map((vItem) => {
           const line = lines[vItem.index]
+          const lineTokens = line.kind === 'removed'
+            ? oldTokens?.[line.sourceIdx]
+            : (newTokens ?? oldTokens)?.[line.sourceIdx]
           return (
-            <div
+            <DiffLineRow
               key={vItem.index}
-              className={cn('absolute left-0 right-0 whitespace-pre px-2', LINE_STYLE[line.kind].bg)}
-              style={{ height: vItem.size, transform: `translateY(${vItem.start}px)` }}
-            >
-              {renderLine(line, vItem.index)}
-            </div>
+              line={line}
+              tokens={lineTokens}
+              gw={gw}
+              size={vItem.size}
+              start={vItem.start}
+              isHighlighted={vItem.index === highlightIdx}
+            />
           )
         })}
       </div>

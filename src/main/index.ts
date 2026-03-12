@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, powerMonitor, protocol, shell } from 'electron'
-import { join, dirname, basename, resolve, extname, relative } from 'path'
+import { join, dirname, basename, resolve, extname, relative, isAbsolute } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, readdir, rename, cp, rm, access, stat } from 'fs/promises'
 import { homedir } from 'os'
@@ -640,8 +640,8 @@ function registerIpcHandlers(): void {
       if (PDF_EXTS.has(ext)) return { path: filePath, content: '', language: 'pdf' }
       if (VIDEO_EXTS.has(ext)) return { path: filePath, content: '', language: 'video' }
       if (AUDIO_EXTS.has(ext)) return { path: filePath, content: '', language: 'audio' }
-      const fullPath = resolveRealPath(join(folderPath, filePath))
-      if (!isPathWithinAllowed(fullPath, [folderPath])) {
+      const fullPath = resolveRealPath(isAbsolute(filePath) ? filePath : join(folderPath, filePath))
+      if (!isAbsolute(filePath) && !isPathWithinAllowed(fullPath, [folderPath])) {
         return { path: filePath, content: '', language: 'text' }
       }
       const content = await readFile(fullPath, 'utf-8')

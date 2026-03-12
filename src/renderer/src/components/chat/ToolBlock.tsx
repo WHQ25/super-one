@@ -236,14 +236,14 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   )
 })
 
-export function FileChip({ name, title, filePath, className }: { name: string; title: string; filePath?: string; className?: string }) {
+export function FileChip({ name, title, filePath, lineNumber, className }: { name: string; title: string; filePath?: string; lineNumber?: number; className?: string }) {
   const handleClick = (e: React.MouseEvent): void => {
     e.stopPropagation()
     if (!filePath) return
     const projectPath = useChatStore.getState().activeProject
     if (!projectPath) return
     const relative = filePath.startsWith(projectPath + '/') ? filePath.slice(projectPath.length + 1) : filePath
-    useSourceControlStore.getState().selectFile(projectPath, relative)
+    useSourceControlStore.getState().selectFile(projectPath, relative, lineNumber)
     useAppStore.getState().setShowFilePanel(true)
     useAppStore.getState().setFilePanelView('file')
   }
@@ -256,6 +256,7 @@ export function FileChip({ name, title, filePath, className }: { name: string; t
     >
       <FileIcon name={name} size={12} />
       <span className={cn('truncate', className ?? 'max-w-[160px]')}>{name}</span>
+      {lineNumber != null && <span className="text-muted-foreground text-[10px]">#L{lineNumber}</span>}
     </span>
   )
 }

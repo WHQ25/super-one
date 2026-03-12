@@ -8,9 +8,10 @@ interface SourceControlState {
   fileDiff: GitFileDiff | null
   fileContent: GitFileContent | null
   activeTab: 'changes' | 'file' | 'preview'
+  scrollToLine: { line: number; seq: number } | null
   setActiveTab: (tab: 'changes' | 'file' | 'preview') => void
   fetchFiles: (projectPath: string) => Promise<void>
-  selectFile: (projectPath: string, path: string) => Promise<void>
+  selectFile: (projectPath: string, path: string, lineNumber?: number) => Promise<void>
   clearSelection: () => void
   refresh: (projectPath: string) => Promise<void>
   reset: () => void
@@ -23,6 +24,7 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
   fileDiff: null,
   fileContent: null,
   activeTab: 'changes',
+  scrollToLine: null,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
@@ -36,10 +38,10 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
     }
   },
 
-  selectFile: async (projectPath, path) => {
+  selectFile: async (projectPath, path, lineNumber) => {
     const file = get().files.find((f) => f.path === path)
     const isSameFile = get().selectedFile === path
-    set({ selectedFile: path })
+    set({ selectedFile: path, ...(lineNumber != null ? { scrollToLine: { line: lineNumber, seq: Date.now() } } : isSameFile ? {} : { scrollToLine: null }) })
     try {
       const [diff, content] = await Promise.all([
         window.app.getGitDiffFile(projectPath, path, file?.staged ?? false),
@@ -49,14 +51,15 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
       const isMd = /\.(?:md|mdx|markdown)$/i.test(path)
       const isBinaryPreview = content.language === 'image' || content.language === 'pdf' || content.language === 'video' || content.language === 'audio'
       const isSvg = content.language === 'svg'
-      set({ fileDiff: diff, fileContent: content, ...(isSameFile ? {} : { activeTab: isBinaryPreview ? 'preview' : diff.diff ? 'changes' : (isMd || isSvg) ? 'preview' : 'file' }) })
+      const autoTab = lineNumber ? 'file' : isBinaryPreview ? 'preview' : diff.diff ? 'changes' : (isMd || isSvg) ? 'preview' : 'file'
+      set({ fileDiff: diff, fileContent: content, ...(isSameFile && !lineNumber ? {} : { activeTab: autoTab }) })
     } catch {
       if (get().selectedFile !== path) return
       set({ fileDiff: null, fileContent: null })
     }
   },
 
-  clearSelection: () => set({ selectedFile: null, fileDiff: null, fileContent: null }),
+  clearSelection: () => set({ selectedFile: null, fileDiff: null, fileContent: null, scrollToLine: null }),
 
   refresh: async (projectPath) => {
     await get().fetchFiles(projectPath)
@@ -73,5 +76,6 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
     fileDiff: null,
     fileContent: null,
     activeTab: 'changes',
+    scrollToLine: null,
   }),
 }))

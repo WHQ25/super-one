@@ -38,9 +38,14 @@ function toToolStatus(status: ItemStatus): 'streaming' | 'complete' {
 function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const { href, children, ...rest } = props
   const projectPath = useChatStore.getState().activeProject
-  if (href && projectPath && href.startsWith(projectPath + '/')) {
-    const text = typeof children === 'string' ? children : (href.split('/').pop() || '')
-    return <span className="mt-1.5 inline-flex"><FileChip name={text} title={href} filePath={href} className="max-w-full" /></span>
+  if (href && projectPath) {
+    const lineMatch = href.match(/#L(\d+)$/)
+    const cleanHref = lineMatch ? href.slice(0, -lineMatch[0].length) : href
+    const lineNumber = lineMatch ? parseInt(lineMatch[1], 10) : undefined
+    if (cleanHref.startsWith(projectPath + '/')) {
+      const text = typeof children === 'string' ? children : (cleanHref.split('/').pop() || '')
+      return <span className="mt-1.5 inline-flex"><FileChip name={text} title={cleanHref} filePath={cleanHref} lineNumber={lineNumber} className="max-w-full" /></span>
+    }
   }
   return <a href={href} {...rest}>{children}</a>
 }

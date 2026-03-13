@@ -1,6 +1,10 @@
 import { realpathSync } from 'fs'
 import { resolve, sep } from 'path'
 
+function normalizeSep(p: string): string {
+  return sep === '\\' ? p.replace(/\//g, '\\') : p
+}
+
 export function resolveRealPath(inputPath: string): string {
   const absPath = resolve(inputPath)
   try {
@@ -11,8 +15,8 @@ export function resolveRealPath(inputPath: string): string {
 }
 
 export function isPathWithinAllowed(filePath: string, allowedRoots: string[]): boolean {
-  const real = resolveRealPath(filePath)
-  return allowedRoots.some((root) => real.startsWith(root + sep))
+  const real = normalizeSep(resolveRealPath(filePath))
+  return allowedRoots.some((root) => real.startsWith(normalizeSep(root) + sep))
 }
 
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/

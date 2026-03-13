@@ -5,7 +5,7 @@ import type { ChatMessage, ContentBlock, LoadSessionMessagesResult, SessionHisto
 import { getSessionTitles } from './session-titles'
 
 function encodeCwd(cwd: string): string {
-  return cwd.replace(/\//g, '-')
+  return cwd.replace(/[\\/]/g, '-')
 }
 
 /** Strip XML-like internal tags from text; discard entirely if it starts with a system tag. */

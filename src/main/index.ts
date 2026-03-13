@@ -592,7 +592,7 @@ function registerIpcHandlers(): void {
         return { ok: true as const, path: folderPath }
       }
       const repoRoot = resolve(folderPath, await gitRun(folderPath, ['rev-parse', '--git-common-dir']))
-      const mainDir = repoRoot.endsWith('/.git') ? dirname(repoRoot) : repoRoot
+      const mainDir = repoRoot.endsWith(`${sep}.git`) ? dirname(repoRoot) : repoRoot
       const repoName = basename(mainDir)
       const safeRef = sanitizeGitRef(baseBranch)
       const commitHash = (await gitRun(folderPath, ['rev-parse', safeRef])).trim()
@@ -843,8 +843,9 @@ function registerIpcHandlers(): void {
   })
 
   function validatePathInProject(folderPath: string, relPath: string): string {
+    const normalizedFolder = resolve(folderPath)
     const absPath = resolve(folderPath, relPath)
-    if (!absPath.startsWith(folderPath + sep) && absPath !== folderPath) {
+    if (!absPath.startsWith(normalizedFolder + sep) && absPath !== normalizedFolder) {
       throw new Error('Path escapes project directory')
     }
     return absPath
@@ -920,7 +921,7 @@ function registerIpcHandlers(): void {
       }
       const oldAbs = validatePathInProject(folderPath, relPath)
       const newAbs = join(dirname(oldAbs), newName)
-      if (!newAbs.startsWith(folderPath + sep)) {
+      if (!newAbs.startsWith(resolve(folderPath) + sep)) {
         return { ok: false, error: 'Renamed path escapes project directory' }
       }
       try {

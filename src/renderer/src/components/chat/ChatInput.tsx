@@ -508,11 +508,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const placeholderText = mentions.length > 0
       ? 'Add instructions...'
       : isCodexPlanMode
-        ? 'Plan mode — describe your intent...'
+        ? "Let's make a plan! What's in your mind?"
         : activeProviderForResources === 'codex'
           ? 'Ask Codex...'
         : permissionMode === 'plan'
-          ? 'Plan mode — describe your intent...'
+          ? "Let's make a plan! What's in your mind?"
           : 'Ask anything, @ to add files, / for commands'
     placeholderTextRef.current = placeholderText
 
@@ -688,11 +688,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }}
           onKeyDown={handleKeyDownCore}
           placeholder={isCodexPlanMode
-            ? 'Plan mode — describe your intent...'
+            ? "Let's make a plan! What's in your mind?"
             : activeProviderForResources === 'codex'
               ? 'Ask Codex...'
               : permissionMode === 'plan'
-                ? 'Plan mode — describe your intent...'
+                ? "Let's make a plan! What's in your mind?"
                 : 'Ask anything...'}
           className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none"
         />

@@ -64,7 +64,7 @@ function QuestionPanel({
             <button
               key={opt.label}
               onClick={() => onSelect(q, opt.label)}
-              className={`cursor-pointer rounded px-2 py-1 text-xs transition ${
+              className={`cursor-pointer rounded px-2 py-1 text-xs text-left whitespace-normal transition ${
                 selected
                   ? 'bg-blue-600 text-white'
                   : 'bg-muted text-foreground hover:bg-accent'

@@ -30,6 +30,7 @@ interface AgentAPI {
 }
 
 interface AppAPI {
+  platform: NodeJS.Platform
   connectClaude(): Promise<ConnectResult>
   getStartupData(): Promise<StartupData>
   selectFolder(): Promise<string | null>

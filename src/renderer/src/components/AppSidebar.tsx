@@ -81,6 +81,7 @@ export function AppSidebar() {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
   const isFullscreen = useFullscreen()
+  const isMac = window.app.platform === 'darwin'
   const hasRealProject = useHasRealProject()
   const resetSession = useChatStore((s) => s.resetSession)
   const removeSessionFromMemory = useChatStore((s) => s.removeSessionFromMemory)
@@ -221,26 +222,28 @@ export function AppSidebar() {
     <div className="flex h-full w-full shrink-0 select-none flex-col bg-sidebar text-sidebar-foreground">
       {/* Header — drag region with traffic lights spacer + toggle */}
       <div
-        className={cn('flex h-11 shrink-0 items-center pt-[2px]', isFullscreen ? 'pl-2' : 'pl-[18px]')}
+        className={cn('flex h-11 shrink-0 items-center pt-[2px]', !isMac || isFullscreen ? 'pl-2' : 'pl-[18px]')}
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
-        {!isFullscreen && <div className="w-[66px] shrink-0" />}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => setShowSidebar(false)}
-                className="rounded-md p-1 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              >
-                <PanelLeftDashed className="size-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={4}>
-              <span>Toggle Sidebar</span> <CommandShortcut>⌘B</CommandShortcut>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {isMac && !isFullscreen && <div className="w-[66px] shrink-0" />}
+        {isMac && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setShowSidebar(false)}
+                  className="rounded-md p-1 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                >
+                  <PanelLeftDashed className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={4}>
+                <span>Toggle Sidebar</span> <CommandShortcut>⌘B</CommandShortcut>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
 
       {/* New session button */}

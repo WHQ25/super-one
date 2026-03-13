@@ -448,6 +448,8 @@ const appAPI = {
   getLogPath: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_LOG_PATH) as Promise<string>,
 
+  platform: process.platform,
+
   // Window state
   getFullscreen: () =>
     ipcRenderer.invoke('get-fullscreen') as Promise<boolean>,

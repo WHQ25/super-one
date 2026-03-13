@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react'
-import { Sun, Moon, PanelLeft, Code, Paintbrush } from 'lucide-react'
+import { Sun, Moon, PanelLeft, PanelLeftDashed, Code, Paintbrush } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
 import { ChatPanel } from '@/components/chat/ChatPanel'
@@ -28,6 +28,7 @@ function App(): React.JSX.Element {
   const theme = useTheme()
   const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, showFilePanel, setShowFilePanel, filePanelView, filePanelWidth, setFilePanelWidth, layoutMode, setLayoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, setShowSidebar: s.setShowSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, showFilePanel: s.showFilePanel, setShowFilePanel: s.setShowFilePanel, filePanelView: s.filePanelView, filePanelWidth: s.filePanelWidth, setFilePanelWidth: s.setFilePanelWidth, layoutMode: s.layoutMode, setLayoutMode: s.setLayoutMode })))
   const isFullscreen = useFullscreen()
+  const isMac = window.app.platform === 'darwin'
 
   useEffect(() => {
     useAppStore.getState().loadRemoteConfig()
@@ -250,25 +251,46 @@ function App(): React.JSX.Element {
         <div className={cn('flex min-w-[400px] flex-1 flex-col transition-[border-radius] duration-300', layoutMode === 'coding' && hasLeftPanel && 'rounded-l-2xl bg-background overflow-hidden')}>
         {/* Main header — drag region */}
         <div
-          className={cn('flex h-11 shrink-0 items-center bg-card pt-[2px] transition-[padding-left] duration-300 ease-in-out', isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'pl-2' : 'pl-[18px]')}
+          className={cn('flex h-11 shrink-0 items-center bg-card pt-[2px] transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !(layoutMode === 'coding' && hasLeftPanel)) ? 'pl-2' : 'pl-[18px]')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', !isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'w-[66px]' : 'w-0')} />
-          {layoutMode === 'coding' && (
-            <div className={cn('shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out', showSidebar || showFilePanel ? 'w-0' : 'w-[30px]')}>
+          {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', !isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'w-[66px]' : 'w-0')} />}
+          {isMac ? (
+            layoutMode === 'coding' && (
+              <div className={cn('shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out', showSidebar || showFilePanel ? 'w-0' : 'w-[30px]')}>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => setShowSidebar(true)}
+                        className="mr-2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                      >
+                        <PanelLeft className="size-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" sideOffset={4}>
+                      <span>Toggle Sidebar</span> <CommandShortcut>⌘B</CommandShortcut>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            )
+          ) : (
+            <div className="mr-1 shrink-0">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => setShowSidebar(true)}
-                      className="mr-2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      onClick={() => setShowSidebar(!showSidebar)}
+                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
                     >
-                      <PanelLeft className="size-3.5" />
+                      {showSidebar ? <PanelLeftDashed className="size-3.5" /> : <PanelLeft className="size-3.5" />}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" sideOffset={4}>
-                    <span>Toggle Sidebar</span> <CommandShortcut>⌘B</CommandShortcut>
+                    <span>Toggle Sidebar</span> <CommandShortcut>Ctrl+B</CommandShortcut>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

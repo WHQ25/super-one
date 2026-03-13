@@ -213,7 +213,6 @@ export function ReviewPanel({ isCoding }: { isCoding: boolean }) {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search commits..."
                 className="w-full rounded-md border border-border bg-background py-1 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
-                onKeyDown={handleKeyDown}
               />
             </div>
 

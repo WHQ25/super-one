@@ -88,6 +88,7 @@ export interface ProjectState {
   codexModelsLoading: boolean
   projectAdditionalDirs: string[]
   showDirManager: boolean
+  showReviewPanel: boolean
 }
 
 export type ActiveSessionView = PerSessionState & ProjectState
@@ -173,6 +174,7 @@ export function createDefaultProjectState(): ProjectState {
     codexModelsLoading: false,
     projectAdditionalDirs: [],
     showDirManager: false,
+    showReviewPanel: false,
   }
 }
 
@@ -288,6 +290,8 @@ interface ChatStore {
   addDir: (path: string, scope: 'session' | 'project') => void
   removeDir: (path: string, scope: 'session' | 'project') => void
   setShowDirManager: (show: boolean) => void
+  setShowReviewPanel: (show: boolean) => void
+  startCodexReview: (target: CodexReviewTarget) => void
 }
 
 // --- Helper: get or create session state for a project ---
@@ -2843,6 +2847,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     set((s) => updateProjectState(s, activeProject, () => ({ showDirManager: show })))
+  },
+
+  setShowReviewPanel: (show) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateProjectState(s, activeProject, () => ({ showReviewPanel: show })))
+  },
+
+  startCodexReview: (target) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateProjectState(s, activeProject, () => ({ showReviewPanel: false })))
+    let command: string
+    if (target.type === 'uncommittedChanges') command = '/review'
+    else if (target.type === 'baseBranch') command = '/review branch'
+    else command = `/review commit ${target.sha}`
+    get().sendMessage(command)
   },
 }))
 

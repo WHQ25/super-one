@@ -1,4 +1,4 @@
-import { Check, ClipboardList, Clock, Copy, Expand, Loader2, MessageSquare, TriangleAlert } from 'lucide-react'
+import { Check, ClipboardList, Clock, Copy, Expand, MessageSquare, ScanSearch, TriangleAlert } from 'lucide-react'
 import type { CodexCommandExecutionItem, CodexPlanItem, CodexThreadItem } from '../../../../shared/agent-types'
 import { ToolBlock } from './ToolBlock'
 import { CopyableMarkdown } from './CopyableMarkdown'
@@ -329,13 +329,14 @@ export function renderCodexItem(
 
     case 'review':
       return item.phase === 'entered' ? (
-        <div key={`${item.id}-${index}`} className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
-          <span>Reviewing...</span>
+        <div key={`${item.id}-${index}`} className="my-1 flex items-center gap-2 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs text-blue-300">
+          <ScanSearch className="size-3.5 shrink-0" />
+          <span className="font-medium">Start review{item.text ? ` — ${item.text}` : ''}</span>
         </div>
       ) : (
-        <div key={`${item.id}-${index}`} className="my-0.5">
-          <CopyableMarkdown text={item.text} isStreaming={isStreaming} />
+        <div key={`${item.id}-${index}`} className="my-1 flex items-center gap-2 rounded-md bg-green-500/10 px-2.5 py-1.5 text-xs text-green-300">
+          <Check className="size-3.5 shrink-0" />
+          <span className="font-medium">Review complete</span>
         </div>
       )
 

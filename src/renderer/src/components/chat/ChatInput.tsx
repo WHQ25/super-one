@@ -21,6 +21,7 @@ import { toMentionPath } from './chat-input-utils'
 import { AttachmentBar } from './AttachmentBar'
 import { ModelSelector } from './ModelSelector'
 import { DirManagerPanel } from './DirManagerPanel'
+import { ReviewPanel } from './ReviewPanel'
 
 export interface ChatInputHandle {
   send: () => void
@@ -51,6 +52,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const attachments = useActiveSession((s) => s.attachments)
     const addAttachment = useChatStore((s) => s.addAttachment)
     const removeAttachment = useChatStore((s) => s.removeAttachment)
+    const clearAttachments = useChatStore((s) => s.clearAttachments)
     const slashCommands = useActiveSession((s) => s.slashCommands)
     const preferredProvider = useActiveSession((s) => s.preferredProvider)
     const sessionProvider = useActiveSession((s) => s.sessionProvider)
@@ -66,6 +68,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const dismissCommandPopup = useChatStore((s) => s.dismissSlashCommandOutput)
     const showDirManager = useActiveSession((s) => s.showDirManager)
     const setShowDirManager = useChatStore((s) => s.setShowDirManager)
+    const showReviewPanel = useActiveSession((s) => s.showReviewPanel)
+    const setShowReviewPanel = useChatStore((s) => s.setShowReviewPanel)
     const promptSuggestion = useActiveSession((s) => s.promptSuggestion)
     const prefireMessage = useActiveSession((s) => s.prefireMessage)
     const hasPendingInteraction = useActiveSession((s) => s.hasPendingInteraction)
@@ -121,9 +125,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       { name: 'auth auto', description: 'Auto auth mode (prefer API key)', argumentHint: '', isSkill: false },
       { name: 'auth chatgpt', description: 'Use ChatGPT sign-in mode', argumentHint: '', isSkill: false },
       { name: 'auth apikey', description: 'Use API key mode', argumentHint: '<CODEX_API_KEY>', isSkill: false },
-      { name: 'review', description: 'Review uncommitted changes', argumentHint: '', isSkill: false },
-      { name: 'review branch', description: 'Review diff against base branch', argumentHint: '', isSkill: false },
-      { name: 'review commit', description: 'Review a specific commit', argumentHint: '<sha>', isSkill: false },
+      { name: 'review', description: 'Review code changes', argumentHint: '', isSkill: false },
       { name: 'compact', description: 'Compact thread context', argumentHint: '', isSkill: false },
     ]), [])
 
@@ -174,6 +176,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           setShowDirManager(true)
           return
         }
+        if (name === 'review') {
+          const ed = editorRef.current
+          if (ed) {
+            ed.chain().focus().setContent('').run()
+          }
+          setText('')
+          clearAttachments()
+          for (const mention of mentions) {
+            removeMention(mention.value)
+          }
+          setSlashIndex(-1)
+          setShowReviewPanel(true)
+          return
+        }
         const ed = editorRef.current
         if (ed) {
           ed.chain().focus().setContent(`/${name} `).run()
@@ -182,7 +198,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         setText(`/${name} `)
         setSlashIndex(-1)
       },
-      [setShowDirManager]
+      [clearAttachments, mentions, removeMention, setShowDirManager, setShowReviewPanel]
     )
 
     const handleMentionSelect = useCallback(
@@ -255,6 +271,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         const isComposing = 'nativeEvent' in e ? e.nativeEvent.isComposing : e.isComposing
         if (isComposing) return false
 
+        if (e.key === 'Escape' && showReviewPanel) {
+          setShowReviewPanel(false)
+          return true
+        }
         if (e.key === 'Escape' && showDirManager) {
           setShowDirManager(false)
           return true
@@ -372,7 +392,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         return false
       },
-      [handleSend, handlePrefire, canPrefire, prefireMessage, cancelPrefireMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, showDirManager, setShowDirManager]
+      [handleSend, handlePrefire, canPrefire, prefireMessage, cancelPrefireMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, showDirManager, setShowDirManager, showReviewPanel, setShowReviewPanel]
     )
 
     handleKeyDownRef.current = handleKeyDownCore
@@ -601,10 +621,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     }, [text, editor])
 
     useEffect(() => {
-      if (!compact && isOpen && editor) {
+      if (!compact && isOpen && editor && !showReviewPanel) {
         editor.commands.focus('end')
       }
-    }, [compact, isOpen, editor])
+    }, [compact, isOpen, editor, showReviewPanel])
+
+    useEffect(() => {
+      if (showReviewPanel && editor) {
+        editor.commands.blur()
+      }
+    }, [showReviewPanel, editor])
 
     useEffect(() => {
       if (editor) {
@@ -755,6 +781,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         )}
 
         {showDirManager && <DirManagerPanel isCoding={isCoding} />}
+        {showReviewPanel && <ReviewPanel isCoding={isCoding} />}
 
         {mentionInfoRef.current && mentionActive && matchingCommands.length === 0 && (
           <MentionPopup

@@ -478,6 +478,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, folderPath, baseBranch, carryLocalChanges),
   getGitStatusFiles: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_STATUS_FILES, folderPath),
+  getGitLog: (folderPath: string, query?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_LOG, folderPath, query),
   getGitDiffFile: (folderPath: string, filePath: string, staged: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_DIFF_FILE, folderPath, filePath, staged),
   getGitReadFile: (folderPath: string, filePath: string) =>

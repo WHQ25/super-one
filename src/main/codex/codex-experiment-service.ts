@@ -574,7 +574,7 @@ function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadItem): C
 
     case 'exitedReviewMode': {
       const text = readString(rec.text) ?? readString(rec.review) ?? ''
-      return { id, type: 'review', phase: 'exited', text }
+      return { id: `${id}_exit`, type: 'review', phase: 'exited', text }
     }
 
     case 'contextCompaction':

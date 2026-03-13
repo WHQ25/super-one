@@ -393,6 +393,13 @@ export interface GitInfo {
   dirty?: GitDirtyStatus
 }
 
+export interface GitLogEntry {
+  sha: string
+  message: string
+  author: string
+  date: string
+}
+
 export type GitResult = { ok: true } | { ok: false; error: string }
 
 export type FileOpResult = { ok: true } | { ok: false; error: string }
@@ -971,6 +978,7 @@ export const AgentIpcChannels = {
   GIT_WORKTREE_INFO: 'app:git-worktree-info',
   GIT_ACTIVATE_WORKTREE: 'app:git-activate-worktree',
   GIT_STATUS_FILES: 'app:git-status-files',
+  GIT_LOG: 'app:git-log',
   GIT_FILE_TREE: 'app:git-file-tree',
   GIT_LIST_DIR: 'app:git-list-dir',
   FILE_MOVE: 'app:file-move',

@@ -489,6 +489,30 @@ function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle(AgentIpcChannels.GIT_LOG, async (_event, folderPath: string, query?: string) => {
+    try {
+      const normalizedQuery = query?.trim().toLowerCase()
+      const args = normalizedQuery
+        ? ['log', '--format=%H%x00%s%x00%an%x00%ai']
+        : ['log', '--format=%H%x00%s%x00%an%x00%ai', '-50']
+      const raw = await gitRun(folderPath, args)
+      if (!raw) return []
+      const entries = raw.split('\n').filter(Boolean).map((line) => {
+        const [sha, message, author, date] = line.split('\0')
+        return { sha, message, author, date }
+      })
+      if (!normalizedQuery) return entries
+      return entries
+        .filter((entry) =>
+          entry.sha.toLowerCase().includes(normalizedQuery)
+          || entry.message.toLowerCase().includes(normalizedQuery)
+        )
+        .slice(0, 50)
+    } catch {
+      return []
+    }
+  })
+
   const gitErrorMessage = (err: unknown): string => {
     const stderr = (err as { stderr?: string })?.stderr?.trim()
     if (stderr) return stderr

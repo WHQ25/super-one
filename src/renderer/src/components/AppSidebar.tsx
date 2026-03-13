@@ -180,17 +180,23 @@ export function AppSidebar() {
   const handleDeleteSession = useCallback(async () => {
     if (!deleteTarget) return
     await window.app.deleteSession(deleteTarget.sessionId)
-    refreshFolderSessions(deleteTarget.folderPath)
-    refreshPinned()
-    setDeleteTarget(null)
 
     const current = projectSessions[deleteTarget.folderPath]
-    const currentId = current?._activeSessionId
-    if (currentId === deleteTarget.sessionId) {
+    if (current?._activeSessionId === deleteTarget.sessionId) {
       resetSession()
-    } else {
-      removeSessionFromMemory(deleteTarget.folderPath, deleteTarget.sessionId)
     }
+    removeSessionFromMemory(deleteTarget.folderPath, deleteTarget.sessionId)
+
+    setFolderSessions((prev) => ({
+      ...prev,
+      [deleteTarget.folderPath]: (prev[deleteTarget.folderPath] ?? []).filter(
+        (s) => s.sessionId !== deleteTarget.sessionId
+      ),
+    }))
+    setPinnedSessions((prev) => prev.filter((s) => s.sessionId !== deleteTarget.sessionId))
+    setDeleteTarget(null)
+    refreshFolderSessions(deleteTarget.folderPath)
+    refreshPinned()
   }, [deleteTarget, refreshFolderSessions, refreshPinned, projectSessions, resetSession, removeSessionFromMemory])
 
   const deleteTargetCli = getDeleteSessionRecovery(deleteTarget?.provider ?? 'claude', deleteTarget?.sessionId ?? '')

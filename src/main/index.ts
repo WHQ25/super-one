@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, powerMonitor, protocol, shell } from 'electron'
-import { join, dirname, basename, resolve, extname, relative, isAbsolute } from 'path'
+import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, readdir, rename, cp, rm, access, stat } from 'fs/promises'
 import { homedir } from 'os'
@@ -844,7 +844,7 @@ function registerIpcHandlers(): void {
 
   function validatePathInProject(folderPath: string, relPath: string): string {
     const absPath = resolve(folderPath, relPath)
-    if (!absPath.startsWith(folderPath + '/') && absPath !== folderPath) {
+    if (!absPath.startsWith(folderPath + sep) && absPath !== folderPath) {
       throw new Error('Path escapes project directory')
     }
     return absPath
@@ -920,7 +920,7 @@ function registerIpcHandlers(): void {
       }
       const oldAbs = validatePathInProject(folderPath, relPath)
       const newAbs = join(dirname(oldAbs), newName)
-      if (!newAbs.startsWith(folderPath + '/')) {
+      if (!newAbs.startsWith(folderPath + sep)) {
         return { ok: false, error: 'Renamed path escapes project directory' }
       }
       try {

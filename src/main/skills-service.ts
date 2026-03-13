@@ -1,4 +1,4 @@
-import { join, resolve } from 'path'
+import { join, resolve, basename } from 'path'
 import log from './logger'
 import { homedir } from 'os'
 import { existsSync, readdirSync, readFileSync, statSync, cpSync, rmSync } from 'fs'
@@ -208,7 +208,7 @@ export function readCodexSkillFile(cwd: string, skillName: string, relativePath:
 // --- Install / Delete (Claude Code only) ---
 
 export function installSkill(sourcePath: string): SkillInfo {
-  const name = sourcePath.split('/').pop()!
+  const name = basename(sourcePath)
   const dest = join(homedir(), '.claude', 'skills', name)
   cpSync(sourcePath, dest, { recursive: true })
 

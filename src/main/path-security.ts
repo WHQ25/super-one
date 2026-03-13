@@ -1,5 +1,5 @@
 import { realpathSync } from 'fs'
-import { resolve } from 'path'
+import { resolve, sep } from 'path'
 
 export function resolveRealPath(inputPath: string): string {
   const absPath = resolve(inputPath)
@@ -12,7 +12,7 @@ export function resolveRealPath(inputPath: string): string {
 
 export function isPathWithinAllowed(filePath: string, allowedRoots: string[]): boolean {
   const real = resolveRealPath(filePath)
-  return allowedRoots.some((root) => real.startsWith(root + '/'))
+  return allowedRoots.some((root) => real.startsWith(root + sep))
 }
 
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/

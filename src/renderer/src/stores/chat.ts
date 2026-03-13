@@ -1711,14 +1711,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (resolvedCodexCommand) {
       set((s) => updateActivePerSession(s,() => ({ _pendingSlashCommand: '' })))
 
+      const codexProjectPath = activeProject
+      const codexSid = codexSessionId!
       const assistantId = `codex_${Date.now()}`
       const previousCodexTurnLastUsage = session.codexTurnLastUsage
-      const appendAssistant = (message: ChatMessage) => {
-        set((s) => updateActivePerSession(s,(sess) => ({
-          messages: [...sess.messages, message],
-        })))
+      const updateCodexSession = (updater: (s: PerSessionState) => Partial<PerSessionState>) => {
+        set((s) => updatePerSession(s, codexProjectPath, codexSid, updater))
       }
-      const getTargetAssistantId = () => getActivePerSession(get()).activeCodexMessageId ?? assistantId
+      const getCodexSession = () => getProject(get(), codexProjectPath)._sessions[codexSid]
+      const appendAssistant = (message: ChatMessage) => {
+        updateCodexSession((sess) => ({
+          messages: [...sess.messages, message],
+        }))
+      }
+      const getTargetAssistantId = () => getCodexSession()?.activeCodexMessageId ?? assistantId
       const updateAssistant = (
         status: 'streaming' | 'complete' | 'interrupted' | 'error',
         text: string,
@@ -1726,7 +1732,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         sessionUpdates?: Partial<PerSessionState>,
       ) => {
         const targetAssistantId = getTargetAssistantId()
-        set((s) => updateActivePerSession(s,(sess) => ({
+        updateCodexSession((sess) => ({
           status: status === 'streaming' ? 'streaming' : 'idle',
           ...(status === 'streaming' ? { activeCodexMessageId: targetAssistantId } : { activeCodexMessageId: null }),
           ...(sessionUpdates ?? {}),
@@ -1740,7 +1746,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                   ...(metadata ? { metadata } : {}),
                 }
           )),
-        })))
+        }))
       }
 
       // Steer: if streaming and command is 'run', send as steer input instead of starting a new run
@@ -1755,21 +1761,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           createdAt: new Date().toISOString(),
           providerId: 'codex',
         })
-        set((s) => updateActivePerSession(s,() => ({
+        updateCodexSession(() => ({
           status: 'streaming',
           activeCodexMessageId: steerAssistantId,
           codexTurnLastUsage: null,
           streamingTokens: { input: 0, output: 0 },
-        })))
+        }))
         try {
           await window.app.codexSteer(codexSessionId!, resolvedCodexCommand.prompt, steerAssistantId)
         } catch (error) {
-          set((s) => updateActivePerSession(s,(sess) => ({
+          updateCodexSession((sess) => ({
             status: 'streaming',
             activeCodexMessageId: previousActiveCodexMessageId ?? null,
             codexTurnLastUsage: previousCodexTurnLastUsage,
             messages: sess.messages.filter((m) => m.id !== steerAssistantId),
-          })))
+          }))
           console.warn('[sendMessage] Codex steer failed:', error)
         }
         return
@@ -1783,12 +1789,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         createdAt: new Date().toISOString(),
         providerId: 'codex',
       })
-      set((s) => updateActivePerSession(s,() => ({
+      updateCodexSession(() => ({
         status: 'streaming',
         activeCodexMessageId: assistantId,
         codexTurnLastUsage: null,
         streamingTokens: { input: 0, output: 0 },
-      })))
+      }))
 
       try {
         const runStart = Date.now()
@@ -1839,10 +1845,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             : 'Codex completed without returning text.'
         )
         const renderedItems = pruneTransientCodexItems(result.items)
-        const activeSession = getActivePerSession(get())
-        const footerTokens = result.usage
-          ? accumulateCodexFooterTokens(activeSession.streamingTokens, result.usage, activeSession.codexTurnLastUsage)
-          : activeSession.streamingTokens
+        const codexSession = getCodexSession()
+        const footerTokens = result.usage && codexSession
+          ? accumulateCodexFooterTokens(codexSession.streamingTokens, result.usage, codexSession.codexTurnLastUsage)
+          : codexSession?.streamingTokens ?? { input: 0, output: 0 }
         const consumedTokens = footerTokens.input > 0 || footerTokens.output > 0 ? footerTokens : undefined
         updateAssistant('complete', text, result.usage ? {
           durationMs: Date.now() - runStart,
@@ -1869,13 +1875,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           contextTokens: result.usage
             ? (() => {
                 const total = getCodexContextTokens(result.usage)
-                return total > 0 ? total : activeSession.contextTokens
+                return total > 0 ? total : (codexSession?.contextTokens ?? 0)
               })()
-            : activeSession.contextTokens,
+            : (codexSession?.contextTokens ?? 0),
           contextWindow: result.usage?.contextWindow && result.usage.contextWindow > 0
             ? result.usage.contextWindow
-            : activeSession.contextWindow,
-          codexUsageSnapshot: result.usage ?? activeSession.codexUsageSnapshot,
+            : (codexSession?.contextWindow ?? null),
+          codexUsageSnapshot: result.usage ?? codexSession?.codexUsageSnapshot ?? null,
           codexTurnLastUsage: null,
           streamingTokens: { input: 0, output: 0 },
         })
@@ -1889,7 +1895,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           { codexTurnLastUsage: null, streamingTokens: { input: 0, output: 0 } },
         )
       }
-      _saveSessionState(get, activeProject)
+      const finalCodexSession = getCodexSession()
+      if (finalCodexSession) {
+        const currentProject = getProject(get(), codexProjectPath)
+        if (currentProject._activeSessionId !== codexSid) {
+          set((s) => {
+            const proj = s.projectSessions[codexProjectPath]
+            if (!proj) return {}
+            return {
+              projectSessions: {
+                ...s.projectSessions,
+                [codexProjectPath]: {
+                  ...proj,
+                  unseenCompletedSessions: new Set([...proj.unseenCompletedSessions, codexSid]),
+                },
+              },
+            }
+          })
+        }
+        void _savePerSessionSnapshot(codexProjectPath, codexSid, finalCodexSession)
+      }
       return
     }
 
@@ -2015,7 +2040,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const activeSession = getActivePerSession(get())
     const currentSid = resolveActiveSessionId(project)
 
-    if (activeSession.status === 'streaming' && currentSid) {
+    if (activeSession.sessionProvider === 'codex') {
+      if (activeSession.status !== 'streaming' && currentSid) {
+        await window.app.codexReset(currentSid).catch(() => {})
+      }
+    } else if (activeSession.status === 'streaming' && currentSid) {
       await window.agent.parkSession(activeProject)
     } else {
       await window.agent.resetSession(activeProject)
@@ -2660,7 +2689,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       })
 
       const targetSession = project._sessions[sessionId]
-      if (targetSession.sessionProvider === 'codex') return
       if (sessionId === DRAFT_SESSION_ID) return
       let runtimeSession = targetSession
 
@@ -2695,10 +2723,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      try {
-        await window.app.resumeSession(activeProject, sessionId, _getSessionCwd(activeProject, runtimeSession))
-      } catch (err) {
-        console.warn('[chat] resumeSession failed:', err)
+      if (targetSession.sessionProvider !== 'codex') {
+        try {
+          await window.app.resumeSession(activeProject, sessionId, _getSessionCwd(activeProject, runtimeSession))
+        } catch (err) {
+          console.warn('[chat] resumeSession failed:', err)
+        }
       }
       return
     }

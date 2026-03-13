@@ -37,6 +37,61 @@ function createSession(projectPath: string, runningController: AbortController |
   }
 }
 
+describe('resolveThread fallback', () => {
+  const permissionProfile = {
+    permissionPreset: 'default' as const,
+    approvalPolicy: 'unless-allow-listed' as const,
+    sandboxMode: 'permissive' as const,
+    networkAccessEnabled: true,
+  }
+
+  it('falls back to thread/start when thread/resume fails', async () => {
+    const service = new CodexExperimentService()
+    const session = { ...createSession('/project', null), model: 'gpt-5', threadId: 'stale-thread' }
+    const mockConnection = {
+      request: vi.fn()
+        .mockRejectedValueOnce(new Error('thread not found'))
+        .mockResolvedValueOnce({ thread: { id: 'new-thread-1' } }),
+    }
+
+    const result = await (service as any).resolveThread(mockConnection, session, '/project', permissionProfile)
+
+    expect(result).toBe('new-thread-1')
+    expect(session.threadId).toBe('new-thread-1')
+    expect(mockConnection.request).toHaveBeenCalledTimes(2)
+    expect(mockConnection.request.mock.calls[0][0]).toBe('thread/resume')
+    expect(mockConnection.request.mock.calls[1][0]).toBe('thread/start')
+  })
+
+  it('uses thread/resume when it succeeds', async () => {
+    const service = new CodexExperimentService()
+    const session = { ...createSession('/project', null), model: 'gpt-5', threadId: 'valid-thread' }
+    const mockConnection = {
+      request: vi.fn().mockResolvedValueOnce({ thread: { id: 'valid-thread' } }),
+    }
+
+    const result = await (service as any).resolveThread(mockConnection, session, '/project', permissionProfile)
+
+    expect(result).toBe('valid-thread')
+    expect(mockConnection.request).toHaveBeenCalledTimes(1)
+    expect(mockConnection.request.mock.calls[0][0]).toBe('thread/resume')
+  })
+
+  it('uses thread/start when no threadId exists', async () => {
+    const service = new CodexExperimentService()
+    const session = { ...createSession('/project', null), model: 'gpt-5' }
+    const mockConnection = {
+      request: vi.fn().mockResolvedValueOnce({ thread: { id: 'fresh-thread' } }),
+    }
+
+    const result = await (service as any).resolveThread(mockConnection, session, '/project', permissionProfile)
+
+    expect(result).toBe('fresh-thread')
+    expect(mockConnection.request).toHaveBeenCalledTimes(1)
+    expect(mockConnection.request.mock.calls[0][0]).toBe('thread/start')
+  })
+})
+
 describe('CodexExperimentService auth state', () => {
   beforeEach(() => {
     vi.clearAllMocks()

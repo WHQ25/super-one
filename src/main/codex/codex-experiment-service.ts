@@ -1345,6 +1345,20 @@ export class CodexExperimentService {
   ): Promise<string> {
     const threadConfig = this.buildThreadConfig(permissionProfile)
 
+    const startNewThread = () =>
+      connection.request(
+        'thread/start',
+        compactRecord({
+          model: session.model,
+          cwd,
+          approvalPolicy: permissionProfile.approvalPolicy,
+          sandbox: permissionProfile.sandboxMode,
+          config: threadConfig,
+          experimentalRawEvents: false,
+          persistExtendedHistory: true,
+        }),
+      )
+
     const threadResult = session.threadId
       ? await connection.request(
           'thread/resume',
@@ -1357,19 +1371,11 @@ export class CodexExperimentService {
             config: threadConfig,
             persistExtendedHistory: true,
           }),
-        )
-      : await connection.request(
-          'thread/start',
-          compactRecord({
-            model: session.model,
-            cwd,
-            approvalPolicy: permissionProfile.approvalPolicy,
-            sandbox: permissionProfile.sandboxMode,
-            config: threadConfig,
-            experimentalRawEvents: false,
-            persistExtendedHistory: true,
-          }),
-        )
+        ).catch(() => {
+          session.threadId = null
+          return startNewThread()
+        })
+      : await startNewThread()
 
     const thread = asRecord(threadResult.thread)
     const resolvedThreadId = readString(thread?.id)

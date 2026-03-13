@@ -40,6 +40,8 @@ const mockWindowApp = {
   codexSteer: vi.fn().mockResolvedValue(undefined),
   codexAnswerQuestion: vi.fn().mockResolvedValue(true),
   codexDismissQuestion: vi.fn().mockResolvedValue(true),
+  codexReset: vi.fn().mockResolvedValue(undefined),
+  codexInterrupt: vi.fn().mockResolvedValue(false),
 }
 
 vi.stubGlobal('window', { agent: mockWindowAgent, app: mockWindowApp })
@@ -1671,5 +1673,175 @@ describe('switchSession Case B codex usage restore', () => {
     expect(session.contextTokens).toBe(139481)
     expect(session.contextWindow).toBe(258400)
     expect(session.codexUsageSnapshot?.lastCachedInputTokens).toBe(69376)
+    expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('codex run session isolation', () => {
+  it('writes run result to the originating session even after switching away', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const codexSid = 'codex_local_A'
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: codexSid,
+          _sessions: {
+            [codexSid]: {
+              ...createDefaultPerSessionState(),
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+            },
+            'ses-B': {
+              ...createDefaultPerSessionState(),
+              messages: [{ id: 'b-msg', role: 'user' as const, content: [{ type: 'text', text: 'hi' }], status: 'complete' as const, createdAt: '', providerId: 'claude' }] as never[],
+            },
+          },
+        },
+      },
+    })
+
+    let resolveCodexRun!: (v: unknown) => void
+    mockWindowApp.codexRun.mockReturnValueOnce(
+      new Promise((r) => { resolveCodexRun = r }),
+    )
+
+    const sendPromise = useChatStore.getState().sendMessage('test codex')
+
+    await vi.waitFor(() => {
+      expect(mockWindowApp.codexRun).toHaveBeenCalled()
+    })
+
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        '/test': {
+          ...s.projectSessions['/test'],
+          _activeSessionId: 'ses-B',
+        },
+      },
+    }))
+
+    resolveCodexRun({ threadId: 'thread-iso', finalResponse: 'isolation ok', usage: null, items: [] })
+    await sendPromise
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._activeSessionId).toBe('ses-B')
+
+    const codexSession = after._sessions[codexSid]
+    const assistantMsg = codexSession.messages.find((m) => m.role === 'assistant')
+    expect(assistantMsg?.status).toBe('complete')
+    expect(assistantMsg?.content[0]).toEqual({ type: 'text', text: 'isolation ok' })
+    expect(codexSession.status).toBe('idle')
+
+    const sesB = after._sessions['ses-B']
+    expect(sesB.messages).toHaveLength(1)
+    expect(sesB.messages[0].id).toBe('b-msg')
+
+    expect(after.unseenCompletedSessions.has(codexSid)).toBe(true)
+  })
+})
+
+describe('resetSession codex handling', () => {
+  it('calls codexReset for idle codex session instead of claude resetSession', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const codexSid = 'codex_local_reset'
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: codexSid,
+          _sessions: {
+            [codexSid]: {
+              ...createDefaultPerSessionState(),
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+              messages: [{ id: 'cx1', role: 'user' as const, content: [], status: 'complete' as const, createdAt: '', providerId: 'codex' }] as never[],
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().resetSession()
+
+    expect(mockWindowApp.codexReset).toHaveBeenCalledWith(codexSid)
+    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._activeSessionId).toBe(DRAFT_SESSION_ID)
+  })
+
+  it('lets streaming codex session continue in background without interrupt', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const codexSid = 'codex_local_streaming_reset'
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: codexSid,
+          _sessions: {
+            [codexSid]: {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().resetSession()
+
+    expect(mockWindowApp.codexInterrupt).not.toHaveBeenCalled()
+    expect(mockWindowApp.codexReset).not.toHaveBeenCalled()
+    expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
+    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._activeSessionId).toBe(DRAFT_SESSION_ID)
+    expect(after._sessions[codexSid]).toBeDefined()
+  })
+})
+
+describe('switchSession Case A codex worktree', () => {
+  it('handles worktree for codex sessions and skips resumeSession', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const codexWtSid = 'codex_local_wt'
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [codexWtSid]: {
+              ...createDefaultPerSessionState(),
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+              _worktreePath: '/test/.worktrees/feat',
+              _worktreeBaseBranch: 'main',
+            },
+          },
+        },
+      },
+    })
+
+    mockWindowApp.pathExists.mockResolvedValueOnce(true)
+    await useChatStore.getState().switchSession(codexWtSid)
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._activeSessionId).toBe(codexWtSid)
+    expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', '/test/.worktrees/feat')
+    expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
   })
 })

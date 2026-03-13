@@ -134,6 +134,20 @@
   animation: shimmer 2s ease-in-out infinite;
 }
 
+@keyframes rainbow-scroll {
+  0% { background-position: 200% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.rainbow-text {
+  background: linear-gradient(90deg, #ff0000, #ff8000, #ffff00, #00ff00, #00bfff, #8000ff, #ff00ff, #ff0000);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: rainbow-scroll 2s linear infinite;
+}
+
 *,
 ::before,
 ::after {

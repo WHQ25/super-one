@@ -104,8 +104,8 @@ export function ModelSelector() {
         {effortLevels && effortLevels.length > 0 && (
           <Popover open={effortOpen} onOpenChange={setEffortOpen}>
             <PopoverTrigger asChild>
-              <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                <span className="max-w-[100px] truncate">{currentEffortLabel ?? 'Effort'}</span>
+              <button className={`flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs transition-colors hover:bg-muted hover:text-foreground ${selectedEffort === 'high' ? '' : 'text-muted-foreground'}`}>
+                <span className={`max-w-[100px] truncate ${selectedEffort === 'high' ? 'rainbow-text font-normal' : ''}`}>{selectedEffort === 'high' ? 'ULTRATHINK' : (currentEffortLabel ?? 'Effort')}</span>
                 <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
               </button>
             </PopoverTrigger>

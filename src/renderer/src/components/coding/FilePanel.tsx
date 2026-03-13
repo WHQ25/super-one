@@ -9,6 +9,7 @@ import { useAppStore } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { cn } from '@/lib/utils'
+import { toLocalFileUrl } from '@/lib/path-utils'
 import { MarkdownView } from '@/components/MarkdownPreview'
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import { FileDiffView } from './source-control/FileDiffView'
@@ -108,8 +109,8 @@ export function FilePanel() {
       (_, alt, src, rest) => {
         const cleanSrc = src.replace(/^\.\//, '')
         const resolved = src.startsWith('/')
-          ? `local-file://${src}`
-          : `local-file://${baseDir}/${cleanSrc}`
+          ? toLocalFileUrl(src)
+          : toLocalFileUrl(`${baseDir}/${cleanSrc}`)
         return `![${alt}](${resolved}${rest})`
       },
     )
@@ -177,20 +178,20 @@ export function FilePanel() {
         ) : effectiveTab === 'preview' && isBinImg ? (
           <div className="flex h-full items-center justify-center p-4">
             <img
-              src={`local-file://${currentFolder}/${selectedFile}`}
+              src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
               alt={fileName}
               className="max-h-full max-w-full object-contain"
             />
           </div>
         ) : effectiveTab === 'preview' && isPdfFile ? (
           <PdfPreview
-            url={`local-file://${currentFolder}/${selectedFile}`}
+            url={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
             className="h-full"
           />
         ) : effectiveTab === 'preview' && isVideoFile ? (
           <div className="flex h-full items-center justify-center p-4">
             <video
-              src={`local-file://${currentFolder}/${selectedFile}`}
+              src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
               controls
               preload="auto"
               className="max-h-full max-w-full"
@@ -199,7 +200,7 @@ export function FilePanel() {
         ) : effectiveTab === 'preview' && isAudioFile ? (
           <div className="flex h-full items-center justify-center p-4">
             <audio
-              src={`local-file://${currentFolder}/${selectedFile}`}
+              src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
               controls
               preload="auto"
             />
@@ -207,7 +208,7 @@ export function FilePanel() {
         ) : effectiveTab === 'preview' && isSvgFile ? (
           <div className="flex h-full items-center justify-center p-4">
             <img
-              src={`local-file://${currentFolder}/${selectedFile}`}
+              src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
               alt={fileName}
               className="max-h-full max-w-full object-contain"
             />

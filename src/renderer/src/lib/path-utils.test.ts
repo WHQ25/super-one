@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shortenPath, homePath } from './path-utils'
+import { shortenPath, homePath, toLocalFileUrl } from './path-utils'
 
 describe('shortenPath', () => {
   it('returns relative path when shortest', () => {
@@ -67,5 +67,23 @@ describe('homePath', () => {
 
   it('leaves non-home paths unchanged', () => {
     expect(homePath('/tmp/file.ts')).toBe('/tmp/file.ts')
+  })
+})
+
+describe('toLocalFileUrl', () => {
+  it('handles macOS/Linux absolute paths', () => {
+    expect(toLocalFileUrl('/Users/alice/project/image.png')).toBe('local-file:///Users/alice/project/image.png')
+  })
+
+  it('handles Windows drive letter paths with backslashes', () => {
+    expect(toLocalFileUrl('C:\\Users\\carol\\project\\image.png')).toBe('local-file:///C:/Users/carol/project/image.png')
+  })
+
+  it('handles Windows drive letter paths with forward slashes', () => {
+    expect(toLocalFileUrl('C:/Users/carol/project/image.png')).toBe('local-file:///C:/Users/carol/project/image.png')
+  })
+
+  it('handles lowercase drive letters', () => {
+    expect(toLocalFileUrl('d:\\data\\file.pdf')).toBe('local-file:///d:/data/file.pdf')
   })
 })

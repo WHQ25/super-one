@@ -28,3 +28,10 @@ export function shortenPath(absolutePath: string, cwd?: string | null, homedir?:
 export function homePath(absolutePath: string): string {
   return absolutePath.replace(HOME_RE, '~')
 }
+
+export function toLocalFileUrl(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/')
+  return /^[A-Za-z]:/.test(normalized)
+    ? `local-file:///${normalized}`
+    : `local-file://${normalized}`
+}

@@ -1187,7 +1187,8 @@ app.whenReady().then(() => {
 
   protocol.handle('local-file', async (request) => {
     try {
-      const filePath = decodeURIComponent(request.url.slice('local-file://'.length))
+      const rawPath = decodeURIComponent(new URL(request.url).pathname)
+      const filePath = rawPath.replace(/^\/([A-Za-z]:)/, '$1')
       const resolved = resolveRealPath(filePath)
       const folders = getRecentFolders()
       if (!isPathWithinAllowed(resolved, folders.map((f) => f.path))) {

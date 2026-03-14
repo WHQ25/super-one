@@ -5,6 +5,7 @@ import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Circle, CheckCircle2, ShieldAlert } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay } from './tool-display'
+import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
 
 /** Dev-only: comma-separated tool names to show debug data in permission prompt. */
@@ -280,6 +281,12 @@ export function PermissionPrompt() {
         >
           {display.summary}
         </p>
+      )}
+      {(toolName === 'Edit' || toolName === 'Write') && (
+        <div className="mb-2 max-h-64 overflow-y-auto rounded bg-muted/50 text-xs">
+          {toolName === 'Edit' && <EditDiff params={input} />}
+          {toolName === 'Write' && <WriteDiff params={input} />}
+        </div>
       )}
       {blockedPath && (
         <p className="mb-2 break-all text-xs text-amber-400">Blocked path: {blockedPath}</p>

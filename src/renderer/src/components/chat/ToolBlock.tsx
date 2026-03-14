@@ -620,7 +620,7 @@ function buildDiffSourceText(lines: DiffLine[]): { oldText: string; newText: str
 
 
 /** Unified diff for Edit tool with actual file line numbers. */
-function EditDiff({ params }: { params: Record<string, unknown> }) {
+export function EditDiff({ params }: { params: Record<string, unknown> }) {
   const oldStr = String(params.old_string ?? '')
   const newStr = String(params.new_string ?? '')
   const filePath = String(params.file_path ?? '')
@@ -659,7 +659,7 @@ function EditDiff({ params }: { params: Record<string, unknown> }) {
 }
 
 /** Content preview for Write tool (all lines are additions). */
-function WriteDiff({ params }: { params: Record<string, unknown> }) {
+export function WriteDiff({ params }: { params: Record<string, unknown> }) {
   const content = String(params.content ?? '')
   const filePath = String(params.file_path ?? '')
   const language = inferLanguage(filePath)

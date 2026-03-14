@@ -526,10 +526,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       : isCodexPlanMode
         ? "Let's make a plan! What's in your mind?"
         : activeProviderForResources === 'codex'
-          ? 'Ask Codex...'
+          ? 'Ask Codex anything, @ to mention, / for commands'
         : permissionMode === 'plan'
           ? "Let's make a plan! What's in your mind?"
-          : 'Ask anything, @ to add files, / for commands'
+          : 'Ask Claude anything, @ to mention files & agents, / for commands'
     placeholderTextRef.current = placeholderText
 
     const editor = useEditor({
@@ -706,10 +706,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           placeholder={isCodexPlanMode
             ? "Let's make a plan! What's in your mind?"
             : activeProviderForResources === 'codex'
-              ? 'Ask Codex...'
+              ? 'Ask Codex anything, @ to mention, / for commands'
               : permissionMode === 'plan'
                 ? "Let's make a plan! What's in your mind?"
-                : 'Ask anything...'}
+                : 'Ask Claude anything, @ to mention files & agents, / for commands'}
           className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none"
         />
       )

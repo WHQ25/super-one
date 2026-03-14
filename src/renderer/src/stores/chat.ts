@@ -66,6 +66,7 @@ export interface PerSessionState {
   lastEventAt: number
   prefireMessage: { content: string; attachments: ImageAttachment[]; mentions: Mention[] } | null
   activeCodexMessageId: string | null
+  lastAssistantMessageId: string | null
 }
 
 export interface ProjectState {
@@ -140,6 +141,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     lastEventAt: 0,
     prefireMessage: null,
     activeCodexMessageId: null,
+    lastAssistantMessageId: null,
   }
 }
 
@@ -444,7 +446,13 @@ function findLatestCodexUsage(messages: ChatMessage[]): CodexUsageInfo | null {
 function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
   switch (event.type) {
     case 'message_start':
-      return { messages: [...session.messages, event.message], promptSuggestion: null, awaitingAssistantReply: false, lastEventAt: Date.now() }
+      return {
+        messages: [...session.messages, event.message],
+        promptSuggestion: null,
+        awaitingAssistantReply: false,
+        lastEventAt: Date.now(),
+        ...(event.message.role === 'assistant' ? { lastAssistantMessageId: event.message.id } : {}),
+      }
 
     case 'content_delta': {
       let updatedMessages = session.messages.map((msg) => {
@@ -2783,6 +2791,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       _worktreePath: savedWorktreePath ?? null,
       preferredProvider: restoredProvider,
       sessionProvider: restoredProvider,
+      lastAssistantMessageId: savedMessages.findLast((m) => m.role === 'assistant')?.id ?? null,
     }
     if (restoredProvider !== 'codex') {
       applyDefaultModel(restoredSession, get().availableModels)
@@ -2909,6 +2918,10 @@ const DEFAULT_PER_SESSION = createDefaultPerSessionState()
 const DEFAULT_PROJECT = createDefaultProjectState()
 const DEFAULT_VIEW: ActiveSessionView = { ...DEFAULT_PER_SESSION, ...DEFAULT_PROJECT }
 
+let _cachedProject: ProjectState | null = null
+let _cachedSession: PerSessionState | null = null
+let _cachedView: ActiveSessionView | null = null
+
 export function useActiveSession<T>(selector: (s: ActiveSessionView) => T): T {
   return useChatStore((store) => {
     const project = store.activeProject
@@ -2917,7 +2930,12 @@ export function useActiveSession<T>(selector: (s: ActiveSessionView) => T): T {
     const p = project ?? DEFAULT_PROJECT
     const session = (p._activeSessionId ? p._sessions[p._activeSessionId] : null) ?? DEFAULT_PER_SESSION
     if (!project) return selector(DEFAULT_VIEW)
-    return selector({ ...session, ...p })
+    if (p !== _cachedProject || session !== _cachedSession) {
+      _cachedProject = p
+      _cachedSession = session
+      _cachedView = { ...session, ...p }
+    }
+    return selector(_cachedView!)
   })
 }
 

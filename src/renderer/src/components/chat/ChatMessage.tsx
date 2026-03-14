@@ -10,6 +10,7 @@ import { CodexTurnView } from './CodexTurnView'
 import { AttachmentBar } from './AttachmentBar'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { useActiveSession } from '@/stores/chat'
+import { useShallow } from 'zustand/react/shallow'
 import {
   formatTokens,
 } from './chat-shared'
@@ -381,10 +382,10 @@ export function RateLimitIndicator({
 
 export const ChatMessage = memo(function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user'
-  const sessionStatus = useActiveSession((s) => s.status)
-  const isLastAssistant = useActiveSession(
-    (s) => s.messages.findLast((m) => m.role === 'assistant')?.id === message.id
-  )
+  const { sessionStatus, isLastAssistant } = useActiveSession(useShallow((s) => ({
+    sessionStatus: s.status,
+    isLastAssistant: s.lastAssistantMessageId === message.id,
+  })))
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
   const isCodexMessage = !isUser && message.providerId === 'codex'
   const assistantCopyText = useMemo(() => {
@@ -524,16 +525,17 @@ function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 
 const ZERO_TOKENS = { input: 0, output: 0 }
 
 function DurationFooter({ message, copyText, parentIsStreaming }: { message: ChatMessageType; copyText?: string; parentIsStreaming: boolean }) {
-  const isCompacting = useActiveSession((s) => s.isCompacting)
+  const { isCompacting, pendingApproval, streamingTokens: rawStreamingTokens } = useActiveSession(useShallow((s) => ({
+    isCompacting: s.isCompacting,
+    pendingApproval: parentIsStreaming && (s.pendingPermissions.length > 0 || !!s.pendingQuestion || !!s.pendingPlanApproval),
+    streamingTokens: parentIsStreaming && !s.isCompacting ? s.streamingTokens : ZERO_TOKENS,
+  })))
   const isStreaming = parentIsStreaming && !isCompacting
-  const streamingTokens = useActiveSession((s) => isStreaming ? s.streamingTokens : ZERO_TOKENS)
+  const streamingTokens = rawStreamingTokens
   const frozenTokensRef = useRef(ZERO_TOKENS)
   if (isStreaming && (streamingTokens.input > 0 || streamingTokens.output > 0)) {
     frozenTokensRef.current = streamingTokens
   }
-  const pendingApproval = useActiveSession((s) =>
-    isStreaming && (s.pendingPermissions.length > 0 || !!s.pendingQuestion || !!s.pendingPlanApproval),
-  )
   const stallLevel = useStallLevel(isStreaming)
   const pausedMsRef = useRef(0)
   const pauseStartRef = useRef(0)

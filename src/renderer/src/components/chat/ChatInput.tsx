@@ -7,6 +7,7 @@ import type { MentionKind } from '@/stores/chat'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
 import { useAppStore } from '@/stores/app'
+import { useShallow } from 'zustand/react/shallow'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -37,42 +38,57 @@ interface ChatInputProps {
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   function ChatInput({ compact }, ref) {
-    const text = useActiveSession((s) => s.draftText)
-    const setText = useChatStore((s) => s.setDraftText)
-    const fileInputRef = useRef<HTMLInputElement>(null)
-
-    const sendMessage = useChatStore((s) => s.sendMessage)
-    const setPrefireMessage = useChatStore((s) => s.setPrefireMessage)
-    const cancelPrefireMessage = useChatStore((s) => s.cancelPrefireMessage)
-    const activeProject = useChatStore((s) => s.activeProject)
-    const interrupt = useChatStore((s) => s.interrupt)
-    const isOpen = useChatStore((s) => s.isOpen)
-    const toggleOpen = useChatStore((s) => s.toggleOpen)
-    const status = useActiveSession((s) => s.status)
-    const attachments = useActiveSession((s) => s.attachments)
-    const addAttachment = useChatStore((s) => s.addAttachment)
-    const removeAttachment = useChatStore((s) => s.removeAttachment)
-    const clearAttachments = useChatStore((s) => s.clearAttachments)
-    const slashCommands = useActiveSession((s) => s.slashCommands)
-    const preferredProvider = useActiveSession((s) => s.preferredProvider)
-    const sessionProvider = useActiveSession((s) => s.sessionProvider)
-    const mentions = useActiveSession((s) => s.mentions)
-    const addMention = useChatStore((s) => s.addMention)
-    const removeMention = useChatStore((s) => s.removeMention)
-    const agents = useActiveSession((s) => s.agents)
-    const permissionMode = useActiveSession((s) => s.permissionMode)
-    const selectedCodexCollaborationMode = useActiveSession((s) => s.selectedCodexCollaborationMode)
+    const { activeProject, isOpen } = useChatStore(useShallow((s) => ({
+      activeProject: s.activeProject,
+      isOpen: s.isOpen,
+    })))
+    const {
+      setText, sendMessage, setPrefireMessage, cancelPrefireMessage,
+      interrupt, toggleOpen, addAttachment, removeAttachment, clearAttachments,
+      addMention, removeMention, dismissCommandPopup, setShowDirManager, setShowReviewPanel,
+    } = useChatStore(useShallow((s) => ({
+      setText: s.setDraftText,
+      sendMessage: s.sendMessage,
+      setPrefireMessage: s.setPrefireMessage,
+      cancelPrefireMessage: s.cancelPrefireMessage,
+      interrupt: s.interrupt,
+      toggleOpen: s.toggleOpen,
+      addAttachment: s.addAttachment,
+      removeAttachment: s.removeAttachment,
+      clearAttachments: s.clearAttachments,
+      addMention: s.addMention,
+      removeMention: s.removeMention,
+      dismissCommandPopup: s.dismissSlashCommandOutput,
+      setShowDirManager: s.setShowDirManager,
+      setShowReviewPanel: s.setShowReviewPanel,
+    })))
+    const { text, status, attachments, mentions, permissionMode, prefireMessage, hasPendingInteraction } =
+      useActiveSession(useShallow((s) => ({
+        text: s.draftText,
+        status: s.status,
+        attachments: s.attachments,
+        mentions: s.mentions,
+        permissionMode: s.permissionMode,
+        prefireMessage: s.prefireMessage,
+        hasPendingInteraction: s.hasPendingInteraction,
+      })))
+    const {
+      slashCommands, preferredProvider, sessionProvider, agents,
+      selectedCodexCollaborationMode, promptSuggestion, showDirManager, showReviewPanel,
+    } = useActiveSession(useShallow((s) => ({
+      slashCommands: s.slashCommands,
+      preferredProvider: s.preferredProvider,
+      sessionProvider: s.sessionProvider,
+      agents: s.agents,
+      selectedCodexCollaborationMode: s.selectedCodexCollaborationMode,
+      promptSuggestion: s.promptSuggestion,
+      showDirManager: s.showDirManager,
+      showReviewPanel: s.showReviewPanel,
+    })))
     const commandPopup = useActiveSession((s) =>
       s.slashCommandOutput?.mode === 'popup' ? s.slashCommandOutput : null
     )
-    const dismissCommandPopup = useChatStore((s) => s.dismissSlashCommandOutput)
-    const showDirManager = useActiveSession((s) => s.showDirManager)
-    const setShowDirManager = useChatStore((s) => s.setShowDirManager)
-    const showReviewPanel = useActiveSession((s) => s.showReviewPanel)
-    const setShowReviewPanel = useChatStore((s) => s.setShowReviewPanel)
-    const promptSuggestion = useActiveSession((s) => s.promptSuggestion)
-    const prefireMessage = useActiveSession((s) => s.prefireMessage)
-    const hasPendingInteraction = useActiveSession((s) => s.hasPendingInteraction)
+    const fileInputRef = useRef<HTMLInputElement>(null)
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const [slashDismissed, setSlashDismissed] = useState(false)

@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { ArrowDown, Check, ClipboardList, Copy, GitFork, PenLine, Trash2, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
@@ -65,17 +66,24 @@ interface ChatContentProps {
 }
 
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, externalHistory = false }: ChatContentProps) {
-  const messages = useActiveSession((s) => s.messages)
-  const isCompacting = useActiveSession((s) => s.isCompacting)
-  const rateLimitInfo = useActiveSession((s) => s.rateLimitInfo)
-  const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
-  const showHistory = useActiveSession((s) => s.showHistory)
-  const historySessionId = useActiveSession((s) => s._activeSessionId)
-  const hasActiveSession = useActiveSession((s) => !!s.session)
-  const worktreeRemoved = useActiveSession((s) => s._worktreeRemoved)
-  const prefireMessage = useActiveSession((s) => s.prefireMessage)
-  const cancelPrefireMessage = useChatStore((s) => s.cancelPrefireMessage)
-  const discardPrefireMessage = useChatStore((s) => s.discardPrefireMessage)
+  const {
+    messages, isCompacting, rateLimitInfo, pendingPlanApproval,
+    showHistory, historySessionId, hasActiveSession, worktreeRemoved, prefireMessage,
+  } = useActiveSession(useShallow((s) => ({
+    messages: s.messages,
+    isCompacting: s.isCompacting,
+    rateLimitInfo: s.rateLimitInfo,
+    pendingPlanApproval: s.pendingPlanApproval,
+    showHistory: s.showHistory,
+    historySessionId: s._activeSessionId,
+    hasActiveSession: !!s.session,
+    worktreeRemoved: s._worktreeRemoved,
+    prefireMessage: s.prefireMessage,
+  })))
+  const { cancelPrefireMessage, discardPrefireMessage } = useChatStore(useShallow((s) => ({
+    cancelPrefireMessage: s.cancelPrefireMessage,
+    discardPrefireMessage: s.discardPrefireMessage,
+  })))
   const [fullscreenPlanText, setFullscreenPlanText] = useState<string | null>(null)
   const planFullscreenCtx = useMemo(() => ({ open: (text: string) => setFullscreenPlanText(text) }), [])
   const [dismissedRateLimitKey, setDismissedRateLimitKey] = useState<string | null>(null)

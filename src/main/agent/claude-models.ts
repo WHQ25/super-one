@@ -50,8 +50,7 @@ export function mapModelInfo(m: { value: string; displayName: string; descriptio
   const sepIdx = raw.indexOf('·')
   const descPrefix = sepIdx !== -1 ? raw.slice(0, sepIdx).trim() : ''
   const name = extractModelName(descPrefix) ?? m.displayName
-  const description = sepIdx !== -1 ? raw.slice(sepIdx + 1).trim() : raw
-  const base: ModelOption = { id: m.value, name, description }
+  const base: ModelOption = { id: m.value, name, description: raw }
   if (m.supportsEffort) base.supportsEffort = true
   if (m.supportedEffortLevels?.length) base.supportedEffortLevels = m.supportedEffortLevels as ModelOption['supportedEffortLevels']
   if (m.supportsAdaptiveThinking) base.supportsAdaptiveThinking = true

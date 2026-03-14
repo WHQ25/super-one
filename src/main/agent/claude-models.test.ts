@@ -23,7 +23,7 @@ describe('mapModelInfo', () => {
     expect(mapped).toMatchObject({
       id: 'default',
       name: 'Opus 4.6 1M',
-      description: 'Most capable for complex work',
+      description: 'Opus 4.6 with 1M context [NEW] · Most capable for complex work',
       supportsEffort: true,
     })
   })
@@ -38,7 +38,7 @@ describe('mapModelInfo', () => {
     expect(mapped).toMatchObject({
       id: 'default',
       name: 'Sonnet 4.6',
-      description: 'Best for everyday tasks',
+      description: 'Sonnet 4.6 · Best for everyday tasks',
     })
   })
 
@@ -52,7 +52,7 @@ describe('mapModelInfo', () => {
     expect(mapped).toMatchObject({
       id: 'opus',
       name: 'Opus 4.6',
-      description: 'Most capable for complex work',
+      description: 'Opus 4.6 · Most capable for complex work',
     })
   })
 
@@ -66,7 +66,7 @@ describe('mapModelInfo', () => {
     expect(mapped).toMatchObject({
       id: 'sonnet[1m]',
       name: 'Sonnet 4.6 1M',
-      description: 'Billed as extra usage · $3/$15 per Mtok',
+      description: 'Sonnet 4.6 with 1M context · Billed as extra usage · $3/$15 per Mtok',
     })
   })
 
@@ -107,7 +107,7 @@ describe('mapModelInfo', () => {
     expect(mapped).toMatchObject({
       id: 'custom',
       name: 'Custom Model',
-      description: 'details here',
+      description: 'some unexpected format · details here',
     })
   })
 })

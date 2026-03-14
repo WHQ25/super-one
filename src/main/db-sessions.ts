@@ -135,7 +135,7 @@ export function saveSessionState(
         claudeSessionId,
         i,
         msg.role,
-        msg.status,
+        msg.status === 'streaming' ? 'interrupted' : msg.status,
         JSON.stringify(msg.content),
         msg.createdAt,
         msg.providerId,

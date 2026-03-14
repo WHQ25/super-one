@@ -13,7 +13,7 @@ vi.mock('./recent-folders', () => ({
   getProjectId: getProjectIdMock,
 }))
 
-import { deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder } from './db-sessions'
+import { deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, saveSessionState } from './db-sessions'
 
 describe('db-sessions provider inference query + mapping', () => {
   beforeEach(() => {
@@ -167,5 +167,33 @@ describe('deleteSessionsOlderThan', () => {
 
     deleteSessionsOlderThan('/tmp/project', '2026-01-01T00:00:00.000Z')
     expect(allMock).toHaveBeenCalledWith('proj-1', '2026-01-01T00:00:00.000Z')
+  })
+})
+
+describe('saveSessionState', () => {
+  beforeEach(() => {
+    getDbMock.mockReset()
+  })
+
+  it('converts streaming status to interrupted on write', () => {
+    const runMock = vi.fn()
+    const prepareMock = vi.fn().mockReturnValue({ run: runMock })
+    const transactionMock = vi.fn((fn: () => void) => fn)
+    getDbMock.mockReturnValue({ prepare: prepareMock, transaction: transactionMock })
+
+    saveSessionState('session-1', {
+      messages: [
+        { id: 'msg-1', role: 'assistant', status: 'streaming', content: [], createdAt: '2026-01-01T00:00:00.000Z', providerId: 'claude' },
+        { id: 'msg-2', role: 'user', status: 'complete', content: [], createdAt: '2026-01-01T00:00:00.000Z', providerId: 'claude' },
+      ] as never[],
+      totalCostUsd: 0,
+      contextTokens: 0,
+    })
+
+    const upsertCalls = runMock.mock.calls
+    expect(upsertCalls[0][3]).toBe('assistant')
+    expect(upsertCalls[0][4]).toBe('interrupted')
+    expect(upsertCalls[1][3]).toBe('user')
+    expect(upsertCalls[1][4]).toBe('complete')
   })
 })

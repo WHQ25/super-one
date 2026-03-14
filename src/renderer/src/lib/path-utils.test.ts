@@ -86,4 +86,14 @@ describe('toLocalFileUrl', () => {
   it('handles lowercase drive letters', () => {
     expect(toLocalFileUrl('d:\\data\\file.pdf')).toBe('local-file:///d:/data/file.pdf')
   })
+
+  it('encodes percent signs in filenames to prevent unwanted decoding', () => {
+    expect(toLocalFileUrl('C:\\Users\\test\\%E4%BC%81%E4%B8%9A.png')).toBe(
+      'local-file:///C:/Users/test/%25E4%25BC%2581%25E4%25B8%259A.png',
+    )
+  })
+
+  it('encodes hash signs in filenames', () => {
+    expect(toLocalFileUrl('/Users/alice/file#1.png')).toBe('local-file:///Users/alice/file%231.png')
+  })
 })

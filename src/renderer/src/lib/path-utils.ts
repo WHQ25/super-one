@@ -31,7 +31,8 @@ export function homePath(absolutePath: string): string {
 
 export function toLocalFileUrl(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/')
+  const encoded = encodeURI(normalized).replace(/#/g, '%23')
   return /^[A-Za-z]:/.test(normalized)
-    ? `local-file:///${normalized}`
-    : `local-file://${normalized}`
+    ? `local-file:///${encoded}`
+    : `local-file://${encoded}`
 }

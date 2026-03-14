@@ -18,8 +18,8 @@ const agentAPI = {
   setSandboxMode: (projectPath: string, mode: SandboxMode) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SANDBOX_MODE, projectPath, mode),
 
-  answerQuestion: (projectPath: string, requestId: string, answers: Record<string, string>) =>
-    ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, projectPath, requestId, answers),
+  answerQuestion: (projectPath: string, requestId: string, answers: Record<string, string>, annotations?: Record<string, { preview?: string; notes?: string }>) =>
+    ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, projectPath, requestId, answers, annotations),
 
   dismissQuestion: (projectPath: string, requestId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DISMISS_QUESTION, projectPath, requestId),
@@ -443,6 +443,10 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.BASH_OUTPUT_EVENT, handler)
     }
   },
+
+  // Settings
+  setFastMode: (enabled: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.SET_FAST_MODE, enabled),
 
   // Logging
   getLogPath: () =>

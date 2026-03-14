@@ -819,7 +819,6 @@ function mapApprovalRequest(notification: AppServerNotification): ParsedApproval
       request: {
         requestId,
         questions: questions.map((question) => ({
-          id: question.id,
           header: question.header,
           question: question.question,
           options: question.options.map((label) => ({
@@ -827,7 +826,6 @@ function mapApprovalRequest(notification: AppServerNotification): ParsedApproval
             description: '',
           })),
           multiSelect: false,
-          allowOther: question.isOther,
         })),
       },
     }

@@ -287,16 +287,22 @@ export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | '
 export interface UserQuestionOption {
   label: string
   description: string
+  preview?: string
 }
 
 export interface UserQuestion {
-  id?: string
   question: string
   header: string
   options: UserQuestionOption[]
   multiSelect: boolean
-  allowOther?: boolean
 }
+
+export interface QuestionAnnotation {
+  preview?: string
+  notes?: string
+}
+
+export type QuestionAnnotations = Record<string, QuestionAnnotation>
 
 export interface AskUserQuestionRequest {
   requestId: string
@@ -466,7 +472,7 @@ export type AgentEventBase =
   | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number }
   | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode }
   | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string }
-  | { type: 'task_progress'; taskId: string; toolUseId?: string; description: string; lastToolName?: string; usage: { totalTokens: number; toolUses: number; durationMs: number } }
+  | { type: 'task_progress'; taskId: string; toolUseId?: string; description: string; lastToolName?: string; summary?: string; usage: { totalTokens: number; toolUses: number; durationMs: number } }
   | { type: 'task_notification'; taskId: string; toolUseId?: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string; summary?: string; usage?: { totalTokens: number; toolUses: number; durationMs: number } }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
@@ -511,6 +517,7 @@ export interface ModelOption {
   supportsEffort?: boolean
   supportedEffortLevels?: ('low' | 'medium' | 'high' | 'max')[]
   supportsAdaptiveThinking?: boolean
+  supportsFastMode?: boolean
   supportedReasoningEfforts?: ReasoningEffortOption[]
   defaultReasoningEffort?: CodexReasoningEffort
 }
@@ -1014,6 +1021,9 @@ export const AgentIpcChannels = {
   // Additional directories
   READ_PROJECT_ADDITIONAL_DIRS: 'agent:read-project-additional-dirs',
   WRITE_PROJECT_ADDITIONAL_DIRS: 'agent:write-project-additional-dirs',
+
+  // Settings
+  SET_FAST_MODE: 'app:set-fast-mode',
 
   // Logging
   GET_LOG_PATH: 'app:get-log-path',

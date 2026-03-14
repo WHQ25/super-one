@@ -304,7 +304,7 @@ function AgentActivity({ entries, fallbackTools, activeTool, isRunning, summary 
   )
   return (
     <div className="border-t border-border/30">
-      {isRunning && summary && (
+      {summary && (
         <div className="mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs leading-relaxed text-foreground dark:bg-blue-900/20">
           <Sparkles className="mt-0.5 size-3 shrink-0 text-blue-400" />
           <span className="whitespace-pre-wrap">{summary}</span>

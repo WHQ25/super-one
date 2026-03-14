@@ -860,6 +860,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
             ...usageUpdate,
             completed: true,
             outputFile: file || prevProgress?.outputFile,
+            summary: event.summary || prevProgress?.summary,
           },
         },
       }

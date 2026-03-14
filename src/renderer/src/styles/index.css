@@ -395,6 +395,14 @@ body {
   pointer-events: none;
   height: 0;
 }
+.tiptap p.is-editor-empty:first-child::after {
+  content: attr(data-placeholder);
+  display: block;
+  visibility: hidden;
+  pointer-events: none;
+  margin-top: -1lh;
+}
+
 
 .tiptap.has-prompt-suggestion p.is-editor-empty:first-child::before {
   display: none;

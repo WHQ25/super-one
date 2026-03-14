@@ -672,6 +672,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       }
     }, [placeholderText, editor])
 
+
     useEffect(() => {
       if (!promptSuggestion || isStreaming || hasPendingInteraction) return
       function onKeyDown(e: KeyboardEvent) {
@@ -814,9 +815,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
 
-        <div className="relative w-full">
-          <EditorContent editor={editor} />
-        </div>
+        <EditorContent editor={editor} />
 
         <div className="mt-2 flex items-center justify-between">
           <div className="flex items-center gap-2">

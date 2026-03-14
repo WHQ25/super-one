@@ -548,6 +548,7 @@ export interface RecentFolder {
   name: string        // basename
   lastOpened: string   // ISO timestamp — last user message time or added time
   addedAt: string      // ISO timestamp — set once on first add
+  missing?: boolean   // true when the folder path no longer exists on disk
 }
 
 // --- Resource scope ---

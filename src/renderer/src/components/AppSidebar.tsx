@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderClosed, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History, EyeOff } from 'lucide-react'
+import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderClosed, FolderX, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -391,85 +391,109 @@ export function AppSidebar() {
                   <div key={folder.path}>
                     {/* Folder row */}
                     <div
-                      onClick={() => toggleExpand(folder.path)}
+                      onClick={() => !folder.missing && toggleExpand(folder.path)}
                       className={cn(
-                        'group flex h-9 cursor-pointer items-center justify-between overflow-hidden rounded-md px-2.5 transition-colors',
-                        'hover:bg-sidebar-accent'
+                        'group flex h-9 items-center justify-between overflow-hidden rounded-md px-2.5 transition-colors',
+                        folder.missing ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-accent'
                       )}
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <ChevronRight className={cn(
                           'hidden size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 group-hover:block',
-                          isExpanded && 'rotate-90'
+                          isExpanded && 'rotate-90',
+                          folder.missing && '!hidden'
                         )} />
-                        {isExpanded
-                          ? <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
-                          : <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
+                        {folder.missing
+                          ? <FolderX className="size-4.5 shrink-0 text-destructive" />
+                          : isExpanded
+                            ? <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
+                            : <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
                         }
                         <TooltipProvider delayDuration={500}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="min-w-0 truncate text-md">{folder.name}</span>
+                              <span className={cn('min-w-0 truncate text-md', folder.missing && 'text-muted-foreground line-through')}>{folder.name}</span>
                             </TooltipTrigger>
                             <TooltipContent side="top" sideOffset={8}>
-                              <span className="text-xs">{displayPath}</span>
+                              <span className="text-xs">{folder.missing ? `Folder not found: ${folder.path}` : displayPath}</span>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
                       <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              onClick={(e) => e.stopPropagation()}
-                              className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
-                            >
-                              <MoreHorizontal className="size-4" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" side="right" className="w-44">
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                openFolder(folder.path).then(() => {
-                                  useChatStore.getState().fetchSessions()
-                                  useAppStore.setState({ showFilePanel: true, filePanelView: 'history' })
-                                })
-                              }}
-                              className="text-xs"
-                            >
-                              <History className="size-3.5" />
-                              Session History
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setRemoveTarget({ name: folder.name, path: folder.path })
-                              }}
-                              className="text-xs"
-                            >
-                              <Trash2 className="size-3.5" />
-                              Remove Project
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                        <TooltipProvider delayDuration={300}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  openFolder(folder.path).then(() => resetSession())
-                                }}
-                                className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
-                              >
-                                <SquarePen className="size-4" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={8}>New Session</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {folder.missing ? (
+                          <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setRemoveTarget({ name: folder.name, path: folder.path })
+                                  }}
+                                  className="rounded p-0.5 text-destructive/70 transition-colors hover:text-destructive"
+                                >
+                                  <Trash2 className="size-4" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" sideOffset={8}>Remove Project</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : (
+                          <>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+                                >
+                                  <MoreHorizontal className="size-4" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" side="right" className="w-44">
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    openFolder(folder.path).then(() => {
+                                      useChatStore.getState().fetchSessions()
+                                      useAppStore.setState({ showFilePanel: true, filePanelView: 'history' })
+                                    })
+                                  }}
+                                  className="text-xs"
+                                >
+                                  <History className="size-3.5" />
+                                  Session History
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setRemoveTarget({ name: folder.name, path: folder.path })
+                                  }}
+                                  className="text-xs"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  Remove Project
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                            <TooltipProvider delayDuration={300}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      openFolder(folder.path).then(() => resetSession())
+                                    }}
+                                    className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+                                  >
+                                    <SquarePen className="size-4" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={8}>New Session</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </>
+                        )}
                       </div>
                     </div>
 

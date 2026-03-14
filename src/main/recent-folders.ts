@@ -1,11 +1,11 @@
 import { basename } from 'path'
 import { randomUUID } from 'crypto'
+import { existsSync } from 'fs'
 import { getDb } from './database'
 import type { RecentFolder } from '../shared/agent-types'
 
 export function getRecentFolders(): RecentFolder[] {
   const db = getDb()
-  // Sort by the most recent user message time, falling back to project added time
   const rows = db.prepare(`
     SELECT p.id, p.path, p.name, p.added_at,
            COALESCE(
@@ -24,6 +24,7 @@ export function getRecentFolders(): RecentFolder[] {
     name: r.name,
     addedAt: r.added_at,
     lastOpened: r.last_active,
+    ...(!existsSync(r.path) && { missing: true }),
   }))
 }
 

@@ -69,7 +69,7 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
       <DropdownMenuContent align={align} className="w-64 overflow-hidden">
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Select Project</DropdownMenuLabel>
         <div className="max-h-48 overflow-y-auto">
-          {recentFolders.map((folder) => (
+          {recentFolders.filter((f) => !f.missing).map((folder) => (
             <DropdownMenuItem
               key={folder.path}
               onClick={() => {
@@ -83,7 +83,7 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
             >
               <div className="flex items-center gap-2 truncate">
                 <Folder className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate">{folder.path.split('/').pop()}</span>
+                <span className="truncate">{folder.name}</span>
               </div>
               {folder.path === currentFolder && (
                 <Check className="size-4 shrink-0 text-muted-foreground" />

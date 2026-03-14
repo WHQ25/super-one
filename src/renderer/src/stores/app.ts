@@ -94,15 +94,16 @@ interface AppState {
   getWorktreeState: (projectPath: string) => WorktreeState
 }
 
-async function openFolderDirect(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<void> {
+async function openFolderDirect(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<boolean> {
   const ok = await window.app.openFolder(folderPath)
-  if (!ok) return
+  if (!ok) return false
   set({ currentFolder: folderPath })
   useAppStore.getState().fetchRecentFolders()
   const { useChatStore } = await import('./chat')
   useChatStore.getState().ensureSession(folderPath)
   await useChatStore.getState().switchProject(folderPath)
   if (useAppStore.getState().view === 'startup') set({ view: 'main' })
+  return true
 }
 
 async function refreshResourcesInBackground(): Promise<void> {
@@ -326,13 +327,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     if (get().layoutMode === 'coding' && !get().currentFolder) {
-      if (folders.length > 0) {
-        await openFolderDirect(folders[0].path, set)
-        set({ view: 'main' })
-      } else {
+      let opened = false
+      for (const folder of folders) {
+        if (await openFolderDirect(folder.path, set)) {
+          opened = true
+          break
+        }
+      }
+      if (!opened) {
         set({ view: 'startup' })
         return
       }
+      set({ view: 'main' })
     } else {
       set({ view: 'main' })
     }

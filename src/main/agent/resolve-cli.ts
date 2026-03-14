@@ -57,7 +57,8 @@ export function findSystemClaude(): string | undefined {
 export function resolveSdkCli(): string | undefined {
   try {
     const sdkDir = require.resolve('@anthropic-ai/claude-agent-sdk').replace(/[/\\][^/\\]+$/, '')
-    return `${sdkDir}/cli.js`.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
+    const sep = sdkDir.includes('\\') ? '\\' : '/'
+    return `${sdkDir}${sep}cli.js`.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
   } catch {
     return undefined
   }

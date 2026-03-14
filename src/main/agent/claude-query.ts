@@ -236,9 +236,8 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           }
         }
 
-          // Slash command output arrives as a string with <local-command-stdout> wrapper
         const raw = typeof msgContent === 'string' ? msgContent : ''
-        if (raw.includes('<local-command-stdout>')) {
+        if (!isReplay && raw.includes('<local-command-stdout>')) {
           const text = raw
             .replace(/<local-command-stdout>\n?/g, '')
             .replace(/<\/local-command-stdout>\n?/g, '')
@@ -334,6 +333,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               toolUseId: sys.tool_use_id,
               description: sys.description ?? '',
               lastToolName: sys.last_tool_name,
+              summary: sys.summary,
               usage: {
                 totalTokens: sys.usage?.total_tokens ?? 0,
                 toolUses: sys.usage?.tool_uses ?? 0,
@@ -481,6 +481,18 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               inputTokens: tracker.input,
               outputTokens: tracker.output,
             })
+          }
+
+          const isSyntheticMsg = msg.message?.model === '<synthetic>'
+          if (isSyntheticMsg && Array.isArray(msg.message?.content)) {
+            const text = msg.message.content
+              .filter((b: any) => b.type === 'text')
+              .map((b: any) => b.text ?? '')
+              .join('')
+              .trim()
+            if (text) {
+              emit({ type: 'slash_command_output', messageId, content: text })
+            }
           }
 
           const content = msg.message?.content

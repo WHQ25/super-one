@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Bot, ChevronRight, Check, BookOpen, Wrench, ArrowUp, ArrowDown, MessageSquare } from 'lucide-react'
+import { Bot, ChevronRight, Check, BookOpen, Wrench, ArrowUp, ArrowDown, MessageSquare, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
 import { getToolDisplay, getToolVerb, parseToolInput } from './tool-display'
@@ -216,6 +216,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
               fallbackTools={jsonlEntries.length === 0 ? progress?.toolHistory : undefined}
               activeTool={isRunning && progress?.description ? { toolName: progress.lastToolName ?? '', description: progress.description } : undefined}
               isRunning={isRunning}
+              summary={progress?.summary}
             />
           )}
 
@@ -286,11 +287,12 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   )
 }
 
-function AgentActivity({ entries, fallbackTools, activeTool, isRunning }: {
+function AgentActivity({ entries, fallbackTools, activeTool, isRunning, summary }: {
   entries: JsonlEntry[]
   fallbackTools?: Array<{ toolName: string; description: string }>
   activeTool?: { toolName: string; description: string }
   isRunning: boolean
+  summary?: string
 }) {
   const latestActivity = useMemo(
     () => entries.findLast((e) => e.type === 'activity') as { type: 'activity'; text: string } | undefined,
@@ -302,6 +304,12 @@ function AgentActivity({ entries, fallbackTools, activeTool, isRunning }: {
   )
   return (
     <div className="border-t border-border/30">
+      {isRunning && summary && (
+        <div className="mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs leading-relaxed text-foreground dark:bg-blue-900/20">
+          <Sparkles className="mt-0.5 size-3 shrink-0 text-blue-400" />
+          <span className="whitespace-pre-wrap">{summary}</span>
+        </div>
+      )}
       {isRunning && latestActivity && (
         <div className="mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md bg-purple-500/10 px-2.5 py-1.5 text-xs leading-relaxed text-foreground dark:bg-purple-900/20">
           <MessageSquare className="mt-0.5 size-3 shrink-0 animate-pulse text-purple-400" />

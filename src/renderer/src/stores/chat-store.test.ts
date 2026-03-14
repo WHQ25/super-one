@@ -24,6 +24,7 @@ const mockWindowAgent = {
   respondToPermission: vi.fn().mockResolvedValue(undefined),
   answerQuestion: vi.fn().mockResolvedValue(undefined),
   dismissQuestion: vi.fn().mockResolvedValue(undefined),
+  setPermissionMode: vi.fn().mockResolvedValue(undefined),
 }
 
 const mockWindowApp = {
@@ -1874,5 +1875,327 @@ describe('slash_command_output for compact', () => {
     expect(afterSession.messages.find((m: { id: string }) => m.id === 'compact-assist')).toBeUndefined()
     expect(afterSession.messages).toHaveLength(1)
     expect(afterSession.messages[0].id).toBe('prev-msg')
+  })
+})
+
+describe('createDefaultPerSessionState', () => {
+  it('returns correct default values', () => {
+    const state = createDefaultPerSessionState()
+    expect(state.cwd).toBe('')
+    expect(state.messages).toEqual([])
+    expect(state.status).toBe('idle')
+    expect(state.awaitingAssistantReply).toBe(false)
+    expect(state.session).toBeNull()
+    expect(state.sessionProvider).toBeNull()
+    expect(state.totalCostUsd).toBe(0)
+    expect(state.contextTokens).toBe(0)
+    expect(state.contextWindow).toBeNull()
+    expect(state.subagentTokens).toEqual({})
+    expect(state.taskProgress).toEqual({})
+    expect(state.streamingTokens).toEqual({ input: 0, output: 0 })
+    expect(state.codexUsageSnapshot).toBeNull()
+    expect(state.codexTurnLastUsage).toBeNull()
+    expect(state.selectedModel).toBe('')
+    expect(state.selectedEffort).toBeUndefined()
+    expect(state.selectedCodexModel).toBe('')
+    expect(state.selectedCodexReasoningEffort).toBeUndefined()
+    expect(state.selectedCodexPermissionPreset).toBe('default')
+    expect(state.selectedCodexCollaborationMode).toBe('default')
+    expect(state.preferredProvider).toBe('claude')
+    expect(state.draftText).toBe('')
+    expect(state.promptSuggestion).toBeNull()
+    expect(state.attachments).toEqual([])
+    expect(state.mentions).toEqual([])
+    expect(state.pendingPermissions).toEqual([])
+    expect(state.permissionMode).toBe('default')
+    expect(state.pendingQuestion).toBeNull()
+    expect(state.pendingPlanApproval).toBeNull()
+    expect(state.planApprovalOutcome).toBeNull()
+    expect(state.slashCommandOutput).toBeNull()
+    expect(state._pendingSlashCommand).toBe('')
+    expect(state.todos).toEqual({})
+    expect(state.showTodos).toBe(false)
+    expect(state._todosUserDismissed).toBe(false)
+    expect(state._nextTodoId).toBe(1)
+    expect(state.isCompacting).toBe(false)
+    expect(state.rateLimitInfo).toBeNull()
+    expect(state._worktreeBaseBranch).toBeNull()
+    expect(state._worktreePath).toBeNull()
+    expect(state._worktreeRemoved).toBe(false)
+    expect(state.additionalDirs).toEqual([])
+    expect(state.lastEventAt).toBe(0)
+    expect(state.prefireMessage).toBeNull()
+    expect(state.activeCodexMessageId).toBeNull()
+    expect(state.lastAssistantMessageId).toBeNull()
+  })
+})
+
+describe('createDefaultProjectState', () => {
+  it('returns correct default values', () => {
+    const state = createDefaultProjectState()
+    expect(state._activeSessionId).toBeNull()
+    expect(state._sessions).toEqual({})
+    expect(state.slashCommands).toEqual([])
+    expect(state._projectSkills).toEqual([])
+    expect(state._projectCommands).toEqual([])
+    expect(state.agents).toEqual([])
+    expect(state.homedir).toBe('')
+    expect(state.sandboxInfo).toEqual({ enabled: true, autoAllowBash: false })
+    expect(state.sessions).toEqual([])
+    expect(state.sessionsPage).toBe(0)
+    expect(state.sessionsHasMore).toBe(true)
+    expect(state.showHistory).toBe(false)
+    expect(state.hasUnseenActivity).toBe(false)
+    expect(state.hasPendingInteraction).toBe(false)
+    expect(state.unseenCompletedSessions).toEqual(new Set())
+    expect(state.codexModels).toEqual([])
+    expect(state.codexModelsLoading).toBe(false)
+    expect(state.projectAdditionalDirs).toEqual([])
+    expect(state.showDirManager).toBe(false)
+    expect(state.showReviewPanel).toBe(false)
+  })
+})
+
+describe('handleAgentEvent supplemental', () => {
+  describe('message_start', () => {
+    it('creates a new assistant message with correct defaults', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-a1', role: 'assistant', content: [], status: 'streaming', createdAt: '2024-01-01', providerId: 'claude' } as never,
+      }))
+
+      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      expect(session.messages).toHaveLength(1)
+      expect(session.messages[0].id).toBe('msg-a1')
+      expect(session.messages[0].role).toBe('assistant')
+      expect(session.messages[0].status).toBe('streaming')
+      expect(session.messages[0].content).toEqual([])
+      expect(session.promptSuggestion).toBeNull()
+      expect(session.awaitingAssistantReply).toBe(false)
+      expect(session.lastAssistantMessageId).toBe('msg-a1')
+    })
+
+    it('does not set lastAssistantMessageId for user messages', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-u1', role: 'user', content: [], status: 'complete', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      expect(session.lastAssistantMessageId).toBeNull()
+    })
+  })
+
+  describe('content_delta', () => {
+    it('appends text to last message via text delta', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-d1', role: 'assistant', content: [{ type: 'text', text: 'Hello' }], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-d1',
+        delta: { type: 'text', text: ' world' },
+      }))
+
+      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      const msg = session.messages.find((m) => m.id === 'msg-d1')
+      const textBlock = msg?.content.find((b) => b.type === 'text')
+      expect(textBlock).toBeDefined()
+      expect((textBlock as { text: string }).text).toBe('Hello world')
+    })
+
+    it('appends thinking block via thinking delta', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-t1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-t1',
+        delta: { type: 'thinking', text: 'Let me think...' },
+      }))
+
+      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      const msg = session.messages.find((m) => m.id === 'msg-t1')
+      const thinkingBlock = msg?.content.find((b) => b.type === 'thinking')
+      expect(thinkingBlock).toBeDefined()
+      expect((thinkingBlock as { text: string }).text).toBe('Let me think...')
+    })
+  })
+
+  describe('message_complete', () => {
+    it('sets message status to complete and updates cost', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-c1', role: 'assistant', content: [{ type: 'text', text: 'done' }], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_complete',
+        messageId: 'msg-c1',
+        metadata: {
+          costUsd: 0.02,
+          usage: { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10, cacheCreationInputTokens: 5 },
+        },
+      }))
+
+      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      const msg = session.messages.find((m) => m.id === 'msg-c1')
+      expect(msg?.status).toBe('complete')
+      expect(session.totalCostUsd).toBe(0.02)
+      expect(session.contextTokens).toBe(115)
+    })
+  })
+
+  describe('permission_request', () => {
+    it('sets pendingPermission on session state', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'permission_request',
+        request: { requestId: 'perm-1', toolName: 'Bash', description: 'run command' } as never,
+      }))
+
+      const proj = useChatStore.getState().projectSessions['/test']
+      const session = proj._sessions[DRAFT_SESSION_ID]
+      expect(session.pendingPermissions).toHaveLength(1)
+      expect(session.pendingPermissions[0].requestId).toBe('perm-1')
+      expect(session.pendingPermissions[0].toolName).toBe('Bash')
+      expect(proj.hasPendingInteraction).toBe(true)
+    })
+  })
+
+  describe('message_error', () => {
+    it('adds error content block and sets status to error', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-e1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_error',
+        messageId: 'msg-e1',
+        error: 'API timeout',
+      }))
+
+      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      const msg = session.messages.find((m) => m.id === 'msg-e1')
+      expect(msg?.status).toBe('error')
+      const errorBlock = msg?.content.find((b) => b.type === 'text' && (b as { text: string }).text.includes('Error:'))
+      expect(errorBlock).toBeDefined()
+      expect((errorBlock as { text: string }).text).toBe('Error: API timeout')
+    })
+  })
+})
+
+describe('cyclePermissionMode', () => {
+  it('cycles through default → acceptEdits → plan → bypassPermissions → default', async () => {
+    setupProject('/test')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.permissionMode).toBe('default')
+
+    await useChatStore.getState().cyclePermissionMode()
+    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].permissionMode).toBe('acceptEdits')
+
+    await useChatStore.getState().cyclePermissionMode()
+    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].permissionMode).toBe('plan')
+
+    await useChatStore.getState().cyclePermissionMode()
+    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].permissionMode).toBe('bypassPermissions')
+
+    await useChatStore.getState().cyclePermissionMode()
+    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].permissionMode).toBe('default')
+  })
+})
+
+describe('cost/token accumulation via message_complete', () => {
+  it('accumulates cost across multiple message_complete events', () => {
+    setupProject('/test')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'mc-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_complete',
+      messageId: 'mc-1',
+      metadata: {
+        costUsd: 0.01,
+        usage: { inputTokens: 50, outputTokens: 20, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+      },
+    }))
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'mc-2', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_complete',
+      messageId: 'mc-2',
+      metadata: {
+        costUsd: 0.03,
+        usage: { inputTokens: 200, outputTokens: 80, cacheReadInputTokens: 50, cacheCreationInputTokens: 10 },
+      },
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.totalCostUsd).toBeCloseTo(0.04)
+    expect(session.contextTokens).toBe(260)
+  })
+
+  it('updates contextWindow from modelUsage metadata', () => {
+    setupProject('/test')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'cw-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_complete',
+      messageId: 'cw-1',
+      metadata: {
+        costUsd: 0,
+        usage: { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+        modelUsage: { 'claude-sonnet-4-6': { contextWindow: 200000 } },
+      },
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.contextWindow).toBe(200000)
+  })
+
+  it('handles message_complete with no metadata gracefully', () => {
+    setupProject('/test')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'nm-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_complete',
+      messageId: 'nm-1',
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    expect(session.totalCostUsd).toBe(0)
+    expect(session.contextTokens).toBe(0)
+    const msg = session.messages.find((m) => m.id === 'nm-1')
+    expect(msg?.status).toBe('complete')
   })
 })

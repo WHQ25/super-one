@@ -202,22 +202,24 @@ export function FileTree() {
   return (
     <div className="flex h-full flex-col">
       <div className="px-3 py-1.5">
-        <span className="text-xs font-medium text-sidebar-foreground/70">{folderName}</span>
+        <span className="text-md font-medium text-sidebar-foreground/70">{folderName}</span>
       </div>
 
-      <div className="relative min-h-0 flex-1">
+      <div
+        className="relative min-h-0 flex-1"
+        onDragEnter={handleContainerDragEnter}
+        onDragLeave={handleContainerDragLeave}
+        onDragOver={handleContainerDragOver}
+        onDrop={handleContainerDrop}
+      >
         {isEmpty ? (
-          <div className="flex items-center justify-center p-4 text-xs text-sidebar-foreground/50">
+          <div className="flex h-full items-center justify-center p-4 text-xs text-sidebar-foreground/50">
             No files
           </div>
         ) : (
           <div
             ref={scrollRef}
             className="h-full overflow-auto"
-            onDragEnter={handleContainerDragEnter}
-            onDragLeave={handleContainerDragLeave}
-            onDragOver={handleContainerDragOver}
-            onDrop={handleContainerDrop}
           >
             <div
               style={{ height: `${virtualizer.getTotalSize() + 40}px`, position: 'relative' }}
@@ -256,17 +258,18 @@ export function FileTree() {
               )}
             </div>
 
-            {externalDragOver && (
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-primary/50 bg-sidebar/90 backdrop-blur-sm">
-                <span className="text-sm font-medium text-primary/70">
-                  {altKeyHeld ? 'Move files here' : 'Copy files here'}
-                </span>
-                {!altKeyHeld && (
-                  <span className="flex items-center gap-1 text-xs text-primary/40">
-                    Hold <Kbd>{navigator.platform.startsWith('Mac') ? 'option' : 'alt'}</Kbd> to move
-                  </span>
-                )}
-              </div>
+          </div>
+        )}
+
+        {externalDragOver && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-primary/50 bg-sidebar/90 backdrop-blur-sm">
+            <span className="text-sm font-medium text-primary/70">
+              {altKeyHeld ? 'Move files here' : 'Copy files here'}
+            </span>
+            {!altKeyHeld && (
+              <span className="flex items-center gap-1 text-xs text-primary/40">
+                Hold <Kbd>{navigator.platform.startsWith('Mac') ? 'option' : 'alt'}</Kbd> to move
+              </span>
             )}
           </div>
         )}

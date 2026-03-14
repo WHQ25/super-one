@@ -140,7 +140,7 @@
 }
 
 .rainbow-text {
-  background: linear-gradient(90deg, #ff0000, #ff8000, #ffff00, #00ff00, #00bfff, #8000ff, #ff00ff, #ff0000);
+  background: linear-gradient(90deg, #ed7aab, #e0874e, #d4b040, #6abf55, #45d4c0, #5db8ff, #7d7df5, #b86ad8, #ed7aab);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;

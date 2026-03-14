@@ -14,6 +14,7 @@ import { MarkdownView } from '@/components/MarkdownPreview'
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
+import { ImagePreview } from './ImagePreview'
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown'])
 const BINARY_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'])
@@ -176,13 +177,10 @@ export function FilePanel() {
             diff={fileDiff?.diff ?? ''}
           />
         ) : effectiveTab === 'preview' && isBinImg ? (
-          <div className="flex h-full items-center justify-center p-4">
-            <img
-              src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
-              alt={fileName}
-              className="max-h-full max-w-full object-contain"
-            />
-          </div>
+          <ImagePreview
+            src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
+            alt={fileName}
+          />
         ) : effectiveTab === 'preview' && isPdfFile ? (
           <PdfPreview
             url={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
@@ -206,13 +204,10 @@ export function FilePanel() {
             />
           </div>
         ) : effectiveTab === 'preview' && isSvgFile ? (
-          <div className="flex h-full items-center justify-center p-4">
-            <img
-              src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
-              alt={fileName}
-              className="max-h-full max-w-full object-contain"
-            />
-          </div>
+          <ImagePreview
+            src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
+            alt={fileName}
+          />
         ) : effectiveTab === 'preview' && isMd ? (
           <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
         ) : (

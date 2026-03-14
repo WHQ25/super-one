@@ -312,8 +312,8 @@ export function AppSidebar() {
       )}
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
       {/* Projects header */}
-      <div className="flex items-center justify-between px-3 py-1.5">
-        <span className="text-xs font-medium text-sidebar-foreground/70">Projects</span>
+      <div className="flex items-center justify-between pl-4 pr-3 pt-1.5 pb-0.5">
+        <span className="text-sm font-medium text-sidebar-foreground/40">Projects</span>
         <div className="flex items-center gap-0.5">
           <Button
             size="icon-xs"
@@ -349,7 +349,7 @@ export function AppSidebar() {
           </div>
         ) : (
           <ScrollArea className="h-full">
-            <div className="flex w-0 min-w-full flex-col p-1.5">
+            <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
               {sortedFolders.map((folder) => {
                 const isActive = hasRealProject && folder.path === currentFolder
                 const isExpanded = expandedFolders.has(folder.path)

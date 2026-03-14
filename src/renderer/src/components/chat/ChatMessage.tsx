@@ -472,9 +472,9 @@ export const ChatMessage = memo(function ChatMessage({ message }: ChatMessagePro
             })
         }
         {message.status === 'interrupted' && (
-          <div className="mt-1 flex items-center gap-1 text-xs text-destructive">
+          <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <OctagonX className="size-3" />
-            <span>Response interrupted</span>
+            <span>Interrupted · What should I do instead?</span>
           </div>
         )}
         {!isUser && <DurationFooter message={message} copyText={assistantCopyText} parentIsStreaming={isStreaming} />}

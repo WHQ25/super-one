@@ -37,18 +37,22 @@ export async function refreshModelsFromQuery(activeQuery: Query): Promise<ModelO
   }
 }
 
-/** Extract a clean model name from SDK ModelInfo.
- *  If description contains "·" (e.g. "Opus 4.6 · Most capable..."),
- *  use left side as name and right side as description.
- *  Otherwise fall back to displayName + full description. */
-export function mapModelInfo(m: { value: string; displayName: string; description?: string; supportsEffort?: boolean; supportedEffortLevels?: string[]; supportsAdaptiveThinking?: boolean }): ModelOption {
+const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  'default': 'Opus 4.6 1M',
+  'sonnet': 'Sonnet 4.6',
+  'sonnet[1m]': 'Sonnet 4.6 1M',
+  'haiku': 'Haiku 4.5',
+}
+
+export function mapModelInfo(m: { value: string; displayName: string; description?: string; supportsEffort?: boolean; supportedEffortLevels?: string[]; supportsAdaptiveThinking?: boolean; supportsFastMode?: boolean }): ModelOption {
   const desc = m.description ?? ''
   const sepIdx = desc.indexOf('·')
-  const base: ModelOption = sepIdx !== -1
-    ? { id: m.value, name: desc.slice(0, sepIdx).trim(), description: desc.slice(sepIdx + 1).trim() }
-    : { id: m.value, name: m.displayName, description: desc }
+  const name = MODEL_DISPLAY_NAMES[m.value]
+    ?? (sepIdx !== -1 ? desc.slice(0, sepIdx).trim() : m.displayName)
+  const base: ModelOption = { id: m.value, name, description: desc }
   if (m.supportsEffort) base.supportsEffort = true
   if (m.supportedEffortLevels?.length) base.supportedEffortLevels = m.supportedEffortLevels as ModelOption['supportedEffortLevels']
   if (m.supportsAdaptiveThinking) base.supportsAdaptiveThinking = true
+  if (m.supportsFastMode) base.supportsFastMode = true
   return base
 }

@@ -148,6 +148,18 @@
   animation: rainbow-scroll 2s linear infinite;
 }
 
+@keyframes fire-glow {
+  0%, 100% { text-shadow: 0 0 4px #ff4500, 0 0 8px #ff6a00, 0 -2px 12px rgba(255,140,0,0.4); }
+  25% { text-shadow: 0 0 6px #ff8c00, 0 0 12px #ff4500, 0 -3px 16px rgba(255,69,0,0.5); }
+  50% { text-shadow: 0 0 5px #ffd700, 0 0 10px #ff8c00, 0 -2px 18px rgba(255,0,0,0.4); }
+  75% { text-shadow: 0 0 7px #ff4500, 0 0 14px #ff6a00, 0 -4px 14px rgba(255,140,0,0.5); }
+}
+
+.fire-text-glow {
+  color: #ffd700;
+  animation: fire-glow 0.8s ease-in-out infinite;
+}
+
 *,
 ::before,
 ::after {

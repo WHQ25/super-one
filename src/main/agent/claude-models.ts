@@ -37,19 +37,21 @@ export async function refreshModelsFromQuery(activeQuery: Query): Promise<ModelO
   }
 }
 
-const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  'default': 'Opus 4.6 1M',
-  'sonnet': 'Sonnet 4.6',
-  'sonnet[1m]': 'Sonnet 4.6 1M',
-  'haiku': 'Haiku 4.5',
+const MODEL_NAME_RE = /^(\w+ [\d.]+)(?:\s+with\s+(\w+)\s+context)?/
+
+function extractModelName(descPrefix: string): string | null {
+  const match = descPrefix.match(MODEL_NAME_RE)
+  if (!match) return null
+  return match[2] ? `${match[1]} ${match[2]}` : match[1]
 }
 
 export function mapModelInfo(m: { value: string; displayName: string; description?: string; supportsEffort?: boolean; supportedEffortLevels?: string[]; supportsAdaptiveThinking?: boolean; supportsFastMode?: boolean }): ModelOption {
-  const desc = m.description ?? ''
-  const sepIdx = desc.indexOf('·')
-  const name = MODEL_DISPLAY_NAMES[m.value]
-    ?? (sepIdx !== -1 ? desc.slice(0, sepIdx).trim() : m.displayName)
-  const base: ModelOption = { id: m.value, name, description: desc }
+  const raw = m.description ?? ''
+  const sepIdx = raw.indexOf('·')
+  const descPrefix = sepIdx !== -1 ? raw.slice(0, sepIdx).trim() : ''
+  const name = extractModelName(descPrefix) ?? m.displayName
+  const description = sepIdx !== -1 ? raw.slice(sepIdx + 1).trim() : raw
+  const base: ModelOption = { id: m.value, name, description }
   if (m.supportsEffort) base.supportsEffort = true
   if (m.supportedEffortLevels?.length) base.supportedEffortLevels = m.supportedEffortLevels as ModelOption['supportedEffortLevels']
   if (m.supportsAdaptiveThinking) base.supportsAdaptiveThinking = true

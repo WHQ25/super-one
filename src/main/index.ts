@@ -255,7 +255,7 @@ function registerIpcHandlers(): void {
   // App-level IPC handlers
   ipcMain.handle(AgentIpcChannels.SELECT_FOLDER, async () => {
     const result = await dialog.showOpenDialog(getMainWindow(), {
-      properties: ['openDirectory'],
+      properties: ['openDirectory', 'createDirectory'],
     })
     return result.canceled ? null : result.filePaths[0]
   })

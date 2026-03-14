@@ -780,6 +780,12 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
 
     case 'slash_command_output': {
       const cmd = session._pendingSlashCommand
+      if (cmd === 'compact') {
+        const filtered = session.messages.filter((m) => m.id !== event.messageId)
+        const lastUserIdx = filtered.findLastIndex((m) => m.role === 'user')
+        if (lastUserIdx >= 0) filtered.splice(lastUserIdx, 1)
+        return { _pendingSlashCommand: '', messages: filtered }
+      }
       const filtered = session.messages.filter((m) => m.id !== event.messageId)
       const lastUserIdx = filtered.findLastIndex((m) => m.role === 'user')
       if (lastUserIdx >= 0) filtered.splice(lastUserIdx, 1)

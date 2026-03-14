@@ -1845,3 +1845,34 @@ describe('switchSession Case A codex worktree', () => {
     expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
   })
 })
+
+describe('slash_command_output for compact', () => {
+  it('removes /compact user message without setting slashCommandOutput', () => {
+    setupProject('/test')
+
+    const proj = useChatStore.getState().projectSessions['/test']
+    const session = proj._sessions[proj._activeSessionId]
+    session._pendingSlashCommand = 'compact'
+    session.messages = [
+      { id: 'prev-msg', role: 'assistant', content: [{ type: 'text', text: 'hello' }], status: 'complete', createdAt: '', providerId: 'claude' },
+      { id: 'compact-user', role: 'user', content: [{ type: 'text', text: '/compact' }], status: 'complete', createdAt: '', providerId: 'claude' },
+      { id: 'compact-assist', role: 'assistant', content: [{ type: 'text', text: 'compacted' }], status: 'complete', createdAt: '', providerId: 'claude' },
+    ] as never[]
+    useChatStore.setState({ projectSessions: { '/test': proj } })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'slash_command_output',
+      messageId: 'compact-assist',
+      content: 'Conversation compacted',
+    } as never))
+
+    const after = useChatStore.getState().projectSessions['/test']
+    const afterSession = after._sessions[after._activeSessionId]
+    expect(afterSession.slashCommandOutput).toBeNull()
+    expect(afterSession._pendingSlashCommand).toBe('')
+    expect(afterSession.messages.find((m: { id: string }) => m.id === 'compact-user')).toBeUndefined()
+    expect(afterSession.messages.find((m: { id: string }) => m.id === 'compact-assist')).toBeUndefined()
+    expect(afterSession.messages).toHaveLength(1)
+    expect(afterSession.messages[0].id).toBe('prev-msg')
+  })
+})

@@ -694,7 +694,7 @@ export function AppSidebar() {
           <DialogHeader>
             <DialogTitle>Remove Project?</DialogTitle>
             <DialogDescription>
-              <span className="font-medium text-foreground">{removeTarget?.name}</span> and all its chat sessions will be removed from SuperOne. Sessions in Claude Code CLI will not be affected.
+              <span className="font-medium text-foreground">{removeTarget?.name}</span> and all its chat sessions will be removed from SuperOne. Your project files will not be affected.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

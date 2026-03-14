@@ -29,9 +29,6 @@ function TerminalOutput({ text }: { text: string }): React.JSX.Element {
 export function SetupPage(): React.JSX.Element {
   const { installStatus, installOutput, startInstall, handleSetupEvent, continueToMain } = useAppStore(useShallow((s) => ({ installStatus: s.installStatus, installOutput: s.installOutput, startInstall: s.startInstall, handleSetupEvent: s.handleSetupEvent, continueToMain: s.continueToMain })))
   const outputRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    continueToMain()
-  }, [continueToMain])
 
   useEffect(() => {
     const cleanup = window.app.onSetupEvent((event: SetupEvent) => {
@@ -50,7 +47,6 @@ export function SetupPage(): React.JSX.Element {
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4">
-      {/* Header — changes based on status */}
       <div className="text-center">
         {installStatus === 'idle' && (
           <>
@@ -93,7 +89,6 @@ export function SetupPage(): React.JSX.Element {
         )}
       </div>
 
-      {/* Action buttons */}
       {installStatus === 'idle' && (
         <Button size="lg" onClick={startInstall}>
           <Download className="size-5" />
@@ -112,10 +107,8 @@ export function SetupPage(): React.JSX.Element {
         </Button>
       )}
 
-      {/* Faux terminal */}
       {(isInstalling || installOutput) && (
         <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 shadow-lg dark:border-zinc-600">
-          {/* Title bar */}
           <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-4 py-2">
             <div className="flex gap-1.5">
               <span className="size-3 rounded-full bg-red-500" />
@@ -128,7 +121,6 @@ export function SetupPage(): React.JSX.Element {
             </div>
             <div className="w-[42px]" />
           </div>
-          {/* Output */}
           <div
             ref={outputRef}
             className="overflow-auto p-4 font-mono text-xs leading-relaxed"

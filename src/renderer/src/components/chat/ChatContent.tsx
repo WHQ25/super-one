@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react'
+import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -107,17 +107,18 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       ? compactIndices[compactIndices.length - 1 - expandLevel]
       : 0
   const visibleMessages = visibleStart > 0 ? messages.slice(visibleStart) : messages
+  const computeZoom = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
   const [zoom, setZoom] = useState(1)
-  useEffect(() => {
+  useLayoutEffect(() => {
     const parent = containerRef.current?.parentElement
     if (!parent) return
+    setZoom(computeZoom(parent.getBoundingClientRect().width))
     const observer = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width ?? 0
-      setZoom(w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1)
+      setZoom(computeZoom(entries[0]?.contentRect.width ?? 0))
     })
     observer.observe(parent)
     return () => observer.disconnect()
-  }, [])
+  }, [computeZoom])
 
   useLayoutEffect(() => {
     const viewport = scrollViewportRef.current

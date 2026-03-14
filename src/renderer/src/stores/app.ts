@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { RecentFolder, SetupEvent, SettingsProvider, UpdateEvent } from '../../../shared/agent-types'
 
-type AppView = 'startup' | 'setup' | 'main' | 'settings'
+type AppView = 'loading' | 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
 export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'remote'
@@ -123,7 +123,7 @@ async function refreshResourcesInBackground(): Promise<void> {
 const defaultWorktreeState: WorktreeState = { pendingBaseBranch: null, activePath: null, carryLocalChanges: false }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  view: 'setup',
+  view: 'loading',
   currentFolder: null,
   tmpFolder: null,
   recentFolders: [],
@@ -302,7 +302,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   continueToMain: async () => {
-    const startupData = await window.app.getStartupData()
+    const [startupData, folders] = await Promise.all([
+      window.app.getStartupData(),
+      window.app.getRecentFolders(),
+    ])
+    set({ recentFolders: folders })
     console.info('[continueToMain] cached:', startupData.cached ? `${startupData.cached.models?.length} models` : 'null')
     const { useChatStore } = await import('./chat')
 
@@ -321,12 +325,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       useChatStore.getState().setGlobalResources([], {}, [], startupData.userSkills, startupData.userCommands, startupData.userAgents)
     }
 
-    // Open default folder or show startup page
     if (get().layoutMode === 'coding' && !get().currentFolder) {
-      const folders = get().recentFolders
       if (folders.length > 0) {
-        set({ view: 'main' })
         await openFolderDirect(folders[0].path, set)
+        set({ view: 'main' })
       } else {
         set({ view: 'startup' })
         return
@@ -433,8 +435,7 @@ export function useHasRealProject(): boolean {
   return currentFolder !== null && currentFolder !== tmpFolder
 }
 
-// Load recent folders on module init
-useAppStore.getState().fetchRecentFolders()
+
 
 // Reset file panel and source-control store when project changes
 // NOTE: file-tree reset is handled by fetchTree (called from FileTree useEffect on currentFolder change)

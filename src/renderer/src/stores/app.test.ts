@@ -45,7 +45,7 @@ const { useAppStore } = await import('./app')
 
 function resetStore(overrides: Record<string, unknown> = {}) {
   useAppStore.setState({
-    view: 'setup',
+    view: 'loading',
     currentFolder: null,
     recentFolders: [],
     layoutMode: 'coding',
@@ -112,6 +112,7 @@ describe('removeRecentFolder', () => {
 
 describe('continueToMain', () => {
   it('should show startup page when no projects exist', async () => {
+    mockWindowApp.getRecentFolders.mockResolvedValue([])
     resetStore({ recentFolders: [], layoutMode: 'coding' })
 
     await useAppStore.getState().continueToMain()

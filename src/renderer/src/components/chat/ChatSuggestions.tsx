@@ -26,7 +26,7 @@ function ClaudeAgentIcon() {
           dur="2.5s"
           repeatCount="indefinite"
         />
-        <g fill="#D67657">
+        <g fill="#E07B4A">
           <rect x="10" y="0" width="90" height="60" />
           <rect x="0" y="20" width="10" height="20" />
           <rect x="100" y="20" width="10" height="20" />
@@ -42,7 +42,7 @@ function ClaudeAgentIcon() {
             repeatCount="indefinite"
           />
         </g>
-        <g fill="#D67657">
+        <g fill="#E07B4A">
           <rect x="10" y="60" width="10" height="20">
             <animate attributeName="height" values="20;24;20;16;20" dur="2.5s" repeatCount="indefinite" />
           </rect>
@@ -125,7 +125,7 @@ export function ChatSuggestions() {
   if (isCoding && !hasRealProject) {
     const hasRecent = recentFolders.length > 0
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
         <ProviderSelector />
         <p className="text-sm text-muted-foreground">Open a project to get started</p>
         {hasRecent ? (
@@ -165,7 +165,7 @@ export function ChatSuggestions() {
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
       <ProviderSelector />
       {isCoding && <ProjectSelector align="center" />}
     </div>

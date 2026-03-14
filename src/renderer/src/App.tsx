@@ -29,10 +29,19 @@ function App(): React.JSX.Element {
   const { view, currentFolder, showSidebar, setShowSidebar, sidebarWidth, setSidebarWidth, showFilePanel, setShowFilePanel, filePanelView, filePanelWidth, setFilePanelWidth, layoutMode, setLayoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, setShowSidebar: s.setShowSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, showFilePanel: s.showFilePanel, setShowFilePanel: s.setShowFilePanel, filePanelView: s.filePanelView, filePanelWidth: s.filePanelWidth, setFilePanelWidth: s.setFilePanelWidth, layoutMode: s.layoutMode, setLayoutMode: s.setLayoutMode })))
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
+  const initialTransition = useRef(true)
 
   useEffect(() => {
     useAppStore.getState().loadRemoteConfig()
   }, [])
+
+  useEffect(() => {
+    if (view === 'loading') {
+      useAppStore.getState().continueToMain().catch(() => {
+        useAppStore.setState({ view: 'setup' })
+      })
+    }
+  }, [view])
 
   useEffect(() => {
     return window.app.onUpdateEvent((event) => {
@@ -169,10 +178,17 @@ function App(): React.JSX.Element {
       .slice(0, 100) || null
   })
 
+  if (view === 'loading') {
+    return <div className="h-screen bg-background" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+  }
+
+  const enterAnimation = initialTransition.current ? { animation: 'fade-in 300ms ease-out' } : undefined
+  initialTransition.current = false
+
   // Non-main views: keep simple titlebar layout
   if (view !== 'main') {
     return (
-      <div className="flex h-screen flex-col bg-background text-foreground">
+      <div className="flex h-screen flex-col bg-background text-foreground" style={enterAnimation}>
         <div className="flex h-11 shrink-0 items-center justify-between px-3" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
           <div className="w-20" />
           <div />
@@ -195,7 +211,7 @@ function App(): React.JSX.Element {
 
   // Main view: sidebar + content
   return (
-    <div className="flex h-screen overflow-hidden bg-sidebar text-foreground">
+    <div className="flex h-screen overflow-hidden bg-sidebar text-foreground" style={enterAnimation}>
       <GitAutoRefresh />
       {/* Sidebar — only in coding mode, animated width */}
       {layoutMode === 'coding' && (

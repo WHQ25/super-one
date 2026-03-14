@@ -75,6 +75,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const {
       slashCommands, preferredProvider, sessionProvider, agents,
       selectedCodexCollaborationMode, promptSuggestion, showDirManager, showReviewPanel,
+      activeSessionId,
     } = useActiveSession(useShallow((s) => ({
       slashCommands: s.slashCommands,
       preferredProvider: s.preferredProvider,
@@ -84,6 +85,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       promptSuggestion: s.promptSuggestion,
       showDirManager: s.showDirManager,
       showReviewPanel: s.showReviewPanel,
+      activeSessionId: s._activeSessionId,
     })))
     const commandPopup = useActiveSession((s) =>
       s.slashCommandOutput?.mode === 'popup' ? s.slashCommandOutput : null
@@ -640,7 +642,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       if (!compact && isOpen && editor && !showReviewPanel) {
         editor.commands.focus('end')
       }
-    }, [compact, isOpen, editor, showReviewPanel])
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [compact, isOpen, editor, showReviewPanel, activeSessionId])
 
     useEffect(() => {
       if (showReviewPanel && editor) {

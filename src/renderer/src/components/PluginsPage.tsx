@@ -25,7 +25,7 @@ import {
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
-import { streamdownLinkSafety } from '@/components/chat/chat-shared'
+import { streamdownLinkSafety, mathPlugin } from '@/components/chat/chat-shared'
 import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
 import { Button } from '@/components/ui/button'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
@@ -35,7 +35,7 @@ import type { MarketplacePlugin, PluginInfo, ResourceScope, SkillFileEntry } fro
 import { cn } from '@/lib/utils'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
-const streamdownPlugins = { code: codePlugin }
+const streamdownPlugins = { code: codePlugin, math: mathPlugin }
 const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
 
 // --- Shared file viewing utilities (same pattern as SkillsPage) ---

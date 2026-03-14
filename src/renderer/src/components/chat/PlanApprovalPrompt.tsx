@@ -6,10 +6,10 @@ import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { PenLine, Check, X } from 'lucide-react'
 import { Kbd } from '@/components/ui/kbd'
-import { streamdownLinkSafety } from './chat-shared'
+import { streamdownLinkSafety, mathPlugin } from './chat-shared'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
-const streamdownPlugins = { code: codePlugin }
+const streamdownPlugins = { code: codePlugin, math: mathPlugin }
 const streamdownControls = { table: false }
 const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
 

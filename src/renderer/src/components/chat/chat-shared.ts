@@ -1,6 +1,8 @@
 import { createElement } from 'react'
 import type { LinkSafetyConfig } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
+import { createMathPlugin } from '@streamdown/math'
+import 'katex/dist/katex.min.css'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { LinkSafetyModal } from './LinkSafetyModal'
 
@@ -8,8 +10,10 @@ import { LinkSafetyModal } from './LinkSafetyModal'
 export const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 export const codePluginLight = createCodePlugin({ themes: ['github-light', 'github-light'] })
 
+export const mathPlugin = createMathPlugin({ singleDollarTextMath: true })
+
 /** Shared Streamdown plugins config. */
-export const streamdownPlugins = { code: codePlugin }
+export const streamdownPlugins = { code: codePlugin, math: mathPlugin }
 
 /** Shared Streamdown controls config. */
 export const streamdownControls = { table: false }

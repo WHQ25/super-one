@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { Toaster } from 'sonner'
 import App from './App'
 import './styles/index.css'
+import './utils/scroll-overlay'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

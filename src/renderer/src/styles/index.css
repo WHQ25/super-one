@@ -163,6 +163,13 @@ body {
   color: var(--foreground);
 }
 
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; transition: background 0.3s; }
+.is-scrolling::-webkit-scrollbar-thumb { background: oklch(0.5 0 0 / 0.25); }
+.is-scrolling::-webkit-scrollbar-thumb:hover { background: oklch(0.5 0 0 / 0.4); }
+::-webkit-scrollbar-corner { background: transparent; }
+
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { scrollbar-width: none; }
 

@@ -164,6 +164,34 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(scrolledPos)
   })
 
+  it('keeps auto-scroll disabled when ResizeObserver fires between wheel and scroll (trackpad race)', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    state.scrollTop = state.scrollHeight - state.clientHeight
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      el.dispatchEvent(new Event('wheel'))
+    })
+
+    act(() => {
+      state.scrollHeight = 600
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    act(() => {
+      el.dispatchEvent(new Event('wheel'))
+      state.scrollTop = 100
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 900
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(100)
+  })
+
   it('re-enables auto-scroll when user scrolls back near bottom', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }

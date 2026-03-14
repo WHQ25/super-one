@@ -3,7 +3,7 @@ import log from '../logger'
 import { resolve } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, type ClaudeAgentConfig } from './claude-agent'
-import { AgentIpcChannels, type AgentEvent, type PermissionMode, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type PermissionMode, type QuestionAnnotations, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 import { searchFiles, searchMentions, type AgentEntry } from './fuzzy-file-search'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -202,8 +202,8 @@ export class AgentService {
       return this.getAgent(projectPath).setSandboxMode(mode)
     })
 
-    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>) => {
-      this.getAgent(projectPath).respondToQuestion(requestId, answers)
+    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
+      this.getAgent(projectPath).respondToQuestion(requestId, answers, annotations)
     })
 
     ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string) => {

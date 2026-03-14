@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ChevronDown, Loader2, Check } from 'lucide-react'
+import { ChevronDown, Loader2, Check, Zap } from 'lucide-react'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from './chat-input-utils'
 import { CodexModeSelector } from './CodexModeSelector'
+import { FireText } from './FireText'
 import type { EffortLevel } from '../../../../shared/agent-types'
 
 const EFFORT_LABELS: Record<EffortLevel, string> = {
@@ -34,12 +35,11 @@ export function ModelSelector() {
 
   const activeProvider = sessionProvider ?? preferredProvider
 
-  const account = useChatStore((s) => s.account)
-  const isApiUser = !!account.apiKeySource
+  const fastModeState = useActiveSession((s) => s.session?.fastModeState)
 
   const currentModel = availableModels.find((m) => m.id === selectedModel)
   const currentModelName = (currentModel?.name ?? selectedModel) || null
-  const effortLevels = currentModel?.supportedEffortLevels?.filter((l) => isApiUser || l !== 'max')
+  const effortLevels = currentModel?.supportedEffortLevels
   const currentEffortLabel = selectedEffort ? EFFORT_LABELS[selectedEffort] : null
 
   const selectedCodexModelOption = codexModels.find((m) => m.id === selectedCodexModel)
@@ -68,6 +68,11 @@ export function ModelSelector() {
   if (activeProvider === 'claude') {
     return (
       <div className="flex items-center gap-1">
+        {fastModeState && fastModeState !== 'off' && (
+          <span title={`Fast mode: ${fastModeState}`}>
+            <Zap className={`size-3 ${fastModeState === 'on' ? 'text-yellow-500' : 'text-muted-foreground'}`} />
+          </span>
+        )}
         <Popover open={modelOpen} onOpenChange={setModelOpen}>
           <PopoverTrigger asChild>
             <button className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
@@ -91,7 +96,7 @@ export function ModelSelector() {
               >
                 <div className="font-medium">{model.name}</div>
                 {model.description && (
-                  <div className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">{model.description}</div>
+                  <div className="mt-0.5 text-[10px] text-muted-foreground">{model.description}</div>
                 )}
               </button>
             ))}
@@ -104,8 +109,8 @@ export function ModelSelector() {
         {effortLevels && effortLevels.length > 0 && (
           <Popover open={effortOpen} onOpenChange={setEffortOpen}>
             <PopoverTrigger asChild>
-              <button className={`flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs transition-colors hover:bg-muted hover:text-foreground ${selectedEffort === 'high' ? '' : 'text-muted-foreground'}`}>
-                <span className={`max-w-[100px] truncate ${selectedEffort === 'high' ? 'rainbow-text font-normal' : ''}`}>{selectedEffort === 'high' ? 'ULTRATHINK' : (currentEffortLabel ?? 'Effort')}</span>
+              <button className={`flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs transition-colors hover:bg-muted hover:text-foreground ${selectedEffort === 'high' || selectedEffort === 'max' ? '' : 'text-muted-foreground'}`}>
+                {selectedEffort === 'max' ? <FireText>MAX</FireText> : <span className={`max-w-[100px] truncate ${selectedEffort === 'high' ? 'rainbow-text font-normal' : ''}`}>{selectedEffort === 'high' ? 'ULTRATHINK' : (currentEffortLabel ?? 'Effort')}</span>}
                 <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
               </button>
             </PopoverTrigger>
@@ -126,6 +131,7 @@ export function ModelSelector() {
             </PopoverContent>
           </Popover>
         )}
+
       </div>
     )
   }

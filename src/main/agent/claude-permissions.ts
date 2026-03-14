@@ -3,7 +3,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import log from '../logger'
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentEvent } from '../../shared/agent-types'
+import type { AgentEvent, QuestionAnnotations } from '../../shared/agent-types'
 
 export interface PendingPermission {
   resolve: (result: { allow: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[] }) => void
@@ -11,8 +11,13 @@ export interface PendingPermission {
   toolUseID: string
 }
 
+export interface QuestionResponse {
+  answers: Record<string, string>
+  annotations?: QuestionAnnotations
+}
+
 export interface PendingQuestion {
-  resolve: (answers: Record<string, string> | null) => void
+  resolve: (response: QuestionResponse | null) => void
 }
 
 export interface PendingPlanApproval {
@@ -141,7 +146,7 @@ async function handleAskUserQuestion(
     request: { requestId, questions },
   })
 
-  const answers = await new Promise<Record<string, string> | null>((resolve) => {
+  const response = await new Promise<QuestionResponse | null>((resolve) => {
     if (context.signal.aborted) {
       resolve(null)
       return
@@ -152,13 +157,29 @@ async function handleAskUserQuestion(
     // Cleanup is handled by rejectAllPending() on session reset/interrupt.
   })
 
-  if (answers === null) {
+  if (response === null) {
     return { behavior: 'deny' as const, message: 'User dismissed the question', toolUseID: context.toolUseID }
+  }
+
+  const { answers, annotations: userAnnotations } = response
+
+  const annotations: QuestionAnnotations = { ...userAnnotations }
+  for (const q of questions) {
+    const answer = answers[q.question]
+    if (!answer) continue
+    const selected = q.options?.find((o: { label: string }) => o.label === answer)
+    if (selected?.preview) {
+      annotations[q.question] = { ...annotations[q.question], preview: selected.preview }
+    }
   }
 
   return {
     behavior: 'allow' as const,
-    updatedInput: { questions, answers },
+    updatedInput: {
+      questions,
+      answers,
+      ...(Object.keys(annotations).length > 0 && { annotations }),
+    },
     toolUseID: context.toolUseID,
   }
 }
@@ -181,7 +202,8 @@ async function handlePlanApproval(
   emit: (event: AgentEvent) => void
 ) {
   const requestId = `plan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  const planFile = readPlanFile(trackedPlanFilePath)
+  const sdkPlanPath = typeof input.planFilePath === 'string' ? input.planFilePath : null
+  const planFile = readPlanFile(sdkPlanPath ?? trackedPlanFilePath)
   const allowedPrompts = Array.isArray(input.allowedPrompts)
     ? (input.allowedPrompts as Array<{ tool: string; prompt: string }>)
     : []
@@ -249,12 +271,13 @@ export function respondToPermission(
 export function respondToQuestion(
   pendingQuestions: Map<string, PendingQuestion>,
   requestId: string,
-  answers: Record<string, string>
+  answers: Record<string, string>,
+  annotations?: QuestionAnnotations
 ): void {
   const pending = pendingQuestions.get(requestId)
   if (pending) {
     pendingQuestions.delete(requestId)
-    pending.resolve(answers)
+    pending.resolve({ answers, annotations })
   }
 }
 

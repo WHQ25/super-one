@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
@@ -31,7 +31,7 @@ export interface PerSessionState {
   contextTokens: number
   contextWindow: number | null
   subagentTokens: Record<string, { input: number; output: number }>
-  taskProgress: Record<string, { description: string; lastToolName?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; outputFile?: string; toolHistory: Array<{ toolName: string; description: string }> }>
+  taskProgress: Record<string, { description: string; lastToolName?: string; summary?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; outputFile?: string; toolHistory: Array<{ toolName: string; description: string }> }>
   streamingTokens: { input: number; output: number }
   codexUsageSnapshot: CodexUsageInfo | null
   codexTurnLastUsage: CodexUsageInfo | null
@@ -245,6 +245,7 @@ interface ChatStore {
   // Model actions
   setSelectedModel: (model: string) => void
   setSelectedEffort: (effort?: EffortLevel) => void
+  setFastMode: (enabled: boolean) => void
   setSelectedCodexModel: (model: string) => void
   setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void
@@ -265,7 +266,7 @@ interface ChatStore {
   setSandboxMode: (mode: SandboxMode) => Promise<void>
 
   // Question actions
-  answerQuestion: (requestId: string, answers: Record<string, string>) => void
+  answerQuestion: (requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => void
   dismissQuestion: (requestId: string) => void
 
   // Plan approval
@@ -597,7 +598,14 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           contextWindow: codexUsage.contextWindow > 0 ? codexUsage.contextWindow : session.contextWindow,
           codexUsageSnapshot: codexUsage,
           codexTurnLastUsage: null,
-        } : {}),
+        } : {
+          contextWindow: (() => {
+            const mu = event.metadata?.modelUsage
+            if (!mu) return session.contextWindow
+            const cw = Math.max(...Object.values(mu).map((u) => u.contextWindow ?? 0))
+            return cw > 0 ? cw : session.contextWindow
+          })(),
+        }),
         awaitingAssistantReply: false,
         ...(isCurrentTurn ? { streamingTokens: { input: 0, output: 0 }, lastEventAt: 0 } : {}),
         ...(hasUncompletedAgents ? {
@@ -852,6 +860,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
             ...usageUpdate,
             completed: true,
             outputFile: file || prevProgress?.outputFile,
+            summary: event.summary || prevProgress?.summary,
           },
         },
       }
@@ -886,6 +895,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
             ...(prev ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
             description: event.description,
             lastToolName: event.lastToolName,
+            summary: event.summary ?? prev?.summary,
             totalTokens: event.usage.totalTokens,
             toolUses: event.usage.toolUses,
             durationMs: event.usage.durationMs,
@@ -986,7 +996,7 @@ function _buildQuestionAnswerItem(
   answers: Record<string, string>,
 ): CodexAgentMessageItem {
   const lines = questions.map((q) => {
-    const key = q.id ?? q.question
+    const key = q.question
     const answer = answers[key]?.trim()
     return `**${q.question}**\n${answer || '_(dismissed)_'}`
   })
@@ -2245,6 +2255,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateActivePerSession(s,() => ({ selectedEffort: effort })))
   },
 
+  setFastMode: (enabled) => {
+    void window.app.setFastMode(enabled)
+  },
+
   setSelectedCodexModel: (model) => {
     const { activeProject } = get()
     if (!activeProject) return
@@ -2457,7 +2471,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateActivePerSession(s, () => ({ permissionMode: mode })))
   },
 
-  answerQuestion: (requestId, answers) => {
+  answerQuestion: (requestId, answers, annotations) => {
     const { activeProject } = get()
     if (!activeProject) return
     const session = getActivePerSession(get(), activeProject)
@@ -2465,7 +2479,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const sid = _getEffectiveSessionId(getProject(get(), activeProject))
       if (sid) void window.app.codexAnswerQuestion(sid, requestId, answers)
     } else {
-      void window.agent.answerQuestion(activeProject, requestId, answers)
+      void window.agent.answerQuestion(activeProject, requestId, answers, annotations)
     }
     const codexQaItem = session.sessionProvider === 'codex' && session.pendingQuestion
       ? _buildQuestionAnswerItem(session.pendingQuestion.questions, answers)

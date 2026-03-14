@@ -1037,6 +1037,18 @@ function registerIpcHandlers(): void {
     return readBashOutputTail(filePath, tailLines)
   })
 
+  ipcMain.handle(AgentIpcChannels.SET_FAST_MODE, (_e, enabled: boolean) => {
+    const settingsPath = join(homedir(), '.claude', 'settings.json')
+    let data: Record<string, unknown> = {}
+    try {
+      if (existsSync(settingsPath)) data = JSON.parse(readFileSync(settingsPath, 'utf-8'))
+    } catch { /* start fresh */ }
+    data.fastMode = enabled
+    mkdirSync(join(homedir(), '.claude'), { recursive: true })
+    writeFileSync(settingsPath, JSON.stringify(data, null, 2))
+    log.info('[settings] fastMode set to %s', enabled)
+  })
+
   ipcMain.handle(AgentIpcChannels.GET_LOG_PATH, () => {
     return log.transports.file.getFile().path
   })

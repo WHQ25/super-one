@@ -4,7 +4,7 @@ import { join, resolve } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, PermissionMode, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, PermissionMode, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
 import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
@@ -307,8 +307,8 @@ export class ClaudeAgent {
     respondToPermission(this.pendingPermissions, requestId, allow, alwaysAllow, reason, selectedSuggestions)
   }
 
-  respondToQuestion(requestId: string, answers: Record<string, string>): void {
-    respondToQuestion(this.pendingQuestions, requestId, answers)
+  respondToQuestion(requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): void {
+    respondToQuestion(this.pendingQuestions, requestId, answers, annotations)
   }
 
   dismissQuestion(requestId: string): void {

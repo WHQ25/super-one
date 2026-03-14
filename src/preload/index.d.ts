@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
 
 
 interface AgentAPI {
@@ -8,7 +8,7 @@ interface AgentAPI {
   respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): Promise<void>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
   setSandboxMode(projectPath: string, mode: SandboxMode): Promise<SandboxInfo>
-  answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>): Promise<void>
+  answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>
   dismissQuestion(projectPath: string, requestId: string): Promise<void>
   respondToPlanApproval(projectPath: string, requestId: string, approved: boolean, feedback?: string): Promise<void>
   resetSession(projectPath: string): Promise<void>
@@ -133,6 +133,9 @@ interface AppAPI {
   readBashOutputMore(toolUseId: string, tailLines: number): Promise<string>
   readBashOutputFile(filePath: string, tailLines: number): Promise<string>
   onBashOutputEvent(callback: (event: BashOutputEvent) => void): () => void
+
+  // Settings
+  setFastMode(enabled: boolean): Promise<void>
 
   // Logging
   getLogPath(): Promise<string>

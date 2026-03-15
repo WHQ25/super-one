@@ -61,18 +61,19 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     }
   }, [sessionId, messages.length > 0, scrollViewportRef])
 
+  const lastMsgIsUser = messages.length > 0 && messages[messages.length - 1].role === 'user'
+
   useLayoutEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
 
-    const lastMsg = messages[messages.length - 1]
-    if (isNearBottomRef.current || lastMsg?.role === 'user') {
+    if (isNearBottomRef.current || lastMsgIsUser) {
       el.scrollTop = el.scrollHeight
       lastScrollTopRef.current = el.scrollTop
       isNearBottomRef.current = true
       setShowScrollButton(false)
     }
-  }, [messages, scrollViewportRef])
+  }, [messages.length, lastMsgIsUser, scrollViewportRef])
 
   useEffect(() => {
     const viewport = scrollViewportRef.current

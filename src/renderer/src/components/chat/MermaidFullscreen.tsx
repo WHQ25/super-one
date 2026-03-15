@@ -13,10 +13,10 @@ const ZOOM_MAX = 3
 const FIT_PADDING = 60
 const PAN_MARGIN = 350
 
-interface Size { width: number; height: number }
+export interface Size { width: number; height: number }
 interface Point { x: number; y: number }
 
-function normalizeSvg(raw: string): { html: string; size: Size } {
+export function normalizeSvg(raw: string): { html: string; size: Size } {
   const doc = new DOMParser().parseFromString(raw, 'image/svg+xml')
   const el = doc.querySelector('svg')
   if (!el) return { html: raw, size: { width: 800, height: 600 } }

@@ -1,10 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Check, Code, Copy, Expand, Eye, Loader2 } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import mermaid from 'mermaid'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { HighlightedCodeBlock } from './CodeBlock'
-import { MermaidFullscreen } from './MermaidFullscreen'
+import { MermaidFullscreen, normalizeSvg } from './MermaidFullscreen'
 
 interface MermaidBlockProps {
   code: string
@@ -66,6 +66,8 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [code])
+
+  const normalizedSvg = useMemo(() => svg ? normalizeSvg(svg).html : '', [svg])
 
   if (!isComplete) {
     return <HighlightedCodeBlock code={code} language="mermaid" codePlugin={codePlugin} />
@@ -136,8 +138,8 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
           : (
             <div className="relative">
               <div
-                className="overflow-x-auto p-4 [&_svg]:mx-auto [&_svg]:max-w-full"
-                dangerouslySetInnerHTML={{ __html: svg }}
+                className="max-h-[600px] overflow-auto p-4 [&_svg]:mx-auto [&_svg]:max-w-full"
+                dangerouslySetInnerHTML={{ __html: normalizedSvg }}
               />
               {isThemeSwitching && (
                 <div className="absolute inset-0 flex items-center justify-center rounded-md bg-background/80 backdrop-blur-sm">

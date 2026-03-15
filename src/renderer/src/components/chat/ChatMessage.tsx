@@ -1,5 +1,5 @@
 import type { ChatMessage as ChatMessageType, ContentBlock } from '../../../../shared/agent-types'
-import { useState, useEffect, useRef, useMemo, memo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { cn } from '@/lib/utils'
 import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
@@ -116,18 +116,10 @@ function groupContent(content: ContentBlock[]): GroupResult {
   return { segments, toolNameMap, toolResultMap, timedOutToolIds, outputPathMap }
 }
 
-function CopyButton({ text, className }: { text: string; className?: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
+function CopyButton({ copied, onClick, className }: { copied: boolean; onClick: () => void; className?: string }) {
   return (
     <button
-      onClick={handleCopy}
+      onClick={onClick}
       className={cn('cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/copy:opacity-100', className ?? 'absolute right-0 top-0')}
     >
       {copied
@@ -136,6 +128,17 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
       }
     </button>
   )
+}
+
+function useCopyText() {
+  const [copied, setCopied] = useState(false)
+  const copy = useCallback((text: string) => {
+    if (window.getSelection()?.toString()) return
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }, [])
+  return { copied, copy }
 }
 
 function renderBlock(
@@ -415,6 +418,7 @@ export const ChatMessage = memo(function ChatMessage({ message }: ChatMessagePro
       : ''),
     [isUser, message.content],
   )
+  const { copied: userCopied, copy: copyUserText } = useCopyText()
   return (
     <div className={cn('w-0 min-w-full flex', isUser ? 'justify-end' : 'mb-2 justify-start')}>
       <div className={cn(isUser ? 'group/copy relative mb-0 flex min-w-0 max-w-[85%] flex-col items-end' : 'w-full')}>
@@ -422,9 +426,10 @@ export const ChatMessage = memo(function ChatMessage({ message }: ChatMessagePro
           className={cn(
             'min-w-0 text-sm',
             isUser
-              ? 'rounded-xl bg-secondary px-3 py-2 text-secondary-foreground break-all'
+              ? 'cursor-pointer rounded-xl bg-secondary px-3 py-2 text-secondary-foreground break-all'
               : 'assistant-reply w-full text-foreground'
           )}
+          onClick={isUser && userText ? () => copyUserText(userText) : undefined}
         >
           {isUser
             ? <>
@@ -482,7 +487,7 @@ export const ChatMessage = memo(function ChatMessage({ message }: ChatMessagePro
       {isUser && (
         <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
           {message.checkpointId && <RewindButton checkpointId={message.checkpointId} rewound={message.rewound} className="opacity-100" />}
-          {userText.length > 0 && <CopyButton text={userText} className="opacity-100" />}
+          {userText.length > 0 && <CopyButton copied={userCopied} onClick={() => copyUserText(userText)} className="opacity-100" />}
         </div>
       )}
       </div>

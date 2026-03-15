@@ -5,6 +5,64 @@ import mermaid from 'mermaid'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { MermaidFullscreen, normalizeSvg } from './MermaidFullscreen'
+import type { Size } from './MermaidFullscreen'
+
+const MAX_H = 600
+const OVERFLOW_THRESHOLD = 0.2
+const OVERFLOW_RENDER_RATIO = 0.5
+
+function MermaidPreview({ normalized, containerRef, containerWidth, isThemeSwitching }: {
+  normalized: { html: string; size: Size }
+  containerRef: React.RefObject<HTMLDivElement | null>
+  containerWidth: number
+  isThemeSwitching: boolean
+}) {
+  const { html, size } = normalized
+  const svgW = size.width
+  const svgH = size.height
+
+  let mode: 'fit' | 'overflow' = 'fit'
+  let svgStyle: React.CSSProperties | undefined
+
+  if (containerWidth > 0 && svgW > 0 && svgH > 0) {
+    const widthScale = Math.min(containerWidth / svgW, 1)
+    const scaledW = svgW * widthScale
+    const scaledH = svgH * widthScale
+    if (scaledH <= MAX_H) {
+      svgStyle = { width: scaledW, height: scaledH }
+    } else {
+      const fitScale = MAX_H / svgH
+      const fittedW = svgW * fitScale
+      if (fittedW >= containerWidth * OVERFLOW_THRESHOLD) {
+        svgStyle = { width: fittedW, height: MAX_H }
+      } else {
+        mode = 'overflow'
+        svgStyle = { width: containerWidth * OVERFLOW_RENDER_RATIO, height: svgH * (containerWidth * OVERFLOW_RENDER_RATIO / svgW) }
+      }
+    }
+  }
+
+  return (
+    <div className="relative">
+      <div
+        ref={containerRef}
+        className={mode === 'overflow'
+          ? 'max-h-[600px] overflow-auto p-4 [&_svg]:mx-auto'
+          : 'p-4 [&_svg]:mx-auto'
+        }
+        dangerouslySetInnerHTML={{ __html: svgStyle
+          ? html.replace(/<svg/, `<svg style="width:${svgStyle.width}px;height:${svgStyle.height}px"`)
+          : html
+        }}
+      />
+      {isThemeSwitching && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-md bg-background/80 backdrop-blur-sm">
+          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface MermaidBlockProps {
   code: string
@@ -67,7 +125,16 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
     setTimeout(() => setCopied(false), 2000)
   }, [code])
 
-  const normalizedSvg = useMemo(() => svg ? normalizeSvg(svg).html : '', [svg])
+  const normalized = useMemo(() => svg ? normalizeSvg(svg) : null, [svg])
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
+    ro.observe(containerRef.current)
+    return () => ro.disconnect()
+  }, [svg])
 
   if (!isComplete) {
     return <HighlightedCodeBlock code={code} language="mermaid" codePlugin={codePlugin} />
@@ -136,17 +203,12 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
             </pre>
           )
           : (
-            <div className="relative">
-              <div
-                className="max-h-[600px] overflow-auto p-4 [&_svg]:mx-auto [&_svg]:max-w-full"
-                dangerouslySetInnerHTML={{ __html: normalizedSvg }}
-              />
-              {isThemeSwitching && (
-                <div className="absolute inset-0 flex items-center justify-center rounded-md bg-background/80 backdrop-blur-sm">
-                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                </div>
-              )}
-            </div>
+            <MermaidPreview
+              normalized={normalized!}
+              containerRef={containerRef}
+              containerWidth={containerWidth}
+              isThemeSwitching={isThemeSwitching}
+            />
           )
         }
       </div>

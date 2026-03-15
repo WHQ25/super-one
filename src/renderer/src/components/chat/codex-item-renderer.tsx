@@ -11,7 +11,10 @@ import { ToolIcon } from './ToolIcon'
 import { cn } from '@/lib/utils'
 import { AnsiText } from '@/lib/ansi'
 import { FileChip } from './ToolBlock'
+import { FileIcon } from '@/components/ui/FileIcon'
+import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
+import { useSourceControlStore } from '@/stores/source-control'
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '../../../../shared/agent-types'
@@ -35,6 +38,30 @@ function toToolStatus(status: ItemStatus): 'streaming' | 'complete' {
   return status === 'in_progress' ? 'streaming' : 'complete'
 }
 
+function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath: string; lineNumber?: number }) {
+  const handleClick = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    const projectPath = useChatStore.getState().activeProject
+    if (!projectPath) return
+    const relative = filePath.startsWith(projectPath + '/') ? filePath.slice(projectPath.length + 1) : filePath
+    useSourceControlStore.getState().selectFile(projectPath, relative, lineNumber)
+    useAppStore.getState().setShowFilePanel(true)
+    useAppStore.getState().setFilePanelView('file')
+  }
+  return (
+    <span
+      role="button"
+      onClick={handleClick}
+      title={filePath}
+      className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-muted px-1 text-[0.9em] text-foreground whitespace-nowrap align-baseline translate-y-[1px] hover:bg-muted/80 transition-colors"
+    >
+      <FileIcon name={name} size={12} />
+      <span>{name}</span>
+      {lineNumber != null && <span className="text-muted-foreground text-[0.85em]">#L{lineNumber}</span>}
+    </span>
+  )
+}
+
 function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const { href, children, ...rest } = props
   const projectPath = useChatStore.getState().activeProject
@@ -44,7 +71,7 @@ function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
     const lineNumber = lineMatch ? parseInt(lineMatch[1], 10) : undefined
     if (cleanHref.startsWith(projectPath + '/')) {
       const text = typeof children === 'string' ? children : (cleanHref.split('/').pop() || '')
-      return <span className="mt-1.5 inline-flex"><FileChip name={text} title={cleanHref} filePath={cleanHref} lineNumber={lineNumber} className="max-w-full" /></span>
+      return <InlineFileChip name={text} filePath={cleanHref} lineNumber={lineNumber} />
     }
   }
   return <a href={href} {...rest}>{children}</a>

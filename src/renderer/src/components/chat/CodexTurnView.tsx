@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, CodexThreadItem } from '../../../../shared/agent-types'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { renderCodexItem, CodexCommandBlock } from './codex-item-renderer'
@@ -43,13 +43,13 @@ function CodexCommandGroup({ items, isStreaming }: { items: CodexCommandExecutio
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70"
       >
-        <ChevronRight className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-90')} />
+        <BookOpenText className="size-3 shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate text-foreground">
           {hasRunning && runningItem
             ? <>{runningItem.commandActions?.[0]?.type === 'read' ? 'Reading' : 'Searching'}…</>
             : generateCommandGroupSummary(items)}
         </span>
-        <span className="ml-auto shrink-0 text-muted-foreground">{items.length} tool use</span>
+        <ChevronRight className={cn('ml-auto size-3 shrink-0 transition-transform duration-200', expanded && 'rotate-90')} />
       </button>
       {expanded && (
         <div className="mt-0.5 space-y-0.5 pl-2">

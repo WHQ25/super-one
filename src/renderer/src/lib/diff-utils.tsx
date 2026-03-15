@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useMemo, 
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { cn } from '@/lib/utils'
 import { codePlugin, codePluginLight } from '@/components/chat/chat-shared'
+import { useIsDark } from '@/hooks/use-is-dark'
 
 const EXT_LANG: Record<string, string> = {
   ts: 'typescript', tsx: 'tsx', mts: 'typescript', cts: 'typescript',
@@ -37,17 +38,6 @@ export interface HLToken { content: string; style?: React.CSSProperties }
 
 const HIGHLIGHT_LINE_LIMIT = 10000
 
-function useIsDark(): boolean {
-  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'))
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setIsDark(document.documentElement.classList.contains('dark'))
-    })
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-    return () => observer.disconnect()
-  }, [])
-  return isDark
-}
 
 export function useHighlightedTokens(code: string, language: string): HLToken[][] | null {
   const [tokens, setTokens] = useState<HLToken[][] | null>(null)

@@ -1,13 +1,15 @@
-import { useState, type PointerEvent } from 'react'
+import { useState, useRef, useMemo, type PointerEvent } from 'react'
 import { Streamdown } from 'streamdown'
 import { Check, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
+  codePlugin,
   streamdownPlugins,
   streamdownControls,
   streamdownComponents,
   streamdownLinkSafety,
 } from './chat-shared'
+import { createStreamdownCodeComponent } from './CodeBlock'
 
 function CopyButton({ text, className }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false)
@@ -33,7 +35,17 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
 
 export function CopyableMarkdown({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
   const [isCodeBlockHovered, setIsCodeBlockHovered] = useState(false)
-  const merged = components ? { ...streamdownComponents, ...components } : streamdownComponents
+  const textRef = useRef(text)
+  textRef.current = text
+  const isStreamingRef = useRef(isStreaming)
+  isStreamingRef.current = isStreaming
+  const streamingCodeComponent = useMemo(
+    () => createStreamdownCodeComponent(codePlugin, { textRef, isStreamingRef }),
+    [],
+  )
+  const merged = components
+    ? { ...streamdownComponents, ...components, code: streamingCodeComponent }
+    : { ...streamdownComponents, code: streamingCodeComponent }
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     setIsCodeBlockHovered(Boolean((event.target as HTMLElement | null)?.closest('[data-chat-codeblock]')))

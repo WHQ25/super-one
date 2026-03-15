@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'child_process'
 import { createRequire } from 'module'
+import { is } from '@electron-toolkit/utils'
 import log from '../logger'
 
 const require = createRequire(import.meta.url)
@@ -73,4 +74,22 @@ export function getClaudeCliPath(): string | undefined {
   cachedPath = findSystemClaude() ?? resolveSdkCli() ?? ''
   log.info('[resolve-cli] resolved=%s platform=%s arch=%s', cachedPath || 'none', process.platform, process.arch)
   return cachedPath || undefined
+}
+
+export interface NodeRuntime {
+  executable?: string
+  env?: Record<string, string>
+}
+
+let cachedRuntime: NodeRuntime | undefined
+
+export function getNodeRuntime(): NodeRuntime {
+  if (cachedRuntime) return cachedRuntime
+  if (is.dev) {
+    cachedRuntime = {}
+    return cachedRuntime
+  }
+  cachedRuntime = { executable: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } }
+  log.info('[resolve-cli] packaged mode: using Electron as Node runtime executable=%s', process.execPath)
+  return cachedRuntime
 }

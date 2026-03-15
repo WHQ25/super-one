@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Bot, ChevronRight, Check, BookOpen, Wrench, ArrowUp, ArrowDown, MessageSquare, Sparkles } from 'lucide-react'
+import { Bot, ChevronRight, Check, Wrench, ArrowUp, ArrowDown, MessageSquare, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
 import { getToolDisplay, getToolVerb, parseToolInput } from './tool-display'
@@ -172,12 +172,10 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   }, [bashOutput?.finished, bashOutput?.outputPath, expanded, isRunning, outputFile, taskBlock.toolUseId])
 
   const resultText = jsonlResultText ?? (asyncOutputPath ? undefined : rawResultText)
-  const { toolCallCount, filesReadCount } = useMemo(() => {
-    let tools = 0, reads = 0
-    for (const b of childBlocks) {
-      if (b.type === 'tool_use') { tools++; if (b.toolName === 'Read') reads++ }
-    }
-    return { toolCallCount: tools, filesReadCount: reads }
+  const toolCallCount = useMemo(() => {
+    let count = 0
+    for (const b of childBlocks) { if (b.type === 'tool_use') count++ }
+    return count
   }, [childBlocks])
 
   return (
@@ -264,20 +262,13 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
             </>
           ) : (
             <>
-              {filesReadCount > 0 && (
-                <span className="inline-flex items-center gap-0.5">
-                  <BookOpen className="size-3" />
-                  {filesReadCount}
-                </span>
-              )}
-              {filesReadCount > 0 && toolCallCount > 0 && <span>·</span>}
               {toolCallCount > 0 && (
                 <span className="inline-flex items-center gap-0.5">
                   <Wrench className="size-3" />
                   {toolCallCount}
                 </span>
               )}
-              {hasTokens && (filesReadCount > 0 || toolCallCount > 0) && <span>·</span>}
+              {hasTokens && toolCallCount > 0 && <span>·</span>}
               <SubagentTokens input={tokens.input} output={tokens.output} />
             </>
           )}

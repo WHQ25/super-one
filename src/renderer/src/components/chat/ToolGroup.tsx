@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
 import { getToolVerb } from './tool-display'
@@ -26,15 +26,15 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70"
       >
-        <ChevronRight
-          className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-90')}
-        />
+        <BookOpenText className="size-3 shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate text-foreground">
           {hasStreamingTool && streamingTool?.type === 'tool_use'
             ? <>{getToolVerb(streamingTool.toolName)}…</>
             : summary}
         </span>
-        <span className="ml-auto shrink-0 text-muted-foreground">{toolUses.length} tool use</span>
+        <ChevronRight
+          className={cn('ml-auto size-3 shrink-0 transition-transform duration-200', expanded && 'rotate-90')}
+        />
       </button>
 
       {expanded && (

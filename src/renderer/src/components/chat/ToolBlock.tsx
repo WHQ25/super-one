@@ -10,7 +10,7 @@ import { useSourceControlStore } from '@/stores/source-control'
 import { ToolIcon } from './ToolIcon'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
-import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName } from './tool-display'
+import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, formatReadMeta } from './tool-display'
 import { codePlugin } from './chat-shared'
 import { useStallLevel, getStallColor, type StallLevel } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
@@ -185,6 +185,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
             <FileChip name={fileToolName} title={display.summary} filePath={fileToolPath} />
             {toolName === 'FileChange' && params.kind && (
               <span className="text-muted-foreground">{String(params.kind)}</span>
+            )}
+            {toolName === 'Read' && formatReadMeta(params) && (
+              <span className="text-muted-foreground">{formatReadMeta(params)}</span>
             )}
           </>
         ) : summary ? (

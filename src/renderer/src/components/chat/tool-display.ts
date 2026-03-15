@@ -53,8 +53,11 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
   switch (toolName) {
     case 'Bash':
       return { icon: 'terminal', summary: String(input.command ?? '') }
-    case 'Read':
-      return { icon: 'file-text', summary: sp(String(input.file_path ?? '')) }
+    case 'Read': {
+      const readPath = sp(String(input.file_path ?? ''))
+      const readMeta = formatReadMeta(input)
+      return { icon: 'file-text', summary: readMeta ? `${readPath} (${readMeta})` : readPath }
+    }
     case 'Edit':
       return { icon: 'file-edit', summary: sp(String(input.file_path ?? '')) }
     case 'FileChange': {
@@ -97,6 +100,16 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     default:
       return { icon: 'wrench', summary: '' }
   }
+}
+
+export function formatReadMeta(input: Record<string, unknown>): string {
+  if (input.pages != null) return `Page ${input.pages}`
+  const offset = input.offset != null ? Number(input.offset) : 0
+  const limit = input.limit != null ? Number(input.limit) : undefined
+  const start = offset || 1
+  if (limit != null) return `L${start}–${start + limit - 1}`
+  if (offset > 0) return `L${offset}+`
+  return ''
 }
 
 /** Parse a JSON string into a Record for tool display. */

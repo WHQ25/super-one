@@ -684,12 +684,35 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     case 'plan_approval':
       return { pendingPlanApproval: event.request }
 
-    case 'tool_input_delta':
-      // Skip state updates for streaming input deltas — the complete input arrives
-      // via the 'result' event (content_delta with full tool_use block) which replaces
-      // the streaming block entirely via applyDelta dedup. Updating state on every
-      // delta caused massive re-render overhead for large-input tools (Write/Edit).
+    case 'tool_input_delta': {
+      const targetMsg = session.messages.find((m) => m.id === event.messageId)
+      const targetBlock = targetMsg?.content.find(
+        (b) => b.type === 'tool_use' && b.toolUseId === event.toolUseId
+      )
+      window.app?.trace?.('widget.store', 'tool_input_delta', {
+        toolUseId: event.toolUseId,
+        toolName: targetBlock?.type === 'tool_use' ? targetBlock.toolName : null,
+        partialLen: event.partialJson.length,
+        matchesWidget: targetBlock?.type === 'tool_use' && targetBlock.toolName.endsWith('__show_widget'),
+      })
+      if (targetBlock?.type === 'tool_use' && targetBlock.toolName.endsWith('__show_widget')) {
+        return {
+          lastEventAt: Date.now(),
+          messages: session.messages.map((msg) => {
+            if (msg.id !== event.messageId) return msg
+            return {
+              ...msg,
+              content: msg.content.map((b) =>
+                b.type === 'tool_use' && b.toolUseId === event.toolUseId
+                  ? { ...b, input: b.input + event.partialJson }
+                  : b
+              ),
+            }
+          }),
+        }
+      }
       return { lastEventAt: Date.now() }
+    }
 
     case 'tool_progress':
       return {

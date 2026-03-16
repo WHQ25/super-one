@@ -15,6 +15,8 @@ import { codePlugin } from './chat-shared'
 import { useStallLevel, getStallColor, type StallLevel } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
 import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, tryPrettifyJson, parseQAPairs } from './tool-block-utils'
+import { WidgetBlock } from './WidgetBlock'
+import { parseWidgetResult, parsePartialWidgetInput } from '../../../../shared/generative-ui/types'
 
 /** Dev-only: comma-separated tool names to show raw debug UI. e.g. RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate */
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
@@ -145,6 +147,34 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   const displayName = mcpInfo
     ? <>{mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{mcpInfo.mcpToolName}</>
     : toolName
+
+  if (mcpInfo?.mcpToolName === 'read_guidelines') {
+    return (
+      <div className="tool-node my-0.5 rounded bg-muted/50">
+        <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
+          <ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />
+          <span className="font-medium text-foreground">
+            {isStreaming ? <>Reading widget guidelines…</> : 'Read widget guidelines'}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  if (mcpInfo?.mcpToolName === 'show_widget') {
+    const widgetData = result ? parseWidgetResult(result) : parsePartialWidgetInput(input)
+    if (widgetData) return <WidgetBlock data={widgetData} streaming={isStreaming} />
+    return (
+      <div className="tool-node my-0.5 rounded bg-muted/50">
+        <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
+          <ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />
+          <span className="font-medium text-foreground">
+            {isStreaming ? <>Generating widget…</> : 'Generate widget'}
+          </span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div

@@ -4,6 +4,10 @@ import type { MessageBridge } from './message-bridge'
 import log from '../logger'
 import { trace } from './event-trace'
 import { getNodeRuntime, resolveSdkCli } from './resolve-cli'
+import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
+
+const generativeUiServer = createGenerativeUiMcpServer()
+log.info('[claude-query] generativeUiServer created type=%s name=%s', generativeUiServer.type, generativeUiServer.name)
 export interface SessionQueryOptions {
   cwd: string
   model?: string
@@ -78,6 +82,7 @@ export function createSessionQuery(
       additionalDirectories: options.additionalDirectories,
       env: runtime.env || options.env ? { ...process.env, ...runtime.env, ...options.env } : undefined,
       stderr: (data: string) => log.warn('[claude-cli]', data.trimEnd()),
+      mcpServers: { 'widget': generativeUiServer },
     },
   })
 
@@ -573,6 +578,8 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               })
             } else if (event.delta?.type === 'input_json_delta' && event.delta.partial_json) {
               const toolUseId = activeToolBlocks.get(event.index) ?? ''
+              const toolName = toolIdToName.get(toolUseId) ?? ''
+              trace('widget.main', 'input_json_delta', { toolUseId, toolName, partialLen: event.delta.partial_json.length }, messageId)
               emit({
                 type: 'tool_input_delta',
                 messageId,

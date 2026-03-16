@@ -59,6 +59,11 @@ export function createCanUseTool(
       trackPlanFile(input.file_path)
     }
 
+
+    if (toolName.startsWith('mcp__widget__')) {
+      return { behavior: 'allow' as const, updatedInput: input, toolUseID: context.toolUseID }
+    }
+
     // AskUserQuestion — different flow: emit question, wait for answers
     if (toolName === 'AskUserQuestion') {
       return handleAskUserQuestion(input, context, pendingQuestions, emit)

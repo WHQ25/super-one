@@ -26,7 +26,7 @@ export function getToolVerb(toolName: string): string {
 
 /** Shared tool name → icon key + summary extraction for ToolBlock & PermissionPrompt. */
 
-export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'message-circle' | 'wrench' | 'plug' | 'clipboard-list' | 'bot'
+export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'message-circle' | 'wrench' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox'
 
 export interface ToolDisplay {
   icon: ToolIcon
@@ -93,6 +93,8 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     }
     case 'SandboxNetworkAccess':
       return { icon: 'globe', summary: String(input.host ?? '') }
+    case 'ToolSearch':
+      return { icon: 'toolbox', summary: String(input.query ?? '') }
     case 'EnterPlanMode':
       return { icon: 'wrench', summary: 'Entered plan mode' }
     case 'ExitPlanMode':

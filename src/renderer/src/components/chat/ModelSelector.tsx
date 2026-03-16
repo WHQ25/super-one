@@ -14,7 +14,7 @@ const EFFORT_LABELS: Record<EffortLevel, string> = {
   max: 'Max',
 }
 
-export function ModelSelector() {
+export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
   const [modelOpen, setModelOpen] = useState(false)
   const [effortOpen, setEffortOpen] = useState(false)
 
@@ -84,7 +84,7 @@ export function ModelSelector() {
               <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
             </button>
           </PopoverTrigger>
-          <PopoverContent align="start" side="top" className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1">
+          <PopoverContent align="start" side="top" className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
             <div className="px-2 py-1.5 text-xs text-muted-foreground">Select Model</div>
             {availableModels.map((model) => (
               <button
@@ -114,7 +114,7 @@ export function ModelSelector() {
                 <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
               </button>
             </PopoverTrigger>
-            <PopoverContent align="start" side="top" className="w-48 border-border bg-card p-1">
+            <PopoverContent align="start" side="top" className="w-48 border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
               <div className="px-2 py-1.5 text-xs text-muted-foreground">Thinking Effort</div>
               {effortLevels.map((level) => (
                 <button
@@ -154,7 +154,7 @@ export function ModelSelector() {
             <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" side="top" className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1">
+        <PopoverContent align="start" side="top" className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
           <div className="px-2 py-1.5 text-xs text-muted-foreground">Select Model</div>
           {codexModels.map((model) => (
             <button
@@ -187,7 +187,7 @@ export function ModelSelector() {
               <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
             </button>
           </PopoverTrigger>
-          <PopoverContent align="start" side="top" className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1">
+          <PopoverContent align="start" side="top" className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
             <div className="px-2 py-1.5 text-xs text-muted-foreground">Reasoning Effort</div>
             {codexReasoningEfforts.map((option) => (
               <button

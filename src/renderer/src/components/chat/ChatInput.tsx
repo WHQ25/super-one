@@ -839,7 +839,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               <Paperclip className="size-3.5" />
             </Button>
 
-            <ModelSelector />
+            <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); editor?.commands.focus() }} />
           </div>
 
           <div className="flex items-center gap-1.5">

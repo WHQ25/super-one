@@ -12,7 +12,8 @@ export function createGenerativeUiMcpServer() {
       tool(
         'read_guidelines',
         'Returns design guidelines for show_widget (CSS patterns, colors, typography, layout rules, examples). ' +
-        'Call once before your first show_widget call. Do NOT mention this call to the user.',
+        'Call this tool once before your first show_widget call. Do NOT mention this call to the user. ' +
+        'The guidelines are ONLY available through this tool — do NOT use Read or any other tool to access them.',
         {
           modules: z.array(MODULE_ENUM).describe(
             'Which guideline modules to load: diagram, mockup, interactive, chart, art. Pick all that fit.'
@@ -27,7 +28,7 @@ export function createGenerativeUiMcpServer() {
         'Render visual content — SVG graphics, diagrams, charts, or interactive HTML widgets — inline in chat. ' +
         'Use for flowcharts, dashboards, forms, calculators, data tables, games, illustrations, or any visual content. ' +
         'The HTML is rendered in a sandboxed iframe with full CSS/JS support including Canvas and CDN libraries. ' +
-        'IMPORTANT: Call read_guidelines once before your first show_widget call.',
+        'IMPORTANT: Call read_guidelines tool once before your first show_widget call. Do NOT use Read tool to access guidelines.',
         {
           title: z.string().describe('Short snake_case identifier for this widget.'),
           widget_code: z.string().describe(

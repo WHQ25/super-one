@@ -2,6 +2,7 @@ import { useRef, useState, useMemo, useLayoutEffect, useCallback } from 'react'
 import morphdom from 'morphdom'
 import { SVG_STYLES } from '../../../../shared/generative-ui/svg-styles'
 import type { WidgetData } from '../../../../shared/generative-ui/types'
+import { Download } from 'lucide-react'
 
 const THROTTLE_MS = 150
 
@@ -16,11 +17,13 @@ const SHADOW_STYLES = `*{box-sizing:border-box}
 @keyframes _pulse{0%,100%{opacity:.4}50%{opacity:.7}}
 ${SVG_STYLES.replace(/:root\s*\{/g, ':host {')}`
 
+const RESIZE_SCRIPT = `<script>new ResizeObserver(()=>{const h=document.body.offsetHeight;if(h>0)parent.postMessage({type:'widget-resize',height:h},'*')}).observe(document.body)</script>`
+
 function buildSrcdoc(code: string, isSVG: boolean): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<style>*{box-sizing:border-box}body{${bodyStyle(isSVG)};overflow:hidden}${SVG_STYLES}</style>
-</head><body>${code}</body></html>`
+<style>*{box-sizing:border-box}body{${bodyStyle(isSVG)}}${SVG_STYLES}</style>
+</head><body>${code}${RESIZE_SCRIPT}</body></html>`
 }
 
 function canvasToPlaceholder(_match: string, attrs: string): string {
@@ -130,9 +133,20 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
     try {
       const doc = iframeRef.current?.contentDocument
       if (!doc) return
-      const h = doc.documentElement.scrollHeight || doc.body.scrollHeight
+      const h = doc.body.offsetHeight || doc.documentElement.scrollHeight
       if (h > 0) setHeight(h)
     } catch {}
+  }, [])
+
+  useLayoutEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.source !== iframeRef.current?.contentWindow) return
+      if (e.data?.type === 'widget-resize' && typeof e.data.height === 'number' && e.data.height > 0) {
+        setHeight(e.data.height)
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
   }, [])
 
   const handleLoad = useCallback(() => {
@@ -166,6 +180,17 @@ interface WidgetBlockProps {
   messageStreaming?: boolean
 }
 
+function downloadWidget(srcdoc: string, title: string, e: { stopPropagation(): void }) {
+  e.stopPropagation()
+  const blob = new Blob([srcdoc], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${title}.html`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function WidgetBlock({ data, streaming, messageStreaming }: WidgetBlockProps) {
   const displayCode = useThrottledValue(data.widget_code, streaming ? THROTTLE_MS : 0)
   const finalSrcdoc = useMemo(() => buildSrcdoc(data.widget_code, data.isSVG), [data.widget_code, data.isSVG])
@@ -174,7 +199,7 @@ export function WidgetBlock({ data, streaming, messageStreaming }: WidgetBlockPr
   const showShadow = streaming || !iframeReady
 
   return (
-    <div className="my-1 w-full">
+    <div className="group/widget relative my-0.5 w-full">
       {showShadow && (
         <ShadowWidget html={displayCode} isSVG={data.isSVG} />
       )}
@@ -186,6 +211,20 @@ export function WidgetBlock({ data, streaming, messageStreaming }: WidgetBlockPr
           hidden={!iframeReady}
           onReady={() => setIframeReady(true)}
         />
+      )}
+      {messageComplete && iframeReady && (
+        <div className="absolute right-2 top-2 flex items-center gap-2 opacity-0 transition-opacity group-hover/widget:opacity-100">
+          <span className="text-xs text-muted-foreground/70">
+            {data.title.replace(/_/g, ' ')}
+          </span>
+          <button
+            onClick={(e) => downloadWidget(finalSrcdoc, data.title, e)}
+            className="text-muted-foreground/70 transition-colors hover:text-foreground"
+            title="Save as HTML"
+          >
+            <Download className="size-3.5" />
+          </button>
+        </div>
       )}
     </div>
   )

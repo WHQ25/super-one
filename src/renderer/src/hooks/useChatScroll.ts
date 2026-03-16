@@ -85,27 +85,6 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       if (isNearBottomRef.current && statusRef.current === 'streaming') {
         viewport.scrollTop = viewport.scrollHeight
         lastScrollTopRef.current = viewport.scrollTop
-        cancelAnimationFrame(rafId)
-        rafId = requestAnimationFrame(() => {
-          if (isNearBottomRef.current) {
-            viewport.scrollTop = viewport.scrollHeight
-            lastScrollTopRef.current = viewport.scrollTop
-          }
-        })
-      }
-    })
-    observer.observe(content)
-    return () => { observer.disconnect(); cancelAnimationFrame(rafId) }
-  }, [sessionId, messages.length > 0, scrollViewportRef])
-
-  useEffect(() => {
-    const viewport = scrollViewportRef.current
-    if (!viewport) return
-    let rafId = 0
-    const observer = new ResizeObserver(() => {
-      if (isNearBottomRef.current && statusRef.current === 'streaming') {
-        viewport.scrollTop = viewport.scrollHeight
-        lastScrollTopRef.current = viewport.scrollTop
         setShowScrollButton(false)
         cancelAnimationFrame(rafId)
         rafId = requestAnimationFrame(() => {
@@ -116,6 +95,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
         })
       }
     })
+    observer.observe(content)
     observer.observe(viewport)
     return () => { observer.disconnect(); cancelAnimationFrame(rafId) }
   }, [sessionId, messages.length > 0, scrollViewportRef])

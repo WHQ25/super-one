@@ -185,6 +185,11 @@ body {
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { scrollbar-width: none; }
 
+.chat-message-wrapper {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
+}
+
 /* =============================================
    Chat markdown styling (scoped to .chat-md)
    Uses Streamdown's data-streamdown attributes

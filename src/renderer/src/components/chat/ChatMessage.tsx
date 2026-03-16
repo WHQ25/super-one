@@ -1,4 +1,4 @@
-import type { ChatMessage as ChatMessageType, ContentBlock } from '../../../../shared/agent-types'
+import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus } from '../../../../shared/agent-types'
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { cn } from '@/lib/utils'
 import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X } from 'lucide-react'
@@ -21,6 +21,8 @@ import { ReasoningBlock } from './ReasoningBlock'
 
 interface ChatMessageProps {
   message: ChatMessageType
+  sessionStatus: AgentStatus
+  isLastAssistant: boolean
 }
 
 /** Tools whose consecutive calls can be collapsed into a summary group. */
@@ -383,12 +385,8 @@ export function RateLimitIndicator({
   )
 }
 
-export const ChatMessage = memo(function ChatMessage({ message }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant }: ChatMessageProps) {
   const isUser = message.role === 'user'
-  const { sessionStatus, isLastAssistant } = useActiveSession(useShallow((s) => ({
-    sessionStatus: s.status,
-    isLastAssistant: s.lastAssistantMessageId === message.id,
-  })))
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
   const isCodexMessage = !isUser && message.providerId === 'codex'
   const assistantCopyText = useMemo(() => {
@@ -528,13 +526,17 @@ function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 
 }
 
 const ZERO_TOKENS = { input: 0, output: 0 }
+const STATIC_FOOTER = { isCompacting: false, pendingApproval: false, streamingTokens: ZERO_TOKENS }
 
 function DurationFooter({ message, copyText, parentIsStreaming }: { message: ChatMessageType; copyText?: string; parentIsStreaming: boolean }) {
-  const { isCompacting, pendingApproval, streamingTokens: rawStreamingTokens } = useActiveSession(useShallow((s) => ({
-    isCompacting: s.isCompacting,
-    pendingApproval: parentIsStreaming && (s.pendingPermissions.length > 0 || !!s.pendingQuestion || !!s.pendingPlanApproval),
-    streamingTokens: parentIsStreaming && !s.isCompacting ? s.streamingTokens : ZERO_TOKENS,
-  })))
+  const { isCompacting, pendingApproval, streamingTokens: rawStreamingTokens } = useActiveSession(useShallow((s) => {
+    if (!parentIsStreaming) return STATIC_FOOTER
+    return {
+      isCompacting: s.isCompacting,
+      pendingApproval: s.pendingPermissions.length > 0 || !!s.pendingQuestion || !!s.pendingPlanApproval,
+      streamingTokens: s.isCompacting ? ZERO_TOKENS : s.streamingTokens,
+    }
+  }))
   const isStreaming = parentIsStreaming && !isCompacting
   const streamingTokens = rawStreamingTokens
   const frozenTokensRef = useRef(ZERO_TOKENS)

@@ -99,9 +99,12 @@ export function CopyableMarkdown({ text, isStreaming, components }: { text: stri
     () => createStreamdownCodeComponent(codePlugin, { textRef, isStreamingRef }),
     [],
   )
-  const merged = components
-    ? { ...streamdownComponents, ...components, code: streamingCodeComponent }
-    : { ...streamdownComponents, code: streamingCodeComponent }
+  const merged = useMemo(
+    () => components
+      ? { ...streamdownComponents, ...components, code: streamingCodeComponent }
+      : { ...streamdownComponents, code: streamingCodeComponent },
+    [components, streamingCodeComponent],
+  )
 
   const textSegments = useMemo(() => {
     const all = splitByCodeFences(text)

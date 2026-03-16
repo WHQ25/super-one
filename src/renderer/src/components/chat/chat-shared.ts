@@ -11,6 +11,7 @@ export const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dar
 export const codePluginLight = createCodePlugin({ themes: ['github-light', 'github-light'] })
 
 export const mathPlugin = createMathPlugin({ singleDollarTextMath: true })
+;(mathPlugin.rehypePlugin as [unknown, Record<string, unknown>])[1].strict = false
 
 /** Shared Streamdown plugins config. */
 export const streamdownPlugins = { code: codePlugin, math: mathPlugin }

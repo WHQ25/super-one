@@ -6,8 +6,6 @@ import { trace } from './event-trace'
 import { getNodeRuntime, resolveSdkCli } from './resolve-cli'
 import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
 
-const generativeUiServer = createGenerativeUiMcpServer()
-log.info('[claude-query] generativeUiServer created type=%s name=%s', generativeUiServer.type, generativeUiServer.name)
 export interface SessionQueryOptions {
   cwd: string
   model?: string
@@ -82,7 +80,7 @@ export function createSessionQuery(
       additionalDirectories: options.additionalDirectories,
       env: runtime.env || options.env ? { ...process.env, ...runtime.env, ...options.env } : undefined,
       stderr: (data: string) => log.warn('[claude-cli]', data.trimEnd()),
-      mcpServers: { 'widget': generativeUiServer },
+      mcpServers: { 'widget': createGenerativeUiMcpServer() },
     },
   })
 
@@ -267,6 +265,9 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           const sys = msg as any
           log.debug(`[iterateMessages] system message subtype=${sys.subtype} session_id=${sys.session_id ?? '(none)'}`)
           if (sys.subtype === 'init') {
+            const mcpNames = (sys.mcp_servers ?? []).map((s: any) => `${s.name}(${s.status})`).join(', ')
+            const widgetTools = (sys.tools ?? []).filter((t: string) => t.startsWith('mcp__widget'))
+            log.info(`[iterateMessages] init mcp_servers=[${mcpNames}] widget_tools=[${widgetTools}]`)
             if (sys.session_id) onSessionId?.(sys.session_id)
             emit({
               type: 'session_init',

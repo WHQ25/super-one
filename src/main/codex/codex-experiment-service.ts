@@ -6,6 +6,7 @@ import { basename, extname, join } from 'path'
 import { createInterface } from 'readline'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
+import { getNodeRuntime } from '../agent/resolve-cli'
 import { getActiveProviderRaw } from '../database'
 import {
   CODEX_PERMISSION_PRESETS,
@@ -1123,7 +1124,7 @@ export class CodexExperimentService {
           shell: process.platform === 'win32',
           windowsHide: process.platform === 'win32',
         })
-      : spawn(process.execPath, [codexScript, 'app-server', '--listen', 'stdio://'], {
+      : spawn(getNodeRuntime().executable ?? process.execPath, [codexScript, 'app-server', '--listen', 'stdio://'], {
           env,
           stdio: ['pipe', 'pipe', 'pipe'],
         })

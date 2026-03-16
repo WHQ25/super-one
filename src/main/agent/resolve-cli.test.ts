@@ -6,12 +6,14 @@ const {
   resolveMock,
   logInfoMock,
   logWarnMock,
+  existsSyncMock,
 } = vi.hoisted(() => ({
   execFileSyncMock: vi.fn(),
   spawnSyncMock: vi.fn(),
   resolveMock: vi.fn(),
   logInfoMock: vi.fn(),
   logWarnMock: vi.fn(),
+  existsSyncMock: vi.fn(() => false),
 }))
 
 vi.mock('child_process', () => ({
@@ -23,6 +25,14 @@ vi.mock('module', () => ({
   createRequire: () => ({
     resolve: resolveMock,
   }),
+}))
+
+vi.mock('node:fs', () => ({
+  existsSync: existsSyncMock,
+}))
+
+vi.mock('@electron-toolkit/utils', () => ({
+  is: { dev: true },
 }))
 
 vi.mock('../logger', () => ({

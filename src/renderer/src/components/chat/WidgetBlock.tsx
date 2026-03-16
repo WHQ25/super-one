@@ -2,7 +2,6 @@ import { useRef, useState, useMemo, useLayoutEffect, useCallback } from 'react'
 import morphdom from 'morphdom'
 import { SVG_STYLES } from '../../../../shared/generative-ui/svg-styles'
 import type { WidgetData } from '../../../../shared/generative-ui/types'
-import { useActiveSession } from '@/stores/chat'
 
 const THROTTLE_MS = 150
 
@@ -164,14 +163,14 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
 interface WidgetBlockProps {
   data: WidgetData
   streaming?: boolean
+  messageStreaming?: boolean
 }
 
-export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
+export function WidgetBlock({ data, streaming, messageStreaming }: WidgetBlockProps) {
   const displayCode = useThrottledValue(data.widget_code, streaming ? THROTTLE_MS : 0)
   const finalSrcdoc = useMemo(() => buildSrcdoc(data.widget_code, data.isSVG), [data.widget_code, data.isSVG])
   const [iframeReady, setIframeReady] = useState(false)
-  const sessionStatus = useActiveSession((s) => s.status)
-  const messageComplete = !streaming && sessionStatus === 'idle'
+  const messageComplete = !streaming && !messageStreaming
   const showShadow = streaming || !iframeReady
 
   return (

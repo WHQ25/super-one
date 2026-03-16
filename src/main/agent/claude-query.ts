@@ -76,7 +76,7 @@ export function createSessionQuery(
       sessionId: options.sessionId,
       abortController: options.abortController,
       additionalDirectories: options.additionalDirectories,
-      env: { ...runtime.env, ...options.env },
+      env: runtime.env || options.env ? { ...process.env, ...runtime.env, ...options.env } : undefined,
       stderr: (data: string) => log.warn('[claude-cli]', data.trimEnd()),
     },
   })

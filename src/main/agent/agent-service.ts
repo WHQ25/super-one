@@ -52,7 +52,7 @@ export class AgentService {
   private createEventEmitter(projectPath: string): (event: AgentEvent) => void {
     return (event: AgentEvent) => {
       const eventWithPath = { ...event, projectPath }
-      this.mainWindow?.webContents.send(AgentIpcChannels.EVENT, eventWithPath)
+      this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.EVENT, eventWithPath)
       this.eventSubscribers.forEach((cb) => cb(eventWithPath))
 
       // Re-key pending background agents when session_init provides the real session ID
@@ -550,7 +550,7 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.SESSIONS_CREATE, (_event, projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string, title?: string) => {
       try {
         createSession(projectPath, claudeSessionId, title, isWorktree, gitBranch, worktreePath)
-        this.mainWindow?.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+        this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
       } catch { /* ignore duplicate */ }
     })
 
@@ -564,13 +564,13 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, (_event, claudeSessionId: string) => {
       dbDeleteSession(claudeSessionId)
-      this.mainWindow?.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+      this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE_OLDER, (_event, folderPath: string, cutoffDate: string) => {
       const deleted = dbDeleteSessionsOlderThan(folderPath, cutoffDate)
       if (deleted.length > 0) {
-        this.mainWindow?.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+        this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
       }
       return deleted
     })

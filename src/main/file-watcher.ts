@@ -15,12 +15,12 @@ const GIT_HEAD = /(?:^|[/\\])\.git[/\\]HEAD$/
 const GIT_INDEX = /(?:^|[/\\])\.git[/\\]index(?:\.lock)?$/
 
 function send(): void {
-  if (!win || !currentFolder) return
+  if (!win || win.isDestroyed() || !currentFolder) return
   win.webContents.send(AgentIpcChannels.FILE_CHANGE_EVENT, { folderPath: currentFolder })
 }
 
 function sendGitHeadChange(): void {
-  if (!win || !currentFolder) return
+  if (!win || win.isDestroyed() || !currentFolder) return
   win.webContents.send(AgentIpcChannels.GIT_HEAD_CHANGE, { folderPath: currentFolder })
 }
 

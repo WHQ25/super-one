@@ -22,7 +22,7 @@ function safeCheckForUpdates(): Promise<unknown> {
 }
 
 function send(event: UpdateEvent): void {
-  win?.webContents.send(AgentIpcChannels.UPDATER_EVENT, event)
+  if (win && !win.isDestroyed()) win.webContents.send(AgentIpcChannels.UPDATER_EVENT, event)
   updaterState = event.type
   const prevLabel = menuLabel
   const prevEnabled = menuEnabled

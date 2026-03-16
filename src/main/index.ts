@@ -29,7 +29,7 @@ import {
   type GitFileStatus,
   type FileOpResult,
 } from '../shared/agent-types'
-import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange } from './updater'
+import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, disposeUpdater } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { parseGitStatusOutput, parseGitStatusFiles } from './git-status-utils'
@@ -61,27 +61,27 @@ const agentService = new AgentService()
 const codexService = new CodexExperimentService()
 const remoteCallbacks: RemoteControlCallbacks = {
   onCommand: (command) => {
-    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_COMMAND, command)
+    safeSend(AgentIpcChannels.REMOTE_COMMAND, command)
   },
   onClientRegistered: ({ deviceName, deviceId }) => {
     upsertPairedDevice(deviceId, deviceName)
-    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true })
+    safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true })
   },
   onClientDisconnected: ({ deviceId }) => {
-    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
+    safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
   },
   onPairingCodeReceived: ({ code, deviceName }) => {
-    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_PAIRING_CODE_RECEIVED, { code, deviceName })
+    safeSend(AgentIpcChannels.REMOTE_PAIRING_CODE_RECEIVED, { code, deviceName })
   },
   onPairingExpired: () => {
-    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_PAIRING_EXPIRED)
+    safeSend(AgentIpcChannels.REMOTE_PAIRING_EXPIRED)
   },
   onPairingConfirmed: ({ mobileDeviceId, deviceName }) => {
     upsertPairedDevice(mobileDeviceId, deviceName)
-    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: mobileDeviceId, online: false })
+    safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: mobileDeviceId, online: false })
   },
   onPairingAlreadyPaired: ({ deviceName }) => {
-    mainWindow?.webContents.send(AgentIpcChannels.REMOTE_PAIRING_ALREADY_PAIRED, { deviceName })
+    safeSend(AgentIpcChannels.REMOTE_PAIRING_ALREADY_PAIRED, { deviceName })
   },
   isPairedDevice: (deviceId) => isPairedDevice(deviceId),
 }
@@ -93,8 +93,12 @@ function getMainWindow(): BrowserWindow {
   return mainWindow
 }
 
+function safeSend(channel: string, ...args: unknown[]): void {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args)
+}
+
 function emitAgentEvent(event: AgentEvent): void {
-  mainWindow?.webContents.send(AgentIpcChannels.EVENT, event)
+  safeSend(AgentIpcChannels.EVENT, event)
 }
 
 const activeCodexEventTargets = new Map<string, {
@@ -226,10 +230,10 @@ function createWindow(): void {
 
   // Fullscreen state (window-specific, re-binds per window)
   mainWindow.on('enter-full-screen', () => {
-    mainWindow?.webContents.send('fullscreen-changed', true)
+    safeSend('fullscreen-changed', true)
   })
   mainWindow.on('leave-full-screen', () => {
-    mainWindow?.webContents.send('fullscreen-changed', false)
+    safeSend('fullscreen-changed', false)
   })
 
   if (is.dev) {
@@ -968,14 +972,14 @@ function registerIpcHandlers(): void {
       : spawn('bash', ['-c', installCmd], { env: colorEnv })
 
     child.stdout.on('data', (data: Buffer) => {
-      win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+      !win.isDestroyed() && win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_output',
         data: data.toString(),
       })
     })
 
     child.stderr.on('data', (data: Buffer) => {
-      win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+      !win.isDestroyed() && win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_output',
         data: data.toString(),
       })
@@ -983,14 +987,14 @@ function registerIpcHandlers(): void {
 
     child.on('close', (code) => {
       fixPath()
-      win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+      !win.isDestroyed() && win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_complete',
         code: code ?? 1,
       })
     })
 
     child.on('error', (err) => {
-      win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
+      !win.isDestroyed() && win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_error',
         error: err.message,
       })
@@ -1311,6 +1315,7 @@ let quitting = false
 function performQuit(): void {
   quitting = true
   stopWatching()
+  disposeUpdater()
   agentService
     .dispose()
     .catch(() => {})

@@ -22,6 +22,10 @@ vi.mock('../database', () => ({
   getActiveProviderRaw: vi.fn(() => null),
 }))
 
+vi.mock('../agent/resolve-cli', () => ({
+  getNodeRuntime: vi.fn(() => ({})),
+}))
+
 const { CodexExperimentService } = await import('./codex-experiment-service')
 
 function createSession(projectPath: string, runningController: AbortController | { abort: () => void } | null) {
@@ -131,5 +135,56 @@ describe('CodexExperimentService auth state', () => {
     expect((service as any).sessions.get('sid-project').runningController).toBeNull()
     expect(status.mode).toBe('chatgpt')
     expect(status.isRunning).toBe(false)
+  })
+})
+
+describe('CodexExperimentService run', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('requests concise reasoning summary when reasoning effort is set', async () => {
+    const service = new CodexExperimentService()
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({ turn: { id: 'turn-1' } }),
+    }
+
+    vi.spyOn(service as any, 'withAppServerConnection').mockImplementation(async (_auth, _signal, fn) => fn(mockConnection))
+    vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-1')
+    vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-1', usage: null, items: [] })
+
+    await service.run('sid-1', '/project', {
+      prompt: 'Test prompt',
+      model: 'gpt-5.4',
+      reasoningEffort: 'high',
+      permissionPreset: 'default',
+    })
+
+    expect(mockConnection.request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+      threadId: 'thread-1',
+      model: 'gpt-5.4',
+      effort: 'high',
+      summary: 'concise',
+    }))
+  })
+
+  it('does not request reasoning summary when reasoning effort is absent', async () => {
+    const service = new CodexExperimentService()
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({ turn: { id: 'turn-2' } }),
+    }
+
+    vi.spyOn(service as any, 'withAppServerConnection').mockImplementation(async (_auth, _signal, fn) => fn(mockConnection))
+    vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-2')
+    vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-2', usage: null, items: [] })
+
+    await service.run('sid-2', '/project', {
+      prompt: 'Test prompt',
+      model: 'gpt-5.4',
+      permissionPreset: 'default',
+    })
+
+    expect(mockConnection.request).toHaveBeenCalledWith('turn/start', expect.any(Object))
+    expect(mockConnection.request.mock.calls[0][1]).not.toHaveProperty('summary')
   })
 })

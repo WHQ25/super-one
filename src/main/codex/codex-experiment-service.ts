@@ -1951,6 +1951,7 @@ export class CodexExperimentService {
             ],
             model: session.model,
             effort: session.modelReasoningEffort,
+            ...(session.modelReasoningEffort ? { summary: 'concise' } : {}),
             approvalPolicy: permissionProfile.approvalPolicy,
             sandboxPolicy: this.buildTurnSandboxPolicy(effectiveCwd, permissionProfile),
             ...(collaborationMode ? { collaborationMode } : {}),

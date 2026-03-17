@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '../../../../shared/agent-types'
 import { CodexTurnView } from './CodexTurnView'
@@ -11,6 +11,7 @@ vi.mock('./CopyableMarkdown', () => ({
 
 vi.mock('./ToolBlock', () => ({
   ToolBlock: ({ toolName }: { toolName: string }) => <div>{toolName}</div>,
+  FileChip: ({ name }: { name: string }) => <div>{name}</div>,
 }))
 
 function createMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -51,10 +52,11 @@ describe('CodexTurnView', () => {
     expect(screen.queryByText('Thinking')).toBeNull()
   })
 
-  it('shows codex reasoning as a status indicator only', () => {
+  it('collapses codex reasoning summary content after completion by default', () => {
     render(
       <CodexTurnView
         message={createMessage({
+          status: 'complete',
           metadata: {
             codex: {
               threadId: 'thread-1',
@@ -69,12 +71,16 @@ describe('CodexTurnView', () => {
             },
           },
         })}
-        isStreaming
+        isStreaming={false}
       />,
     )
 
-    expect(screen.getByText('Thinking...')).toBeTruthy()
+    expect(screen.getByText('Thought')).toBeTruthy()
     expect(screen.queryByText('working')).toBeNull()
+
+    fireEvent.click(screen.getByText('Thought'))
+
+    expect(screen.getByText('working')).toBeTruthy()
   })
 
   it('renders recent codex text immediately when not streaming', () => {
@@ -102,6 +108,115 @@ describe('CodexTurnView', () => {
     )
 
     expect(screen.getByText('done')).toBeTruthy()
+  })
+
+  it('does not auto expand a streaming read block', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'cmd-1',
+                  type: 'command_execution',
+                  command: 'cat src/file.ts',
+                  aggregatedOutput: 'file content',
+                  status: 'in_progress',
+                  commandActions: [{ type: 'read', path: '/test/src/file.ts' }],
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming
+      />,
+    )
+
+    expect(screen.getByText('Reading…')).toBeTruthy()
+    expect(screen.queryByText(/cat src\/file\.ts/)).toBeNull()
+
+    fireEvent.click(screen.getByText('Reading…'))
+
+    expect(screen.getByText(/cat src\/file\.ts/)).toBeTruthy()
+  })
+
+  it('auto expands grouped streaming read and search blocks and keeps them open after completion', () => {
+    const message = createMessage({
+      metadata: {
+        codex: {
+          threadId: 'thread-1',
+          usage: null,
+          items: [
+            {
+              id: 'cmd-1',
+              type: 'command_execution',
+              command: 'cat src/file.ts',
+              aggregatedOutput: 'file content',
+              status: 'in_progress',
+              commandActions: [{ type: 'read', path: '/test/src/file.ts' }],
+            },
+            {
+              id: 'cmd-2',
+              type: 'command_execution',
+              command: 'rg hello src',
+              aggregatedOutput: 'src/file.ts:1:hello',
+              status: 'in_progress',
+              commandActions: [{ type: 'search', query: 'hello', path: '/test/src' }],
+            },
+          ],
+        },
+      },
+    })
+    const { rerender } = render(
+      <CodexTurnView
+        message={message}
+        isStreaming
+      />,
+    )
+
+    expect(screen.getByText('hello in /test/src')).toBeTruthy()
+    expect(screen.getByText('file.ts')).toBeTruthy()
+
+    rerender(
+      <CodexTurnView
+        message={createMessage({
+          ...message,
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'cmd-1',
+                  type: 'command_execution',
+                  command: 'cat src/file.ts',
+                  aggregatedOutput: 'file content',
+                  status: 'completed',
+                  commandActions: [{ type: 'read', path: '/test/src/file.ts' }],
+                },
+                {
+                  id: 'cmd-2',
+                  type: 'command_execution',
+                  command: 'rg hello src',
+                  aggregatedOutput: 'src/file.ts:1:hello',
+                  status: 'completed',
+                  commandActions: [{ type: 'search', query: 'hello', path: '/test/src' }],
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+      />,
+    )
+
+    expect(screen.getByText('Read 1 file, searched 1 code')).toBeTruthy()
+    expect(screen.getByText('hello in /test/src')).toBeTruthy()
+    expect(screen.getByText('file.ts')).toBeTruthy()
   })
 
   it('renders plan item as Plan block, not as reasoning', () => {

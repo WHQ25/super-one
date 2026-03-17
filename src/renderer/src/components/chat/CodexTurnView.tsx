@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, CodexThreadItem } from '../../../../shared/agent-types'
 import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -35,7 +35,11 @@ function generateCommandGroupSummary(items: CodexCommandExecutionItem[]): string
 function CodexCommandGroup({ items, isStreaming }: { items: CodexCommandExecutionItem[]; isStreaming: boolean }) {
   const hasRunning = items.some((item) => isStreaming && item.status === 'in_progress')
   const runningItem = hasRunning ? items.find((item) => item.status === 'in_progress') : null
-  const [expanded, setExpanded] = useState(hasRunning)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    if (hasRunning) setExpanded(true)
+  }, [hasRunning])
 
   return (
     <div className="tool-group my-1">
@@ -56,11 +60,6 @@ function CodexCommandGroup({ items, isStreaming }: { items: CodexCommandExecutio
           {items.map((item, i) => (
             <CodexCommandBlock key={`${item.id}-${i}`} item={item} isStreaming={isStreaming} />
           ))}
-        </div>
-      )}
-      {!expanded && runningItem && (
-        <div className="mt-0.5">
-          <CodexCommandBlock item={runningItem} isStreaming={isStreaming} />
         </div>
       )}
     </div>

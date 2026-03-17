@@ -101,6 +101,7 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
   const homedir = useActiveSession((s) => s.homedir)
   const display = getCommandDisplay(item, cwd, homedir)
   const action = item.commandActions?.[0]
+  const autoExpandOnRun = action?.type !== 'read' && action?.type !== 'search'
   const realRunning = item.status === 'in_progress'
   const [showRunning, setShowRunning] = useState(realRunning)
 
@@ -117,8 +118,8 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
   const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
-    setExpanded(isRunning)
-  }, [isRunning])
+    if (autoExpandOnRun) setExpanded(isRunning)
+  }, [autoExpandOnRun, isRunning])
   const output = `${item.aggregatedOutput ?? ''}${item.exitCode !== undefined ? `\n\nExit code ${item.exitCode}` : ''}`.trim()
 
   return (
@@ -278,7 +279,11 @@ export function renderCodexItem(
 
     case 'reasoning':
       return (
-        <ReasoningBlock key={`${item.id}-${index}`} text={item.text} blockDone={!isStreaming || !!nextItem} showContent={false} />
+        <ReasoningBlock
+          key={`${item.id}-${index}`}
+          text={item.text}
+          blockDone={!isStreaming || !!nextItem}
+        />
       )
 
     case 'plan':

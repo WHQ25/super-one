@@ -1213,7 +1213,77 @@ describe('codex steer routing', () => {
     expect(lastMessage?.providerId).toBe('codex')
     expect(lastMessage?.status).toBe('streaming')
     expect(lastMessage?.id).toBe(session.activeCodexMessageId)
+    expect(session.lastAssistantMessageId).toBe(lastMessage?.id)
     expect(mockWindowApp.codexSteer).toHaveBeenCalledWith(codexSid, 'steer follow-up', lastMessage?.id)
+  })
+})
+
+describe('codex item streaming behavior', () => {
+  it('keeps reasoning visible after non-reasoning codex items arrive', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [DRAFT_SESSION_ID]: {
+              ...proj._sessions[DRAFT_SESSION_ID],
+              status: 'streaming',
+              messages: [
+                {
+                  id: 'codex-msg',
+                  role: 'assistant',
+                  status: 'streaming',
+                  content: [],
+                  createdAt: '',
+                  providerId: 'codex',
+                  metadata: {
+                    codex: {
+                      threadId: 'thread-1',
+                      usage: null,
+                      items: [],
+                    },
+                  },
+                },
+              ] as never[],
+            },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'codex_item_delta',
+      messageId: 'codex-msg',
+      phase: 'updated',
+      item: { id: 'reason-1', type: 'reasoning', text: 'Thinking' },
+    }))
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'codex_item_delta',
+      messageId: 'codex-msg',
+      phase: 'completed',
+      item: { id: 'reason-1', type: 'reasoning', text: 'Thinking' },
+    }))
+
+    let items = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].messages[0].metadata?.codex?.items ?? []
+    expect(items).toEqual([{ id: 'reason-1', type: 'reasoning', text: 'Thinking' }])
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'codex_item_delta',
+      messageId: 'codex-msg',
+      phase: 'started',
+      item: { id: 'cmd-1', type: 'command_execution', command: 'ls', aggregatedOutput: '', status: 'in_progress' },
+    }))
+
+    items = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].messages[0].metadata?.codex?.items ?? []
+    expect(items).toEqual([
+      { id: 'reason-1', type: 'reasoning', text: 'Thinking' },
+      { id: 'cmd-1', type: 'command_execution', command: 'ls', aggregatedOutput: '', status: 'in_progress' },
+    ])
   })
 })
 
@@ -1725,7 +1795,15 @@ describe('codex run session isolation', () => {
       },
     }))
 
-    resolveCodexRun({ threadId: 'thread-iso', finalResponse: 'isolation ok', usage: null, items: [] })
+    resolveCodexRun({
+      threadId: 'thread-iso',
+      finalResponse: 'isolation ok',
+      usage: null,
+      items: [
+        { id: 'reason-1', type: 'reasoning', text: 'summary kept' },
+        { id: 'agent-1', type: 'agent_message', text: 'isolation ok' },
+      ],
+    })
     await sendPromise
 
     const after = useChatStore.getState().projectSessions['/test']
@@ -1735,6 +1813,10 @@ describe('codex run session isolation', () => {
     const assistantMsg = codexSession.messages.find((m) => m.role === 'assistant')
     expect(assistantMsg?.status).toBe('complete')
     expect(assistantMsg?.content[0]).toEqual({ type: 'text', text: 'isolation ok' })
+    expect(assistantMsg?.metadata?.codex?.items).toEqual([
+      { id: 'reason-1', type: 'reasoning', text: 'summary kept' },
+      { id: 'agent-1', type: 'agent_message', text: 'isolation ok' },
+    ])
     expect(codexSession.status).toBe('idle')
 
     const sesB = after._sessions['ses-B']

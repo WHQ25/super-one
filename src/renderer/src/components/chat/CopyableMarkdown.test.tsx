@@ -106,39 +106,6 @@ describe('CopyableMarkdown', () => {
     expect(container.querySelector('button')).toBeNull()
   })
 
-  it('copies markdown text when clicking non-codeblock content', () => {
-    render(
-      <CopyableMarkdown text={'before\n```ts\nconst x = 1\n```\nafter'} isStreaming={false} />,
-    )
-
-    vi.mocked(navigator.clipboard.writeText).mockClear()
-    fireEvent.click(screen.getByText('text after'))
-
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('after')
-  })
-
-  it('does not copy when clicking a code block', () => {
-    render(
-      <CopyableMarkdown text={'```ts\nconst x = 1\n```'} isStreaming={false} />,
-    )
-
-    vi.mocked(navigator.clipboard.writeText).mockClear()
-    fireEvent.click(screen.getByText('code block'))
-
-    expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
-  })
-
-  it('does not copy while streaming', () => {
-    render(
-      <CopyableMarkdown text="some text" isStreaming={true} />,
-    )
-
-    vi.mocked(navigator.clipboard.writeText).mockClear()
-    fireEvent.click(screen.getByText('some text'))
-
-    expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
-  })
-
   it('does not show copy button while streaming', () => {
     const { container } = render(
       <CopyableMarkdown text="some text" isStreaming={true} />,

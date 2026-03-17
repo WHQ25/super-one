@@ -135,17 +135,6 @@ export function CopyableMarkdown({ text, isStreaming, components }: { text: stri
     if (info) copySegment(info.textSegmentIndex, info.top)
   }, [copySegment])
 
-  const handleClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
-    if (isStreaming || !text) return
-    if (!wrapperRef.current) return
-    const target = event.target as HTMLElement
-    if (target.closest('[data-chat-codeblock]') || target.closest('a') || target.closest('button')) return
-    if (window.getSelection()?.toString()) return
-    const info = findHoverInfo(target, wrapperRef.current)
-    if (!info) return
-    copySegment(info.textSegmentIndex, info.top)
-  }, [isStreaming, text, copySegment])
-
   const showIndicator = !isStreaming && (hovered || copied)
 
   return (
@@ -154,7 +143,6 @@ export function CopyableMarkdown({ text, isStreaming, components }: { text: stri
       className="group/copy relative"
       onPointerLeave={() => { if (!copied) setHovered(false) }}
       onPointerMove={handlePointerMove}
-      onClick={handleClick}
     >
       <Streamdown
         className="chat-md"

@@ -425,10 +425,9 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
           className={cn(
             'min-w-0 text-sm',
             isUser
-              ? 'cursor-pointer rounded-xl bg-secondary px-3 py-2 text-secondary-foreground break-all'
+              ? 'rounded-xl bg-secondary px-3 py-2 text-secondary-foreground break-all'
               : 'assistant-reply w-full text-foreground'
           )}
-          onClick={isUser && userText ? () => copyUserText(userText) : undefined}
         >
           {isUser
             ? <>

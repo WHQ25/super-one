@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Plus, Sun, Moon, Settings, PanelLeftDashed, Folder, FolderOpen, FolderClosed, FolderX, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History, EyeOff } from 'lucide-react'
+import { Plus, Settings, PanelLeftDashed, Folder, FolderOpen, FolderClosed, FolderX, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
@@ -30,7 +30,7 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject, type SidebarTab } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
-import { useTheme } from '@/hooks/useTheme'
+
 import { cn } from '@/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -75,7 +75,6 @@ function isLiveSession(
 const MAX_SESSIONS = 10
 
 export function AppSidebar() {
-  const theme = useTheme()
   const { setShowSidebar, navigateTo, selectAndOpenFolder, openFolder, removeRecentFolder, setSidebarTab } = useAppStore(useShallow((s) => ({ setShowSidebar: s.setShowSidebar, navigateTo: s.navigateTo, selectAndOpenFolder: s.selectAndOpenFolder, openFolder: s.openFolder, removeRecentFolder: s.removeRecentFolder, setSidebarTab: s.setSidebarTab })))
   const sidebarTab = useAppStore((s) => s.sidebarTab)
   const currentFolder = useAppStore((s) => s.currentFolder)
@@ -632,19 +631,13 @@ export function AppSidebar() {
       </div>
       </div>
 
-      {/* Footer — settings, theme */}
+      {/* Footer — settings */}
       <div className="flex items-center gap-1 px-3 py-2">
         <button
           onClick={() => navigateTo('settings')}
           className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <Settings className="size-3.5" />
-        </button>
-        <button
-          onClick={theme.toggle}
-          className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        >
-          {theme.dark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
         </button>
       </div>
 

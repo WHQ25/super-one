@@ -10,7 +10,7 @@ const THROTTLE_MS = 150
 function bodyStyle(isSVG: boolean): string {
   return isSVG
     ? 'margin:0;display:flex;align-items:center;justify-content:center;min-height:100%;background:transparent;color:var(--color-text-primary);'
-    : 'margin:0;padding:1rem;font-family:system-ui,-apple-system,sans-serif;background:transparent;color:var(--color-text-primary);'
+    : 'margin:0;font-family:system-ui,-apple-system,sans-serif;background:transparent;color:var(--color-text-primary);'
 }
 
 const SHADOW_STYLES = `*{box-sizing:border-box}
@@ -51,8 +51,8 @@ function canvasToPlaceholder(_match: string, attrs: string): string {
   const wAttr = attrs.match(/width\s*=\s*["']?(\d+)/i)?.[1]
   const hAttr = attrs.match(/height\s*=\s*["']?(\d+)/i)?.[1]
   let sizeStyle = ''
-  if (wAttr && !existingStyle.includes('width')) sizeStyle += `width:${wAttr}px;`
-  if (hAttr && !existingStyle.includes('height')) sizeStyle += `height:${hAttr}px;`
+  if (!existingStyle.includes('width')) sizeStyle += wAttr ? `width:${wAttr}px;` : 'width:100%;'
+  if (!existingStyle.includes('height')) sizeStyle += hAttr ? `height:${hAttr}px;` : 'height:100%;'
   const placeholderStyle = 'background:var(--color-background-secondary);border-radius:var(--border-radius-md,8px);animation:_pulse 2s ease-in-out infinite;'
   const finalStyle = `${existingStyle};${sizeStyle}${placeholderStyle}`
   const idAttr = id ? ` id="${id}"` : ''
@@ -171,7 +171,7 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
           if (typeof data.height === 'number' && data.height > 0) setHeight(data.height)
           break
         case 'widget-sendPrompt':
-          if (typeof data.text === 'string') useChatStore.getState().sendMessage(data.text)
+          if (typeof data.text === 'string') useChatStore.getState().setDraftText(data.text)
           break
         case 'widget-openLink':
           if (typeof data.url === 'string') window.open(data.url, '_blank')
@@ -244,34 +244,38 @@ export function WidgetBlock({ data, streaming, messageStreaming }: WidgetBlockPr
 
   const showShadow = streaming || !iframeReady
 
+  const displayTitle = data.title.replace(/_/g, ' ')
+
   return (
-    <div className="group/widget relative my-0.5 w-full">
-      {showShadow && (
-        <ShadowWidget html={displayCode} isSVG={data.isSVG} />
-      )}
-      {mountIframe && (
-        <AutoIframe
-          srcdoc={finalSrcdoc}
-          title={data.title.replace(/_/g, ' ')}
-          fallbackHeight={data.height}
-          hidden={!iframeReady}
-          onReady={() => setIframeReady(true)}
-        />
-      )}
-      {mountIframe && iframeReady && (
-        <div className="absolute right-2 top-2 flex items-center gap-2 opacity-0 transition-opacity group-hover/widget:opacity-100">
-          <span className="text-xs text-muted-foreground/70">
-            {data.title.replace(/_/g, ' ')}
-          </span>
+    <div className="group/widget my-0.5 w-full">
+      <div className="flex h-5 items-center justify-end gap-1.5 px-1 opacity-0 transition-opacity group-hover/widget:opacity-100">
+        <span className="text-xs text-muted-foreground/70">
+          {displayTitle}
+        </span>
+        {mountIframe && iframeReady && (
           <button
-            onClick={(e) => downloadWidget(finalSrcdoc, data.title, e)}
+            onClick={(e) => downloadWidget(finalSrcdoc, displayTitle, e)}
             className="text-muted-foreground/70 transition-colors hover:text-foreground"
             title="Save as HTML"
           >
             <Download className="size-3.5" />
           </button>
-        </div>
-      )}
+        )}
+      </div>
+      <div className="relative">
+        {showShadow && (
+          <ShadowWidget html={displayCode} isSVG={data.isSVG} />
+        )}
+        {mountIframe && (
+          <AutoIframe
+            srcdoc={finalSrcdoc}
+            title={displayTitle}
+            fallbackHeight={data.height}
+            hidden={!iframeReady}
+            onReady={() => setIframeReady(true)}
+          />
+        )}
+      </div>
     </div>
   )
 }

@@ -36,6 +36,7 @@ Output streams token-by-token. Structure code so useful content appears early.
 - **Icon sizing**: When using emoji or inline SVG icons, explicitly set `font-size: 16px` for emoji or `width: 16px; height: 16px` for SVG icons. Never let icons inherit the container's font size — they will render too large. For larger decorative icons, use 24px max.
 - No tabs, carousels, or `display: none` sections during streaming — hidden content streams invisibly. Show all content stacked vertically. (Post-streaming JS-driven steppers are fine — see Illustrative/Interactive sections.)
 - No nested scrolling — auto-fit height.
+- **Canvas elements** must be wrapped in a `<div>` with explicit `height` (e.g. `height: 300px`) and `position: relative`. Never set width/height on `<canvas>` itself — size the wrapper, let the library fill it. During streaming, canvas is replaced by an animated placeholder that inherits the wrapper's dimensions.
 - Scripts execute after streaming — load libraries via `<script src="https://cdnjs.cloudflare.com/ajax/libs/...">` (UMD globals), then use the global in a plain `<script>` that follows.
 - **CDN allowlist (CSP-enforced)**: external resources may ONLY load from `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, `unpkg.com`. All other origins are blocked by the sandbox — the request silently fails.
 

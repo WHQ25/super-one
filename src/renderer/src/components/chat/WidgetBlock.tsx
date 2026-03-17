@@ -1,40 +1,63 @@
-import { useRef, useState, useMemo, useLayoutEffect, useCallback } from 'react'
+import { useRef, useState, useMemo, useLayoutEffect, useEffect, useCallback } from 'react'
 import morphdom from 'morphdom'
 import { SVG_STYLES } from '../../../../shared/generative-ui/svg-styles'
 import type { WidgetData } from '../../../../shared/generative-ui/types'
 import { Download } from 'lucide-react'
+import { useChatStore } from '@/stores/chat'
 
 const THROTTLE_MS = 150
 
 function bodyStyle(isSVG: boolean): string {
   return isSVG
-    ? 'margin:0;display:flex;align-items:center;justify-content:center;min-height:100%;background:transparent;color:#e0e0e0;'
-    : 'margin:0;padding:1rem;font-family:system-ui,-apple-system,sans-serif;background:transparent;color:#e0e0e0;'
+    ? 'margin:0;display:flex;align-items:center;justify-content:center;min-height:100%;background:transparent;color:var(--color-text-primary);'
+    : 'margin:0;padding:1rem;font-family:system-ui,-apple-system,sans-serif;background:transparent;color:var(--color-text-primary);'
 }
 
 const SHADOW_STYLES = `*{box-sizing:border-box}
 @keyframes _fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes _pulse{0%,100%{opacity:.4}50%{opacity:.7}}
-${SVG_STYLES.replace(/:root\s*\{/g, ':host {')}`
+${SVG_STYLES
+  .replace(/:root\s*\{/g, ':host {')
+  .replace(/\.dark\s*\{/g, ':host-context(.dark) {')
+  .replace(/\.dark\s+svg/g, ':host-context(.dark) svg')
+  .replace(/\.dark\s+input/g, ':host-context(.dark) input')}`
 
-const RESIZE_SCRIPT = `<script>new ResizeObserver(()=>{const h=document.body.offsetHeight;if(h>0)parent.postMessage({type:'widget-resize',height:h},'*')}).observe(document.body)</script>`
+const BRIDGE_SCRIPT = `<script>
+(function(){
+  var s=function(){document.documentElement.classList.toggle('dark',parent.document.documentElement.classList.contains('dark'))};
+  s();
+  new MutationObserver(s).observe(parent.document.documentElement,{attributes:true,attributeFilter:['class']});
+  window.sendPrompt=function(t){parent.postMessage({type:'widget-sendPrompt',text:String(t)},'*')};
+  window.openLink=function(u){parent.postMessage({type:'widget-openLink',url:String(u)},'*')};
+  document.addEventListener('click',function(e){
+    var a=e.target.closest('a[href]');
+    if(a&&/^https?:/.test(a.href)){e.preventDefault();openLink(a.href)}
+  });
+  new ResizeObserver(function(){var h=document.body.offsetHeight;if(h>0)parent.postMessage({type:'widget-resize',height:h},'*')}).observe(document.body);
+})();
+</script>`
 
 function buildSrcdoc(code: string, isSVG: boolean): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <style>*{box-sizing:border-box}body{${bodyStyle(isSVG)}}${SVG_STYLES}</style>
-</head><body>${code}${RESIZE_SCRIPT}</body></html>`
+</head><body>${code}${BRIDGE_SCRIPT}</body></html>`
 }
 
 function canvasToPlaceholder(_match: string, attrs: string): string {
+  const id = attrs.match(/id\s*=\s*["']([^"']+)/i)?.[1]
+  const cls = attrs.match(/class\s*=\s*["']([^"']+)/i)?.[1]
+  const existingStyle = attrs.match(/style\s*=\s*["']([^"']*)/i)?.[1] || ''
   const wAttr = attrs.match(/width\s*=\s*["']?(\d+)/i)?.[1]
   const hAttr = attrs.match(/height\s*=\s*["']?(\d+)/i)?.[1]
-  const styleAttr = attrs.match(/style\s*=\s*["']([^"']*)/i)?.[1] || ''
-  const wStyle = styleAttr.match(/width\s*:\s*(\d+(?:px|%))/)?.[1]
-  const hStyle = styleAttr.match(/height\s*:\s*(\d+(?:px|%))/)?.[1]
-  const w = wAttr ? `${wAttr}px` : wStyle || '100%'
-  const h = hAttr ? `${hAttr}px` : hStyle || '200px'
-  return `<div style="width:${w};height:${h};background:var(--color-background-secondary);border-radius:var(--border-radius-md,8px);animation:_pulse 2s ease-in-out infinite"></div>`
+  let sizeStyle = ''
+  if (wAttr && !existingStyle.includes('width')) sizeStyle += `width:${wAttr}px;`
+  if (hAttr && !existingStyle.includes('height')) sizeStyle += `height:${hAttr}px;`
+  const placeholderStyle = 'background:var(--color-background-secondary);border-radius:var(--border-radius-md,8px);animation:_pulse 2s ease-in-out infinite;'
+  const finalStyle = `${existingStyle};${sizeStyle}${placeholderStyle}`
+  const idAttr = id ? ` id="${id}"` : ''
+  const clsAttr = cls ? ` class="${cls}"` : ''
+  return `<div${idAttr}${clsAttr} style="${finalStyle}"></div>`
 }
 
 function patchHtmlForShadow(html: string): string {
@@ -86,7 +109,7 @@ function ShadowWidget({ html, isSVG }: { html: string; isSVG: boolean }) {
     rootRef.current = root
   }, [isSVG])
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const root = rootRef.current
     if (!root) return
     const safeHtml = patchHtmlForShadow(html)
@@ -141,8 +164,18 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
   useLayoutEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.source !== iframeRef.current?.contentWindow) return
-      if (e.data?.type === 'widget-resize' && typeof e.data.height === 'number' && e.data.height > 0) {
-        setHeight(e.data.height)
+      const { data } = e
+      if (!data?.type) return
+      switch (data.type) {
+        case 'widget-resize':
+          if (typeof data.height === 'number' && data.height > 0) setHeight(data.height)
+          break
+        case 'widget-sendPrompt':
+          if (typeof data.text === 'string') useChatStore.getState().sendMessage(data.text)
+          break
+        case 'widget-openLink':
+          if (typeof data.url === 'string') window.open(data.url, '_blank')
+          break
       }
     }
     window.addEventListener('message', handler)
@@ -168,7 +201,9 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
       onLoad={handleLoad}
       sandbox="allow-scripts allow-same-origin"
       className="w-full border-0 rounded-md"
-      style={{ height, display: hidden ? 'none' : undefined }}
+      style={hidden
+        ? { height, visibility: 'hidden' as const, position: 'absolute' as const, inset: 0 }
+        : { height }}
       title={title}
     />
   )
@@ -196,6 +231,17 @@ export function WidgetBlock({ data, streaming, messageStreaming }: WidgetBlockPr
   const finalSrcdoc = useMemo(() => buildSrcdoc(data.widget_code, data.isSVG), [data.widget_code, data.isSVG])
   const [iframeReady, setIframeReady] = useState(false)
   const messageComplete = !streaming && !messageStreaming
+  const [mountIframe, setMountIframe] = useState(false)
+
+  useEffect(() => {
+    if (!messageComplete) {
+      setMountIframe(false)
+      return
+    }
+    const id = requestIdleCallback(() => setMountIframe(true), { timeout: 300 })
+    return () => cancelIdleCallback(id)
+  }, [messageComplete])
+
   const showShadow = streaming || !iframeReady
 
   return (
@@ -203,7 +249,7 @@ export function WidgetBlock({ data, streaming, messageStreaming }: WidgetBlockPr
       {showShadow && (
         <ShadowWidget html={displayCode} isSVG={data.isSVG} />
       )}
-      {messageComplete && (
+      {mountIframe && (
         <AutoIframe
           srcdoc={finalSrcdoc}
           title={data.title.replace(/_/g, ' ')}
@@ -212,7 +258,7 @@ export function WidgetBlock({ data, streaming, messageStreaming }: WidgetBlockPr
           onReady={() => setIframeReady(true)}
         />
       )}
-      {messageComplete && iframeReady && (
+      {mountIframe && iframeReady && (
         <div className="absolute right-2 top-2 flex items-center gap-2 opacity-0 transition-opacity group-hover/widget:opacity-100">
           <span className="text-xs text-muted-foreground/70">
             {data.title.replace(/_/g, ' ')}

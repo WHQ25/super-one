@@ -12,7 +12,7 @@ Work bottom-up for trees: size leaf tier first, parent width ≥ sum of children
 
 **Diagrams are the hardest use case** — they have the highest failure rate due to precise coordinate math. Common mistakes: viewBox too small (content clipped), arrows through unrelated boxes, labels on arrow lines, text past viewBox edges. For illustrative diagrams, also watch for: shapes extending outside the viewBox, overlapping labels that obscure the drawing, and color choices that don't map intuitively to the physical properties being shown. Double-check coordinates before finalizing.
 
-Use `imagine_svg` for diagrams. The widget automatically wraps SVG output in a card.
+Use `show_widget` for diagrams. The widget automatically wraps SVG output in a card.
 
 **Pick the right diagram type.** The decision is about *intent*, not subject matter. Ask: is the user trying to *document* this, or *understand* it?
 
@@ -66,7 +66,7 @@ For sequential processes, cause-and-effect, decision trees.
 
 **Cycles don't get drawn as rings.** If the last stage feeds back into the first (Krebs cycle, event loop, GC mark-and-sweep, TCP retransmit), your instinct is to place the stages around a circle. Don't. Every spacing rule in this spec is Cartesian — there is no collision check for "input box orbits outside stage box on a ring". You will get satellite boxes overlapping the stages they feed, labels sitting on the dashed circle, and tangential arrows that point nowhere. The ring is decoration; the loop is conveyed by the return arrow.
 
-Build a stepper in `imagine_html`. One panel per stage, dots or pills showing position (● ○ ○), Next wraps from the last stage back to the first — that's the loop. Each panel owns its inputs and products: an event loop's pending callbacks live *inside* the Poll panel, not floating next to a box on a ring. Nothing collides because nothing shares the canvas. Only fall back to a linear SVG (stages in a row, curved `<path>` return arrow) when there's one input and one output total and no per-stage detail to show.
+Build a stepper in `show_widget`. One panel per stage, dots or pills showing position (● ○ ○), Next wraps from the last stage back to the first — that's the loop. Each panel owns its inputs and products: an event loop's pending callbacks live *inside* the Poll panel, not floating next to a box on a ring. Nothing collides because nothing shares the canvas. Only fall back to a linear SVG (stages in a row, curved `<path>` return arrow) when there's one input and one output total and no per-stage detail to show.
 
 **Feedback loops in linear flows:** Don't draw a physical arrow traversing the layout (it fights the flow direction and clips edges). Instead:
 - Small `↻` glyph + text near the cycle point: `<text>↻ returns to start</text>`
@@ -179,7 +179,7 @@ erDiagram
   }
 ```
 
-Use `imagine_html` for ERDs. Import and initialize in a `<script type="module">`. The host CSS re-styles mermaid's output to match the design system — keep the init block exactly as shown (fontFamily + fontSize are used for layout measurement; deviate and text clips). After rendering, replace sharp-cornered entity `<path>` elements with rounded `<rect rx="8">` to match the design system, and strip borders from attribute rows (only the outer container and header row keep visible borders — alternating fill colors separate the rows):
+Use `show_widget` for ERDs. Import and initialize in a `<script type="module">`. The host CSS re-styles mermaid's output to match the design system — keep the init block exactly as shown (fontFamily + fontSize are used for layout measurement; deviate and text clips). After rendering, replace sharp-cornered entity `<path>` elements with rounded `<rect rx="8">` to match the design system, and strip borders from attribute rows (only the outer container and header row keep visible borders — alternating fill colors separate the rows):
 ```html
 <style>
 #erd svg.erDiagram .divider path { stroke-opacity: 0.5; }
@@ -196,11 +196,11 @@ await document.fonts.ready;
 mermaid.initialize({
   startOnLoad: false,
   theme: 'base',
-  fontFamily: '"Anthropic Sans", sans-serif',
+  fontFamily: '"system-ui", sans-serif',
   themeVariables: {
     darkMode: dark,
     fontSize: '13px',
-    fontFamily: '"Anthropic Sans", sans-serif',
+    fontFamily: '"system-ui", sans-serif',
     lineColor: dark ? '#9c9a92' : '#73726c',
     textColor: dark ? '#c2c0b6' : '#3d3d3a',
   },
@@ -250,7 +250,7 @@ For building *intuition*. The subject might be physical (an engine, a lung) or c
 
 This is the most ambitious diagram type and the one Claude is best at. Lean into it. Use colour for intensity (a hot attention weight glows amber, a cold one stays gray). Use repetition for scale (many small circles = many parameters).
 
-**Prefer interactive over static.** A static cross-section is a good answer; a cross-section you can *operate* is a great one. The decision rule: if the real-world system has a control, give the diagram that control. A water heater has a thermostat — so give the user a slider that shifts the hot/cold boundary, a toggle that fires the burner and animates convection currents. An LLM has input tokens — let the user click one and watch the attention weights re-fan. A cache has a hit rate — let them drag it and watch latency change. Reach for `imagine_html` with inline SVG first; only fall back to static `imagine_svg` when there's genuinely nothing to twiddle.
+**Prefer interactive over static.** A static cross-section is a good answer; a cross-section you can *operate* is a great one. The decision rule: if the real-world system has a control, give the diagram that control. A water heater has a thermostat — so give the user a slider that shifts the hot/cold boundary, a toggle that fires the burner and animates convection currents. An LLM has input tokens — let the user click one and watch the attention weights re-fan. A cache has a hit rate — let them drag it and watch latency change. Reach for `show_widget` with inline SVG first; only fall back to static `show_widget` when there's genuinely nothing to twiddle.
 
 **When NOT to use**: The user is asking for a *reference*, not an *intuition*. "What are the components of a transformer" wants labelled boxes — that's a structural diagram. "Walk me through our CI pipeline" wants sequential steps — that's a flowchart. Also skip this when the metaphor would be arbitrary rather than revealing: drawing "the cloud" as a cloud shape or "microservices" as little houses doesn't teach anything about how they work. If the drawing doesn't make the *mechanism* clearer, don't draw it.
 
@@ -269,7 +269,7 @@ This is the most ambitious diagram type and the one Claude is best at. Lean into
 - **One gradient per diagram is permitted** — the only exception to the global no-gradients rule — and only to show a *continuous* physical property across a region (temperature stratification in a tank, pressure drop along a pipe, concentration in a solution). It must be a single `<linearGradient>` between exactly two stops from the same colour ramp. No radial gradients, no multi-stop fades, no gradient-as-aesthetic. If two stacked flat-fill rects communicate the same thing, do that instead.
 - **Animation is permitted for interactive HTML versions.** Use CSS `@keyframes` animating only `transform` and `opacity`. Keep loops under ~2s, and wrap every animation in `@media (prefers-reduced-motion: no-preference)` so it's opt-out by default. Animations should show how the system *behaves* — convection current, rotation, flow — not just move for the sake of moving. No physics engines or heavy libraries.
 
-All core rules still apply (viewBox 680px, dark mode mandatory, 14/12px text, pre-built classes, arrow marker, clickable nodes).
+All core rules still apply (viewBox 680px, light/dark mode via CSS variables, 14/12px text, pre-built classes, arrow marker, clickable nodes).
 
 **Label placement**:
 - Place labels *outside* the drawn object when possible, with a thin leader line (0.5px dashed, `var(--t)` stroke) pointing to the relevant part. This keeps the illustration uncluttered.
@@ -283,9 +283,9 @@ All core rules still apply (viewBox 680px, dark mode mandatory, 14/12px text, pr
 4. Add state indicators last: color fills showing temperature/pressure/concentration, small animated elements showing movement or energy.
 5. Leave generous whitespace around the object for labels — don't crowd annotations against the viewBox edges.
 
-**Static vs interactive**: Static cutaways and cross-sections work best as pure `imagine_svg`. If the diagram benefits from controls — a slider that changes a temperature zone, buttons toggling between operating states, live readouts — use `imagine_html` with inline SVG for the drawing and HTML controls around it.
+**Static vs interactive**: Static cutaways and cross-sections work best as pure `show_widget`. If the diagram benefits from controls — a slider that changes a temperature zone, buttons toggling between operating states, live readouts — use `show_widget` with inline SVG for the drawing and HTML controls around it.
 
-**Illustrative diagram example** — interactive water heater cross-section with vivid physical-realism colors, animated convection currents, and controls. Uses `imagine_html` with inline SVG: a thermostat slider shifts the hot/cold gradient boundary, a heating toggle animates flames on/off and transitions convection to paused. viewBox is 680x560; tank occupies x=180..440, leaving 140px+ of right margin for labels. Smooth convection paths use `stroke-dasharray:5 5` at ~1.6s for a gentle flow feel. A warm-glow overlay on the hot zone pulses subtly when heating is on. Flame shapes use warm gradient fills and clean opacity transitions. Labels sit along the right margin with leader lines.
+**Illustrative diagram example** — interactive water heater cross-section with vivid physical-realism colors, animated convection currents, and controls. Uses `show_widget` with inline SVG: a thermostat slider shifts the hot/cold gradient boundary, a heating toggle animates flames on/off and transitions convection to paused. viewBox is 680x560; tank occupies x=180..440, leaving 140px+ of right margin for labels. Smooth convection paths use `stroke-dasharray:5 5` at ~1.6s for a gentle flow feel. A warm-glow overlay on the hot zone pulses subtly when heating is on. Flame shapes use warm gradient fills and clean opacity transitions. Labels sit along the right margin with leader lines.
 ```html
 <style>
   @keyframes conv { to { stroke-dashoffset: -20; } }

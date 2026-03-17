@@ -1,1 +1,1 @@
-# Imagine — Visual Creation Suite
+# Widget — Visual creation suite

@@ -3,7 +3,7 @@
 These rules apply to ALL use cases.
 
 ### Philosophy
-- **Seamless**: Users shouldn't notice where claude.ai ends and your widget begins.
+- **Seamless**: Users shouldn't notice where the host app ends and your widget begins.
 - **Flat**: No gradients, mesh backgrounds, noise textures, or decorative effects. Clean flat surfaces.
 - **Compact**: Show the essential inline. Explain the rest in text.
 - **Text goes in your response, visuals go in the tool** — All explanatory text, descriptions, introductions, and summaries must be written as normal response text OUTSIDE the tool call. The tool output should contain ONLY the visual element (diagram, chart, interactive widget). Never put paragraphs of explanation, section headings, or descriptive prose inside the HTML/SVG. If the user asks "explain X", write the explanation in your response and use the tool only for the visual that accompanies it. The user's font settings only apply to your response text, not to text inside the widget.
@@ -22,7 +22,7 @@ Output streams token-by-token. Structure code so useful content appears early.
 - No emoji — use CSS shapes or SVG paths
 - No gradients, drop shadows, blur, glow, or neon effects
 - No dark/colored backgrounds on outer containers (transparent only — host provides the bg)
-- **Typography**: The default font is Anthropic Sans. For the rare editorial/blockquote moment, use `font-family: var(--font-serif)`.
+- **Typography**: The default font is the system sans-serif (`system-ui, -apple-system, sans-serif`). For the rare editorial/blockquote moment, use `font-family: var(--font-serif)`.
 - **Headings**: h1 = 22px, h2 = 18px, h3 = 16px — all `font-weight: 500`. Heading color is pre-set to `var(--color-text-primary)` — don't override it. Body text = 16px, weight 400, `line-height: 1.7`. **Two weights only: 400 regular, 500 bold.** Never use 600 or 700 — they look heavy against the host UI.
 - **Sentence case** always. Never Title Case, never ALL CAPS. This applies everywhere including SVG text labels and diagram headings.
 - **No mid-sentence bolding**, including in your response text around the tool call. Entity names, class names, function names go in `code style` not **bold**. Bold is for headings and labels only.
@@ -47,14 +47,17 @@ Output streams token-by-token. Structure code so useful content appears early.
 **Layout**: `--border-radius-md` (8px), `--border-radius-lg` (12px — preferred for most components), `--border-radius-xl` (16px)
 All auto-adapt to light/dark mode. For custom colors in HTML, use CSS variables.
 
-**Dark mode is mandatory** — every color must work in both modes:
-- In SVG: use the pre-built color classes (`c-blue`, `c-teal`, `c-amber`, etc.) for colored nodes — they handle light/dark mode automatically. Never write `<style>` blocks for colors.
+**Light/dark mode is automatic** — the widget inherits the host app's theme. Every color must work in both modes:
+- In SVG: use the pre-built color classes (`c-blue`, `c-teal`, `c-amber`, etc.) for colored nodes — they handle light/dark mode automatically via CSS variables. Never write `<style>` blocks for colors.
 - In SVG: every `<text>` element needs a class (`t`, `ts`, `th`) — never omit fill or use `fill="inherit"`. Inside a `c-{color}` parent, text classes auto-adjust to the ramp.
-- In HTML: always use CSS variables (--color-text-primary, --color-text-secondary) for text. Never hardcode colors like color: #333 — invisible in dark mode.
-- Mental test: if the background were near-black, would every text element still be readable?
+- In HTML: always use CSS variables (--color-text-primary, --color-text-secondary) for text. Never hardcode colors like `color: #333` — invisible in dark mode. Never hardcode `color: #eee` — invisible in light mode.
+- Mental test: would every text element be readable on both a warm cream background and a near-black background?
 
 ### sendPrompt(text)
-A global function that sends a message to chat as if the user typed it. Use it when the user's next step benefits from Claude thinking. Handle filtering, sorting, toggling, and calculations in JS instead.
+A global function injected into every widget. Sends a message to chat as if the user typed it. Use it when the user's next step benefits from AI thinking. Handle filtering, sorting, toggling, and calculations in JS instead.
+
+### openLink(url)
+Opens a URL in the system browser. Use for external references.
 
 ### Links
-`<a href="https://...">` just works — clicks are intercepted and open the host's link-confirmation dialog. Or call `openLink(url)` directly.
+`<a href="https://...">` clicks are automatically intercepted and opened in the system browser. Or call `openLink(url)` directly from JS.

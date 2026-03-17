@@ -23,9 +23,9 @@
 
 **Text on colored backgrounds:** Always use the 800 or 900 stop from the same ramp as the fill. Never use black, gray, or --color-text-primary on colored fills. **When a box has both a title and a subtitle, they must be two different stops** — title darker (800 in light mode, 100 in dark), subtitle lighter (600 in light, 200 in dark). Same stop for both reads flat; the weight difference alone isn't enough. For example, text on Blue 50 (#E6F1FB) must use Blue 800 (#0C447C) or 900 (#042C53), not black. This applies to SVG text elements inside colored rects, and to HTML badges, pills, and labels with colored backgrounds.
 
-**Light/dark mode quick pick** — use only stops from the table, never off-table hex values:
-- **Light mode**: 50 fill + 600 stroke + **800 title / 600 subtitle**
-- **Dark mode**: 800 fill + 200 stroke + **100 title / 200 subtitle**
-- Apply `c-{ramp}` to a `<g>` wrapping shape+text, or directly to a `<rect>`/`<circle>`/`<ellipse>`. Never to `<path>` — paths don't get ramp fill. For colored connector strokes use inline `stroke="#..."` (any mid-ramp hex works in both modes). Dark mode is automatic for ramp classes. Available: c-gray, c-blue, c-red, c-amber, c-green, c-teal, c-purple, c-coral, c-pink.
+**Light/dark mode is automatic** — the `c-{ramp}` classes use CSS variables that switch between light and dark stops automatically. You never need to write manual dark mode overrides for ramp colors.
+- **Light mode** (auto): 50 fill + 600 stroke + **800 title / 600 subtitle**
+- **Dark mode** (auto): 800 fill + 200 stroke + **100 title / 200 subtitle**
+- Apply `c-{ramp}` to a `<g>` wrapping shape+text, or directly to a `<rect>`/`<circle>`/`<ellipse>`. Never to `<path>` — paths don't get ramp fill. For colored connector strokes use inline `stroke="#..."` (any mid-ramp hex works in both modes). Available: c-gray, c-blue, c-red, c-amber, c-green, c-teal, c-purple, c-coral, c-pink.
 
 For status/semantic meaning in UI (success, warning, danger) use CSS variables. For categorical coloring in both diagrams and UI, use these ramps.

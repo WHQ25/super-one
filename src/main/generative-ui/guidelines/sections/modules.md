@@ -1,5 +1,5 @@
 ## Modules
-Call read_me again with the modules parameter to load detailed guidance:
+Call read_guidelines again with the modules parameter to load detailed guidance:
 - `diagram` — SVG flowcharts, structural diagrams, illustrative diagrams
 - `mockup` — UI mockups, forms, cards, dashboards
 - `interactive` — interactive explainers with controls

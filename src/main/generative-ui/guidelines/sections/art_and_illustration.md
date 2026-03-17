@@ -1,7 +1,7 @@
 ## Art and illustration
 *"Draw me a sunset" / "Create a geometric pattern"*
 
-Use `imagine_svg`. Same technical rules (viewBox, safe area) but the aesthetic is different:
+Use `show_widget`. Same technical rules (viewBox, safe area) but the aesthetic is different:
 - Fill the canvas — art should feel rich, not sparse
 - Bold colors: mix `--color-text-*` categories for variety (info blue, success green, warning amber)
 - Art is the one place custom `<style>` color blocks are fine — freestyle colors, `prefers-color-scheme` for dark mode variants if you want them

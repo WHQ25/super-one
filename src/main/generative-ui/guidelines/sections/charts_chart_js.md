@@ -3,7 +3,7 @@
 <div style="position: relative; width: 100%; height: 300px;">
   <canvas id="myChart"></canvas>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" onload="initChart()"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.js" onload="initChart()"></script>
 <script>
   function initChart() {
     new Chart(document.getElementById('myChart'), {

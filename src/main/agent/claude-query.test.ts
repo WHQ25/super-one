@@ -34,6 +34,15 @@ vi.mock('./event-trace', () => ({
   trace: vi.fn(),
 }))
 
+vi.mock('./resolve-cli', () => ({
+  resolveSdkCli: vi.fn(),
+  getNodeRuntime: vi.fn(() => ({})),
+}))
+
+vi.mock('../generative-ui/mcp-server', () => ({
+  createGenerativeUiMcpServer: vi.fn(),
+}))
+
 import { buildUserMessage, createSessionQuery } from './claude-query'
 
 beforeEach(() => {

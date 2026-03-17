@@ -378,11 +378,13 @@ export class ClaudeAgent {
 
   /** Rewind files to the state before a given user message. */
   async rewindFiles(userMessageId: string): Promise<RewindFilesResult> {
+    log.info('[rewind] rewindFiles called: userMessageId=%s hasQuery=%s', userMessageId, !!this.sessionQuery)
     if (!this.sessionQuery) {
       return { canRewind: false, error: 'No active session' }
     }
     try {
       const result = await this.sessionQuery.rewindFiles(userMessageId)
+      log.info('[rewind] rewindFiles result: %s', JSON.stringify(result))
       return {
         canRewind: result.canRewind,
         error: result.error,
@@ -391,17 +393,20 @@ export class ClaudeAgent {
         deletions: result.deletions,
       }
     } catch (err) {
+      log.error('[rewind] rewindFiles error: %s', err instanceof Error ? err.message : String(err))
       return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
     }
   }
 
   /** Preview file rewind without modifying files (dry run). */
   async previewRewind(userMessageId: string): Promise<RewindFilesResult> {
+    log.info('[rewind] previewRewind called: userMessageId=%s hasQuery=%s', userMessageId, !!this.sessionQuery)
     if (!this.sessionQuery) {
       return { canRewind: false, error: 'No active session' }
     }
     try {
       const result = await this.sessionQuery.rewindFiles(userMessageId, { dryRun: true })
+      log.info('[rewind] previewRewind result: %s', JSON.stringify(result))
       return {
         canRewind: result.canRewind,
         error: result.error,
@@ -410,6 +415,7 @@ export class ClaudeAgent {
         deletions: result.deletions,
       }
     } catch (err) {
+      log.error('[rewind] previewRewind error: %s', err instanceof Error ? err.message : String(err))
       return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
     }
   }

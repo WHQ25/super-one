@@ -20,6 +20,7 @@ vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 const { startWatching, stopWatching } = await import('./file-watcher')
 
 const mockWindow = {
+  isDestroyed: () => false,
   webContents: { send: mockSend },
 } as unknown as import('electron').BrowserWindow
 

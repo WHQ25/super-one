@@ -46,7 +46,8 @@ export function createSessionQuery(
     return result
   }
 
-  log.info('[claude-query] createSessionQuery env=%s model=%s cwd=%s resume=%s', options.env ? Object.keys(options.env).join(',') : 'none', options.model ?? 'default', options.cwd, options.resume ?? 'none')
+  log.info('[claude-query] createSessionQuery env=%s model=%s cwd=%s resume=%s enableFileCheckpointing=true', options.env ? Object.keys(options.env).join(',') : 'none', options.model ?? 'default', options.cwd, options.resume ?? 'none')
+  log.info('[claude-query] env CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=%s CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=%s', process.env.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING ?? 'unset', process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING ?? 'unset')
   trace('provider.query', 'create_session', { envKeys: options.env ? Object.keys(options.env) : null, model: options.model, resume: options.resume })
 
   const cliPath = resolveSdkCli()
@@ -79,7 +80,12 @@ export function createSessionQuery(
       abortController: options.abortController,
       additionalDirectories: options.additionalDirectories,
       env: runtime.env || options.env ? { ...process.env, ...runtime.env, ...options.env } : undefined,
-      stderr: (data: string) => log.warn('[claude-cli]', data.trimEnd()),
+      stderr: (data: string) => {
+        log.warn('[claude-cli]', data.trimEnd())
+        if (data.includes('FileHistory') || data.includes('checkpoint') || data.includes('file_history')) {
+          log.info('[claude-cli][checkpoint-stderr] %s', data.trimEnd())
+        }
+      },
       systemPrompt: {
         type: 'preset',
         preset: 'claude_code',
@@ -257,9 +263,11 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           }
         }
 
-        // Capture file checkpoint UUID from top-level user messages
+        // Capture file checkpoint UUID from top-level user messages (skip replays — their checkpoint data is not available)
         const uuid = userMsg.uuid as string | undefined
-        if (uuid && !userMsg.parent_tool_use_id) {
+        log.info('[checkpoint] user msg: uuid=%s parent=%s isReplay=%s isSynthetic=%s', uuid ?? 'none', userMsg.parent_tool_use_id ?? 'none', userMsg.isReplay ?? false, userMsg.isSynthetic ?? false)
+        if (uuid && !userMsg.parent_tool_use_id && !userMsg.isReplay) {
+          log.info('[checkpoint] captured: checkpointId=%s resumePointId=%s', uuid, lastTopLevelAssistantUuid)
           emit({ type: 'checkpoint_captured', messageId, checkpointId: uuid, resumePointId: lastTopLevelAssistantUuid })
         }
       }
@@ -274,6 +282,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             const widgetTools = (sys.tools ?? []).filter((t: string) => t.startsWith('mcp__widget'))
             log.info(`[iterateMessages] init mcp_servers=[${mcpNames}] widget_tools=[${widgetTools}]`)
             if (sys.session_id) onSessionId?.(sys.session_id)
+            log.info('[session_init] outputStyle=%s availableOutputStyles=%j', sys.output_style, sys.available_output_styles)
             emit({
               type: 'session_init',
               session: {
@@ -290,6 +299,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
                 apiKeySource: sys.apiKeySource,
                 betas: sys.betas,
                 outputStyle: sys.output_style,
+                availableOutputStyles: sys.available_output_styles,
                 plugins: sys.plugins,
                 fastModeState: sys.fast_mode_state,
               },

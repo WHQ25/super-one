@@ -44,7 +44,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       const isUserScroll = Date.now() - userScrollTimeRef.current < 150
       if (isUserScroll) {
         if (scrolledUp && statusRef.current === 'streaming') {
-          isNearBottomRef.current = false
+          isNearBottomRef.current = remaining < 200
         } else {
           isNearBottomRef.current = remaining < el.clientHeight / 2
         }

@@ -120,6 +120,24 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(0)
   })
 
+  it('keeps auto-scroll when user scrolls up slightly during streaming (within 200px of bottom)', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    state.scrollTop = state.scrollHeight - state.clientHeight
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      el.dispatchEvent(new Event('wheel'))
+      state.scrollTop = state.scrollHeight - state.clientHeight - 30
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(500)
+  })
+
   it('keeps auto-scroll when programmatic scroll fires after content expansion', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }
@@ -146,7 +164,7 @@ describe('useChatScroll', () => {
 
     const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
 
-    const scrolledPos = state.scrollHeight - state.clientHeight - 10
+    const scrolledPos = 50
     act(() => {
       el.dispatchEvent(new Event('wheel'))
       state.scrollTop = scrolledPos

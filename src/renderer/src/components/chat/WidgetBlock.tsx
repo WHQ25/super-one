@@ -1,6 +1,7 @@
 import { useRef, useState, useMemo, useLayoutEffect, useEffect, useCallback } from 'react'
 import morphdom from 'morphdom'
 import { SVG_STYLES } from '../../../../shared/generative-ui/svg-styles'
+import { rewriteCdnUrls } from '../../../../shared/generative-ui/cdn-allowlist'
 import type { WidgetData } from '../../../../shared/generative-ui/types'
 import { Download } from 'lucide-react'
 import { useChatStore } from '@/stores/chat'
@@ -34,14 +35,18 @@ const BRIDGE_SCRIPT = `<script>
     if(a&&/^https?:/.test(a.href)){e.preventDefault();openLink(a.href)}
   });
   new ResizeObserver(function(){var h=document.body.offsetHeight;if(h>0)parent.postMessage({type:'widget-resize',height:h},'*')}).observe(document.body);
+  document.documentElement.style.overflow='hidden';
+  document.body.style.overflow='hidden';
+  window.addEventListener('wheel',function(e){parent.postMessage({type:'widget-wheel',deltaX:e.deltaX,deltaY:e.deltaY,deltaMode:e.deltaMode},'*')},{passive:true});
 })();
 </script>`
 
 function buildSrcdoc(code: string, isSVG: boolean): string {
+  const safeCode = rewriteCdnUrls(code)
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <style>*{box-sizing:border-box}body{${bodyStyle(isSVG)}}${SVG_STYLES}</style>
-</head><body>${code}${BRIDGE_SCRIPT}</body></html>`
+</head><body>${safeCode}${BRIDGE_SCRIPT}</body></html>`
 }
 
 function canvasToPlaceholder(_match: string, attrs: string): string {
@@ -176,6 +181,9 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
         case 'widget-openLink':
           if (typeof data.url === 'string') window.open(data.url, '_blank')
           break
+        case 'widget-wheel':
+          iframeRef.current?.dispatchEvent(new WheelEvent('wheel', { deltaX: data.deltaX, deltaY: data.deltaY, deltaMode: data.deltaMode, bubbles: true }))
+          break
       }
     }
     window.addEventListener('message', handler)
@@ -186,12 +194,7 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
     measure()
     setTimeout(measure, 300)
     setTimeout(measure, 1000)
-    const notify = () => onReady?.()
-    if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(notify, { timeout: 3000 })
-    } else {
-      setTimeout(notify, 500)
-    }
+    onReady?.()
   }, [measure, onReady])
 
   return (
@@ -212,7 +215,6 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
 interface WidgetBlockProps {
   data: WidgetData
   streaming?: boolean
-  messageStreaming?: boolean
 }
 
 function downloadWidget(srcdoc: string, title: string, e: { stopPropagation(): void }) {
@@ -226,21 +228,27 @@ function downloadWidget(srcdoc: string, title: string, e: { stopPropagation(): v
   URL.revokeObjectURL(url)
 }
 
-export function WidgetBlock({ data, streaming, messageStreaming }: WidgetBlockProps) {
+export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
   const displayCode = useThrottledValue(data.widget_code, streaming ? THROTTLE_MS : 0)
   const finalSrcdoc = useMemo(() => buildSrcdoc(data.widget_code, data.isSVG), [data.widget_code, data.isSVG])
   const [iframeReady, setIframeReady] = useState(false)
-  const messageComplete = !streaming && !messageStreaming
-  const [mountIframe, setMountIframe] = useState(false)
+  const [mountIframe, setMountIframe] = useState(!streaming)
+  const gateNotifiedRef = useRef(false)
 
   useEffect(() => {
-    if (!messageComplete) {
-      setMountIframe(false)
-      return
+    if (streaming) { setMountIframe(false); return }
+    window.app.trace?.('widget.ui', 'mount_iframe', { title: data.title })
+    setMountIframe(true)
+  }, [streaming, data.title])
+
+  const handleIframeReady = useCallback(() => {
+    setIframeReady(true)
+    if (!gateNotifiedRef.current) {
+      gateNotifiedRef.current = true
+      window.app.trace?.('widget.ui', 'iframe_ready', { title: data.title })
+      window.app.widgetIframeReady(data.title)
     }
-    const id = requestIdleCallback(() => setMountIframe(true), { timeout: 300 })
-    return () => cancelIdleCallback(id)
-  }, [messageComplete])
+  }, [data.title])
 
   const showShadow = streaming || !iframeReady
 
@@ -272,7 +280,7 @@ export function WidgetBlock({ data, streaming, messageStreaming }: WidgetBlockPr
             title={displayTitle}
             fallbackHeight={data.height}
             hidden={!iframeReady}
-            onReady={() => setIframeReady(true)}
+            onReady={handleIframeReady}
           />
         )}
       </div>

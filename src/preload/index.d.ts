@@ -191,6 +191,8 @@ interface AppAPI {
   onPairingCodeReceived(callback: (info: { code: string; deviceName: string }) => void): () => void
   onPairingExpired(callback: () => void): () => void
   onPairingAlreadyPaired(callback: (info: { deviceName: string }) => void): () => void
+
+  widgetIframeReady(widgetId: string): Promise<void>
 }
 
 declare global {

@@ -594,6 +594,9 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.REMOTE_PAIRING_ALREADY_PAIRED, handler)
     }
   },
+
+  widgetIframeReady: (widgetId: string): Promise<void> =>
+    ipcRenderer.invoke(AgentIpcChannels.WIDGET_IFRAME_READY, widgetId),
 }
 
 if (process.contextIsolated) {

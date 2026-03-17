@@ -36,7 +36,7 @@ Use `show_widget` for diagrams. The widget automatically wraps SVG output in a c
 | "TCP handshake sequence" | Flowchart | SYN → SYN-ACK → ACK. Three boxes. |
 | "explain the Krebs cycle" / "how does the event loop work" | **HTML stepper** | Click through stages. Never a ring. |
 | "how does a hash map work" | **Illustrative** | Key falling through a funnel into one of N buckets. |
-| "draw the database schema" / "show me the ERD" | **mermaid.js** | `erDiagram` syntax. Not SVG. |
+| "draw the database schema" / "show me the ERD" | **mermaid code block** | Output a \`\`\`mermaid code block with `erDiagram` syntax. The host app renders it natively. Do NOT use show_widget for mermaid. |
 
 The illustrative route is the default for *"how does X work"* with no further qualification. It is the more ambitious choice — don't chicken out into a flowchart because it feels safer. Claude draws these well.
 
@@ -161,9 +161,10 @@ For concepts where physical or logical containment matters — things inside oth
 
 **Color in structural diagrams**: Nested regions need distinct ramps — `c-{ramp}` classes resolve to fixed fill/stroke stops, so the same class on parent and child gives identical fills and flattens the hierarchy. Pick a *related* ramp for inner structures (e.g. Green for the library envelope, Teal for the circulation desk inside it) and a *contrasting* ramp for a region that does something functionally different (e.g. Amber for the reading room). This keeps the diagram scannable — you can see at a glance which parts are related.
 
-**Database schemas / ERDs — use mermaid.js, not SVG.** A schema table is a header plus N field rows plus typed columns plus crow's-foot connectors. That is a text-layout problem and hand-placing it in SVG fails the same way every time. mermaid.js `erDiagram` does layout, cardinality, and connector routing for free. ERDs only; everything else stays in SVG.
+**Database schemas / ERDs — use mermaid code blocks, not SVG or show_widget.** The host app has native mermaid rendering. Output a fenced mermaid code block in your response text. Do NOT use `show_widget` for any mermaid diagram.
 
-```
+````
+```mermaid
 erDiagram
   USERS ||--o{ POSTS : writes
   POSTS ||--o{ COMMENTS : has
@@ -178,67 +179,9 @@ erDiagram
     string title
   }
 ```
+````
 
-Use `show_widget` for ERDs. Import and initialize in a `<script type="module">`. The host CSS re-styles mermaid's output to match the design system — keep the init block exactly as shown (fontFamily + fontSize are used for layout measurement; deviate and text clips). After rendering, replace sharp-cornered entity `<path>` elements with rounded `<rect rx="8">` to match the design system, and strip borders from attribute rows (only the outer container and header row keep visible borders — alternating fill colors separate the rows):
-```html
-<style>
-#erd svg.erDiagram .divider path { stroke-opacity: 0.5; }
-#erd svg.erDiagram .row-rect-odd path,
-#erd svg.erDiagram .row-rect-odd rect,
-#erd svg.erDiagram .row-rect-even path,
-#erd svg.erDiagram .row-rect-even rect { stroke: none !important; }
-</style>
-<div id="erd"></div>
-<script type="module">
-import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
-const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-await document.fonts.ready;
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'base',
-  fontFamily: '"system-ui", sans-serif',
-  themeVariables: {
-    darkMode: dark,
-    fontSize: '13px',
-    fontFamily: '"system-ui", sans-serif',
-    lineColor: dark ? '#9c9a92' : '#73726c',
-    textColor: dark ? '#c2c0b6' : '#3d3d3a',
-  },
-});
-const { svg } = await mermaid.render('erd-svg', `erDiagram
-  USERS ||--o{ POSTS : writes
-  POSTS ||--o{ COMMENTS : has`);
-document.getElementById('erd').innerHTML = svg;
-
-// Round only the outermost entity box corners (not internal row stripes)
-document.querySelectorAll('#erd svg.erDiagram .node').forEach(node => {
-  const firstPath = node.querySelector('path[d]');
-  if (!firstPath) return;
-  const d = firstPath.getAttribute('d');
-  const nums = d.match(/-?[\d.]+/g)?.map(Number);
-  if (!nums || nums.length < 8) return;
-  const xs = [nums[0], nums[2], nums[4], nums[6]];
-  const ys = [nums[1], nums[3], nums[5], nums[7]];
-  const x = Math.min(...xs), y = Math.min(...ys);
-  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
-  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  rect.setAttribute('x', x); rect.setAttribute('y', y);
-  rect.setAttribute('width', w); rect.setAttribute('height', h);
-  rect.setAttribute('rx', '8');
-  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
-    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
-  }
-  firstPath.replaceWith(rect);
-});
-
-// Strip borders from attribute rows (mermaid v11: .row-rect-odd / .row-rect-even)
-document.querySelectorAll('#erd svg.erDiagram .row-rect-odd path, #erd svg.erDiagram .row-rect-even path').forEach(p => {
-  p.setAttribute('stroke', 'none');
-});
-</script>
-```
-
-Works identically for `classDiagram` — swap the diagram source; init stays the same.
+This also applies to `classDiagram`, `sequenceDiagram`, `flowchart`, and all other mermaid diagram types — always use mermaid code blocks, never `show_widget`.
 
 #### Illustrative diagram
 

@@ -22,15 +22,22 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   const userScrollTimeRef = useRef(0)
   const [showScrollButton, setShowScrollButton] = useState(false)
 
+  const sessionSwitchRef = useRef(false)
+  const sessionSwitchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+
   useLayoutEffect(() => {
     isNearBottomRef.current = true
+    sessionSwitchRef.current = true
     setShowScrollButton(false)
+    clearTimeout(sessionSwitchTimerRef.current)
+    sessionSwitchTimerRef.current = setTimeout(() => { sessionSwitchRef.current = false }, 3000)
     const el = scrollViewportRef.current
     if (el) {
       el.scrollTop = el.scrollHeight
       lastScrollTopRef.current = el.scrollTop
+      window.app.trace?.('scroll', 'session_switch', { sessionId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight, msgCount: messages.length })
     }
-  }, [sessionId])
+  }, [sessionId, scrollViewportRef])
 
   useEffect(() => {
     const el = scrollViewportRef.current
@@ -66,8 +73,9 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   useLayoutEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
-
-    if (isNearBottomRef.current || lastMsgIsUser) {
+    const shouldScroll = isNearBottomRef.current || lastMsgIsUser || sessionSwitchRef.current
+    window.app.trace?.('scroll', 'msg_length_change', { msgLen: messages.length, shouldScroll, isNearBottom: isNearBottomRef.current, lastMsgIsUser, sessionSwitch: sessionSwitchRef.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight })
+    if (shouldScroll) {
       el.scrollTop = el.scrollHeight
       lastScrollTopRef.current = el.scrollTop
       isNearBottomRef.current = true
@@ -82,7 +90,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     if (!content) return
     let rafId = 0
     const observer = new ResizeObserver(() => {
-      if (isNearBottomRef.current && statusRef.current === 'streaming') {
+      if (isNearBottomRef.current && (statusRef.current === 'streaming' || sessionSwitchRef.current)) {
         viewport.scrollTop = viewport.scrollHeight
         lastScrollTopRef.current = viewport.scrollTop
         setShowScrollButton(false)

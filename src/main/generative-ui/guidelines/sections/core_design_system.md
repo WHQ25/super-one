@@ -39,6 +39,11 @@ Output streams token-by-token. Structure code so useful content appears early.
 - **Canvas elements** must be wrapped in a `<div>` with explicit `height` (e.g. `height: 300px`) and `position: relative`. Never set width/height on `<canvas>` itself — size the wrapper, let the library fill it. During streaming, canvas is replaced by an animated placeholder that inherits the wrapper's dimensions.
 - Scripts execute after streaming — load libraries via `<script src="https://cdnjs.cloudflare.com/ajax/libs/...">` (UMD globals), then use the global in a plain `<script>` that follows.
 - **CDN allowlist (CSP-enforced)**: external resources may ONLY load from `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, `unpkg.com`. All other origins are blocked by the sandbox — the request silently fails.
+- **Pinned CDN versions** — use these exact URLs, do not change the version number:
+  - Chart.js: `https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.js`
+  - D3: `https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js`
+  - Three.js: `https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js`
+- **Mermaid**: Do NOT load mermaid via CDN or use it in show_widget. The host app renders mermaid natively — output a fenced ` ```mermaid ` code block in your response text instead.
 
 ### CSS Variables
 **Backgrounds**: `--color-background-primary` (white), `-secondary` (surfaces), `-tertiary` (page bg), `-info`, `-danger`, `-success`, `-warning`

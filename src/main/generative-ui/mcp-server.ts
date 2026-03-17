@@ -1,6 +1,8 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { getGuidelines, AVAILABLE_MODULES } from './guidelines'
+import { checkCdnViolations } from '../../shared/generative-ui/cdn-allowlist'
+import { waitForWidgetReady } from './widget-gate'
 
 const MODULE_ENUM = z.enum(AVAILABLE_MODULES as [string, ...string[]])
 
@@ -38,18 +40,25 @@ export function createGenerativeUiMcpServer() {
           width: z.number().optional().describe('Widget width in pixels. Default: 800.'),
           height: z.number().optional().describe('Widget height in pixels. Default: 600.'),
         },
-        async (args) => ({
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify({
-              title: args.title,
-              widget_code: args.widget_code,
-              width: args.width ?? 800,
-              height: args.height ?? 600,
-              isSVG: args.widget_code.trimStart().startsWith('<svg'),
-            }),
-          }],
-        })
+        async (args) => {
+          const violations = checkCdnViolations(args.widget_code)
+          const result = JSON.stringify({
+            title: args.title,
+            widget_code: args.widget_code,
+            width: args.width ?? 800,
+            height: args.height ?? 600,
+            isSVG: args.widget_code.trimStart().startsWith('<svg'),
+          })
+          const content: { type: 'text'; text: string }[] = [{ type: 'text', text: result }]
+          if (violations.length > 0) {
+            content.push({
+              type: 'text',
+              text: `⚠️ CDN VIOLATION: The following URLs were blocked (not in allowlist: ${['cdnjs.cloudflare.com', 'esm.sh', 'cdn.jsdelivr.net', 'unpkg.com'].join(', ')}):\n${violations.map(u => `  - ${u}`).join('\n')}\nThe widget will render without these resources. Re-call show_widget with corrected URLs from the allowlist.`,
+            })
+          }
+          await waitForWidgetReady(args.title)
+          return { content }
+        }
       ),
     ],
   })

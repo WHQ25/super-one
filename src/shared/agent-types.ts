@@ -1069,6 +1069,8 @@ export const AgentIpcChannels = {
   REMOTE_PAIRING_CODE_RECEIVED: 'remote:pairing-code-received',
   REMOTE_PAIRING_EXPIRED: 'remote:pairing-expired',
   REMOTE_PAIRING_ALREADY_PAIRED: 'remote:pairing-already-paired',
+
+  WIDGET_IFRAME_READY: 'widget:iframe-ready',
 } as const
 
 export interface FileSearchResult {

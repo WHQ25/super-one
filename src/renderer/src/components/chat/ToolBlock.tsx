@@ -18,6 +18,10 @@ import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, tryPre
 import { WidgetBlock } from './WidgetBlock'
 import { parseWidgetResult, parsePartialWidgetInput } from '../../../../shared/generative-ui/types'
 
+function isCompleteJson(s: string): boolean {
+  try { JSON.parse(s); return true } catch { return false }
+}
+
 /** Dev-only: comma-separated tool names to show raw debug UI. e.g. RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate */
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
   ? (import.meta.env.RENDERER_VITE_DEBUG_TOOL_NAMES ?? '').split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
@@ -34,7 +38,6 @@ interface ToolBlockProps {
   resultOutputPath?: string
   autoExpand?: boolean
   backgroundActivity?: boolean
-  messageStreaming?: boolean
 }
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
@@ -42,7 +45,7 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 
-export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, resultOutputPath, autoExpand = true, backgroundActivity = false, messageStreaming = false }: ToolBlockProps) {
+export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, resultOutputPath, autoExpand = true, backgroundActivity = false }: ToolBlockProps) {
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const params = useMemo(() => parseToolInput(input, toolName), [input, toolName])
@@ -164,7 +167,12 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
 
   if (mcpInfo?.mcpToolName === 'show_widget') {
     const widgetData = result ? parseWidgetResult(result) : parsePartialWidgetInput(input)
-    if (widgetData) return <WidgetBlock data={widgetData} streaming={isStreaming} messageStreaming={messageStreaming} />
+    const jsonComplete = isCompleteJson(input)
+    const inputComplete = !isStreaming || jsonComplete
+    if (isStreaming && jsonComplete && widgetData) {
+      window.app.trace?.('widget.ui', 'input_complete_early', { title: widgetData.title, inputLen: input.length })
+    }
+    if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} />
     return (
       <div className="tool-node my-0.5 rounded bg-muted/50">
         <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">

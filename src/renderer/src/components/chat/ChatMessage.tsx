@@ -194,7 +194,6 @@ function renderBlock(
           isTimedOut={timedOutToolIds?.has(block.toolUseId)}
           resultOutputPath={outputPathMap?.get(block.toolUseId)}
           autoExpand={isBg ? false : undefined}
-          messageStreaming={isStreaming}
         />
       )
     }

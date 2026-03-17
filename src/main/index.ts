@@ -31,6 +31,7 @@ import {
 } from '../shared/agent-types'
 import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, disposeUpdater } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
+import { notifyWidgetReady } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { parseGitStatusOutput, parseGitStatusFiles } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
@@ -1182,6 +1183,10 @@ function registerIpcHandlers(): void {
         q.close()
       } catch {}
     }
+  })
+
+  ipcMain.handle(AgentIpcChannels.WIDGET_IFRAME_READY, (_e, widgetId: string) => {
+    notifyWidgetReady(widgetId)
   })
 }
 

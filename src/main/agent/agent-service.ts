@@ -5,6 +5,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, type ClaudeAgentConfig } from './claude-agent'
 import { AgentIpcChannels, type AgentEvent, type PermissionMode, type QuestionAnnotations, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 import { searchFiles, searchMentions, type AgentEntry } from './fuzzy-file-search'
+import { clearAllGates } from '../generative-ui/widget-gate'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -186,6 +187,7 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.INTERRUPT, async (_event, projectPath: string) => {
       const agent = this.agents.get(projectPath)
       if (!agent) return false
+      clearAllGates()
       await agent.interrupt()
       return true
     })

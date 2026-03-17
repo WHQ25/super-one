@@ -74,14 +74,14 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const el = scrollViewportRef.current
     if (!el) return
     const shouldScroll = isNearBottomRef.current || lastMsgIsUser || sessionSwitchRef.current
-    window.app.trace?.('scroll', 'msg_length_change', { msgLen: messages.length, shouldScroll, isNearBottom: isNearBottomRef.current, lastMsgIsUser, sessionSwitch: sessionSwitchRef.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight })
+    window.app.trace?.('scroll', 'msg_change', { msgLen: messages.length, shouldScroll, isNearBottom: isNearBottomRef.current, lastMsgIsUser, sessionSwitch: sessionSwitchRef.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight })
     if (shouldScroll) {
       el.scrollTop = el.scrollHeight
       lastScrollTopRef.current = el.scrollTop
       isNearBottomRef.current = true
       setShowScrollButton(false)
     }
-  }, [messages.length, lastMsgIsUser, scrollViewportRef])
+  }, [messages, lastMsgIsUser, scrollViewportRef])
 
   useEffect(() => {
     const viewport = scrollViewportRef.current

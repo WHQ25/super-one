@@ -277,7 +277,7 @@ export function PermissionPrompt() {
       )}
       {!isSandboxNetwork && display.summary && (
         <p
-          className={`mb-2 text-xs text-muted-foreground ${isBash ? 'whitespace-pre-wrap break-all font-mono' : 'truncate'}`}
+          className={`mb-2 text-xs text-muted-foreground ${isBash ? 'max-h-32 overflow-y-auto whitespace-pre-wrap break-all font-mono' : 'truncate'}`}
         >
           {display.summary}
         </p>

@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { CopyableMarkdown, splitByCodeFences } from './CopyableMarkdown'
+import { CopyableMarkdown, splitByCodeFences, normalizeCodeFences } from './CopyableMarkdown'
 
 vi.mock('streamdown', () => ({
   Streamdown: ({ children, className }: { children: string; className?: string }) => (
@@ -78,6 +78,55 @@ describe('splitByCodeFences', () => {
   it('handles code fence only', () => {
     const result = splitByCodeFences('```ts\ncode\n```')
     expect(result).toEqual([{ content: '```ts\ncode\n```', isCode: true }])
+  })
+
+  it('handles nested code fences inside markdown block', () => {
+    const input = '```markdown\n# Title\n```python\nprint("hi")\n```\nMore text\n```\nafter'
+    const result = splitByCodeFences(input)
+    expect(result).toEqual([
+      { content: '```markdown\n# Title\n```python\nprint("hi")\n```\nMore text\n```', isCode: true },
+      { content: 'after', isCode: false },
+    ])
+  })
+
+  it('handles multiple nested code fences inside markdown block', () => {
+    const input = '```markdown\n```js\na\n```\n```py\nb\n```\n```\nend'
+    const result = splitByCodeFences(input)
+    expect(result).toEqual([
+      { content: '```markdown\n```js\na\n```\n```py\nb\n```\n```', isCode: true },
+      { content: 'end', isCode: false },
+    ])
+  })
+})
+
+describe('normalizeCodeFences', () => {
+  it('returns text unchanged when no nesting', () => {
+    const input = 'hello\n```ts\ncode\n```\nworld'
+    expect(normalizeCodeFences(input)).toBe(input)
+  })
+
+  it('upgrades outer fence when inner fences use same backtick count', () => {
+    const input = '```markdown\n# Title\n```python\nprint("hi")\n```\nMore text\n```'
+    const result = normalizeCodeFences(input)
+    expect(result).toBe('````markdown\n# Title\n```python\nprint("hi")\n```\nMore text\n````')
+  })
+
+  it('upgrades outer fence with multiple nested blocks', () => {
+    const input = '```markdown\n```js\na\n```\n```py\nb\n```\n```'
+    const result = normalizeCodeFences(input)
+    expect(result).toBe('````markdown\n```js\na\n```\n```py\nb\n```\n````')
+  })
+
+  it('preserves surrounding text', () => {
+    const input = 'before\n```markdown\n```json\n{}\n```\ntext\n```\nafter'
+    const result = normalizeCodeFences(input)
+    expect(result).toBe('before\n````markdown\n```json\n{}\n```\ntext\n````\nafter')
+  })
+
+  it('handles unclosed nested fence', () => {
+    const input = '```markdown\n```json\n{}\n```'
+    const result = normalizeCodeFences(input)
+    expect(result).toBe('````markdown\n```json\n{}\n````')
   })
 })
 

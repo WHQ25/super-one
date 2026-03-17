@@ -31,6 +31,7 @@ export function splitByCodeFences(text: string): { content: string; isCode: bool
   let current: string[] = []
   let inFence = false
   let fenceTicks = ''
+  let nestedDepth = 0
   for (const line of lines) {
     if (!inFence) {
       const match = line.match(/^(`{3,})/)
@@ -39,20 +40,96 @@ export function splitByCodeFences(text: string): { content: string; isCode: bool
         current = [line]
         inFence = true
         fenceTicks = match[1]
+        nestedDepth = 0
       } else {
         current.push(line)
       }
     } else {
       current.push(line)
       if (line.trimEnd() === fenceTicks) {
-        segments.push({ content: current.join('\n'), isCode: true })
-        current = []
-        inFence = false
-        fenceTicks = ''
+        if (nestedDepth > 0) {
+          nestedDepth--
+        } else {
+          segments.push({ content: current.join('\n'), isCode: true })
+          current = []
+          inFence = false
+          fenceTicks = ''
+        }
+      } else {
+        const innerMatch = line.match(/^(`{3,})\S/)
+        if (innerMatch && innerMatch[1] === fenceTicks) {
+          nestedDepth++
+        }
       }
     }
   }
   if (current.length > 0) segments.push({ content: current.join('\n'), isCode: inFence })
+  return segments
+}
+
+export function normalizeCodeFences(text: string): string {
+  const segments = splitByCodeFences(text)
+  return segments.map((seg) => {
+    if (!seg.isCode) return seg.content
+    const lines = seg.content.split('\n')
+    const openMatch = lines[0].match(/^(`{3,})(.*)$/)
+    if (!openMatch) return seg.content
+    const outerTicks = openMatch[1]
+    const lang = openMatch[2]
+    const body = lines.slice(1)
+    const closingIdx = body.length - 1
+    const isClosed = closingIdx >= 0 && body[closingIdx].trimEnd() === outerTicks
+    const inner = isClosed ? body.slice(0, closingIdx) : body
+    let maxInner = 0
+    for (const line of inner) {
+      const m = line.match(/^(`{3,})/)
+      if (m && m[1].length > maxInner) maxInner = m[1].length
+    }
+    if (maxInner < outerTicks.length) return seg.content
+    const newTicks = '`'.repeat(maxInner + 1)
+    const result = [newTicks + lang, ...inner]
+    if (isClosed) result.push(newTicks)
+    return result.join('\n')
+  }).join('\n')
+}
+
+const INSIGHT_HEADER_LINE = /^`★\s+(.+?)\s+─{37}`$/
+const INSIGHT_FOOTER_LINE = /^`─{49}`$/
+
+type TextSegment = { type: 'text'; content: string } | { type: 'insight'; title: string; content: string }
+
+export function splitByInsightBlocks(text: string): TextSegment[] {
+  const lines = text.split('\n')
+  const segments: TextSegment[] = []
+  let current: string[] = []
+  let insightTitle: string | null = null
+  let insightLines: string[] = []
+  for (const line of lines) {
+    if (insightTitle === null) {
+      const m = line.match(INSIGHT_HEADER_LINE)
+      if (m) {
+        if (current.length > 0) segments.push({ type: 'text', content: current.join('\n') })
+        current = []
+        insightTitle = m[1].trim()
+        insightLines = []
+      } else {
+        current.push(line)
+      }
+    } else {
+      if (INSIGHT_FOOTER_LINE.test(line)) {
+        segments.push({ type: 'insight', title: insightTitle, content: insightLines.join('\n') })
+        insightTitle = null
+        insightLines = []
+      } else {
+        insightLines.push(line)
+      }
+    }
+  }
+  if (insightTitle !== null) {
+    current.push(`\`★ ${insightTitle} ${'─'.repeat(37)}\``)
+    current.push(...insightLines)
+  }
+  if (current.length > 0) segments.push({ type: 'text', content: current.join('\n') })
   return segments
 }
 
@@ -85,14 +162,67 @@ function findHoverInfo(target: HTMLElement, wrapper: HTMLElement): HoverInfo | n
   return { top: firstInSegment.offsetTop, textSegmentIndex }
 }
 
-export function CopyableMarkdown({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
+function InsightBlock({ title, content, isStreaming, components }: { title: string; content: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
+  const [copied, setCopied] = useState(false)
+  const normalized = useMemo(() => normalizeCodeFences(content), [content])
+  const textRef = useRef(normalized)
+  textRef.current = normalized
+  const isStreamingRef = useRef(isStreaming)
+  isStreamingRef.current = isStreaming
+  const codeComponent = useMemo(
+    () => createStreamdownCodeComponent(codePlugin, { textRef, isStreamingRef }),
+    [],
+  )
+  const merged = useMemo(
+    () => components
+      ? { ...streamdownComponents, ...components, code: codeComponent }
+      : { ...streamdownComponents, code: codeComponent },
+    [components, codeComponent],
+  )
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }, [content])
+
+  return (
+    <div className="group/insight my-3 border-l-[3px] pt-2.5 pb-1 pl-3 pr-2" style={{ borderColor: 'oklch(0.65 0.15 280)', background: 'oklch(0.65 0.1 280 / 0.13)' }}>
+      <div className="mb-1 flex items-center text-[13px] font-semibold" style={{ color: 'oklch(0.7 0.15 280)' }}>
+        <span className="flex items-center gap-1.5">
+          <span>★</span>
+          <span>{title}</span>
+        </span>
+        <button
+          onClick={handleCopy}
+          className="ml-auto cursor-pointer rounded p-0.5 opacity-0 transition-opacity group-hover/insight:opacity-100"
+          style={{ color: 'oklch(0.7 0.15 280)' }}
+        >
+          {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+        </button>
+      </div>
+      <Streamdown
+        className="chat-md"
+        plugins={streamdownPlugins}
+        components={merged}
+        controls={streamdownControls}
+        linkSafety={streamdownLinkSafety}
+        isAnimating={isStreaming}
+      >
+        {normalized}
+      </Streamdown>
+    </div>
+  )
+}
+
+function MarkdownRenderer({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
   const [hovered, setHovered] = useState(false)
   const [copied, setCopied] = useState(false)
   const [indicatorTop, setIndicatorTop] = useState(0)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const hoverInfoRef = useRef<HoverInfo | null>(null)
-  const textRef = useRef(text)
-  textRef.current = text
+  const normalized = useMemo(() => normalizeCodeFences(text), [text])
+  const textRef = useRef(normalized)
+  textRef.current = normalized
   const isStreamingRef = useRef(isStreaming)
   isStreamingRef.current = isStreaming
   const streamingCodeComponent = useMemo(
@@ -107,9 +237,9 @@ export function CopyableMarkdown({ text, isStreaming, components }: { text: stri
   )
 
   const textSegments = useMemo(() => {
-    const all = splitByCodeFences(text)
+    const all = splitByCodeFences(normalized)
     return all.filter((s) => !s.isCode).map((s) => s.content.trim())
-  }, [text])
+  }, [normalized])
 
   const copySegment = useCallback((index: number, top: number) => {
     const md = textSegments[index]
@@ -152,7 +282,7 @@ export function CopyableMarkdown({ text, isStreaming, components }: { text: stri
         linkSafety={streamdownLinkSafety}
         isAnimating={isStreaming}
       >
-        {text}
+        {normalized}
       </Streamdown>
       {showIndicator && (
         <div
@@ -163,5 +293,28 @@ export function CopyableMarkdown({ text, isStreaming, components }: { text: stri
         </div>
       )}
     </div>
+  )
+}
+
+export function CopyableMarkdown({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
+  const segments = useMemo(() => splitByInsightBlocks(text), [text])
+  const hasInsight = segments.some((s) => s.type === 'insight')
+
+  if (!hasInsight) {
+    return <MarkdownRenderer text={text} isStreaming={isStreaming} components={components} />
+  }
+
+  return (
+    <>
+      {segments.map((seg, i) => {
+        if (seg.type === 'text') {
+          if (!seg.content.trim()) return null
+          return <MarkdownRenderer key={i} text={seg.content} isStreaming={isStreaming} components={components} />
+        }
+        return (
+          <InsightBlock key={i} title={seg.title} content={seg.content} isStreaming={isStreaming} components={components} />
+        )
+      })}
+    </>
   )
 }

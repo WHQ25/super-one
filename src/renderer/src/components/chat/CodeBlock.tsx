@@ -22,8 +22,18 @@ export interface StreamingCtx {
 function isCodeBlockClosed(text: string, startLine?: number): boolean {
   if (startLine === undefined) return false
   const lines = text.split('\n')
+  const openLine = lines[startLine - 1]
+  const fenceMatch = openLine?.match(/^(\s*`{3,})/)
+  const fenceTicks = fenceMatch?.[1]?.trim() ?? '```'
+  let nestedDepth = 0
   for (let i = startLine; i < lines.length; i++) {
-    if (/^\s*`{3,}\s*$/.test(lines[i])) return true
+    const line = lines[i]
+    if (line.trimEnd() === fenceTicks) {
+      if (nestedDepth > 0) nestedDepth--
+      else return true
+    } else if (new RegExp(`^${fenceTicks}\\S`).test(line)) {
+      nestedDepth++
+    }
   }
   return false
 }

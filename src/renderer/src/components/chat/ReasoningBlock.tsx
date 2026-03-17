@@ -6,14 +6,16 @@ export function ReasoningBlock({
   text,
   blockDone,
   showContent = true,
+  collapseOnDone = true,
 }: {
   text: string
   blockDone: boolean
   showContent?: boolean
+  collapseOnDone?: boolean
 }) {
   const [elapsed, setElapsed] = useState(0)
   const startRef = useRef(!blockDone ? Date.now() : 0)
-  const [expanded, setExpanded] = useState(showContent && !blockDone)
+  const [expanded, setExpanded] = useState(showContent && (!blockDone || !collapseOnDone))
   const scrollRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef(0)
 
@@ -29,8 +31,8 @@ export function ReasoningBlock({
     if (!showContent) return
     if (!blockDone) return
     if (startRef.current) setElapsed(Math.round((Date.now() - startRef.current) / 1000))
-    setExpanded(false)
-  }, [blockDone, showContent])
+    if (collapseOnDone) setExpanded(false)
+  }, [blockDone, showContent, collapseOnDone])
 
   useEffect(() => {
     if (!showContent) return

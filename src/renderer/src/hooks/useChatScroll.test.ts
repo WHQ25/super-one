@@ -159,12 +159,14 @@ describe('useChatScroll', () => {
   })
 
   it('disables auto-scroll on user-initiated upward scroll during streaming', () => {
+    vi.useFakeTimers()
     const { el, state } = createMockViewport()
     const ref = { current: el }
 
     const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    vi.advanceTimersByTime(3000)
 
-    const scrolledPos = 50
+    const scrolledPos = 0
     act(() => {
       el.dispatchEvent(new Event('wheel'))
       state.scrollTop = scrolledPos
@@ -180,6 +182,7 @@ describe('useChatScroll', () => {
     }
     rerender()
     expect(state.scrollTop).toBe(scrolledPos)
+    vi.useRealTimers()
   })
 
   it('keeps auto-scroll disabled when ResizeObserver fires between wheel and scroll (trackpad race)', () => {
@@ -232,15 +235,18 @@ describe('useChatScroll', () => {
   })
 
   it('does not scroll on resize when not streaming', () => {
+    vi.useFakeTimers()
     mockSessionState = { ...mockSessionState, status: 'idle' }
     const { el, state } = createMockViewport()
     const ref = { current: el }
 
     renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    vi.advanceTimersByTime(3000)
 
     state.scrollHeight = 800
     fireResize()
     expect(state.scrollTop).toBe(200)
+    vi.useRealTimers()
   })
 
   it('scrolls to bottom when messages change and near bottom', () => {
@@ -259,5 +265,22 @@ describe('useChatScroll', () => {
     }
     rerender()
     expect(state.scrollTop).toBe(500)
+  })
+
+  it('scrolls to bottom when the last streaming message content updates and near bottom', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    state.scrollHeight = 900
+    mockSessionState = {
+      ...mockSessionState,
+      messages: [
+        { id: '1', role: 'assistant', status: 'streaming', content: [{ type: 'text', text: 'updated' }] },
+      ],
+    }
+    rerender()
+    expect(state.scrollTop).toBe(600)
   })
 })

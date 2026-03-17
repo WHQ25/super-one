@@ -4,7 +4,7 @@ import type { RecentFolder, SetupEvent, SettingsProvider, UpdateEvent } from '..
 type AppView = 'loading' | 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
-export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'remote'
+export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'preferences' | 'remote'
 export type LayoutMode = 'canvas' | 'coding'
 export type SidebarTab = 'sessions' | 'files'
 export type FilePanelView = 'file' | 'history'
@@ -115,6 +115,7 @@ async function refreshResourcesInBackground(): Promise<void> {
     useChatStore.getState().setGlobalResources(
       result.models, result.account, result.slashCommands,
       result.userSkills, result.userCommands, result.userAgents,
+      undefined, result.availableOutputStyles,
     )
   } catch (err) {
     console.error('[refreshResources] Failed:', err)
@@ -352,7 +353,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSettingsProvider: (provider) => {
     const currentTab = get().settingsTab
     // Codex only supports 'skills' and 'mcp' tabs
-    const needsTabSwitch = provider === 'codex' && (currentTab === 'providers' || currentTab === 'agents' || currentTab === 'plugins')
+    const needsTabSwitch = provider === 'codex' && (currentTab === 'providers' || currentTab === 'agents' || currentTab === 'plugins' || currentTab === 'preferences')
     set({
       settingsProvider: provider,
       ...(needsTabSwitch ? { settingsTab: 'skills' } : {}),

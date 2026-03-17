@@ -34,8 +34,13 @@ export interface SessionInfo {
   apiKeySource?: string
   betas?: string[]
   outputStyle?: string
+  availableOutputStyles?: string[]
   plugins?: { name: string; path: string }[]
   fastModeState?: 'off' | 'cooldown' | 'on'
+}
+
+export interface ClaudePreferences {
+  outputStyle: string
 }
 
 // --- Usage / cost tracking ---
@@ -715,6 +720,7 @@ export interface ConnectResult {
   userSkills: SlashCommandInfo[]
   userCommands: SlashCommandInfo[]
   userAgents: AgentInfo[]
+  availableOutputStyles: string[]
 }
 
 // --- Startup data (cached resources + user resources) ---
@@ -972,6 +978,11 @@ export const AgentIpcChannels = {
   // MCP library
   MCP_LIST_LIBRARY: 'mcp:list-library',
   MCP_DELETE_LIBRARY_ENTRY: 'mcp:delete-library-entry',
+
+  CLAUDE_USER_PREFERENCES_GET: 'claude:user-preferences-get',
+  CLAUDE_USER_PREFERENCES_SAVE: 'claude:user-preferences-save',
+  CLAUDE_PROJECT_PREFERENCES_GET: 'claude:project-preferences-get',
+  CLAUDE_PROJECT_PREFERENCES_SAVE: 'claude:project-preferences-save',
 
   // Agents
   AGENTS_LIST: 'agents:list',

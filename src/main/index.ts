@@ -41,6 +41,7 @@ import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './
 import { CodexExperimentService } from './codex/codex-experiment-service'
 import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
+import { readUserPreferences, saveUserPreferences, readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import type { RemoteCommand, PairedDevice } from '../shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
@@ -1042,6 +1043,26 @@ function registerIpcHandlers(): void {
     return readBashOutputTail(filePath, tailLines)
   })
 
+  ipcMain.handle(AgentIpcChannels.CLAUDE_USER_PREFERENCES_GET, () => {
+    return readUserPreferences()
+  })
+
+  ipcMain.handle(AgentIpcChannels.CLAUDE_USER_PREFERENCES_SAVE, (_e, preferences) => {
+    const result = saveUserPreferences(preferences)
+    agentService.markAllNeedsRebuild()
+    return result
+  })
+
+  ipcMain.handle(AgentIpcChannels.CLAUDE_PROJECT_PREFERENCES_GET, (_e, projectPath: string) => {
+    return readProjectPreferences(projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CLAUDE_PROJECT_PREFERENCES_SAVE, (_e, projectPath: string, preferences) => {
+    const result = saveProjectPreferences(projectPath, preferences)
+    agentService.markAllNeedsRebuild()
+    return result
+  })
+
   ipcMain.handle(AgentIpcChannels.SET_FAST_MODE, (_e, enabled: boolean) => {
     const settingsPath = join(homedir(), '.claude', 'settings.json')
     let data: Record<string, unknown> = {}
@@ -1137,10 +1158,11 @@ function registerIpcHandlers(): void {
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')
-      const [modelInfos, accountInfo, commands] = await Promise.all([
+      const [modelInfos, accountInfo, commands, initResult] = await Promise.all([
         q.supportedModels(),
         q.accountInfo(),
         q.supportedCommands(),
+        q.initializationResult(),
       ])
       log.info('[CONNECT_CLAUDE] Fetch complete, closing query...')
       q.close()
@@ -1151,6 +1173,7 @@ function registerIpcHandlers(): void {
       log.info('[CONNECT_CLAUDE] Models:', JSON.stringify(modelInfos, null, 2))
       log.info('[CONNECT_CLAUDE] Account:', JSON.stringify(accountInfo, null, 2))
       log.info('[CONNECT_CLAUDE] Commands:', JSON.stringify(commands, null, 2))
+      log.info('[CONNECT_CLAUDE] OutputStyle=%s AvailableStyles=%j', initResult.output_style, initResult.available_output_styles)
       log.info('[CONNECT_CLAUDE] User Skills:', JSON.stringify(userSkills, null, 2))
       log.info('[CONNECT_CLAUDE] User Commands:', JSON.stringify(userCommands, null, 2))
 
@@ -1173,7 +1196,9 @@ function registerIpcHandlers(): void {
 
       const userAgents = discoverUserAgents()
 
-      return { models, account, slashCommands, userSkills, userCommands, userAgents }
+      const availableOutputStyles = initResult.available_output_styles ?? []
+
+      return { models, account, slashCommands, userSkills, userCommands, userAgents, availableOutputStyles }
     } catch (error) {
       log.error('[CONNECT_CLAUDE] failed: %s', error instanceof Error ? error.message : String(error))
       const debugLogPath = String(log.transports.file.getFile().path)

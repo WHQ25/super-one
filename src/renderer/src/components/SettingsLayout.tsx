@@ -1,10 +1,11 @@
-import { ArrowLeft, Blocks, Bot, Globe, Puzzle, Server, Smartphone } from 'lucide-react'
+import { ArrowLeft, Blocks, Bot, Globe, Palette, Puzzle, Server, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
 import { AgentsPage } from './AgentsPage'
 import { SkillsPage } from './SkillsPage'
 import { McpPage } from './McpPage'
 import { PluginsPage } from './PluginsPage'
+import { PreferencesPage } from './PreferencesPage'
 import { ProvidersPage } from './ProvidersPage'
 import { RemotePage } from './RemotePage'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -17,6 +18,7 @@ const allTabs = [
   { id: 'skills' as const, label: 'Skills', icon: Puzzle },
   { id: 'mcp' as const, label: 'MCP Servers', icon: Server },
   { id: 'plugins' as const, label: 'Plugins', icon: Blocks },
+  { id: 'preferences' as const, label: 'Preference', icon: Palette },
 ]
 
 const codexTabs = new Set<string>(['providers', 'skills', 'mcp'])
@@ -101,6 +103,7 @@ export function SettingsLayout() {
         {settingsTab === 'skills' && <SkillsPage />}
         {settingsTab === 'mcp' && <McpPage />}
         {settingsTab === 'plugins' && <PluginsPage />}
+        {settingsTab === 'preferences' && <PreferencesPage />}
         {settingsTab === 'remote' && <RemotePage />}
       </div>
     </div>

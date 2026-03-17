@@ -44,6 +44,12 @@ export class AgentService {
     }
   }
 
+  markAllNeedsRebuild(): void {
+    for (const agent of this.agents.values()) {
+      agent.markNeedsRebuild()
+    }
+  }
+
   private getAgent(projectPath: string): ClaudeAgent {
     const agent = this.agents.get(projectPath)
     if (!agent) throw new Error(`No agent for project: ${projectPath}`)
@@ -436,9 +442,7 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.PROVIDERS_ACTIVATE, (_event, id: string, agentType: string) => {
       log.info('[providers] activate id=%s agentType=%s agents=%d', id, agentType, this.agents.size)
       const result = activateProvider(id, agentType)
-      for (const agent of this.agents.values()) {
-        agent.markNeedsRebuild()
-      }
+      this.markAllNeedsRebuild()
       log.info('[providers] activate done, all agents marked for rebuild')
       return result
     })
@@ -446,9 +450,7 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL, (_event, agentType: string) => {
       log.info('[providers] deactivate all, agentType=%s agents=%d', agentType, this.agents.size)
       deactivateAllProviders(agentType)
-      for (const agent of this.agents.values()) {
-        agent.markNeedsRebuild()
-      }
+      this.markAllNeedsRebuild()
       log.info('[providers] deactivate done, all agents marked for rebuild')
     })
 

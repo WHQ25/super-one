@@ -199,6 +199,7 @@ interface ChatStore {
   userSkills: SlashCommandInfo[]
   userCommands: SlashCommandInfo[]
   userAgents: AgentInfo[]
+  availableOutputStyles: string[]
 
   // Global resource setter
   setGlobalResources: (
@@ -209,6 +210,7 @@ interface ChatStore {
     userCommands: SlashCommandInfo[],
     userAgents: AgentInfo[],
     codexModels?: ModelOption[],
+    availableOutputStyles?: string[],
   ) => void
 
   // Event handling
@@ -380,7 +382,7 @@ function removeCodexItem(items: CodexThreadItem[], itemId: string): CodexThreadI
 }
 
 function pruneTransientCodexItems(items: CodexThreadItem[]): CodexThreadItem[] {
-  return items.filter((item) => item.type !== 'reasoning')
+  return items
 }
 
 function getCodexContextTokens(usage: CodexUsageInfo): number {
@@ -675,7 +677,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       return { permissionMode: event.mode }
 
     case 'session_init':
-      console.log('[applyEvent] session_init', { sessionId: event.session?.sessionId })
+      console.log('[applyEvent] session_init', { sessionId: event.session?.sessionId, outputStyle: event.session?.outputStyle, availableOutputStyles: event.session?.availableOutputStyles })
       return { session: event.session, sessionProvider: session.sessionProvider ?? DEFAULT_PROVIDER }
 
     case 'ask_user_question':
@@ -801,9 +803,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           const prevCodex = msg.metadata?.codex ?? { threadId: null, usage: null, items: [] }
-          const nextItems = event.item.type === 'reasoning' && event.phase === 'completed'
-            ? removeCodexItem(prevCodex.items, event.item.id)
-            : upsertCodexItem(prevCodex.items, event.item)
+          const nextItems = upsertCodexItem(prevCodex.items, event.item)
           return {
             ...msg,
             metadata: {
@@ -1227,8 +1227,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   userSkills: [],
   userCommands: [],
   userAgents: [],
+  availableOutputStyles: [],
 
-  setGlobalResources: (models, account, slashCommands, userSkills, userCommands, userAgents, codexModels) => {
+  setGlobalResources: (models, account, slashCommands, userSkills, userCommands, userAgents, codexModels, availableOutputStyles) => {
     set((s) => {
       const effectiveCodexModels = codexModels ?? s.cachedCodexModels
       const updates: Partial<ChatStore> = {
@@ -1239,6 +1240,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         userSkills,
         userCommands,
         userAgents,
+        availableOutputStyles: availableOutputStyles ?? s.availableOutputStyles,
       }
 
       const projects = { ...s.projectSessions }
@@ -1769,6 +1771,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const appendAssistant = (message: ChatMessage) => {
         updateCodexSession((sess) => ({
           messages: [...sess.messages, message],
+          ...(message.role === 'assistant' ? { lastAssistantMessageId: message.id } : {}),
         }))
       }
       const getTargetAssistantId = () => getCodexSession()?.activeCodexMessageId ?? assistantId

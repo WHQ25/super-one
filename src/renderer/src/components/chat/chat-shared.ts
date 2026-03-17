@@ -10,7 +10,7 @@ import { LinkSafetyModal } from './LinkSafetyModal'
 export const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 export const codePluginLight = createCodePlugin({ themes: ['github-light', 'github-light'] })
 
-export const mathPlugin = createMathPlugin({ singleDollarTextMath: true })
+export const mathPlugin = createMathPlugin({ singleDollarTextMath: false })
 ;(mathPlugin.rehypePlugin as [unknown, Record<string, unknown>])[1].strict = false
 
 /** Shared Streamdown plugins config. */

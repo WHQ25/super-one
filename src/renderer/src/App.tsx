@@ -318,22 +318,28 @@ function App(): React.JSX.Element {
 
           <div className="flex-1" />
 
-          {/* Mode switch */}
-          <Tabs
-            value={layoutMode}
-            onValueChange={(v) => setLayoutMode(v as 'canvas' | 'coding')}
-            className="mr-3"
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          >
-            <TabsList>
-              <TabsTrigger value="canvas" className="px-1.5">
-                <Paintbrush className="size-3.5" />
-              </TabsTrigger>
-              <TabsTrigger value="coding" className="px-1.5">
-                <Code className="size-3.5" />
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {/* Mode switch + theme */}
+          <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <Tabs
+              value={layoutMode}
+              onValueChange={(v) => setLayoutMode(v as 'canvas' | 'coding')}
+            >
+              <TabsList>
+                <TabsTrigger value="canvas" className="px-1.5">
+                  <Paintbrush className="size-3.5" />
+                </TabsTrigger>
+                <TabsTrigger value="coding" className="px-1.5">
+                  <Code className="size-3.5" />
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <button
+              onClick={theme.toggle}
+              className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {theme.dark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
+            </button>
+          </div>
         </div>
 
         {/* Content */}

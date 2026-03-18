@@ -22,9 +22,52 @@ const THROTTLED_EVENTS = new Set(['tool_progress'])
 
 const TOOL_RESULT_MAX_LEN = 200
 
+const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
+
+function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSummary?: string; toolFilePath?: string } {
+  try {
+    const p = JSON.parse(block.input)
+    if (!p || typeof p !== 'object') return {}
+    const filePath = FILE_PATH_TOOLS.has(block.toolName) ? String(p.file_path ?? p.notebook_path ?? '') : undefined
+    let summary: string | undefined
+    switch (block.toolName) {
+      case 'Read': {
+        const fileName = (filePath ?? '').split('/').pop() || filePath || ''
+        let meta = ''
+        if (p.pages != null) meta = `Page ${p.pages}`
+        else {
+          const offset = p.offset != null ? Number(p.offset) : 0
+          const limit = p.limit != null ? Number(p.limit) : undefined
+          const start = offset || 1
+          if (limit != null) meta = `L${start}–${start + limit - 1}`
+          else if (offset > 0) meta = `L${offset}+`
+        }
+        summary = meta ? `${fileName} (${meta})` : fileName
+        break
+      }
+      case 'Grep':
+        summary = `${p.pattern ?? ''}${p.path ? ` in ${String(p.path).split('/').pop()}` : ''}`
+        break
+      case 'Glob':
+        summary = String(p.pattern ?? '')
+        break
+      case 'WebSearch':
+        summary = String(p.query ?? '')
+        break
+      case 'WebFetch':
+        summary = String(p.url ?? '')
+        break
+    }
+    return { toolSummary: summary, toolFilePath: filePath || undefined }
+  } catch { return {} }
+}
+
 function stripContentBlock(block: ContentBlock): ContentBlock {
   if (block.type === 'thinking') return { ...block, thinking: '' }
-  if (block.type === 'tool_use') return { ...block, input: '' }
+  if (block.type === 'tool_use') {
+    const meta = computeToolMeta(block)
+    return { ...block, input: '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath }
+  }
   if (block.type === 'tool_result' && block.summary.length > TOOL_RESULT_MAX_LEN) {
     return { ...block, summary: block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
   }

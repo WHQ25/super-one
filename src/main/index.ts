@@ -45,7 +45,6 @@ import { readUserPreferences, saveUserPreferences, readProjectPreferences, saveP
 import type { RemoteCommand, PairedDevice } from '../shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
-declare const __CF_RELAY_URL__: string
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -91,6 +90,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
   },
   isPairedDevice: (deviceId) => isPairedDevice(deviceId),
 }
+declare const __CF_RELAY_URL__: string
 const remoteControlService = new RemoteControlService(__CF_RELAY_URL__, remoteCallbacks)
 let mainWindow: BrowserWindow | null = null
 
@@ -256,6 +256,7 @@ function createWindow(): void {
 /** Register all IPC handlers once at app startup. */
 function registerIpcHandlers(): void {
   // Setup agent IPC handlers (does NOT auto-initialize)
+  agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))
   agentService.setup()
 
   ipcMain.on('app:trace', (_e, source: string, type: string, data: unknown, tag?: string) => {
@@ -1084,16 +1085,16 @@ function registerIpcHandlers(): void {
   })
 
   const remoteConfigPath = join(app.getPath('userData'), 'remote-config.json')
-  function readRemoteConfig(): { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean } | null {
+  function readRemoteConfig(): { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean; relayUrl: string } | null {
     try {
       const raw = JSON.parse(readFileSync(remoteConfigPath, 'utf-8'))
-      return { preventSleep: false, ...raw }
+      return { preventSleep: false, relayUrl: '', ...raw }
     } catch {
       return null
     }
   }
   ipcMain.handle('remote:get-config', readRemoteConfig)
-  ipcMain.handle('remote:save-config', (_, config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean }) => {
+  ipcMain.handle('remote:save-config', (_, config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean; relayUrl: string }) => {
     writeFileSync(remoteConfigPath, JSON.stringify(config))
     remoteControlService.start(config)
   })
@@ -1124,6 +1125,7 @@ function registerIpcHandlers(): void {
     await remoteControlService.cancelPairing()
   })
 
+  agentService.setRemoteControlService(remoteControlService)
   agentService.addEventSubscriber((event) => {
     remoteControlService.broadcastAgentEvent(event)
   })

@@ -540,7 +540,7 @@ const appAPI = {
   // Remote control
   getRemoteConfig: () =>
     ipcRenderer.invoke('remote:get-config'),
-  saveRemoteConfig: (config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean }) =>
+  saveRemoteConfig: (config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean; relayUrl: string }) =>
     ipcRenderer.invoke('remote:save-config', config),
   onRecentFoldersChanged: (callback: (folders: unknown[]) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, folders: unknown[]): void => {
@@ -582,7 +582,7 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, handler)
     }
   },
-  startPairing: (): Promise<{ channelId: string; tempKeyHex: string }> =>
+  startPairing: (): Promise<{ channelId: string; tempKeyHex: string; relayUrl: string }> =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_START_PAIRING),
   confirmPairing: (code: string): Promise<void> =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_CONFIRM_PAIRING, code),

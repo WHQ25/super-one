@@ -20,6 +20,27 @@ export interface RemoteDeviceConfig {
   masterSecret: string
   deviceId: string
   preventSleep: boolean
+  relayUrl: string
+}
+
+function createRemoteDeviceConfig(): RemoteDeviceConfig {
+  return {
+    enabled: false,
+    masterSecret: Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join(''),
+    deviceId: crypto.randomUUID(),
+    preventSleep: false,
+    relayUrl: '',
+  }
+}
+
+function normalizeRemoteDeviceConfig(config: RemoteDeviceConfig): RemoteDeviceConfig {
+  return {
+    ...config,
+    preventSleep: config.preventSleep ?? false,
+    relayUrl: config.relayUrl ?? '',
+  }
 }
 
 interface AppState {
@@ -412,20 +433,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   loadRemoteConfig: async () => {
-    const saved = await window.app.getRemoteConfig()
-    if (saved) {
-      set({ remoteConfig: { ...saved, preventSleep: saved.preventSleep ?? false } })
-    } else {
-      const initial: RemoteDeviceConfig = {
-        enabled: false,
-        masterSecret: Array.from(crypto.getRandomValues(new Uint8Array(32)))
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join(''),
-        deviceId: crypto.randomUUID(),
-        preventSleep: false,
+    const initial = get().remoteConfig ?? createRemoteDeviceConfig()
+    if (!get().remoteConfig) set({ remoteConfig: initial })
+    try {
+      const saved = await window.app.getRemoteConfig()
+      if (saved) {
+        set({ remoteConfig: normalizeRemoteDeviceConfig(saved) })
+        return
       }
       await window.app.saveRemoteConfig(initial)
-      set({ remoteConfig: initial })
+    } catch (err) {
+      console.error('[remote] loadRemoteConfig failed:', err)
     }
   },
 

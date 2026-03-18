@@ -19,6 +19,7 @@ export function RemotePage() {
   const [codeInput, setCodeInput] = useState('')
   const [codeError, setCodeError] = useState('')
   const [confirming, setConfirming] = useState(false)
+  const [relayStatus, setRelayStatus] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle')
   useEffect(() => {
     window.app.listPairedDevices().then(setPairedDevices)
 
@@ -62,8 +63,8 @@ export function RemotePage() {
   async function handleStartPairing() {
     setCodeError('')
 
-    const { channelId, tempKeyHex } = await window.app.startPairing()
-    const url = `superone://pair?channel=${channelId}&key=${tempKeyHex}&deviceId=${config!.deviceId}`
+    const { channelId, tempKeyHex, relayUrl } = await window.app.startPairing()
+    const url = `superone://pair?channel=${channelId}&key=${tempKeyHex}&deviceId=${config!.deviceId}&relay=${encodeURIComponent(relayUrl)}`
     setQrValue(url)
     setPairingStep('waiting_scan')
   }
@@ -106,6 +107,19 @@ export function RemotePage() {
     setPairedDevices((prev) => prev.filter((d) => d.id !== id))
   }
 
+  async function checkRelay() {
+    const url = config?.relayUrl
+    if (!url) return
+    setRelayStatus('checking')
+    try {
+      const httpUrl = url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://')
+      const res = await fetch(`${httpUrl}/health`)
+      setRelayStatus(res.ok ? 'ok' : 'error')
+    } catch {
+      setRelayStatus('error')
+    }
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
@@ -124,7 +138,6 @@ export function RemotePage() {
           <Switch
             checked={config?.enabled ?? false}
             onCheckedChange={(checked) => updateConfig({ enabled: checked })}
-            disabled={!config}
           />
         </div>
 
@@ -136,7 +149,6 @@ export function RemotePage() {
           <Switch
             checked={config?.preventSleep ?? false}
             onCheckedChange={(checked) => updateConfig({ preventSleep: checked })}
-            disabled={!config}
           />
         </div>
       </div>
@@ -225,6 +237,47 @@ export function RemotePage() {
           </ul>
         )}
       </div>
+
+      {import.meta.env.DEV && (
+        <div className="rounded-lg border border-border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Custom Relay Server</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => window.open('https://deploy.workers.cloudflare.com/?url=https://github.com/WHQ25/super-one-relay', '_blank')}
+            >
+              Deploy to Cloudflare
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              placeholder="wss://your-relay.workers.dev"
+              value={config?.relayUrl ?? ''}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                updateConfig({ relayUrl: e.target.value.trim() })
+                setRelayStatus('idle')
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={checkRelay}
+              disabled={!config?.relayUrl || relayStatus === 'checking'}
+            >
+              {relayStatus === 'checking' ? 'Checking…' : 'Test'}
+            </Button>
+            {relayStatus === 'ok' && <span className="text-xs text-green-600">Connected</span>}
+            {relayStatus === 'error' && <span className="text-xs text-destructive">Unreachable</span>}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Override the default relay with your own Cloudflare Workers deployment. Leave empty to use the built-in relay.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

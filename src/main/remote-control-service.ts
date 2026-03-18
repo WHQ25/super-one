@@ -1,8 +1,8 @@
-import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js'
 import { webcrypto } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { hostname } from 'node:os'
 import { powerSaveBlocker } from 'electron'
+import WebSocket from 'ws'
 import log from './logger'
 import type { AgentEvent, RemoteCommand } from '../shared/agent-types'
 
@@ -10,6 +10,11 @@ const subtle = webcrypto.subtle
 const encoder = new TextEncoder()
 
 const PAIRING_TIMEOUT_MS = 3 * 60 * 1000
+const BATCH_INTERVAL_MS = 50
+const MAX_RECONNECT_DELAY_MS = 30_000
+const SKIPPED_EVENTS = new Set(['files_persisted', 'elicitation_complete'])
+const THROTTLED_EVENTS = new Set(['tool_progress', 'hook_progress'])
+const THROTTLE_INTERVAL_MS = 2_000
 
 function bytesToHex(bytes: ArrayBuffer): string {
   return Array.from(new Uint8Array(bytes))
@@ -17,18 +22,23 @@ function bytesToHex(bytes: ArrayBuffer): string {
     .join('')
 }
 
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
+  const arr = hex.match(/.{2}/g)!.map((h) => parseInt(h, 16))
+  return new Uint8Array(arr) as Uint8Array<ArrayBuffer>
+}
+
 async function importKeyMaterial(masterSecretHex: string): Promise<webcrypto.CryptoKey> {
-  const bytes = new Uint8Array(masterSecretHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)))
-  return subtle.importKey('raw', bytes, 'HKDF', false, ['deriveBits'])
+  return subtle.importKey('raw', hexToBytes(masterSecretHex), 'HKDF', false, ['deriveBits'])
 }
 
 async function deriveKeys(masterSecretHex: string): Promise<{
   channelKeyHex: string
   aesKey: webcrypto.CryptoKey
 }> {
+  const keyMaterial = await importKeyMaterial(masterSecretHex)
   const channelBits = await subtle.deriveBits(
     { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encoder.encode('channel-key') },
-    await importKeyMaterial(masterSecretHex),
+    keyMaterial,
     256,
   )
   const channelKeyHex = bytesToHex(channelBits)
@@ -44,8 +54,7 @@ async function deriveKeys(masterSecretHex: string): Promise<{
 }
 
 async function importRawAesKey(keyHex: string): Promise<webcrypto.CryptoKey> {
-  const bytes = new Uint8Array(keyHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)))
-  return subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt', 'decrypt'])
+  return subtle.importKey('raw', hexToBytes(keyHex), 'AES-GCM', false, ['encrypt', 'decrypt'])
 }
 
 async function encryptPayload(aesKey: webcrypto.CryptoKey, payload: unknown): Promise<string> {
@@ -65,21 +74,15 @@ async function decryptPayload(aesKey: webcrypto.CryptoKey, data: string): Promis
   return JSON.parse(new TextDecoder().decode(decrypted))
 }
 
-async function computeSignature(timestamp: number, nonce: string, channelKeyHex: string): Promise<string> {
-  const parts = [timestamp.toString(), nonce, channelKeyHex].sort()
-  const hash = await subtle.digest('SHA-1', encoder.encode(parts.join('')))
-  return bytesToHex(hash)
+async function computeHmacToken(channelKeyHex: string, role: string, timestamp: string): Promise<string> {
+  const key = await subtle.importKey('raw', hexToBytes(channelKeyHex), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const sig = await subtle.sign('HMAC', key, encoder.encode(`${role}:${timestamp}`))
+  return bytesToHex(sig)
 }
 
-function generateNonce(): string {
-  return Buffer.from(webcrypto.getRandomValues(new Uint8Array(3))).toString('hex')
-}
-
-interface IncomingEnvelope {
-  timestamp: number
-  nonce: string
-  signature: string
-  data: string
+async function computeRoomId(channelKeyHex: string): Promise<string> {
+  const hash = await subtle.digest('SHA-256', hexToBytes(channelKeyHex))
+  return bytesToHex(hash).substring(0, 32)
 }
 
 export interface RemoteDeviceConfig {
@@ -92,16 +95,17 @@ export interface RemoteDeviceConfig {
 interface PairingSession {
   channelId: string
   aesKey: webcrypto.CryptoKey
-  pairingSupabase: SupabaseClient
-  pairingChannel: RealtimeChannel
+  ws: WebSocket | null
   pendingCode: string | null
   pendingMobileDeviceId: string | null
   pendingDeviceName: string | null
   expiryTimer: ReturnType<typeof setTimeout>
 }
 
+export type RemoteResponder = (requestId: string, data: unknown) => Promise<void>
+
 export interface RemoteControlCallbacks {
-  onCommand: (cmd: RemoteCommand) => void
+  onCommand: (cmd: RemoteCommand, respond: RemoteResponder) => void
   onClientRegistered?: (info: { deviceName: string; deviceId: string }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
   onPairingCodeReceived?: (info: { code: string; deviceName: string }) => void
@@ -112,19 +116,24 @@ export interface RemoteControlCallbacks {
 }
 
 export class RemoteControlService {
-  private supabase: SupabaseClient | null = null
-  private channel: RealtimeChannel | null = null
+  private relayWs: WebSocket | null = null
   private keys: { channelKeyHex: string; aesKey: webcrypto.CryptoKey } | null = null
-  private seenSignatures = new Set<string>()
   private onlineDeviceIds = new Set<string>()
   private currentConfig: RemoteDeviceConfig | null = null
   private sleepBlockerProcess: ChildProcess | null = null
   private powerBlockerId: number | null = null
   private pairingSession: PairingSession | null = null
 
+  private batchBuffer: AgentEvent[] = []
+  private batchTimer: ReturnType<typeof setTimeout> | null = null
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private reconnectDelay = 1_000
+  private intentionallyClosed = false
+
+  private lastThrottledAt = new Map<string, number>()
+
   constructor(
-    private readonly supabaseUrl: string,
-    private readonly publishableKey: string,
+    private readonly relayUrl: string,
     private readonly callbacks: RemoteControlCallbacks,
   ) {}
 
@@ -173,80 +182,112 @@ export class RemoteControlService {
   async start(config: RemoteDeviceConfig): Promise<void> {
     await this.stop()
     this.currentConfig = config
-    if (!config.enabled || !this.supabaseUrl || !this.publishableKey) return
+    if (!config.enabled || !this.relayUrl) return
 
-    const keys = await deriveKeys(config.masterSecret)
-    this.keys = keys
-    this.supabase = createClient(this.supabaseUrl, this.publishableKey)
-    this.channel = this.supabase.channel(`agent:${config.deviceId}`)
-
-    this.channel.on(
-      'broadcast',
-      { event: 'command' },
-      async ({ payload }: { payload: IncomingEnvelope }) => {
-        try {
-          const { timestamp, nonce, signature, data } = payload
-          if (Math.abs(Date.now() - timestamp) > 30_000) {
-            log.warn('[RemoteControl] Envelope expired')
-            return
-          }
-          const expected = await computeSignature(timestamp, nonce, keys.channelKeyHex)
-          if (expected !== signature) {
-            log.warn('[RemoteControl] Invalid signature')
-            return
-          }
-          if (this.seenSignatures.has(signature)) {
-            log.warn('[RemoteControl] Replay attack rejected')
-            return
-          }
-          this.seenSignatures.add(signature)
-          setTimeout(() => this.seenSignatures.delete(signature), 30_000)
-          const command = (await decryptPayload(keys.aesKey, data)) as RemoteCommand
-          this.callbacks.onCommand(command)
-        } catch (err) {
-          log.error('[RemoteControl] Failed to handle command:', err)
-        }
-      },
-    )
-
-    this.channel.on('broadcast', { event: 'register' }, ({ payload }: { payload: { deviceName?: string; mobileDeviceId?: string } }) => {
-      const deviceName = payload?.deviceName ?? 'Unknown Device'
-      const deviceId = payload?.mobileDeviceId ?? `unknown-${Date.now()}`
-      if (this.callbacks.isPairedDevice && !this.callbacks.isPairedDevice(deviceId)) {
-        log.warn('[RemoteControl] Rejecting unrecognized device:', deviceId)
-        this.channel?.send({ type: 'broadcast', event: 'kicked', payload: { mobileDeviceId: deviceId } })
-        return
-      }
-      log.info('[RemoteControl] Client registered:', deviceName, deviceId)
-      this.onlineDeviceIds.add(deviceId)
-      this.callbacks.onClientRegistered?.({ deviceName, deviceId })
-      this.channel?.send({ type: 'broadcast', event: 'handshake', payload: { hostName: hostname() } })
-    })
-
-    this.channel.on('broadcast', { event: 'disconnect' }, ({ payload }: { payload: { mobileDeviceId?: string } }) => {
-      const deviceId = payload?.mobileDeviceId
-      if (deviceId) {
-        this.onlineDeviceIds.delete(deviceId)
-        log.info('[RemoteControl] Client disconnected:', deviceId)
-        this.callbacks.onClientDisconnected?.({ deviceId })
-      }
-    })
-
-    this.channel.subscribe()
+    this.keys = await deriveKeys(config.masterSecret)
+    this.intentionallyClosed = false
+    await this.connectRelay()
     if (config.preventSleep) this.acquirePowerLock()
-    log.info('[RemoteControl] Channel started for device:', config.deviceId)
+    log.info('[RemoteControl] Started for device:', config.deviceId)
   }
 
   async stop(): Promise<void> {
     await this.cancelPairing()
-    if (this.channel && this.supabase) {
-      await this.supabase.removeChannel(this.channel)
+    this.intentionallyClosed = true
+    this.clearBatch()
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
     }
-    this.channel = null
-    this.supabase = null
+    if (this.relayWs) {
+      this.relayWs.close(1000, 'stopping')
+      this.relayWs = null
+    }
     this.keys = null
-    this.seenSignatures.clear()
     this.releasePowerLock()
+  }
+
+  private async connectRelay(): Promise<void> {
+    if (!this.keys || !this.relayUrl) return
+
+    const ts = Date.now().toString()
+    const token = await computeHmacToken(this.keys.channelKeyHex, 'desktop', ts)
+    const room = await computeRoomId(this.keys.channelKeyHex)
+    log.info('[RemoteControl] channelKeyHex:', this.keys.channelKeyHex.substring(0, 8) + '...')
+    log.info('[RemoteControl] room:', room)
+    const url = `${this.relayUrl}/ws?role=desktop&token=${token}&ts=${ts}&room=${room}`
+
+    const ws = new WebSocket(url)
+    this.relayWs = ws
+
+    ws.on('open', () => {
+      log.info('[RemoteControl] Relay connected')
+      this.reconnectDelay = 1_000
+      ws.send(JSON.stringify({ type: 'handshake', hostName: hostname() }))
+    })
+
+    ws.on('message', (raw) => {
+      try {
+        this.handleRelayMessage(JSON.parse(raw.toString()))
+      } catch (err) {
+        log.error('[RemoteControl] Failed to parse relay message:', err)
+      }
+    })
+
+    ws.on('close', () => {
+      if (this.relayWs === ws) this.relayWs = null
+      if (!this.intentionallyClosed) this.scheduleReconnect()
+    })
+
+    ws.on('error', (err) => {
+      log.error('[RemoteControl] Relay WS error:', err.message)
+    })
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) return
+    log.info(`[RemoteControl] Reconnecting in ${this.reconnectDelay}ms`)
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null
+      await this.connectRelay()
+    }, this.reconnectDelay)
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_DELAY_MS)
+  }
+
+  private async handleRelayMessage(frame: { type: string; [key: string]: unknown }): Promise<void> {
+    switch (frame.type) {
+      case 'command': {
+        if (!this.keys) return
+        const command = (await decryptPayload(this.keys.aesKey, frame.data as string)) as RemoteCommand
+        this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data))
+        break
+      }
+      case 'register': {
+        const deviceName = (frame.deviceName as string) ?? 'Unknown Device'
+        const deviceId = (frame.mobileDeviceId as string) ?? `unknown-${Date.now()}`
+        if (this.callbacks.isPairedDevice && !this.callbacks.isPairedDevice(deviceId)) {
+          log.warn('[RemoteControl] Rejecting unrecognized device:', deviceId)
+          this.relayWs?.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
+          return
+        }
+        log.info('[RemoteControl] Client registered:', deviceName, deviceId)
+        this.onlineDeviceIds.add(deviceId)
+        this.callbacks.onClientRegistered?.({ deviceName, deviceId })
+        break
+      }
+      case 'peer_connected':
+        log.info('[RemoteControl] Mobile peer connected')
+        this.relayWs?.send(JSON.stringify({ type: 'handshake', hostName: hostname() }))
+        break
+      case 'peer_disconnected': {
+        log.info('[RemoteControl] Mobile peer disconnected')
+        for (const id of this.onlineDeviceIds) {
+          this.onlineDeviceIds.delete(id)
+          this.callbacks.onClientDisconnected?.({ deviceId: id })
+        }
+        break
+      }
+    }
   }
 
   async startPairing(): Promise<{ channelId: string; tempKeyHex: string }> {
@@ -259,46 +300,52 @@ export class RemoteControlService {
     const tempKeyHex = bytesToHex(tempKeyBytes.buffer)
     const aesKey = await importRawAesKey(tempKeyHex)
 
-    const pairingSupabase = createClient(this.supabaseUrl, this.publishableKey)
-    const pairingChannel = pairingSupabase.channel(`pairing:${channelId}`)
-
     const expiryTimer = setTimeout(async () => {
       log.info('[RemoteControl] Pairing session expired:', channelId)
       await this.cancelPairing()
       this.callbacks.onPairingExpired?.()
     }, PAIRING_TIMEOUT_MS)
 
+    const pairingUrl = `${this.relayUrl}/pair?channel=${channelId}&role=desktop`
+    const ws = new WebSocket(pairingUrl)
+
     this.pairingSession = {
-      channelId, aesKey, pairingSupabase, pairingChannel,
+      channelId, aesKey, ws,
       pendingCode: null, pendingMobileDeviceId: null, pendingDeviceName: null,
       expiryTimer,
     }
 
-    pairingChannel.on('broadcast', { event: 'pair_request' }, async ({ payload }: { payload: { data: string } }) => {
+    ws.on('message', async (raw) => {
       if (!this.pairingSession || this.pairingSession.pendingCode !== null) return
       try {
-        const { code, mobileDeviceId, deviceName } = await decryptPayload(aesKey, payload.data) as {
-          code: string; mobileDeviceId: string; deviceName: string
+        const frame = JSON.parse(raw.toString())
+        if (frame.type === 'pair_request') {
+          const { code, mobileDeviceId, deviceName } = (await decryptPayload(aesKey, frame.data)) as {
+            code: string; mobileDeviceId: string; deviceName: string
+          }
+          const name = deviceName ?? 'Mobile Device'
+          if (this.callbacks.isPairedDevice?.(mobileDeviceId)) {
+            log.info('[RemoteControl] Device already paired:', mobileDeviceId)
+            ws.send(JSON.stringify({ type: 'pair_already_paired' }))
+            this.callbacks.onPairingAlreadyPaired?.({ deviceName: name })
+            await this.cancelPairing()
+            return
+          }
+          this.pairingSession.pendingCode = code
+          this.pairingSession.pendingMobileDeviceId = mobileDeviceId
+          this.pairingSession.pendingDeviceName = name
+          log.info('[RemoteControl] Pairing code received from:', name)
+          this.callbacks.onPairingCodeReceived?.({ code, deviceName: name })
         }
-        const name = deviceName ?? 'Mobile Device'
-        if (this.callbacks.isPairedDevice?.(mobileDeviceId)) {
-          log.info('[RemoteControl] Device already paired:', mobileDeviceId)
-          this.pairingSession?.pairingChannel.send({ type: 'broadcast', event: 'pair_already_paired', payload: {} })
-          this.callbacks.onPairingAlreadyPaired?.({ deviceName: name })
-          await this.cancelPairing()
-          return
-        }
-        this.pairingSession.pendingCode = code
-        this.pairingSession.pendingMobileDeviceId = mobileDeviceId
-        this.pairingSession.pendingDeviceName = name
-        log.info('[RemoteControl] Pairing code received from:', name)
-        this.callbacks.onPairingCodeReceived?.({ code, deviceName: name })
       } catch (err) {
         log.error('[RemoteControl] Failed to handle pair_request:', err)
       }
     })
 
-    pairingChannel.subscribe()
+    ws.on('error', (err) => {
+      log.error('[RemoteControl] Pairing WS error:', err.message)
+    })
+
     log.info('[RemoteControl] Pairing session started:', channelId)
     return { channelId, tempKeyHex }
   }
@@ -308,12 +355,12 @@ export class RemoteControlService {
     if (!session || session.pendingCode === null) throw new Error('No pairing request received yet')
     if (session.pendingCode !== enteredCode) throw new Error('Incorrect pairing code')
 
-    const encrypted = await encryptPayload(session.aesKey, { masterSecret, hostName: hostname() })
-    session.pairingChannel.send({
-      type: 'broadcast',
-      event: 'pair_response',
-      payload: { data: encrypted },
+    const encrypted = await encryptPayload(session.aesKey, {
+      masterSecret,
+      hostName: hostname(),
+      relayUrl: this.relayUrl,
     })
+    session.ws?.send(JSON.stringify({ type: 'pair_response', data: encrypted }))
 
     const mobileDeviceId = session.pendingMobileDeviceId!
     const deviceName = session.pendingDeviceName!
@@ -325,24 +372,66 @@ export class RemoteControlService {
   async cancelPairing(): Promise<void> {
     if (!this.pairingSession) return
     clearTimeout(this.pairingSession.expiryTimer)
-    await this.pairingSession.pairingSupabase.removeChannel(this.pairingSession.pairingChannel)
+    this.pairingSession.ws?.close(1000, 'cancelled')
     this.pairingSession = null
   }
 
   async broadcastAgentEvent(event: AgentEvent): Promise<void> {
-    if (!this.keys || !this.channel) return
-    try {
-      const nonce = generateNonce()
-      const timestamp = Date.now()
-      const data = await encryptPayload(this.keys.aesKey, event)
-      const signature = await computeSignature(timestamp, nonce, this.keys.channelKeyHex)
-      this.channel.send({
-        type: 'broadcast',
-        event: 'agent_event',
-        payload: { timestamp, nonce, signature, data },
-      })
-    } catch (err) {
-      log.error('[RemoteControl] Failed to broadcast event:', err)
+    if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
+
+    if (SKIPPED_EVENTS.has(event.type)) return
+
+    if (THROTTLED_EVENTS.has(event.type)) {
+      const now = Date.now()
+      const last = this.lastThrottledAt.get(event.type) ?? 0
+      if (now - last < THROTTLE_INTERVAL_MS) return
+      this.lastThrottledAt.set(event.type, now)
     }
+
+    if (event.type === 'content_delta' || event.type === 'tool_input_delta') {
+      this.batchBuffer.push(event)
+      if (!this.batchTimer) {
+        this.batchTimer = setTimeout(() => this.flushBatch(), BATCH_INTERVAL_MS)
+      }
+      return
+    }
+
+    try {
+      const data = await encryptPayload(this.keys.aesKey, event)
+      this.relayWs.send(JSON.stringify({ type: 'event', data }))
+    } catch (err) {
+      log.error('[RemoteControl] Failed to send event:', err)
+    }
+  }
+
+  private async sendResponse(requestId: string, data: unknown): Promise<void> {
+    if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
+    try {
+      const encrypted = await encryptPayload(this.keys.aesKey, data)
+      this.relayWs.send(JSON.stringify({ type: 'response', requestId, data: encrypted }))
+    } catch (err) {
+      log.error('[RemoteControl] Failed to send response:', err)
+    }
+  }
+
+  private async flushBatch(): Promise<void> {
+    this.batchTimer = null
+    if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN || this.batchBuffer.length === 0) return
+
+    try {
+      const events = this.batchBuffer.splice(0)
+      const data = await encryptPayload(this.keys.aesKey, events)
+      this.relayWs.send(JSON.stringify({ type: 'event', data }))
+    } catch (err) {
+      log.error('[RemoteControl] Failed to flush batch:', err)
+    }
+  }
+
+  private clearBatch(): void {
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer)
+      this.batchTimer = null
+    }
+    this.batchBuffer = []
   }
 }

@@ -9,8 +9,7 @@ export default defineConfig(({ mode }) => {
   main: {
     define: {
       __UPDATER_TOKEN__: JSON.stringify(process.env.UPDATER_TOKEN ?? ''),
-      __SUPABASE_URL__: JSON.stringify(env.SO_SUPABASE_URL ?? ''),
-      __SUPABASE_PUBLISHABLE_KEY__: JSON.stringify(env.SO_SUPABASE_PUBLISHABLE_KEY ?? ''),
+      __CF_RELAY_URL__: JSON.stringify(env.SO_CF_RELAY_URL ?? ''),
     },
     build: {
       externalizeDeps: true
@@ -28,10 +27,7 @@ export default defineConfig(({ mode }) => {
     }
   },
   renderer: {
-    define: {
-      'import.meta.env.SO_SUPABASE_URL': JSON.stringify(env.SO_SUPABASE_URL ?? ''),
-      'import.meta.env.SO_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(env.SO_SUPABASE_PUBLISHABLE_KEY ?? ''),
-    },
+    define: {},
     server: {
       port: parseInt(process.env.VITE_PORT || '5173'),
       strictPort: true

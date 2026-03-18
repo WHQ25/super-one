@@ -1100,6 +1100,10 @@ export type RemoteCommand =
   | { type: 'send_message'; content: string }
   | { type: 'interrupt' }
   | { type: 'respond_permission'; requestId: string; decision: boolean }
+  | { type: 'list_directory'; requestId: string; path: string }
+  | { type: 'create_directory'; requestId: string; path: string; name: string }
+  | { type: 'add_project'; requestId: string; path: string }
+  | { type: 'list_projects'; requestId: string }
 
 export interface PairedDevice {
   id: string

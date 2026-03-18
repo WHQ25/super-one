@@ -62,9 +62,8 @@ export function RemotePage() {
   async function handleStartPairing() {
     setCodeError('')
 
-    const supabaseUrl = import.meta.env.SO_SUPABASE_URL as string
     const { channelId, tempKeyHex } = await window.app.startPairing()
-    const url = `superone://pair?channel=${channelId}&key=${tempKeyHex}&deviceId=${config!.deviceId}&url=${encodeURIComponent(supabaseUrl)}`
+    const url = `superone://pair?channel=${channelId}&key=${tempKeyHex}&deviceId=${config!.deviceId}`
     setQrValue(url)
     setPairingStep('waiting_scan')
   }

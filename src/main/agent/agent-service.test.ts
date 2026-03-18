@@ -134,6 +134,24 @@ vi.mock('../logger', () => ({
   },
 }))
 
+vi.mock('../recent-folders', () => ({
+  getRecentFolders: vi.fn(() => [
+    { path: '/projects/app-one', name: 'app-one', added_at: '2025-01-01' },
+    { path: '/projects/app-two', name: 'app-two', added_at: '2025-01-02' },
+  ]),
+  addRecentFolder: vi.fn(),
+  removeRecentFolder: vi.fn(),
+}))
+
+const mockReaddir = vi.fn()
+const mockMkdir = vi.fn()
+vi.mock('fs/promises', () => ({
+  readdir: (...args: unknown[]) => mockReaddir(...args),
+  mkdir: (...args: unknown[]) => mockMkdir(...args),
+}))
+
+vi.mock('../remote-control-service', () => ({}))
+
 const { AgentService } = await import('./agent-service')
 
 beforeEach(() => {
@@ -164,5 +182,101 @@ describe('AgentService.resumeSession', () => {
       expect.any(Function),
       'local-session',
     )
+  })
+})
+
+describe('AgentService.handleRemoteCommand', () => {
+  it('list_directory returns sorted items with directories first', async () => {
+    mockReaddir.mockResolvedValue([
+      { name: 'zebra.txt', isDirectory: () => false },
+      { name: 'src', isDirectory: () => true },
+      { name: 'alpha.txt', isDirectory: () => false },
+      { name: 'docs', isDirectory: () => true },
+    ])
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand({ type: 'list_directory', requestId: 'r1', path: '/test' }, respond)
+    expect(respond).toHaveBeenCalledWith('r1', {
+      items: [
+        { name: 'docs', isDirectory: true },
+        { name: 'src', isDirectory: true },
+        { name: 'alpha.txt', isDirectory: false },
+        { name: 'zebra.txt', isDirectory: false },
+      ],
+    })
+  })
+
+  it('list_directory filters dotfiles', async () => {
+    mockReaddir.mockResolvedValue([
+      { name: '.git', isDirectory: () => true },
+      { name: 'src', isDirectory: () => true },
+    ])
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand({ type: 'list_directory', requestId: 'r2', path: '/test' }, respond)
+    expect(respond).toHaveBeenCalledWith('r2', {
+      items: [{ name: 'src', isDirectory: true }],
+    })
+  })
+
+  it('list_directory returns error for invalid path', async () => {
+    mockReaddir.mockRejectedValue(new Error('ENOENT: no such directory'))
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand({ type: 'list_directory', requestId: 'r3', path: '/nonexistent' }, respond)
+    expect(respond).toHaveBeenCalledWith('r3', { error: 'ENOENT: no such directory' })
+  })
+
+  it('create_directory calls mkdir with correct path', async () => {
+    mockMkdir.mockResolvedValue(undefined)
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand({ type: 'create_directory', requestId: 'r4', path: '/projects', name: 'new-app' }, respond)
+    expect(mockMkdir).toHaveBeenCalledWith('/projects/new-app')
+    expect(respond).toHaveBeenCalledWith('r4', { success: true })
+  })
+
+  it('create_directory rejects names with path traversal', async () => {
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand({ type: 'create_directory', requestId: 'r5', path: '/projects', name: '../escape' }, respond)
+    expect(mockMkdir).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith('r5', { error: 'Invalid directory name' })
+  })
+
+  it('create_directory rejects names with slashes', async () => {
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand({ type: 'create_directory', requestId: 'r6', path: '/projects', name: 'a/b' }, respond)
+    expect(mockMkdir).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith('r6', { error: 'Invalid directory name' })
+  })
+
+  it('list_projects returns formatted project list', async () => {
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand({ type: 'list_projects', requestId: 'r7' }, respond)
+    expect(respond).toHaveBeenCalledWith('r7', {
+      projects: [
+        { path: '/projects/app-one', name: 'app-one' },
+        { path: '/projects/app-two', name: 'app-two' },
+      ],
+    })
+  })
+
+  it('send_message does not throw when no active agent', async () => {
+    const service = new AgentService()
+    await expect(
+      service.handleRemoteCommand({ type: 'send_message', content: 'hello' }),
+    ).resolves.toBeUndefined()
+  })
+
+  it('add_project calls addRecentFolder and openFolder', async () => {
+    const { addRecentFolder } = await import('../recent-folders')
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand({ type: 'add_project', requestId: 'r8', path: '/projects/new' }, respond)
+    expect(addRecentFolder).toHaveBeenCalledWith('/projects/new')
+    expect(respond).toHaveBeenCalledWith('r8', { success: true })
   })
 })

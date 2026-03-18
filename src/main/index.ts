@@ -45,8 +45,7 @@ import { readUserPreferences, saveUserPreferences, readProjectPreferences, saveP
 import type { RemoteCommand, PairedDevice } from '../shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
-declare const __SUPABASE_URL__: string
-declare const __SUPABASE_PUBLISHABLE_KEY__: string
+declare const __CF_RELAY_URL__: string
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -62,8 +61,13 @@ if (process.env.SUPERONE_INSTANCE) {
 const agentService = new AgentService()
 const codexService = new CodexExperimentService()
 const remoteCallbacks: RemoteControlCallbacks = {
-  onCommand: (command) => {
+  onCommand: async (command, respond) => {
+    await agentService.handleRemoteCommand(command, respond)
     safeSend(AgentIpcChannels.REMOTE_COMMAND, command)
+    if (command.type === 'add_project') {
+      const folders = getRecentFolders()
+      safeSend('app:recent-folders-changed', folders)
+    }
   },
   onClientRegistered: ({ deviceName, deviceId }) => {
     upsertPairedDevice(deviceId, deviceName)
@@ -87,7 +91,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
   },
   isPairedDevice: (deviceId) => isPairedDevice(deviceId),
 }
-const remoteControlService = new RemoteControlService(__SUPABASE_URL__, __SUPABASE_PUBLISHABLE_KEY__, remoteCallbacks)
+const remoteControlService = new RemoteControlService(__CF_RELAY_URL__, remoteCallbacks)
 let mainWindow: BrowserWindow | null = null
 
 function getMainWindow(): BrowserWindow {

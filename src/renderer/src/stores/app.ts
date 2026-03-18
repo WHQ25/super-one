@@ -445,6 +445,12 @@ export function useHasRealProject(): boolean {
 
 
 // Reset file panel and source-control store when project changes
+if (typeof window !== 'undefined') {
+  window.app?.onRecentFoldersChanged?.(() => {
+    useAppStore.getState().fetchRecentFolders()
+  })
+}
+
 // NOTE: file-tree reset is handled by fetchTree (called from FileTree useEffect on currentFolder change)
 let _prevFolder = useAppStore.getState().currentFolder
 useAppStore.subscribe((state) => {

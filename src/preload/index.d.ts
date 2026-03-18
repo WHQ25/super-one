@@ -184,6 +184,7 @@ interface AppAPI {
   // Remote control
   getRemoteConfig(): Promise<{ masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean } | null>
   saveRemoteConfig(config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean }): Promise<void>
+  onRecentFoldersChanged(callback: (folders: unknown[]) => void): () => void
   onRemoteCommand(callback: (command: unknown) => void): () => void
   onClientRegistered(callback: (info: { deviceName: string }) => void): () => void
   listPairedDevices(): Promise<import('../shared/agent-types').PairedDevice[]>

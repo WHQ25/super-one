@@ -1,9 +1,12 @@
 import { execFileSync } from 'child_process'
 import log from '../logger'
-import { resolve } from 'path'
+import { resolve, join, basename } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, type ClaudeAgentConfig } from './claude-agent'
-import { AgentIpcChannels, type AgentEvent, type PermissionMode, type QuestionAnnotations, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
+import type { RemoteResponder } from '../remote-control-service'
+import { getRecentFolders, addRecentFolder } from '../recent-folders'
+import { readdir, mkdir } from 'fs/promises'
 import { searchFiles, searchMentions, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
 
@@ -41,6 +44,71 @@ export class AgentService {
     this.eventSubscribers.push(cb)
     return () => {
       this.eventSubscribers = this.eventSubscribers.filter((s) => s !== cb)
+    }
+  }
+
+  async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder): Promise<void> {
+    switch (command.type) {
+      case 'send_message': {
+        const projectPath = this.agents.keys().next().value
+        const agent = projectPath ? this.agents.get(projectPath) : undefined
+        if (agent?.isReady()) await agent.sendMessage({ content: command.content })
+        break
+      }
+      case 'interrupt': {
+        const projectPath = this.agents.keys().next().value
+        const agent = projectPath ? this.agents.get(projectPath) : undefined
+        if (agent) { clearAllGates(); await agent.interrupt() }
+        break
+      }
+      case 'respond_permission': {
+        const projectPath = this.agents.keys().next().value
+        const agent = projectPath ? this.agents.get(projectPath) : undefined
+        agent?.respondToPermission(command.requestId, command.decision)
+        break
+      }
+      case 'list_directory': {
+        try {
+          const entries = await readdir(command.path, { withFileTypes: true })
+          const items = entries
+            .filter((e) => !e.name.startsWith('.'))
+            .map((e) => ({ name: e.name, isDirectory: e.isDirectory() }))
+            .sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1))
+          await respond?.(command.requestId, { items })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'create_directory': {
+        try {
+          if (command.name.includes('..') || command.name.includes('/') || command.name.includes('\\')) {
+            throw new Error('Invalid directory name')
+          }
+          await mkdir(join(command.path, command.name))
+          await respond?.(command.requestId, { success: true })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'add_project': {
+        try {
+          addRecentFolder(command.path)
+          await this.openFolder(command.path)
+          await respond?.(command.requestId, { success: true })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'list_projects': {
+        const folders = getRecentFolders()
+        await respond?.(command.requestId, {
+          projects: folders.map((f) => ({ path: f.path, name: basename(f.path) })),
+        })
+        break
+      }
     }
   }
 

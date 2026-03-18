@@ -542,6 +542,15 @@ const appAPI = {
     ipcRenderer.invoke('remote:get-config'),
   saveRemoteConfig: (config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean }) =>
     ipcRenderer.invoke('remote:save-config', config),
+  onRecentFoldersChanged: (callback: (folders: unknown[]) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, folders: unknown[]): void => {
+      callback(folders)
+    }
+    ipcRenderer.on('app:recent-folders-changed', handler)
+    return () => {
+      ipcRenderer.removeListener('app:recent-folders-changed', handler)
+    }
+  },
   onRemoteCommand: (callback: (command: unknown) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, command: unknown): void => {
       callback(command)

@@ -1,12 +1,17 @@
-import { execFileSync } from 'child_process'
+import { execFile, execFileSync } from 'child_process'
 import log from '../logger'
 import { resolve, join, basename } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, type ClaudeAgentConfig } from './claude-agent'
-import { AgentIpcChannels, type AgentEvent, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
-import type { RemoteResponder } from '../remote-control-service'
+import { fetchModels } from './claude-models'
+import { AgentIpcChannels, type AgentEvent, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
+import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
+import { stripMessagesForRemote } from '../remote-control-service'
+import { trace } from './event-trace'
 import { getRecentFolders, addRecentFolder } from '../recent-folders'
 import { readdir, mkdir } from 'fs/promises'
+import { getDb, getCachedResources } from '../database'
+import { sanitizeGitRef } from '../path-security'
 import { searchFiles, searchMentions, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
 
@@ -39,6 +44,16 @@ export class AgentService {
   private mainWindow: BrowserWindow | null = null
   private pendingParkCounter = 0
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
+  private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
+  private remoteControlService?: RemoteControlService
+
+  setCodexListModels(fn: (projectPath: string) => Promise<ModelOption[]>): void {
+    this.codexListModels = fn
+  }
+
+  setRemoteControlService(svc: RemoteControlService): void {
+    this.remoteControlService = svc
+  }
 
   addEventSubscriber(cb: (event: AgentEvent) => void): () => void {
     this.eventSubscribers.push(cb)
@@ -48,23 +63,55 @@ export class AgentService {
   }
 
   async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder): Promise<void> {
+    trace('remote.cmd', command.type, command)
     switch (command.type) {
       case 'send_message': {
-        const projectPath = this.agents.keys().next().value
+        const projectPath = command.projectPath || this.agents.keys().next().value
         const agent = projectPath ? this.agents.get(projectPath) : undefined
-        if (agent?.isReady()) await agent.sendMessage({ content: command.content })
+        if (agent?.isReady()) {
+          if (!command.sessionId && projectPath) {
+            const unsub = this.addEventSubscriber((event) => {
+              if (event.type === 'session_init' && event.projectPath === projectPath) {
+                unsub()
+                const sid = (event as { session?: { sessionId?: string } }).session?.sessionId
+                if (sid) this.remoteControlService?.subscribeSession(projectPath, sid)
+              }
+            })
+          }
+          await agent.sendMessage({ content: command.content, model: command.model, effort: command.effort as never, images: command.images })
+        }
         break
       }
       case 'interrupt': {
-        const projectPath = this.agents.keys().next().value
+        const projectPath = command.projectPath || this.agents.keys().next().value
         const agent = projectPath ? this.agents.get(projectPath) : undefined
         if (agent) { clearAllGates(); await agent.interrupt() }
         break
       }
       case 'respond_permission': {
-        const projectPath = this.agents.keys().next().value
+        const projectPath = command.projectPath || this.agents.keys().next().value
         const agent = projectPath ? this.agents.get(projectPath) : undefined
         agent?.respondToPermission(command.requestId, command.decision)
+        break
+      }
+      case 'subscribe_session': {
+        this.remoteControlService?.subscribeSession(command.projectPath, command.sessionId)
+        break
+      }
+      case 'unsubscribe_session': {
+        this.remoteControlService?.unsubscribeSession()
+        break
+      }
+      case 'load_session_messages': {
+        try {
+          const result = loadSessionMessages(command.projectPath, command.sessionId, command.limit ?? 10, command.cursor)
+          const stripped = stripMessagesForRemote(result.messages)
+          trace('remote.cmd', 'load_session_messages_result', { projectPath: command.projectPath, sessionId: command.sessionId, messageCount: stripped.length, hasMore: result.hasMore, cursor: result.cursor })
+          await respond?.(command.requestId, { messages: stripped, hasMore: result.hasMore, cursor: result.cursor })
+        } catch (err) {
+          trace('remote.cmd', 'load_session_messages_error', { projectPath: command.projectPath, sessionId: command.sessionId, error: (err as Error).message })
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
         break
       }
       case 'list_directory': {
@@ -109,7 +156,181 @@ export class AgentService {
         })
         break
       }
+      case 'list_sessions': {
+        try {
+          const db = getDb()
+          const limit = command.limit ?? 10
+          const offset = command.offset ?? 0
+          const allSessions = listSessionsForFolder(command.projectPath)
+          const claudeSessions = allSessions.filter((s) => !s.isHidden && s.provider !== 'codex')
+          const visible = claudeSessions.slice(offset, offset + limit)
+          const totalCount = claudeSessions.length
+          const countStmt = db.prepare('SELECT COUNT(*) as cnt FROM chat_messages WHERE claude_session_id = ?')
+          await respond?.(command.requestId, {
+            totalCount,
+            sessions: visible.map((s) => {
+              const row = countStmt.get(s.sessionId) as { cnt: number } | undefined
+              return {
+                sessionId: s.sessionId,
+                title: s.title,
+                lastActiveAt: s.lastActiveAt,
+                messageCount: row?.cnt ?? 0,
+                provider: s.provider ?? 'claude',
+                gitBranch: s.gitBranch ?? null,
+              }
+            }),
+          })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'list_models': {
+        try {
+          const models = await fetchModels(command.projectPath)
+          await respond?.(command.requestId, { models })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'get_system_info': {
+        try {
+          const isClaude = command.provider !== 'codex'
+          const cached = getCachedResources()
+          if (isClaude) {
+            const models = await fetchModels(command.projectPath)
+            const skills = listSkills(command.projectPath)
+            const agents = discoverAllAgents(command.projectPath)
+            await respond?.(command.requestId, {
+              models,
+              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
+              agents: agents.map((a) => ({ name: a.name, description: a.description ?? '', model: a.model })),
+              slashCommands: cached?.slashCommands ?? [],
+              account: cached?.account ?? null,
+              permissionModes: ['default', 'acceptEdits', 'plan', 'bypassPermissions'],
+              sandboxModes: ['off', 'on', 'auto'],
+            })
+          } else {
+            const models = this.codexListModels ? await this.codexListModels(command.projectPath) : []
+            const skills = listCodexSkills(command.projectPath)
+            await respond?.(command.requestId, {
+              models,
+              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
+              slashCommands: [
+                { name: 'help', description: 'Show available commands' },
+                { name: 'reset', description: 'Reset Codex thread' },
+                { name: 'auth', description: 'Show auth status' },
+                { name: 'review', description: 'Review code changes' },
+                { name: 'compact', description: 'Compact thread context' },
+              ],
+              account: cached?.account ?? null,
+              permissionPresets: ['default', 'full-access'],
+            })
+          }
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'get_git_info': {
+        try {
+          const branch = await this.gitRun(command.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
+            .catch(() => this.gitRun(command.projectPath, ['symbolic-ref', 'HEAD']).then((r) => r.replace('refs/heads/', '')))
+          const status = await this.gitRun(command.projectPath, ['status', '--porcelain'])
+          const files = status ? status.split('\n').filter(Boolean).length : 0
+          let insertions = 0
+          let deletions = 0
+          if (files > 0) {
+            try {
+              const shortstat = await this.gitRun(command.projectPath, ['diff', 'HEAD', '--shortstat'])
+              const insMatch = shortstat.match(/(\d+) insertion/)
+              const delMatch = shortstat.match(/(\d+) deletion/)
+              if (insMatch) insertions = parseInt(insMatch[1])
+              if (delMatch) deletions = parseInt(delMatch[1])
+            } catch { /* no HEAD yet */ }
+          }
+          await respond?.(command.requestId, {
+            branch,
+            ...(files > 0 ? { dirty: { files, insertions, deletions } } : {}),
+          })
+        } catch {
+          await respond?.(command.requestId, { branch: null })
+        }
+        break
+      }
+      case 'get_git_branches': {
+        try {
+          const raw = await this.gitRun(command.projectPath, ['branch', '--format=%(refname:short)'])
+          await respond?.(command.requestId, { branches: raw.split('\n').filter(Boolean) })
+        } catch {
+          await respond?.(command.requestId, { branches: [] })
+        }
+        break
+      }
+      case 'switch_git_branch': {
+        try {
+          await this.gitRun(command.projectPath, ['checkout', sanitizeGitRef(command.branch)])
+          await respond?.(command.requestId, { ok: true })
+        } catch (err) {
+          const stderr = (err as { stderr?: string })?.stderr?.trim()
+          await respond?.(command.requestId, { ok: false, error: stderr || (err as Error)?.message || 'Unknown git error' })
+        }
+        break
+      }
+      case 'create_git_branch': {
+        try {
+          await this.gitRun(command.projectPath, ['rev-parse', '--verify', 'HEAD'])
+        } catch {
+          await respond?.(command.requestId, { ok: false, error: 'Cannot create branch before the first commit.' })
+          break
+        }
+        try {
+          await this.gitRun(command.projectPath, ['checkout', '-b', sanitizeGitRef(command.branch)])
+          await respond?.(command.requestId, { ok: true })
+        } catch (err) {
+          const stderr = (err as { stderr?: string })?.stderr?.trim()
+          await respond?.(command.requestId, { ok: false, error: stderr || (err as Error)?.message || 'Unknown git error' })
+        }
+        break
+      }
+      case 'get_worktree_info': {
+        try {
+          const raw = await this.gitRun(command.projectPath, ['worktree', 'list', '--porcelain'])
+          const entries: { path: string; branch: string; head: string; isMain: boolean; isCurrent: boolean }[] = []
+          let first = true
+          for (const block of raw.split('\n\n').filter(Boolean)) {
+            const lines = block.split('\n')
+            const pathLine = lines.find((l) => l.startsWith('worktree '))
+            const branchLine = lines.find((l) => l.startsWith('branch '))
+            const headLine = lines.find((l) => l.startsWith('HEAD '))
+            if (!pathLine) continue
+            const wtPath = pathLine.slice('worktree '.length)
+            const head = headLine ? headLine.slice('HEAD '.length) : ''
+            const branch = branchLine ? branchLine.slice('branch refs/heads/'.length) : ''
+            entries.push({ path: wtPath, branch, head, isMain: first, isCurrent: wtPath === command.projectPath })
+            first = false
+          }
+          const mainEntry = entries.find((e) => e.isMain)
+          const isWorktree = mainEntry ? mainEntry.path !== command.projectPath : false
+          const current = entries.find((e) => e.isCurrent)
+          const currentBranch = current?.branch || (current?.head ? current.head.slice(0, 7) : '')
+          await respond?.(command.requestId, { isWorktree, currentBranch, entries })
+        } catch {
+          await respond?.(command.requestId, { isWorktree: false, currentBranch: '', entries: [] })
+        }
+        break
+      }
     }
+  }
+
+  private gitRun(cwd: string, args: string[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+      execFile('git', args, { cwd }, (err, stdout) => {
+        if (err) reject(err)
+        else resolve(stdout.trimEnd())
+      })
+    })
   }
 
   markAllNeedsRebuild(): void {

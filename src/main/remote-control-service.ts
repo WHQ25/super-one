@@ -4,7 +4,8 @@ import { hostname } from 'node:os'
 import { powerSaveBlocker } from 'electron'
 import WebSocket from 'ws'
 import log from './logger'
-import type { AgentEvent, RemoteCommand } from '../shared/agent-types'
+import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage } from '../shared/agent-types'
+import { trace } from './agent/event-trace'
 
 const subtle = webcrypto.subtle
 const encoder = new TextEncoder()
@@ -12,8 +13,50 @@ const encoder = new TextEncoder()
 const PAIRING_TIMEOUT_MS = 3 * 60 * 1000
 const BATCH_INTERVAL_MS = 50
 const MAX_RECONNECT_DELAY_MS = 30_000
-const SKIPPED_EVENTS = new Set(['files_persisted', 'elicitation_complete'])
-const THROTTLED_EVENTS = new Set(['tool_progress', 'hook_progress'])
+const SKIPPED_EVENTS = new Set([
+  'files_persisted', 'elicitation_complete', 'tool_input_delta',
+  'subagent_usage', 'checkpoint_captured', 'hook_started', 'hook_complete', 'hook_progress',
+  'slash_command_output', 'stream_message_start', 'stream_message_stop',
+])
+const THROTTLED_EVENTS = new Set(['tool_progress'])
+
+const TOOL_RESULT_MAX_LEN = 200
+
+function stripContentBlock(block: ContentBlock): ContentBlock {
+  if (block.type === 'thinking') return { ...block, thinking: '' }
+  if (block.type === 'tool_use') return { ...block, input: '' }
+  if (block.type === 'tool_result' && block.summary.length > TOOL_RESULT_MAX_LEN) {
+    return { ...block, summary: block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
+  }
+  return block
+}
+
+function stripEventForRemote(event: AgentEvent): AgentEvent {
+  if (event.type === 'content_delta') {
+    return { ...event, delta: stripContentBlock(event.delta) }
+  }
+  if (event.type === 'message_start') {
+    const msg = event.message
+    return {
+      ...event,
+      message: { ...msg, content: msg.content.map(stripContentBlock) },
+    }
+  }
+  if (event.type === 'message_complete' && event.metadata) {
+    const { codex: _codex, ...rest } = event.metadata
+    return { ...event, metadata: rest }
+  }
+  return event
+}
+
+export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((msg) => ({
+    ...msg,
+    content: msg.content.map(stripContentBlock),
+    metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return rest })() : undefined,
+  }))
+}
+
 const THROTTLE_INTERVAL_MS = 2_000
 
 function bytesToHex(bytes: ArrayBuffer): string {
@@ -90,6 +133,7 @@ export interface RemoteDeviceConfig {
   masterSecret: string
   deviceId: string
   preventSleep: boolean
+  relayUrl: string
 }
 
 interface PairingSession {
@@ -131,9 +175,12 @@ export class RemoteControlService {
   private intentionallyClosed = false
 
   private lastThrottledAt = new Map<string, number>()
+  private subscribedSession: { projectPath: string; sessionId: string } | null = null
+
+  private relayUrl = ''
 
   constructor(
-    private readonly relayUrl: string,
+    private readonly defaultRelayUrl: string,
     private readonly callbacks: RemoteControlCallbacks,
   ) {}
 
@@ -182,6 +229,7 @@ export class RemoteControlService {
   async start(config: RemoteDeviceConfig): Promise<void> {
     await this.stop()
     this.currentConfig = config
+    this.relayUrl = config.relayUrl || this.defaultRelayUrl
     if (!config.enabled || !this.relayUrl) return
 
     this.keys = await deriveKeys(config.masterSecret)
@@ -234,8 +282,10 @@ export class RemoteControlService {
       }
     })
 
-    ws.on('close', () => {
-      if (this.relayWs === ws) this.relayWs = null
+    ws.on('close', (code: number, reason: Buffer) => {
+      log.info('[RemoteControl] Relay WS closed:', code, reason.toString())
+      if (this.relayWs !== ws) return
+      this.relayWs = null
       if (!this.intentionallyClosed) this.scheduleReconnect()
     })
 
@@ -259,6 +309,7 @@ export class RemoteControlService {
       case 'command': {
         if (!this.keys) return
         const command = (await decryptPayload(this.keys.aesKey, frame.data as string)) as RemoteCommand
+        trace('remote.in', command.type, command)
         this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data))
         break
       }
@@ -290,7 +341,9 @@ export class RemoteControlService {
     }
   }
 
-  async startPairing(): Promise<{ channelId: string; tempKeyHex: string }> {
+  async startPairing(): Promise<{ channelId: string; tempKeyHex: string; relayUrl: string }> {
+    if (!this.relayUrl) this.relayUrl = this.defaultRelayUrl
+    if (!this.relayUrl) throw new Error('No relay URL configured')
     await this.cancelPairing()
 
     const channelIdBytes = webcrypto.getRandomValues(new Uint8Array(8))
@@ -347,7 +400,7 @@ export class RemoteControlService {
     })
 
     log.info('[RemoteControl] Pairing session started:', channelId)
-    return { channelId, tempKeyHex }
+    return { channelId, tempKeyHex, relayUrl: this.relayUrl }
   }
 
   async confirmPairing(enteredCode: string, masterSecret: string): Promise<void> {
@@ -376,10 +429,26 @@ export class RemoteControlService {
     this.pairingSession = null
   }
 
+  subscribeSession(projectPath: string, sessionId: string): void {
+    this.subscribedSession = { projectPath, sessionId }
+    log.info(`[RemoteControl] Subscribed to session: ${sessionId} in ${projectPath}`)
+  }
+
+  unsubscribeSession(): void {
+    this.subscribedSession = null
+    log.info('[RemoteControl] Unsubscribed from session')
+  }
+
   async broadcastAgentEvent(event: AgentEvent): Promise<void> {
     if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
 
+    if (this.subscribedSession && event.type !== 'status_change') {
+      const { projectPath, sessionId } = this.subscribedSession
+      if (event.projectPath !== projectPath || event.sessionId !== sessionId) return
+    }
+
     if (SKIPPED_EVENTS.has(event.type)) return
+    trace('remote.out', event.type, { messageId: 'messageId' in event ? event.messageId : undefined }, event.sessionId)
 
     if (THROTTLED_EVENTS.has(event.type)) {
       const now = Date.now()
@@ -388,8 +457,8 @@ export class RemoteControlService {
       this.lastThrottledAt.set(event.type, now)
     }
 
-    if (event.type === 'content_delta' || event.type === 'tool_input_delta') {
-      this.batchBuffer.push(event)
+    if (event.type === 'content_delta') {
+      this.batchBuffer.push(stripEventForRemote(event))
       if (!this.batchTimer) {
         this.batchTimer = setTimeout(() => this.flushBatch(), BATCH_INTERVAL_MS)
       }
@@ -397,7 +466,8 @@ export class RemoteControlService {
     }
 
     try {
-      const data = await encryptPayload(this.keys.aesKey, event)
+      const stripped = stripEventForRemote(event)
+      const data = await encryptPayload(this.keys.aesKey, stripped)
       this.relayWs.send(JSON.stringify({ type: 'event', data }))
     } catch (err) {
       log.error('[RemoteControl] Failed to send event:', err)
@@ -407,6 +477,7 @@ export class RemoteControlService {
   private async sendResponse(requestId: string, data: unknown): Promise<void> {
     if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
     try {
+      trace('remote.resp', requestId, data)
       const encrypted = await encryptPayload(this.keys.aesKey, data)
       this.relayWs.send(JSON.stringify({ type: 'response', requestId, data: encrypted }))
     } catch (err) {

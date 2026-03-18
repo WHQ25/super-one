@@ -1097,13 +1097,24 @@ export type MentionSearchItem =
   | { kind: 'agent'; name: string; model: string; matchIndices: number[]; score: number }
 
 export type RemoteCommand =
-  | { type: 'send_message'; content: string }
-  | { type: 'interrupt' }
-  | { type: 'respond_permission'; requestId: string; decision: boolean }
+  | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[] }
+  | { type: 'interrupt'; projectPath?: string }
+  | { type: 'respond_permission'; requestId: string; decision: boolean; projectPath?: string }
+  | { type: 'subscribe_session'; projectPath: string; sessionId: string }
+  | { type: 'unsubscribe_session' }
+  | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number }
   | { type: 'list_directory'; requestId: string; path: string }
   | { type: 'create_directory'; requestId: string; path: string; name: string }
   | { type: 'add_project'; requestId: string; path: string }
   | { type: 'list_projects'; requestId: string }
+  | { type: 'list_sessions'; requestId: string; projectPath: string; limit?: number; offset?: number }
+  | { type: 'list_models'; requestId: string; projectPath: string }
+  | { type: 'get_system_info'; requestId: string; projectPath: string; provider: 'claude' | 'codex' }
+  | { type: 'get_git_info'; requestId: string; projectPath: string }
+  | { type: 'get_git_branches'; requestId: string; projectPath: string }
+  | { type: 'switch_git_branch'; requestId: string; projectPath: string; branch: string }
+  | { type: 'create_git_branch'; requestId: string; projectPath: string; branch: string }
+  | { type: 'get_worktree_info'; requestId: string; projectPath: string }
 
 export interface PairedDevice {
   id: string

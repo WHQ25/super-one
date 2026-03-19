@@ -6,7 +6,7 @@ import WebSocket from 'ws'
 import log from './logger'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage } from '../shared/agent-types'
 import { trace } from './agent/event-trace'
-import { initHighlighter, highlightCodeSync, type DiffTokenLine } from './remote-highlighter'
+import { initHighlighter, highlightCodeSync, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
 
 const subtle = webcrypto.subtle
 const encoder = new TextEncoder()
@@ -22,6 +22,8 @@ const SKIPPED_EVENTS = new Set([
 const THROTTLED_EVENTS = new Set(['tool_progress'])
 
 const TOOL_RESULT_MAX_LEN = 200
+const MAX_BASH_OUTPUT = 5000
+const MAX_BASH_LINES = 100
 
 const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
 
@@ -104,6 +106,9 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSumm
         }
         break
       }
+      case 'Bash':
+        summary = String(p.description ?? p.command ?? '')
+        break
       case 'Grep':
         summary = `${p.pattern ?? ''}${p.path ? ` in ${String(p.path).split('/').pop()}` : ''}`
         break
@@ -121,14 +126,28 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSumm
   } catch { return {} }
 }
 
-function stripContentBlock(block: ContentBlock): ContentBlock {
+function truncateBashOutput(text: string): string {
+  const lines = text.split('\n')
+  const truncated = lines.length > MAX_BASH_LINES ? lines.slice(0, MAX_BASH_LINES).join('\n') + '\n…' : text
+  return truncated.length > MAX_BASH_OUTPUT ? truncated.slice(0, MAX_BASH_OUTPUT) + '…' : truncated
+}
+
+function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>): ContentBlock {
   if (block.type === 'thinking') return { ...block, thinking: '' }
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block)
     return { ...block, input: '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens }
   }
-  if (block.type === 'tool_result' && block.summary.length > TOOL_RESULT_MAX_LEN) {
-    return { ...block, summary: block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
+  if (block.type === 'tool_result') {
+    if (bashCmds?.has(block.toolUseId)) {
+      const cmd = bashCmds.get(block.toolUseId) ?? ''
+      const raw = cmd ? `\x1b[32m$\x1b[0m ${cmd}\n${block.summary}` : block.summary
+      const output = truncateBashOutput(raw)
+      return { ...block, summary: output, outputTokens: parseAnsiTokens(output) }
+    }
+    if (block.summary.length > TOOL_RESULT_MAX_LEN) {
+      return { ...block, summary: block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
+    }
   }
   return block
 }
@@ -141,7 +160,7 @@ function stripEventForRemote(event: AgentEvent): AgentEvent {
     const msg = event.message
     return {
       ...event,
-      message: { ...msg, content: msg.content.map(stripContentBlock) },
+      message: { ...msg, content: msg.content.map((b) => stripContentBlock(b)) },
     }
   }
   if (event.type === 'message_complete' && event.metadata) {
@@ -152,11 +171,19 @@ function stripEventForRemote(event: AgentEvent): AgentEvent {
 }
 
 export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((msg) => ({
-    ...msg,
-    content: msg.content.map(stripContentBlock),
-    metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return rest })() : undefined,
-  }))
+  return messages.map((msg) => {
+    const bashCmds = new Map<string, string>()
+    for (const block of msg.content) {
+      if (block.type === 'tool_use' && block.toolName === 'Bash') {
+        try { const p = JSON.parse(block.input); bashCmds.set(block.toolUseId, String(p.command ?? '')) } catch {}
+      }
+    }
+    return {
+      ...msg,
+      content: msg.content.map((b) => stripContentBlock(b, bashCmds)),
+      metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return rest })() : undefined,
+    }
+  })
 }
 
 const THROTTLE_INTERVAL_MS = 2_000
@@ -277,6 +304,7 @@ export class RemoteControlService {
   private intentionallyClosed = false
 
   private lastThrottledAt = new Map<string, number>()
+  private bashToolCommands = new Map<string, string>()
   private subscribedSession: { projectPath: string; sessionId: string } | null = null
 
   private relayUrl = ''
@@ -561,8 +589,22 @@ export class RemoteControlService {
       this.lastThrottledAt.set(event.type, now)
     }
 
+    if (event.type === 'message_start') this.bashToolCommands.clear()
+
     if (event.type === 'content_delta') {
-      this.batchBuffer.push(stripEventForRemote(event))
+      if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
+        try { const p = JSON.parse(event.delta.input); this.bashToolCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
+      }
+      let stripped: AgentEvent
+      if (event.delta.type === 'tool_result' && this.bashToolCommands.has(event.delta.toolUseId)) {
+        const cmd = this.bashToolCommands.get(event.delta.toolUseId) ?? ''
+        const raw = cmd ? `\x1b[32m$\x1b[0m ${cmd}\n${event.delta.summary}` : event.delta.summary
+        const output = truncateBashOutput(raw)
+        stripped = { ...event, delta: { ...event.delta, summary: output, outputTokens: parseAnsiTokens(output) } }
+      } else {
+        stripped = stripEventForRemote(event)
+      }
+      this.batchBuffer.push(stripped)
       if (!this.batchTimer) {
         this.batchTimer = setTimeout(() => this.flushBatch(), BATCH_INTERVAL_MS)
       }

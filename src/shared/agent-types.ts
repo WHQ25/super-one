@@ -13,7 +13,7 @@ export interface ImageAttachment {
 export type ContentBlock =
   | { type: 'text'; text: string; parentToolUseId?: string | null }
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null }
-  | { type: 'tool_use'; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; startedAt?: number; parentToolUseId?: string | null; toolSummary?: string; toolFilePath?: string }
+  | { type: 'tool_use'; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; startedAt?: number; parentToolUseId?: string | null; toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: [string, string | null][][]; removed?: [string, string | null][][] } }
   | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; parentToolUseId?: string | null }
   | { type: 'image'; name: string }
   | { type: 'document'; name: string }

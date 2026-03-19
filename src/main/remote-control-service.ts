@@ -6,6 +6,7 @@ import WebSocket from 'ws'
 import log from './logger'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage } from '../shared/agent-types'
 import { trace } from './agent/event-trace'
+import { initHighlighter, highlightCodeSync, type DiffTokenLine } from './remote-highlighter'
 
 const subtle = webcrypto.subtle
 const encoder = new TextEncoder()
@@ -24,12 +25,20 @@ const TOOL_RESULT_MAX_LEN = 200
 
 const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
 
-function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSummary?: string; toolFilePath?: string } {
+function countLines(s: string): number {
+  if (!s) return 0
+  return s.split('\n').length
+}
+
+function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] } } {
   try {
     const p = JSON.parse(block.input)
     if (!p || typeof p !== 'object') return {}
     const filePath = FILE_PATH_TOOLS.has(block.toolName) ? String(p.file_path ?? p.notebook_path ?? '') : undefined
     let summary: string | undefined
+    let toolLineDelta: { added: number; removed: number } | undefined
+    let toolDiff: string | undefined
+    let toolDiffTokens: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] } | undefined
     switch (block.toolName) {
       case 'Read': {
         const fileName = (filePath ?? '').split('/').pop() || filePath || ''
@@ -45,6 +54,56 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSumm
         summary = meta ? `${fileName} (${meta})` : fileName
         break
       }
+      case 'Edit': {
+        const oldStr = String(p.old_string ?? '')
+        const newStr = String(p.new_string ?? '')
+        if (oldStr || newStr) {
+          toolLineDelta = { added: countLines(newStr), removed: countLines(oldStr) }
+          const removed = oldStr ? oldStr.split('\n').map((l: string) => `-${l}`) : []
+          const added = newStr ? newStr.split('\n').map((l: string) => `+${l}`) : []
+          toolDiff = [...removed, ...added].join('\n')
+          if (filePath) {
+            const addedTokens = newStr ? highlightCodeSync(newStr, filePath) : undefined
+            const removedTokens = oldStr ? highlightCodeSync(oldStr, filePath) : undefined
+            if (addedTokens || removedTokens) toolDiffTokens = { added: addedTokens ?? undefined, removed: removedTokens ?? undefined }
+          }
+        }
+        break
+      }
+      case 'Write': {
+        const content = String(p.content ?? '')
+        if (content) {
+          toolLineDelta = { added: countLines(content), removed: 0 }
+          toolDiff = content.split('\n').map((l: string) => `+${l}`).join('\n')
+          if (filePath) {
+            const addedTokens = highlightCodeSync(content, filePath)
+            if (addedTokens) toolDiffTokens = { added: addedTokens }
+          }
+        }
+        break
+      }
+      case 'FileChange': {
+        const diff = String(p.diff ?? '')
+        const kind = String(p.kind ?? '')
+        if (diff) {
+          if (kind === 'add') {
+            toolLineDelta = { added: countLines(diff), removed: 0 }
+            toolDiff = diff.split('\n').map((l: string) => `+${l}`).join('\n')
+          } else if (kind === 'delete') {
+            toolLineDelta = { added: 0, removed: countLines(diff) }
+            toolDiff = diff.split('\n').map((l: string) => `-${l}`).join('\n')
+          } else {
+            let added = 0, removed = 0
+            for (const line of diff.split('\n')) {
+              if (line.startsWith('+') && !line.startsWith('+++')) added++
+              else if (line.startsWith('-') && !line.startsWith('---')) removed++
+            }
+            if (added > 0 || removed > 0) toolLineDelta = { added, removed }
+            toolDiff = diff
+          }
+        }
+        break
+      }
       case 'Grep':
         summary = `${p.pattern ?? ''}${p.path ? ` in ${String(p.path).split('/').pop()}` : ''}`
         break
@@ -58,7 +117,7 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSumm
         summary = String(p.url ?? '')
         break
     }
-    return { toolSummary: summary, toolFilePath: filePath || undefined }
+    return { toolSummary: summary, toolFilePath: filePath || undefined, toolLineDelta, toolDiff, toolDiffTokens }
   } catch { return {} }
 }
 
@@ -66,7 +125,7 @@ function stripContentBlock(block: ContentBlock): ContentBlock {
   if (block.type === 'thinking') return { ...block, thinking: '' }
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block)
-    return { ...block, input: '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath }
+    return { ...block, input: '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens }
   }
   if (block.type === 'tool_result' && block.summary.length > TOOL_RESULT_MAX_LEN) {
     return { ...block, summary: block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
@@ -225,7 +284,9 @@ export class RemoteControlService {
   constructor(
     private readonly defaultRelayUrl: string,
     private readonly callbacks: RemoteControlCallbacks,
-  ) {}
+  ) {
+    initHighlighter()
+  }
 
   resume(): void {
     if (this.currentConfig) this.start(this.currentConfig)

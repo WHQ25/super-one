@@ -3,18 +3,14 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ArrowLeft, Check, Copy, Eye, EyeOff, GitFork, MessageSquare, MoreHorizontal, Pencil, Search, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getDeleteSessionRecovery } from '../session-delete-helpers'
+import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from '../session-delete-helpers'
 import type { SessionHistoryEntry } from '../../../../shared/agent-types'
 
-const CLEANUP_OPTIONS = [
-  { label: 'Older than 1 week', days: 7 },
-  { label: 'Older than 2 weeks', days: 14 },
-  { label: 'Older than 30 days', days: 30 },
-] as const
 
 interface SessionHistoryProps {
   showBackButton?: boolean
@@ -38,7 +34,8 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
   const [searchQuery, setSearchQuery] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<SessionHistoryEntry | null>(null)
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null)
-  const [cleanupDays, setCleanupDays] = useState<number | null>(null)
+  const [skipConfirm, setSkipConfirm] = useState(false)
+  const [showDeleteAll, setShowDeleteAll] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -89,27 +86,30 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
     fetchSessions()
   }
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return
-    await window.app.deleteSession(deleteTarget.sessionId)
+  const executeDelete = async (target: SessionHistoryEntry) => {
+    await window.app.deleteSession(target.sessionId)
     fetchSessions()
-    if (currentSessionId === deleteTarget.sessionId) resetSession()
-    setDeleteTarget(null)
-    setCopiedCmd(null)
+    if (currentSessionId === target.sessionId) resetSession()
   }
 
-  const cleanupCutoff = cleanupDays != null ? new Date(Date.now() - cleanupDays * 86400000).toISOString() : null
-  const cleanupCount = cleanupCutoff
-    ? sessions.filter((s) => !s.isPinned && s.lastActiveAt < cleanupCutoff).length
-    : 0
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    if (skipConfirm) setSkipDeleteConfirm()
+    await executeDelete(deleteTarget)
+    setDeleteTarget(null)
+    setCopiedCmd(null)
+    setSkipConfirm(false)
+  }
 
-  const handleBatchDelete = useCallback(async () => {
-    if (!activeProject || !cleanupCutoff) return
-    const deleted = await window.app.deleteSessionsOlderThan(activeProject, cleanupCutoff)
+  const deleteAllCount = sessions.filter((s) => !s.isPinned).length
+
+  const handleDeleteAll = useCallback(async () => {
+    if (!activeProject) return
+    const deleted = await window.app.deleteSessionsOlderThan(activeProject, new Date(Date.now() + 86400000).toISOString())
     fetchSessions()
     if (currentSessionId && deleted.includes(currentSessionId)) resetSession()
-    setCleanupDays(null)
-  }, [activeProject, cleanupCutoff, currentSessionId, fetchSessions, resetSession])
+    setShowDeleteAll(false)
+  }, [activeProject, currentSessionId, fetchSessions, resetSession])
 
   const deleteTargetCli = getDeleteSessionRecovery(deleteTarget?.provider ?? 'claude', deleteTarget?.sessionId ?? '')
 
@@ -174,13 +174,11 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
               <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            {CLEANUP_OPTIONS.map((opt) => (
-              <DropdownMenuItem key={opt.days} variant="destructive" onClick={() => setCleanupDays(opt.days)} className="text-xs">
-                <Trash2 className="size-3.5" />
-                Delete {opt.label.toLowerCase()}
-              </DropdownMenuItem>
-            ))}
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem variant="destructive" onClick={() => setShowDeleteAll(true)} className="text-xs">
+              <Trash2 className="size-3.5" />
+              Delete all
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         {!showBackButton && onClose && (
@@ -257,7 +255,14 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
                               <Pencil className="size-3" />
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); setDeleteTarget(entry) }}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (shouldSkipDeleteConfirm()) {
+                                  executeDelete(entry)
+                                } else {
+                                  setDeleteTarget(entry)
+                                }
+                              }}
                               className="rounded p-0.5 text-muted-foreground/70 hover:text-destructive"
                             >
                               <Trash2 className="size-3" />
@@ -306,27 +311,31 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
               </div>
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <DialogFooter className="flex-row items-center gap-2">
+            <label className="mr-auto flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+              <Checkbox checked={skipConfirm} onCheckedChange={(v) => setSkipConfirm(v === true)} />
+              Don't ask again
+            </label>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setSkipConfirm(false) }}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>Delete</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={cleanupDays != null} onOpenChange={(open) => { if (!open) setCleanupDays(null) }}>
+      <Dialog open={showDeleteAll} onOpenChange={(open) => { if (!open) setShowDeleteAll(false) }}>
         <DialogContent showCloseButton={false} className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Batch Delete Sessions?</DialogTitle>
+            <DialogTitle>Delete All Sessions?</DialogTitle>
             <DialogDescription>
-              {cleanupCount === 0
-                ? `No non-pinned sessions found ${CLEANUP_OPTIONS.find((o) => o.days === cleanupDays)?.label.toLowerCase() ?? ''}.`
-                : `This will delete ${cleanupCount} non-pinned session${cleanupCount > 1 ? 's' : ''} ${CLEANUP_OPTIONS.find((o) => o.days === cleanupDays)?.label.toLowerCase() ?? ''}. Pinned sessions will not be affected.`
+              {deleteAllCount === 0
+                ? 'No non-pinned sessions found.'
+                : `This will delete ${deleteAllCount} non-pinned session${deleteAllCount > 1 ? 's' : ''}. Pinned sessions will not be affected.`
               }
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCleanupDays(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleBatchDelete} disabled={cleanupCount === 0}>Delete</Button>
+            <Button variant="outline" onClick={() => setShowDeleteAll(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteAll} disabled={deleteAllCount === 0}>Delete</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { hostname } from 'node:os'
 import { powerSaveBlocker } from 'electron'
 import WebSocket from 'ws'
+import { diffLines } from 'diff'
 import log from './logger'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage } from '../shared/agent-types'
 import { trace } from './agent/event-trace'
@@ -61,9 +62,14 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSumm
         const newStr = String(p.new_string ?? '')
         if (oldStr || newStr) {
           toolLineDelta = { added: countLines(newStr), removed: countLines(oldStr) }
-          const removed = oldStr ? oldStr.split('\n').map((l: string) => `-${l}`) : []
-          const added = newStr ? newStr.split('\n').map((l: string) => `+${l}`) : []
-          toolDiff = [...removed, ...added].join('\n')
+          const changes = diffLines(oldStr, newStr)
+          const parts: string[] = []
+          for (const change of changes) {
+            const lines = change.value.replace(/\n$/, '').split('\n')
+            const prefix = change.added ? '+' : change.removed ? '-' : ' '
+            for (const l of lines) parts.push(`${prefix}${l}`)
+          }
+          toolDiff = parts.join('\n')
           if (filePath) {
             const addedTokens = newStr ? highlightCodeSync(newStr, filePath) : undefined
             const removedTokens = oldStr ? highlightCodeSync(oldStr, filePath) : undefined

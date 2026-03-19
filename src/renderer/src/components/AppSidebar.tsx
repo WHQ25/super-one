@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Plus, Settings, PanelLeftDashed, Folder, FolderOpen, FolderClosed, FolderX, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Checkbox } from '@/components/ui/checkbox'
 import { CommandShortcut } from '@/components/ui/command'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -36,7 +37,7 @@ import { homePath } from '@/lib/path-utils'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FileTree } from '@/components/sidebar/FileTree'
 import type { SessionHistoryEntry, PinnedSessionEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
-import { getDeleteSessionRecovery } from './session-delete-helpers'
+import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from './session-delete-helpers'
 
 type SortMode = 'recent' | 'added'
 
@@ -177,27 +178,35 @@ export function AppSidebar() {
     refreshFolderSessions(folderPath)
   }, [refreshFolderSessions])
 
-  const handleDeleteSession = useCallback(async () => {
-    if (!deleteTarget) return
-    await window.app.deleteSession(deleteTarget.sessionId)
+  const [skipConfirm, setSkipConfirm] = useState(false)
 
-    const current = projectSessions[deleteTarget.folderPath]
-    if (current?._activeSessionId === deleteTarget.sessionId) {
+  const executeDeleteSession = useCallback(async (target: { sessionId: string; folderPath: string }) => {
+    await window.app.deleteSession(target.sessionId)
+
+    const current = projectSessions[target.folderPath]
+    if (current?._activeSessionId === target.sessionId) {
       resetSession()
     }
-    removeSessionFromMemory(deleteTarget.folderPath, deleteTarget.sessionId)
+    removeSessionFromMemory(target.folderPath, target.sessionId)
 
     setFolderSessions((prev) => ({
       ...prev,
-      [deleteTarget.folderPath]: (prev[deleteTarget.folderPath] ?? []).filter(
-        (s) => s.sessionId !== deleteTarget.sessionId
+      [target.folderPath]: (prev[target.folderPath] ?? []).filter(
+        (s) => s.sessionId !== target.sessionId
       ),
     }))
-    setPinnedSessions((prev) => prev.filter((s) => s.sessionId !== deleteTarget.sessionId))
-    setDeleteTarget(null)
-    refreshFolderSessions(deleteTarget.folderPath)
+    setPinnedSessions((prev) => prev.filter((s) => s.sessionId !== target.sessionId))
+    refreshFolderSessions(target.folderPath)
     refreshPinned()
-  }, [deleteTarget, refreshFolderSessions, refreshPinned, projectSessions, resetSession, removeSessionFromMemory])
+  }, [refreshFolderSessions, refreshPinned, projectSessions, resetSession, removeSessionFromMemory])
+
+  const handleDeleteSession = useCallback(async () => {
+    if (!deleteTarget) return
+    if (skipConfirm) setSkipDeleteConfirm()
+    await executeDeleteSession(deleteTarget)
+    setDeleteTarget(null)
+    setSkipConfirm(false)
+  }, [deleteTarget, skipConfirm, executeDeleteSession])
 
   const deleteTargetCli = getDeleteSessionRecovery(deleteTarget?.provider ?? 'claude', deleteTarget?.sessionId ?? '')
 
@@ -592,12 +601,19 @@ export function AppSidebar() {
                                         <ContextMenuSeparator />
                                         <ContextMenuItem
                                           variant="destructive"
-                                          onClick={() => setDeleteTarget({
-                                            sessionId: session.sessionId,
-                                            title: session.title,
-                                            folderPath: folder.path,
-                                            provider: session.provider ?? 'claude',
-                                          })}
+                                          onClick={() => {
+                                            const target = {
+                                              sessionId: session.sessionId,
+                                              title: session.title,
+                                              folderPath: folder.path,
+                                              provider: (session.provider ?? 'claude') as 'claude' | 'codex',
+                                            }
+                                            if (shouldSkipDeleteConfirm()) {
+                                              executeDeleteSession(target)
+                                            } else {
+                                              setDeleteTarget(target)
+                                            }
+                                          }}
                                           className="text-xs"
                                         >
                                           <Trash2 className="size-3.5" />
@@ -674,8 +690,12 @@ export function AppSidebar() {
               </div>
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <DialogFooter className="flex-row items-center gap-2">
+            <label className="mr-auto flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+              <Checkbox checked={skipConfirm} onCheckedChange={(v) => setSkipConfirm(v === true)} />
+              Don't ask again
+            </label>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setSkipConfirm(false) }}>Cancel</Button>
             <Button variant="destructive" onClick={handleDeleteSession}>Delete</Button>
           </DialogFooter>
         </DialogContent>

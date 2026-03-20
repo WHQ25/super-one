@@ -136,9 +136,9 @@ interface AppAPI {
 
   // Settings
   getUserPreferences(): Promise<ClaudePreferences>
-  saveUserPreferences(preferences: ClaudePreferences): Promise<ClaudePreferences>
+  saveUserPreferences(preferences: Partial<ClaudePreferences>): Promise<ClaudePreferences>
   getProjectPreferences(projectPath: string): Promise<ClaudePreferences>
-  saveProjectPreferences(projectPath: string, preferences: ClaudePreferences): Promise<ClaudePreferences>
+  saveProjectPreferences(projectPath: string, preferences: Partial<ClaudePreferences>): Promise<ClaudePreferences>
   setFastMode(enabled: boolean): Promise<void>
 
   // Logging

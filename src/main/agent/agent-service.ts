@@ -177,6 +177,7 @@ export class AgentService {
                 messageCount: row?.cnt ?? 0,
                 provider: s.provider ?? 'claude',
                 gitBranch: s.gitBranch ?? null,
+                isWorktree: s.isWorktree ?? false,
               }
             }),
           })

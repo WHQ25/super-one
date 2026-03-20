@@ -10,6 +10,7 @@ import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
 import { discoverSkills, discoverProjectCommands, discoverProjectAgents } from './discover-resources'
 import { getActiveProviderRaw } from '../database'
+import { readUserPreferences } from '../claude-preferences-service'
 import type { ApiProvider } from '../../shared/agent-types'
 
 export function buildProviderEnv(provider: ApiProvider, agentType: string = 'claude'): Record<string, string> {
@@ -109,14 +110,22 @@ export class ClaudeAgent {
 
     if (resumeSessionId) this.sessionId = resumeSessionId
 
-    // Cache agents at init time
-    // Eagerly create session — triggers system init, makes slash commands/models/MCP available
+    if (!resumeSessionId) {
+      const prefs = readUserPreferences()
+      if (prefs.defaultPermissionMode) {
+        this.currentPermissionMode = prefs.defaultPermissionMode as PermissionMode
+      }
+      if (prefs.defaultSandboxMode) {
+        this.setSandboxMode(prefs.defaultSandboxMode as SandboxMode)
+      }
+    }
+
     this.createSession(resumeSessionId)
   }
 
   /** Create a new session (bridge + query). Safe to call if session already exists (no-op). */
   private createSession(resumeSessionId?: string, resumeSessionAt?: string, forkSession?: boolean, forkedSessionId?: string): void {
-    resumeSessionId = resumeSessionId || this.sessionId || undefined
+    resumeSessionId = resumeSessionId || (this.bridge ? (this.sessionId || undefined) : undefined)
 
     if (this.bridge) {
       if (this.iterationAlive) return

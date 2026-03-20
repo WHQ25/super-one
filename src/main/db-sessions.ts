@@ -127,7 +127,10 @@ export function saveSessionState(
         WHERE claude_session_id = ?
       `)
 
+  const deleteStale = db.prepare('DELETE FROM chat_messages WHERE claude_session_id = ?')
+
   const tx = db.transaction(() => {
+    deleteStale.run(claudeSessionId)
     for (let i = 0; i < data.messages.length; i++) {
       const msg = data.messages[i]
       upsertMsg.run(

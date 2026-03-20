@@ -191,9 +191,10 @@ describe('saveSessionState', () => {
     })
 
     const upsertCalls = runMock.mock.calls
-    expect(upsertCalls[0][3]).toBe('assistant')
-    expect(upsertCalls[0][4]).toBe('interrupted')
-    expect(upsertCalls[1][3]).toBe('user')
-    expect(upsertCalls[1][4]).toBe('complete')
+    expect(upsertCalls[0][0]).toBe('session-1')
+    expect(upsertCalls[1][3]).toBe('assistant')
+    expect(upsertCalls[1][4]).toBe('interrupted')
+    expect(upsertCalls[2][3]).toBe('user')
+    expect(upsertCalls[2][4]).toBe('complete')
   })
 })

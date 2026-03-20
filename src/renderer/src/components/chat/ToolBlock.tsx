@@ -294,10 +294,10 @@ export function FileChip({ name, title, filePath, lineNumber, className }: { nam
       role="button"
       onClick={handleClick}
       title={title}
-      className="inline-flex cursor-pointer items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground whitespace-nowrap hover:bg-muted/80 transition-colors"
+      className="inline-flex min-w-0 cursor-pointer items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground hover:bg-muted/80 transition-colors"
     >
-      <FileIcon name={name} size={12} />
-      <span className={cn('truncate', className ?? 'max-w-[160px]')}>{name}</span>
+      <FileIcon name={name} size={12} className="shrink-0" />
+      <span className={cn('truncate', className)}>{name}</span>
       {lineNumber != null && <span className="text-muted-foreground text-[10px]">#L{lineNumber}</span>}
     </span>
   )

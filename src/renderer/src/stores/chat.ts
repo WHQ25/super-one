@@ -185,6 +185,7 @@ export function createDefaultProjectState(): ProjectState {
 interface ChatStore {
   projectSessions: Record<string, ProjectState>
   activeProject: string | null
+  remoteSession: { projectPath: string; sessionId: string } | null
 
   // Bash output live content (not persisted)
   _bashOutputs: Record<string, { content: string; finished: boolean; outputPath?: string }>
@@ -223,6 +224,7 @@ interface ChatStore {
   // Message actions (operate on activeProject)
   sendMessage: (content: string) => Promise<void>
   interrupt: () => Promise<void>
+  disconnectRemoteSession: () => void
 
   // UI actions
   toggleOpen: () => void
@@ -1217,6 +1219,7 @@ function saveLastCodexSelection(modelId: string, reasoningEffort?: CodexReasonin
 export const useChatStore = create<ChatStore>((set, get) => ({
   projectSessions: {},
   activeProject: null,
+  remoteSession: null,
   _bashOutputs: {},
   isOpen: false,
   corner: 'br',
@@ -1281,6 +1284,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   handleAgentEvent: (event: AgentEvent) => {
+    if (event.type === 'remote_session_start') {
+      set({ remoteSession: { projectPath: event.remoteProjectPath, sessionId: event.remoteSessionId } })
+      return
+    }
+    if (event.type === 'remote_session_end') {
+      set((s) => {
+        if (s.remoteSession?.projectPath === event.remoteProjectPath && s.remoteSession?.sessionId === event.remoteSessionId) {
+          return { remoteSession: null }
+        }
+        return {}
+      })
+      return
+    }
+
     const projectPath = event.projectPath
     const eventSessionId = event.sessionId
     if (!projectPath) return
@@ -1338,8 +1355,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             }
           : {}
         window.app.trace?.('agent.store', event.type, {
+          targetSid,
+          eventSessionId,
           deltaKeys: Object.keys(delta),
           ...('status' in delta ? { status: delta.status } : {}),
+          ...(event.type === 'message_start' ? { role: event.message.role, messageId: event.message.id } : {}),
           ...('taskProgress' in delta ? { taskProgressKeys: Object.keys(delta.taskProgress ?? {}) } : {}),
           ...codexItemTrace,
         }, (event as any).messageId)
@@ -1452,6 +1472,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         && targetSid === updatedProject._activeSessionId && !isBackground) {
         const prefire = updatedSession.prefireMessage
         if (prefire) {
+          window.app.trace?.('chat.prefire', 'auto_send', { content: prefire.content.slice(0, 50), targetSid })
           updatedProject._sessions = {
             ...updatedProject._sessions,
             [targetSid]: { ...updatedSession, prefireMessage: null },
@@ -1530,7 +1551,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const project = get().projectSessions[currentProject]
       if (project) {
         const activeSession = project._activeSessionId ? project._sessions[project._activeSessionId] : null
-        if (activeSession?.status === 'streaming') {
+        const rs = get().remoteSession
+        const isRemote = rs && rs.projectPath === currentProject && activeSession?.session?.sessionId === rs.sessionId
+        if (activeSession?.status === 'streaming' && !isRemote) {
           await window.agent.parkSession(currentProject)
         } else {
           _saveSessionState(get, currentProject)
@@ -1602,8 +1625,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   sendMessage: async (content: string) => {
-    const { activeProject } = get()
+    const { activeProject, remoteSession } = get()
     if (!activeProject) return
+    if (remoteSession && remoteSession.projectPath === activeProject) return
 
     const { useAppStore } = await import('./app')
     const wtState = useAppStore.getState().getWorktreeState(activeProject)
@@ -1986,6 +2010,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))
       throw err
     }
+  },
+
+  disconnectRemoteSession: () => {
+    void window.agent.disconnectRemoteSession()
+    set({ remoteSession: null })
   },
 
   interrupt: async () => {
@@ -2976,6 +3005,14 @@ export function useActiveSession<T>(selector: (s: ActiveSessionView) => T): T {
       _cachedView = { ...session, ...p }
     }
     return selector(_cachedView!)
+  })
+}
+
+export function useIsRemoteLocked(): boolean {
+  return useChatStore((store) => {
+    const rs = store.remoteSession
+    if (!rs || !store.activeProject) return false
+    return rs.projectPath === store.activeProject
   })
 }
 

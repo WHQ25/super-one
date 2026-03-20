@@ -502,6 +502,8 @@ export type AgentEventBase =
   | { type: 'elicitation_complete'; mcpServerName: string; elicitationId: string }
   | { type: 'stream_message_start'; messageId: string; apiMessageId: string; model: string; parentToolUseId?: string | null }
   | { type: 'stream_message_stop'; messageId: string; parentToolUseId?: string | null }
+  | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string }
+  | { type: 'remote_session_end'; remoteProjectPath: string; remoteSessionId: string }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
 
@@ -703,6 +705,7 @@ export interface SessionHistoryEntry {
   gitBranch?: string
   messageCount: number // Total user + assistant messages
   isWorktree?: boolean // true if session was created in a git worktree
+  worktreePath?: string // filesystem path to the worktree directory
   isPinned?: boolean   // true if session is pinned by user
   isHidden?: boolean   // true if session is hidden by user
 }
@@ -947,6 +950,7 @@ export const AgentIpcChannels = {
   FIND_LINE_NUMBER: 'agent:find-line-number',
   SEARCH_FILES: 'agent:search-files',
   SEARCH_MENTIONS: 'agent:search-mentions',
+  DISCONNECT_REMOTE_SESSION: 'agent:disconnect-remote-session',
 
   // Plugins
   PLUGINS_LIST: 'plugins:list',
@@ -1104,7 +1108,7 @@ export type MentionSearchItem =
   | { kind: 'agent'; name: string; model: string; matchIndices: number[]; score: number }
 
 export type RemoteCommand =
-  | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[] }
+  | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[]; provider?: 'claude' | 'codex'; permissionMode?: string; permissionPreset?: string; gitBranch?: string; worktreeBranch?: string; worktreeCarryLocalChanges?: boolean }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
   | { type: 'respond_permission'; requestId: string; decision: boolean; projectPath?: string; sessionId: string }
   | { type: 'subscribe_session'; projectPath: string; sessionId: string }
@@ -1117,11 +1121,13 @@ export type RemoteCommand =
   | { type: 'list_sessions'; requestId: string; projectPath: string; limit?: number; offset?: number }
   | { type: 'list_models'; requestId: string; projectPath: string }
   | { type: 'get_system_info'; requestId: string; projectPath: string; provider: 'claude' | 'codex' }
+  | { type: 'get_project_resources'; requestId: string; projectPath: string; provider: 'claude' | 'codex' }
   | { type: 'get_git_info'; requestId: string; projectPath: string }
   | { type: 'get_git_branches'; requestId: string; projectPath: string }
   | { type: 'switch_git_branch'; requestId: string; projectPath: string; branch: string }
   | { type: 'create_git_branch'; requestId: string; projectPath: string; branch: string }
   | { type: 'get_worktree_info'; requestId: string; projectPath: string }
+  | { type: 'activate_worktree'; requestId: string; projectPath: string; baseBranch: string | null; carryLocalChanges?: boolean }
 
 export interface PairedDevice {
   id: string

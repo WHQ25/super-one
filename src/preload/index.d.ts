@@ -24,6 +24,7 @@ interface AgentAPI {
   findLineNumber(projectPath: string, filePath: string, text: string): Promise<number | null>
   searchFiles(projectPath: string, query: string, additionalDirs?: string[]): Promise<FileSearchResult[]>
   searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[]): Promise<MentionSearchItem[]>
+  disconnectRemoteSession(): Promise<void>
   readProjectAdditionalDirs(projectPath: string): Promise<string[]>
   writeProjectAdditionalDirs(projectPath: string, dirs: string[]): Promise<void>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void

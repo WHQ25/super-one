@@ -34,7 +34,7 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
 
   const db = getDb()
   const baseSql = `
-    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden,
+    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
            COALESCE(
              (SELECT MAX(m.created_at) FROM chat_messages m
               WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
@@ -55,7 +55,7 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
   const rows = (limit != null
     ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(projectId, limit, offset ?? 0)
     : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; provider: 'claude' | 'codex' }>
+  ) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; provider: 'claude' | 'codex' }>
 
   return rows.map((r) => ({
     sessionId: r.claude_session_id ?? r.id,
@@ -66,6 +66,8 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
     ...(r.is_worktree ? { isWorktree: true } : {}),
     ...(r.is_pinned ? { isPinned: true } : {}),
     ...(r.is_hidden ? { isHidden: true } : {}),
+    ...(r.git_branch ? { gitBranch: r.git_branch } : {}),
+    ...(r.worktree_path ? { worktreePath: r.worktree_path } : {}),
   }))
 }
 

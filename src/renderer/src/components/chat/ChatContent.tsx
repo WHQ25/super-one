@@ -1,8 +1,8 @@
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ArrowDown, Check, ClipboardList, Copy, GitFork, PenLine, Trash2, X } from 'lucide-react'
+import { ArrowDown, Check, ClipboardList, Copy, GitFork, PenLine, Smartphone, Trash2, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
@@ -83,10 +83,12 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     sessionStatus: s.status,
     lastAssistantMessageId: s.lastAssistantMessageId,
   })))
-  const { cancelPrefireMessage, discardPrefireMessage } = useChatStore(useShallow((s) => ({
+  const { cancelPrefireMessage, discardPrefireMessage, disconnectRemoteSession } = useChatStore(useShallow((s) => ({
     cancelPrefireMessage: s.cancelPrefireMessage,
     discardPrefireMessage: s.discardPrefireMessage,
+    disconnectRemoteSession: s.disconnectRemoteSession,
   })))
+  const isRemoteLocked = useIsRemoteLocked()
   const [fullscreenPlanText, setFullscreenPlanText] = useState<string | null>(null)
   const planFullscreenCtx = useMemo(() => ({ open: (text: string) => setFullscreenPlanText(text) }), [])
   const [dismissedRateLimitKey, setDismissedRateLimitKey] = useState<string | null>(null)
@@ -260,6 +262,17 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                 <GitFork className="size-3.5 shrink-0" />
                 <span>Worktree has been removed.</span>
                 <span>This session is now <em>READ ONLY</em>.</span>
+              </div>
+            ) : isRemoteLocked ? (
+              <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
+                <Smartphone className="size-3.5 shrink-0" />
+                <span>Remote session active — observation mode.</span>
+                <button
+                  onClick={disconnectRemoteSession}
+                  className="text-foreground underline underline-offset-2 hover:opacity-80"
+                >
+                  Disconnect
+                </button>
               </div>
             ) : (
               <>

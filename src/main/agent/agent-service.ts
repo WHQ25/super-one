@@ -1,15 +1,17 @@
 import { execFile, execFileSync } from 'child_process'
 import log from '../logger'
-import { resolve, join, basename } from 'path'
+import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, type ClaudeAgentConfig } from './claude-agent'
 import { fetchModels } from './claude-models'
-import { AgentIpcChannels, type AgentEvent, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type ChatMessage, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
 import { getRecentFolders, addRecentFolder } from '../recent-folders'
 import { readdir, mkdir } from 'fs/promises'
+import { existsSync, mkdirSync } from 'fs'
+import { homedir } from 'os'
 import { getDb, getCachedResources } from '../database'
 import { sanitizeGitRef } from '../path-security'
 import { searchFiles, searchMentions, type AgentEntry } from './fuzzy-file-search'
@@ -32,7 +34,7 @@ import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
 import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, listCodexSkills, readCodexSkillContent, readCodexSkillFile, deleteCodexSkill } from '../skills-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
-import { discoverAllAgents, readAgentFile } from './discover-resources'
+import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
 import { backupMcpServers, listLibrary, deleteLibraryEntry } from '../mcp-library-service'
 import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
@@ -45,14 +47,36 @@ export class AgentService {
   private pendingParkCounter = 0
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
   private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
+  private codexGetAuthStatus?: (projectPath: string) => unknown
+  private codexRun?: (sessionId: string, projectPath: string, opts: { prompt: string; model?: string; reasoningEffort?: string; permissionPreset?: string; images?: unknown[] }) => Promise<unknown>
   private remoteControlService?: RemoteControlService
 
   setCodexListModels(fn: (projectPath: string) => Promise<ModelOption[]>): void {
     this.codexListModels = fn
   }
 
+  setCodexGetAuthStatus(fn: (projectPath: string) => unknown): void {
+    this.codexGetAuthStatus = fn
+  }
+
+  setCodexRun(fn: typeof this.codexRun): void {
+    this.codexRun = fn
+  }
+
   setRemoteControlService(svc: RemoteControlService): void {
     this.remoteControlService = svc
+  }
+
+  private broadcastEventToRenderer(event: AgentEvent): void {
+    this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.EVENT, event)
+  }
+
+  private isRemoteLockedSession(projectPath: string, sessionId?: string): boolean {
+    const sub = this.remoteControlService?.getSubscribedSession()
+    if (!sub) return false
+    if (sessionId) return sub.projectPath === projectPath && sub.sessionId === sessionId
+    const agent = this.agents.get(projectPath)
+    return sub.projectPath === projectPath && agent?.getSessionId() === sub.sessionId
   }
 
   addEventSubscriber(cb: (event: AgentEvent) => void): () => void {
@@ -68,24 +92,92 @@ export class AgentService {
       case 'send_message': {
         const projectPath = command.projectPath || this.agents.keys().next().value
         if (!projectPath) break
-        const targetSid = command.sessionId
-        if (targetSid) {
-          const current = this.agents.get(projectPath)
-          if (!current?.isReady() || current.getSessionId() !== targetSid) {
-            await this.resumeSession(projectPath, targetSid)
+
+        const emitUserMessage = (): void => {
+          const agent = this.agents.get(projectPath)
+          const sessionId = agent?.getSessionId() || undefined
+          const userMessage: ChatMessage = {
+            id: `user_${Date.now()}`,
+            role: 'user',
+            status: 'complete',
+            content: [
+              ...(command.images ?? []).map((img) => ({ type: 'image' as const, name: img.name })),
+              { type: 'text' as const, text: command.content },
+            ],
+            attachments: command.images?.length ? command.images : undefined,
+            createdAt: new Date().toISOString(),
+            providerId: 'remote',
           }
-        } else {
-          const unsub = this.addEventSubscriber((event) => {
-            if (event.type === 'session_init' && event.projectPath === projectPath) {
-              unsub()
-              const sid = (event as { session?: { sessionId?: string } }).session?.sessionId
-              if (sid) this.remoteControlService?.subscribeSession(projectPath, sid)
-            }
-          })
+          trace('remote.cmd', 'emit_user_message', { projectPath, sessionId, messageId: userMessage.id })
+          this.broadcastEventToRenderer({ type: 'message_start', message: userMessage, projectPath, sessionId })
         }
-        const agent = this.agents.get(projectPath)
-        if (agent?.isReady()) {
-          await agent.sendMessage({ content: command.content, model: command.model, effort: command.effort as never, images: command.images })
+
+        if (command.provider === 'codex') {
+          const sessionId = command.sessionId ?? `codex-remote-${Date.now()}`
+          if (!command.sessionId) {
+            const unsub = this.addEventSubscriber((event) => {
+              if (event.type === 'session_init' && event.projectPath === projectPath) {
+                unsub()
+                const sid = (event as { session?: { sessionId?: string } }).session?.sessionId
+                if (sid) this.remoteControlService?.subscribeSession(projectPath, sid, (e) => this.broadcastEventToRenderer(e))
+              }
+            })
+          }
+          emitUserMessage()
+          await this.codexRun?.(sessionId, projectPath, {
+            prompt: command.content,
+            model: command.model,
+            reasoningEffort: command.effort,
+            permissionPreset: command.permissionPreset,
+            images: command.images,
+          })
+        } else {
+          if (!this.agents.has(projectPath)) {
+            await this.openFolder(projectPath)
+            if (command.effort) {
+              this.agents.get(projectPath)!.setInitialEffort(command.effort as never)
+            }
+          }
+          if (command.permissionMode) {
+            await this.agents.get(projectPath)!.setPermissionMode(command.permissionMode as PermissionMode)
+          }
+          const targetSid = command.sessionId
+          if (targetSid) {
+            const current = this.agents.get(projectPath)
+            if (!current?.isReady() || current.getSessionId() !== targetSid) {
+              const saved = loadSessionState(targetSid)
+              await this.resumeSession(projectPath, targetSid, saved?.worktreePath ?? undefined)
+            }
+          } else {
+            if (command.worktreeBranch) {
+              await this.handleRemoteCommand({
+                type: 'activate_worktree',
+                requestId: `wt-${Date.now()}`,
+                projectPath,
+                baseBranch: command.worktreeBranch,
+                carryLocalChanges: command.worktreeCarryLocalChanges,
+              }, respond)
+            } else if (command.gitBranch) {
+              try {
+                const currentBranch = (await this.gitRun(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+                if (currentBranch !== command.gitBranch) {
+                  await this.gitRun(projectPath, ['checkout', sanitizeGitRef(command.gitBranch)])
+                }
+              } catch { /* branch may already be correct */ }
+            }
+            const unsub = this.addEventSubscriber((event) => {
+              if (event.type === 'session_init' && event.projectPath === projectPath) {
+                unsub()
+                const sid = (event as { session?: { sessionId?: string } }).session?.sessionId
+                if (sid) this.remoteControlService?.subscribeSession(projectPath, sid, (e) => this.broadcastEventToRenderer(e))
+              }
+            })
+          }
+          const agent = this.agents.get(projectPath)
+          if (agent?.isReady()) {
+            emitUserMessage()
+            await agent.sendMessage({ content: command.content, model: command.model, effort: command.effort as never, images: command.images })
+          }
         }
         break
       }
@@ -108,11 +200,11 @@ export class AgentService {
         break
       }
       case 'subscribe_session': {
-        this.remoteControlService?.subscribeSession(command.projectPath, command.sessionId)
+        this.remoteControlService?.subscribeSession(command.projectPath, command.sessionId, (e) => this.broadcastEventToRenderer(e))
         break
       }
       case 'unsubscribe_session': {
-        this.remoteControlService?.unsubscribeSession()
+        this.remoteControlService?.unsubscribeSession((e) => this.broadcastEventToRenderer(e))
         break
       }
       case 'load_session_messages': {
@@ -191,6 +283,7 @@ export class AgentService {
                 provider: s.provider ?? 'claude',
                 gitBranch: s.gitBranch ?? null,
                 isWorktree: s.isWorktree ?? false,
+                worktreePath: s.worktreePath ?? null,
               }
             }),
           })
@@ -216,11 +309,13 @@ export class AgentService {
             const models = await fetchModels(command.projectPath)
             const skills = listSkills(command.projectPath)
             const agents = discoverAllAgents(command.projectPath)
+            const projectSlashCommands = discoverProjectCommands(command.projectPath)
             await respond?.(command.requestId, {
               models,
               skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
               agents: agents.map((a) => ({ name: a.name, description: a.description ?? '', model: a.model })),
-              slashCommands: cached?.slashCommands ?? [],
+              userSlashCommands: cached?.slashCommands ?? [],
+              projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '' })),
               account: cached?.account ?? null,
               permissionModes: ['default', 'acceptEdits', 'plan', 'bypassPermissions'],
               sandboxModes: ['off', 'on', 'auto'],
@@ -238,8 +333,31 @@ export class AgentService {
                 { name: 'review', description: 'Review code changes' },
                 { name: 'compact', description: 'Compact thread context' },
               ],
-              account: cached?.account ?? null,
+              account: this.codexGetAuthStatus?.(command.projectPath) ?? null,
               permissionPresets: ['default', 'full-access'],
+            })
+          }
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'get_project_resources': {
+        try {
+          const isClaude = command.provider !== 'codex'
+          if (isClaude) {
+            const skills = listSkills(command.projectPath)
+            const agents = discoverAllAgents(command.projectPath)
+            const projectSlashCommands = discoverProjectCommands(command.projectPath)
+            await respond?.(command.requestId, {
+              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
+              agents: agents.map((a) => ({ name: a.name, description: a.description ?? '', model: a.model })),
+              projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '' })),
+            })
+          } else {
+            const skills = listCodexSkills(command.projectPath)
+            await respond?.(command.requestId, {
+              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
             })
           }
         } catch (err) {
@@ -332,6 +450,43 @@ export class AgentService {
           await respond?.(command.requestId, { isWorktree, currentBranch, entries })
         } catch {
           await respond?.(command.requestId, { isWorktree: false, currentBranch: '', entries: [] })
+        }
+        break
+      }
+      case 'activate_worktree': {
+        try {
+          if (command.baseBranch === null) {
+            await this.switchCwd(command.projectPath, command.projectPath)
+            await respond?.(command.requestId, { ok: true, path: command.projectPath })
+            break
+          }
+          const repoRoot = resolve(command.projectPath, await this.gitRun(command.projectPath, ['rev-parse', '--git-common-dir']))
+          const mainDir = repoRoot.endsWith(`${sep}.git`) ? dirname(repoRoot) : repoRoot
+          const repoName = basename(mainDir)
+          const safeRef = sanitizeGitRef(command.baseBranch)
+          const commitHash = (await this.gitRun(command.projectPath, ['rev-parse', safeRef])).trim()
+          const shortHash = commitHash.slice(0, 7)
+          const wtDir = join(homedir(), '.worktrees', repoName)
+          const wtPath = join(wtDir, shortHash)
+
+          let stashSha: string | undefined
+          if (command.carryLocalChanges) {
+            stashSha = (await this.gitRun(command.projectPath, ['stash', 'create'])).trim() || undefined
+          }
+
+          if (!existsSync(wtPath)) {
+            if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
+            await this.gitRun(command.projectPath, ['worktree', 'add', '--detach', wtPath, safeRef])
+          }
+
+          if (stashSha) {
+            await this.gitRun(wtPath, ['stash', 'apply', stashSha])
+          }
+
+          await this.switchCwd(command.projectPath, wtPath)
+          await respond?.(command.requestId, { ok: true, path: wtPath })
+        } catch (err) {
+          await respond?.(command.requestId, { ok: false, error: (err as Error).message })
         }
         break
       }
@@ -496,6 +651,7 @@ export class AgentService {
     // --- Session-scoped handlers (projectPath as first arg) ---
 
     ipcMain.handle(AgentIpcChannels.SEND_MESSAGE, async (_event, projectPath: string, request: SendMessageRequest) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       const agent = this.getAgent(projectPath)
       if (!agent.isReady()) throw new Error('Agent not initialized')
       await agent.sendMessage(request)
@@ -506,30 +662,39 @@ export class AgentService {
       if (!agent) return false
       clearAllGates()
       await agent.interrupt()
+      if (this.isRemoteLockedSession(projectPath)) {
+        this.remoteControlService?.unsubscribeSession((e) => this.broadcastEventToRenderer(e))
+      }
       return true
     })
 
     ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       await this.getAgent(projectPath).setPermissionMode(mode)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, (_event, projectPath: string, mode: SandboxMode) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       return this.getAgent(projectPath).setSandboxMode(mode)
     })
 
     ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       this.getAgent(projectPath).respondToQuestion(requestId, answers, annotations)
     })
 
     ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       this.getAgent(projectPath).dismissQuestion(requestId)
     })
 
     ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       this.getAgent(projectPath).respondToPlanApproval(requestId, approved, feedback)
     })
 
@@ -581,6 +746,10 @@ export class AgentService {
       const cwd = agent?.getCwd() ?? projectPath
       const roots = [cwd, ...(additionalDirs || [])]
       return searchMentions(roots, query, agents, 20)
+    })
+
+    ipcMain.handle(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, () => {
+      this.remoteControlService?.unsubscribeSession((e) => this.broadcastEventToRenderer(e))
     })
 
     // --- Additional directories ---
@@ -843,8 +1012,8 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       await this.parkSession(projectPath)
-      // Create a fresh agent for the project
       const agent = new ClaudeAgent()
       await agent.initialize({ cwd: projectPath }, this.createEventEmitter(projectPath))
       this.agents.set(projectPath, agent)
@@ -974,6 +1143,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.FIND_LINE_NUMBER)
     ipcMain.removeHandler(AgentIpcChannels.SEARCH_FILES)
     ipcMain.removeHandler(AgentIpcChannels.SEARCH_MENTIONS)
+    ipcMain.removeHandler(AgentIpcChannels.DISCONNECT_REMOTE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS)
     ipcMain.removeHandler(AgentIpcChannels.WRITE_PROJECT_ADDITIONAL_DIRS)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_LIST)

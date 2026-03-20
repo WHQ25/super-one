@@ -257,6 +257,16 @@ function createWindow(): void {
 function registerIpcHandlers(): void {
   // Setup agent IPC handlers (does NOT auto-initialize)
   agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))
+  agentService.setCodexGetAuthStatus((projectPath) => codexService.getAuthStatus(projectPath))
+  agentService.setCodexRun(async (sessionId, projectPath, opts) => {
+    const messageId = `remote-${Date.now()}`
+    const { callbacks, route } = createCodexCallbacks(messageId, sessionId, projectPath)
+    try {
+      return await codexService.run(sessionId, projectPath, { ...opts, messageId } as Parameters<typeof codexService.run>[2], callbacks)
+    } finally {
+      route.dispose()
+    }
+  })
   agentService.setup()
 
   ipcMain.on('app:trace', (_e, source: string, type: string, data: unknown, tag?: string) => {

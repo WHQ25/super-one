@@ -227,6 +227,10 @@ export class ClaudeAgent {
     })
   }
 
+  setInitialEffort(effort: SendMessageRequest['effort']): void {
+    this.currentEffort = effort
+  }
+
   async sendMessage(request: SendMessageRequest): Promise<void> {
     if (!this.config || !this.onEvent) {
       throw new Error('ClaudeAgent not initialized')

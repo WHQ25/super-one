@@ -645,12 +645,20 @@ export class RemoteControlService {
     this.pairingSession = null
   }
 
-  subscribeSession(projectPath: string, sessionId: string): void {
+  getSubscribedSession(): { projectPath: string; sessionId: string } | null {
+    return this.subscribedSession
+  }
+
+  subscribeSession(projectPath: string, sessionId: string, broadcastToRenderer?: (event: AgentEvent) => void): void {
     this.subscribedSession = { projectPath, sessionId }
+    broadcastToRenderer?.({ type: 'remote_session_start', remoteProjectPath: projectPath, remoteSessionId: sessionId })
     log.info(`[RemoteControl] Subscribed to session: ${sessionId} in ${projectPath}`)
   }
 
-  unsubscribeSession(): void {
+  unsubscribeSession(broadcastToRenderer?: (event: AgentEvent) => void): void {
+    if (this.subscribedSession) {
+      broadcastToRenderer?.({ type: 'remote_session_end', remoteProjectPath: this.subscribedSession.projectPath, remoteSessionId: this.subscribedSession.sessionId })
+    }
     this.subscribedSession = null
     log.info('[RemoteControl] Unsubscribed from session')
   }

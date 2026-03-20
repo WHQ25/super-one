@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { ArrowUp, Square, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
@@ -128,12 +128,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       }
     }, [slashIndex])
 
+    const isRemoteLocked = useIsRemoteLocked()
     const isStreaming = status === 'streaming'
     const activeProviderForResources = sessionProvider ?? preferredProvider
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || mentions.length > 0
-    const canSend = hasContent && (!isStreaming || activeProviderForResources === 'codex')
-    const canPrefire = isStreaming && !prefireMessage && hasContent && activeProviderForResources !== 'codex'
+    const canSend = hasContent && !isRemoteLocked && (!isStreaming || activeProviderForResources === 'codex')
+    const canPrefire = isStreaming && !isRemoteLocked && !prefireMessage && hasContent && activeProviderForResources !== 'codex'
     const showAgentMentions = activeProviderForResources === 'claude'
 
     const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([

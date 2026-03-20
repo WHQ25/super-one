@@ -4,7 +4,7 @@ import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useState } from 'react'
 import type { SandboxMode } from '../../../../shared/agent-types'
 
-const modes: { id: SandboxMode; label: string; triggerLabel: string; description: string; icon: React.ReactNode; color: string; hoverBg: string }[] = [
+export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: string; description: string; icon: React.ReactNode; color: string; hoverBg: string }[] = [
   {
     id: 'off',
     label: 'Sandbox Off',
@@ -49,7 +49,7 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
   const setSandboxMode = useChatStore((s) => s.setSandboxMode)
 
   const currentMode = getSandboxMode(sandboxInfo)
-  const current = modes.find((m) => m.id === currentMode) ?? modes[1]
+  const current = sandboxModes.find((m) => m.id === currentMode) ?? sandboxModes[1]
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -69,7 +69,7 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
         className="w-56 border-border bg-card p-1"
       >
         <div className="px-2 py-1.5 text-xs text-muted-foreground">Sandbox Mode</div>
-        {modes.map((mode) => (
+        {sandboxModes.map((mode) => (
           <button
             key={mode.id}
             onClick={() => {

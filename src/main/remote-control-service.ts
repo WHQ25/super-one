@@ -364,6 +364,8 @@ export interface RemoteControlCallbacks {
   onCommand: (cmd: RemoteCommand, respond: RemoteResponder) => void
   onClientRegistered?: (info: { deviceName: string; deviceId: string }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
+  onSessionUnsubscribed?: (session: { projectPath: string; sessionId: string }) => void
+  onRemoteFilterCleared?: (filter: { projectPath: string; sessionId: string }) => void
   onPairingCodeReceived?: (info: { code: string; deviceName: string }) => void
   onPairingExpired?: () => void
   onPairingConfirmed?: (info: { mobileDeviceId: string; deviceName: string }) => void
@@ -390,6 +392,7 @@ export class RemoteControlService {
   private bashToolCommands = new Map<string, string>()
   private todoToolInputs = new Map<string, { toolName: string; input: string }>()
   private subscribedSession: { projectPath: string; sessionId: string } | null = null
+  private remoteSessionFilter: { projectPath: string; sessionId: string } | null = null
 
   private relayUrl = ''
 
@@ -548,6 +551,15 @@ export class RemoteControlService {
         break
       case 'peer_disconnected': {
         log.info('[RemoteControl] Mobile peer disconnected')
+        if (this.subscribedSession) {
+          this.callbacks.onSessionUnsubscribed?.(this.subscribedSession)
+          this.subscribedSession = null
+        }
+        if (this.remoteSessionFilter) {
+          const filter = this.remoteSessionFilter
+          this.remoteSessionFilter = null
+          this.callbacks.onRemoteFilterCleared?.(filter)
+        }
         for (const id of this.onlineDeviceIds) {
           this.onlineDeviceIds.delete(id)
           this.callbacks.onClientDisconnected?.({ deviceId: id })
@@ -663,13 +675,28 @@ export class RemoteControlService {
     log.info('[RemoteControl] Unsubscribed from session')
   }
 
+  setRemoteSessionFilter(projectPath: string, sessionId: string): void {
+    this.remoteSessionFilter = { projectPath, sessionId }
+    log.info(`[RemoteControl] Remote session filter set: ${sessionId} in ${projectPath}`)
+  }
+
+  clearRemoteSessionFilter(): void {
+    this.remoteSessionFilter = null
+    log.info('[RemoteControl] Remote session filter cleared')
+  }
+
   async broadcastAgentEvent(event: AgentEvent): Promise<void> {
     if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
 
-    if (this.subscribedSession) {
-      const { projectPath, sessionId } = this.subscribedSession
-      if (event.projectPath !== projectPath || event.sessionId !== sessionId) return
+    const filter = this.subscribedSession ?? this.remoteSessionFilter
+    if (filter) {
+      const { projectPath, sessionId } = filter
+      if (event.projectPath !== projectPath || event.sessionId !== sessionId) {
+        trace('remote.debug', 'broadcastAgentEvent:filtered', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, filterProject: projectPath, filterSession: sessionId })
+        return
+      }
     }
+    trace('remote.debug', 'broadcastAgentEvent:pass', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, hasFilter: !!filter, filterType: this.subscribedSession ? 'subscribed' : this.remoteSessionFilter ? 'remoteFilter' : 'none' })
 
     if (event.type === 'tool_input_delta' && 'toolUseId' in event) {
       const entry = this.todoToolInputs.get(event.toolUseId as string)

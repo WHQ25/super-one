@@ -1285,7 +1285,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   handleAgentEvent: (event: AgentEvent) => {
     if (event.type === 'remote_session_start') {
-      set({ remoteSession: { projectPath: event.remoteProjectPath, sessionId: event.remoteSessionId } })
+      set((s) => {
+        const pp = event.remoteProjectPath
+        const sid = event.remoteSessionId
+        const project = s.projectSessions[pp]
+        if (!project) return { remoteSession: { projectPath: pp, sessionId: sid } }
+        return {
+          remoteSession: { projectPath: pp, sessionId: sid },
+          projectSessions: {
+            ...s.projectSessions,
+            [pp]: {
+              ...project,
+              _sessions: { ...project._sessions, [sid]: project._sessions[sid] ?? createDefaultPerSessionState() },
+            },
+          },
+        }
+      })
       return
     }
     if (event.type === 'remote_session_end') {
@@ -1311,6 +1326,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         : (eventSessionId && _isLiveSession(project._sessions[DRAFT_SESSION_ID]))
           ? DRAFT_SESSION_ID
           : project._activeSessionId
+
+      if (import.meta.env.DEV) {
+        const matchType = (eventSessionId && project._sessions[eventSessionId]) ? 'exact' : (eventSessionId && _isLiveSession(project._sessions[DRAFT_SESSION_ID])) ? 'draft' : 'fallback_active'
+        console.debug('[handleAgentEvent] route', { type: event.type, eventSessionId, targetSid, matchType, activeSid: project._activeSessionId, knownSids: Object.keys(project._sessions) })
+      }
 
       if (!targetSid || !project._sessions[targetSid]) {
         if (event.type === 'init_ready' || event.type === 'session_init' || event.type === 'status_change') {
@@ -1552,7 +1572,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (project) {
         const activeSession = project._activeSessionId ? project._sessions[project._activeSessionId] : null
         const rs = get().remoteSession
-        const isRemote = rs && rs.projectPath === currentProject && activeSession?.session?.sessionId === rs.sessionId
+        const isRemote = rs && rs.projectPath === currentProject && project._activeSessionId === rs.sessionId
         if (activeSession?.status === 'streaming' && !isRemote) {
           await window.agent.parkSession(currentProject)
         } else {
@@ -1627,7 +1647,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   sendMessage: async (content: string) => {
     const { activeProject, remoteSession } = get()
     if (!activeProject) return
-    if (remoteSession && remoteSession.projectPath === activeProject) return
+    if (remoteSession && remoteSession.projectPath === activeProject) {
+      const project = get().projectSessions[activeProject]
+      if (project?._activeSessionId === remoteSession.sessionId) return
+    }
 
     const { useAppStore } = await import('./app')
     const wtState = useAppStore.getState().getWorktreeState(activeProject)
@@ -3012,7 +3035,9 @@ export function useIsRemoteLocked(): boolean {
   return useChatStore((store) => {
     const rs = store.remoteSession
     if (!rs || !store.activeProject) return false
-    return rs.projectPath === store.activeProject
+    if (rs.projectPath !== store.activeProject) return false
+    const project = store.projectSessions[store.activeProject]
+    return project?._activeSessionId === rs.sessionId
   })
 }
 

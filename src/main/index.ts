@@ -75,6 +75,12 @@ const remoteCallbacks: RemoteControlCallbacks = {
   onClientDisconnected: ({ deviceId }) => {
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
   },
+  onSessionUnsubscribed: (session) => {
+    safeSend(AgentIpcChannels.EVENT, { type: 'remote_session_end', remoteProjectPath: session.projectPath, remoteSessionId: session.sessionId })
+  },
+  onRemoteFilterCleared: (filter) => {
+    agentService.transferRemoteToLocal(filter.projectPath, filter.sessionId)
+  },
   onPairingCodeReceived: ({ code, deviceName }) => {
     safeSend(AgentIpcChannels.REMOTE_PAIRING_CODE_RECEIVED, { code, deviceName })
   },

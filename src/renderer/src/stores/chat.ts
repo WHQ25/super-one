@@ -1289,7 +1289,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const pp = event.remoteProjectPath
         const sid = event.remoteSessionId
         const project = s.projectSessions[pp]
-        if (!project) return { remoteSession: { projectPath: pp, sessionId: sid } }
+        if (!project || event.isSubscribe) return { remoteSession: { projectPath: pp, sessionId: sid } }
         return {
           remoteSession: { projectPath: pp, sessionId: sid },
           projectSessions: {

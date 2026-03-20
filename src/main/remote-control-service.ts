@@ -663,7 +663,7 @@ export class RemoteControlService {
 
   subscribeSession(projectPath: string, sessionId: string, broadcastToRenderer?: (event: AgentEvent) => void): void {
     this.subscribedSession = { projectPath, sessionId }
-    broadcastToRenderer?.({ type: 'remote_session_start', remoteProjectPath: projectPath, remoteSessionId: sessionId })
+    broadcastToRenderer?.({ type: 'remote_session_start', remoteProjectPath: projectPath, remoteSessionId: sessionId, isSubscribe: true })
     log.info(`[RemoteControl] Subscribed to session: ${sessionId} in ${projectPath}`)
   }
 
@@ -683,6 +683,16 @@ export class RemoteControlService {
   clearRemoteSessionFilter(): void {
     this.remoteSessionFilter = null
     log.info('[RemoteControl] Remote session filter cleared')
+  }
+
+  async sendEventToMobile(event: Record<string, unknown>): Promise<void> {
+    if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
+    try {
+      const data = await encryptPayload(this.keys.aesKey, event)
+      this.relayWs.send(JSON.stringify({ type: 'event', data }))
+    } catch (err) {
+      log.error('[RemoteControl] Failed to send event to mobile:', err)
+    }
   }
 
   async broadcastAgentEvent(event: AgentEvent): Promise<void> {

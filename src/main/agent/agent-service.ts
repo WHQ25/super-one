@@ -84,11 +84,11 @@ export class AgentService {
   }
 
   private isRemoteLockedSession(projectPath: string, sessionId?: string): boolean {
-    const sub = this.remoteControlService?.getSubscribedSession()
-    if (!sub) return false
-    if (sessionId) return sub.projectPath === projectPath && sub.sessionId === sessionId
+    if (!this.remoteSession || this.remoteSession.projectPath !== projectPath) return false
+    const remoteSid = this.remoteSession.agent.getSessionId()
+    if (sessionId) return remoteSid === sessionId
     const agent = this.agents.get(projectPath)
-    return sub.projectPath === projectPath && agent?.getSessionId() === sub.sessionId
+    return agent?.getSessionId() === remoteSid
   }
 
   addEventSubscriber(cb: (event: AgentEvent) => void): () => void {
@@ -836,14 +836,23 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, async () => {
+      const sub = this.remoteControlService?.getSubscribedSession()
+      if (sub) {
+        await this.remoteControlService?.sendEventToMobile({ type: 'session_disconnected', sessionId: sub.sessionId })
+      }
       this.remoteControlService?.unsubscribeSession((e) => this.broadcastEventToRenderer(e))
-      this.remoteControlService?.clearRemoteSessionFilter()
       if (this.remoteSession) {
         const sid = this.remoteSession.agent.getSessionId()
-        if (sid) this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: this.remoteSession.projectPath, remoteSessionId: sid })
+        if (sid) {
+          if (!sub || sub.sessionId !== sid) {
+            await this.remoteControlService?.sendEventToMobile({ type: 'session_disconnected', sessionId: sid })
+          }
+          this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: this.remoteSession.projectPath, remoteSessionId: sid })
+        }
         await this.remoteSession.agent.dispose()
         this.remoteSession = null
       }
+      this.remoteControlService?.clearRemoteSessionFilter()
     })
 
     // --- Additional directories ---

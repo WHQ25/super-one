@@ -502,7 +502,7 @@ export type AgentEventBase =
   | { type: 'elicitation_complete'; mcpServerName: string; elicitationId: string }
   | { type: 'stream_message_start'; messageId: string; apiMessageId: string; model: string; parentToolUseId?: string | null }
   | { type: 'stream_message_stop'; messageId: string; parentToolUseId?: string | null }
-  | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string }
+  | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean }
   | { type: 'remote_session_end'; remoteProjectPath: string; remoteSessionId: string }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }

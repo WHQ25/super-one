@@ -271,6 +271,141 @@ describe('AgentService.handleRemoteCommand', () => {
     ).resolves.toBeUndefined()
   })
 
+  it('send_message resumes target session before sending when sessionId differs', async () => {
+    const service = new AgentService()
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    const resumeSession = vi.fn(function (this: any, sid: string) { this.sessionId = sid })
+    const currentAgent = {
+      isReady: vi.fn(() => true),
+      getSessionId: vi.fn(function (this: any) { return this.sessionId }),
+      sessionId: 'session-A',
+      sendMessage,
+      getCwd: vi.fn(() => '/project'),
+      isStreaming: vi.fn(() => false),
+      resumeSession,
+    }
+    ;(service as any).agents.set('/project', currentAgent)
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      content: 'hello',
+      projectPath: '/project',
+      sessionId: 'session-B',
+    })
+
+    expect(resumeSession).toHaveBeenCalledWith('session-B')
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'hello' }),
+    )
+  })
+
+  it('send_message skips resume when sessionId matches current agent', async () => {
+    const service = new AgentService()
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    const currentAgent = {
+      isReady: vi.fn(() => true),
+      getSessionId: vi.fn(() => 'session-A'),
+      sendMessage,
+      getCwd: vi.fn(() => '/project'),
+      isStreaming: vi.fn(() => false),
+    }
+    ;(service as any).agents.set('/project', currentAgent)
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      content: 'hello',
+      projectPath: '/project',
+      sessionId: 'session-A',
+    })
+
+    expect(createdAgents).toHaveLength(0)
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'hello' }),
+    )
+  })
+
+  it('interrupt targets active agent when sessionId matches', async () => {
+    const service = new AgentService()
+    const interrupt = vi.fn().mockResolvedValue(undefined)
+    ;(service as any).agents.set('/project', {
+      getSessionId: vi.fn(() => 'session-A'),
+      interrupt,
+    })
+
+    await service.handleRemoteCommand({ type: 'interrupt', projectPath: '/project', sessionId: 'session-A' })
+    expect(interrupt).toHaveBeenCalledTimes(1)
+  })
+
+  it('interrupt targets background agent when sessionId is in bgAgents', async () => {
+    const service = new AgentService()
+    const bgInterrupt = vi.fn().mockResolvedValue(undefined)
+    ;(service as any).agents.set('/project', {
+      getSessionId: vi.fn(() => 'session-A'),
+      interrupt: vi.fn(),
+    })
+    ;(service as any).bgAgents.set('session-B', {
+      agent: { getSessionId: vi.fn(() => 'session-B'), interrupt: bgInterrupt },
+      projectPath: '/project',
+      gitRoot: '/project',
+    })
+
+    await service.handleRemoteCommand({ type: 'interrupt', projectPath: '/project', sessionId: 'session-B' })
+    expect(bgInterrupt).toHaveBeenCalledTimes(1)
+  })
+
+  it('interrupt is no-op when sessionId not found in active or bg', async () => {
+    const service = new AgentService()
+    const interrupt = vi.fn().mockResolvedValue(undefined)
+    ;(service as any).agents.set('/project', {
+      getSessionId: vi.fn(() => 'session-A'),
+      interrupt,
+    })
+
+    await service.handleRemoteCommand({ type: 'interrupt', projectPath: '/project', sessionId: 'session-X' })
+    expect(interrupt).not.toHaveBeenCalled()
+  })
+
+  it('respond_permission routes to background agent by sessionId', async () => {
+    const service = new AgentService()
+    const bgRespond = vi.fn()
+    ;(service as any).agents.set('/project', {
+      getSessionId: vi.fn(() => 'session-A'),
+      respondToPermission: vi.fn(),
+    })
+    ;(service as any).bgAgents.set('session-B', {
+      agent: { getSessionId: vi.fn(() => 'session-B'), respondToPermission: bgRespond },
+      projectPath: '/project',
+      gitRoot: '/project',
+    })
+
+    await service.handleRemoteCommand({
+      type: 'respond_permission',
+      requestId: 'req-1',
+      decision: true,
+      projectPath: '/project',
+      sessionId: 'session-B',
+    })
+    expect(bgRespond).toHaveBeenCalledWith('req-1', true)
+  })
+
+  it('respond_permission is no-op when sessionId not found', async () => {
+    const service = new AgentService()
+    const respond = vi.fn()
+    ;(service as any).agents.set('/project', {
+      getSessionId: vi.fn(() => 'session-A'),
+      respondToPermission: respond,
+    })
+
+    await service.handleRemoteCommand({
+      type: 'respond_permission',
+      requestId: 'req-1',
+      decision: true,
+      projectPath: '/project',
+      sessionId: 'session-X',
+    })
+    expect(respond).not.toHaveBeenCalled()
+  })
+
   it('add_project calls addRecentFolder and openFolder', async () => {
     const { addRecentFolder } = await import('../recent-folders')
     const respond = vi.fn()

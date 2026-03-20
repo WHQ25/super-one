@@ -658,7 +658,7 @@ export class RemoteControlService {
   async broadcastAgentEvent(event: AgentEvent): Promise<void> {
     if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
 
-    if (this.subscribedSession && event.type !== 'status_change') {
+    if (this.subscribedSession) {
       const { projectPath, sessionId } = this.subscribedSession
       if (event.projectPath !== projectPath || event.sessionId !== sessionId) return
     }

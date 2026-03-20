@@ -67,31 +67,44 @@ export class AgentService {
     switch (command.type) {
       case 'send_message': {
         const projectPath = command.projectPath || this.agents.keys().next().value
-        const agent = projectPath ? this.agents.get(projectPath) : undefined
-        if (agent?.isReady()) {
-          if (!command.sessionId && projectPath) {
-            const unsub = this.addEventSubscriber((event) => {
-              if (event.type === 'session_init' && event.projectPath === projectPath) {
-                unsub()
-                const sid = (event as { session?: { sessionId?: string } }).session?.sessionId
-                if (sid) this.remoteControlService?.subscribeSession(projectPath, sid)
-              }
-            })
+        if (!projectPath) break
+        const targetSid = command.sessionId
+        if (targetSid) {
+          const current = this.agents.get(projectPath)
+          if (!current?.isReady() || current.getSessionId() !== targetSid) {
+            await this.resumeSession(projectPath, targetSid)
           }
+        } else {
+          const unsub = this.addEventSubscriber((event) => {
+            if (event.type === 'session_init' && event.projectPath === projectPath) {
+              unsub()
+              const sid = (event as { session?: { sessionId?: string } }).session?.sessionId
+              if (sid) this.remoteControlService?.subscribeSession(projectPath, sid)
+            }
+          })
+        }
+        const agent = this.agents.get(projectPath)
+        if (agent?.isReady()) {
           await agent.sendMessage({ content: command.content, model: command.model, effort: command.effort as never, images: command.images })
         }
         break
       }
       case 'interrupt': {
         const projectPath = command.projectPath || this.agents.keys().next().value
-        const agent = projectPath ? this.agents.get(projectPath) : undefined
+        if (!projectPath) break
+        const agent = this.findAgentBySessionId(projectPath, command.sessionId)
         if (agent) { clearAllGates(); await agent.interrupt() }
         break
       }
       case 'respond_permission': {
         const projectPath = command.projectPath || this.agents.keys().next().value
-        const agent = projectPath ? this.agents.get(projectPath) : undefined
-        agent?.respondToPermission(command.requestId, command.decision)
+        if (!projectPath) break
+        const agent = this.findAgentBySessionId(projectPath, command.sessionId)
+        if (agent) {
+          agent.respondToPermission(command.requestId, command.decision)
+        } else {
+          log.warn('[AgentService] respond_permission: no agent for session %s', command.sessionId)
+        }
         break
       }
       case 'subscribe_session': {
@@ -405,6 +418,14 @@ export class AgentService {
   private hasBgSession(projectPath: string, sessionId: string): boolean {
     const bg = this.bgAgents.get(sessionId)
     return !!bg && bg.gitRoot === getGitRoot(projectPath)
+  }
+
+  private findAgentBySessionId(projectPath: string, sessionId: string): ClaudeAgent | undefined {
+    const active = this.agents.get(projectPath)
+    if (active && active.getSessionId() === sessionId) return active
+    const bg = this.bgAgents.get(sessionId)
+    if (bg && bg.gitRoot === getGitRoot(projectPath)) return bg.agent
+    return undefined
   }
 
   /** Restore a background agent as the active agent for the project.

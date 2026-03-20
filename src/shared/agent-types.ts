@@ -1105,8 +1105,8 @@ export type MentionSearchItem =
 
 export type RemoteCommand =
   | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[] }
-  | { type: 'interrupt'; projectPath?: string }
-  | { type: 'respond_permission'; requestId: string; decision: boolean; projectPath?: string }
+  | { type: 'interrupt'; projectPath?: string; sessionId: string }
+  | { type: 'respond_permission'; requestId: string; decision: boolean; projectPath?: string; sessionId: string }
   | { type: 'subscribe_session'; projectPath: string; sessionId: string }
   | { type: 'unsubscribe_session' }
   | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number }

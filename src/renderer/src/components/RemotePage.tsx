@@ -171,6 +171,11 @@ export function RemotePage() {
               <div className="rounded-lg border border-border bg-white p-3 w-fit">
                 <QRCodeSVG value={qrValue} size={200} />
               </div>
+              {import.meta.env.DEV && (
+                <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(qrValue); toast.success('Pairing link copied') }}>
+                  Copy Pairing Link
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={handleCancelPairing}>
                 Cancel
               </Button>

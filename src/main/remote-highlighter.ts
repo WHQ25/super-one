@@ -91,9 +91,27 @@ export function highlightCodeSync(code: string, filePath: string): DiffTokenLine
   const ext = filePath.split('/').pop()?.split('.').pop()?.toLowerCase() ?? ''
   const lang = EXT_LANG[ext]
   if (!lang) return null
+  return highlightWithLang(code, lang)
+}
 
+const LANG_ALIASES: Record<string, string> = {
+  js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
+  py: 'python', rb: 'ruby', sh: 'bash', zsh: 'bash',
+  yml: 'yaml', cs: 'csharp', kt: 'kotlin', rs: 'rust',
+  md: 'markdown', gql: 'graphql', ex: 'elixir',
+}
+
+export function highlightCodeByLang(code: string, language: string): { lang: string; tokens: DiffTokenLine[] } | null {
+  if (!highlighter) return null
+  const lang = LANG_ALIASES[language] ?? language
+  if (!(LANGS as readonly string[]).includes(lang)) return null
+  const tokens = highlightWithLang(code, lang)
+  return tokens ? { lang, tokens } : null
+}
+
+function highlightWithLang(code: string, lang: string): DiffTokenLine[] | null {
   try {
-    const result = highlighter.codeToTokens(code, { lang: lang as never, theme: 'github-dark' })
+    const result = highlighter!.codeToTokens(code, { lang: lang as never, theme: 'github-dark' })
     return result.tokens.map((line) =>
       line.map((token): DiffToken => [token.content, token.color ?? null])
     )

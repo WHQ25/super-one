@@ -10,11 +10,16 @@ export interface ImageAttachment {
 
 // --- Content blocks ---
 
+type RemoteToolType = 'read' | 'edit' | 'write' | 'notebook_edit' | 'file_change' | 'bash' | 'grep' | 'glob' | 'web_search' | 'web_fetch' | 'agent' | 'skill'
+
 export type ContentBlock =
-  | { type: 'text'; text: string; parentToolUseId?: string | null }
+  | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: [string, string | null][][] | null }> }
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null }
-  | { type: 'tool_use'; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; startedAt?: number; parentToolUseId?: string | null; toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: [string, string | null][][]; removed?: [string, string | null][][] } }
-  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; parentToolUseId?: string | null; outputTokens?: [string, string | null][][] }
+  | { type: 'tool_use'; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; startedAt?: number; parentToolUseId?: string | null; toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: [string, string | null][][]; removed?: [string, string | null][][] }; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
+  | { type: RemoteToolType; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; startedAt?: number; parentToolUseId?: string | null; toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: [string, string | null][][]; removed?: [string, string | null][][] } }
+  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; parentToolUseId?: string | null; outputTokens?: [string, string | null][][]; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
+  | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: [string, string | null][][] }
+  | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
   | { type: 'image'; name: string }
   | { type: 'document'; name: string }
 
@@ -41,6 +46,8 @@ export interface SessionInfo {
 
 export interface ClaudePreferences {
   outputStyle: string
+  defaultPermissionMode: string
+  defaultSandboxMode: string
 }
 
 // --- Usage / cost tracking ---

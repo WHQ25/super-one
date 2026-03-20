@@ -7,7 +7,7 @@ import { diffLines } from 'diff'
 import log from './logger'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage } from '../shared/agent-types'
 import { trace } from './agent/event-trace'
-import { initHighlighter, highlightCodeSync, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
+import { initHighlighter, highlightCodeSync, highlightCodeByLang, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
 
 const subtle = webcrypto.subtle
 const encoder = new TextEncoder()
@@ -27,13 +27,44 @@ const MAX_BASH_OUTPUT = 5000
 const MAX_BASH_LINES = 100
 
 const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
+const TODO_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
+
+const TOOL_TYPE_MAP: Record<string, string> = {
+  Read: 'read', Edit: 'edit', Write: 'write',
+  NotebookEdit: 'notebook_edit', FileChange: 'file_change',
+  Bash: 'bash', Grep: 'grep', Glob: 'glob',
+  WebSearch: 'web_search', WebFetch: 'web_fetch',
+  Agent: 'agent', Skill: 'skill',
+}
+
+function computeTodoItems(toolName: string, input: string): Array<{ content: string; status: string; taskId?: string }> | undefined {
+  try {
+    const p = JSON.parse(input)
+    if (!p || typeof p !== 'object') return undefined
+    if (toolName === 'TodoWrite') {
+      const todos = Array.isArray(p.todos) ? p.todos : []
+      return todos.map((t: Record<string, unknown>, i: number) => ({
+        content: String(t.content ?? t.subject ?? ''),
+        status: String(t.status ?? 'pending'),
+        taskId: String(i + 1),
+      }))
+    }
+    if (toolName === 'TaskCreate') {
+      return [{ content: String(p.subject ?? ''), status: 'pending' }]
+    }
+    if (toolName === 'TaskUpdate') {
+      return [{ content: String(p.subject ?? ''), status: String(p.status ?? 'pending'), taskId: String(p.taskId ?? '') }]
+    }
+  } catch { /* ignore */ }
+  return undefined
+}
 
 function countLines(s: string): number {
   if (!s) return 0
   return s.split('\n').length
 }
 
-function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] } } {
+function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: Array<{ content: string; status: string; taskId?: string }> } {
   try {
     const p = JSON.parse(block.input)
     if (!p || typeof p !== 'object') return {}
@@ -42,6 +73,7 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSumm
     let toolLineDelta: { added: number; removed: number } | undefined
     let toolDiff: string | undefined
     let toolDiffTokens: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] } | undefined
+    let toolTodos: Array<{ content: string; status: string; taskId?: string }> | undefined
     switch (block.toolName) {
       case 'Read': {
         const fileName = (filePath ?? '').split('/').pop() || filePath || ''
@@ -127,8 +159,21 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSumm
       case 'WebFetch':
         summary = String(p.url ?? '')
         break
+      case 'TodoWrite':
+      case 'TaskCreate':
+      case 'TaskUpdate':
+        toolTodos = computeTodoItems(block.toolName, block.input)
+        if (block.toolName === 'TodoWrite' && toolTodos) {
+          const done = toolTodos.filter((t) => t.status === 'completed').length
+          summary = `Todos (${done}/${toolTodos.length})`
+        } else if (block.toolName === 'TaskCreate') {
+          summary = String(p.subject ?? '')
+        } else {
+          summary = `${p.status ?? 'update'}: ${p.subject ?? p.taskId ?? ''}`
+        }
+        break
     }
-    return { toolSummary: summary, toolFilePath: filePath || undefined, toolLineDelta, toolDiff, toolDiffTokens }
+    return { toolSummary: summary, toolFilePath: filePath || undefined, toolLineDelta, toolDiff, toolDiffTokens, toolTodos }
   } catch { return {} }
 }
 
@@ -138,18 +183,38 @@ function truncateBashOutput(text: string): string {
   return truncated.length > MAX_BASH_OUTPUT ? truncated.slice(0, MAX_BASH_OUTPUT) + '…' : truncated
 }
 
+const CODE_FENCE_RE = /^(`{3,})(\w*)\n([\s\S]*?)^\1\s*$/gm
+
+function extractCodeBlockTokens(text: string): Array<{ language: string; tokens: [string, string | null][][] | null }> | undefined {
+  const results: Array<{ language: string; tokens: [string, string | null][][] | null }> = []
+  for (const m of text.matchAll(CODE_FENCE_RE)) {
+    const language = m[2] || ''
+    const code = m[3]
+    if (!code) continue
+    const result = language ? highlightCodeByLang(code.replace(/\n$/, ''), language) : null
+    results.push({ language: result?.lang ?? (language || 'text'), tokens: result?.tokens ?? null })
+  }
+  return results.length > 0 ? results : undefined
+}
+
 function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>): ContentBlock {
+  if (block.type === 'text') {
+    const codeBlockTokens = extractCodeBlockTokens(block.text)
+    if (codeBlockTokens) return { ...block, codeBlockTokens }
+    return block
+  }
   if (block.type === 'thinking') return { ...block, thinking: '' }
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block)
-    return { ...block, input: '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens }
+    const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'
+    return { ...block, type: mappedType, input: '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos } as ContentBlock
   }
   if (block.type === 'tool_result') {
     if (bashCmds?.has(block.toolUseId)) {
       const cmd = bashCmds.get(block.toolUseId) ?? ''
       const raw = cmd ? `\x1b[32m$\x1b[0m ${cmd}\n${block.summary}` : block.summary
       const output = truncateBashOutput(raw)
-      return { ...block, summary: output, outputTokens: parseAnsiTokens(output) }
+      return { type: 'bash_result', toolUseId: block.toolUseId, summary: output, parentToolUseId: block.parentToolUseId, outputTokens: parseAnsiTokens(output) }
     }
     if (block.summary.length > TOOL_RESULT_MAX_LEN) {
       return { ...block, summary: block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
@@ -179,14 +244,26 @@ function stripEventForRemote(event: AgentEvent): AgentEvent {
 export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((msg) => {
     const bashCmds = new Map<string, string>()
+    const todoInputs = new Map<string, { toolName: string; input: string }>()
     for (const block of msg.content) {
       if (block.type === 'tool_use' && block.toolName === 'Bash') {
         try { const p = JSON.parse(block.input); bashCmds.set(block.toolUseId, String(p.command ?? '')) } catch {}
       }
+      if (block.type === 'tool_use' && TODO_TOOLS.has(block.toolName)) {
+        todoInputs.set(block.toolUseId, { toolName: block.toolName, input: block.input })
+      }
     }
     return {
       ...msg,
-      content: msg.content.map((b) => stripContentBlock(b, bashCmds)),
+      content: msg.content
+        .filter((b) => !(b.type === 'tool_use' && TODO_TOOLS.has(b.toolName)))
+        .map((b) => {
+          if (b.type === 'tool_result' && todoInputs.has(b.toolUseId)) {
+            const entry = todoInputs.get(b.toolUseId)!
+            return { type: 'todo_result' as const, toolUseId: b.toolUseId, summary: b.summary, parentToolUseId: b.parentToolUseId, todoToolName: entry.toolName, toolTodos: computeTodoItems(entry.toolName, entry.input) }
+          }
+          return stripContentBlock(b, bashCmds)
+        }),
       metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return rest })() : undefined,
     }
   })
@@ -311,6 +388,7 @@ export class RemoteControlService {
 
   private lastThrottledAt = new Map<string, number>()
   private bashToolCommands = new Map<string, string>()
+  private todoToolInputs = new Map<string, { toolName: string; input: string }>()
   private subscribedSession: { projectPath: string; sessionId: string } | null = null
 
   private relayUrl = ''
@@ -585,6 +663,11 @@ export class RemoteControlService {
       if (event.projectPath !== projectPath || event.sessionId !== sessionId) return
     }
 
+    if (event.type === 'tool_input_delta' && 'toolUseId' in event) {
+      const entry = this.todoToolInputs.get(event.toolUseId as string)
+      if (entry) entry.input += (event as { partialJson: string }).partialJson
+    }
+
     if (SKIPPED_EVENTS.has(event.type)) return
     trace('remote.out', event.type, { messageId: 'messageId' in event ? event.messageId : undefined }, event.sessionId)
 
@@ -595,18 +678,29 @@ export class RemoteControlService {
       this.lastThrottledAt.set(event.type, now)
     }
 
-    if (event.type === 'message_start') this.bashToolCommands.clear()
+    if (event.type === 'message_start') {
+      this.bashToolCommands.clear()
+      this.todoToolInputs.clear()
+    }
 
     if (event.type === 'content_delta') {
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
         try { const p = JSON.parse(event.delta.input); this.bashToolCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
       }
+      if (event.delta.type === 'tool_use' && TODO_TOOLS.has(event.delta.toolName)) {
+        this.todoToolInputs.set(event.delta.toolUseId, { toolName: event.delta.toolName, input: event.delta.input })
+        return
+      }
       let stripped: AgentEvent
-      if (event.delta.type === 'tool_result' && this.bashToolCommands.has(event.delta.toolUseId)) {
+      if (event.delta.type === 'tool_result' && this.todoToolInputs.has(event.delta.toolUseId)) {
+        const entry = this.todoToolInputs.get(event.delta.toolUseId)!
+        const toolTodos = computeTodoItems(entry.toolName, entry.input)
+        stripped = { ...event, delta: { type: 'todo_result', toolUseId: event.delta.toolUseId, summary: event.delta.summary, parentToolUseId: event.delta.parentToolUseId, todoToolName: entry.toolName, toolTodos } }
+      } else if (event.delta.type === 'tool_result' && this.bashToolCommands.has(event.delta.toolUseId)) {
         const cmd = this.bashToolCommands.get(event.delta.toolUseId) ?? ''
         const raw = cmd ? `\x1b[32m$\x1b[0m ${cmd}\n${event.delta.summary}` : event.delta.summary
         const output = truncateBashOutput(raw)
-        stripped = { ...event, delta: { ...event.delta, summary: output, outputTokens: parseAnsiTokens(output) } }
+        stripped = { ...event, delta: { type: 'bash_result', toolUseId: event.delta.toolUseId, summary: output, parentToolUseId: event.delta.parentToolUseId, outputTokens: parseAnsiTokens(output) } }
       } else {
         stripped = stripEventForRemote(event)
       }

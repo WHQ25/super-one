@@ -171,7 +171,7 @@ function InsightBlock({ title, content, isStreaming, components }: { title: stri
   isStreamingRef.current = isStreaming
   const codeComponent = useMemo(
     () => createStreamdownCodeComponent(codePlugin, { textRef, isStreamingRef }),
-    [],
+    [isStreaming],
   )
   const merged = useMemo(
     () => components
@@ -227,7 +227,7 @@ function MarkdownRenderer({ text, isStreaming, components }: { text: string; isS
   isStreamingRef.current = isStreaming
   const streamingCodeComponent = useMemo(
     () => createStreamdownCodeComponent(codePlugin, { textRef, isStreamingRef }),
-    [],
+    [isStreaming],
   )
   const merged = useMemo(
     () => components

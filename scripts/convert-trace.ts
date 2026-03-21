@@ -167,6 +167,96 @@ function computeToolMeta(block: Record<string, unknown>) {
   } catch { return {} }
 }
 
+const INSIGHT_HEADER_RE = /^`★\s+(.+?)\s+─{3,}`$/m
+const INSIGHT_FOOTER_RE = /^`─{3,}`$/
+
+function splitTextIntoBlocks(text: string): Array<{ type: string; text?: string; title?: string; content?: string }> {
+  if (!text.trim()) return []
+  const lines = text.split('\n')
+  const segments: Array<{ type: string; text?: string; title?: string; content?: string }> = []
+  let current: string[] = []
+  let inCodeFence = false
+  let fenceTicks = ''
+  let codeLines: string[] = []
+  let codeLang = ''
+  let inTable = false
+  let tableLines: string[] = []
+  let insightTitle: string | null = null
+  let insightLines: string[] = []
+
+  function flushCurrent() {
+    const t = current.join('\n').trim()
+    if (t) segments.push({ type: 'text', text: t })
+    current = []
+  }
+
+  function flushTable() {
+    if (tableLines.length > 0) {
+      segments.push({ type: 'text', text: tableLines.join('\n') })
+      tableLines = []
+    }
+    inTable = false
+  }
+
+  for (const line of lines) {
+    if (insightTitle !== null) {
+      if (INSIGHT_FOOTER_RE.test(line)) {
+        segments.push({ type: 'insight', title: insightTitle, content: insightLines.join('\n') })
+        insightTitle = null
+        insightLines = []
+      } else {
+        insightLines.push(line)
+      }
+      continue
+    }
+    if (inCodeFence) {
+      if (line.trimEnd() === fenceTicks) {
+        segments.push({ type: 'text', text: `${fenceTicks}${codeLang}\n${codeLines.join('\n')}\n${fenceTicks}` })
+        inCodeFence = false
+        fenceTicks = ''
+        codeLines = []
+        codeLang = ''
+      } else {
+        codeLines.push(line)
+      }
+      continue
+    }
+    const fenceMatch = line.match(/^(`{3,})(\w*)/)
+    if (fenceMatch) {
+      if (inTable) flushTable()
+      flushCurrent()
+      inCodeFence = true
+      fenceTicks = fenceMatch[1]
+      codeLang = fenceMatch[2] || ''
+      codeLines = []
+      continue
+    }
+    const insightMatch = line.match(INSIGHT_HEADER_RE)
+    if (insightMatch) {
+      if (inTable) flushTable()
+      flushCurrent()
+      insightTitle = insightMatch[1].trim()
+      insightLines = []
+      continue
+    }
+    if (line.startsWith('|') && line.includes('|', 1)) {
+      if (!inTable) { flushCurrent(); inTable = true }
+      tableLines.push(line)
+      continue
+    }
+    if (inTable) flushTable()
+    current.push(line)
+  }
+  if (insightTitle !== null) {
+    current.push(`\`★ ${insightTitle} ${'─'.repeat(37)}\``)
+    current.push(...insightLines)
+  }
+  if (inCodeFence) { current.push(`${fenceTicks}${codeLang}`); current.push(...codeLines) }
+  if (inTable) flushTable()
+  flushCurrent()
+  return segments
+}
+
 function stripContentBlock(block: Record<string, unknown>, bashCmds?: Map<string, string>): Record<string, unknown> {
   if (block.type === 'text') return block
   if (block.type === 'thinking') return block
@@ -221,7 +311,31 @@ const insert = db.prepare("INSERT INTO events (ts, source, type, tag, data) VALU
 const bashCmds = new Map<string, string>()
 const todoInputs = new Map<string, { toolName: string; input: string }>()
 const widgetToolIds = new Set<string>()
+let pendingText: { messageId: string; tag: string; text: string; parentToolUseId: string | null; deltaType: string } | null = null
 let count = 0
+
+function flushPendingText() {
+  if (!pendingText || !pendingText.text.trim()) { pendingText = null; return }
+  const { messageId, tag, text, parentToolUseId, deltaType } = pendingText
+  pendingText = null
+  if (deltaType === 'thinking') {
+    const delta = { type: 'thinking', thinking: text, parentToolUseId }
+    const stripped = { type: 'content_delta', messageId, delta }
+    const ts = new Date().toISOString().slice(11, 23)
+    insert.run(ts, 'content_delta', tag, JSON.stringify(stripped))
+    count++
+    return
+  }
+  for (const seg of splitTextIntoBlocks(text)) {
+    const delta = seg.type === 'insight'
+      ? { type: 'insight', title: seg.title, content: seg.content, parentToolUseId }
+      : { type: 'text', text: seg.text, parentToolUseId }
+    const stripped = { type: 'content_delta', messageId, delta }
+    const ts = new Date().toISOString().slice(11, 23)
+    insert.run(ts, 'content_delta', tag, JSON.stringify(stripped))
+    count++
+  }
+}
 
 for (const row of rows) {
   const event = JSON.parse(row.data) as Record<string, unknown>
@@ -236,6 +350,7 @@ for (const row of rows) {
   if (SKIPPED_EVENTS.has(eventType)) continue
 
   if (eventType === 'message_start') {
+    flushPendingText()
     bashCmds.clear()
     todoInputs.clear()
     widgetToolIds.clear()
@@ -245,6 +360,19 @@ for (const row of rows) {
     const delta = event.delta as Record<string, unknown>
     const deltaType = String(delta?.type ?? '')
     const toolName = String(delta?.toolName ?? '')
+
+    if (deltaType === 'text' || deltaType === 'thinking') {
+      const parentId = delta.parentToolUseId as string | null ?? null
+      const msgId = String(event.messageId ?? '')
+      if (pendingText && (pendingText.messageId !== msgId || pendingText.parentToolUseId !== parentId || pendingText.deltaType !== deltaType)) {
+        flushPendingText()
+      }
+      if (!pendingText) pendingText = { messageId: msgId, tag: row.tag, text: '', parentToolUseId: parentId, deltaType }
+      pendingText.text += String(deltaType === 'thinking' ? (delta.thinking ?? '') : (delta.text ?? ''))
+      continue
+    }
+
+    flushPendingText()
 
     if (deltaType === 'tool_use' && toolName === 'Bash') {
       try { const p = JSON.parse(String(delta.input ?? '{}')); bashCmds.set(String(delta.toolUseId), String(p.command ?? '')) } catch {}
@@ -281,11 +409,13 @@ for (const row of rows) {
     continue
   }
 
+  flushPendingText()
   const stripped = stripEvent(event, bashCmds)
   const ts = new Date().toISOString().slice(11, 23)
   insert.run(ts, String(stripped.type), row.tag, JSON.stringify(stripped))
   count++
 }
+flushPendingText()
 
 console.log(`Converted ${rows.length} agent.emit events → ${count} remote.out events`)
 console.log(`Skipped: ${rows.length - count} (tool_input_delta, todo tool_use, etc.)`)

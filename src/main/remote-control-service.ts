@@ -204,6 +204,110 @@ function extractCodeBlockTokens(text: string): Array<{ language: string; tokens:
   return results.length > 0 ? results : undefined
 }
 
+const INSIGHT_HEADER_RE = /^`★\s+(.+?)\s+─{3,}`$/m
+const INSIGHT_FOOTER_RE = /^`─{3,}`$/
+
+interface TextSegment { type: 'text' | 'insight'; text: string; title?: string; content?: string }
+
+function splitTextIntoBlocks(text: string): TextSegment[] {
+  if (!text.trim()) return []
+  const lines = text.split('\n')
+  const segments: TextSegment[] = []
+  let current: string[] = []
+  let inCodeFence = false
+  let fenceTicks = ''
+  let codeLines: string[] = []
+  let codeLang = ''
+  let inTable = false
+  let tableLines: string[] = []
+  let insightTitle: string | null = null
+  let insightLines: string[] = []
+
+  function flushCurrent() {
+    const t = current.join('\n').trim()
+    if (t) segments.push({ type: 'text', text: t })
+    current = []
+  }
+
+  function flushTable() {
+    if (tableLines.length > 0) {
+      segments.push({ type: 'text', text: tableLines.join('\n') })
+      tableLines = []
+    }
+    inTable = false
+  }
+
+  for (const line of lines) {
+    if (insightTitle !== null) {
+      if (INSIGHT_FOOTER_RE.test(line)) {
+        segments.push({ type: 'insight', text: '', title: insightTitle, content: insightLines.join('\n') })
+        insightTitle = null
+        insightLines = []
+      } else {
+        insightLines.push(line)
+      }
+      continue
+    }
+
+    if (inCodeFence) {
+      if (line.trimEnd() === fenceTicks) {
+        segments.push({ type: 'text', text: `${fenceTicks}${codeLang}\n${codeLines.join('\n')}\n${fenceTicks}` })
+        inCodeFence = false
+        fenceTicks = ''
+        codeLines = []
+        codeLang = ''
+      } else {
+        codeLines.push(line)
+      }
+      continue
+    }
+
+    const fenceMatch = line.match(/^(`{3,})(\w*)/)
+    if (fenceMatch) {
+      if (inTable) flushTable()
+      flushCurrent()
+      inCodeFence = true
+      fenceTicks = fenceMatch[1]
+      codeLang = fenceMatch[2] || ''
+      codeLines = []
+      continue
+    }
+
+    const insightMatch = line.match(INSIGHT_HEADER_RE)
+    if (insightMatch) {
+      if (inTable) flushTable()
+      flushCurrent()
+      insightTitle = insightMatch[1].trim()
+      insightLines = []
+      continue
+    }
+
+    if (line.startsWith('|') && line.includes('|', 1)) {
+      if (!inTable) {
+        flushCurrent()
+        inTable = true
+      }
+      tableLines.push(line)
+      continue
+    }
+
+    if (inTable) flushTable()
+    current.push(line)
+  }
+
+  if (insightTitle !== null) {
+    current.push(`\`★ ${insightTitle} ${'─'.repeat(37)}\``)
+    current.push(...insightLines)
+  }
+  if (inCodeFence) {
+    current.push(`${fenceTicks}${codeLang}`)
+    current.push(...codeLines)
+  }
+  if (inTable) flushTable()
+  flushCurrent()
+  return segments
+}
+
 function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>): ContentBlock {
   if (block.type === 'text') {
     const codeBlockTokens = extractCodeBlockTokens(block.text)
@@ -405,6 +509,7 @@ export class RemoteControlService {
   private bashToolCommands = new Map<string, string>()
   private todoToolInputs = new Map<string, { toolName: string; input: string }>()
   private widgetToolIds = new Set<string>()
+  private pendingText: { messageId: string; text: string; parentToolUseId: string | null } | null = null
   private subscribedSession: { projectPath: string; sessionId: string } | null = null
   private remoteSessionFilter: { projectPath: string; sessionId: string } | null = null
 
@@ -740,9 +845,24 @@ export class RemoteControlService {
       this.bashToolCommands.clear()
       this.todoToolInputs.clear()
       this.widgetToolIds.clear()
+      this.flushPendingText()
     }
 
     if (event.type === 'content_delta') {
+      if (event.delta.type === 'text') {
+        const parentId = event.delta.parentToolUseId ?? null
+        const msgId = event.messageId
+        if (this.pendingText && (this.pendingText.messageId !== msgId || this.pendingText.parentToolUseId !== parentId)) {
+          this.flushPendingText()
+        }
+        if (!this.pendingText) this.pendingText = { messageId: msgId, text: '', parentToolUseId: parentId }
+        this.pendingText.text += event.delta.text
+        if (!this.batchTimer) {
+          this.batchTimer = setTimeout(() => this.flushBatch(), BATCH_INTERVAL_MS)
+        }
+        return
+      }
+      this.flushPendingText()
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
         try { const p = JSON.parse(event.delta.input); this.bashToolCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
       }
@@ -776,6 +896,7 @@ export class RemoteControlService {
       return
     }
 
+    this.flushPendingText()
     try {
       const stripped = stripEventForRemote(event)
       trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
@@ -797,8 +918,27 @@ export class RemoteControlService {
     }
   }
 
+  private flushPendingText(): void {
+    if (!this.pendingText || !this.pendingText.text.trim()) {
+      this.pendingText = null
+      return
+    }
+    const { messageId, text, parentToolUseId } = this.pendingText
+    this.pendingText = null
+    const segments = splitTextIntoBlocks(text)
+    for (const seg of segments) {
+      const delta = seg.type === 'insight'
+        ? { type: 'insight' as const, title: seg.title!, content: seg.content!, parentToolUseId }
+        : { type: 'text' as const, text: seg.text, parentToolUseId, codeBlockTokens: extractCodeBlockTokens(seg.text) }
+      const event = { type: 'content_delta' as const, messageId, delta } as unknown as AgentEvent
+      trace('remote.out', event.type, event, messageId)
+      this.batchBuffer.push(event)
+    }
+  }
+
   private async flushBatch(): Promise<void> {
     this.batchTimer = null
+    this.flushPendingText()
     if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN || this.batchBuffer.length === 0) return
 
     try {

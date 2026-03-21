@@ -208,9 +208,10 @@ const INSIGHT_HEADER_RE = /^`★\s+(.+?)\s+─{3,}`$/m
 const INSIGHT_FOOTER_RE = /^`─{3,}`$/
 
 interface TextSegment { type: 'text' | 'insight'; text: string; title?: string; content?: string }
+interface SplitResult { segments: TextSegment[]; remainder: string }
 
-function splitTextIntoBlocks(text: string): TextSegment[] {
-  if (!text.trim()) return []
+function splitTextIntoBlocks(text: string, streaming = false): SplitResult {
+  if (!text.trim()) return { segments: [], remainder: '' }
   const lines = text.split('\n')
   const segments: TextSegment[] = []
   let current: string[] = []
@@ -295,6 +296,19 @@ function splitTextIntoBlocks(text: string): TextSegment[] {
     current.push(line)
   }
 
+  if (streaming && insightTitle !== null) {
+    if (inTable) flushTable()
+    flushCurrent()
+    const remainder = `\`★ ${insightTitle} ${'─'.repeat(37)}\`\n${insightLines.join('\n')}`
+    return { segments, remainder }
+  }
+  if (streaming && inCodeFence) {
+    if (inTable) flushTable()
+    flushCurrent()
+    const remainder = `${fenceTicks}${codeLang}\n${codeLines.join('\n')}`
+    return { segments, remainder }
+  }
+
   if (insightTitle !== null) {
     current.push(`\`★ ${insightTitle} ${'─'.repeat(37)}\``)
     current.push(...insightLines)
@@ -305,7 +319,7 @@ function splitTextIntoBlocks(text: string): TextSegment[] {
   }
   if (inTable) flushTable()
   flushCurrent()
-  return segments
+  return { segments, remainder: '' }
 }
 
 function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>): ContentBlock {
@@ -373,12 +387,21 @@ export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
       ...msg,
       content: msg.content
         .filter((b) => !(b.type === 'tool_use' && TODO_TOOLS.has(b.toolName)))
-        .map((b) => {
+        .flatMap((b) => {
           if (b.type === 'tool_result' && todoInputs.has(b.toolUseId)) {
             const entry = todoInputs.get(b.toolUseId)!
             return { type: 'todo_result' as const, toolUseId: b.toolUseId, summary: b.summary, parentToolUseId: b.parentToolUseId, todoToolName: entry.toolName, toolTodos: computeTodoItems(entry.toolName, entry.input) }
           }
           if (b.type === 'tool_result' && widgetIds.has(b.toolUseId)) return b
+          if (b.type === 'text') {
+            const { segments } = splitTextIntoBlocks(b.text)
+            if (segments.length <= 1) return stripContentBlock(b, bashCmds)
+            return segments.map((seg) =>
+              seg.type === 'insight'
+                ? { type: 'insight', title: seg.title!, content: seg.content!, parentToolUseId: b.parentToolUseId, codeBlockTokens: extractCodeBlockTokens(seg.content!) } as unknown as ContentBlock
+                : stripContentBlock({ ...b, text: seg.text } as ContentBlock, bashCmds),
+            )
+          }
           return stripContentBlock(b, bashCmds)
         }),
       metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return rest })() : undefined,
@@ -510,6 +533,7 @@ export class RemoteControlService {
   private todoToolInputs = new Map<string, { toolName: string; input: string }>()
   private widgetToolIds = new Set<string>()
   private pendingText: { messageId: string; text: string; parentToolUseId: string | null } | null = null
+  private pendingTextFlushedLen = 0
   private pendingThinking: { messageId: string; text: string; parentToolUseId: string | null } | null = null
   private subscribedSession: { projectPath: string; sessionId: string } | null = null
   private remoteSessionFilter: { projectPath: string; sessionId: string } | null = null
@@ -846,7 +870,7 @@ export class RemoteControlService {
       this.bashToolCommands.clear()
       this.todoToolInputs.clear()
       this.widgetToolIds.clear()
-      this.flushPendingText()
+      this.flushPendingText(true)
       this.flushPendingThinking()
     }
 
@@ -855,10 +879,15 @@ export class RemoteControlService {
         const parentId = event.delta.parentToolUseId ?? null
         const msgId = event.messageId
         if (this.pendingText && (this.pendingText.messageId !== msgId || this.pendingText.parentToolUseId !== parentId)) {
-          this.flushPendingText()
+          this.flushPendingText(true)
         }
         if (!this.pendingText) this.pendingText = { messageId: msgId, text: '', parentToolUseId: parentId }
         this.pendingText.text += event.delta.text
+        const pending = this.pendingText.text
+        const newLen = pending.length - this.pendingTextFlushedLen
+        if (newLen > 0 && (pending.lastIndexOf('\n\n') > this.pendingTextFlushedLen || newLen >= 1000)) {
+          this.flushPendingText()
+        }
         if (!this.batchTimer) {
           this.batchTimer = setTimeout(() => this.flushBatch(), BATCH_INTERVAL_MS)
         }
@@ -891,7 +920,7 @@ export class RemoteControlService {
         }
         return
       }
-      this.flushPendingText()
+      this.flushPendingText(true)
       this.flushPendingThinking()
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
         try { const p = JSON.parse(event.delta.input); this.bashToolCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
@@ -926,7 +955,7 @@ export class RemoteControlService {
       return
     }
 
-    this.flushPendingText()
+    this.flushPendingText(true)
     this.flushPendingThinking()
     try {
       const stripped = stripEventForRemote(event)
@@ -962,17 +991,24 @@ export class RemoteControlService {
     this.batchBuffer.push(event)
   }
 
-  private flushPendingText(): void {
+  private flushPendingText(final = false): void {
     if (!this.pendingText || !this.pendingText.text.trim()) {
       this.pendingText = null
+      this.pendingTextFlushedLen = 0
       return
     }
     const { messageId, text, parentToolUseId } = this.pendingText
-    this.pendingText = null
-    const segments = splitTextIntoBlocks(text)
+    const { segments, remainder } = splitTextIntoBlocks(text, !final)
+    if (remainder) {
+      this.pendingText = { messageId, text: remainder, parentToolUseId }
+      this.pendingTextFlushedLen = remainder.length
+    } else {
+      this.pendingText = null
+      this.pendingTextFlushedLen = 0
+    }
     for (const seg of segments) {
       const delta = seg.type === 'insight'
-        ? { type: 'insight' as const, title: seg.title!, content: seg.content!, parentToolUseId }
+        ? { type: 'insight' as const, title: seg.title!, content: seg.content!, parentToolUseId, codeBlockTokens: extractCodeBlockTokens(seg.content!) }
         : { type: 'text' as const, text: seg.text, parentToolUseId, codeBlockTokens: extractCodeBlockTokens(seg.text) }
       const event = { type: 'content_delta' as const, messageId, delta } as unknown as AgentEvent
       trace('remote.out', event.type, event, messageId)
@@ -982,8 +1018,6 @@ export class RemoteControlService {
 
   private async flushBatch(): Promise<void> {
     this.batchTimer = null
-    this.flushPendingText()
-    this.flushPendingThinking()
     if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN || this.batchBuffer.length === 0) return
 
     try {

@@ -216,7 +216,16 @@ trace('agent.emit', 'content_delta', event, msgId)    // emitted AgentEvent
 window.app.trace?.('agent.store', 'content_delta', data, messageId)
 ```
 
-**Source namespaces**: `agent.sdk` (raw SDK messages), `agent.emit` (translated AgentEvents), `agent.store` (Zustand store deltas). Extensible to `mcp.*`, `codex.*`, etc.
+**Source namespaces**: `agent.sdk` (raw SDK messages, tagged with messageId), `agent.emit` (translated AgentEvents, tagged with messageId), `agent.store` (Zustand store deltas), `remote.out` (stripped mobile events, derived by convert-trace). Extensible to `mcp.*`, `codex.*`, etc.
+
+**Saving & converting recordings:**
+```bash
+# Save current trace DB as a named recording
+./scripts/save-recording.sh claude-todos    # → recordings/claude-todos.db
+
+# Convert agent.emit → remote.out (offline, re-runnable after changing strip logic)
+bun run scripts/convert-trace.ts recordings/claude-todos.db
+```
 
 **Querying** (from terminal while app is running):
 ```bash

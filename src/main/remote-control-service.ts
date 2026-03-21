@@ -211,7 +211,8 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>):
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block)
     const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'
-    return { ...block, type: mappedType, input: '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt } as ContentBlock
+    const keepInput = block.toolName.endsWith('__show_widget')
+    return { ...block, type: mappedType, input: keepInput ? block.input : '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt } as ContentBlock
   }
   if (block.type === 'tool_result') {
     if (bashCmds?.has(block.toolUseId)) {
@@ -249,12 +250,16 @@ export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((msg) => {
     const bashCmds = new Map<string, string>()
     const todoInputs = new Map<string, { toolName: string; input: string }>()
+    const widgetIds = new Set<string>()
     for (const block of msg.content) {
       if (block.type === 'tool_use' && block.toolName === 'Bash') {
         try { const p = JSON.parse(block.input); bashCmds.set(block.toolUseId, String(p.command ?? '')) } catch {}
       }
       if (block.type === 'tool_use' && TODO_TOOLS.has(block.toolName)) {
         todoInputs.set(block.toolUseId, { toolName: block.toolName, input: block.input })
+      }
+      if (block.type === 'tool_use' && block.toolName.endsWith('__show_widget')) {
+        widgetIds.add(block.toolUseId)
       }
     }
     return {
@@ -266,6 +271,7 @@ export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
             const entry = todoInputs.get(b.toolUseId)!
             return { type: 'todo_result' as const, toolUseId: b.toolUseId, summary: b.summary, parentToolUseId: b.parentToolUseId, todoToolName: entry.toolName, toolTodos: computeTodoItems(entry.toolName, entry.input) }
           }
+          if (b.type === 'tool_result' && widgetIds.has(b.toolUseId)) return b
           return stripContentBlock(b, bashCmds)
         }),
       metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return rest })() : undefined,
@@ -395,6 +401,7 @@ export class RemoteControlService {
   private lastThrottledAt = new Map<string, number>()
   private bashToolCommands = new Map<string, string>()
   private todoToolInputs = new Map<string, { toolName: string; input: string }>()
+  private widgetToolIds = new Set<string>()
   private subscribedSession: { projectPath: string; sessionId: string } | null = null
   private remoteSessionFilter: { projectPath: string; sessionId: string } | null = null
 
@@ -729,11 +736,15 @@ export class RemoteControlService {
     if (event.type === 'message_start') {
       this.bashToolCommands.clear()
       this.todoToolInputs.clear()
+      this.widgetToolIds.clear()
     }
 
     if (event.type === 'content_delta') {
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
         try { const p = JSON.parse(event.delta.input); this.bashToolCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
+      }
+      if (event.delta.type === 'tool_use' && event.delta.toolName.endsWith('__show_widget')) {
+        this.widgetToolIds.add(event.delta.toolUseId)
       }
       if (event.delta.type === 'tool_use' && TODO_TOOLS.has(event.delta.toolName)) {
         this.todoToolInputs.set(event.delta.toolUseId, { toolName: event.delta.toolName, input: event.delta.input })
@@ -744,6 +755,8 @@ export class RemoteControlService {
         const entry = this.todoToolInputs.get(event.delta.toolUseId)!
         const toolTodos = computeTodoItems(entry.toolName, entry.input)
         stripped = { ...event, delta: { type: 'todo_result', toolUseId: event.delta.toolUseId, summary: event.delta.summary, parentToolUseId: event.delta.parentToolUseId, todoToolName: entry.toolName, toolTodos } }
+      } else if (event.delta.type === 'tool_result' && this.widgetToolIds.has(event.delta.toolUseId)) {
+        stripped = { ...event, delta: event.delta }
       } else if (event.delta.type === 'tool_result' && this.bashToolCommands.has(event.delta.toolUseId)) {
         const cmd = this.bashToolCommands.get(event.delta.toolUseId) ?? ''
         const raw = cmd ? `\x1b[32m$\x1b[0m ${cmd}\n${event.delta.summary}` : event.delta.summary

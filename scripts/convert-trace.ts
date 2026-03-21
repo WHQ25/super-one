@@ -169,8 +169,10 @@ function stripContentBlock(block: Record<string, unknown>, bashCmds?: Map<string
   if (block.type === 'thinking') return { ...block, thinking: '' }
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block)
-    const mappedType = TOOL_TYPE_MAP[String(block.toolName ?? '')] ?? 'tool_use'
-    return { ...block, type: mappedType, input: '', ...meta }
+    const toolName = String(block.toolName ?? '')
+    const mappedType = TOOL_TYPE_MAP[toolName] ?? 'tool_use'
+    const keepInput = toolName.endsWith('__show_widget')
+    return { ...block, type: mappedType, input: keepInput ? block.input : '', ...meta }
   }
   if (block.type === 'tool_result') {
     const toolUseId = String(block.toolUseId ?? '')
@@ -215,6 +217,7 @@ const insert = db.prepare("INSERT INTO events (ts, source, type, tag, data) VALU
 
 const bashCmds = new Map<string, string>()
 const todoInputs = new Map<string, { toolName: string; input: string }>()
+const widgetToolIds = new Set<string>()
 let count = 0
 
 for (const row of rows) {
@@ -232,6 +235,7 @@ for (const row of rows) {
   if (eventType === 'message_start') {
     bashCmds.clear()
     todoInputs.clear()
+    widgetToolIds.clear()
   }
 
   if (eventType === 'content_delta') {
@@ -241,6 +245,10 @@ for (const row of rows) {
 
     if (deltaType === 'tool_use' && toolName === 'Bash') {
       try { const p = JSON.parse(String(delta.input ?? '{}')); bashCmds.set(String(delta.toolUseId), String(p.command ?? '')) } catch {}
+    }
+
+    if (deltaType === 'tool_use' && toolName.endsWith('__show_widget')) {
+      widgetToolIds.add(String(delta.toolUseId))
     }
 
     if (deltaType === 'tool_use' && TODO_TOOLS.has(toolName)) {
@@ -253,6 +261,8 @@ for (const row of rows) {
       const entry = todoInputs.get(String(delta.toolUseId))!
       const toolTodos = computeTodoItems(entry.toolName, entry.input)
       stripped = { ...event, delta: { type: 'todo_result', toolUseId: delta.toolUseId, summary: delta.summary, parentToolUseId: delta.parentToolUseId, todoToolName: entry.toolName, toolTodos } }
+    } else if (deltaType === 'tool_result' && widgetToolIds.has(String(delta.toolUseId))) {
+      stripped = { ...event, delta }
     } else if (deltaType === 'tool_result' && bashCmds.has(String(delta.toolUseId))) {
       const cmd = bashCmds.get(String(delta.toolUseId)) ?? ''
       const raw = cmd ? `\x1b[32m$\x1b[0m ${cmd}\n${delta.summary}` : String(delta.summary ?? '')

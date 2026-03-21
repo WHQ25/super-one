@@ -166,7 +166,7 @@ function computeToolMeta(block: Record<string, unknown>) {
 
 function stripContentBlock(block: Record<string, unknown>, bashCmds?: Map<string, string>): Record<string, unknown> {
   if (block.type === 'text') return block
-  if (block.type === 'thinking') return { ...block, thinking: '' }
+  if (block.type === 'thinking') return block
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block)
     const toolName = String(block.toolName ?? '')

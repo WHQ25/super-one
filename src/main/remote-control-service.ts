@@ -207,7 +207,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>):
     if (codeBlockTokens) return { ...block, codeBlockTokens }
     return block
   }
-  if (block.type === 'thinking') return { ...block, thinking: '' }
+  if (block.type === 'thinking') return block
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block)
     const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'

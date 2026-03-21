@@ -176,6 +176,9 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSumm
       case 'Task':
         summary = String(p.description ?? p.name ?? '')
         return { toolSummary: summary, subagentType: p.subagent_type ? String(p.subagent_type) : undefined, toolPrompt: p.prompt ? String(p.prompt) : undefined }
+      case 'ToolSearch':
+        summary = String(p.query ?? '')
+        break
     }
     return { toolSummary: summary, toolFilePath: filePath || undefined, toolLineDelta, toolDiff, toolDiffTokens, toolTodos }
   } catch { return {} }

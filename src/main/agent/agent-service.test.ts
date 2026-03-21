@@ -52,6 +52,7 @@ vi.mock('../db-sessions', () => ({
   renameSession: vi.fn(),
   saveSessionState: vi.fn(),
   loadSessionState: vi.fn(),
+  sessionBelongsToProject: vi.fn(),
   deleteSession: vi.fn(),
   deleteSessionsOlderThan: vi.fn(),
   pinSession: vi.fn(),
@@ -153,10 +154,12 @@ vi.mock('fs/promises', () => ({
 vi.mock('../remote-control-service', () => ({}))
 
 const { AgentService } = await import('./agent-service')
+const dbSessions = await import('../db-sessions')
 
 beforeEach(() => {
   createdAgents.length = 0
   vi.clearAllMocks()
+  vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(true)
 })
 
 describe('AgentService.resumeSession', () => {
@@ -324,6 +327,30 @@ describe('AgentService.handleRemoteCommand', () => {
     )
   })
 
+  it('send_message ignores session ids that do not belong to the project', async () => {
+    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
+    const service = new AgentService()
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    const currentAgent = {
+      isReady: vi.fn(() => true),
+      getSessionId: vi.fn(() => 'session-A'),
+      sendMessage,
+      getCwd: vi.fn(() => '/project'),
+      isStreaming: vi.fn(() => false),
+    }
+    ;(service as any).agents.set('/project', currentAgent)
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      content: 'hello',
+      projectPath: '/project',
+      sessionId: 'session-B',
+    })
+
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(createdAgents).toHaveLength(0)
+  })
+
   it('interrupt targets active agent when sessionId matches', async () => {
     const service = new AgentService()
     const interrupt = vi.fn().mockResolvedValue(undefined)
@@ -404,6 +431,23 @@ describe('AgentService.handleRemoteCommand', () => {
       sessionId: 'session-X',
     })
     expect(respond).not.toHaveBeenCalled()
+  })
+
+  it('load_session_messages returns an error when session does not belong to the project', async () => {
+    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
+    const respond = vi.fn()
+    const service = new AgentService()
+
+    await service.handleRemoteCommand({
+      type: 'load_session_messages',
+      requestId: 'r9',
+      projectPath: '/project',
+      sessionId: 'session-X',
+    }, respond)
+
+    expect(respond).toHaveBeenCalledWith('r9', {
+      error: 'Session session-X does not belong to project /project',
+    })
   })
 
   it('add_project calls addRecentFolder and openFolder', async () => {

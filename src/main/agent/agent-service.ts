@@ -27,7 +27,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
+import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import { checkMcpServers } from '../mcp-probe-service'
@@ -89,6 +89,21 @@ export class AgentService {
     if (sessionId) return remoteSid === sessionId
     const agent = this.agents.get(projectPath)
     return agent?.getSessionId() === remoteSid
+  }
+
+  private canAccessSession(projectPath: string, sessionId: string): boolean {
+    if (this.remoteSession?.projectPath === projectPath && this.remoteSession.agent.getSessionId() === sessionId) {
+      return true
+    }
+    const active = this.agents.get(projectPath)
+    if (active?.getSessionId() === sessionId) return true
+    const bg = this.bgAgents.get(sessionId)
+    if (bg && bg.gitRoot === getGitRoot(projectPath)) return true
+    return sessionBelongsToProject(projectPath, sessionId)
+  }
+
+  private buildSessionAccessError(projectPath: string, sessionId: string): string {
+    return `Session ${sessionId} does not belong to project ${projectPath}`
   }
 
   addEventSubscriber(cb: (event: AgentEvent) => void): () => void {
@@ -155,9 +170,17 @@ export class AgentService {
           let agent: RemoteAgentRef | ClaudeAgent | undefined
           const targetSid = command.sessionId
           if (targetSid) {
+            if (!this.canAccessSession(projectPath, targetSid)) {
+              log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, targetSid))
+              break
+            }
             const remoteSessionSid = this.remoteSession?.agent.getSessionId()
             trace('remote.debug', 'send_message:follow_up', { targetSid, remoteSessionSid, hasRemoteSession: !!this.remoteSession, desktopAgentSid: this.agents.get(projectPath)?.getSessionId() })
             if (remoteSessionSid === targetSid) {
+              if (this.remoteSession?.projectPath !== projectPath) {
+                log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, targetSid))
+                break
+              }
               agent = this.remoteSession!.agent
             } else {
               const current = this.agents.get(projectPath)
@@ -233,6 +256,10 @@ export class AgentService {
       case 'interrupt': {
         const projectPath = command.projectPath || this.agents.keys().next().value
         if (!projectPath) break
+        if (!this.canAccessSession(projectPath, command.sessionId)) {
+          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
+          break
+        }
         const agent = this.findAgentBySessionId(projectPath, command.sessionId)
         if (agent) { clearAllGates(); await agent.interrupt() }
         break
@@ -240,6 +267,10 @@ export class AgentService {
       case 'respond_permission': {
         const projectPath = command.projectPath || this.agents.keys().next().value
         if (!projectPath) break
+        if (!this.canAccessSession(projectPath, command.sessionId)) {
+          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
+          break
+        }
         const agent = this.findAgentBySessionId(projectPath, command.sessionId)
         if (agent) {
           agent.respondToPermission(command.requestId, command.decision)
@@ -249,6 +280,10 @@ export class AgentService {
         break
       }
       case 'subscribe_session': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          log.warn('[AgentService] %s', this.buildSessionAccessError(command.projectPath, command.sessionId))
+          break
+        }
         this.remoteControlService?.subscribeSession(command.projectPath, command.sessionId, (e) => this.broadcastEventToRenderer(e))
         break
       }
@@ -257,8 +292,12 @@ export class AgentService {
         break
       }
       case 'load_session_messages': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
+          break
+        }
         try {
-          const result = loadSessionMessages(command.projectPath, command.sessionId, command.limit ?? 10, command.cursor)
+          const result = loadSessionMessagesPaginated(command.sessionId, command.limit ?? 10, command.cursor)
           const stripped = stripMessagesForRemote(result.messages)
           trace('remote.cmd', 'load_session_messages_result', { projectPath: command.projectPath, sessionId: command.sessionId, messageCount: stripped.length, hasMore: result.hasMore, cursor: result.cursor })
           await respond?.(command.requestId, { messages: stripped, hasMore: result.hasMore, cursor: result.cursor })

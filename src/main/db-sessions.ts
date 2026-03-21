@@ -205,6 +205,52 @@ export function loadSessionState(
   }
 }
 
+export function sessionBelongsToProject(folderPath: string, claudeSessionId: string): boolean {
+  const projectId = getProjectId(folderPath)
+  if (!projectId) return false
+  const db = getDb()
+  const row = db.prepare(`
+    SELECT 1 AS found
+    FROM sessions
+    WHERE project_id = ? AND claude_session_id = ?
+    LIMIT 1
+  `).get(projectId, claudeSessionId) as { found: number } | undefined
+  return !!row
+}
+
+export function loadSessionMessagesPaginated(
+  claudeSessionId: string,
+  limit: number,
+  cursor?: number,
+): { messages: ChatMessage[]; cursor: number | null; hasMore: boolean } {
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id
+    FROM chat_messages
+    WHERE claude_session_id = ?
+    ORDER BY sort_order ASC
+  `).all(claudeSessionId) as (DbChatMessage & { sort_order: number })[]
+
+  const endIndex = cursor ?? rows.length
+  const startIndex = Math.max(0, endIndex - limit)
+  const slice = rows.slice(startIndex, endIndex)
+  const hasMore = startIndex > 0
+
+  const messages: ChatMessage[] = slice.map((r) => ({
+    id: r.id,
+    role: r.role as ChatMessage['role'],
+    status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
+    content: JSON.parse(r.content_json),
+    createdAt: r.created_at,
+    providerId: r.provider_id,
+    ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
+    ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
+    ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
+  }))
+
+  return { messages, cursor: hasMore ? startIndex : null, hasMore }
+}
+
 /** Delete a session and its messages (cascade). */
 export function deleteSession(claudeSessionId: string): void {
   const db = getDb()

@@ -701,7 +701,7 @@ export class RemoteControlService {
     const filter = this.subscribedSession ?? this.remoteSessionFilter
     if (filter) {
       const { projectPath, sessionId } = filter
-      if (event.projectPath !== projectPath || event.sessionId !== sessionId) {
+      if (event.projectPath !== projectPath || (event.sessionId && event.sessionId !== sessionId)) {
         trace('remote.debug', 'broadcastAgentEvent:filtered', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, filterProject: projectPath, filterSession: sessionId })
         return
       }

@@ -67,6 +67,7 @@ export interface PerSessionState {
   prefireMessage: { content: string; attachments: ImageAttachment[]; mentions: Mention[] } | null
   activeCodexMessageId: string | null
   lastAssistantMessageId: string | null
+  _historyHydrated: boolean
 }
 
 export interface ProjectState {
@@ -142,6 +143,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     prefireMessage: null,
     activeCodexMessageId: null,
     lastAssistantMessageId: null,
+    _historyHydrated: true,
   }
 }
 
@@ -941,6 +943,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     case 'stream_message_stop':
       return {}
   }
+  return {}
 }
 
 // --- Auto-save helper ---
@@ -976,6 +979,87 @@ function _getSessionCwd(projectPath: string, session: Pick<PerSessionState, '_wo
   return session?._worktreePath && !session._worktreeRemoved ? session._worktreePath : projectPath
 }
 
+type PersistedSessionState = {
+  messages: ChatMessage[]
+  totalCostUsd: number
+  contextTokens: number
+  isWorktree: boolean
+  gitBranch: string | null
+  worktreePath: string | null
+  provider: string
+}
+
+function _mergePersistedMessages(savedMessages: ChatMessage[], runtimeMessages: ChatMessage[]): ChatMessage[] {
+  const runtimeById = new Map(runtimeMessages.map((message) => [message.id, message]))
+  const merged = savedMessages.map((message) => runtimeById.get(message.id) ?? message)
+  const seen = new Set(merged.map((message) => message.id))
+  for (const message of runtimeMessages) {
+    if (seen.has(message.id)) continue
+    merged.push(message)
+    seen.add(message.id)
+  }
+  return merged
+}
+
+function _mergePersistedSessionState(session: PerSessionState, saved: PersistedSessionState): PerSessionState {
+  const mergedMessages = _mergePersistedMessages(saved.messages, session.messages)
+  const persistedProvider = saved.provider === 'codex' ? 'codex' : 'claude'
+  return {
+    ...session,
+    messages: mergedMessages,
+    totalCostUsd: Math.max(session.totalCostUsd, saved.totalCostUsd),
+    contextTokens: Math.max(session.contextTokens, saved.contextTokens),
+    sessionProvider: session.sessionProvider ?? persistedProvider,
+    preferredProvider: session.sessionProvider ? session.preferredProvider : persistedProvider,
+    _worktreeBaseBranch: session._worktreeBaseBranch ?? saved.gitBranch,
+    _worktreePath: session._worktreePath ?? saved.worktreePath,
+    lastAssistantMessageId: mergedMessages.findLast((message) => message.role === 'assistant')?.id ?? session.lastAssistantMessageId,
+    _historyHydrated: true,
+  }
+}
+
+async function _prepareSessionSnapshot(sessionId: string, session: PerSessionState): Promise<PerSessionState | null> {
+  if (session._historyHydrated) return session
+  try {
+    const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
+    if (!saved) return { ...session, _historyHydrated: true }
+    return _mergePersistedSessionState(session, saved)
+  } catch (err) {
+    console.warn('[saveSessionSnapshot] hydrate failed:', err)
+    return null
+  }
+}
+
+type ChatStoreSetter = (updater: (state: ChatStore) => Partial<ChatStore>) => void
+
+function _hydrateRemoteSessionState(
+  set: ChatStoreSetter,
+  projectPath: string,
+  sessionId: string,
+): void {
+  window.app.loadSessionState(sessionId)
+    .then((saved) => {
+      set((state) => {
+        const project = state.projectSessions[projectPath]
+        const session = project?._sessions[sessionId]
+        if (!project || !session || session._historyHydrated) return {}
+        const hydrated = saved
+          ? _mergePersistedSessionState(session, saved as PersistedSessionState)
+          : { ...session, _historyHydrated: true }
+        return {
+          projectSessions: {
+            ...state.projectSessions,
+            [projectPath]: {
+              ...project,
+              _sessions: { ...project._sessions, [sessionId]: hydrated },
+            },
+          },
+        }
+      })
+    })
+    .catch((err) => console.warn('[remoteSessionHydrate] failed:', err))
+}
+
 function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   const project = get().projectSessions[projectPath]
   if (!project) return
@@ -1001,17 +1085,31 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
 function _savePerSessionSnapshot(projectPath: string, sessionId: string, session: PerSessionState): Promise<void> {
   if (!sessionId || sessionId === DRAFT_SESSION_ID || session.messages.length === 0) return Promise.resolve()
 
-  const branch = _getWorktreeBranch(projectPath, session)
-  const wtPath = session._worktreePath ?? undefined
-  const title = _extractTitle(session.messages)
-  return window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath, title)
-    .then(() => window.app.saveSessionState(sessionId, {
-      messages: session.messages,
-      totalCostUsd: session.totalCostUsd,
-      contextTokens: session.contextTokens,
-      title,
-      provider: session.sessionProvider ?? undefined,
-    }))
+  const persistSnapshot = (snapshot: PerSessionState): Promise<void> => {
+    const branch = _getWorktreeBranch(projectPath, snapshot)
+    const wtPath = snapshot._worktreePath ?? undefined
+    const title = _extractTitle(snapshot.messages)
+    return window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath, title)
+      .then(() => window.app.saveSessionState(sessionId, {
+        messages: snapshot.messages,
+        totalCostUsd: snapshot.totalCostUsd,
+        contextTokens: snapshot.contextTokens,
+        title,
+        provider: snapshot.sessionProvider ?? undefined,
+      }))
+  }
+
+  if (session._historyHydrated) {
+    return persistSnapshot(session)
+      .then(() => {})
+      .catch((err) => console.warn('[saveSessionSnapshot] failed:', err))
+  }
+
+  return _prepareSessionSnapshot(sessionId, session)
+    .then((snapshot) => {
+      if (!snapshot) return
+      return persistSnapshot(snapshot)
+    })
     .then(() => {})
     .catch((err) => console.warn('[saveSessionSnapshot] failed:', err))
 }
@@ -1285,22 +1383,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   handleAgentEvent: (event: AgentEvent) => {
     if (event.type === 'remote_session_start') {
+      const projectPath = event.remoteProjectPath
+      const sessionId = event.remoteSessionId
       set((s) => {
-        const pp = event.remoteProjectPath
-        const sid = event.remoteSessionId
-        const project = s.projectSessions[pp]
-        if (!project || event.isSubscribe) return { remoteSession: { projectPath: pp, sessionId: sid } }
+        const project = s.projectSessions[projectPath] ?? createDefaultProjectState()
+        const existingSession = project._sessions[sessionId]
+        const nextSession = existingSession ?? {
+          ...createDefaultPerSessionState(),
+          _historyHydrated: !event.isSubscribe,
+        }
         return {
-          remoteSession: { projectPath: pp, sessionId: sid },
+          remoteSession: { projectPath, sessionId },
           projectSessions: {
             ...s.projectSessions,
-            [pp]: {
+            [projectPath]: {
               ...project,
-              _sessions: { ...project._sessions, [sid]: project._sessions[sid] ?? createDefaultPerSessionState() },
+              _sessions: { ...project._sessions, [sessionId]: nextSession },
             },
           },
         }
       })
+      if (event.isSubscribe) {
+        _hydrateRemoteSessionState(set, projectPath, sessionId)
+      }
       return
     }
     if (event.type === 'remote_session_end') {
@@ -2884,6 +2989,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       preferredProvider: restoredProvider,
       sessionProvider: restoredProvider,
       lastAssistantMessageId: savedMessages.findLast((m) => m.role === 'assistant')?.id ?? null,
+      _historyHydrated: true,
     }
     if (restoredProvider !== 'codex') {
       applyDefaultModel(restoredSession, get().availableModels)

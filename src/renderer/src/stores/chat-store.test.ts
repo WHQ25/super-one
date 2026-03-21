@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { AgentEvent } from '../../../shared/agent-types'
+import type { AgentEvent, ChatMessage } from '../../../shared/agent-types'
 
 const mockSetActiveWorktree = vi.fn()
 const mockClearWorktree = vi.fn().mockResolvedValue(undefined)
@@ -70,6 +70,17 @@ function setupProject(path: string) {
 
 function makeEvent(overrides: Partial<AgentEvent> & { type: AgentEvent['type'] }): AgentEvent {
   return { projectPath: '/test', sessionId: undefined, ...overrides } as AgentEvent
+}
+
+function makeMessage(id: string, role: 'user' | 'assistant'): ChatMessage {
+  return {
+    id,
+    role,
+    status: role === 'assistant' ? 'streaming' : 'complete',
+    content: [],
+    createdAt: '',
+    providerId: 'claude',
+  }
 }
 
 beforeEach(() => {
@@ -280,6 +291,119 @@ describe('concurrent streaming sessions', () => {
     expect(after._sessions['real-new']).toBeDefined()
     expect(after._sessions['real-new'].awaitingAssistantReply).toBe(true)
     expect(after._sessions['old']).toBeDefined()
+  })
+
+  it('hydrates subscribed remote sessions and routes follow-up events to them', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'active',
+          _sessions: { active: createDefaultPerSessionState() },
+        },
+      },
+    })
+
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [makeMessage('old-msg', 'assistant')],
+      totalCostUsd: 1,
+      contextTokens: 2,
+      isWorktree: false,
+      gitBranch: null,
+      worktreePath: null,
+      provider: 'claude',
+    })
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/test',
+      remoteSessionId: 'remote-1',
+      isSubscribe: true,
+    } as AgentEvent)
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      sessionId: 'remote-1',
+      message: makeMessage('new-msg', 'assistant') as never,
+    }))
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['remote-1'].messages.map((message) => message.id)).toEqual(['old-msg', 'new-msg'])
+    expect(after._sessions['active'].messages).toHaveLength(0)
+  })
+
+  it('merges stored history before saving subscribed remote sessions', async () => {
+    vi.useFakeTimers()
+    try {
+      setupProject('/test')
+      const proj = useChatStore.getState().projectSessions['/test']
+
+      useChatStore.setState({
+        projectSessions: {
+          '/test': {
+            ...proj,
+            _activeSessionId: 'active',
+            _sessions: { active: createDefaultPerSessionState() },
+          },
+        },
+      })
+
+      let resolveLoad: (value: unknown) => void = () => {}
+      const loadPromise = new Promise((resolve) => {
+        resolveLoad = resolve
+      })
+      mockWindowApp.loadSessionState.mockImplementation(() => loadPromise as Promise<never>)
+
+      useChatStore.getState().handleAgentEvent({
+        type: 'remote_session_start',
+        remoteProjectPath: '/test',
+        remoteSessionId: 'remote-1',
+        isSubscribe: true,
+      } as AgentEvent)
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        sessionId: 'remote-1',
+        message: makeMessage('new-msg', 'assistant') as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'status_change',
+        sessionId: 'remote-1',
+        status: 'idle',
+      }))
+
+      resolveLoad({
+        messages: [makeMessage('old-msg', 'assistant')],
+        totalCostUsd: 1,
+        contextTokens: 2,
+        isWorktree: false,
+        gitBranch: null,
+        worktreePath: null,
+        provider: 'claude',
+      })
+
+      await Promise.resolve()
+      await vi.runAllTimersAsync()
+
+      expect(mockWindowApp.saveSessionState).toHaveBeenCalledWith(
+        'remote-1',
+        expect.objectContaining({
+          messages: expect.arrayContaining([
+            expect.objectContaining({ id: 'old-msg' }),
+            expect.objectContaining({ id: 'new-msg' }),
+          ]),
+        }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

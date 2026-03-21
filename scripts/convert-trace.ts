@@ -257,7 +257,7 @@ function splitTextIntoBlocks(text: string): Array<{ type: string; text?: string;
   return segments
 }
 
-function stripContentBlock(block: Record<string, unknown>, bashCmds?: Map<string, string>): Record<string, unknown> {
+function stripContentBlock(block: Record<string, unknown>, bashCmds?: Map<string, string>, agentIds?: Set<string>): Record<string, unknown> {
   if (block.type === 'text') return block
   if (block.type === 'thinking') return block
   if (block.type === 'tool_use') {
@@ -276,20 +276,20 @@ function stripContentBlock(block: Record<string, unknown>, bashCmds?: Map<string
       return { type: 'bash_result', toolUseId, summary: output, parentToolUseId: block.parentToolUseId }
     }
     const summary = String(block.summary ?? '')
-    if (summary.length > TOOL_RESULT_MAX_LEN) {
+    if (!agentIds?.has(toolUseId) && summary.length > TOOL_RESULT_MAX_LEN) {
       return { ...block, summary: summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
     }
   }
   return block
 }
 
-function stripEvent(event: Record<string, unknown>, bashCmds?: Map<string, string>): Record<string, unknown> {
+function stripEvent(event: Record<string, unknown>, bashCmds?: Map<string, string>, agentIds?: Set<string>): Record<string, unknown> {
   if (event.type === 'content_delta') {
-    return { ...event, delta: stripContentBlock(event.delta as Record<string, unknown>, bashCmds) }
+    return { ...event, delta: stripContentBlock(event.delta as Record<string, unknown>, bashCmds, agentIds) }
   }
   if (event.type === 'message_start') {
     const msg = event.message as Record<string, unknown>
-    const content = Array.isArray(msg.content) ? msg.content.map((b: Record<string, unknown>) => stripContentBlock(b, bashCmds)) : []
+    const content = Array.isArray(msg.content) ? msg.content.map((b: Record<string, unknown>) => stripContentBlock(b, bashCmds, agentIds)) : []
     return { ...event, message: { ...msg, content } }
   }
   if (event.type === 'message_complete' && event.metadata) {
@@ -311,6 +311,7 @@ const insert = db.prepare("INSERT INTO events (ts, source, type, tag, data) VALU
 const bashCmds = new Map<string, string>()
 const todoInputs = new Map<string, { toolName: string; input: string }>()
 const widgetToolIds = new Set<string>()
+const agentToolIds = new Set<string>()
 let pendingText: { messageId: string; tag: string; text: string; parentToolUseId: string | null; deltaType: string } | null = null
 let pendingThinking: { messageId: string; tag: string; text: string; parentToolUseId: string | null } | null = null
 let count = 0
@@ -421,6 +422,9 @@ for (const row of rows) {
     if (deltaType === 'tool_use' && toolName.endsWith('__show_widget')) {
       widgetToolIds.add(String(delta.toolUseId))
     }
+    if (deltaType === 'tool_use' && toolName === 'Agent') {
+      agentToolIds.add(String(delta.toolUseId))
+    }
 
     if (deltaType === 'tool_use' && TODO_TOOLS.has(toolName)) {
       todoInputs.set(String(delta.toolUseId), { toolName, input: String(delta.input ?? '') })
@@ -439,8 +443,10 @@ for (const row of rows) {
       const raw = cmd ? `\x1b[32m$\x1b[0m ${cmd}\n${delta.summary}` : String(delta.summary ?? '')
       const output = truncateBashOutput(raw)
       stripped = { ...event, delta: { type: 'bash_result', toolUseId: delta.toolUseId, summary: output, parentToolUseId: delta.parentToolUseId } }
+    } else if (deltaType === 'tool_result' && agentToolIds.has(String(delta.toolUseId))) {
+      stripped = { ...event, delta }
     } else {
-      stripped = stripEvent(event, bashCmds)
+      stripped = stripEvent(event, bashCmds, agentToolIds)
     }
 
     const ts = new Date().toISOString().slice(11, 23)
@@ -451,7 +457,7 @@ for (const row of rows) {
 
   flushPendingText()
   flushPendingThinking()
-  const stripped = stripEvent(event, bashCmds)
+  const stripped = stripEvent(event, bashCmds, agentToolIds)
   const ts = new Date().toISOString().slice(11, 23)
   insert.run(ts, String(stripped.type), row.tag, JSON.stringify(stripped))
   count++

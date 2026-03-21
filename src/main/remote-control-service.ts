@@ -322,7 +322,7 @@ function splitTextIntoBlocks(text: string, streaming = false): SplitResult {
   return { segments, remainder: '' }
 }
 
-function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>): ContentBlock {
+function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, agentIds?: Set<string>): ContentBlock {
   if (block.type === 'text') {
     const codeBlockTokens = extractCodeBlockTokens(block.text)
     if (codeBlockTokens) return { ...block, codeBlockTokens }
@@ -342,7 +342,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>):
       const output = truncateBashOutput(raw)
       return { type: 'bash_result', toolUseId: block.toolUseId, summary: output, parentToolUseId: block.parentToolUseId, outputTokens: parseAnsiTokens(output) }
     }
-    if (block.summary.length > TOOL_RESULT_MAX_LEN) {
+    if (!agentIds?.has(block.toolUseId) && block.summary.length > TOOL_RESULT_MAX_LEN) {
       return { ...block, summary: block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
     }
   }
@@ -372,6 +372,7 @@ export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
     const bashCmds = new Map<string, string>()
     const todoInputs = new Map<string, { toolName: string; input: string }>()
     const widgetIds = new Set<string>()
+    const agentIds = new Set<string>()
     for (const block of msg.content) {
       if (block.type === 'tool_use' && block.toolName === 'Bash') {
         try { const p = JSON.parse(block.input); bashCmds.set(block.toolUseId, String(p.command ?? '')) } catch {}
@@ -381,6 +382,9 @@ export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
       }
       if (block.type === 'tool_use' && block.toolName.endsWith('__show_widget')) {
         widgetIds.add(block.toolUseId)
+      }
+      if (block.type === 'tool_use' && block.toolName === 'Agent') {
+        agentIds.add(block.toolUseId)
       }
     }
     return {
@@ -395,14 +399,14 @@ export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
           if (b.type === 'tool_result' && widgetIds.has(b.toolUseId)) return b
           if (b.type === 'text') {
             const { segments } = splitTextIntoBlocks(b.text)
-            if (segments.length <= 1) return stripContentBlock(b, bashCmds)
+            if (segments.length <= 1) return stripContentBlock(b, bashCmds, agentIds)
             return segments.map((seg) =>
               seg.type === 'insight'
                 ? { type: 'insight', title: seg.title!, content: seg.content!, parentToolUseId: b.parentToolUseId, codeBlockTokens: extractCodeBlockTokens(seg.content!) } as unknown as ContentBlock
-                : stripContentBlock({ ...b, text: seg.text } as ContentBlock, bashCmds),
+                : stripContentBlock({ ...b, text: seg.text } as ContentBlock, bashCmds, agentIds),
             )
           }
-          return stripContentBlock(b, bashCmds)
+          return stripContentBlock(b, bashCmds, agentIds)
         }),
       metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return rest })() : undefined,
     }
@@ -532,6 +536,7 @@ export class RemoteControlService {
   private bashToolCommands = new Map<string, string>()
   private todoToolInputs = new Map<string, { toolName: string; input: string }>()
   private widgetToolIds = new Set<string>()
+  private agentToolIds = new Set<string>()
   private pendingText: { messageId: string; text: string; parentToolUseId: string | null } | null = null
   private pendingTextFlushedLen = 0
   private pendingThinking: { messageId: string; text: string; parentToolUseId: string | null } | null = null
@@ -870,6 +875,7 @@ export class RemoteControlService {
       this.bashToolCommands.clear()
       this.todoToolInputs.clear()
       this.widgetToolIds.clear()
+      this.agentToolIds.clear()
       this.flushPendingText(true)
       this.flushPendingThinking()
     }
@@ -928,6 +934,9 @@ export class RemoteControlService {
       if (event.delta.type === 'tool_use' && event.delta.toolName.endsWith('__show_widget')) {
         this.widgetToolIds.add(event.delta.toolUseId)
       }
+      if (event.delta.type === 'tool_use' && event.delta.toolName === 'Agent') {
+        this.agentToolIds.add(event.delta.toolUseId)
+      }
       if (event.delta.type === 'tool_use' && TODO_TOOLS.has(event.delta.toolName)) {
         this.todoToolInputs.set(event.delta.toolUseId, { toolName: event.delta.toolName, input: event.delta.input })
         return
@@ -944,6 +953,8 @@ export class RemoteControlService {
         const raw = cmd ? `\x1b[32m$\x1b[0m ${cmd}\n${event.delta.summary}` : event.delta.summary
         const output = truncateBashOutput(raw)
         stripped = { ...event, delta: { type: 'bash_result', toolUseId: event.delta.toolUseId, summary: output, parentToolUseId: event.delta.parentToolUseId, outputTokens: parseAnsiTokens(output) } }
+      } else if (event.delta.type === 'tool_result' && this.agentToolIds.has(event.delta.toolUseId)) {
+        stripped = { ...event, delta: event.delta }
       } else {
         stripped = stripEventForRemote(event)
       }

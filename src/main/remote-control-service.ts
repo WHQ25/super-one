@@ -510,6 +510,7 @@ export class RemoteControlService {
   private todoToolInputs = new Map<string, { toolName: string; input: string }>()
   private widgetToolIds = new Set<string>()
   private pendingText: { messageId: string; text: string; parentToolUseId: string | null } | null = null
+  private pendingThinking: { messageId: string; text: string; parentToolUseId: string | null } | null = null
   private subscribedSession: { projectPath: string; sessionId: string } | null = null
   private remoteSessionFilter: { projectPath: string; sessionId: string } | null = null
 
@@ -846,6 +847,7 @@ export class RemoteControlService {
       this.todoToolInputs.clear()
       this.widgetToolIds.clear()
       this.flushPendingText()
+      this.flushPendingThinking()
     }
 
     if (event.type === 'content_delta') {
@@ -862,7 +864,35 @@ export class RemoteControlService {
         }
         return
       }
+      if (event.delta.type === 'thinking') {
+        const parentId = event.delta.parentToolUseId ?? null
+        const msgId = event.messageId
+        if (this.pendingThinking && (this.pendingThinking.messageId !== msgId || this.pendingThinking.parentToolUseId !== parentId)) {
+          this.flushPendingThinking()
+        }
+        if (!this.pendingThinking) this.pendingThinking = { messageId: msgId, text: '', parentToolUseId: parentId }
+        this.pendingThinking.text += event.delta.thinking
+        const pending = this.pendingThinking.text
+        const breakIdx = pending.lastIndexOf('\n\n')
+        if (breakIdx > 0) {
+          this.pendingThinking.text = pending.slice(breakIdx + 2)
+          const flushed = pending.slice(0, breakIdx)
+          if (flushed.trim()) {
+            const delta = { type: 'thinking' as const, thinking: flushed, parentToolUseId: parentId }
+            const ev = { type: 'content_delta' as const, messageId: msgId, delta } as unknown as AgentEvent
+            trace('remote.out', ev.type, ev, msgId)
+            this.batchBuffer.push(ev)
+          }
+        } else if (pending.length >= 1000) {
+          this.flushPendingThinking()
+        }
+        if (!this.batchTimer) {
+          this.batchTimer = setTimeout(() => this.flushBatch(), BATCH_INTERVAL_MS)
+        }
+        return
+      }
       this.flushPendingText()
+      this.flushPendingThinking()
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
         try { const p = JSON.parse(event.delta.input); this.bashToolCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
       }
@@ -897,6 +927,7 @@ export class RemoteControlService {
     }
 
     this.flushPendingText()
+    this.flushPendingThinking()
     try {
       const stripped = stripEventForRemote(event)
       trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
@@ -916,6 +947,19 @@ export class RemoteControlService {
     } catch (err) {
       log.error('[RemoteControl] Failed to send response:', err)
     }
+  }
+
+  private flushPendingThinking(): void {
+    if (!this.pendingThinking || !this.pendingThinking.text.trim()) {
+      this.pendingThinking = null
+      return
+    }
+    const { messageId, text, parentToolUseId } = this.pendingThinking
+    this.pendingThinking = null
+    const delta = { type: 'thinking' as const, thinking: text, parentToolUseId }
+    const event = { type: 'content_delta' as const, messageId, delta } as unknown as AgentEvent
+    trace('remote.out', event.type, event, messageId)
+    this.batchBuffer.push(event)
   }
 
   private flushPendingText(): void {
@@ -939,6 +983,7 @@ export class RemoteControlService {
   private async flushBatch(): Promise<void> {
     this.batchTimer = null
     this.flushPendingText()
+    this.flushPendingThinking()
     if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN || this.batchBuffer.length === 0) return
 
     try {

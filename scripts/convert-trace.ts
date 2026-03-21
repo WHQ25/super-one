@@ -312,6 +312,7 @@ const bashCmds = new Map<string, string>()
 const todoInputs = new Map<string, { toolName: string; input: string }>()
 const widgetToolIds = new Set<string>()
 let pendingText: { messageId: string; tag: string; text: string; parentToolUseId: string | null; deltaType: string } | null = null
+let pendingThinking: { messageId: string; tag: string; text: string; parentToolUseId: string | null } | null = null
 let count = 0
 
 function flushPendingText() {
@@ -337,6 +338,17 @@ function flushPendingText() {
   }
 }
 
+function flushPendingThinking() {
+  if (!pendingThinking || !pendingThinking.text.trim()) { pendingThinking = null; return }
+  const { messageId, tag, text, parentToolUseId } = pendingThinking
+  pendingThinking = null
+  const delta = { type: 'thinking', thinking: text, parentToolUseId }
+  const stripped = { type: 'content_delta', messageId, delta }
+  const ts = new Date().toISOString().slice(11, 23)
+  insert.run(ts, 'content_delta', tag, JSON.stringify(stripped))
+  count++
+}
+
 for (const row of rows) {
   const event = JSON.parse(row.data) as Record<string, unknown>
   const eventType = String(event.type ?? '')
@@ -351,6 +363,7 @@ for (const row of rows) {
 
   if (eventType === 'message_start') {
     flushPendingText()
+    flushPendingThinking()
     bashCmds.clear()
     todoInputs.clear()
     widgetToolIds.clear()
@@ -361,18 +374,45 @@ for (const row of rows) {
     const deltaType = String(delta?.type ?? '')
     const toolName = String(delta?.toolName ?? '')
 
-    if (deltaType === 'text' || deltaType === 'thinking') {
+    if (deltaType === 'text') {
       const parentId = delta.parentToolUseId as string | null ?? null
       const msgId = String(event.messageId ?? '')
-      if (pendingText && (pendingText.messageId !== msgId || pendingText.parentToolUseId !== parentId || pendingText.deltaType !== deltaType)) {
+      if (pendingText && (pendingText.messageId !== msgId || pendingText.parentToolUseId !== parentId || pendingText.deltaType !== 'text')) {
         flushPendingText()
       }
-      if (!pendingText) pendingText = { messageId: msgId, tag: row.tag, text: '', parentToolUseId: parentId, deltaType }
-      pendingText.text += String(deltaType === 'thinking' ? (delta.thinking ?? '') : (delta.text ?? ''))
+      if (!pendingText) pendingText = { messageId: msgId, tag: row.tag, text: '', parentToolUseId: parentId, deltaType: 'text' }
+      pendingText.text += String(delta.text ?? '')
+      continue
+    }
+
+    if (deltaType === 'thinking') {
+      flushPendingText()
+      const parentId = delta.parentToolUseId as string | null ?? null
+      const msgId = String(event.messageId ?? '')
+      if (pendingThinking && (pendingThinking.messageId !== msgId || pendingThinking.parentToolUseId !== parentId)) {
+        flushPendingThinking()
+      }
+      if (!pendingThinking) pendingThinking = { messageId: msgId, tag: row.tag, text: '', parentToolUseId: parentId }
+      pendingThinking.text += String(delta.thinking ?? '')
+      const pending = pendingThinking.text
+      const breakIdx = pending.lastIndexOf('\n\n')
+      if (breakIdx > 0) {
+        pendingThinking.text = pending.slice(breakIdx + 2)
+        const flushed = pending.slice(0, breakIdx)
+        if (flushed.trim()) {
+          const d = { type: 'thinking', thinking: flushed, parentToolUseId: parentId }
+          const ts = new Date().toISOString().slice(11, 23)
+          insert.run(ts, 'content_delta', row.tag, JSON.stringify({ type: 'content_delta', messageId: msgId, delta: d }))
+          count++
+        }
+      } else if (pending.length >= 1000) {
+        flushPendingThinking()
+      }
       continue
     }
 
     flushPendingText()
+    flushPendingThinking()
 
     if (deltaType === 'tool_use' && toolName === 'Bash') {
       try { const p = JSON.parse(String(delta.input ?? '{}')); bashCmds.set(String(delta.toolUseId), String(p.command ?? '')) } catch {}
@@ -410,12 +450,14 @@ for (const row of rows) {
   }
 
   flushPendingText()
+  flushPendingThinking()
   const stripped = stripEvent(event, bashCmds)
   const ts = new Date().toISOString().slice(11, 23)
   insert.run(ts, String(stripped.type), row.tag, JSON.stringify(stripped))
   count++
 }
 flushPendingText()
+flushPendingThinking()
 
 console.log(`Converted ${rows.length} agent.emit events → ${count} remote.out events`)
 console.log(`Skipped: ${rows.length - count} (tool_input_delta, todo tool_use, etc.)`)

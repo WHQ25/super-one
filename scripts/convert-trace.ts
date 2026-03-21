@@ -186,13 +186,13 @@ function splitTextIntoBlocks(text: string): Array<{ type: string; text?: string;
 
   function flushCurrent() {
     const t = current.join('\n').trim()
-    if (t) segments.push({ type: 'text', text: t })
+    if (t) segments.push({ type: 'text', text: (segments.length > 0 ? '\n\n' : '') + t })
     current = []
   }
 
   function flushTable() {
     if (tableLines.length > 0) {
-      segments.push({ type: 'text', text: tableLines.join('\n') })
+      segments.push({ type: 'text', text: (segments.length > 0 ? '\n\n' : '') + tableLines.join('\n') })
       tableLines = []
     }
     inTable = false
@@ -211,7 +211,7 @@ function splitTextIntoBlocks(text: string): Array<{ type: string; text?: string;
     }
     if (inCodeFence) {
       if (line.trimEnd() === fenceTicks) {
-        segments.push({ type: 'text', text: `${fenceTicks}${codeLang}\n${codeLines.join('\n')}\n${fenceTicks}` })
+        segments.push({ type: 'text', text: (segments.length > 0 ? '\n\n' : '') + `${fenceTicks}${codeLang}\n${codeLines.join('\n')}\n${fenceTicks}` })
         inCodeFence = false
         fenceTicks = ''
         codeLines = []

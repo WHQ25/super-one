@@ -147,10 +147,7 @@ interface IterateMessagesOptions {
 
 async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
   const { emit: rawEmit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile, timing } = opts
-  const emit: typeof rawEmit = (event) => {
-    trace('agent.emit', event.type, event, (event as any).messageId)
-    rawEmit(event)
-  }
+  const emit = rawEmit
   // Track content_block index → tool_use_id for input_json_delta correlation
   const activeToolBlocks = new Map<number, string>()
   // Track tool_use_id → tool_name so we can tag tool_result events
@@ -179,7 +176,6 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
   log.debug('[iterateMessages] starting iteration loop')
   try {
     for await (const msg of q) {
-      trace('agent.sdk', msg.type, msg)
       let messageId = turnMessageId
 
       if (!turnActive) {
@@ -201,6 +197,8 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           messageId = turnMessageId
         }
       }
+
+      trace('agent.sdk', msg.type, msg, messageId)
 
       // User messages carry tool results and slash command output
       if (msg.type === 'user') {

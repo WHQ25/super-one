@@ -8,6 +8,7 @@ import type { AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, P
 import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
 import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
+import { trace } from './event-trace'
 import { discoverSkills, discoverProjectCommands, discoverProjectAgents } from './discover-resources'
 import { getActiveProviderRaw } from '../database'
 import { readUserPreferences } from '../claude-preferences-service'
@@ -630,6 +631,7 @@ export class ClaudeAgent {
   }
 
   private emit(event: AgentEvent): void {
+    trace('agent.emit', event.type, event, (event as Record<string, unknown>).messageId as string ?? this.currentMessageId)
     this.onEvent?.({ ...event, sessionId: this.sessionId || undefined })
 
     if (

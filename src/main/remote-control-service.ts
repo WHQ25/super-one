@@ -64,7 +64,7 @@ function countLines(s: string): number {
   return s.split('\n').length
 }
 
-function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: Array<{ content: string; status: string; taskId?: string }> } {
+function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: Array<{ content: string; status: string; taskId?: string }>; subagentType?: string; toolPrompt?: string } {
   try {
     const p = JSON.parse(block.input)
     if (!p || typeof p !== 'object') return {}
@@ -172,6 +172,10 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSumm
           summary = `${p.status ?? 'update'}: ${p.subject ?? p.taskId ?? ''}`
         }
         break
+      case 'Agent':
+      case 'Task':
+        summary = String(p.description ?? p.name ?? '')
+        return { toolSummary: summary, subagentType: p.subagent_type ? String(p.subagent_type) : undefined, toolPrompt: p.prompt ? String(p.prompt) : undefined }
     }
     return { toolSummary: summary, toolFilePath: filePath || undefined, toolLineDelta, toolDiff, toolDiffTokens, toolTodos }
   } catch { return {} }
@@ -207,7 +211,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>):
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block)
     const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'
-    return { ...block, type: mappedType, input: '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos } as ContentBlock
+    return { ...block, type: mappedType, input: '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt } as ContentBlock
   }
   if (block.type === 'tool_result') {
     if (bashCmds?.has(block.toolUseId)) {
@@ -714,7 +718,6 @@ export class RemoteControlService {
     }
 
     if (SKIPPED_EVENTS.has(event.type)) return
-    trace('remote.out', event.type, { messageId: 'messageId' in event ? event.messageId : undefined }, event.sessionId)
 
     if (THROTTLED_EVENTS.has(event.type)) {
       const now = Date.now()
@@ -749,6 +752,7 @@ export class RemoteControlService {
       } else {
         stripped = stripEventForRemote(event)
       }
+      trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
       this.batchBuffer.push(stripped)
       if (!this.batchTimer) {
         this.batchTimer = setTimeout(() => this.flushBatch(), BATCH_INTERVAL_MS)
@@ -758,6 +762,7 @@ export class RemoteControlService {
 
     try {
       const stripped = stripEventForRemote(event)
+      trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
       const data = await encryptPayload(this.keys.aesKey, stripped)
       this.relayWs.send(JSON.stringify({ type: 'event', data }))
     } catch (err) {

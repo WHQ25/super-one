@@ -338,7 +338,7 @@ describe('concurrent streaming sessions', () => {
     expect(after._sessions['active'].messages).toHaveLength(0)
   })
 
-  it('merges stored history before saving subscribed remote sessions', async () => {
+  it('keeps subscribed remote sessions in memory after idle and does not save them from renderer', async () => {
     vi.useFakeTimers()
     try {
       setupProject('/test')
@@ -392,15 +392,9 @@ describe('concurrent streaming sessions', () => {
       await Promise.resolve()
       await vi.runAllTimersAsync()
 
-      expect(mockWindowApp.saveSessionState).toHaveBeenCalledWith(
-        'remote-1',
-        expect.objectContaining({
-          messages: expect.arrayContaining([
-            expect.objectContaining({ id: 'old-msg' }),
-            expect.objectContaining({ id: 'new-msg' }),
-          ]),
-        }),
-      )
+      const after = useChatStore.getState().projectSessions['/test']
+      expect(after._sessions['remote-1'].messages.map((message) => message.id)).toEqual(['old-msg', 'new-msg'])
+      expect(mockWindowApp.saveSessionState).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
     }
@@ -1338,7 +1332,12 @@ describe('codex steer routing', () => {
     expect(lastMessage?.status).toBe('streaming')
     expect(lastMessage?.id).toBe(session.activeCodexMessageId)
     expect(session.lastAssistantMessageId).toBe(lastMessage?.id)
-    expect(mockWindowApp.codexSteer).toHaveBeenCalledWith(codexSid, 'steer follow-up', lastMessage?.id)
+    const call = mockWindowApp.codexSteer.mock.calls.at(-1)
+    expect(call?.[0]).toBe(codexSid)
+    expect(call?.[1]).toBe('steer follow-up')
+    expect(call?.[2]).toBe(lastMessage?.id)
+    expect(call?.[3]).toBeTruthy()
+    expect(call?.[4]).toBe('steer follow-up')
   })
 })
 
@@ -1759,7 +1758,7 @@ describe('task_started event', () => {
 })
 
 describe('worktree session save isolation', () => {
-  it('saves each worktree session with its own _worktreePath on re-key', () => {
+  it('keeps each worktree session isolated in renderer state on re-key', () => {
     setupProject('/test')
 
     useChatStore.setState((s) => {
@@ -1788,11 +1787,8 @@ describe('worktree session save isolation', () => {
       session: { sessionId: 'wt-session-A' } as never,
     }))
 
-    expect(mockWindowApp.createSession).toHaveBeenCalledWith(
-      '/test', 'wt-session-A', true, 'feature-a', '/worktrees/project/wt-A', expect.any(String),
-    )
-
-    mockWindowApp.createSession.mockClear()
+    let project = useChatStore.getState().projectSessions['/test']
+    expect(project._sessions['wt-session-A']._worktreePath).toBe('/worktrees/project/wt-A')
 
     useChatStore.setState((s) => {
       const project = s.projectSessions['/test']
@@ -1821,9 +1817,9 @@ describe('worktree session save isolation', () => {
       session: { sessionId: 'wt-session-B' } as never,
     }))
 
-    expect(mockWindowApp.createSession).toHaveBeenCalledWith(
-      '/test', 'wt-session-B', true, 'feature-b', '/worktrees/project/wt-B', expect.any(String),
-    )
+    project = useChatStore.getState().projectSessions['/test']
+    expect(project._sessions['wt-session-B']._worktreePath).toBe('/worktrees/project/wt-B')
+    expect(mockWindowApp.createSession).not.toHaveBeenCalled()
   })
 })
 
@@ -1948,6 +1944,8 @@ describe('codex run session isolation', () => {
     expect(sesB.messages[0].id).toBe('b-msg')
 
     expect(after.unseenCompletedSessions.has(codexSid)).toBe(true)
+    expect(mockWindowApp.createSession).not.toHaveBeenCalled()
+    expect(mockWindowApp.saveSessionState).not.toHaveBeenCalled()
   })
 })
 

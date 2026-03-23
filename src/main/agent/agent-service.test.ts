@@ -302,6 +302,129 @@ describe('AgentService.handleRemoteCommand', () => {
     )
   })
 
+  it('send_message persists merged history from main runtime instead of renderer snapshots', async () => {
+    vi.mocked(dbSessions.loadSessionState).mockReturnValue({
+      messages: [
+        { id: 'old-msg', role: 'assistant', content: [{ type: 'text', text: 'old' }], status: 'complete', createdAt: '', providerId: 'claude' },
+      ] as never[],
+      totalCostUsd: 1,
+      contextTokens: 2,
+      isWorktree: false,
+      gitBranch: null,
+      worktreePath: null,
+      provider: 'claude',
+    })
+    const service = new AgentService()
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    const currentAgent = {
+      isReady: vi.fn(() => true),
+      getSessionId: vi.fn(() => 'session-A'),
+      sendMessage,
+      getCwd: vi.fn(() => '/project'),
+      isStreaming: vi.fn(() => false),
+    }
+    ;(service as any).agents.set('/project', currentAgent)
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      content: 'hello',
+      projectPath: '/project',
+      sessionId: 'session-A',
+    })
+
+    expect(dbSessions.saveSessionState).toHaveBeenCalledWith(
+      'session-A',
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({ id: 'old-msg' }),
+          expect.objectContaining({ role: 'user', providerId: 'remote' }),
+        ]),
+        totalCostUsd: 1,
+        contextTokens: 2,
+        provider: 'claude',
+      }),
+    )
+  })
+
+  it('codex runtime persists turns from main without renderer snapshots', () => {
+    const service = new AgentService()
+
+    service.beginCodexTurn('/project', 'codex-session', {
+      userMessageId: 'user-1',
+      userText: 'hello codex',
+      assistantMessageId: 'assistant-1',
+      providerId: 'local',
+      gitBranch: 'feature-a',
+      worktreePath: '/project/.worktrees/feature-a',
+    })
+
+    service.recordCodexEvent({
+      type: 'codex_thread_started',
+      messageId: 'assistant-1',
+      threadId: 'thread-1',
+      projectPath: '/project',
+      sessionId: 'codex-session',
+    } as never)
+
+    service.recordCodexEvent({
+      type: 'codex_item_delta',
+      messageId: 'assistant-1',
+      phase: 'updated',
+      item: { id: 'reason-1', type: 'reasoning', text: 'thinking' },
+      projectPath: '/project',
+      sessionId: 'codex-session',
+    } as never)
+
+    service.completeCodexTurn('codex-session', {
+      messageId: 'assistant-1',
+      durationMs: 123,
+      fallbackText: 'Codex completed without returning text.',
+      result: {
+        threadId: 'thread-1',
+        finalResponse: 'done',
+        usage: null,
+        items: [
+          { id: 'reason-1', type: 'reasoning', text: 'thinking' },
+          { id: 'agent-1', type: 'agent_message', text: 'done' },
+        ],
+      },
+    })
+
+    expect(dbSessions.createSession).toHaveBeenCalledWith(
+      '/project',
+      'codex-session',
+      'hello codex',
+      true,
+      'feature-a',
+      '/project/.worktrees/feature-a',
+    )
+    expect(dbSessions.saveSessionState).toHaveBeenLastCalledWith(
+      'codex-session',
+      expect.objectContaining({
+        provider: 'codex',
+        messages: expect.arrayContaining([
+          expect.objectContaining({ id: 'user-1', role: 'user', providerId: 'local' }),
+          expect.objectContaining({
+            id: 'assistant-1',
+            role: 'assistant',
+            status: 'complete',
+            content: [{ type: 'text', text: 'done' }],
+            metadata: expect.objectContaining({
+              durationMs: 123,
+              codex: expect.objectContaining({
+                threadId: 'thread-1',
+                items: [
+                  { id: 'reason-1', type: 'reasoning', text: 'thinking' },
+                  { id: 'agent-1', type: 'agent_message', text: 'done' },
+                ],
+              }),
+            }),
+          }),
+        ]),
+      }),
+    )
+  })
+
   it('send_message skips resume when sessionId matches current agent', async () => {
     const service = new AgentService()
     const sendMessage = vi.fn().mockResolvedValue(undefined)
@@ -412,7 +535,7 @@ describe('AgentService.handleRemoteCommand', () => {
       projectPath: '/project',
       sessionId: 'session-B',
     })
-    expect(bgRespond).toHaveBeenCalledWith('req-1', true)
+    expect(bgRespond).toHaveBeenCalledWith('req-1', true, undefined, undefined)
   })
 
   it('respond_permission is no-op when sessionId not found', async () => {
@@ -431,6 +554,97 @@ describe('AgentService.handleRemoteCommand', () => {
       sessionId: 'session-X',
     })
     expect(respond).not.toHaveBeenCalled()
+  })
+
+  it('respond_permission passes reason to agent', async () => {
+    const service = new AgentService()
+    const respond = vi.fn()
+    ;(service as any).agents.set('/project', {
+      getSessionId: vi.fn(() => 'session-A'),
+      respondToPermission: respond,
+    })
+
+    await service.handleRemoteCommand({
+      type: 'respond_permission',
+      requestId: 'req-1',
+      decision: false,
+      reason: 'not needed',
+      projectPath: '/project',
+      sessionId: 'session-A',
+    })
+    expect(respond).toHaveBeenCalledWith('req-1', false, undefined, 'not needed')
+  })
+
+  it('answer_question routes to agent by sessionId', async () => {
+    const service = new AgentService()
+    const respond = vi.fn()
+    ;(service as any).agents.set('/project', {
+      getSessionId: vi.fn(() => 'session-A'),
+      respondToQuestion: respond,
+    })
+
+    await service.handleRemoteCommand({
+      type: 'answer_question',
+      requestId: 'ask-1',
+      answers: { 'Which?': 'Option A' },
+      projectPath: '/project',
+      sessionId: 'session-A',
+    })
+    expect(respond).toHaveBeenCalledWith('ask-1', { 'Which?': 'Option A' })
+  })
+
+  it('dismiss_question routes to agent by sessionId', async () => {
+    const service = new AgentService()
+    const dismiss = vi.fn()
+    ;(service as any).agents.set('/project', {
+      getSessionId: vi.fn(() => 'session-A'),
+      dismissQuestion: dismiss,
+    })
+
+    await service.handleRemoteCommand({
+      type: 'dismiss_question',
+      requestId: 'ask-1',
+      projectPath: '/project',
+      sessionId: 'session-A',
+    })
+    expect(dismiss).toHaveBeenCalledWith('ask-1')
+  })
+
+  it('respond_plan_approval routes to agent by sessionId', async () => {
+    const service = new AgentService()
+    const respond = vi.fn()
+    ;(service as any).agents.set('/project', {
+      getSessionId: vi.fn(() => 'session-A'),
+      respondToPlanApproval: respond,
+    })
+
+    await service.handleRemoteCommand({
+      type: 'respond_plan_approval',
+      requestId: 'plan-1',
+      approved: true,
+      projectPath: '/project',
+      sessionId: 'session-A',
+    })
+    expect(respond).toHaveBeenCalledWith('plan-1', true, undefined)
+  })
+
+  it('respond_plan_approval passes feedback', async () => {
+    const service = new AgentService()
+    const respond = vi.fn()
+    ;(service as any).agents.set('/project', {
+      getSessionId: vi.fn(() => 'session-A'),
+      respondToPlanApproval: respond,
+    })
+
+    await service.handleRemoteCommand({
+      type: 'respond_plan_approval',
+      requestId: 'plan-1',
+      approved: false,
+      feedback: 'needs more detail',
+      projectPath: '/project',
+      sessionId: 'session-A',
+    })
+    expect(respond).toHaveBeenCalledWith('plan-1', false, 'needs more detail')
   })
 
   it('load_session_messages returns an error when session does not belong to the project', async () => {

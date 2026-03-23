@@ -43,10 +43,10 @@ interface AppAPI {
   closeProject(folderPath: string): Promise<void>
   checkClaude(): Promise<boolean>
   installClaude(): Promise<void>
-  codexRun(sessionId: string, projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, collaborationMode?: CodexCollaborationMode, threadId?: string, messageId?: string, images?: ImageAttachment[], cwd?: string): Promise<CodexRunResult>
-  codexSteer(sessionId: string, input: string, messageId?: string): Promise<void>
-  codexReview(sessionId: string, projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string): Promise<CodexRunResult>
-  codexCompact(sessionId: string, projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string): Promise<CodexRunResult>
+  codexRun(sessionId: string, projectPath: string, prompt: string, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, collaborationMode?: CodexCollaborationMode, threadId?: string, messageId?: string, images?: ImageAttachment[], cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string): Promise<CodexRunResult>
+  codexSteer(sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string): Promise<void>
+  codexReview(sessionId: string, projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string): Promise<CodexRunResult>
+  codexCompact(sessionId: string, projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string): Promise<CodexRunResult>
   codexListModels(projectPath: string): Promise<ModelOption[]>
   codexReset(sessionId: string): Promise<void>
   codexInterrupt(sessionId: string): Promise<boolean>

@@ -1,9 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type SandboxMode } from '../shared/agent-types'
+import { AgentIpcChannels, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type SandboxMode, type SendMessageRequest } from '../shared/agent-types'
 
 const agentAPI = {
-  sendMessage: (projectPath: string, request: { content: string; model?: string; images?: { mimeType: string; base64: string; name: string }[]; additionalDirs?: string[] }) =>
+  sendMessage: (projectPath: string, request: SendMessageRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.SEND_MESSAGE, projectPath, request),
 
   interrupt: (projectPath: string) =>
@@ -132,6 +132,10 @@ const appAPI = {
     messageId?: string,
     images?: { mimeType: string; base64: string; name: string }[],
     cwd?: string,
+    userMessageId?: string,
+    userMessageText?: string,
+    gitBranch?: string,
+    worktreePath?: string,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_RUN,
@@ -146,6 +150,10 @@ const appAPI = {
       messageId,
       images,
       cwd,
+      userMessageId,
+      userMessageText,
+      gitBranch,
+      worktreePath,
     ),
 
   codexListModels: (projectPath: string) =>
@@ -197,8 +205,8 @@ const appAPI = {
       requestId,
     ),
 
-  codexSteer: (sessionId: string, input: string, messageId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, sessionId, input, messageId),
+  codexSteer: (sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, sessionId, input, messageId, userMessageId, userMessageText, gitBranch, worktreePath),
 
   codexReview: (
     sessionId: string,
@@ -210,6 +218,10 @@ const appAPI = {
     threadId?: string,
     messageId?: string,
     cwd?: string,
+    userMessageId?: string,
+    userMessageText?: string,
+    gitBranch?: string,
+    worktreePath?: string,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_REVIEW,
@@ -222,6 +234,10 @@ const appAPI = {
       threadId,
       messageId,
       cwd,
+      userMessageId,
+      userMessageText,
+      gitBranch,
+      worktreePath,
     ),
 
   codexCompact: (
@@ -232,6 +248,10 @@ const appAPI = {
     threadId?: string,
     messageId?: string,
     cwd?: string,
+    userMessageId?: string,
+    userMessageText?: string,
+    gitBranch?: string,
+    worktreePath?: string,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_COMPACT,
@@ -242,6 +262,10 @@ const appAPI = {
       threadId,
       messageId,
       cwd,
+      userMessageId,
+      userMessageText,
+      gitBranch,
+      worktreePath,
     ),
 
   codexGetAuthStatus: (projectPath: string) =>

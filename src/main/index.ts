@@ -110,11 +110,14 @@ function safeSend(channel: string, ...args: unknown[]): void {
 }
 
 function emitAgentEvent(event: AgentEvent): void {
+  agentService.recordCodexEvent(event)
   safeSend(AgentIpcChannels.EVENT, event)
 }
 
 const activeCodexEventTargets = new Map<string, {
   setMessageId: (messageId?: string) => void
+  getMessageId: () => string | undefined
+  projectPath: string
   dispose: () => void
 }>()
 
@@ -124,6 +127,8 @@ function createCodexCallbacks(messageId: string | undefined, sessionId: string, 
     setMessageId: (nextMessageId?: string) => {
       currentMessageId = nextMessageId
     },
+    getMessageId: () => currentMessageId,
+    projectPath,
     dispose: () => {
       if (activeCodexEventTargets.get(sessionId) === route) {
         activeCodexEventTargets.delete(sessionId)
@@ -265,7 +270,7 @@ function registerIpcHandlers(): void {
   agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))
   agentService.setCodexGetAuthStatus((projectPath) => codexService.getAuthStatus(projectPath))
   agentService.setCodexRun(async (sessionId, projectPath, opts) => {
-    const messageId = `remote-${Date.now()}`
+    const messageId = opts.messageId ?? `remote-${Date.now()}`
     const { callbacks, route } = createCodexCallbacks(messageId, sessionId, projectPath)
     try {
       return await codexService.run(sessionId, projectPath, { ...opts, messageId } as Parameters<typeof codexService.run>[2], callbacks)
@@ -340,15 +345,47 @@ function registerIpcHandlers(): void {
       messageId?: string,
       images?: ImageAttachment[],
       cwd?: string,
+      userMessageId?: string,
+      userMessageText?: string,
+      gitBranch?: string,
+      worktreePath?: string,
     ) => {
-      const { callbacks, route } = createCodexCallbacks(messageId, sessionId, projectPath)
+      const assistantMessageId = messageId ?? `codex_${Date.now()}`
+      const persistedUserMessageId = userMessageId ?? `user_${Date.now()}`
+      agentService.beginCodexTurn(projectPath, sessionId, {
+        userMessageId: persistedUserMessageId,
+        userText: userMessageText ?? prompt,
+        assistantMessageId,
+        providerId: 'local',
+        images,
+        gitBranch: gitBranch ?? null,
+        worktreePath: worktreePath ?? null,
+        cwd,
+      })
+      const { callbacks, route } = createCodexCallbacks(assistantMessageId, sessionId, projectPath)
+      const runStart = Date.now()
       try {
-        return await codexService.run(
+        const result = await codexService.run(
           sessionId,
           projectPath,
-          { prompt, model, reasoningEffort, permissionPreset, collaborationMode, threadId, messageId, images, cwd },
+          { prompt, model, reasoningEffort, permissionPreset, collaborationMode, threadId, messageId: assistantMessageId, images, cwd },
           callbacks,
         )
+        agentService.completeCodexTurn(sessionId, {
+          messageId: route.getMessageId() ?? assistantMessageId,
+          result,
+          durationMs: Date.now() - runStart,
+          fallbackText: 'Codex completed without returning text.',
+        })
+        return result
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        agentService.failCodexTurn(sessionId, {
+          messageId: route.getMessageId() ?? assistantMessageId,
+          status: /interrupt|abort/i.test(message) ? 'interrupted' : 'error',
+          text: /interrupt|abort/i.test(message) ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
+        })
+        throw error
       } finally {
         route.dispose()
       }
@@ -405,12 +442,28 @@ function registerIpcHandlers(): void {
     return codexService.setAuth(projectPath, request)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_STEER, (_event, sessionId: string, input: string, messageId?: string) => {
-    if (messageId) {
-      activeCodexEventTargets.get(sessionId)?.setMessageId(messageId)
-    }
-    return codexService.steer(sessionId, input)
-  })
+  ipcMain.handle(
+    AgentIpcChannels.CODEX_STEER,
+    (_event, sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string) => {
+      const route = activeCodexEventTargets.get(sessionId)
+      const assistantMessageId = messageId ?? `codex_${Date.now()}`
+      if (route) {
+        agentService.beginCodexTurn(route.projectPath, sessionId, {
+          userMessageId: userMessageId ?? `user_${Date.now()}`,
+          userText: userMessageText ?? input,
+          assistantMessageId,
+          providerId: 'local',
+          gitBranch: gitBranch ?? null,
+          worktreePath: worktreePath ?? null,
+        })
+        route.setMessageId(assistantMessageId)
+      }
+      return codexService.steer(sessionId, input).catch((error) => {
+        agentService.rollbackCodexAssistantMessage(sessionId, assistantMessageId)
+        throw error
+      })
+    },
+  )
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_REVIEW,
@@ -425,15 +478,45 @@ function registerIpcHandlers(): void {
       threadId?: string,
       messageId?: string,
       cwd?: string,
+      userMessageId?: string,
+      userMessageText?: string,
+      gitBranch?: string,
+      worktreePath?: string,
     ) => {
-      const { callbacks, route } = createCodexCallbacks(messageId, sessionId, projectPath)
+      const assistantMessageId = messageId ?? `codex_${Date.now()}`
+      agentService.beginCodexTurn(projectPath, sessionId, {
+        userMessageId: userMessageId ?? `user_${Date.now()}`,
+        userText: userMessageText ?? '/review',
+        assistantMessageId,
+        providerId: 'local',
+        gitBranch: gitBranch ?? null,
+        worktreePath: worktreePath ?? null,
+        cwd,
+      })
+      const { callbacks, route } = createCodexCallbacks(assistantMessageId, sessionId, projectPath)
+      const runStart = Date.now()
       try {
-        return await codexService.review(
+        const result = await codexService.review(
           sessionId,
           projectPath,
-          { target, model, reasoningEffort, permissionPreset, threadId, messageId, cwd },
+          { target, model, reasoningEffort, permissionPreset, threadId, messageId: assistantMessageId, cwd },
           callbacks,
         )
+        agentService.completeCodexTurn(sessionId, {
+          messageId: route.getMessageId() ?? assistantMessageId,
+          result,
+          durationMs: Date.now() - runStart,
+          fallbackText: 'Codex completed without returning text.',
+        })
+        return result
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        agentService.failCodexTurn(sessionId, {
+          messageId: route.getMessageId() ?? assistantMessageId,
+          status: /interrupt|abort/i.test(message) ? 'interrupted' : 'error',
+          text: /interrupt|abort/i.test(message) ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
+        })
+        throw error
       } finally {
         route.dispose()
       }
@@ -451,15 +534,45 @@ function registerIpcHandlers(): void {
       threadId?: string,
       messageId?: string,
       cwd?: string,
+      userMessageId?: string,
+      userMessageText?: string,
+      gitBranch?: string,
+      worktreePath?: string,
     ) => {
-      const { callbacks, route } = createCodexCallbacks(messageId, sessionId, projectPath)
+      const assistantMessageId = messageId ?? `codex_${Date.now()}`
+      agentService.beginCodexTurn(projectPath, sessionId, {
+        userMessageId: userMessageId ?? `user_${Date.now()}`,
+        userText: userMessageText ?? '/compact',
+        assistantMessageId,
+        providerId: 'local',
+        gitBranch: gitBranch ?? null,
+        worktreePath: worktreePath ?? null,
+        cwd,
+      })
+      const { callbacks, route } = createCodexCallbacks(assistantMessageId, sessionId, projectPath)
+      const runStart = Date.now()
       try {
-        return await codexService.compact(
+        const result = await codexService.compact(
           sessionId,
           projectPath,
-          { model, permissionPreset, threadId, messageId, cwd },
+          { model, permissionPreset, threadId, messageId: assistantMessageId, cwd },
           callbacks,
         )
+        agentService.completeCodexTurn(sessionId, {
+          messageId: route.getMessageId() ?? assistantMessageId,
+          result,
+          durationMs: Date.now() - runStart,
+          fallbackText: 'Conversation compacted.',
+        })
+        return result
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        agentService.failCodexTurn(sessionId, {
+          messageId: route.getMessageId() ?? assistantMessageId,
+          status: /interrupt|abort/i.test(message) ? 'interrupted' : 'error',
+          text: /interrupt|abort/i.test(message) ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
+        })
+        throw error
       } finally {
         route.dispose()
       }

@@ -19,25 +19,6 @@ export interface StreamingCtx {
   isStreamingRef: RefObject<boolean>
 }
 
-function isCodeBlockClosed(text: string, startLine?: number): boolean {
-  if (startLine === undefined) return false
-  const lines = text.split('\n')
-  const openLine = lines[startLine - 1]
-  const fenceMatch = openLine?.match(/^(\s*`{3,})/)
-  const fenceTicks = fenceMatch?.[1]?.trim() ?? '```'
-  let nestedDepth = 0
-  for (let i = startLine; i < lines.length; i++) {
-    const line = lines[i]
-    if (line.trimEnd() === fenceTicks) {
-      if (nestedDepth > 0) nestedDepth--
-      else return true
-    } else if (new RegExp(`^${fenceTicks}\\S`).test(line)) {
-      nestedDepth++
-    }
-  }
-  return false
-}
-
 // --- Highlighted code block ---
 
 interface HighlightedCodeBlockProps {
@@ -188,9 +169,10 @@ export function createStreamdownCodeComponent(codePlugin: CodeHighlighterPlugin,
 
     const language = className?.match(/language-([^\s]+)/)?.[1] ?? 'text'
     if (language === 'mermaid') {
+      const codeLineCount = code.split('\n').length
       const isComplete = !streamingCtx
         || !streamingCtx.isStreamingRef.current
-        || isCodeBlockClosed(streamingCtx.textRef.current, startLine)
+        || (startLine !== undefined && endLine !== undefined && (endLine - startLine) > codeLineCount)
       return <MermaidBlock code={code} isComplete={isComplete} codePlugin={codePlugin} />
     }
     return <HighlightedCodeBlock code={code} language={language} codePlugin={codePlugin} />

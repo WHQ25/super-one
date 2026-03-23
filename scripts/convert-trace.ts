@@ -283,6 +283,35 @@ function stripContentBlock(block: Record<string, unknown>, bashCmds?: Map<string
   return block
 }
 
+function enrichPermissionRequest(event: Record<string, unknown>): Record<string, unknown> {
+  const request = event.request as Record<string, unknown>
+  if (!request) return event
+  const toolName = String(request.toolName ?? '')
+  const input = request.input as Record<string, unknown> | undefined
+  if (!input || (toolName !== 'Edit' && toolName !== 'Write')) return event
+  try {
+    if (toolName === 'Edit') {
+      const oldStr = String(input.old_string ?? '')
+      const newStr = String(input.new_string ?? '')
+      if (!oldStr && !newStr) return event
+      const changes = diffLines(oldStr, newStr)
+      const parts: string[] = []
+      for (const change of changes) {
+        const lines = change.value.replace(/\n$/, '').split('\n')
+        const prefix = change.added ? '+' : change.removed ? '-' : ' '
+        for (const l of lines) parts.push(`${prefix}${l}`)
+      }
+      return { ...event, request: { ...request, toolDiff: parts.join('\n') } }
+    }
+    if (toolName === 'Write') {
+      const content = String(input.content ?? '')
+      if (!content) return event
+      return { ...event, request: { ...request, toolDiff: content.split('\n').map((l: string) => `+${l}`).join('\n') } }
+    }
+  } catch { /* ignore */ }
+  return event
+}
+
 function stripEvent(event: Record<string, unknown>, bashCmds?: Map<string, string>, agentIds?: Set<string>): Record<string, unknown> {
   if (event.type === 'content_delta') {
     return { ...event, delta: stripContentBlock(event.delta as Record<string, unknown>, bashCmds, agentIds) }
@@ -295,6 +324,9 @@ function stripEvent(event: Record<string, unknown>, bashCmds?: Map<string, strin
   if (event.type === 'message_complete' && event.metadata) {
     const { codex: _, ...rest } = event.metadata as Record<string, unknown>
     return { ...event, metadata: rest }
+  }
+  if (event.type === 'permission_request') {
+    return enrichPermissionRequest(event)
   }
   return event
 }

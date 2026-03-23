@@ -204,123 +204,8 @@ function extractCodeBlockTokens(text: string): Array<{ language: string; tokens:
   return results.length > 0 ? results : undefined
 }
 
-const INSIGHT_HEADER_RE = /^`★\s+(.+?)\s+─{3,}`$/m
-const INSIGHT_FOOTER_RE = /^`─{3,}`$/
-
-interface TextSegment { type: 'text' | 'insight'; text: string; title?: string; content?: string }
-interface SplitResult { segments: TextSegment[]; remainder: string }
-
-function splitTextIntoBlocks(text: string, streaming = false): SplitResult {
-  if (!text.trim()) return { segments: [], remainder: '' }
-  const lines = text.split('\n')
-  const segments: TextSegment[] = []
-  let current: string[] = []
-  let inCodeFence = false
-  let fenceTicks = ''
-  let codeLines: string[] = []
-  let codeLang = ''
-  let inTable = false
-  let tableLines: string[] = []
-  let insightTitle: string | null = null
-  let insightLines: string[] = []
-
-  function flushCurrent() {
-    const t = current.join('\n').trim()
-    if (t) segments.push({ type: 'text', text: t })
-    current = []
-  }
-
-  function flushTable() {
-    if (tableLines.length > 0) {
-      segments.push({ type: 'text', text: tableLines.join('\n') })
-      tableLines = []
-    }
-    inTable = false
-  }
-
-  for (const line of lines) {
-    if (insightTitle !== null) {
-      if (INSIGHT_FOOTER_RE.test(line)) {
-        segments.push({ type: 'insight', text: '', title: insightTitle, content: insightLines.join('\n') })
-        insightTitle = null
-        insightLines = []
-      } else {
-        insightLines.push(line)
-      }
-      continue
-    }
-
-    if (inCodeFence) {
-      if (line.trimEnd() === fenceTicks) {
-        segments.push({ type: 'text', text: `${fenceTicks}${codeLang}\n${codeLines.join('\n')}\n${fenceTicks}` })
-        inCodeFence = false
-        fenceTicks = ''
-        codeLines = []
-        codeLang = ''
-      } else {
-        codeLines.push(line)
-      }
-      continue
-    }
-
-    const fenceMatch = line.match(/^(`{3,})(\w*)/)
-    if (fenceMatch) {
-      if (inTable) flushTable()
-      flushCurrent()
-      inCodeFence = true
-      fenceTicks = fenceMatch[1]
-      codeLang = fenceMatch[2] || ''
-      codeLines = []
-      continue
-    }
-
-    const insightMatch = line.match(INSIGHT_HEADER_RE)
-    if (insightMatch) {
-      if (inTable) flushTable()
-      flushCurrent()
-      insightTitle = insightMatch[1].trim()
-      insightLines = []
-      continue
-    }
-
-    if (line.startsWith('|') && line.includes('|', 1)) {
-      if (!inTable) {
-        flushCurrent()
-        inTable = true
-      }
-      tableLines.push(line)
-      continue
-    }
-
-    if (inTable) flushTable()
-    current.push(line)
-  }
-
-  if (streaming && insightTitle !== null) {
-    if (inTable) flushTable()
-    flushCurrent()
-    const remainder = `\`★ ${insightTitle} ${'─'.repeat(37)}\`\n${insightLines.join('\n')}`
-    return { segments, remainder }
-  }
-  if (streaming && inCodeFence) {
-    if (inTable) flushTable()
-    flushCurrent()
-    const remainder = `${fenceTicks}${codeLang}\n${codeLines.join('\n')}`
-    return { segments, remainder }
-  }
-
-  if (insightTitle !== null) {
-    current.push(`\`★ ${insightTitle} ${'─'.repeat(37)}\``)
-    current.push(...insightLines)
-  }
-  if (inCodeFence) {
-    current.push(`${fenceTicks}${codeLang}`)
-    current.push(...codeLines)
-  }
-  if (inTable) flushTable()
-  flushCurrent()
-  return { segments, remainder: '' }
-}
+import { splitTextIntoBlocks } from './split-text-blocks'
+export type { TextSegment, SplitResult } from './split-text-blocks'
 
 function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, agentIds?: Set<string>): ContentBlock {
   if (block.type === 'text') {
@@ -349,6 +234,40 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
   return block
 }
 
+function enrichPermissionRequest(event: AgentEvent & { type: 'permission_request' }): AgentEvent {
+  const { toolName, input } = event.request
+  if (toolName !== 'Edit' && toolName !== 'Write') return event
+  try {
+    const filePath = String(input.file_path ?? '')
+    if (toolName === 'Edit') {
+      const oldStr = String(input.old_string ?? '')
+      const newStr = String(input.new_string ?? '')
+      if (!oldStr && !newStr) return event
+      const changes = diffLines(oldStr, newStr)
+      const parts: string[] = []
+      for (const change of changes) {
+        const lines = change.value.replace(/\n$/, '').split('\n')
+        const prefix = change.added ? '+' : change.removed ? '-' : ' '
+        for (const l of lines) parts.push(`${prefix}${l}`)
+      }
+      const toolDiff = parts.join('\n')
+      const addedTokens = newStr && filePath ? highlightCodeSync(newStr, filePath) : undefined
+      const removedTokens = oldStr && filePath ? highlightCodeSync(oldStr, filePath) : undefined
+      const toolDiffTokens = (addedTokens || removedTokens) ? { added: addedTokens ?? undefined, removed: removedTokens ?? undefined } : undefined
+      return { ...event, request: { ...event.request, toolDiff, toolDiffTokens } }
+    }
+    if (toolName === 'Write') {
+      const content = String(input.content ?? '')
+      if (!content) return event
+      const toolDiff = content.split('\n').map((l: string) => `+${l}`).join('\n')
+      const addedTokens = filePath ? highlightCodeSync(content, filePath) : undefined
+      const toolDiffTokens = addedTokens ? { added: addedTokens } : undefined
+      return { ...event, request: { ...event.request, toolDiff, toolDiffTokens } }
+    }
+  } catch { /* ignore highlight errors */ }
+  return event
+}
+
 function stripEventForRemote(event: AgentEvent): AgentEvent {
   if (event.type === 'content_delta') {
     return { ...event, delta: stripContentBlock(event.delta) }
@@ -363,6 +282,9 @@ function stripEventForRemote(event: AgentEvent): AgentEvent {
   if (event.type === 'message_complete' && event.metadata) {
     const { codex: _codex, ...rest } = event.metadata
     return { ...event, metadata: rest }
+  }
+  if (event.type === 'permission_request') {
+    return enrichPermissionRequest(event)
   }
   return event
 }

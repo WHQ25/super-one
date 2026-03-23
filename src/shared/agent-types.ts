@@ -504,6 +504,7 @@ export type AgentEventBase =
   | { type: 'stream_message_stop'; messageId: string; parentToolUseId?: string | null }
   | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean }
   | { type: 'remote_session_end'; remoteProjectPath: string; remoteSessionId: string }
+  | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
 
@@ -519,6 +520,9 @@ export interface SendMessageRequest {
   effort?: EffortLevel
   images?: ImageAttachment[]
   additionalDirs?: string[]
+  clientMessageId?: string
+  gitBranch?: string
+  worktreePath?: string
 }
 
 // --- Model selection ---
@@ -1110,7 +1114,10 @@ export type MentionSearchItem =
 export type RemoteCommand =
   | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[]; provider?: 'claude' | 'codex'; permissionMode?: string; permissionPreset?: string; gitBranch?: string; worktreeBranch?: string; worktreeCarryLocalChanges?: boolean }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
-  | { type: 'respond_permission'; requestId: string; decision: boolean; projectPath?: string; sessionId: string }
+  | { type: 'respond_permission'; requestId: string; decision: boolean; reason?: string; projectPath?: string; sessionId: string }
+  | { type: 'answer_question'; requestId: string; answers: Record<string, string>; projectPath?: string; sessionId: string }
+  | { type: 'dismiss_question'; requestId: string; projectPath?: string; sessionId: string }
+  | { type: 'respond_plan_approval'; requestId: string; approved: boolean; feedback?: string; projectPath?: string; sessionId: string }
   | { type: 'subscribe_session'; projectPath: string; sessionId: string }
   | { type: 'unsubscribe_session' }
   | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number }

@@ -4,7 +4,7 @@ import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, type ClaudeAgentConfig } from './claude-agent'
 import { fetchModels } from './claude-models'
-import { AgentIpcChannels, type AgentEvent, type ChatMessage, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type ChatMessage, type CodexRunResult, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
@@ -16,6 +16,8 @@ import { getDb, getCachedResources } from '../database'
 import { sanitizeGitRef } from '../path-security'
 import { searchFiles, searchMentions, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
+import { applyClaudeEventToRuntime, buildClaudeUserMessage, createClaudeRuntime, extractClaudeTitle, hydrateClaudeRuntime, mergeClaudeRuntimes, syncClaudeRuntimeLocation, type ClaudeSessionRuntime, type PersistedClaudeSessionState } from './claude-session-runtime'
+import { applyCodexEventToRuntime, buildCodexAssistantMessage, buildCodexUserMessage, createCodexRuntime, extractCodexTitle, finalizeCodexAssistantMessage, hydrateCodexRuntime, mergeCodexRuntimes, removeCodexAssistantMessage, syncCodexRuntimeLocation, withCodexTurnMessages, type CodexSessionRuntime, type PersistedCodexSessionState } from './codex-session-runtime'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -47,18 +49,35 @@ interface RemoteAgentRef {
   interrupt(): Promise<void>
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string): void
   respondToQuestion(requestId: string, answers: Record<string, string>): void
+  dismissQuestion(requestId: string): void
+  respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
   dispose(): Promise<void>
 }
 
 export class AgentService {
   private agents = new Map<string, ClaudeAgent>()
   private bgAgents = new Map<string, { agent: ClaudeAgent; projectPath: string; gitRoot: string }>()
+  private claudeRuntimes = new Map<string, ClaudeSessionRuntime>()
+  private pendingClaudeRuntimes = new Map<string, ClaudeSessionRuntime>()
+  private notifiedClaudeSessions = new Set<string>()
+  private codexRuntimes = new Map<string, CodexSessionRuntime>()
+  private notifiedCodexSessions = new Set<string>()
   private mainWindow: BrowserWindow | null = null
   private pendingParkCounter = 0
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
   private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
   private codexGetAuthStatus?: (projectPath: string) => unknown
-  private codexRun?: (sessionId: string, projectPath: string, opts: { prompt: string; model?: string; reasoningEffort?: string; permissionPreset?: string; images?: unknown[] }) => Promise<unknown>
+  private codexRun?: (sessionId: string, projectPath: string, opts: {
+    prompt: string
+    model?: string
+    reasoningEffort?: string
+    permissionPreset?: string
+    collaborationMode?: string
+    threadId?: string
+    messageId?: string
+    images?: unknown[]
+    cwd?: string
+  }) => Promise<CodexRunResult>
   private remoteControlService?: RemoteControlService
   private remoteSession: { projectPath: string; agent: RemoteAgentRef; bufferForRenderer?: (event: AgentEvent) => void } | null = null
 
@@ -106,6 +125,369 @@ export class AgentService {
     return `Session ${sessionId} does not belong to project ${projectPath}`
   }
 
+  private getClaudeRuntimeCwd(projectPath: string, sessionId?: string | null): string | undefined {
+    if (sessionId) {
+      if (this.remoteSession?.projectPath === projectPath && this.remoteSession.agent.getSessionId() === sessionId && 'getCwd' in this.remoteSession.agent) {
+        return this.remoteSession.agent.getCwd()
+      }
+      const active = this.agents.get(projectPath)
+      if (active?.getSessionId() === sessionId) return active.getCwd()
+      const bg = this.bgAgents.get(sessionId)
+      if (bg?.projectPath === projectPath) return bg.agent.getCwd()
+    }
+
+    if (this.remoteSession?.projectPath === projectPath && 'getCwd' in this.remoteSession.agent) {
+      return this.remoteSession.agent.getCwd()
+    }
+    return this.agents.get(projectPath)?.getCwd()
+  }
+
+  private getClaudeRuntimeSnapshot(sessionId: string): PersistedClaudeSessionState | null {
+    const runtime = this.claudeRuntimes.get(sessionId)
+    if (!runtime) return null
+    return {
+      messages: runtime.messages,
+      totalCostUsd: runtime.totalCostUsd,
+      contextTokens: runtime.contextTokens,
+      isWorktree: !!runtime.worktreePath,
+      gitBranch: runtime.gitBranch,
+      worktreePath: runtime.worktreePath,
+      provider: 'claude',
+    }
+  }
+
+  private loadOrCreateClaudeRuntime(
+    projectPath: string,
+    sessionId: string,
+    options: {
+      cwd?: string
+      gitBranch?: string | null
+      worktreePath?: string | null
+    } = {},
+  ): ClaudeSessionRuntime {
+    const existing = this.claudeRuntimes.get(sessionId)
+    if (existing) {
+      const updated = syncClaudeRuntimeLocation(existing, projectPath, options.gitBranch, options.worktreePath, options.cwd)
+      this.claudeRuntimes.set(sessionId, updated)
+      return updated
+    }
+
+    const saved = loadSessionState(sessionId) as PersistedClaudeSessionState | null
+    const runtime = syncClaudeRuntimeLocation(
+      hydrateClaudeRuntime(projectPath, sessionId, saved, options.cwd),
+      projectPath,
+      options.gitBranch ?? saved?.gitBranch ?? null,
+      options.worktreePath ?? saved?.worktreePath ?? null,
+      options.cwd,
+    )
+    this.claudeRuntimes.set(sessionId, runtime)
+    return runtime
+  }
+
+  private getOrCreatePendingClaudeRuntime(
+    projectPath: string,
+    options: {
+      cwd?: string
+      gitBranch?: string | null
+      worktreePath?: string | null
+    } = {},
+  ): ClaudeSessionRuntime {
+    const existing = this.pendingClaudeRuntimes.get(projectPath)
+    if (existing) {
+      const updated = syncClaudeRuntimeLocation(existing, projectPath, options.gitBranch, options.worktreePath, options.cwd)
+      this.pendingClaudeRuntimes.set(projectPath, updated)
+      return updated
+    }
+
+    const runtime = syncClaudeRuntimeLocation(
+      createClaudeRuntime(projectPath, null),
+      projectPath,
+      options.gitBranch ?? null,
+      options.worktreePath ?? null,
+      options.cwd,
+    )
+    this.pendingClaudeRuntimes.set(projectPath, runtime)
+    return runtime
+  }
+
+  private persistClaudeRuntime(sessionId: string): void {
+    const runtime = this.claudeRuntimes.get(sessionId)
+    if (!runtime || runtime.messages.length === 0) return
+    const title = extractClaudeTitle(runtime.messages)
+    createSession(
+      runtime.projectPath,
+      sessionId,
+      title,
+      !!runtime.worktreePath,
+      runtime.gitBranch ?? undefined,
+      runtime.worktreePath ?? undefined,
+    )
+    if (!this.notifiedClaudeSessions.has(sessionId)) {
+      this.notifiedClaudeSessions.add(sessionId)
+      this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+    }
+    saveSessionState(sessionId, {
+      messages: runtime.messages,
+      totalCostUsd: runtime.totalCostUsd,
+      contextTokens: runtime.contextTokens,
+      title,
+      provider: 'claude',
+    })
+  }
+
+  private appendClaudeUserMessage(
+    projectPath: string,
+    request: SendMessageRequest,
+    providerId: 'local' | 'remote',
+    sessionId?: string,
+  ): ChatMessage {
+    const cwd = request.worktreePath ?? this.getClaudeRuntimeCwd(projectPath, sessionId)
+    const runtime = sessionId
+      ? this.loadOrCreateClaudeRuntime(projectPath, sessionId, {
+          cwd,
+          gitBranch: request.gitBranch ?? null,
+          worktreePath: request.worktreePath ?? null,
+        })
+      : this.getOrCreatePendingClaudeRuntime(projectPath, {
+          cwd,
+          gitBranch: request.gitBranch ?? null,
+          worktreePath: request.worktreePath ?? null,
+        })
+    const userMessage = buildClaudeUserMessage(request, providerId)
+    const updated = {
+      ...runtime,
+      messages: runtime.messages.some((message) => message.id === userMessage.id)
+        ? runtime.messages
+        : [...runtime.messages, userMessage],
+    }
+    if (updated.sessionId) {
+      this.claudeRuntimes.set(updated.sessionId, updated)
+      this.persistClaudeRuntime(updated.sessionId)
+    } else {
+      this.pendingClaudeRuntimes.set(projectPath, updated)
+    }
+    return userMessage
+  }
+
+  private recordClaudeEvent(event: AgentEvent): void {
+    const projectPath = event.projectPath
+    if (!projectPath) return
+
+    if (event.type === 'session_init' && event.session?.sessionId) {
+      const realSid = event.session.sessionId
+      const pending = this.pendingClaudeRuntimes.get(projectPath)
+      const runtime = pending
+        ? mergeClaudeRuntimes(
+            this.loadOrCreateClaudeRuntime(projectPath, realSid, { cwd: event.session.cwd }),
+            { ...pending, sessionId: realSid, session: event.session },
+          )
+        : this.loadOrCreateClaudeRuntime(projectPath, realSid, { cwd: event.session.cwd })
+      const updated = applyClaudeEventToRuntime(
+        syncClaudeRuntimeLocation(runtime, projectPath, runtime.gitBranch, runtime.worktreePath, event.session.cwd),
+        event,
+      )
+      this.pendingClaudeRuntimes.delete(projectPath)
+      this.claudeRuntimes.set(realSid, updated)
+      this.persistClaudeRuntime(realSid)
+      return
+    }
+
+    if (event.sessionId) {
+      const runtime = applyClaudeEventToRuntime(
+        this.loadOrCreateClaudeRuntime(projectPath, event.sessionId, {
+          cwd: this.getClaudeRuntimeCwd(projectPath, event.sessionId),
+        }),
+        event,
+      )
+      this.claudeRuntimes.set(event.sessionId, runtime)
+      if (event.type === 'message_complete' || event.type === 'message_interrupted' || event.type === 'message_error') {
+        this.persistClaudeRuntime(event.sessionId)
+      }
+      return
+    }
+
+    if (
+      event.type === 'message_start'
+      || event.type === 'content_delta'
+      || event.type === 'message_complete'
+      || event.type === 'message_interrupted'
+      || event.type === 'message_error'
+      || event.type === 'checkpoint_captured'
+    ) {
+      const runtime = applyClaudeEventToRuntime(
+        this.getOrCreatePendingClaudeRuntime(projectPath, { cwd: this.getClaudeRuntimeCwd(projectPath) }),
+        event,
+      )
+      this.pendingClaudeRuntimes.set(projectPath, runtime)
+    }
+  }
+
+  private getCodexRuntimeSnapshot(sessionId: string): PersistedCodexSessionState | null {
+    const runtime = this.codexRuntimes.get(sessionId)
+    if (!runtime) return null
+    return {
+      messages: runtime.messages,
+      totalCostUsd: runtime.totalCostUsd,
+      contextTokens: runtime.contextTokens,
+      isWorktree: !!runtime.worktreePath,
+      gitBranch: runtime.gitBranch,
+      worktreePath: runtime.worktreePath,
+      provider: 'codex',
+    }
+  }
+
+  private loadOrCreateCodexRuntime(
+    projectPath: string,
+    sessionId: string,
+    options: {
+      cwd?: string
+      gitBranch?: string | null
+      worktreePath?: string | null
+    } = {},
+  ): CodexSessionRuntime {
+    const existing = this.codexRuntimes.get(sessionId)
+    if (existing) {
+      const updated = syncCodexRuntimeLocation(existing, projectPath, options.gitBranch, options.worktreePath, options.cwd)
+      this.codexRuntimes.set(sessionId, updated)
+      return updated
+    }
+
+    const saved = loadSessionState(sessionId) as PersistedCodexSessionState | null
+    const runtime = syncCodexRuntimeLocation(
+      hydrateCodexRuntime(projectPath, sessionId, saved, options.cwd),
+      projectPath,
+      options.gitBranch ?? saved?.gitBranch ?? null,
+      options.worktreePath ?? saved?.worktreePath ?? null,
+      options.cwd,
+    )
+    this.codexRuntimes.set(sessionId, runtime)
+    return runtime
+  }
+
+  private persistCodexRuntime(sessionId: string): void {
+    const runtime = this.codexRuntimes.get(sessionId)
+    if (!runtime || runtime.messages.length === 0) return
+    const title = extractCodexTitle(runtime.messages)
+    createSession(
+      runtime.projectPath,
+      sessionId,
+      title,
+      !!runtime.worktreePath,
+      runtime.gitBranch ?? undefined,
+      runtime.worktreePath ?? undefined,
+    )
+    if (!this.notifiedCodexSessions.has(sessionId)) {
+      this.notifiedCodexSessions.add(sessionId)
+      this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+    }
+    saveSessionState(sessionId, {
+      messages: runtime.messages,
+      totalCostUsd: runtime.totalCostUsd,
+      contextTokens: runtime.contextTokens,
+      title,
+      provider: 'codex',
+    })
+  }
+
+  beginCodexTurn(
+    projectPath: string,
+    sessionId: string,
+    options: {
+      userMessageId: string
+      userText: string
+      assistantMessageId: string
+      providerId: 'local' | 'remote'
+      images?: SendMessageRequest['images']
+      gitBranch?: string | null
+      worktreePath?: string | null
+      cwd?: string
+    },
+  ): { userMessage: ChatMessage; assistantMessage: ChatMessage } {
+    const runtime = this.loadOrCreateCodexRuntime(projectPath, sessionId, {
+      cwd: options.cwd ?? options.worktreePath ?? undefined,
+      gitBranch: options.gitBranch ?? null,
+      worktreePath: options.worktreePath ?? null,
+    })
+    const userMessage = buildCodexUserMessage({
+      content: options.userText,
+      images: options.images,
+      clientMessageId: options.userMessageId,
+    }, options.providerId)
+    const assistantMessage = buildCodexAssistantMessage(options.assistantMessageId)
+    const updated = withCodexTurnMessages(runtime, userMessage, assistantMessage)
+    this.codexRuntimes.set(sessionId, updated)
+    this.persistCodexRuntime(sessionId)
+    return { userMessage, assistantMessage }
+  }
+
+  rollbackCodexAssistantMessage(sessionId: string, messageId: string): void {
+    const runtime = this.codexRuntimes.get(sessionId)
+    if (!runtime) return
+    const updated = removeCodexAssistantMessage(runtime, messageId)
+    this.codexRuntimes.set(sessionId, updated)
+    this.persistCodexRuntime(sessionId)
+  }
+
+  recordCodexEvent(event: AgentEvent): void {
+    const projectPath = event.projectPath
+    if (!projectPath || !event.sessionId) return
+    if (
+      event.type !== 'message_usage'
+      && event.type !== 'codex_thread_started'
+      && event.type !== 'codex_item_delta'
+      && event.type !== 'checkpoint_captured'
+    ) {
+      return
+    }
+    const runtime = applyCodexEventToRuntime(
+      this.loadOrCreateCodexRuntime(projectPath, event.sessionId),
+      event,
+    )
+    this.codexRuntimes.set(event.sessionId, runtime)
+  }
+
+  completeCodexTurn(
+    sessionId: string,
+    options: {
+      messageId: string
+      result: CodexRunResult
+      durationMs: number
+      fallbackText: string
+    },
+  ): void {
+    const runtime = this.codexRuntimes.get(sessionId)
+    if (!runtime) return
+    const text = options.result.finalResponse?.trim() || options.fallbackText
+    const updated = finalizeCodexAssistantMessage(runtime, {
+      messageId: options.messageId,
+      status: 'complete',
+      text,
+      result: options.result,
+      durationMs: options.durationMs,
+    })
+    this.codexRuntimes.set(sessionId, updated)
+    this.persistCodexRuntime(sessionId)
+  }
+
+  failCodexTurn(
+    sessionId: string,
+    options: {
+      messageId: string
+      status: 'interrupted' | 'error'
+      text: string
+    },
+  ): void {
+    const runtime = this.codexRuntimes.get(sessionId)
+    if (!runtime) return
+    const updated = finalizeCodexAssistantMessage(runtime, {
+      messageId: options.messageId,
+      status: options.status,
+      text: options.text,
+    })
+    this.codexRuntimes.set(sessionId, updated)
+    this.persistCodexRuntime(sessionId)
+  }
+
   addEventSubscriber(cb: (event: AgentEvent) => void): () => void {
     this.eventSubscribers.push(cb)
     return () => {
@@ -122,18 +504,12 @@ export class AgentService {
 
         const emitUserMessage = (remoteAgent?: RemoteAgentRef): void => {
           const sessionId = remoteAgent?.getSessionId() || this.agents.get(projectPath)?.getSessionId() || undefined
-          const userMessage: ChatMessage = {
-            id: `user_${Date.now()}`,
-            role: 'user',
-            status: 'complete',
-            content: [
-              ...(command.images ?? []).map((img) => ({ type: 'image' as const, name: img.name })),
-              { type: 'text' as const, text: command.content },
-            ],
-            attachments: command.images?.length ? command.images : undefined,
-            createdAt: new Date().toISOString(),
-            providerId: 'remote',
-          }
+          const userMessage = this.appendClaudeUserMessage(projectPath, {
+            content: command.content,
+            images: command.images,
+            clientMessageId: `user_${Date.now()}`,
+            gitBranch: command.gitBranch,
+          }, 'remote', sessionId)
           trace('remote.debug', 'emitUserMessage', { projectPath, sessionId, messageId: userMessage.id, isRemote: !!remoteAgent })
           if (remoteAgent) {
             this.remoteSession?.bufferForRenderer?.({ type: 'message_start', message: userMessage, projectPath, sessionId })
@@ -144,13 +520,17 @@ export class AgentService {
 
         if (command.provider === 'codex') {
           const sessionId = command.sessionId ?? `codex-remote-${Date.now()}`
+          const userMessageId = `user_${Date.now()}`
+          const assistantMessageId = `remote-${Date.now()}`
           const codexAgent: RemoteAgentRef = {
             getSessionId: () => sessionId,
             isReady: () => true,
-            sendMessage: async (req) => { await this.codexRun?.(sessionId, projectPath, { prompt: req.content, model: req.model, reasoningEffort: req.effort as string | undefined, permissionPreset: command.permissionPreset, images: req.images }) },
+            sendMessage: async () => {},
             interrupt: async () => { /* codex interrupt handled externally */ },
             respondToPermission: () => {},
             respondToQuestion: () => {},
+            dismissQuestion: () => {},
+            respondToPlanApproval: () => {},
             dispose: async () => {},
           }
           if (this.remoteSession) await this.remoteSession.agent.dispose()
@@ -164,8 +544,43 @@ export class AgentService {
               }
             })
           }
-          emitUserMessage(codexAgent)
-          await codexAgent.sendMessage({ content: command.content, model: command.model, effort: command.effort as never, images: command.images })
+          const { userMessage, assistantMessage } = this.beginCodexTurn(projectPath, sessionId, {
+            userMessageId,
+            userText: command.content,
+            assistantMessageId,
+            providerId: 'remote',
+            images: command.images,
+            gitBranch: command.gitBranch ?? command.worktreeBranch ?? null,
+          })
+          this.remoteSession?.bufferForRenderer?.({ type: 'message_start', message: userMessage, projectPath, sessionId })
+          this.remoteSession?.bufferForRenderer?.({ type: 'message_start', message: assistantMessage, projectPath, sessionId })
+          const runStart = Date.now()
+          try {
+            const result = await this.codexRun?.(sessionId, projectPath, {
+              prompt: command.content,
+              model: command.model,
+              reasoningEffort: command.effort as string | undefined,
+              permissionPreset: command.permissionPreset,
+              messageId: assistantMessageId,
+              images: command.images,
+            })
+            if (result) {
+              this.completeCodexTurn(sessionId, {
+                messageId: assistantMessageId,
+                result,
+                durationMs: Date.now() - runStart,
+                fallbackText: 'Codex completed without returning text.',
+              })
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            this.failCodexTurn(sessionId, {
+              messageId: assistantMessageId,
+              status: /interrupt|abort/i.test(message) ? 'interrupted' : 'error',
+              text: /interrupt|abort/i.test(message) ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
+            })
+            throw error
+          }
         } else {
           let agent: RemoteAgentRef | ClaudeAgent | undefined
           const targetSid = command.sessionId
@@ -273,9 +688,58 @@ export class AgentService {
         }
         const agent = this.findAgentBySessionId(projectPath, command.sessionId)
         if (agent) {
-          agent.respondToPermission(command.requestId, command.decision)
+          agent.respondToPermission(command.requestId, command.decision, undefined, command.reason)
+          this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'permission', requestId: command.requestId, projectPath, sessionId: command.sessionId })
         } else {
           log.warn('[AgentService] respond_permission: no agent for session %s', command.sessionId)
+        }
+        break
+      }
+      case 'answer_question': {
+        const projectPath = command.projectPath || this.agents.keys().next().value
+        if (!projectPath) break
+        if (!this.canAccessSession(projectPath, command.sessionId)) {
+          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
+          break
+        }
+        const agent = this.findAgentBySessionId(projectPath, command.sessionId)
+        if (agent) {
+          agent.respondToQuestion(command.requestId, command.answers)
+          this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'question', requestId: command.requestId, projectPath, sessionId: command.sessionId })
+        } else {
+          log.warn('[AgentService] answer_question: no agent for session %s', command.sessionId)
+        }
+        break
+      }
+      case 'dismiss_question': {
+        const projectPath = command.projectPath || this.agents.keys().next().value
+        if (!projectPath) break
+        if (!this.canAccessSession(projectPath, command.sessionId)) {
+          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
+          break
+        }
+        const agent = this.findAgentBySessionId(projectPath, command.sessionId)
+        if (agent) {
+          agent.dismissQuestion(command.requestId)
+          this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'question', requestId: command.requestId, projectPath, sessionId: command.sessionId })
+        } else {
+          log.warn('[AgentService] dismiss_question: no agent for session %s', command.sessionId)
+        }
+        break
+      }
+      case 'respond_plan_approval': {
+        const projectPath = command.projectPath || this.agents.keys().next().value
+        if (!projectPath) break
+        if (!this.canAccessSession(projectPath, command.sessionId)) {
+          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
+          break
+        }
+        const agent = this.findAgentBySessionId(projectPath, command.sessionId)
+        if (agent) {
+          agent.respondToPlanApproval(command.requestId, command.approved, command.feedback)
+          this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'plan_approval', requestId: command.requestId, projectPath, sessionId: command.sessionId })
+        } else {
+          log.warn('[AgentService] respond_plan_approval: no agent for session %s', command.sessionId)
         }
         break
       }
@@ -605,6 +1069,7 @@ export class AgentService {
   private createEventEmitter(projectPath: string): (event: AgentEvent) => void {
     return (event: AgentEvent) => {
       const eventWithPath = { ...event, projectPath }
+      this.recordClaudeEvent(eventWithPath)
       trace('remote.debug', 'desktopEventEmitter', { type: event.type, projectPath, sessionId: event.sessionId })
       this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.EVENT, eventWithPath)
       this.eventSubscribers.forEach((cb) => cb(eventWithPath))
@@ -659,6 +1124,7 @@ export class AgentService {
     return {
       emit: (event: AgentEvent) => {
         const eventWithPath = { ...event, projectPath }
+        this.recordClaudeEvent(eventWithPath)
         trace('remote.debug', 'remoteEventEmitter', { type: event.type, projectPath, sessionId: event.sessionId, subscriberCount: this.eventSubscribers.length })
         this.eventSubscribers.forEach((cb) => cb(eventWithPath))
         addToBuffer(eventWithPath)
@@ -780,6 +1246,7 @@ export class AgentService {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       const agent = this.getAgent(projectPath)
       if (!agent.isReady()) throw new Error('Agent not initialized')
+      this.appendClaudeUserMessage(projectPath, request, 'local', agent.getSessionId() || undefined)
       await agent.sendMessage(request)
     })
 
@@ -796,6 +1263,7 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'permission_responded', { requestId, allow, reason })
       this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
     })
 
@@ -811,16 +1279,19 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'question_answered', { requestId, answers })
       this.getAgent(projectPath).respondToQuestion(requestId, answers, annotations)
     })
 
     ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'question_dismissed', { requestId })
       this.getAgent(projectPath).dismissQuestion(requestId)
     })
 
     ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback })
       this.getAgent(projectPath).respondToPlanApproval(requestId, approved, feedback)
     })
 
@@ -1185,10 +1656,14 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_STATE, (_event, claudeSessionId: string) => {
-      return loadSessionState(claudeSessionId)
+      return this.getClaudeRuntimeSnapshot(claudeSessionId) ?? this.getCodexRuntimeSnapshot(claudeSessionId) ?? loadSessionState(claudeSessionId)
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, (_event, claudeSessionId: string) => {
+      this.claudeRuntimes.delete(claudeSessionId)
+      this.notifiedClaudeSessions.delete(claudeSessionId)
+      this.codexRuntimes.delete(claudeSessionId)
+      this.notifiedCodexSessions.delete(claudeSessionId)
       dbDeleteSession(claudeSessionId)
       this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
     })

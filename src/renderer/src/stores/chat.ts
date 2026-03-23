@@ -680,6 +680,19 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     case 'permission_mode_change':
       return { permissionMode: event.mode }
 
+    case 'interaction_resolved':
+      switch (event.interactionType) {
+        case 'permission':
+          return { pendingPermissions: session.pendingPermissions.filter((p) => p.requestId !== event.requestId) }
+        case 'question':
+          if (session.pendingQuestion?.requestId === event.requestId) return { pendingQuestion: null }
+          return {}
+        case 'plan_approval':
+          if (session.pendingPlanApproval?.requestId === event.requestId) return { pendingPlanApproval: null }
+          return {}
+      }
+      return {}
+
     case 'session_init':
       console.log('[applyEvent] session_init', { sessionId: event.session?.sessionId, outputStyle: event.session?.outputStyle, availableOutputStyles: event.session?.availableOutputStyles })
       return { session: event.session, sessionProvider: session.sessionProvider ?? DEFAULT_PROVIDER }
@@ -1067,51 +1080,11 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   if (!sessionId) return
   const session = project._sessions[sessionId]
   if (!session || session.messages.length === 0) return
-
-  const branch = _getWorktreeBranch(projectPath, session)
-  const wtPath = session._worktreePath ?? undefined
-  const title = _extractTitle(session.messages)
-  window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath, title)
-    .then(() => window.app.saveSessionState(sessionId, {
-      messages: session.messages,
-      totalCostUsd: session.totalCostUsd,
-      contextTokens: session.contextTokens,
-      title,
-      provider: session.sessionProvider ?? undefined,
-    }))
-    .catch((err) => console.warn('[saveSessionState] failed:', err))
 }
 
 function _savePerSessionSnapshot(projectPath: string, sessionId: string, session: PerSessionState): Promise<void> {
-  if (!sessionId || sessionId === DRAFT_SESSION_ID || session.messages.length === 0) return Promise.resolve()
-
-  const persistSnapshot = (snapshot: PerSessionState): Promise<void> => {
-    const branch = _getWorktreeBranch(projectPath, snapshot)
-    const wtPath = snapshot._worktreePath ?? undefined
-    const title = _extractTitle(snapshot.messages)
-    return window.app.createSession(projectPath, sessionId, !!branch || undefined, branch, wtPath, title)
-      .then(() => window.app.saveSessionState(sessionId, {
-        messages: snapshot.messages,
-        totalCostUsd: snapshot.totalCostUsd,
-        contextTokens: snapshot.contextTokens,
-        title,
-        provider: snapshot.sessionProvider ?? undefined,
-      }))
-  }
-
-  if (session._historyHydrated) {
-    return persistSnapshot(session)
-      .then(() => {})
-      .catch((err) => console.warn('[saveSessionSnapshot] failed:', err))
-  }
-
-  return _prepareSessionSnapshot(sessionId, session)
-    .then((snapshot) => {
-      if (!snapshot) return
-      return persistSnapshot(snapshot)
-    })
-    .then(() => {})
-    .catch((err) => console.warn('[saveSessionSnapshot] failed:', err))
+  if (!projectPath || !sessionId || !session) return Promise.resolve()
+  return Promise.resolve()
 }
 
 function _buildQuestionAnswerItem(
@@ -1544,7 +1517,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             ...updatedProject.sessions.filter((e) => e.sessionId !== realSid),
           ]
 
-          _savePerSessionSnapshot(projectPath, realSid, updatedSession)
+          if (updatedSession.sessionProvider === 'codex') {
+            _savePerSessionSnapshot(projectPath, realSid, updatedSession)
+          }
         }
       }
 
@@ -1582,9 +1557,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const effectiveSid = targetSid === DRAFT_SESSION_ID ? null : targetSid
       if (effectiveSid) {
         if (
+          updatedSession.sessionProvider === 'codex'
+          && (
           (event.type === 'session_init' && event.session) ||
           (event.type === 'content_delta' && event.delta.type === 'tool_result') ||
           event.type === 'message_complete' || event.type === 'message_interrupted' || event.type === 'message_error'
+          )
         ) {
           const snapshot = updatedSession
           setTimeout(() => _savePerSessionSnapshot(projectPath, effectiveSid, snapshot), 0)
@@ -1615,24 +1593,30 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Non-active session went idle → save, mark unseen, and evict from _sessions after save completes
       if (event.type === 'status_change' && event.status === 'idle' && targetSid !== updatedProject._activeSessionId) {
         if (!_isLiveSession(updatedSession)) {
-          if (effectiveSid) {
+          const isRemoteSubscribed = s.remoteSession?.projectPath === projectPath && s.remoteSession?.sessionId === targetSid
+          if (!isRemoteSubscribed && effectiveSid) {
             updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
-            const snapshot = updatedSession
-            const evictSid = targetSid
-            const evictProjectPath = projectPath
-            setTimeout(() => {
-              _savePerSessionSnapshot(evictProjectPath, effectiveSid, snapshot).then(() => {
-                set((s) => {
-                  const proj = s.projectSessions[evictProjectPath]
-                  if (!proj?._sessions[evictSid]) return {}
-                  if (proj._activeSessionId === evictSid) return {}
-                  if (_isLiveSession(proj._sessions[evictSid])) return {}
-                  const { [evictSid]: _, ...rest } = proj._sessions
-                  return { projectSessions: { ...s.projectSessions, [evictProjectPath]: { ...proj, _sessions: rest } } }
+            if (updatedSession.sessionProvider === 'codex') {
+              const snapshot = updatedSession
+              const evictSid = targetSid
+              const evictProjectPath = projectPath
+              setTimeout(() => {
+                _savePerSessionSnapshot(evictProjectPath, effectiveSid, snapshot).then(() => {
+                  set((s) => {
+                    const proj = s.projectSessions[evictProjectPath]
+                    if (!proj?._sessions[evictSid]) return {}
+                    if (proj._activeSessionId === evictSid) return {}
+                    if (_isLiveSession(proj._sessions[evictSid])) return {}
+                    const { [evictSid]: _, ...rest } = proj._sessions
+                    return { projectSessions: { ...s.projectSessions, [evictProjectPath]: { ...proj, _sessions: rest } } }
+                  })
                 })
-              })
-            }, 0)
-          } else {
+              }, 0)
+            } else {
+              const { [targetSid]: _, ...restSessions } = updatedProject._sessions
+              updatedProject._sessions = restSessions
+            }
+          } else if (!isRemoteSubscribed) {
             const { [targetSid]: _, ...restSessions } = updatedProject._sessions
             updatedProject._sessions = restSessions
           }
@@ -1890,8 +1874,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       ...(finalContent ? [{ type: 'text' as const, text: finalContent }] : []),
     ]
 
+    const userMessageId = `user_${Date.now()}`
     const userMessage: ChatMessage = {
-      id: `user_${Date.now()}`,
+      id: userMessageId,
       role: 'user',
       status: 'complete',
       content: userContent,
@@ -1970,7 +1955,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           streamingTokens: { input: 0, output: 0 },
         }))
         try {
-          await window.app.codexSteer(codexSessionId!, resolvedCodexCommand.prompt, steerAssistantId)
+          await window.app.codexSteer(
+            codexSessionId!,
+            resolvedCodexCommand.prompt,
+            steerAssistantId,
+            userMessageId,
+            finalContent,
+            session._worktreeBaseBranch ?? undefined,
+            session._worktreePath ?? undefined,
+          )
         } catch (error) {
           updateCodexSession((sess) => ({
             status: 'streaming',
@@ -2014,6 +2007,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             codexThreadId,
             assistantId,
             codexCwd,
+            userMessageId,
+            finalContent,
+            session._worktreeBaseBranch ?? undefined,
+            session._worktreePath ?? undefined,
           )
         } else if (resolvedCodexCommand.kind === 'compact') {
           result = await window.app.codexCompact(
@@ -2024,6 +2021,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             codexThreadId,
             assistantId,
             codexCwd,
+            userMessageId,
+            finalContent,
+            session._worktreeBaseBranch ?? undefined,
+            session._worktreePath ?? undefined,
           )
         } else {
           result = await window.app.codexRun(
@@ -2038,6 +2039,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             assistantId,
             attachments.length > 0 ? attachments : undefined,
             codexCwd,
+            userMessageId,
+            finalContent,
+            session._worktreeBaseBranch ?? undefined,
+            session._worktreePath ?? undefined,
           )
         }
 
@@ -2115,7 +2120,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             }
           })
         }
-        void _savePerSessionSnapshot(codexProjectPath, codexSid, finalCodexSession)
       }
       return
     }
@@ -2133,6 +2137,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         effort: selectedEffort,
         images: attachments.length > 0 ? attachments : undefined,
         additionalDirs: mergedDirs.length > 0 ? mergedDirs : undefined,
+        clientMessageId: userMessageId,
+        gitBranch: session._worktreeBaseBranch ?? undefined,
+        worktreePath: session._worktreePath ?? undefined,
       })
     } catch (err) {
       set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))

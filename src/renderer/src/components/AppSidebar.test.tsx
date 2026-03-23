@@ -20,6 +20,8 @@ const appState = {
 
 const chatState = {
   resetSession: vi.fn(),
+  fetchSessions: vi.fn(),
+  removeSessionFromMemory: vi.fn(),
   switchSession: vi.fn(async () => {}),
   projectSessions: {} as Record<string, unknown>,
 }
@@ -27,6 +29,7 @@ const chatState = {
 const mockWindowApp = {
   listPinnedSessions: vi.fn(async () => []),
   listSessionsForFolder: vi.fn(async (folderPath: string) => sessionsByFolder[folderPath] ?? []),
+  listSessionsForFolderPage: vi.fn(async (folderPath: string, limit: number, offset: number) => (sessionsByFolder[folderPath] ?? []).slice(offset, offset + limit)),
   onSessionChanged: vi.fn(() => () => {}),
   hideSession: vi.fn(async (sessionId: string, hidden: boolean) => {
     sessionsByFolder = Object.fromEntries(
@@ -54,7 +57,10 @@ vi.mock('@/stores/app', () => ({
 }))
 
 vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
+  useChatStore: Object.assign(
+    (selector: (state: typeof chatState) => unknown) => selector(chatState),
+    { getState: () => chatState },
+  ),
 }))
 
 vi.mock('@/hooks/useFullscreen', () => ({

@@ -11,8 +11,8 @@ interface AgentAPI {
   answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>
   dismissQuestion(projectPath: string, requestId: string): Promise<void>
   respondToPlanApproval(projectPath: string, requestId: string, approved: boolean, feedback?: string): Promise<void>
-  resetSession(projectPath: string): Promise<void>
-  parkSession(projectPath: string): Promise<void>
+  resetSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
+  parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   activateSession(projectPath: string, sessionId: string): Promise<void>
   rewindFiles(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
   previewRewind(projectPath: string, userMessageId: string): Promise<RewindFilesResult>

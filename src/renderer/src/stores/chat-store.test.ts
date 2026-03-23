@@ -293,6 +293,103 @@ describe('concurrent streaming sessions', () => {
     expect(after._sessions['old']).toBeDefined()
   })
 
+  it('creates a real session entry for a saved session_init instead of falling back to DRAFT', async () => {
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [makeMessage('old-msg', 'assistant')],
+      totalCostUsd: 1,
+      contextTokens: 2,
+      isWorktree: false,
+      gitBranch: null,
+      worktreePath: null,
+      provider: 'claude',
+    })
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...createDefaultProjectState(),
+          sessions: [
+            {
+              sessionId: 'old-session',
+              title: 'Old Session',
+              lastActiveAt: '2026-03-23T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
+        },
+      },
+      activeProject: '/test',
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'session_init',
+      sessionId: 'old-session',
+      session: { sessionId: 'old-session' } as never,
+    }))
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._activeSessionId).toBeNull()
+    expect(after._sessions[DRAFT_SESSION_ID]).toBeUndefined()
+    expect(after._sessions['old-session']).toBeDefined()
+    expect(after._sessions['old-session'].messages.map((message) => message.id)).toEqual(['old-msg'])
+  })
+
+  it('routes follow-up events for an unloaded saved session to its real session id', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          sessions: [
+            {
+              sessionId: 'old-session',
+              title: 'Old Session',
+              lastActiveAt: '2026-03-23T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
+          _sessions: {
+            [DRAFT_SESSION_ID]: {
+              ...proj._sessions[DRAFT_SESSION_ID],
+              messages: [{
+                id: 'draft-user',
+                role: 'user' as const,
+                content: [{ type: 'text', text: 'new draft' }],
+                status: 'complete' as const,
+                createdAt: '',
+                providerId: 'local',
+              }],
+              awaitingAssistantReply: true,
+            },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'status_change',
+      sessionId: 'old-session',
+      status: 'streaming',
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      sessionId: 'old-session',
+      message: makeMessage('old-follow-up', 'assistant') as never,
+    }))
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions[DRAFT_SESSION_ID].messages.map((message) => message.id)).toEqual(['draft-user'])
+    expect(after._sessions[DRAFT_SESSION_ID].awaitingAssistantReply).toBe(true)
+    expect(after._sessions['old-session']).toBeDefined()
+    expect(after._sessions['old-session'].status).toBe('streaming')
+    expect(after._sessions['old-session'].messages.map((message) => message.id)).toContain('old-follow-up')
+  })
+
   it('hydrates subscribed remote sessions and routes follow-up events to them', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']

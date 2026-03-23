@@ -1,0 +1,79 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const dbMock = vi.hoisted(() => {
+  const exec = vi.fn()
+  const pragma = vi.fn()
+  const prepare = vi.fn((sql: string) => {
+    if (sql === 'PRAGMA table_info(sessions)') {
+      return {
+        all: () => [
+          { name: 'id' },
+          { name: 'project_id' },
+          { name: 'claude_session_id' },
+          { name: 'title' },
+          { name: 'created_at' },
+          { name: 'total_cost_usd' },
+          { name: 'context_tokens' },
+          { name: 'provider' },
+        ],
+      }
+    }
+    if (sql === 'PRAGMA table_info(chat_messages)') {
+      return {
+        all: () => [
+          { name: 'id' },
+          { name: 'claude_session_id' },
+          { name: 'sort_order' },
+          { name: 'role' },
+          { name: 'status' },
+          { name: 'content_json' },
+          { name: 'created_at' },
+          { name: 'provider_id' },
+          { name: 'metadata_json' },
+        ],
+      }
+    }
+    if (sql === 'PRAGMA table_info(api_providers)') {
+      return { all: () => [] }
+    }
+    if (sql === 'PRAGMA table_info(global_resource_cache)') {
+      return { all: () => [] }
+    }
+    if (sql === 'SELECT * FROM api_providers WHERE agent_configs = \'{}\'') {
+      return { all: () => [] }
+    }
+    return { all: () => [], get: () => undefined, run: vi.fn() }
+  })
+  return { exec, pragma, prepare }
+})
+
+const DatabaseCtor = vi.hoisted(() => vi.fn(function MockDatabase() {
+  return dbMock
+}))
+
+vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
+vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
+vi.mock('better-sqlite3', () => ({ default: DatabaseCtor }))
+
+describe('database migration', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    DatabaseCtor.mockClear()
+    dbMock.exec.mockClear()
+    dbMock.pragma.mockClear()
+    dbMock.prepare.mockClear()
+  })
+
+  it('adds last_user_message_at before creating its index on legacy databases', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    const alterIndex = execSql.findIndex((sql) => sql.includes('ALTER TABLE sessions ADD COLUMN last_user_message_at TEXT'))
+    const createIndex = execSql.findIndex((sql) => sql.includes('CREATE INDEX IF NOT EXISTS idx_sessions_project_last_user ON sessions(project_id, last_user_message_at DESC)'))
+
+    expect(alterIndex).toBeGreaterThan(-1)
+    expect(createIndex).toBeGreaterThan(-1)
+    expect(createIndex).toBeGreaterThan(alterIndex)
+  })
+})

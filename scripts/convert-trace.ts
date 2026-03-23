@@ -244,6 +244,10 @@ function splitTextIntoBlocks(text: string): Array<{ type: string; text?: string;
       tableLines.push(line)
       continue
     }
+    if (inTable && line.trimEnd().endsWith('|') && line.includes('|')) {
+      tableLines[tableLines.length - 1] += line
+      continue
+    }
     if (inTable) flushTable()
     current.push(line)
   }

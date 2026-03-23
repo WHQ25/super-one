@@ -15,7 +15,7 @@ vi.mock('./recent-folders', () => ({
 
 import { deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, saveSessionState } from './db-sessions'
 
-describe('db-sessions provider inference query + mapping', () => {
+describe('db-sessions session query + mapping', () => {
   beforeEach(() => {
     getDbMock.mockReset()
     getProjectIdMock.mockReset()
@@ -58,8 +58,8 @@ describe('db-sessions provider inference query + mapping', () => {
     ]
     const allMock = vi.fn().mockReturnValue(rows)
     const prepareMock = vi.fn((sql: string) => {
-      expect(sql).toContain("codex_local_%")
-      expect(sql).toContain("m2.provider_id = 'codex'")
+      expect(sql).toContain('last_user_message_at')
+      expect(sql).not.toContain("m2.provider_id = 'codex'")
       return { all: allMock }
     })
     getDbMock.mockReturnValue({ prepare: prepareMock })
@@ -99,8 +99,8 @@ describe('db-sessions provider inference query + mapping', () => {
     ]
     const allMock = vi.fn().mockReturnValue(rows)
     const prepareMock = vi.fn((sql: string) => {
-      expect(sql).toContain("codex_local_%")
-      expect(sql).toContain("m2.provider_id = 'codex'")
+      expect(sql).toContain('last_user_message_at')
+      expect(sql).not.toContain("m2.provider_id = 'codex'")
       return { all: allMock }
     })
     getDbMock.mockReturnValue({ prepare: prepareMock })
@@ -196,5 +196,25 @@ describe('saveSessionState', () => {
     expect(upsertCalls[1][4]).toBe('interrupted')
     expect(upsertCalls[2][3]).toBe('user')
     expect(upsertCalls[2][4]).toBe('complete')
+  })
+
+  it('stores latest user message timestamp on session update', () => {
+    const runMock = vi.fn()
+    const prepareMock = vi.fn().mockReturnValue({ run: runMock })
+    const transactionMock = vi.fn((fn: () => void) => fn)
+    getDbMock.mockReturnValue({ prepare: prepareMock, transaction: transactionMock })
+
+    saveSessionState('session-1', {
+      messages: [
+        { id: 'msg-1', role: 'user', status: 'complete', content: [], createdAt: '2026-01-01T00:00:00.000Z', providerId: 'claude' },
+        { id: 'msg-2', role: 'assistant', status: 'complete', content: [], createdAt: '2026-01-01T00:01:00.000Z', providerId: 'claude' },
+        { id: 'msg-3', role: 'user', status: 'complete', content: [], createdAt: '2026-01-01T00:02:00.000Z', providerId: 'claude' },
+      ] as never[],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      provider: 'claude',
+    })
+
+    expect(runMock).toHaveBeenLastCalledWith(0, 0, 'claude', '2026-01-01T00:02:00.000Z', 'session-1')
   })
 })

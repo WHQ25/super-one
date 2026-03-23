@@ -71,7 +71,6 @@ export function FileTree() {
   const fileRoot = wtActivePath ?? currentFolder
   const loading = useFileTreeStore((s) => s.loading)
   const visibleList = useFileTreeStore((s) => s._visibleList)
-  const visibleVersion = useFileTreeStore((s) => s._visibleVersion)
   const fetchTree = useFileTreeStore((s) => s.fetchTree)
   const renamingPath = useFileTreeStore((s) => s.renamingPath)
   const toggleDir = useFileTreeStore((s) => s.toggleDir)
@@ -98,10 +97,6 @@ export function FileTree() {
     overscan: 10,
     getItemKey: (index) => visibleList[index]?.path ?? index,
   })
-
-  useEffect(() => {
-    virtualizer.measure()
-  }, [visibleVersion, virtualizer])
 
   useEffect(() => {
     window.app.trace?.('agent.store', 'FileTree:fetchTree', { currentFolder, wtActivePath, fileRoot })

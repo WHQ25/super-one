@@ -86,6 +86,11 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
       continue
     }
 
+    if (inTable && line.trimEnd().endsWith('|') && line.includes('|')) {
+      tableLines[tableLines.length - 1] += line
+      continue
+    }
+
     if (inTable) flushTable()
     current.push(line)
   }

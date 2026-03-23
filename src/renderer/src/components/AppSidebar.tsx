@@ -1,7 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
-import { toast } from 'sonner'
-import { Plus, Settings, PanelLeftDashed, Folder, FolderOpen, FolderClosed, FolderX, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History, EyeOff } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { Plus, Settings, PanelLeftDashed, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, GitFork, Pin, Copy, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -13,13 +11,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-} from '@/components/ui/context-menu'
 import {
   Dialog,
   DialogContent,
@@ -34,45 +25,14 @@ import { useShallow } from 'zustand/react/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
 
 import { cn } from '@/lib/utils'
-import { homePath } from '@/lib/path-utils'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FileTree } from '@/components/sidebar/FileTree'
-import type { SessionHistoryEntry, PinnedSessionEntry, PermissionRequest, AskUserQuestionRequest, PlanApprovalRequest } from '../../../shared/agent-types'
+import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
+import type { RecentFolder, SessionHistoryEntry, PinnedSessionEntry } from '../../../shared/agent-types'
 import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from './session-delete-helpers'
 
 type SortMode = 'recent' | 'added'
-
-/** Extract a short pending-reason string from the pending request objects. */
-function getPendingReason(
-  permissions: PermissionRequest[] | undefined,
-  question: AskUserQuestionRequest | null | undefined,
-  planApproval: PlanApprovalRequest | null | undefined,
-): string | null {
-  if (permissions && permissions.length > 0) return `Allow ${permissions[0].toolName}?`
-  if (question) return question.questions[0]?.question ?? 'Waiting for input'
-  if (planApproval) return 'Review plan'
-  return null
-}
-
-function isLiveSession(
-  session:
-    | {
-      status?: string
-      pendingPermissions?: PermissionRequest[]
-      pendingQuestion?: AskUserQuestionRequest | null
-      pendingPlanApproval?: PlanApprovalRequest | null
-      awaitingAssistantReply?: boolean
-    }
-    | undefined,
-  isUnseen: boolean | undefined,
-): boolean {
-  return !!isUnseen
-    || session?.status === 'streaming'
-    || (session?.pendingPermissions?.length ?? 0) > 0
-    || !!session?.pendingQuestion
-    || !!session?.pendingPlanApproval
-    || !!session?.awaitingAssistantReply
-}
 
 const MAX_SESSIONS = 10
 
@@ -87,7 +47,7 @@ export function AppSidebar() {
   const resetSession = useChatStore((s) => s.resetSession)
   const removeSessionFromMemory = useChatStore((s) => s.removeSessionFromMemory)
   const switchSession = useChatStore((s) => s.switchSession)
-  const projectSessions = useChatStore((s) => s.projectSessions)
+  const currentProject = useChatStore(useCallback((s) => currentFolder ? s.projectSessions[currentFolder] : undefined, [currentFolder]))
 
   const [filesMounted, setExplorerMounted] = useState(sidebarTab === 'files')
   if (sidebarTab === 'files' && !filesMounted) setExplorerMounted(true)
@@ -101,8 +61,76 @@ export function AppSidebar() {
   const [removeTarget, setRemoveTarget] = useState<{ name: string; path: string } | null>(null)
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const inFlightFolderSessions = useRef(new Map<string, Promise<SessionHistoryEntry[]>>())
+  const expandedFoldersRef = useRef(expandedFolders)
+  const folderSessionsRef = useRef(folderSessions)
 
-  const toggleExpand = useCallback(async (folderPath: string) => {
+  useEffect(() => {
+    expandedFoldersRef.current = expandedFolders
+  }, [expandedFolders])
+
+  useEffect(() => {
+    folderSessionsRef.current = folderSessions
+  }, [folderSessions])
+
+  const loadFolderSessions = useCallback(async (folderPath: string, reason: 'expand' | 'refresh' | 'current' | 'switch') => {
+    const existing = inFlightFolderSessions.current.get(folderPath)
+    if (existing) {
+      traceSidebar('sessions_load:reuse', { folderPath, reason }, folderPath)
+      return existing
+    }
+
+    const promise = (async () => {
+      const sessions: SessionHistoryEntry[] = []
+      let offset = 0
+      let visibleCount = 0
+      const startedAt = performance.now()
+      traceSidebar('sessions_load:start', { folderPath, reason, pageSize: MAX_SESSIONS }, folderPath)
+      try {
+        while (sessions.filter((session) => !session.isHidden).length < MAX_SESSIONS) {
+          const page = await window.app.listSessionsForFolderPage(folderPath, MAX_SESSIONS, offset)
+          visibleCount += page.filter((session) => !session.isHidden).length
+          traceSidebar('sessions_load:page', {
+            folderPath,
+            reason,
+            offset,
+            pageCount: page.length,
+            visibleCount,
+            elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+          }, folderPath)
+          if (page.length === 0) break
+          sessions.push(...page)
+          if (page.length < MAX_SESSIONS) break
+          offset += page.length
+        }
+        setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
+        traceSidebar('sessions_load:end', {
+          folderPath,
+          reason,
+          fetchedCount: sessions.length,
+          visibleCount,
+          elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+        }, folderPath)
+        return sessions
+      } catch (error) {
+        traceSidebar('sessions_load:error', {
+          folderPath,
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+          elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+        }, folderPath)
+        return []
+      } finally {
+        inFlightFolderSessions.current.delete(folderPath)
+      }
+    })()
+
+    inFlightFolderSessions.current.set(folderPath, promise)
+    return promise
+  }, [])
+
+  const toggleExpand = useCallback((folderPath: string) => {
+    const isExpanded = expandedFoldersRef.current.has(folderPath)
     let willExpand = false
     setExpandedFolders((prev) => {
       const next = new Set(prev)
@@ -114,36 +142,44 @@ export function AppSidebar() {
       }
       return next
     })
-    // Refresh session list every time we expand
     if (willExpand) {
-      const sessions = await window.app.listSessionsForFolder(folderPath)
-      setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
+      const startedAt = performance.now()
+      traceSidebar('project_expand:start', { folderPath, wasExpanded: isExpanded }, folderPath)
+      requestAnimationFrame(() => {
+        traceSidebar('project_expand:frame', {
+          folderPath,
+          sinceStartMs: Math.round((performance.now() - startedAt) * 100) / 100,
+        }, folderPath)
+      })
+      void loadFolderSessions(folderPath, 'expand').then(() => {
+        traceSidebar('project_expand:end', {
+          folderPath,
+          elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+        }, folderPath)
+      })
+    } else {
+      traceSidebar('project_expand:collapse', { folderPath, wasExpanded: isExpanded }, folderPath)
     }
-  }, [])
+  }, [loadFolderSessions])
 
   const refreshPinned = useCallback(() => {
     window.app.listPinnedSessions().then(setPinnedSessions)
   }, [])
 
   const refreshFolderSessions = useCallback((folderPath: string) => {
-    window.app.listSessionsForFolder(folderPath).then((sessions) => {
-      setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
-    })
-  }, [])
+    loadFolderSessions(folderPath, 'refresh')
+  }, [loadFolderSessions])
 
   // Load pinned sessions on mount
   useEffect(() => { refreshPinned() }, [refreshPinned])
 
-  const currentProject = currentFolder ? projectSessions[currentFolder] : undefined
   const currentActiveSid = currentProject?._activeSessionId
   const currentActiveSession = currentActiveSid ? currentProject?._sessions?.[currentActiveSid] : undefined
   const currentStatus = currentActiveSession?.status
   const currentSessionId = currentActiveSid
   useEffect(() => {
     if (!currentFolder) return
-    window.app.listSessionsForFolder(currentFolder).then((sessions) => {
-      setFolderSessions((prev) => ({ ...prev, [currentFolder]: sessions }))
-    })
+    void loadFolderSessions(currentFolder, 'current')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolder, currentStatus, currentSessionId])
   useEffect(() => {
@@ -155,18 +191,16 @@ export function AppSidebar() {
   }, [currentFolder, refreshFolderSessions, refreshPinned])
 
   const handleSwitchSession = useCallback(async (folderPath: string, sessionId: string) => {
-    const ps = projectSessions[folderPath]
+    const ps = useChatStore.getState().projectSessions[folderPath]
     const currentSid = ps?._activeSessionId
     if (folderPath === currentFolder && currentSid === sessionId) return
     setExpandedFolders((prev) => prev.has(folderPath) ? prev : new Set([...prev, folderPath]))
-    if (!folderSessions[folderPath]) {
-      window.app.listSessionsForFolder(folderPath).then((sessions) => {
-        setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
-      })
+    if (!folderSessionsRef.current[folderPath]) {
+      void loadFolderSessions(folderPath, 'switch')
     }
     await openFolder(folderPath)
     await switchSession(sessionId)
-  }, [openFolder, switchSession, currentFolder, projectSessions, folderSessions])
+  }, [openFolder, switchSession, currentFolder, loadFolderSessions])
 
   const handlePinSession = useCallback(async (sessionId: string, pinned: boolean, folderPath: string) => {
     await window.app.pinSession(sessionId, pinned)
@@ -184,7 +218,7 @@ export function AppSidebar() {
   const executeDeleteSession = useCallback(async (target: { sessionId: string; folderPath: string }) => {
     await window.app.deleteSession(target.sessionId)
 
-    const current = projectSessions[target.folderPath]
+    const current = useChatStore.getState().projectSessions[target.folderPath]
     if (current?._activeSessionId === target.sessionId) {
       resetSession()
     }
@@ -199,7 +233,7 @@ export function AppSidebar() {
     setPinnedSessions((prev) => prev.filter((s) => s.sessionId !== target.sessionId))
     refreshFolderSessions(target.folderPath)
     refreshPinned()
-  }, [refreshFolderSessions, refreshPinned, projectSessions, resetSession, removeSessionFromMemory])
+  }, [refreshFolderSessions, refreshPinned, resetSession, removeSessionFromMemory])
 
   const handleDeleteSession = useCallback(async () => {
     if (!deleteTarget) return
@@ -226,6 +260,55 @@ export function AppSidebar() {
     }
     return folders
   }, [recentFolders, sortMode])
+
+  const expandedTraceState = useMemo(() => Array.from(expandedFolders).sort().map((folderPath) => {
+    const cached = folderSessions[folderPath] ?? []
+    return {
+      folderPath,
+      cachedCount: cached.length,
+      hiddenCount: cached.filter((session) => session.isHidden).length,
+      inMemoryCount: 0,
+      liveCount: 0,
+      unseenCount: 0,
+      activeSessionId: currentFolder === folderPath ? currentActiveSid ?? null : null,
+    }
+  }), [expandedFolders, folderSessions, currentFolder, currentActiveSid])
+
+  const handleRemoveProject = useCallback((folder: RecentFolder) => {
+    setRemoveTarget({ name: folder.name, path: folder.path })
+  }, [])
+
+  const handleRequestRenameSession = useCallback((target: { sessionId: string; title: string; folderPath: string }) => {
+    setRenameTarget(target)
+    setRenameValue(target.title)
+  }, [])
+
+  const handleRequestDeleteSession = useCallback((target: { sessionId: string; title: string; folderPath: string; provider: 'claude' | 'codex' }) => {
+    if (shouldSkipDeleteConfirm()) {
+      void executeDeleteSession(target)
+    } else {
+      setDeleteTarget(target)
+    }
+  }, [executeDeleteSession])
+
+  const handleOpenHistory = useCallback((folderPath: string) => {
+    openFolder(folderPath).then(() => {
+      useChatStore.getState().fetchSessions()
+      useAppStore.setState({ showFilePanel: true, filePanelView: 'history' })
+    })
+  }, [openFolder])
+
+  const handleNewSession = useCallback((folderPath: string) => {
+    openFolder(folderPath).then(() => resetSession())
+  }, [openFolder, resetSession])
+
+  useSidebarRenderTrace({
+    sidebarTab,
+    currentFolder,
+    recentFolderCount: sortedFolders.length,
+    pinnedCount: pinnedSessions.length,
+    expanded: expandedTraceState,
+  })
 
   return (
     <div className="flex h-full w-full shrink-0 select-none flex-col bg-sidebar text-sidebar-foreground">
@@ -360,293 +443,25 @@ export function AppSidebar() {
           <ScrollArea className="h-full">
             <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
               {sortedFolders.map((folder) => {
-                const isActive = hasRealProject && folder.path === currentFolder
-                const isExpanded = expandedFolders.has(folder.path)
-                const displayPath = homePath(folder.path)
-                const allSessions = folderSessions[folder.path] ?? []
-                let sessions = allSessions.filter(s => !s.isHidden)
-                const projectSession = projectSessions[folder.path]
-                if (projectSession?._sessions) {
-                  const live: SessionHistoryEntry[] = []
-                  for (const [sid, data] of Object.entries(projectSession._sessions)) {
-                    if (data.messages.length === 0) continue
-                    const firstText = data.messages[0]?.content.find(b => b.type === 'text')
-                    const dbEntry = allSessions.find(s => s.sessionId === sid)
-                    if (dbEntry?.isHidden) continue
-                    if (dbEntry) continue
-                    const isUnseen = projectSession.unseenCompletedSessions?.has(sid)
-                    if (!isActive && !isLiveSession(data, isUnseen)) continue
-                    live.push({
-                      sessionId: sid,
-                      title: (firstText && 'text' in firstText ? firstText.text : '').slice(0, 100) || 'New session',
-                      lastActiveAt: new Date().toISOString(),
-                      provider: data.sessionProvider ?? undefined,
-                      messageCount: data.messages.length,
-                      isWorktree: !!data._worktreeBaseBranch,
-                      gitBranch: data._worktreeBaseBranch ?? undefined,
-                    })
-                  }
-                  if (live.length > 0) sessions = [...live, ...sessions]
-                }
-                const liveSessions = isExpanded ? [] : sessions.filter(s => {
-                  const entry = projectSession?._sessions?.[s.sessionId]
-                  const isUnseen = projectSession?.unseenCompletedSessions?.has(s.sessionId)
-                  if (!entry && !isUnseen) return false
-                  return isLiveSession(entry, isUnseen)
-                })
-                const sessionsToShow = isExpanded ? sessions.slice(0, MAX_SESSIONS) : liveSessions
-                const showSessions = isExpanded || liveSessions.length > 0
                 return (
-                  <div key={folder.path}>
-                    {/* Folder row */}
-                    <div
-                      onClick={() => !folder.missing && toggleExpand(folder.path)}
-                      className={cn(
-                        'group flex h-9 items-center justify-between overflow-hidden rounded-md px-2.5 transition-colors',
-                        folder.missing ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-accent'
-                      )}
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <ChevronRight className={cn(
-                          'hidden size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 group-hover:block',
-                          isExpanded && 'rotate-90',
-                          folder.missing && '!hidden'
-                        )} />
-                        {folder.missing
-                          ? <FolderX className="size-4.5 shrink-0 text-destructive" />
-                          : isExpanded
-                            ? <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
-                            : <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
-                        }
-                        <TooltipProvider delayDuration={500}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className={cn('min-w-0 truncate text-md', folder.missing && 'text-muted-foreground line-through')}>{folder.name}</span>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={8}>
-                              <span className="text-xs">{folder.missing ? `Folder not found: ${folder.path}` : displayPath}</span>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
-                        {folder.missing ? (
-                          <TooltipProvider delayDuration={300}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setRemoveTarget({ name: folder.name, path: folder.path })
-                                  }}
-                                  className="rounded p-0.5 text-destructive/70 transition-colors hover:text-destructive"
-                                >
-                                  <Trash2 className="size-4" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" sideOffset={8}>Remove Project</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        ) : (
-                          <>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
-                                >
-                                  <MoreHorizontal className="size-4" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="start" side="right" className="w-44">
-                                <DropdownMenuItem
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    openFolder(folder.path).then(() => {
-                                      useChatStore.getState().fetchSessions()
-                                      useAppStore.setState({ showFilePanel: true, filePanelView: 'history' })
-                                    })
-                                  }}
-                                  className="text-xs"
-                                >
-                                  <History className="size-3.5" />
-                                  Session History
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  variant="destructive"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setRemoveTarget({ name: folder.name, path: folder.path })
-                                  }}
-                                  className="text-xs"
-                                >
-                                  <Trash2 className="size-3.5" />
-                                  Remove Project
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                            <TooltipProvider delayDuration={300}>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      openFolder(folder.path).then(() => resetSession())
-                                    }}
-                                    className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
-                                  >
-                                    <SquarePen className="size-4" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" sideOffset={8}>New Session</TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Sessions list */}
-                    <AnimatePresence initial={false}>
-                      {showSessions && (
-                        <motion.div
-                          key="sessions"
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.12, ease: 'easeOut' }}
-                          className="overflow-hidden"
-                        >
-                          <div className="flex flex-col py-0.5 pl-5">
-                            {sessionsToShow.length === 0 ? (
-                              <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">No sessions</div>
-                            ) : (
-                              sessionsToShow.map((session) => {
-                                const activeSid = projectSession?._activeSessionId
-                                const isForeground = activeSid === session.sessionId
-                                const sessionEntry = projectSession?._sessions?.[session.sessionId]
-                                const isRunning = sessionEntry?.status === 'streaming'
-                                const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
-                                const pendingReason = getPendingReason(sessionEntry?.pendingPermissions, sessionEntry?.pendingQuestion, sessionEntry?.pendingPlanApproval)
-                                return (
-                                  <div key={session.sessionId}>
-                                    <ContextMenu>
-                                      <ContextMenuTrigger asChild>
-                                        <div
-                                          onClick={() => handleSwitchSession(folder.path, session.sessionId)}
-                                          className={cn(
-                                            'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
-                                            isActive && isForeground
-                                              ? 'bg-sidebar-accent'
-                                              : 'hover:bg-sidebar-accent'
-                                          )}
-                                        >
-                                          <div className="relative flex shrink-0 items-center justify-center size-3">
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleHideSession(session.sessionId, true, folder.path)
-                                              }}
-                                              className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-accent-foreground group-hover/session:opacity-100"
-                                            >
-                                              <EyeOff className="size-3" />
-                                            </button>
-                                            <span className="pointer-events-none group-hover/session:opacity-0 transition-opacity">
-                                              {isRunning
-                                                ? <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
-                                                : isUnseen
-                                                  ? <CircleCheck className="size-3 text-green-400" />
-                                                  : session.isWorktree
-                                                    ? <GitFork className="size-3 text-sidebar-foreground/70" />
-                                                    : <MessageSquare className="size-3 text-sidebar-foreground/70" />
-                                              }
-                                            </span>
-                                          </div>
-                                          <span className="min-w-0 truncate text-[13px]">{session.title}</span>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              handlePinSession(session.sessionId, !session.isPinned, folder.path)
-                                            }}
-                                            className="ml-auto shrink-0 rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-accent-foreground group-hover/session:opacity-100"
-                                          >
-                                            <Pin className="size-3" />
-                                          </button>
-                                        </div>
-                                      </ContextMenuTrigger>
-                                      <ContextMenuContent className="w-36">
-                                        <ContextMenuItem
-                                          onClick={() => {
-                                            setRenameTarget({ sessionId: session.sessionId, title: session.title, folderPath: folder.path })
-                                            setRenameValue(session.title)
-                                          }}
-                                          className="text-xs"
-                                        >
-                                          <Pencil className="size-3.5" />
-                                          Rename
-                                        </ContextMenuItem>
-                                        <ContextMenuItem
-                                          onClick={() => handlePinSession(session.sessionId, !session.isPinned, folder.path)}
-                                          className="text-xs"
-                                        >
-                                          <Pin className="size-3.5" />
-                                          {session.isPinned ? 'Unpin' : 'Pin'}
-                                        </ContextMenuItem>
-                                        <ContextMenuItem
-                                          onClick={() => handleHideSession(session.sessionId, true, folder.path)}
-                                          className="text-xs"
-                                        >
-                                          <EyeOff className="size-3.5" />
-                                          Hide
-                                        </ContextMenuItem>
-                                        <ContextMenuItem
-                                          onClick={() => { navigator.clipboard.writeText(session.sessionId); toast.success(`${session.provider === 'codex' ? 'Codex' : 'Claude Code'} Session ID Copied`) }}
-                                          className="text-xs"
-                                        >
-                                          <Copy className="size-3.5" />
-                                          Copy Session ID
-                                        </ContextMenuItem>
-                                        <ContextMenuSeparator />
-                                        <ContextMenuItem
-                                          variant="destructive"
-                                          onClick={() => {
-                                            const target = {
-                                              sessionId: session.sessionId,
-                                              title: session.title,
-                                              folderPath: folder.path,
-                                              provider: (session.provider ?? 'claude') as 'claude' | 'codex',
-                                            }
-                                            if (shouldSkipDeleteConfirm()) {
-                                              executeDeleteSession(target)
-                                            } else {
-                                              setDeleteTarget(target)
-                                            }
-                                          }}
-                                          className="text-xs"
-                                        >
-                                          <Trash2 className="size-3.5" />
-                                          Delete
-                                        </ContextMenuItem>
-                                      </ContextMenuContent>
-                                    </ContextMenu>
-                                    {pendingReason && (
-                                      <div
-                                        onClick={() => handleSwitchSession(folder.path, session.sessionId)}
-                                        className="ml-5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1"
-                                      >
-                                        <Bot className="size-3 shrink-0 text-green-400" />
-                                        <span className="min-w-0 truncate text-[11px] text-green-400">{pendingReason}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                  <ProjectSidebarRow
+                    key={folder.path}
+                    folder={folder}
+                    currentFolder={currentFolder}
+                    hasRealProject={hasRealProject}
+                    isExpanded={expandedFolders.has(folder.path)}
+                    sessions={folderSessions[folder.path] ?? []}
+                    maxSessions={MAX_SESSIONS}
+                    onToggleExpand={toggleExpand}
+                    onSwitchSession={handleSwitchSession}
+                    onPinSession={handlePinSession}
+                    onHideSession={handleHideSession}
+                    onRemoveProject={handleRemoveProject}
+                    onRenameSession={handleRequestRenameSession}
+                    onDeleteSession={handleRequestDeleteSession}
+                    onOpenHistory={handleOpenHistory}
+                    onNewSession={handleNewSession}
+                  />
                 )
               })}
             </div>

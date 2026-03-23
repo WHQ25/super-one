@@ -35,19 +35,10 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
   const db = getDb()
   const baseSql = `
     SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
-           COALESCE(
-             (SELECT MAX(m.created_at) FROM chat_messages m
-              WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
-             s.created_at
-           ) AS last_user_msg_at,
+           COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
            CASE
              WHEN s.claude_session_id LIKE 'codex_local_%' THEN 'codex'
-             WHEN EXISTS (
-               SELECT 1 FROM chat_messages m2
-               WHERE m2.claude_session_id = s.claude_session_id
-                 AND m2.provider_id = 'codex'
-             ) THEN 'codex'
-             ELSE 'claude'
+             ELSE COALESCE(NULLIF(s.provider, ''), 'claude')
            END AS provider
     FROM sessions s
     WHERE s.project_id = ?
@@ -81,13 +72,13 @@ export function createSession(folderPath: string, claudeSessionId: string, title
   const now = new Date().toISOString()
 
   db.prepare(`
-    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at, is_worktree, git_branch, worktree_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at, last_user_message_at, is_worktree, git_branch, worktree_path)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(claude_session_id) DO UPDATE SET
       title = COALESCE(excluded.title, title),
       git_branch = COALESCE(excluded.git_branch, git_branch),
       worktree_path = COALESCE(excluded.worktree_path, worktree_path)
-  `).run(id, projectId, claudeSessionId, title ?? null, now, isWorktree ? 1 : 0, gitBranch ?? null, worktreePath ?? null)
+  `).run(id, projectId, claudeSessionId, title ?? null, now, now, isWorktree ? 1 : 0, gitBranch ?? null, worktreePath ?? null)
 
   return id
 }
@@ -104,6 +95,7 @@ export function saveSessionState(
   data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string; provider?: string },
 ): void {
   const db = getDb()
+  const lastUserMessageAt = [...data.messages].reverse().find((msg) => msg.role === 'user')?.createdAt ?? null
 
   const upsertMsg = db.prepare(`
     INSERT INTO chat_messages (id, claude_session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id)
@@ -119,13 +111,13 @@ export function saveSessionState(
   const updateSession = data.title
     ? db.prepare(`
         UPDATE sessions
-        SET total_cost_usd = ?, context_tokens = ?, provider = ?,
+        SET total_cost_usd = ?, context_tokens = ?, provider = ?, last_user_message_at = COALESCE(?, last_user_message_at, created_at),
             title = CASE WHEN title IS NULL OR title = '' THEN ? ELSE title END
         WHERE claude_session_id = ?
       `)
     : db.prepare(`
         UPDATE sessions
-        SET total_cost_usd = ?, context_tokens = ?, provider = ?
+        SET total_cost_usd = ?, context_tokens = ?, provider = ?, last_user_message_at = COALESCE(?, last_user_message_at, created_at)
         WHERE claude_session_id = ?
       `)
 
@@ -152,9 +144,9 @@ export function saveSessionState(
 
     const provider = data.provider ?? 'claude'
     if (data.title) {
-      updateSession.run(data.totalCostUsd, data.contextTokens, provider, data.title, claudeSessionId)
+      updateSession.run(data.totalCostUsd, data.contextTokens, provider, lastUserMessageAt, data.title, claudeSessionId)
     } else {
-      updateSession.run(data.totalCostUsd, data.contextTokens, provider, claudeSessionId)
+      updateSession.run(data.totalCostUsd, data.contextTokens, provider, lastUserMessageAt, claudeSessionId)
     }
   })
 
@@ -269,11 +261,7 @@ export function deleteSessionsOlderThan(folderPath: string, cutoffDate: string):
     FROM sessions s
     WHERE s.project_id = ?
       AND COALESCE(s.is_pinned, 0) = 0
-      AND COALESCE(
-            (SELECT MAX(m.created_at) FROM chat_messages m
-             WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
-            s.created_at
-          ) < ?
+      AND COALESCE(s.last_user_message_at, s.created_at) < ?
   `).all(projectId, cutoffDate) as Array<{ claude_session_id: string }>
 
   const ids = rows.map((r) => r.claude_session_id)
@@ -303,19 +291,10 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
   const rows = db.prepare(`
     SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree,
            p.path AS folder_path, p.name AS folder_name,
-           COALESCE(
-             (SELECT MAX(m.created_at) FROM chat_messages m
-              WHERE m.claude_session_id = s.claude_session_id AND m.role = 'user'),
-             s.created_at
-           ) AS last_user_msg_at,
+           COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
            CASE
              WHEN s.claude_session_id LIKE 'codex_local_%' THEN 'codex'
-             WHEN EXISTS (
-               SELECT 1 FROM chat_messages m2
-               WHERE m2.claude_session_id = s.claude_session_id
-                 AND m2.provider_id = 'codex'
-             ) THEN 'codex'
-             ELSE 'claude'
+             ELSE COALESCE(NULLIF(s.provider, ''), 'claude')
            END AS provider
     FROM sessions s
     JOIN projects p ON p.id = s.project_id

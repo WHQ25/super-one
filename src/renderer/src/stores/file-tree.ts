@@ -148,7 +148,10 @@ function recomputeAndSet(
   extra?: Partial<FileTreeState>,
 ): void {
   const s = get()
-  const _visibleList = computeVisible(s.nodes, s.expandedDirs, s.loadingDirs)
+  const nodes = (extra?.nodes as Map<string, FlatNode> | undefined) ?? s.nodes
+  const expandedDirs = (extra?.expandedDirs as Set<string> | undefined) ?? s.expandedDirs
+  const loadingDirs = (extra?.loadingDirs as Set<string> | undefined) ?? s.loadingDirs
+  const _visibleList = computeVisible(nodes, expandedDirs, loadingDirs)
   set({ ...extra, _visibleList, _visibleVersion: s._visibleVersion + 1 })
 }
 
@@ -208,30 +211,22 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
     if (expandedDirs.has(path)) {
       const next = new Set(expandedDirs)
       next.delete(path)
-      set({ expandedDirs: next })
-      recomputeAndSet(get, set)
+      recomputeAndSet(get, set, { expandedDirs: next })
       return
     }
 
     const next = new Set(expandedDirs)
     next.add(path)
-    set({ expandedDirs: next })
 
     const node = nodes.get(path)
-    if (node?.isLoaded) {
-      recomputeAndSet(get, set)
-      return
-    }
-
-    if (loadingDirs.has(path)) {
-      recomputeAndSet(get, set)
+    if (node?.isLoaded || loadingDirs.has(path)) {
+      recomputeAndSet(get, set, { expandedDirs: next })
       return
     }
 
     const nextLoading = new Set(loadingDirs)
     nextLoading.add(path)
-    set({ loadingDirs: nextLoading })
-    recomputeAndSet(get, set)
+    recomputeAndSet(get, set, { expandedDirs: next, loadingDirs: nextLoading })
 
     window.app.listDir(projectPath, path).then((children) => {
       const { nodes: currentNodes } = get()
@@ -240,15 +235,13 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
       mergeEntries(currentNodes, path, depth, children)
       const nl = new Set(get().loadingDirs)
       nl.delete(path)
-      set({ loadingDirs: nl })
-      recomputeAndSet(get, set)
+      recomputeAndSet(get, set, { loadingDirs: nl })
     }).catch(() => {
       const { nodes: currentNodes } = get()
       mergeEntries(currentNodes, path, (currentNodes.get(path)?.depth ?? 0) + 1, [])
       const nl = new Set(get().loadingDirs)
       nl.delete(path)
-      set({ loadingDirs: nl })
-      recomputeAndSet(get, set)
+      recomputeAndSet(get, set, { loadingDirs: nl })
     })
   },
 

@@ -47,6 +47,16 @@ describe('splitTextIntoBlocks', () => {
       expect(segments[2].text).toBe('After')
     })
 
+    it('should merge broken table row continuation', () => {
+      const text = '### 三个 Bug 汇总\n| # | \n位置 | 问题 |\n|---|------|------|\n| **Bug 1** | foo | bar |\n| **Bug 2** | baz | qux |'
+      const { segments } = splitTextIntoBlocks(text, false)
+      expect(segments).toHaveLength(2)
+      expect(segments[0].text).toBe('### 三个 Bug 汇总')
+      expect(segments[1].text).toContain('| # | 位置 | 问题 |')
+      expect(segments[1].text).toContain('|---|------|------|')
+      expect(segments[1].text).toContain('| **Bug 1** | foo | bar |')
+    })
+
     it('should extract insight blocks', () => {
       const text = 'Before\n`★ My Title ─────────────────────────────`\nLine 1\nLine 2\n`─────────────────────────────────────────────────`\nAfter'
       const { segments } = splitTextIntoBlocks(text, false)

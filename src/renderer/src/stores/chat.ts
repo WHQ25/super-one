@@ -751,7 +751,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       }
 
     case 'init_ready':
-      return {}
+      return { permissionMode: event.permissionMode }
 
     case 'compact_boundary': {
       const msgs = [...session.messages]
@@ -1045,7 +1045,7 @@ async function _prepareSessionSnapshot(sessionId: string, session: PerSessionSta
 
 type ChatStoreSetter = (updater: (state: ChatStore) => Partial<ChatStore>) => void
 
-function _hydrateRemoteSessionState(
+function _hydrateSessionState(
   set: ChatStoreSetter,
   projectPath: string,
   sessionId: string,
@@ -1070,7 +1070,7 @@ function _hydrateRemoteSessionState(
         }
       })
     })
-    .catch((err) => console.warn('[remoteSessionHydrate] failed:', err))
+    .catch((err) => console.warn('[sessionHydrate] failed:', err))
 }
 
 function _saveSessionState(get: () => ChatStore, projectPath: string): void {
@@ -1117,6 +1117,14 @@ function _isLiveSession(session: PerSessionState | undefined): boolean {
     || !!session.pendingPlanApproval
     || !!session.awaitingAssistantReply
   )
+}
+
+function _shouldPromoteDraftSessionInit(project: ProjectState, sessionId: string): boolean {
+  const draft = project._sessions[DRAFT_SESSION_ID]
+  if (!draft || !_isLiveSession(draft)) return false
+  if (project._sessions[sessionId]) return false
+  if (project.sessions.some((entry) => entry.sessionId === sessionId)) return false
+  return true
 }
 
 function _needsForegroundActivation(session: PerSessionState): boolean {
@@ -1377,7 +1385,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       })
       if (event.isSubscribe) {
-        _hydrateRemoteSessionState(set, projectPath, sessionId)
+        _hydrateSessionState(set, projectPath, sessionId)
       }
       return
     }
@@ -1394,19 +1402,46 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const projectPath = event.projectPath
     const eventSessionId = event.sessionId
     if (!projectPath) return
+    let hydrateSessionId: string | null = null
 
     set((s) => {
       let project = s.projectSessions[projectPath] ?? createDefaultProjectState()
 
-      // Resolve target session: match by eventSessionId, or fall back to live DRAFT, then active
-      let targetSid: string | null = (eventSessionId && project._sessions[eventSessionId])
-        ? eventSessionId
-        : (eventSessionId && _isLiveSession(project._sessions[DRAFT_SESSION_ID]))
-          ? DRAFT_SESSION_ID
-          : project._activeSessionId
+      let matchType: 'exact' | 'draft_session_init' | 'lazy_session' | 'fallback_active'
+      let targetSid: string | null
+
+      if (eventSessionId && project._sessions[eventSessionId]) {
+        targetSid = eventSessionId
+        matchType = 'exact'
+      } else if (
+        event.type === 'session_init'
+        && event.session?.sessionId
+        && _shouldPromoteDraftSessionInit(project, event.session.sessionId)
+      ) {
+        targetSid = DRAFT_SESSION_ID
+        matchType = 'draft_session_init'
+      } else if (eventSessionId) {
+        if (!project._sessions[eventSessionId]) {
+          project = {
+            ...project,
+            _sessions: {
+              ...project._sessions,
+              [eventSessionId]: {
+                ...createDefaultPerSessionState(),
+                _historyHydrated: false,
+              },
+            },
+          }
+          hydrateSessionId = eventSessionId
+        }
+        targetSid = eventSessionId
+        matchType = 'lazy_session'
+      } else {
+        targetSid = project._activeSessionId
+        matchType = 'fallback_active'
+      }
 
       if (import.meta.env.DEV) {
-        const matchType = (eventSessionId && project._sessions[eventSessionId]) ? 'exact' : (eventSessionId && _isLiveSession(project._sessions[DRAFT_SESSION_ID])) ? 'draft' : 'fallback_active'
         console.debug('[handleAgentEvent] route', { type: event.type, eventSessionId, targetSid, matchType, activeSid: project._activeSessionId, knownSids: Object.keys(project._sessions) })
       }
 
@@ -1652,6 +1687,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }
     })
+    if (hydrateSessionId) {
+      _hydrateSessionState(set, projectPath, hydrateSessionId)
+    }
   },
 
   switchProject: async (projectPath: string) => {
@@ -2254,14 +2292,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const activeSession = getActivePerSession(get())
     const currentSid = resolveActiveSessionId(project)
 
+    let agentConfig: { permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined
+
     if (activeSession.sessionProvider === 'codex') {
       if (activeSession.status !== 'streaming' && currentSid) {
         await window.app.codexReset(currentSid).catch(() => {})
       }
     } else if (activeSession.status === 'streaming' && currentSid) {
-      await window.agent.parkSession(activeProject)
+      agentConfig = await window.agent.parkSession(activeProject)
     } else {
-      await window.agent.resetSession(activeProject)
+      agentConfig = await window.agent.resetSession(activeProject)
     }
 
     await useAppStore.getState().clearWorktree(activeProject)
@@ -2270,6 +2310,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const proj = getProject(s, activeProject)
       const newSession = createDefaultPerSessionState()
       newSession.cwd = activeProject
+      if (agentConfig) {
+        newSession.permissionMode = agentConfig.permissionMode
+      }
       applyDefaultModel(newSession, s.availableModels)
       const rememberedCodexSelection = readLastCodexSelection()
       const codexSelection = resolveCodexModelSelection(
@@ -2284,6 +2327,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ...s.projectSessions,
           [activeProject]: {
             ...proj,
+            ...(agentConfig ? { sandboxInfo: agentConfig.sandboxInfo } : {}),
             _activeSessionId: DRAFT_SESSION_ID,
             _sessions: {
               ...proj._sessions,

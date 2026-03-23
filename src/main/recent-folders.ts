@@ -8,13 +8,10 @@ export function getRecentFolders(): RecentFolder[] {
   const db = getDb()
   const rows = db.prepare(`
     SELECT p.id, p.path, p.name, p.added_at,
-           COALESCE(
-             (SELECT MAX(m.created_at) FROM chat_messages m
-              JOIN sessions s ON s.claude_session_id = m.claude_session_id
-              WHERE s.project_id = p.id AND m.role = 'user'),
-             p.added_at
-           ) AS last_active
+           COALESCE(MAX(COALESCE(s.last_user_message_at, s.created_at)), p.added_at) AS last_active
     FROM projects p
+    LEFT JOIN sessions s ON s.project_id = p.id
+    GROUP BY p.id, p.path, p.name, p.added_at
     ORDER BY last_active DESC
   `).all() as Array<{ id: string; path: string; name: string; added_at: string; last_active: string }>
 

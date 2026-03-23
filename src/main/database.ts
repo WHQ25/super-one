@@ -37,6 +37,7 @@ function migrate(db: Database.Database): void {
       claude_session_id TEXT UNIQUE,
       title TEXT,
       created_at TEXT NOT NULL,
+      last_user_message_at TEXT,
       total_cost_usd REAL DEFAULT 0,
       context_tokens INTEGER DEFAULT 0,
       provider TEXT DEFAULT 'claude'
@@ -84,6 +85,10 @@ function migrate(db: Database.Database): void {
   if (!cols.some((c) => c.name === 'is_hidden')) {
     db.exec('ALTER TABLE sessions ADD COLUMN is_hidden INTEGER DEFAULT 0')
   }
+  if (!cols.some((c) => c.name === 'last_user_message_at')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN last_user_message_at TEXT')
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_project_last_user ON sessions(project_id, last_user_message_at DESC)')
 
   // Add checkpoint_id column to chat_messages if missing
   const msgCols = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
@@ -93,6 +98,32 @@ function migrate(db: Database.Database): void {
   if (!msgCols.some((c) => c.name === 'resume_point_id')) {
     db.exec('ALTER TABLE chat_messages ADD COLUMN resume_point_id TEXT')
   }
+
+  db.exec(`
+    UPDATE sessions
+    SET last_user_message_at = COALESCE(
+      (
+        SELECT MAX(m.created_at)
+        FROM chat_messages m
+        WHERE m.claude_session_id = sessions.claude_session_id
+          AND m.role = 'user'
+      ),
+      created_at
+    )
+    WHERE last_user_message_at IS NULL
+  `)
+
+  db.exec(`
+    UPDATE sessions
+    SET provider = 'codex'
+    WHERE claude_session_id LIKE 'codex_local_%'
+       OR EXISTS (
+         SELECT 1
+         FROM chat_messages m
+         WHERE m.claude_session_id = sessions.claude_session_id
+           AND m.provider_id = 'codex'
+       )
+  `)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS api_providers (

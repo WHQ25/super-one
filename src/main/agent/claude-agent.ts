@@ -112,16 +112,14 @@ export class ClaudeAgent {
     if (resumeSessionId) this.sessionId = resumeSessionId
 
     if (!resumeSessionId) {
-      const prefs = readUserPreferences()
-      if (prefs.defaultPermissionMode) {
-        this.currentPermissionMode = prefs.defaultPermissionMode as PermissionMode
-      }
-      if (prefs.defaultSandboxMode) {
-        this.setSandboxMode(prefs.defaultSandboxMode as SandboxMode)
-      }
+      this.applyPreferences()
     }
 
     this.createSession(resumeSessionId)
+
+    if (!resumeSessionId && this.currentPermissionMode !== 'default') {
+      this.emit({ type: 'permission_mode_change', mode: this.currentPermissionMode })
+    }
   }
 
   /** Create a new session (bridge + query). Safe to call if session already exists (no-op). */
@@ -225,6 +223,7 @@ export class ClaudeAgent {
       cwd: this.config!.cwd,
       homedir: homedir(),
       sandboxInfo: this.currentSandboxInfo,
+      permissionMode: this.currentPermissionMode,
     })
   }
 
@@ -257,9 +256,11 @@ export class ClaudeAgent {
       this.needsSessionRebuild = false
       const prevSessionId = this.sessionId
       await this.resetSession()
+      this.applyPreferences()
       this.currentEffort = request.effort
       if (dirsChanged) this.additionalDirs = request.additionalDirs!
       this.createSession(prevSessionId || undefined)
+      this.emit({ type: 'permission_mode_change', mode: this.currentPermissionMode })
       if (dirNotifyLines.length > 0) {
         this.bridge!.push({
           type: 'user',
@@ -336,6 +337,24 @@ export class ClaudeAgent {
   markNeedsRebuild(): void {
     log.info('[ClaudeAgent] markNeedsRebuild (cwd=%s, sessionId=%s)', this.config?.cwd, this.sessionId)
     this.needsSessionRebuild = true
+  }
+
+  applyPreferences(): void {
+    const prefs = readUserPreferences()
+    this.currentPermissionMode = (prefs.defaultPermissionMode as PermissionMode) || 'default'
+    if (prefs.defaultSandboxMode) {
+      this.setSandboxMode(prefs.defaultSandboxMode as SandboxMode)
+    } else {
+      this.currentSandboxInfo = DEFAULT_SANDBOX_INFO
+    }
+  }
+
+  getCurrentPermissionMode(): PermissionMode {
+    return this.currentPermissionMode
+  }
+
+  getCurrentSandboxInfo(): SandboxInfo {
+    return this.currentSandboxInfo
   }
 
   setSandboxMode(mode: SandboxMode): SandboxInfo {

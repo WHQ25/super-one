@@ -346,6 +346,71 @@ describe('AgentService.handleRemoteCommand', () => {
     )
   })
 
+  it('session_init moves a just-appended user message into the rekeyed session', () => {
+    vi.mocked(dbSessions.loadSessionState).mockImplementation((sessionId: string) => {
+      if (sessionId !== 'session-old') return null
+      return {
+        messages: [
+          { id: 'user-old', role: 'user', content: [{ type: 'text', text: 'old title' }], status: 'complete', createdAt: '', providerId: 'local' },
+          { id: 'assistant-old', role: 'assistant', content: [{ type: 'text', text: 'old reply' }], status: 'complete', createdAt: '', providerId: 'claude' },
+        ] as never[],
+        totalCostUsd: 1,
+        contextTokens: 2,
+        isWorktree: false,
+        gitBranch: null,
+        worktreePath: null,
+        provider: 'claude',
+      }
+    })
+
+    const service = new AgentService()
+    const userMessage = (service as any).appendClaudeUserMessage(
+      '/project',
+      { content: 'follow up', clientMessageId: 'user-new' },
+      'remote',
+      'session-old',
+    )
+    ;(service as any).trackClaudeSessionRekey('/project', 'session-old', userMessage.id)
+
+    ;(service as any).recordClaudeEvent({
+      type: 'session_init',
+      projectPath: '/project',
+      session: {
+        sessionId: 'session-new',
+        model: 'claude',
+        tools: [],
+        mcpServers: [],
+        permissionMode: 'default',
+        slashCommands: [],
+        skills: [],
+        claudeCodeVersion: '1.0.0',
+        cwd: '/project',
+      },
+    })
+
+    const saveCalls = vi.mocked(dbSessions.saveSessionState).mock.calls
+    const oldCall = saveCalls.filter(([sessionId]) => sessionId === 'session-old').at(-1)
+    const newCall = saveCalls.filter(([sessionId]) => sessionId === 'session-new').at(-1)
+
+    expect(oldCall?.[1]).toEqual(expect.objectContaining({
+      messages: [
+        expect.objectContaining({ id: 'user-old' }),
+        expect.objectContaining({ id: 'assistant-old' }),
+      ],
+      title: 'old title',
+      provider: 'claude',
+    }))
+    expect(newCall?.[1]).toEqual(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({ id: 'user-old' }),
+        expect.objectContaining({ id: 'assistant-old' }),
+        expect.objectContaining({ id: 'user-new', role: 'user', providerId: 'remote' }),
+      ]),
+      title: 'old title',
+      provider: 'claude',
+    }))
+  })
+
   it('codex runtime persists turns from main without renderer snapshots', () => {
     const service = new AgentService()
 

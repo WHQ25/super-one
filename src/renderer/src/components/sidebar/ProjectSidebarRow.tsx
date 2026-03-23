@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
 import { toast } from 'sonner'
-import { Bot, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, MoreHorizontal, Pencil, Pin, SquarePen, Trash2 } from 'lucide-react'
+import { Bot, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, MoreHorizontal, Pencil, Pin, Smartphone, SquarePen, Trash2 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -46,6 +46,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onNewSession,
 }: ProjectSidebarRowProps) {
   const projectSession = useChatStore((s) => s.projectSessions[folder.path])
+  const remoteSessionId = useChatStore((s) => s.remoteSession?.projectPath === folder.path ? s.remoteSession.sessionId : null)
 
   const derived = useMemo(() => {
     const isActive = hasRealProject && folder.path === currentFolder
@@ -239,7 +240,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                                   ? <CircleCheck className="size-3 text-green-400" />
                                   : session.isWorktree
                                     ? <GitFork className="size-3 text-sidebar-foreground/70" />
-                                    : <MessageSquare className="size-3 text-sidebar-foreground/70" />
+                                    : remoteSessionId === session.sessionId
+                                      ? <Smartphone className="size-3 text-sidebar-foreground/70" />
+                                      : <MessageSquare className="size-3 text-sidebar-foreground/70" />
                               }
                             </span>
                           </div>

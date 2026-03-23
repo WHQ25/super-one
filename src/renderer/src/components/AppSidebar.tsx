@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
+import { toast } from 'sonner'
 import { Plus, Settings, PanelLeftDashed, Folder, FolderOpen, FolderClosed, FolderX, ChevronRight, Trash2, ArrowDownUp, MoreHorizontal, SquarePen, MessageSquare, Loader2, Bot, GitFork, Pin, Copy, Check, Pencil, CircleCheck, History, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -597,6 +598,13 @@ export function AppSidebar() {
                                         >
                                           <EyeOff className="size-3.5" />
                                           Hide
+                                        </ContextMenuItem>
+                                        <ContextMenuItem
+                                          onClick={() => { navigator.clipboard.writeText(session.sessionId); toast.success(`${session.provider === 'codex' ? 'Codex' : 'Claude Code'} Session ID Copied`) }}
+                                          className="text-xs"
+                                        >
+                                          <Copy className="size-3.5" />
+                                          Copy Session ID
                                         </ContextMenuItem>
                                         <ContextMenuSeparator />
                                         <ContextMenuItem

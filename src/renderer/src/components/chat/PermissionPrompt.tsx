@@ -17,7 +17,7 @@ const DEST_LABELS: Record<string, string> = {
   session: 'session',
   localSettings: 'folder',
   projectSettings: 'project',
-  userSettings: 'user',
+  userSettings: 'all projects',
   cliArg: 'CLI',
 }
 

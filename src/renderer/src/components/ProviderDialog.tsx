@@ -308,7 +308,7 @@ export function ProviderDialog({
       })
       if (result.success) {
         setTestStatus('success')
-        setTestMessage(`Found ${result.models} models`)
+        setTestMessage('Connected ✓')
       } else {
         setTestStatus('error')
         setTestMessage(result.error || 'Connection failed')

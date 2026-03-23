@@ -16,6 +16,7 @@ import { getDb, getCachedResources } from '../database'
 import { sanitizeGitRef } from '../path-security'
 import { searchFiles, searchMentions, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
+import { resolveSdkCli, getNodeRuntime } from './resolve-cli'
 import { applyClaudeEventToRuntime, buildClaudeUserMessage, createClaudeRuntime, extractClaudeTitle, hydrateClaudeRuntime, mergeClaudeRuntimes, syncClaudeRuntimeLocation, type ClaudeSessionRuntime, type PersistedClaudeSessionState } from './claude-session-runtime'
 import { applyCodexEventToRuntime, buildCodexAssistantMessage, buildCodexUserMessage, createCodexRuntime, extractCodexTitle, finalizeCodexAssistantMessage, hydrateCodexRuntime, mergeCodexRuntimes, removeCodexAssistantMessage, syncCodexRuntimeLocation, withCodexTurnMessages, type CodexSessionRuntime, type PersistedCodexSessionState } from './codex-session-runtime'
 
@@ -1639,21 +1640,33 @@ export class AgentService {
       if (data.api_key && env.ANTHROPIC_AUTH_TOKEN !== undefined) env.ANTHROPIC_AUTH_TOKEN = data.api_key
       try {
         const { query: testQuery } = await import('@anthropic-ai/claude-agent-sdk')
+        const cliPath = resolveSdkCli()
+        const runtime = getNodeRuntime()
+        const mergedEnv = { ...process.env, ...runtime.env, ...env }
+        trace('providers.test', 'options', {
+          cliPath: cliPath ?? 'none',
+          cliExists: cliPath ? existsSync(cliPath) : false,
+          executable: runtime.executable ?? 'none',
+          cwd: process.cwd(),
+          envKeys: Object.keys(mergedEnv),
+        })
         const q = testQuery({
           prompt: 'Reply with "ok" only.',
           options: {
+            pathToClaudeCodeExecutable: cliPath,
+            executable: runtime.executable as any,
+            env: mergedEnv,
             cwd: process.cwd(),
             maxTurns: 1,
             permissionMode: 'bypassPermissions',
             systemPrompt: 'Reply with a single word. Do not use any tools.',
             allowedTools: ['Noop'],
-            env,
           },
         })
         let authError = ''
         for await (const msg of q) {
           const m = msg as any
-          log.info('[providers:test] msg type=%s subtype=%s error=%s', m.type, m.subtype ?? '', m.error ?? '')
+          trace('providers.test', 'msg', { type: m.type, subtype: m.subtype, error: m.error })
           if (m.type === 'assistant' && m.error) {
             authError = m.error
             break
@@ -1670,9 +1683,10 @@ export class AgentService {
         const result = authError
           ? { success: false, models: 0, error: authError }
           : { success: true, models: 0 }
-        log.info('[providers:test] result=%j', result)
+        trace('providers.test', 'result', result)
         return result
       } catch (err) {
+        trace('providers.test', 'error', { message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined })
         return { success: false, models: 0, error: err instanceof Error ? err.message : String(err) }
       }
     })

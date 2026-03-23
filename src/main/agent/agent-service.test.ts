@@ -535,7 +535,7 @@ describe('AgentService.handleRemoteCommand', () => {
       projectPath: '/project',
       sessionId: 'session-B',
     })
-    expect(bgRespond).toHaveBeenCalledWith('req-1', true, undefined, undefined)
+    expect(bgRespond).toHaveBeenCalledWith('req-1', true, undefined, undefined, undefined)
   })
 
   it('respond_permission is no-op when sessionId not found', async () => {
@@ -572,7 +572,7 @@ describe('AgentService.handleRemoteCommand', () => {
       projectPath: '/project',
       sessionId: 'session-A',
     })
-    expect(respond).toHaveBeenCalledWith('req-1', false, undefined, 'not needed')
+    expect(respond).toHaveBeenCalledWith('req-1', false, undefined, 'not needed', undefined)
   })
 
   it('answer_question routes to agent by sessionId', async () => {

@@ -47,10 +47,11 @@ interface RemoteAgentRef {
   isReady(): boolean
   sendMessage(request: SendMessageRequest): Promise<void>
   interrupt(): Promise<void>
-  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string): void
+  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): void
   respondToQuestion(requestId: string, answers: Record<string, string>): void
   dismissQuestion(requestId: string): void
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
+  setPermissionMode(mode: PermissionMode): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -531,6 +532,7 @@ export class AgentService {
             respondToQuestion: () => {},
             dismissQuestion: () => {},
             respondToPlanApproval: () => {},
+            setPermissionMode: async () => {},
             dispose: async () => {},
           }
           if (this.remoteSession) await this.remoteSession.agent.dispose()
@@ -688,7 +690,7 @@ export class AgentService {
         }
         const agent = this.findAgentBySessionId(projectPath, command.sessionId)
         if (agent) {
-          agent.respondToPermission(command.requestId, command.decision, undefined, command.reason)
+          agent.respondToPermission(command.requestId, command.decision, undefined, command.reason, command.selectedSuggestions)
           this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'permission', requestId: command.requestId, projectPath, sessionId: command.sessionId })
         } else {
           log.warn('[AgentService] respond_permission: no agent for session %s', command.sessionId)
@@ -740,6 +742,21 @@ export class AgentService {
           this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'plan_approval', requestId: command.requestId, projectPath, sessionId: command.sessionId })
         } else {
           log.warn('[AgentService] respond_plan_approval: no agent for session %s', command.sessionId)
+        }
+        break
+      }
+      case 'set_permission_mode': {
+        const projectPath = command.projectPath || this.agents.keys().next().value
+        if (!projectPath) break
+        if (!this.canAccessSession(projectPath, command.sessionId)) {
+          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
+          break
+        }
+        const agent = this.findAgentBySessionId(projectPath, command.sessionId)
+        if (agent) {
+          await agent.setPermissionMode(command.mode as PermissionMode)
+        } else {
+          log.warn('[AgentService] set_permission_mode: no agent for session %s', command.sessionId)
         }
         break
       }

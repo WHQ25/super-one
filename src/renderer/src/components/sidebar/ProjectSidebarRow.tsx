@@ -8,7 +8,7 @@ import { useChatStore } from '@/stores/chat'
 import { cn } from '@/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import type { RecentFolder, SessionHistoryEntry } from '../../../../shared/agent-types'
-import { getPendingReason, isLiveSession } from './session-state-utils'
+import { getPendingReason, getSessionTitle, isLiveSession } from './session-state-utils'
 
 interface ProjectSidebarRowProps {
   folder: RecentFolder
@@ -58,15 +58,16 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       const live: SessionHistoryEntry[] = []
       for (const [sid, data] of Object.entries(projectSession._sessions)) {
         if (data.messages.length === 0) continue
-        const firstText = data.messages[0]?.content.find((block) => block.type === 'text')
+        const title = getSessionTitle(data.messages)
         const dbEntry = dbSessionById.get(sid)
         if (dbEntry?.isHidden) continue
         if (dbEntry) continue
         const isUnseen = projectSession.unseenCompletedSessions.has(sid)
         if (!isActive && !isLiveSession(data, isUnseen)) continue
+        if (!title && !data._historyHydrated) continue
         live.push({
           sessionId: sid,
-          title: (firstText && 'text' in firstText ? firstText.text : '').slice(0, 100) || 'New session',
+          title: title ?? 'New session',
           lastActiveAt: new Date().toISOString(),
           provider: data.sessionProvider ?? undefined,
           messageCount: data.messages.length,

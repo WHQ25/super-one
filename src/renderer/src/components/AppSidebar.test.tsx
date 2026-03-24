@@ -191,6 +191,50 @@ describe('AppSidebar interactions', () => {
     await screen.findByText('Old Session')
   })
 
+  it('does not show a phantom New session for an unhydrated live session without user text', async () => {
+    sessionsByFolder = {
+      '/project-a': [],
+    }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: 'sid-1',
+        _sessions: {
+          'sid-1': {
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+            status: 'idle',
+            pendingPermissions: [],
+            pendingQuestion: null,
+            pendingPlanApproval: null,
+            awaitingAssistantReply: false,
+            sessionProvider: 'claude',
+            _worktreeBaseBranch: null,
+            _historyHydrated: true,
+          },
+          'sid-old': {
+            messages: [{ role: 'assistant', content: [] }],
+            status: 'streaming',
+            pendingPermissions: [],
+            pendingQuestion: null,
+            pendingPlanApproval: null,
+            awaitingAssistantReply: false,
+            sessionProvider: 'claude',
+            _worktreeBaseBranch: null,
+            _historyHydrated: false,
+          },
+        },
+        unseenCompletedSessions: new Set<string>(),
+      },
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    await waitFor(() => {
+      expect(mockWindowApp.listSessionsForFolderPage).toHaveBeenCalledWith('/project-a', 10, 0)
+    })
+    expect(screen.queryByText('New session')).toBeNull()
+  })
+
   it('keeps session order after clicking another session in the same project', async () => {
     sessionsByFolder = {
       '/project-a': [

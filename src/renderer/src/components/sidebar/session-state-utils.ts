@@ -1,4 +1,4 @@
-import type { AskUserQuestionRequest, PermissionRequest, PlanApprovalRequest } from '../../../../shared/agent-types'
+import type { AskUserQuestionRequest, ChatMessage, PermissionRequest, PlanApprovalRequest } from '../../../../shared/agent-types'
 
 export function getPendingReason(
   permissions: PermissionRequest[] | undefined,
@@ -29,4 +29,18 @@ export function isLiveSession(
     || !!session?.pendingQuestion
     || !!session?.pendingPlanApproval
     || !!session?.awaitingAssistantReply
+}
+
+export function getSessionTitle(messages: ChatMessage[] | undefined): string | null {
+  if (!messages?.length) return null
+  for (const message of messages) {
+    if (message.role !== 'user') continue
+    const text = message.content
+      .flatMap((block) => block.type === 'text' ? [block.text.trim()] : [])
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+    if (text) return text.slice(0, 100)
+  }
+  return null
 }

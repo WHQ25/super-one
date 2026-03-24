@@ -588,7 +588,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         const plainText = ed.getText()
         setTextRef.current(plainText)
         setSlashIndex(-1)
-        setSlashDismissed(false)
+        if (isProgrammaticSetRef.current) {
+          isProgrammaticSetRef.current = false
+          setSlashDismissed(true)
+        } else {
+          setSlashDismissed(false)
+        }
 
         const editorMentions: MentionNodeAttrs[] = []
         ed.state.doc.descendants((node) => {
@@ -628,12 +633,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     editorRef.current = editor
 
     const isEditorUpdateRef = useRef(false)
+    const isProgrammaticSetRef = useRef(false)
     useEffect(() => {
       if (isEditorUpdateRef.current) {
         isEditorUpdateRef.current = false
         return
       }
       if (editor && text !== editor.getText()) {
+        isProgrammaticSetRef.current = true
         editor.commands.setContent(text ? `<p>${text}</p>` : '')
         editor.commands.focus('end')
       }

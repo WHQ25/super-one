@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { Streamdown } from 'streamdown'
 import type { CodexCollabToolCallItem, CodexThreadItem } from '../../../../shared/agent-types'
 import { renderCodexItem } from './codex-item-renderer'
-import { streamdownPlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from './chat-shared'
+import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from './chat-shared'
 
 const TOOL_LABEL: Record<string, string> = {
   spawnAgent: 'Task',
@@ -137,6 +137,7 @@ function OutputPreview({ text }: { text: string }) {
           <Streamdown
             className="chat-md"
             plugins={streamdownPlugins}
+            rehypePlugins={streamdownRehypePlugins}
             components={streamdownComponents}
             controls={streamdownControls}
             linkSafety={streamdownLinkSafety}

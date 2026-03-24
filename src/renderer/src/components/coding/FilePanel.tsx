@@ -9,7 +9,7 @@ import { useAppStore } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { cn } from '@/lib/utils'
-import { toLocalFileUrl } from '@/lib/path-utils'
+import { toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
 import { MarkdownView } from '@/components/MarkdownPreview'
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import { FileDiffView } from './source-control/FileDiffView'
@@ -189,7 +189,7 @@ export function FilePanel() {
         ) : effectiveTab === 'preview' && isVideoFile ? (
           <div className="flex h-full items-center justify-center p-4">
             <video
-              src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
+              src={toMediaUrl(`${currentFolder}/${selectedFile}`)}
               controls
               preload="auto"
               className="max-h-full max-w-full"
@@ -198,7 +198,7 @@ export function FilePanel() {
         ) : effectiveTab === 'preview' && isAudioFile ? (
           <div className="flex h-full items-center justify-center p-4">
             <audio
-              src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)}
+              src={toMediaUrl(`${currentFolder}/${selectedFile}`)}
               controls
               preload="auto"
             />

@@ -7,6 +7,7 @@ import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-sec
 import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
+import { startMediaServer, getMediaServerPort } from './media-server'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
@@ -1373,7 +1374,8 @@ app.whenReady().then(() => {
       const filePath = rawPath.replace(/^\/([A-Za-z]:)/, '$1')
       const resolved = resolveRealPath(filePath)
       const folders = getRecentFolders()
-      if (!isPathWithinAllowed(resolved, folders.map((f) => f.path))) {
+      const tmpDirs = [process.env.TMPDIR, '/tmp', '/private/tmp'].filter(Boolean) as string[]
+      if (!isPathWithinAllowed(resolved, [...folders.map((f) => f.path), ...tmpDirs])) {
         log.warn('[local-file] blocked path outside project folders:', resolved)
         return new Response('Forbidden', { status: 403 })
       }
@@ -1382,6 +1384,7 @@ app.whenReady().then(() => {
       const data = await readFile(resolved)
       const total = data.byteLength
       const range = request.headers.get('Range')
+      log.debug(`[local-file] ${resolved} range=${range} size=${total}`)
 
       if (range) {
         const match = range.match(/bytes=(\d+)-(\d*)/)
@@ -1411,6 +1414,8 @@ app.whenReady().then(() => {
     }
   })
   fixPath()
+  startMediaServer().catch((err) => log.error('[media-server] failed to start:', err))
+  ipcMain.handle('app:media-server-port', () => getMediaServerPort())
   getDb() // Initialize database
   registerIpcHandlers()
   createWindow()

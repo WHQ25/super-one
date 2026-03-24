@@ -99,6 +99,9 @@ const appAPI = {
   getRecentFolders: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_RECENT_FOLDERS),
 
+  getMediaServerPort: () =>
+    ipcRenderer.invoke('app:media-server-port') as Promise<number>,
+
   addRecentFolder: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ADD_RECENT_FOLDER, folderPath),
 

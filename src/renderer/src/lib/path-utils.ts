@@ -36,3 +36,14 @@ export function toLocalFileUrl(filePath: string): string {
     ? `local-file:///${encoded}`
     : `local-file://${encoded}`
 }
+
+let _mediaServerPort = 0
+window.app.getMediaServerPort().then((p) => { _mediaServerPort = p })
+
+export function toMediaUrl(filePath: string): string {
+  if (_mediaServerPort) {
+    const normalized = filePath.replace(/\\/g, '/')
+    return `http://127.0.0.1:${_mediaServerPort}${encodeURI(normalized).replace(/#/g, '%23')}`
+  }
+  return toLocalFileUrl(filePath)
+}

@@ -6,7 +6,7 @@ import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { PenLine, Check, X } from 'lucide-react'
 import { Kbd } from '@/components/ui/kbd'
-import { streamdownLinkSafety, mathPlugin } from './chat-shared'
+import { streamdownLinkSafety, streamdownRehypePlugins, mathPlugin } from './chat-shared'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 const streamdownPlugins = { code: codePlugin, math: mathPlugin }
@@ -113,6 +113,7 @@ export function PlanApprovalPrompt() {
             <Streamdown
               className="chat-md"
               plugins={streamdownPlugins}
+              rehypePlugins={streamdownRehypePlugins}
               components={streamdownComponents}
               controls={streamdownControls}
               linkSafety={streamdownLinkSafety}

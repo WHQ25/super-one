@@ -7,6 +7,7 @@ import {
   streamdownControls,
   streamdownComponents,
   streamdownLinkSafety,
+  streamdownRehypePlugins,
 } from './chat-shared'
 import { createStreamdownCodeComponent } from './CodeBlock'
 
@@ -203,6 +204,7 @@ function InsightBlock({ title, content, isStreaming, components }: { title: stri
       <Streamdown
         className="chat-md"
         plugins={streamdownPlugins}
+        rehypePlugins={streamdownRehypePlugins}
         components={merged}
         controls={streamdownControls}
         linkSafety={streamdownLinkSafety}
@@ -277,6 +279,7 @@ function MarkdownRenderer({ text, isStreaming, components }: { text: string; isS
       <Streamdown
         className="chat-md"
         plugins={streamdownPlugins}
+        rehypePlugins={streamdownRehypePlugins}
         components={merged}
         controls={streamdownControls}
         linkSafety={streamdownLinkSafety}

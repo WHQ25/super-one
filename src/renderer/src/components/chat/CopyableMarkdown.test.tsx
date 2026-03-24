@@ -23,6 +23,7 @@ vi.mock('streamdown', () => ({
 vi.mock('./chat-shared', () => ({
   codePlugin: {},
   streamdownPlugins: [],
+  streamdownRehypePlugins: [],
   streamdownControls: {},
   streamdownComponents: {},
   streamdownLinkSafety: undefined,

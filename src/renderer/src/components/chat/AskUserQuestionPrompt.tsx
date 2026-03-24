@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Kbd } from '@/components/ui/kbd'
 import { Streamdown } from 'streamdown'
-import { streamdownPlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from './chat-shared'
+import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from './chat-shared'
 import type { UserQuestion, QuestionAnnotations } from '../../../../shared/agent-types'
 
 function questionKey(q: UserQuestion): string {
@@ -148,6 +148,7 @@ function PreviewQuestionPanel({
               <Streamdown
                 className="github-md"
                 plugins={streamdownPlugins}
+                rehypePlugins={streamdownRehypePlugins}
                 components={streamdownComponents}
                 controls={streamdownControls}
                 linkSafety={streamdownLinkSafety}

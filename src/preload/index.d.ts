@@ -36,6 +36,7 @@ interface AppAPI {
   getStartupData(): Promise<StartupData>
   selectFolder(): Promise<string | null>
   getRecentFolders(): Promise<RecentFolder[]>
+  getMediaServerPort(): Promise<number>
   addRecentFolder(folderPath: string): Promise<boolean>
   removeRecentFolder(folderPath: string): Promise<RecentFolder[]>
   openFolder(folderPath: string): Promise<boolean>

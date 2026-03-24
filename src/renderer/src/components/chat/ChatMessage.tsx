@@ -9,10 +9,11 @@ import { SubagentBlock } from './SubagentBlock'
 import { CodexTurnView } from './CodexTurnView'
 import { AttachmentBar } from './AttachmentBar'
 import { FileIcon } from '@/components/ui/FileIcon'
-import { useActiveSession } from '@/stores/chat'
+import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import {
   formatTokens,
+  resolveMarkdownImages,
 } from './chat-shared'
 import { RewindButton } from './RewindButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
@@ -152,14 +153,17 @@ function renderBlock(
   outputPathMap?: Map<string, string>,
   nextBlockType?: string,
   prevBlockType?: string,
+  projectPath?: string | null,
 ) {
   switch (block.type) {
-    case 'text':
+    case 'text': {
+      const text = projectPath ? resolveMarkdownImages(block.text, projectPath) : block.text
       return (
         <div key={index} className={prevBlockType === 'thinking' ? 'mt-1 after-thinking' : undefined}>
-          <CopyableMarkdown text={block.text} isStreaming={isStreaming} />
+          <CopyableMarkdown text={text} isStreaming={isStreaming} />
         </div>
       )
+    }
     case 'image':
       return (
         <div
@@ -386,6 +390,7 @@ export function RateLimitIndicator({
 }
 
 export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant }: ChatMessageProps) {
+  const projectPath = useChatStore((s) => s.activeProject)
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
   const isCodexMessage = !isUser && message.providerId === 'codex'
@@ -457,12 +462,12 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                 const prevSeg = segs[segIdx - 1]
                 const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : nextSeg?.kind === 'subagent' ? 'tool_use' : undefined
                 const prevType = prevSeg?.kind === 'block' ? prevSeg.block.type : undefined
-                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.outputPathMap, nextType, prevType)
+                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.outputPathMap, nextType, prevType, projectPath)
               }
               const toolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
               if (toolUseCount <= 1) {
                 return seg.blocks.map((block, i) =>
-                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type)
+                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type, projectPath)
                 )
               }
               return (

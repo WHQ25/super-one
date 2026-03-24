@@ -7,7 +7,7 @@ import { createCodePlugin } from '@streamdown/code'
 import { createMathPlugin } from '@streamdown/math'
 import 'katex/dist/katex.min.css'
 import { createStreamdownCodeComponent } from './CodeBlock'
-import { toMediaUrl } from '@/lib/path-utils'
+import { toMediaUrl, toLocalFileUrl } from '@/lib/path-utils'
 import { LinkSafetyModal } from './LinkSafetyModal'
 
 /** Shared code highlighter plugin instance — reused across all chat components. */
@@ -46,9 +46,14 @@ function MediaAudio(props: ComponentProps<'audio'>) {
   return createElement('audio', { ...props, src: localFileToMediaUrl(props.src) })
 }
 
+function MediaImage(props: ComponentProps<'img'>) {
+  return createElement('img', { ...props, src: localFileToMediaUrl(props.src) })
+}
+
 /** Shared Streamdown code component. */
 export const streamdownComponents: Record<string, unknown> = {
   code: createStreamdownCodeComponent(codePlugin),
+  img: MediaImage,
   video: MediaVideo,
   audio: MediaAudio,
 }
@@ -72,6 +77,18 @@ export const streamdownRehypePlugins = Object.values({
   ...defaultRehypePlugins,
   sanitize: [rehypeSanitize, localFileSanitizeSchema],
 }) as unknown[]
+
+const MD_IMAGE_RE = /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g
+
+export function resolveMarkdownImages(text: string, projectPath: string): string {
+  return text.replace(MD_IMAGE_RE, (_, alt, src, rest) => {
+    const cleanSrc = src.replace(/^\.\//, '')
+    const resolved = src.startsWith('/')
+      ? toLocalFileUrl(src)
+      : toLocalFileUrl(`${projectPath}/${cleanSrc}`)
+    return `![${alt}](${resolved}${rest})`
+  })
+}
 
 /** Format token count: plain number if < 1k, otherwise k with 1 decimal. */
 export function formatTokens(n: number): string {

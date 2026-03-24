@@ -13,7 +13,6 @@ const subtle = webcrypto.subtle
 const encoder = new TextEncoder()
 
 const PAIRING_TIMEOUT_MS = 3 * 60 * 1000
-const BATCH_INTERVAL_MS = 50
 const MAX_RECONNECT_DELAY_MS = 30_000
 const SKIPPED_EVENTS = new Set([
   'files_persisted', 'elicitation_complete', 'tool_input_delta',
@@ -448,8 +447,7 @@ export class RemoteControlService {
   private powerBlockerId: number | null = null
   private pairingSession: PairingSession | null = null
 
-  private batchBuffer: AgentEvent[] = []
-  private batchTimer: ReturnType<typeof setTimeout> | null = null
+  private sendQueue: Promise<void> = Promise.resolve()
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectDelay = 1_000
   private intentionallyClosed = false
@@ -532,7 +530,7 @@ export class RemoteControlService {
   async stop(): Promise<void> {
     await this.cancelPairing()
     this.intentionallyClosed = true
-    this.clearBatch()
+    this.sendQueue = Promise.resolve()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -798,8 +796,7 @@ export class RemoteControlService {
       this.todoToolInputs.clear()
       this.widgetToolIds.clear()
       this.agentToolIds.clear()
-      this.flushPendingText(true)
-      this.flushPendingThinking()
+      this.queueSend(this.drainPending(true))
     }
 
     if (event.type === 'content_delta') {
@@ -807,17 +804,14 @@ export class RemoteControlService {
         const parentId = event.delta.parentToolUseId ?? null
         const msgId = event.messageId
         if (this.pendingText && (this.pendingText.messageId !== msgId || this.pendingText.parentToolUseId !== parentId)) {
-          this.flushPendingText(true)
+          this.queueSend(this.collectPendingText(true))
         }
         if (!this.pendingText) this.pendingText = { messageId: msgId, text: '', parentToolUseId: parentId }
         this.pendingText.text += event.delta.text
         const pending = this.pendingText.text
         const newLen = pending.length - this.pendingTextFlushedLen
         if (newLen > 0 && (pending.lastIndexOf('\n\n') > this.pendingTextFlushedLen || newLen >= 1000)) {
-          this.flushPendingText()
-        }
-        if (!this.batchTimer) {
-          this.batchTimer = setTimeout(() => this.flushBatch(), BATCH_INTERVAL_MS)
+          this.queueSend(this.collectPendingText())
         }
         return
       }
@@ -825,7 +819,7 @@ export class RemoteControlService {
         const parentId = event.delta.parentToolUseId ?? null
         const msgId = event.messageId
         if (this.pendingThinking && (this.pendingThinking.messageId !== msgId || this.pendingThinking.parentToolUseId !== parentId)) {
-          this.flushPendingThinking()
+          this.queueSend(this.collectPendingThinking())
         }
         if (!this.pendingThinking) this.pendingThinking = { messageId: msgId, text: '', parentToolUseId: parentId }
         this.pendingThinking.text += event.delta.thinking
@@ -838,18 +832,14 @@ export class RemoteControlService {
             const delta = { type: 'thinking' as const, thinking: flushed, parentToolUseId: parentId }
             const ev = { type: 'content_delta' as const, messageId: msgId, delta } as unknown as AgentEvent
             trace('remote.out', ev.type, ev, msgId)
-            this.batchBuffer.push(ev)
+            this.queueSend([ev])
           }
         } else if (pending.length >= 1000) {
-          this.flushPendingThinking()
-        }
-        if (!this.batchTimer) {
-          this.batchTimer = setTimeout(() => this.flushBatch(), BATCH_INTERVAL_MS)
+          this.queueSend(this.collectPendingThinking())
         }
         return
       }
-      this.flushPendingText(true)
-      this.flushPendingThinking()
+      const flushed = this.drainPending(true)
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
         try { const p = JSON.parse(event.delta.input); this.bashToolCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
       }
@@ -861,6 +851,7 @@ export class RemoteControlService {
       }
       if (event.delta.type === 'tool_use' && TODO_TOOLS.has(event.delta.toolName)) {
         this.todoToolInputs.set(event.delta.toolUseId, { toolName: event.delta.toolName, input: event.delta.input })
+        this.queueSend(flushed)
         return
       }
       let stripped: AgentEvent
@@ -881,23 +872,16 @@ export class RemoteControlService {
         stripped = stripEventForRemote(event)
       }
       trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
-      this.batchBuffer.push(stripped)
-      if (!this.batchTimer) {
-        this.batchTimer = setTimeout(() => this.flushBatch(), BATCH_INTERVAL_MS)
-      }
+      flushed.push(stripped)
+      this.queueSend(flushed)
       return
     }
 
-    this.flushPendingText(true)
-    this.flushPendingThinking()
-    try {
-      const stripped = stripEventForRemote(event)
-      trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
-      const data = await encryptPayload(this.keys.aesKey, stripped)
-      this.relayWs.send(JSON.stringify({ type: 'event', data }))
-    } catch (err) {
-      log.error('[RemoteControl] Failed to send event:', err)
-    }
+    const flushed = this.drainPending(true)
+    const stripped = stripEventForRemote(event)
+    trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
+    flushed.push(stripped)
+    this.queueSend(flushed)
   }
 
   private async sendResponse(requestId: string, data: unknown): Promise<void> {
@@ -911,24 +895,24 @@ export class RemoteControlService {
     }
   }
 
-  private flushPendingThinking(): void {
+  private collectPendingThinking(): AgentEvent[] {
     if (!this.pendingThinking || !this.pendingThinking.text.trim()) {
       this.pendingThinking = null
-      return
+      return []
     }
     const { messageId, text, parentToolUseId } = this.pendingThinking
     this.pendingThinking = null
     const delta = { type: 'thinking' as const, thinking: text, parentToolUseId }
     const event = { type: 'content_delta' as const, messageId, delta } as unknown as AgentEvent
     trace('remote.out', event.type, event, messageId)
-    this.batchBuffer.push(event)
+    return [event]
   }
 
-  private flushPendingText(final = false): void {
+  private collectPendingText(final = false): AgentEvent[] {
     if (!this.pendingText || !this.pendingText.text.trim()) {
       this.pendingText = null
       this.pendingTextFlushedLen = 0
-      return
+      return []
     }
     const { messageId, text, parentToolUseId } = this.pendingText
     const { segments, remainder } = splitTextIntoBlocks(text, !final)
@@ -939,34 +923,28 @@ export class RemoteControlService {
       this.pendingText = null
       this.pendingTextFlushedLen = 0
     }
+    const events: AgentEvent[] = []
     for (const seg of segments) {
       const delta = seg.type === 'insight'
         ? { type: 'insight' as const, title: seg.title!, content: seg.content!, parentToolUseId, codeBlockTokens: extractCodeBlockTokens(seg.content!) }
         : { type: 'text' as const, text: seg.text, parentToolUseId, codeBlockTokens: extractCodeBlockTokens(seg.text) }
       const event = { type: 'content_delta' as const, messageId, delta } as unknown as AgentEvent
       trace('remote.out', event.type, event, messageId)
-      this.batchBuffer.push(event)
+      events.push(event)
     }
+    return events
   }
 
-  private async flushBatch(): Promise<void> {
-    this.batchTimer = null
-    if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN || this.batchBuffer.length === 0) return
+  private drainPending(final = false): AgentEvent[] {
+    return [...this.collectPendingText(final), ...this.collectPendingThinking()]
+  }
 
-    try {
-      const events = this.batchBuffer.splice(0)
+  private queueSend(events: AgentEvent[]): void {
+    if (events.length === 0) return
+    this.sendQueue = this.sendQueue.then(async () => {
+      if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
       const data = await encryptPayload(this.keys.aesKey, events)
       this.relayWs.send(JSON.stringify({ type: 'event', data }))
-    } catch (err) {
-      log.error('[RemoteControl] Failed to flush batch:', err)
-    }
-  }
-
-  private clearBatch(): void {
-    if (this.batchTimer) {
-      clearTimeout(this.batchTimer)
-      this.batchTimer = null
-    }
-    this.batchBuffer = []
+    }).catch(err => log.error('[RemoteControl] Failed to send events:', err))
   }
 }

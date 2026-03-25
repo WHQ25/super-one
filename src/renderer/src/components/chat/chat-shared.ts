@@ -38,15 +38,36 @@ function localFileToMediaUrl(src: string | undefined): string | undefined {
   return src
 }
 
+const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.ogg', '.mov'])
+const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.opus', '.weba'])
+const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif'])
+
 function MediaVideo(props: ComponentProps<'video'>) {
-  return createElement('video', { ...props, src: localFileToMediaUrl(props.src), style: { width: '100%', borderRadius: '8px' } })
+  return createElement('video', { ...props, src: localFileToMediaUrl(props.src), controls: true, style: { width: '100%', borderRadius: '8px' } })
 }
 
 function MediaAudio(props: ComponentProps<'audio'>) {
-  return createElement('audio', { ...props, src: localFileToMediaUrl(props.src) })
+  return createElement('audio', { ...props, src: localFileToMediaUrl(props.src), controls: true })
+}
+
+function getMediaExt(src: string | undefined): string | null {
+  if (!src) return null
+  try {
+    const pathname = src.startsWith('local-file:///') ? new URL(src).pathname : src
+    return pathname.slice(pathname.lastIndexOf('.')).toLowerCase()
+  } catch { return null }
 }
 
 function MediaImage(props: ComponentProps<'img'>) {
+  const ext = getMediaExt(props.src)
+  if (ext && VIDEO_EXTS.has(ext)) {
+    const { alt: _, ...rest } = props
+    return MediaVideo(rest as ComponentProps<'video'>)
+  }
+  if (ext && AUDIO_EXTS.has(ext)) {
+    const { alt: _, ...rest } = props
+    return MediaAudio(rest as ComponentProps<'audio'>)
+  }
   return createElement('img', { ...props, src: localFileToMediaUrl(props.src) })
 }
 
@@ -78,15 +99,25 @@ export const streamdownRehypePlugins = Object.values({
   sanitize: [rehypeSanitize, localFileSanitizeSchema],
 }) as unknown[]
 
+const MEDIA_EXTS = new Set([...VIDEO_EXTS, ...AUDIO_EXTS, ...IMAGE_EXTS])
 const MD_IMAGE_RE = /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g
+const MD_LINK_RE = /(?<!!)\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g
 
-export function resolveMarkdownImages(text: string, projectPath: string): string {
+function resolveLocalSrc(src: string, projectPath: string): string {
+  const cleanSrc = src.replace(/^\.\//, '')
+  return src.startsWith('/')
+    ? toLocalFileUrl(src)
+    : toLocalFileUrl(`${projectPath}/${cleanSrc}`)
+}
+
+export function resolveMarkdownMedia(text: string, projectPath: string): string {
+  text = text.replace(MD_LINK_RE, (match, alt, src, rest) => {
+    const ext = src.slice(src.lastIndexOf('.')).toLowerCase()
+    if (!MEDIA_EXTS.has(ext)) return match
+    return `![${alt}](${resolveLocalSrc(src, projectPath)}${rest})`
+  })
   return text.replace(MD_IMAGE_RE, (_, alt, src, rest) => {
-    const cleanSrc = src.replace(/^\.\//, '')
-    const resolved = src.startsWith('/')
-      ? toLocalFileUrl(src)
-      : toLocalFileUrl(`${projectPath}/${cleanSrc}`)
-    return `![${alt}](${resolved}${rest})`
+    return `![${alt}](${resolveLocalSrc(src, projectPath)}${rest})`
   })
 }
 

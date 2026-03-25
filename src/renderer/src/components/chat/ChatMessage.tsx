@@ -13,7 +13,7 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import {
   formatTokens,
-  resolveMarkdownImages,
+  resolveMarkdownMedia,
 } from './chat-shared'
 import { RewindButton } from './RewindButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
@@ -157,7 +157,7 @@ function renderBlock(
 ) {
   switch (block.type) {
     case 'text': {
-      const text = projectPath ? resolveMarkdownImages(block.text, projectPath) : block.text
+      const text = projectPath ? resolveMarkdownMedia(block.text, projectPath) : block.text
       return (
         <div key={index} className={prevBlockType === 'thinking' ? 'mt-1 after-thinking' : undefined}>
           <CopyableMarkdown text={text} isStreaming={isStreaming} />

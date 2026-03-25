@@ -256,7 +256,6 @@ export class ClaudeAgent {
       this.needsSessionRebuild = false
       const prevSessionId = this.sessionId
       await this.resetSession()
-      this.applyPreferences()
       this.currentEffort = request.effort
       if (dirsChanged) this.additionalDirs = request.additionalDirs!
       this.createSession(prevSessionId || undefined)

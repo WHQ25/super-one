@@ -261,16 +261,14 @@ export function PermissionPrompt() {
           <div className="mb-2 flex items-center gap-1.5 text-xs">
             <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="font-medium text-foreground">{toolName}</span>
+            {isBash && typeof input.description === 'string' && input.description && (
+              <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>
+            )}
           </div>
           {isBash && !!input.dangerouslyDisableSandbox && (
             <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-              <div className="min-w-0 text-xs">
-                <span className="font-medium text-amber-500">Sandbox Override</span>
-                {typeof input.description === 'string' && input.description && (
-                  <p className="mt-0.5 break-words text-muted-foreground">{input.description}</p>
-                )}
-              </div>
+              <span className="text-xs font-medium text-amber-500">Sandbox Override</span>
             </div>
           )}
         </>

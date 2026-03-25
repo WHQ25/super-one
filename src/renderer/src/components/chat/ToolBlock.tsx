@@ -78,10 +78,12 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   if (toolName === 'Bash') {
     const timeout = typeof params.timeout === 'number' ? params.timeout : undefined
     const runInBackground = params.run_in_background === true || params.background === true
+    const description = typeof params.description === 'string' ? params.description : undefined
     return (
       <BashTerminalView
         toolUseId={toolUseId ?? ''}
         command={display.summary}
+        description={description}
         fallbackResult={isDenied ? undefined : (result ?? undefined)}
         isStreaming={isStreaming}
         isDenied={isDenied}
@@ -308,6 +310,7 @@ const BASH_LOAD_CHUNK = 50
 function BashTerminalView({
   toolUseId,
   command,
+  description,
   fallbackResult,
   isStreaming,
   isDenied,
@@ -322,6 +325,7 @@ function BashTerminalView({
 }: {
   toolUseId: string
   command: string
+  description?: string
   fallbackResult?: string
   isStreaming: boolean
   isDenied?: boolean
@@ -463,7 +467,10 @@ function BashTerminalView({
         <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground')}>
           {isStreaming && !expanded ? <>Running…</> : 'Bash'}
         </span>
-        {(!expanded || fileExpired) && <span className="min-w-0 truncate text-muted-foreground">{command}</span>}
+        {description
+          ? <span className="min-w-0 truncate text-muted-foreground">{description}</span>
+          : (!expanded || fileExpired) && <span className="min-w-0 truncate text-muted-foreground">{command}</span>
+        }
         {isDenied && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>}
         {isTimedOut && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Timed out</span>}
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />

@@ -38,7 +38,9 @@ export function toLocalFileUrl(filePath: string): string {
 }
 
 let _mediaServerPort = 0
-window.app.getMediaServerPort().then((p) => { _mediaServerPort = p })
+if (typeof window !== 'undefined' && window.app?.getMediaServerPort) {
+  window.app.getMediaServerPort().then((p) => { _mediaServerPort = p })
+}
 
 export function toMediaUrl(filePath: string): string {
   if (_mediaServerPort) {

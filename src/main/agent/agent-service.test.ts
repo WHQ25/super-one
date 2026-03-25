@@ -153,6 +153,15 @@ vi.mock('fs/promises', () => ({
 
 vi.mock('../remote-control-service', () => ({}))
 
+vi.mock('./resolve-cli', () => ({
+  fixPath: vi.fn(),
+  findSystemClaude: vi.fn(),
+  resolveSdkCli: vi.fn(),
+  clearCliCache: vi.fn(),
+  getClaudeCliPath: vi.fn(),
+  getNodeRuntime: vi.fn(() => ({ path: 'node', args: [] })),
+}))
+
 const { AgentService } = await import('./agent-service')
 const dbSessions = await import('../db-sessions')
 

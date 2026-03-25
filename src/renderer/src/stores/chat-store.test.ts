@@ -763,6 +763,55 @@ describe('resetSession', () => {
     expect(after._sessions['old-session']).toBeDefined()
     expect(after._sessions['old-session'].messages).toHaveLength(1)
   })
+
+  it('applies permissionMode and sandboxInfo from agentConfig on idle reset', async () => {
+    const agentConfig = {
+      permissionMode: 'acceptEdits' as const,
+      sandboxInfo: { enabled: false, autoAllowBash: true },
+    }
+    mockWindowAgent.resetSession.mockResolvedValueOnce(agentConfig)
+
+    setupProject('/test')
+
+    await useChatStore.getState().resetSession()
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions[DRAFT_SESSION_ID].permissionMode).toBe('acceptEdits')
+    expect(after.sandboxInfo).toEqual({ enabled: false, autoAllowBash: true })
+  })
+
+  it('applies agentConfig from parkSession when streaming', async () => {
+    const agentConfig = {
+      permissionMode: 'bypassPermissions' as const,
+      sandboxInfo: { enabled: true, autoAllowBash: true },
+    }
+    mockWindowAgent.parkSession.mockResolvedValueOnce(agentConfig)
+
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'streaming-sid',
+          _sessions: {
+            'streaming-sid': {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              session: { sessionId: 'streaming-sid' } as never,
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().resetSession()
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions[DRAFT_SESSION_ID].permissionMode).toBe('bypassPermissions')
+    expect(after.sandboxInfo).toEqual({ enabled: true, autoAllowBash: true })
+  })
 })
 
 describe('init_ready updates session fields', () => {

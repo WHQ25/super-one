@@ -18,7 +18,7 @@ function createMockDb() {
     prepare: vi.fn((sql: string) => ({
       run: vi.fn((...args: unknown[]) => {
         if (sql.includes('INSERT INTO sessions')) {
-          const [id, projectId, claudeSessionId, title, createdAt, isWorktree, gitBranch, worktreePath] = args as string[]
+          const [id, projectId, claudeSessionId, title, createdAt, _lastUserMessageAt, isWorktree, gitBranch, worktreePath] = args as string[]
           const existing = [...sessions.values()].find((s) => s.claude_session_id === claudeSessionId)
           if (existing) {
             if (gitBranch != null) existing.git_branch = gitBranch

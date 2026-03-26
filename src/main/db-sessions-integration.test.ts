@@ -8,7 +8,7 @@ const { getDbMock, getProjectIdMock } = vi.hoisted(() => ({
 vi.mock('./database', () => ({ getDb: getDbMock }))
 vi.mock('./recent-folders', () => ({ getProjectId: getProjectIdMock }))
 
-import { createSession, saveSessionState, loadSessionState } from './db-sessions'
+import { createSession, renameSession, saveSessionState, loadSessionState } from './db-sessions'
 
 function createMockDb() {
   const sessions = new Map<string, Record<string, unknown>>()
@@ -21,6 +21,7 @@ function createMockDb() {
           const [id, projectId, claudeSessionId, title, createdAt, _lastUserMessageAt, isWorktree, gitBranch, worktreePath] = args as string[]
           const existing = [...sessions.values()].find((s) => s.claude_session_id === claudeSessionId)
           if (existing) {
+            if (!existing.title || existing.title === '') existing.title = title ?? existing.title
             if (gitBranch != null) existing.git_branch = gitBranch
             if (worktreePath != null) existing.worktree_path = worktreePath
           } else {
@@ -41,6 +42,10 @@ function createMockDb() {
           const msg = { id: msgId, claude_session_id: claudeSessionId, sort_order: sortOrder, role, status, content_json: contentJson, created_at: createdAt, provider_id: providerId, metadata_json: metadataJson, checkpoint_id: checkpointId, resume_point_id: resumePointId }
           if (existing >= 0) list[existing] = msg
           else list.push(msg)
+        } else if (sql.includes('UPDATE sessions') && sql.includes('SET title = ?') && !sql.includes('total_cost_usd')) {
+          const [newTitle, sessionId] = args as string[]
+          const session = [...sessions.values()].find((s) => s.claude_session_id === sessionId)
+          if (session) session.title = newTitle
         } else if (sql.includes('UPDATE sessions')) {
           const sessionId = args[args.length - 1] as string
           const session = [...sessions.values()].find((s) => s.claude_session_id === sessionId)
@@ -48,6 +53,10 @@ function createMockDb() {
             session.total_cost_usd = args[0]
             session.context_tokens = args[1]
             session.provider = args[2]
+            if (sql.includes('CASE WHEN title')) {
+              const titleArg = args[4] as string | undefined
+              if ((!session.title || session.title === '') && titleArg) session.title = titleArg
+            }
           }
         }
       }),
@@ -141,5 +150,18 @@ describe('session restore with worktree path', () => {
   it('should return null when session has no messages', () => {
     createSession('/tmp/project', 'session-empty', undefined, true, 'main', '/some/path')
     expect(loadSessionState('session-empty')).toBeNull()
+  })
+
+  it('should preserve renamed title when createSession is called again with extracted title', () => {
+    createSession('/tmp/project', 'session-rename', 'original auto title')
+    renameSession('session-rename', 'My Custom Name')
+
+    createSession('/tmp/project', 'session-rename', 'original auto title')
+
+    const insertCall = mockDb.prepare.mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO sessions') && sql.includes('ON CONFLICT'),
+    )
+    expect(insertCall).toBeDefined()
+    expect(insertCall![0]).toContain('CASE WHEN title IS NULL OR title =')
   })
 })

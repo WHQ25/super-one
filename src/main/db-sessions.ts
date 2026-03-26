@@ -75,7 +75,7 @@ export function createSession(folderPath: string, claudeSessionId: string, title
     INSERT INTO sessions (id, project_id, claude_session_id, title, created_at, last_user_message_at, is_worktree, git_branch, worktree_path)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(claude_session_id) DO UPDATE SET
-      title = COALESCE(excluded.title, title),
+      title = CASE WHEN title IS NULL OR title = '' THEN COALESCE(excluded.title, title) ELSE title END,
       git_branch = COALESCE(excluded.git_branch, git_branch),
       worktree_path = COALESCE(excluded.worktree_path, worktree_path)
   `).run(id, projectId, claudeSessionId, title ?? null, now, now, isWorktree ? 1 : 0, gitBranch ?? null, worktreePath ?? null)

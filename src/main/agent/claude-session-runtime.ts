@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type { AgentEvent, ChatMessage, ContentBlock, SendMessageRequest, SessionInfo } from '../../shared/agent-types'
 
 export interface PersistedClaudeSessionState {
@@ -10,6 +11,16 @@ export interface PersistedClaudeSessionState {
   provider: string
 }
 
+export interface TaskProgressEntry {
+  description: string
+  lastToolName?: string
+  summary?: string
+  totalTokens: number
+  toolUses: number
+  durationMs: number
+  toolHistory: Array<{ toolName: string; description: string }>
+}
+
 export interface ClaudeSessionRuntime {
   projectPath: string
   sessionId: string | null
@@ -19,6 +30,7 @@ export interface ClaudeSessionRuntime {
   session: SessionInfo | null
   gitBranch: string | null
   worktreePath: string | null
+  taskProgress: Record<string, TaskProgressEntry>
 }
 
 function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {
@@ -107,6 +119,7 @@ export function createClaudeRuntime(
     session: null,
     gitBranch: null,
     worktreePath: null,
+    taskProgress: {},
     ...overrides,
   }
 }
@@ -155,6 +168,78 @@ export function syncClaudeRuntimeLocation(
     gitBranch: gitBranch ?? runtime.gitBranch,
     worktreePath: worktreePath ?? runtime.worktreePath ?? (cwd && cwd !== projectPath ? cwd : null),
   }
+}
+
+export function extractResultText(raw: string): string | undefined {
+  let lastText: string | undefined
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    let record: { type?: string; message?: { content?: Array<{ type: string; text?: string }> } }
+    try { record = JSON.parse(line) } catch { continue }
+    if (record.type !== 'assistant' || !record.message?.content) continue
+    for (const block of record.message.content) {
+      if (block.type === 'text' && block.text) lastText = block.text
+    }
+  }
+  return lastText
+}
+
+function summarizeToolInput(input: Record<string, unknown>, projectPath?: string): string {
+  if (input.file_path) {
+    let fp = String(input.file_path)
+    if (projectPath) {
+      const prefix = projectPath.endsWith('/') ? projectPath : projectPath + '/'
+      if (fp.startsWith(prefix)) fp = fp.slice(prefix.length)
+    }
+    return fp
+  }
+  if (input.command) return String(input.command).slice(0, 120)
+  if (input.pattern) return String(input.pattern)
+  if (input.query) return String(input.query).slice(0, 120)
+  if (input.url) return String(input.url)
+  if (input.prompt) return String(input.prompt).slice(0, 120)
+  if (input.description) return String(input.description).slice(0, 120)
+  return ''
+}
+
+export function extractToolEntries(raw: string, projectPath?: string): Array<{ toolName: string; description: string }> {
+  const entries: Array<{ toolName: string; description: string }> = []
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    let record: { type?: string; message?: { content?: Array<{ type: string; name?: string; input?: Record<string, unknown> }> } }
+    try { record = JSON.parse(line) } catch { continue }
+    if (record.type !== 'assistant' || !record.message?.content) continue
+    for (const block of record.message.content) {
+      if (block.type === 'tool_use' && block.name) {
+        entries.push({ toolName: block.name, description: summarizeToolInput(block.input ?? {}, projectPath) })
+      }
+    }
+  }
+  return entries
+}
+
+export function readOutputFileResultText(outputFile: string): string | undefined {
+  try {
+    return extractResultText(readFileSync(outputFile, 'utf-8'))
+  } catch { return undefined }
+}
+
+export function readOutputFile(outputFile: string, projectPath?: string): { resultText?: string; toolEntries: Array<{ toolName: string; description: string }> } {
+  try {
+    const raw = readFileSync(outputFile, 'utf-8')
+    return { resultText: extractResultText(raw), toolEntries: extractToolEntries(raw, projectPath) }
+  } catch { return { toolEntries: [] } }
+}
+
+export function patchAgentBlock(messages: ChatMessage[], tid: string, patch: Record<string, unknown>): ChatMessage[] {
+  return messages.map((msg) => ({
+    ...msg,
+    content: msg.content.map((block) =>
+      block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid
+        ? { ...block, ...patch }
+        : block,
+    ),
+  }))
 }
 
 export function applyClaudeEventToRuntime(
@@ -236,6 +321,94 @@ export function applyClaudeEventToRuntime(
         resumePointId: event.resumePointId,
       }
       return { ...runtime, messages }
+    }
+    case 'task_started': {
+      if (!event.toolUseId) return runtime
+      const tid = event.toolUseId
+      const prev = runtime.taskProgress[tid]
+      return {
+        ...runtime,
+        taskProgress: {
+          ...runtime.taskProgress,
+          [tid]: {
+            description: event.description ?? '',
+            lastToolName: prev?.lastToolName,
+            summary: prev?.summary,
+            totalTokens: prev?.totalTokens ?? 0,
+            toolUses: prev?.toolUses ?? 0,
+            durationMs: prev?.durationMs ?? 0,
+            toolHistory: prev?.toolHistory ?? [],
+          },
+        },
+      }
+    }
+    case 'task_progress': {
+      if (!event.toolUseId) return runtime
+      const tid = event.toolUseId
+      const prev = runtime.taskProgress[tid]
+      const toolHistory = [...(prev?.toolHistory ?? [])]
+      if (prev && prev.description && prev.description !== event.description) {
+        toolHistory.push({ toolName: prev.lastToolName ?? '', description: prev.description })
+      }
+      const progressSummary = event.summary ?? prev?.summary
+      const usage = event.usage ?? { totalTokens: prev?.totalTokens ?? 0, toolUses: prev?.toolUses ?? 0, durationMs: prev?.durationMs ?? 0 }
+      return {
+        ...runtime,
+        messages: patchAgentBlock(runtime.messages, tid, {
+          taskUsage: { totalTokens: usage.totalTokens, toolUses: usage.toolUses, durationMs: usage.durationMs },
+          taskToolHistory: toolHistory,
+          taskSummary: progressSummary,
+        }),
+        taskProgress: {
+          ...runtime.taskProgress,
+          [tid]: {
+            description: event.description ?? prev?.description ?? '',
+            lastToolName: event.lastToolName,
+            summary: progressSummary,
+            totalTokens: usage.totalTokens,
+            toolUses: usage.toolUses,
+            durationMs: usage.durationMs,
+            toolHistory,
+          },
+        },
+      }
+    }
+    case 'task_notification': {
+      if (!event.toolUseId) return runtime
+      const tid = event.toolUseId
+      const prev = runtime.taskProgress[tid]
+      const finalSummary = event.summary || prev?.summary
+      const usage = event.usage ?? { totalTokens: prev?.totalTokens ?? 0, toolUses: prev?.toolUses ?? 0, durationMs: prev?.durationMs ?? 0 }
+      const finalToolHistory = prev?.toolHistory ?? []
+      const taskResultText = event.outputFile ? readOutputFileResultText(event.outputFile) : undefined
+      let msgs = patchAgentBlock(runtime.messages, tid, {
+        taskUsage: { totalTokens: usage.totalTokens, toolUses: usage.toolUses, durationMs: usage.durationMs },
+        taskToolHistory: finalToolHistory,
+        taskSummary: finalSummary,
+        ...(taskResultText ? { taskResultText } : {}),
+      })
+      if (event.outputFile) {
+        msgs = msgs.map((msg) => ({
+          ...msg,
+          content: msg.content.map((block) =>
+            block.type === 'tool_result' && block.toolUseId === tid ? { ...block, outputPath: event.outputFile } : block,
+          ),
+        }))
+      }
+      return {
+        ...runtime,
+        messages: msgs,
+        taskProgress: {
+          ...runtime.taskProgress,
+          [tid]: {
+            ...(prev ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
+            summary: finalSummary,
+            totalTokens: usage.totalTokens,
+            toolUses: usage.toolUses,
+            durationMs: usage.durationMs,
+          },
+        },
+      }
     }
     default:
       return runtime

@@ -5,7 +5,7 @@ import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, 
 interface AgentAPI {
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
   interrupt(projectPath: string): Promise<boolean>
-  respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): Promise<void>
+  respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string): Promise<void>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
   setSandboxMode(projectPath: string, mode: SandboxMode): Promise<SandboxInfo>
   answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>

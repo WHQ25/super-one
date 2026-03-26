@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { useChatStore, useActiveSession } from '@/stores/chat'
-import { Circle, CheckCircle2, ShieldAlert } from 'lucide-react'
+import { Bot, Circle, CheckCircle2, ShieldAlert } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay } from './tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
@@ -246,6 +246,12 @@ export function PermissionPrompt() {
 
   return (
     <div className="mx-3 mb-2 rounded-lg border border-border bg-muted/60 p-3">
+      {pendingPermission.sourceAgentName && (
+        <div className="mb-2 flex items-center gap-1.5 rounded bg-purple-500/10 px-2 py-1 text-xs text-purple-600 dark:text-purple-400">
+          <Bot className="size-3 shrink-0" />
+          <span className="min-w-0 truncate">{pendingPermission.sourceAgentName}</span>
+        </div>
+      )}
       {isSandboxNetwork ? (
         <>
           <div className="mb-2 flex items-center gap-1.5 text-xs">

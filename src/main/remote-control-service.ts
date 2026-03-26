@@ -7,6 +7,7 @@ import { diffLines } from 'diff'
 import log from './logger'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage } from '../shared/agent-types'
 import { trace } from './agent/event-trace'
+import { readOutputFile } from './agent/claude-session-runtime'
 import { initHighlighter, highlightCodeSync, highlightCodeByLang, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
 
 const subtle = webcrypto.subtle
@@ -63,11 +64,18 @@ function countLines(s: string): number {
   return s.split('\n').length
 }
 
-function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: Array<{ content: string; status: string; taskId?: string }>; subagentType?: string; toolPrompt?: string } {
+function stripProjectPath(value: string, projectPath?: string): string {
+  if (!projectPath) return value
+  const prefix = projectPath.endsWith('/') ? projectPath : projectPath + '/'
+  return value.includes(prefix) ? value.replaceAll(prefix, '') : value
+}
+
+function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, projectPath?: string): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: Array<{ content: string; status: string; taskId?: string }>; subagentType?: string; toolPrompt?: string; runInBackground?: boolean } {
   try {
     const p = JSON.parse(block.input)
     if (!p || typeof p !== 'object') return {}
-    const filePath = FILE_PATH_TOOLS.has(block.toolName) ? String(p.file_path ?? p.notebook_path ?? '') : undefined
+    const rawFilePath = FILE_PATH_TOOLS.has(block.toolName) ? String(p.file_path ?? p.notebook_path ?? '') : undefined
+    const filePath = rawFilePath ? stripProjectPath(rawFilePath, projectPath) : undefined
     let summary: string | undefined
     let toolLineDelta: { added: number; removed: number } | undefined
     let toolDiff: string | undefined
@@ -174,7 +182,7 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }): { toolSumm
       case 'Agent':
       case 'Task':
         summary = String(p.description ?? p.name ?? '')
-        return { toolSummary: summary, subagentType: p.subagent_type ? String(p.subagent_type) : undefined, toolPrompt: p.prompt ? String(p.prompt) : undefined }
+        return { toolSummary: summary, subagentType: p.subagent_type ? String(p.subagent_type) : undefined, toolPrompt: p.prompt ? String(p.prompt) : undefined, runInBackground: p.run_in_background === true ? true : undefined }
       case 'ToolSearch':
         summary = String(p.query ?? '')
         break
@@ -206,7 +214,7 @@ function extractCodeBlockTokens(text: string): Array<{ language: string; tokens:
 import { splitTextIntoBlocks } from './split-text-blocks'
 export type { TextSegment, SplitResult } from './split-text-blocks'
 
-function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, agentIds?: Set<string>): ContentBlock {
+function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, agentIds?: Set<string>, projectPath?: string): ContentBlock {
   if (block.type === 'text') {
     const codeBlockTokens = extractCodeBlockTokens(block.text)
     if (codeBlockTokens) return { ...block, codeBlockTokens }
@@ -214,10 +222,10 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
   }
   if (block.type === 'thinking') return block
   if (block.type === 'tool_use') {
-    const meta = computeToolMeta(block)
+    const meta = computeToolMeta(block, projectPath)
     const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'
     const keepInput = block.toolName.endsWith('__show_widget')
-    return { ...block, type: mappedType, input: keepInput ? block.input : '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt } as ContentBlock
+    return { ...block, type: mappedType, input: keepInput ? block.input : '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt, runInBackground: meta.runInBackground } as ContentBlock
   }
   if (block.type === 'tool_result') {
     if (bashCmds?.has(block.toolUseId)) {
@@ -267,15 +275,19 @@ function enrichPermissionRequest(event: AgentEvent & { type: 'permission_request
   return event
 }
 
-function stripEventForRemote(event: AgentEvent): AgentEvent {
+function stripEventForRemote(event: AgentEvent, projectPath?: string): AgentEvent {
+  if (event.type === 'task_notification' && event.outputFile) {
+    const { resultText, toolEntries } = readOutputFile(event.outputFile, projectPath)
+    if (resultText || toolEntries.length > 0) return { ...event, ...(resultText ? { resultText } : {}), ...(toolEntries.length > 0 ? { toolEntries } : {}) }
+  }
   if (event.type === 'content_delta') {
-    return { ...event, delta: stripContentBlock(event.delta) }
+    return { ...event, delta: stripContentBlock(event.delta, undefined, undefined, projectPath) }
   }
   if (event.type === 'message_start') {
     const msg = event.message
     return {
       ...event,
-      message: { ...msg, content: msg.content.map((b) => stripContentBlock(b)) },
+      message: { ...msg, content: msg.content.map((b) => stripContentBlock(b, undefined, undefined, projectPath)) },
     }
   }
   if (event.type === 'message_complete' && event.metadata) {
@@ -288,7 +300,7 @@ function stripEventForRemote(event: AgentEvent): AgentEvent {
   return event
 }
 
-export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
+export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: string): ChatMessage[] {
   return messages.map((msg) => {
     const bashCmds = new Map<string, string>()
     const todoInputs = new Map<string, { toolName: string; input: string }>()
@@ -320,14 +332,14 @@ export function stripMessagesForRemote(messages: ChatMessage[]): ChatMessage[] {
           if (b.type === 'tool_result' && widgetIds.has(b.toolUseId)) return b
           if (b.type === 'text') {
             const { segments } = splitTextIntoBlocks(b.text)
-            if (segments.length <= 1) return stripContentBlock(b, bashCmds, agentIds)
+            if (segments.length <= 1) return stripContentBlock(b, bashCmds, agentIds, projectPath)
             return segments.map((seg) =>
               seg.type === 'insight'
                 ? { type: 'insight', title: seg.title!, content: seg.content!, parentToolUseId: b.parentToolUseId, codeBlockTokens: extractCodeBlockTokens(seg.content!) } as unknown as ContentBlock
-                : stripContentBlock({ ...b, text: seg.text } as ContentBlock, bashCmds, agentIds),
+                : stripContentBlock({ ...b, text: seg.text } as ContentBlock, bashCmds, agentIds, projectPath),
             )
           }
-          return stripContentBlock(b, bashCmds, agentIds)
+          return stripContentBlock(b, bashCmds, agentIds, projectPath)
         }),
       metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return rest })() : undefined,
     }
@@ -457,6 +469,7 @@ export class RemoteControlService {
   private todoToolInputs = new Map<string, { toolName: string; input: string }>()
   private widgetToolIds = new Set<string>()
   private agentToolIds = new Set<string>()
+  private agentOutputFiles = new Map<string, string>()
   private pendingText: { messageId: string; text: string; parentToolUseId: string | null } | null = null
   private pendingTextFlushedLen = 0
   private pendingThinking: { messageId: string; text: string; parentToolUseId: string | null } | null = null
@@ -796,6 +809,7 @@ export class RemoteControlService {
       this.todoToolInputs.clear()
       this.widgetToolIds.clear()
       this.agentToolIds.clear()
+      this.agentOutputFiles.clear()
       this.queueSend(this.drainPending(true))
     }
 
@@ -867,9 +881,11 @@ export class RemoteControlService {
         const output = truncateBashOutput(raw)
         stripped = { ...event, delta: { type: 'bash_result', toolUseId: event.delta.toolUseId, summary: output, parentToolUseId: event.delta.parentToolUseId, outputTokens: parseAnsiTokens(output) } }
       } else if (event.delta.type === 'tool_result' && this.agentToolIds.has(event.delta.toolUseId)) {
+        const outputMatch = event.delta.summary?.match(/output_file:\s*(\S+)/)
+        if (outputMatch) this.agentOutputFiles.set(event.delta.toolUseId, outputMatch[1])
         stripped = { ...event, delta: event.delta }
       } else {
-        stripped = stripEventForRemote(event)
+        stripped = stripEventForRemote(event, event.projectPath)
       }
       trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
       flushed.push(stripped)
@@ -878,7 +894,18 @@ export class RemoteControlService {
     }
 
     const flushed = this.drainPending(true)
-    const stripped = stripEventForRemote(event)
+    let enriched = event
+    if (event.type === 'task_progress' && event.toolUseId) {
+      const outputFile = this.agentOutputFiles.get(event.toolUseId)
+      if (outputFile) {
+        const { resultText: activityText, toolEntries } = readOutputFile(outputFile, event.projectPath)
+        enriched = { ...event, ...(activityText ? { activityText } : {}), ...(toolEntries.length > 0 ? { toolEntries } : {}) }
+      }
+    }
+    if ((enriched.type === 'task_progress' || enriched.type === 'task_started') && enriched.description && event.projectPath) {
+      enriched = { ...enriched, description: stripProjectPath(enriched.description, event.projectPath) }
+    }
+    const stripped = stripEventForRemote(enriched, event.projectPath)
     trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
     flushed.push(stripped)
     this.queueSend(flushed)

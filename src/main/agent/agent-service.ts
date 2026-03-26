@@ -1,4 +1,5 @@
 import { execFile, execFileSync } from 'child_process'
+import { statSync } from 'fs'
 import log from '../logger'
 import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
@@ -17,7 +18,7 @@ import { sanitizeGitRef } from '../path-security'
 import { searchFiles, searchMentions, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
 import { resolveSdkCli, getNodeRuntime } from './resolve-cli'
-import { applyClaudeEventToRuntime, buildClaudeUserMessage, createClaudeRuntime, extractClaudeTitle, hydrateClaudeRuntime, mergeClaudeRuntimes, syncClaudeRuntimeLocation, type ClaudeSessionRuntime, type PersistedClaudeSessionState } from './claude-session-runtime'
+import { applyClaudeEventToRuntime, buildClaudeUserMessage, createClaudeRuntime, extractClaudeTitle, hydrateClaudeRuntime, mergeClaudeRuntimes, patchAgentBlock, readOutputFileResultText, syncClaudeRuntimeLocation, type ClaudeSessionRuntime, type PersistedClaudeSessionState } from './claude-session-runtime'
 import { applyCodexEventToRuntime, buildCodexAssistantMessage, buildCodexUserMessage, createCodexRuntime, extractCodexTitle, finalizeCodexAssistantMessage, hydrateCodexRuntime, mergeCodexRuntimes, removeCodexAssistantMessage, syncCodexRuntimeLocation, withCodexTurnMessages, type CodexSessionRuntime, type PersistedCodexSessionState } from './codex-session-runtime'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -242,6 +243,29 @@ export class AgentService {
     })
   }
 
+  private scheduleOutputFileRead(sessionId: string, toolUseId: string, outputFile: string, attempt = 0): void {
+    const MAX_ATTEMPTS = 5
+    let prevSize = -1
+    try { prevSize = statSync(outputFile).size } catch { return }
+    setTimeout(() => {
+      let currentSize: number
+      try { currentSize = statSync(outputFile).size } catch { return }
+      if (currentSize !== prevSize && attempt < MAX_ATTEMPTS) {
+        this.scheduleOutputFileRead(sessionId, toolUseId, outputFile, attempt + 1)
+        return
+      }
+      const resultText = readOutputFileResultText(outputFile)
+      if (!resultText) return
+      const rt = this.claudeRuntimes.get(sessionId)
+      if (!rt) return
+      this.claudeRuntimes.set(sessionId, {
+        ...rt,
+        messages: patchAgentBlock(rt.messages, toolUseId, { taskResultText: resultText }),
+      })
+      this.persistClaudeRuntime(sessionId)
+    }, 2000)
+  }
+
   private appendClaudeUserMessage(
     projectPath: string,
     request: SendMessageRequest,
@@ -358,6 +382,9 @@ export class AgentService {
         event,
       )
       this.claudeRuntimes.set(event.sessionId, runtime)
+      if (event.type === 'task_notification' && event.outputFile && event.toolUseId) {
+        this.scheduleOutputFileRead(event.sessionId, event.toolUseId, event.outputFile)
+      }
       if (event.type === 'message_complete' || event.type === 'message_interrupted' || event.type === 'message_error') {
         this.clearClaudeSessionRekey(projectPath, event.sessionId)
         this.persistClaudeRuntime(event.sessionId)
@@ -839,7 +866,7 @@ export class AgentService {
         }
         try {
           const result = loadSessionMessagesPaginated(command.sessionId, command.limit ?? 10, command.cursor)
-          const stripped = stripMessagesForRemote(result.messages)
+          const stripped = stripMessagesForRemote(result.messages, command.projectPath)
           trace('remote.cmd', 'load_session_messages_result', { projectPath: command.projectPath, sessionId: command.sessionId, messageCount: stripped.length, hasMore: result.hasMore, cursor: result.cursor })
           await respond?.(command.requestId, { messages: stripped, hasMore: result.hasMore, cursor: result.cursor })
         } catch (err) {
@@ -1340,10 +1367,15 @@ export class AgentService {
       return true
     })
 
-    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) => {
+    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'permission_responded', { requestId, allow, reason })
-      this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
+      trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
+      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
+      if (agent) {
+        agent.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
+      } else {
+        this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
+      }
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {

@@ -12,13 +12,42 @@ export interface ImageAttachment {
 
 type RemoteToolType = 'read' | 'edit' | 'write' | 'notebook_edit' | 'file_change' | 'bash' | 'grep' | 'glob' | 'web_search' | 'web_fetch' | 'agent' | 'skill'
 
+type DiffTokenLine = [string, string | null][]
+
+interface ToolMeta {
+  toolSummary?: string
+  toolFilePath?: string
+  toolLineDelta?: { added: number; removed: number }
+  toolDiff?: string
+  toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
+  toolTodos?: Array<{ content: string; status: string; taskId?: string }>
+}
+
+interface AgentTaskData {
+  runInBackground?: boolean
+  taskUsage?: { totalTokens: number; toolUses: number; durationMs: number }
+  taskToolHistory?: Array<{ toolName: string; description: string }>
+  taskSummary?: string
+  taskResultText?: string
+}
+
+interface ToolUseBase {
+  toolName: string
+  toolUseId: string
+  input: string
+  status?: 'streaming' | 'complete'
+  elapsedSeconds?: number
+  startedAt?: number
+  parentToolUseId?: string | null
+}
+
 export type ContentBlock =
-  | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: [string, string | null][][] | null }> }
+  | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }> }
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null }
-  | { type: 'tool_use'; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; startedAt?: number; parentToolUseId?: string | null; toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: [string, string | null][][]; removed?: [string, string | null][][] }; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
-  | { type: RemoteToolType; toolName: string; toolUseId: string; input: string; status?: 'streaming' | 'complete'; elapsedSeconds?: number; startedAt?: number; parentToolUseId?: string | null; toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: [string, string | null][][]; removed?: [string, string | null][][] } }
-  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; parentToolUseId?: string | null; outputTokens?: [string, string | null][][]; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
-  | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: [string, string | null][][] }
+  | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData
+  | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData
+  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
+  | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[] }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
   | { type: 'image'; name: string }
   | { type: 'document'; name: string }
@@ -290,6 +319,8 @@ export interface PermissionRequest {
   blockedPath?: string
   allowAlwaysAllow: boolean
   suggestions?: Array<Record<string, unknown>>
+  sourceSessionId?: string
+  sourceAgentName?: string
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
@@ -319,6 +350,8 @@ export type QuestionAnnotations = Record<string, QuestionAnnotation>
 export interface AskUserQuestionRequest {
   requestId: string
   questions: UserQuestion[]
+  sourceSessionId?: string
+  sourceAgentName?: string
 }
 
 // --- Plan approval ---
@@ -328,6 +361,8 @@ export interface PlanApprovalRequest {
   planContent: string
   planFilePath: string
   allowedPrompts: Array<{ tool: string; prompt: string }>
+  sourceSessionId?: string
+  sourceAgentName?: string
 }
 
 // --- MCP server status ---
@@ -484,8 +519,8 @@ export type AgentEventBase =
   | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number }
   | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode }
   | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string }
-  | { type: 'task_progress'; taskId: string; toolUseId?: string; description: string; lastToolName?: string; summary?: string; usage: { totalTokens: number; toolUses: number; durationMs: number } }
-  | { type: 'task_notification'; taskId: string; toolUseId?: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string; summary?: string; usage?: { totalTokens: number; toolUses: number; durationMs: number } }
+  | { type: 'task_progress'; taskId: string; toolUseId?: string; description: string; lastToolName?: string; summary?: string; usage: { totalTokens: number; toolUses: number; durationMs: number }; activityText?: string; toolEntries?: Array<{ toolName: string; description: string }> }
+  | { type: 'task_notification'; taskId: string; toolUseId?: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string; summary?: string; usage?: { totalTokens: number; toolUses: number; durationMs: number }; resultText?: string; toolEntries?: Array<{ toolName: string; description: string }> }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }

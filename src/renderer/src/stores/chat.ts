@@ -450,6 +450,17 @@ function findLatestCodexUsage(messages: ChatMessage[]): CodexUsageInfo | null {
 
 // --- Apply agent event to a session (pure function) ---
 
+function _patchAgentBlock(messages: ChatMessage[], tid: string, patch: Record<string, unknown>): ChatMessage[] {
+  return messages.map((msg) => ({
+    ...msg,
+    content: msg.content.map((block) =>
+      block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid
+        ? { ...block, ...patch }
+        : block,
+    ),
+  }))
+}
+
 function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
   switch (event.type) {
     case 'message_start':
@@ -875,24 +886,30 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       if (!event.toolUseId) return {}
       const tid = event.toolUseId
       const file = event.outputFile
-      const messagesUpdate = file
-        ? {
-            messages: session.messages.map((msg) => ({
-              ...msg,
-              content: msg.content.map((block) =>
-                block.type === 'tool_result' && block.toolUseId === tid ? { ...block, outputPath: file } : block,
-              ),
-            })),
-          }
-        : {}
       const prevProgress = session.taskProgress[tid]
       const usageUpdate = event.usage ? {
         totalTokens: event.usage.totalTokens,
         toolUses: event.usage.toolUses,
         durationMs: event.usage.durationMs,
       } : {}
+      const finalSummary = event.summary || prevProgress?.summary
+      const finalUsage = event.usage ?? { totalTokens: prevProgress?.totalTokens ?? 0, toolUses: prevProgress?.toolUses ?? 0, durationMs: prevProgress?.durationMs ?? 0 }
+      const finalToolHistory = prevProgress?.toolHistory ?? []
+      const agentPatch = {
+        taskUsage: { totalTokens: finalUsage.totalTokens, toolUses: finalUsage.toolUses, durationMs: finalUsage.durationMs },
+        taskToolHistory: finalToolHistory,
+        taskSummary: finalSummary,
+      }
+      const msgs = session.messages.map((msg) => ({
+        ...msg,
+        content: msg.content.map((block) => {
+          if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid) return { ...block, ...agentPatch }
+          if (file && block.type === 'tool_result' && block.toolUseId === tid) return { ...block, outputPath: file }
+          return block
+        }),
+      }))
       return {
-        ...messagesUpdate,
+        messages: msgs,
         taskProgress: {
           ...session.taskProgress,
           [tid]: {
@@ -900,7 +917,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
             ...usageUpdate,
             completed: true,
             outputFile: file || prevProgress?.outputFile,
-            summary: event.summary || prevProgress?.summary,
+            summary: finalSummary,
           },
         },
       }
@@ -928,14 +945,20 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       if (prev && prev.description && prev.description !== event.description) {
         toolHistory.push({ toolName: prev.lastToolName ?? '', description: prev.description })
       }
+      const progressSummary = event.summary ?? prev?.summary
       return {
+        messages: _patchAgentBlock(session.messages, event.toolUseId, {
+          taskUsage: { totalTokens: event.usage.totalTokens, toolUses: event.usage.toolUses, durationMs: event.usage.durationMs },
+          taskToolHistory: toolHistory,
+          taskSummary: progressSummary,
+        }),
         taskProgress: {
           ...session.taskProgress,
           [event.toolUseId]: {
             ...(prev ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
             description: event.description,
             lastToolName: event.lastToolName,
-            summary: event.summary ?? prev?.summary,
+            summary: progressSummary,
             totalTokens: event.usage.totalTokens,
             toolUses: event.usage.toolUses,
             durationMs: event.usage.durationMs,
@@ -1407,10 +1430,34 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => {
       let project = s.projectSessions[projectPath] ?? createDefaultProjectState()
 
-      let matchType: 'exact' | 'draft_session_init' | 'lazy_session' | 'fallback_active'
+      let matchType: 'exact' | 'draft_session_init' | 'lazy_session' | 'fallback_active' | 'forwarded_bg'
       let targetSid: string | null
 
-      if (eventSessionId && project._sessions[eventSessionId]) {
+      const isInteraction = event.type === 'permission_request' || event.type === 'ask_user_question' || event.type === 'plan_approval'
+      const isBgInteraction = isInteraction && eventSessionId && eventSessionId !== project._activeSessionId && project._activeSessionId
+
+      if (isBgInteraction) {
+        const activeSession = project._sessions[project._activeSessionId!]
+        let agentName: string | undefined
+        if (activeSession) {
+          for (const msg of activeSession.messages) {
+            for (const block of msg.content) {
+              if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolSummary) {
+                agentName = block.toolSummary
+              }
+            }
+          }
+        }
+        if (event.type === 'permission_request') {
+          event = { ...event, request: { ...event.request, sourceSessionId: eventSessionId, sourceAgentName: agentName } }
+        } else if (event.type === 'ask_user_question') {
+          event = { ...event, request: { ...event.request, sourceSessionId: eventSessionId, sourceAgentName: agentName } }
+        } else if (event.type === 'plan_approval') {
+          event = { ...event, request: { ...event.request, sourceSessionId: eventSessionId, sourceAgentName: agentName } }
+        }
+        targetSid = project._activeSessionId
+        matchType = 'forwarded_bg'
+      } else if (eventSessionId && project._sessions[eventSessionId]) {
         targetSid = eventSessionId
         matchType = 'exact'
       } else if (
@@ -2674,7 +2721,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const sid = _getEffectiveSessionId(getProject(get(), activeProject))
       if (sid) void window.app.codexRespondToPermission(sid, requestId, allow, alwaysAllow, reason, decision)
     } else {
-      void window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions)
+      void window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions, respondedRequest?.sourceSessionId)
     }
     const updates: Partial<PerSessionState> = {
       pendingPermissions: session.pendingPermissions.filter((p) => p.requestId !== requestId),

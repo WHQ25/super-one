@@ -1901,6 +1901,118 @@ describe('task_started event', () => {
     expect(progress.completed).toBe(true)
     expect(progress.outputFile).toBe('/tmp/out.log')
   })
+
+  function seedAgentBlock(toolUseId: string) {
+    useChatStore.setState((s) => {
+      const project = s.projectSessions['/test']
+      const session = project._sessions[DRAFT_SESSION_ID]
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          '/test': {
+            ...project,
+            _sessions: {
+              ...project._sessions,
+              [DRAFT_SESSION_ID]: {
+                ...session,
+                messages: [{
+                  id: 'msg-1', role: 'assistant' as const, status: 'streaming' as const,
+                  content: [{ type: 'tool_use' as const, toolName: 'Agent', toolUseId, input: '{"run_in_background":true}' }],
+                  createdAt: '', providerId: 'claude',
+                }],
+              },
+            },
+          },
+        },
+      }
+    })
+  }
+
+  it('task_progress patches Agent tool_use block with taskUsage and taskToolHistory', () => {
+    setupProject('/test')
+    seedAgentBlock('tool-abc')
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_started',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'starting',
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_progress',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'reading files',
+      lastToolName: 'Read',
+      usage: { totalTokens: 200, toolUses: 3, durationMs: 1000 },
+    }))
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const block = session.messages[0].content[0]
+    expect(block.type).toBe('tool_use')
+    if (block.type !== 'tool_use') return
+    expect(block.taskUsage).toEqual({ totalTokens: 200, toolUses: 3, durationMs: 1000 })
+    expect(block.taskToolHistory).toEqual([{ toolName: '', description: 'starting' }])
+  })
+
+  it('task_notification patches Agent tool_use block with final state', () => {
+    setupProject('/test')
+    seedAgentBlock('tool-abc')
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_started',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'starting',
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_progress',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'reading files',
+      lastToolName: 'Read',
+      usage: { totalTokens: 200, toolUses: 3, durationMs: 1000 },
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_notification',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      taskStatus: 'completed',
+      summary: 'Done reading all files',
+      usage: { totalTokens: 500, toolUses: 8, durationMs: 3000 },
+    }))
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const block = session.messages[0].content[0]
+    expect(block.type).toBe('tool_use')
+    if (block.type !== 'tool_use') return
+    expect(block.taskUsage).toEqual({ totalTokens: 500, toolUses: 8, durationMs: 3000 })
+    expect(block.taskToolHistory).toEqual([{ toolName: '', description: 'starting' }])
+    expect(block.taskSummary).toBe('Done reading all files')
+  })
+
+  it('task data persists in block even without task_notification (interrupt case)', () => {
+    setupProject('/test')
+    seedAgentBlock('tool-abc')
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_started',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'step 1',
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'task_progress',
+      taskId: 'task-1',
+      toolUseId: 'tool-abc',
+      description: 'step 2',
+      lastToolName: 'Bash',
+      summary: 'partial work',
+      usage: { totalTokens: 100, toolUses: 2, durationMs: 500 },
+    }))
+    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const block = session.messages[0].content[0]
+    expect(block.type).toBe('tool_use')
+    if (block.type !== 'tool_use') return
+    expect(block.taskUsage).toEqual({ totalTokens: 100, toolUses: 2, durationMs: 500 })
+    expect(block.taskToolHistory).toEqual([{ toolName: '', description: 'step 1' }])
+    expect(block.taskSummary).toBe('partial work')
+  })
 })
 
 describe('worktree session save isolation', () => {

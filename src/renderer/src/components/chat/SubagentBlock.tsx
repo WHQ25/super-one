@@ -78,12 +78,12 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   const taskInput = useMemo(() => parseTaskInput(taskBlock.input), [taskBlock.input])
   const showSpawningPlaceholder = !taskInput.subagentType && !taskInput.description
   const isAsync = taskInput.runInBackground
-  const isRunning = isAsync
-    ? !progress?.completed
-    : !resultBlock && isStreaming
   const isComplete = isAsync
-    ? !!progress?.completed
+    ? !!progress?.completed || (!progress && !!taskBlock.taskResultText)
     : !!resultBlock
+  const isRunning = isAsync
+    ? !progress?.completed && !taskBlock.taskResultText
+    : !resultBlock && isStreaming
   const hasTokens = tokens.input > 0 || tokens.output > 0
   const [expanded, setExpanded] = useState(defaultExpanded ?? (isAsync ? false : !isComplete))
 
@@ -163,6 +163,38 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
     if (parsed.entries.length > 0 || parsed.resultText) {
       setJsonlEntries(parsed.entries)
       setJsonlResultText(parsed.resultText)
+      if (parsed.resultText && parsed.resultText !== taskBlock.taskResultText) {
+        useChatStore.setState((s) => {
+          const project = s.projectSessions[s.activeProject ?? '']
+          if (!project) return s
+          const sid = project._activeSessionId
+          if (!sid) return s
+          const session = project._sessions[sid]
+          if (!session) return s
+          return {
+            projectSessions: {
+              ...s.projectSessions,
+              [s.activeProject!]: {
+                ...project,
+                _sessions: {
+                  ...project._sessions,
+                  [sid]: {
+                    ...session,
+                    messages: session.messages.map((msg) => ({
+                      ...msg,
+                      content: msg.content.map((block) =>
+                        block.type === 'tool_use' && block.toolUseId === taskBlock.toolUseId
+                          ? { ...block, taskResultText: parsed.resultText }
+                          : block,
+                      ),
+                    })),
+                  },
+                },
+              },
+            },
+          }
+        })
+      }
     }
   }, [expanded, outputFile, taskBlock.toolUseId, watchedContent])
 
@@ -171,7 +203,9 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
     window.app.unwatchBashOutput(taskBlock.toolUseId).catch(() => {})
   }, [bashOutput?.finished, bashOutput?.outputPath, expanded, isRunning, outputFile, taskBlock.toolUseId])
 
-  const resultText = jsonlResultText ?? (asyncOutputPath ? undefined : rawResultText)
+  const resultText = isAsync
+    ? (jsonlResultText ?? taskBlock.taskResultText)
+    : (jsonlResultText ?? (asyncOutputPath ? undefined : rawResultText) ?? taskBlock.taskResultText)
   const toolCallCount = useMemo(() => {
     let count = 0
     for (const b of childBlocks) { if (b.type === 'tool_use') count++ }
@@ -214,7 +248,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
               fallbackTools={jsonlEntries.length === 0 ? progress?.toolHistory : undefined}
               activeTool={isRunning && progress?.description ? { toolName: progress.lastToolName ?? '', description: progress.description } : undefined}
               isRunning={isRunning}
-              summary={progress?.summary}
+              summary={undefined}
             />
           )}
 

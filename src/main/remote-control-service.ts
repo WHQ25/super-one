@@ -25,6 +25,7 @@ const THROTTLED_EVENTS = new Set(['tool_progress'])
 const TOOL_RESULT_MAX_LEN = 200
 const MAX_BASH_OUTPUT = 5000
 const MAX_BASH_LINES = 100
+const WS_CHUNK_SIZE = 800_000
 
 const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
 const TODO_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
@@ -916,7 +917,16 @@ export class RemoteControlService {
     try {
       trace('remote.resp', requestId, data)
       const encrypted = await encryptPayload(this.keys.aesKey, data)
-      this.relayWs.send(JSON.stringify({ type: 'response', requestId, data: encrypted }))
+      if (encrypted.length <= WS_CHUNK_SIZE) {
+        this.relayWs.send(JSON.stringify({ type: 'response', requestId, data: encrypted }))
+      } else {
+        const totalChunks = Math.ceil(encrypted.length / WS_CHUNK_SIZE)
+        log.info(`[RemoteControl] Chunking response ${requestId}: ${encrypted.length} bytes → ${totalChunks} chunks`)
+        for (let i = 0; i < totalChunks; i++) {
+          const chunk = encrypted.slice(i * WS_CHUNK_SIZE, (i + 1) * WS_CHUNK_SIZE)
+          this.relayWs.send(JSON.stringify({ type: 'response_chunk', requestId, index: i, total: totalChunks, data: chunk }))
+        }
+      }
     } catch (err) {
       log.error('[RemoteControl] Failed to send response:', err)
     }

@@ -348,6 +348,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       useChatStore.getState().setGlobalResources([], {}, [], startupData.userSkills, startupData.userCommands, startupData.userAgents)
     }
 
+    refreshResourcesInBackground()
+
     if (get().layoutMode === 'coding' && !get().currentFolder) {
       let opened = false
       for (const folder of folders) {
@@ -364,9 +366,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     } else {
       set({ view: 'main' })
     }
-
-    // Refresh resources in background (connect to Claude SDK, update cache + store)
-    refreshResourcesInBackground()
   },
 
   navigateTo: (view) => set({ view }),

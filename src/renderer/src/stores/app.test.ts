@@ -120,6 +120,16 @@ describe('continueToMain', () => {
     expect(useAppStore.getState().view).toBe('startup')
   })
 
+  it('should still call connectClaude when no projects exist (first install)', async () => {
+    mockWindowApp.getRecentFolders.mockResolvedValue([])
+    resetStore({ recentFolders: [], layoutMode: 'coding' })
+
+    await useAppStore.getState().continueToMain()
+    await vi.dynamicImportSettled()
+
+    expect(mockWindowApp.connectClaude).toHaveBeenCalled()
+  })
+
   it('should go to main and open first project when projects exist', async () => {
     const folders = [{ name: 'proj', path: '/proj' }]
     mockWindowApp.openFolder.mockResolvedValue(true)

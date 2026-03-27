@@ -767,7 +767,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   }`}
                 >
                   <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                    <span className="text-blue-400">/<HighlightedText text={cmd.name} indices={cmd.matchIndices} highlightClassName="text-orange-400 font-medium" /></span>
+                    <span className="text-blue-400"><HighlightedText text={`/${cmd.name}`} indices={[0, ...cmd.matchIndices.map(i => i + 1)]} highlightClassName="text-orange-400 font-medium" /></span>
                     {cmd.argumentHint && (
                       <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
                     )}

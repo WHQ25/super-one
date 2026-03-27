@@ -23,6 +23,7 @@ function scoreIndices(indices: number[], query: string, text: string): number {
     if (i > 0 && idx === indices[i - 1] + 1) score += 5
     if (text[idx] === query[i]) score += 1
   }
+  if (indices.length > 0 && indices[0] === 0) score += 10
   score -= text.length * 0.1
   return score
 }

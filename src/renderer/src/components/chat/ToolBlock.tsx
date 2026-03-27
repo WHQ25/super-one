@@ -74,6 +74,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   if (toolName === 'TodoWrite') return null
 
   const isDenied = !!result && result.startsWith('[denied] ')
+  const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))
 
   if (toolName === 'Bash') {
     const timeout = typeof params.timeout === 'number' ? params.timeout : undefined
@@ -129,7 +130,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
       : Object.keys(params).length > 0
   )
   const hasResult = !!cleanResult && !isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
-  const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming
+  const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
   const expandable = hasDiff || hasResult || hasQA
   const [expanded, setExpanded] = useState(false)
   const gridRef = useRef<HTMLDivElement>(null)
@@ -206,10 +207,12 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         ) : (
           <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground')}>
-          {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName === 'AskUserQuestion' ? 'Asked' : displayName}
+        <span className={cn('font-medium', isDenied && toolName !== 'AskUserQuestion' ? 'text-red-400' : 'text-foreground')}>
+          {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName === 'AskUserQuestion' ? `Asked${display.summary ? ` ${display.summary}` : ''}` : displayName}
         </span>
-        {isDenied ? (
+        {isQuestionDismissed ? (
+          <span className="shrink-0 rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">Dismissed</span>
+        ) : isDenied ? (
           <>
             {fileToolName ? (
               <FileChip name={fileToolName} title={display.summary} filePath={fileToolPath} />

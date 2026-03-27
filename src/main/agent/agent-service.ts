@@ -687,12 +687,23 @@ export class AgentService {
               agent = this.remoteSession!.agent
             } else {
               const current = this.agents.get(projectPath)
-              if (!current?.isReady() || current.getSessionId() !== targetSid) {
-                trace('remote.debug', 'send_message:resuming_desktop', { targetSid, currentSid: current?.getSessionId(), currentReady: current?.isReady() })
+              if (current?.isReady() && current.getSessionId() === targetSid) {
+                agent = current
+              } else {
+                if (this.remoteSession) {
+                  await this.remoteSession.agent.dispose()
+                  this.remoteSession = null
+                }
+                this.remoteControlService?.clearRemoteSessionFilter()
                 const saved = loadSessionState(targetSid)
-                await this.resumeSession(projectPath, targetSid, saved?.worktreePath ?? undefined)
+                const cwd = saved?.worktreePath ?? projectPath
+                const remoteAgent = new ClaudeAgent()
+                const { emit, bufferForRenderer } = this.createRemoteEventEmitter(projectPath)
+                await remoteAgent.initialize({ cwd }, emit, targetSid)
+                this.remoteSession = { projectPath, agent: remoteAgent, bufferForRenderer }
+                this.remoteControlService?.setRemoteSessionFilter(projectPath, targetSid)
+                agent = remoteAgent
               }
-              agent = this.agents.get(projectPath)
             }
           } else {
             if (this.remoteSession) {
@@ -793,7 +804,7 @@ export class AgentService {
         }
         const agent = this.findAgentBySessionId(projectPath, command.sessionId)
         if (agent) {
-          agent.respondToQuestion(command.requestId, command.answers)
+          agent.respondToQuestion(command.requestId, command.answers, command.annotations)
           this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'question', requestId: command.requestId, projectPath, sessionId: command.sessionId })
         } else {
           log.warn('[AgentService] answer_question: no agent for session %s', command.sessionId)
@@ -879,9 +890,21 @@ export class AgentService {
         try {
           const entries = await readdir(command.path, { withFileTypes: true })
           const items = entries
-            .filter((e) => !e.name.startsWith('.'))
+            .filter((e) => command.showHidden || !e.name.startsWith('.'))
             .map((e) => ({ name: e.name, isDirectory: e.isDirectory() }))
             .sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1))
+          await respond?.(command.requestId, { items })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'search_mentions': {
+        try {
+          const agent = this.agents.get(command.projectPath)
+          const cwd = agent?.getCwd() ?? command.projectPath
+          const agents = discoverAllAgents(command.projectPath).map((a) => ({ name: a.name, model: a.model ?? '' }))
+          const items = searchMentions([cwd], command.query, agents, 20)
           await respond?.(command.requestId, { items })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
@@ -971,7 +994,7 @@ export class AgentService {
               skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
               agents: agents.map((a) => ({ name: a.name, description: a.description ?? '', model: a.model })),
               userSlashCommands: cached?.slashCommands ?? [],
-              projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '' })),
+              projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '', argumentHint: c.argumentHint ?? '' })),
               account: cached?.account ?? null,
               permissionModes: ['default', 'acceptEdits', 'plan', 'bypassPermissions'],
               sandboxModes: ['off', 'on', 'auto'],
@@ -1008,7 +1031,7 @@ export class AgentService {
             await respond?.(command.requestId, {
               skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
               agents: agents.map((a) => ({ name: a.name, description: a.description ?? '', model: a.model })),
-              projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '' })),
+              projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '', argumentHint: c.argumentHint ?? '' })),
             })
           } else {
             const skills = listCodexSkills(command.projectPath)
@@ -1388,22 +1411,37 @@ export class AgentService {
       return this.getAgent(projectPath).setSandboxMode(mode)
     })
 
-    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'question_answered', { requestId, answers })
-      this.getAgent(projectPath).respondToQuestion(requestId, answers, annotations)
+    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations, sessionId?: string) => {
+      if (this.isRemoteLockedSession(projectPath, sessionId)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'question_answered', { requestId, answers, sessionId })
+      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
+      if (agent) {
+        agent.respondToQuestion(requestId, answers, annotations)
+      } else {
+        this.getAgent(projectPath).respondToQuestion(requestId, answers, annotations)
+      }
     })
 
-    ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'question_dismissed', { requestId })
-      this.getAgent(projectPath).dismissQuestion(requestId)
+    ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string, sessionId?: string) => {
+      if (this.isRemoteLockedSession(projectPath, sessionId)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'question_dismissed', { requestId, sessionId })
+      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
+      if (agent) {
+        agent.dismissQuestion(requestId)
+      } else {
+        this.getAgent(projectPath).dismissQuestion(requestId)
+      }
     })
 
-    ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback })
-      this.getAgent(projectPath).respondToPlanApproval(requestId, approved, feedback)
+    ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string, sessionId?: string) => {
+      if (this.isRemoteLockedSession(projectPath, sessionId)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback, sessionId })
+      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
+      if (agent) {
+        agent.respondToPlanApproval(requestId, approved, feedback)
+      } else {
+        this.getAgent(projectPath).respondToPlanApproval(requestId, approved, feedback)
+      }
     })
 
     ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string) => {

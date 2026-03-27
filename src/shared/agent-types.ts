@@ -1170,6 +1170,7 @@ export type RemoteCommand =
   | { type: 'create_git_branch'; requestId: string; projectPath: string; branch: string }
   | { type: 'get_worktree_info'; requestId: string; projectPath: string }
   | { type: 'activate_worktree'; requestId: string; projectPath: string; baseBranch: string | null; carryLocalChanges?: boolean }
+  | { type: 'search_mentions'; requestId: string; projectPath: string; query: string }
 
 export interface PairedDevice {
   id: string

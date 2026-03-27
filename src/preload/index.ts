@@ -18,14 +18,14 @@ const agentAPI = {
   setSandboxMode: (projectPath: string, mode: SandboxMode) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SANDBOX_MODE, projectPath, mode),
 
-  answerQuestion: (projectPath: string, requestId: string, answers: Record<string, string>, annotations?: Record<string, { preview?: string; notes?: string }>) =>
-    ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, projectPath, requestId, answers, annotations),
+  answerQuestion: (projectPath: string, requestId: string, answers: Record<string, string>, annotations?: Record<string, { preview?: string; notes?: string }>, sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, projectPath, requestId, answers, annotations, sessionId),
 
-  dismissQuestion: (projectPath: string, requestId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.DISMISS_QUESTION, projectPath, requestId),
+  dismissQuestion: (projectPath: string, requestId: string, sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DISMISS_QUESTION, projectPath, requestId, sessionId),
 
-  respondToPlanApproval: (projectPath: string, requestId: string, approved: boolean, feedback?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.RESPOND_PLAN_APPROVAL, projectPath, requestId, approved, feedback),
+  respondToPlanApproval: (projectPath: string, requestId: string, approved: boolean, feedback?: string, sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESPOND_PLAN_APPROVAL, projectPath, requestId, approved, feedback, sessionId),
 
   resetSession: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, projectPath),

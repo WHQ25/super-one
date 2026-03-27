@@ -184,6 +184,11 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, projectPath
       case 'Task':
         summary = String(p.description ?? p.name ?? '')
         return { toolSummary: summary, subagentType: p.subagent_type ? String(p.subagent_type) : undefined, toolPrompt: p.prompt ? String(p.prompt) : undefined, runInBackground: p.run_in_background === true ? true : undefined }
+      case 'AskUserQuestion': {
+        const questions = Array.isArray(p.questions) ? p.questions : []
+        summary = `${questions.length} question${questions.length !== 1 ? 's' : ''}`
+        break
+      }
       case 'ToolSearch':
         summary = String(p.query ?? '')
         break

@@ -7,9 +7,11 @@ const { createdAgents } = vi.hoisted(() => ({
     initialize: ReturnType<typeof vi.fn>
     dispose: ReturnType<typeof vi.fn>
     getCwd: ReturnType<typeof vi.fn>
+    isReady: ReturnType<typeof vi.fn>
     isStreaming: ReturnType<typeof vi.fn>
     resumeSession: ReturnType<typeof vi.fn>
     getSessionId: ReturnType<typeof vi.fn>
+    sendMessage: ReturnType<typeof vi.fn>
     updateEventEmitter: ReturnType<typeof vi.fn>
   }>,
 }))
@@ -28,9 +30,11 @@ vi.mock('./claude-agent', () => ({
     })
     dispose = vi.fn().mockResolvedValue(undefined)
     getCwd = vi.fn(() => this.cwd)
+    isReady = vi.fn(() => true)
     isStreaming = vi.fn(() => false)
     resumeSession = vi.fn().mockResolvedValue(undefined)
     getSessionId = vi.fn(() => this.sessionId)
+    sendMessage = vi.fn().mockResolvedValue(undefined)
     updateEventEmitter = vi.fn()
 
     constructor() {
@@ -283,20 +287,22 @@ describe('AgentService.handleRemoteCommand', () => {
     ).resolves.toBeUndefined()
   })
 
-  it('send_message resumes target session before sending when sessionId differs', async () => {
+  it('send_message creates remote agent when sessionId differs from desktop agent', async () => {
+    vi.mocked(dbSessions.loadSessionState).mockReturnValue(null)
     const service = new AgentService()
-    const sendMessage = vi.fn().mockResolvedValue(undefined)
-    const resumeSession = vi.fn(function (this: any, sid: string) { this.sessionId = sid })
+    const desktopSendMessage = vi.fn().mockResolvedValue(undefined)
     const currentAgent = {
       isReady: vi.fn(() => true),
-      getSessionId: vi.fn(function (this: any) { return this.sessionId }),
-      sessionId: 'session-A',
-      sendMessage,
+      getSessionId: vi.fn(() => 'session-A'),
+      sendMessage: desktopSendMessage,
       getCwd: vi.fn(() => '/project'),
       isStreaming: vi.fn(() => false),
-      resumeSession,
     }
     ;(service as any).agents.set('/project', currentAgent)
+    ;(service as any).remoteControlService = {
+      setRemoteSessionFilter: vi.fn(),
+      clearRemoteSessionFilter: vi.fn(),
+    }
 
     await service.handleRemoteCommand({
       type: 'send_message',
@@ -305,10 +311,15 @@ describe('AgentService.handleRemoteCommand', () => {
       sessionId: 'session-B',
     })
 
-    expect(resumeSession).toHaveBeenCalledWith('session-B')
-    expect(sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'hello' }),
+    expect(createdAgents).toHaveLength(1)
+    expect(createdAgents[0].initialize).toHaveBeenCalledWith(
+      { cwd: '/project' },
+      expect.any(Function),
+      'session-B',
     )
+    expect(desktopSendMessage).not.toHaveBeenCalled()
+    expect((service as any).remoteSession).not.toBeNull()
+    expect((service as any).remoteSession.agent).toBe(createdAgents[0])
   })
 
   it('send_message persists merged history from main runtime instead of renderer snapshots', async () => {
@@ -548,6 +559,119 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(createdAgents).toHaveLength(0)
   })
 
+  it('send_message with sessionId creates remote session instead of resuming desktop agent', async () => {
+    vi.mocked(dbSessions.loadSessionState).mockReturnValue(null)
+    const service = new AgentService()
+    const desktopAgent = {
+      isReady: vi.fn(() => true),
+      getSessionId: vi.fn(() => 'desktop-session'),
+      sendMessage: vi.fn().mockResolvedValue(undefined),
+      getCwd: vi.fn(() => '/project'),
+      isStreaming: vi.fn(() => false),
+    }
+    ;(service as any).agents.set('/project', desktopAgent)
+
+    const setFilter = vi.fn()
+    const clearFilter = vi.fn()
+    ;(service as any).remoteControlService = {
+      setRemoteSessionFilter: setFilter,
+      clearRemoteSessionFilter: clearFilter,
+    }
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      content: 'hello from mobile',
+      projectPath: '/project',
+      sessionId: 'old-session-from-db',
+    })
+
+    expect(createdAgents).toHaveLength(1)
+    expect(createdAgents[0].initialize).toHaveBeenCalledWith(
+      { cwd: '/project' },
+      expect.any(Function),
+      'old-session-from-db',
+    )
+
+    const remoteSession = (service as any).remoteSession
+    expect(remoteSession).not.toBeNull()
+    expect(remoteSession.projectPath).toBe('/project')
+    expect(remoteSession.agent).toBe(createdAgents[0])
+
+    expect(clearFilter).toHaveBeenCalled()
+    expect(setFilter).toHaveBeenCalledWith('/project', 'old-session-from-db')
+
+    expect(desktopAgent.sendMessage).not.toHaveBeenCalled()
+    expect(desktopAgent.getSessionId()).toBe('desktop-session')
+  })
+
+  it('send_message with sessionId uses worktree cwd from saved state', async () => {
+    vi.mocked(dbSessions.loadSessionState).mockReturnValue({
+      messages: [],
+      worktreePath: '/tmp/worktree-abc',
+    } as never)
+    const service = new AgentService()
+    ;(service as any).agents.set('/project', {
+      isReady: vi.fn(() => true),
+      getSessionId: vi.fn(() => 'desktop-session'),
+      sendMessage: vi.fn(),
+      getCwd: vi.fn(() => '/project'),
+      isStreaming: vi.fn(() => false),
+    })
+    ;(service as any).remoteControlService = {
+      setRemoteSessionFilter: vi.fn(),
+      clearRemoteSessionFilter: vi.fn(),
+    }
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      content: 'hello',
+      projectPath: '/project',
+      sessionId: 'worktree-session',
+    })
+
+    expect(createdAgents).toHaveLength(1)
+    expect(createdAgents[0].initialize).toHaveBeenCalledWith(
+      { cwd: '/tmp/worktree-abc' },
+      expect.any(Function),
+      'worktree-session',
+    )
+  })
+
+  it('send_message with sessionId disposes existing remote session before creating new one', async () => {
+    vi.mocked(dbSessions.loadSessionState).mockReturnValue(null)
+    const service = new AgentService()
+    ;(service as any).agents.set('/project', {
+      isReady: vi.fn(() => true),
+      getSessionId: vi.fn(() => 'desktop-session'),
+      sendMessage: vi.fn(),
+      getCwd: vi.fn(() => '/project'),
+      isStreaming: vi.fn(() => false),
+    })
+
+    const oldRemoteDispose = vi.fn().mockResolvedValue(undefined)
+    ;(service as any).remoteSession = {
+      projectPath: '/project',
+      agent: { dispose: oldRemoteDispose, getSessionId: vi.fn(() => 'prev-remote') },
+      bufferForRenderer: vi.fn(),
+    }
+    ;(service as any).remoteControlService = {
+      setRemoteSessionFilter: vi.fn(),
+      clearRemoteSessionFilter: vi.fn(),
+    }
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      content: 'hello',
+      projectPath: '/project',
+      sessionId: 'new-old-session',
+    })
+
+    expect(oldRemoteDispose).toHaveBeenCalled()
+    expect(createdAgents).toHaveLength(1)
+    const remoteSession = (service as any).remoteSession
+    expect(remoteSession.agent).toBe(createdAgents[0])
+  })
+
   it('interrupt targets active agent when sessionId matches', async () => {
     const service = new AgentService()
     const interrupt = vi.fn().mockResolvedValue(undefined)
@@ -664,7 +788,7 @@ describe('AgentService.handleRemoteCommand', () => {
       projectPath: '/project',
       sessionId: 'session-A',
     })
-    expect(respond).toHaveBeenCalledWith('ask-1', { 'Which?': 'Option A' })
+    expect(respond).toHaveBeenCalledWith('ask-1', { 'Which?': 'Option A' }, undefined)
   })
 
   it('dismiss_question routes to agent by sessionId', async () => {

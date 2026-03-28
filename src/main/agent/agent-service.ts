@@ -581,6 +581,73 @@ export class AgentService {
     }
   }
 
+  notifyEventSubscribers(event: AgentEvent): void {
+    this.eventSubscribers.forEach((cb) => cb(event))
+  }
+
+  private async runCodexRemoteTurn(projectPath: string, sessionId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }): Promise<void> {
+    const userMessageId = `user_${Date.now()}`
+    const assistantMessageId = `remote-${Date.now()}`
+    const codexAgent: RemoteAgentRef = {
+      getSessionId: () => sessionId,
+      isReady: () => true,
+      sendMessage: async () => {},
+      interrupt: async () => {},
+      respondToPermission: () => {},
+      respondToQuestion: () => {},
+      dismissQuestion: () => {},
+      respondToPlanApproval: () => {},
+      setPermissionMode: async () => {},
+      dispose: async () => {},
+    }
+    if (this.remoteSession) await this.remoteSession.agent.dispose()
+    this.remoteSession = { projectPath, agent: codexAgent }
+    this.remoteControlService?.setRemoteSessionFilter(projectPath, sessionId)
+    const { userMessage, assistantMessage } = this.beginCodexTurn(projectPath, sessionId, {
+      userMessageId,
+      userText: command.content,
+      assistantMessageId,
+      providerId: 'remote',
+      images: command.images,
+      gitBranch: command.gitBranch ?? command.worktreeBranch ?? null,
+    })
+    this.remoteControlService?.broadcastAgentEvent({ type: 'message_start', message: userMessage, projectPath, sessionId } as AgentEvent)
+    this.remoteControlService?.broadcastAgentEvent({ type: 'message_start', message: assistantMessage, projectPath, sessionId } as AgentEvent)
+    this.remoteControlService?.broadcastAgentEvent({ type: 'status_change', status: 'streaming', projectPath, sessionId } as AgentEvent)
+    const runStart = Date.now()
+    try {
+      const result = await this.codexRun?.(sessionId, projectPath, {
+        prompt: command.content,
+        model: command.model,
+        reasoningEffort: command.effort as string | undefined,
+        permissionPreset: command.permissionPreset,
+        threadId: command.threadId,
+        messageId: assistantMessageId,
+        images: command.images,
+      })
+      if (result) {
+        this.completeCodexTurn(sessionId, {
+          messageId: assistantMessageId,
+          result,
+          durationMs: Date.now() - runStart,
+          fallbackText: 'Codex completed without returning text.',
+        })
+      }
+      this.remoteControlService?.broadcastAgentEvent({ type: 'message_complete', messageId: assistantMessageId, metadata: { durationMs: Date.now() - runStart }, projectPath, sessionId } as AgentEvent)
+      this.remoteControlService?.broadcastAgentEvent({ type: 'status_change', status: 'idle', projectPath, sessionId } as AgentEvent)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.failCodexTurn(sessionId, {
+        messageId: assistantMessageId,
+        status: /interrupt|abort/i.test(message) ? 'interrupted' : 'error',
+        text: /interrupt|abort/i.test(message) ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
+      })
+      this.remoteControlService?.broadcastAgentEvent({ type: /interrupt|abort/i.test(message) ? 'message_interrupted' : 'message_error', messageId: assistantMessageId, projectPath, sessionId } as AgentEvent)
+      this.remoteControlService?.broadcastAgentEvent({ type: 'status_change', status: 'idle', projectPath, sessionId } as AgentEvent)
+      throw error
+    }
+  }
+
   async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder): Promise<void> {
     trace('remote.cmd', command.type, command)
     switch (command.type) {
@@ -607,68 +674,15 @@ export class AgentService {
 
         if (command.provider === 'codex') {
           const sessionId = command.sessionId ?? `codex-remote-${Date.now()}`
-          const userMessageId = `user_${Date.now()}`
-          const assistantMessageId = `remote-${Date.now()}`
-          const codexAgent: RemoteAgentRef = {
-            getSessionId: () => sessionId,
-            isReady: () => true,
-            sendMessage: async () => {},
-            interrupt: async () => { /* codex interrupt handled externally */ },
-            respondToPermission: () => {},
-            respondToQuestion: () => {},
-            dismissQuestion: () => {},
-            respondToPlanApproval: () => {},
-            setPermissionMode: async () => {},
-            dispose: async () => {},
-          }
-          if (this.remoteSession) await this.remoteSession.agent.dispose()
-          this.remoteSession = { projectPath, agent: codexAgent }
           if (!command.sessionId) {
-            const unsub = this.addEventSubscriber((event) => {
-              if (event.type === 'session_init' && event.projectPath === projectPath) {
-                unsub()
-                const sid = (event as { session?: { sessionId?: string } }).session?.sessionId
-                if (sid) this.remoteControlService?.setRemoteSessionFilter(projectPath, sid)
-              }
-            })
+            this.remoteControlService?.broadcastAgentEvent({
+              type: 'session_init',
+              projectPath,
+              sessionId,
+              session: { sessionId, permissionMode: command.permissionPreset ?? 'default' },
+            } as AgentEvent)
           }
-          const { userMessage, assistantMessage } = this.beginCodexTurn(projectPath, sessionId, {
-            userMessageId,
-            userText: command.content,
-            assistantMessageId,
-            providerId: 'remote',
-            images: command.images,
-            gitBranch: command.gitBranch ?? command.worktreeBranch ?? null,
-          })
-          this.remoteSession?.bufferForRenderer?.({ type: 'message_start', message: userMessage, projectPath, sessionId })
-          this.remoteSession?.bufferForRenderer?.({ type: 'message_start', message: assistantMessage, projectPath, sessionId })
-          const runStart = Date.now()
-          try {
-            const result = await this.codexRun?.(sessionId, projectPath, {
-              prompt: command.content,
-              model: command.model,
-              reasoningEffort: command.effort as string | undefined,
-              permissionPreset: command.permissionPreset,
-              messageId: assistantMessageId,
-              images: command.images,
-            })
-            if (result) {
-              this.completeCodexTurn(sessionId, {
-                messageId: assistantMessageId,
-                result,
-                durationMs: Date.now() - runStart,
-                fallbackText: 'Codex completed without returning text.',
-              })
-            }
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
-            this.failCodexTurn(sessionId, {
-              messageId: assistantMessageId,
-              status: /interrupt|abort/i.test(message) ? 'interrupted' : 'error',
-              text: /interrupt|abort/i.test(message) ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
-            })
-            throw error
-          }
+          await this.runCodexRemoteTurn(projectPath, sessionId, command)
         } else {
           let agent: RemoteAgentRef | ClaudeAgent | undefined
           const targetSid = command.sessionId
@@ -696,6 +710,10 @@ export class AgentService {
                 }
                 this.remoteControlService?.clearRemoteSessionFilter()
                 const saved = loadSessionState(targetSid)
+                if (saved?.provider === 'codex') {
+                  await this.runCodexRemoteTurn(projectPath, targetSid, command)
+                  break
+                }
                 const cwd = saved?.worktreePath ?? projectPath
                 const remoteAgent = new ClaudeAgent()
                 const { emit, bufferForRenderer } = this.createRemoteEventEmitter(projectPath)
@@ -878,8 +896,9 @@ export class AgentService {
         try {
           const result = loadSessionMessagesPaginated(command.sessionId, command.limit ?? 10, command.cursor)
           const stripped = stripMessagesForRemote(result.messages, command.projectPath)
-          trace('remote.cmd', 'load_session_messages_result', { projectPath: command.projectPath, sessionId: command.sessionId, messageCount: stripped.length, hasMore: result.hasMore, cursor: result.cursor })
-          await respond?.(command.requestId, { messages: stripped, hasMore: result.hasMore, cursor: result.cursor })
+          const sessionProvider = loadSessionState(command.sessionId)?.provider ?? 'claude'
+          trace('remote.cmd', 'load_session_messages_result', { projectPath: command.projectPath, sessionId: command.sessionId, messageCount: stripped.length, hasMore: result.hasMore, cursor: result.cursor, provider: sessionProvider })
+          await respond?.(command.requestId, { messages: stripped, hasMore: result.hasMore, cursor: result.cursor, provider: sessionProvider })
         } catch (err) {
           trace('remote.cmd', 'load_session_messages_error', { projectPath: command.projectPath, sessionId: command.sessionId, error: (err as Error).message })
           await respond?.(command.requestId, { error: (err as Error).message })
@@ -946,9 +965,9 @@ export class AgentService {
           const limit = command.limit ?? 10
           const offset = command.offset ?? 0
           const allSessions = listSessionsForFolder(command.projectPath)
-          const claudeSessions = allSessions.filter((s) => !s.isHidden && s.provider !== 'codex')
-          const visible = claudeSessions.slice(offset, offset + limit)
-          const totalCount = claudeSessions.length
+          const visibleSessions = allSessions.filter((s) => !s.isHidden)
+          const visible = visibleSessions.slice(offset, offset + limit)
+          const totalCount = visibleSessions.length
           const countStmt = db.prepare('SELECT COUNT(*) as cnt FROM chat_messages WHERE claude_session_id = ?')
           await respond?.(command.requestId, {
             totalCount,

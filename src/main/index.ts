@@ -112,6 +112,7 @@ function safeSend(channel: string, ...args: unknown[]): void {
 
 function emitAgentEvent(event: AgentEvent): void {
   agentService.recordCodexEvent(event)
+  agentService.notifyEventSubscribers(event)
   safeSend(AgentIpcChannels.EVENT, event)
 }
 

@@ -15,6 +15,7 @@ export async function fetchModels(cwd: string, env?: Record<string, string | und
         env,
       },
     })
+    await q.initializationResult()
     const models = await q.supportedModels()
     q.close()
     log.info('[claude] fetchModels success count=%d', models.length)

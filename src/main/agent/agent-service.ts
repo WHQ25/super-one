@@ -992,7 +992,9 @@ export class AgentService {
       }
       case 'list_models': {
         try {
-          const models = await fetchModels(command.projectPath)
+          const cached = getCachedResources()
+          const cachedModels = cached?.models as ModelOption[] | undefined
+          const models = cachedModels?.length ? cachedModels : await fetchModels(command.projectPath)
           await respond?.(command.requestId, { models })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
@@ -1004,7 +1006,8 @@ export class AgentService {
           const isClaude = command.provider !== 'codex'
           const cached = getCachedResources()
           if (isClaude) {
-            const models = await fetchModels(command.projectPath)
+            const cachedModels = cached?.models as ModelOption[] | undefined
+            const models = cachedModels?.length ? cachedModels : await fetchModels(command.projectPath)
             const skills = listSkills(command.projectPath)
             const agents = discoverAllAgents(command.projectPath)
             const projectSlashCommands = discoverProjectCommands(command.projectPath)

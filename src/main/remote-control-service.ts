@@ -5,7 +5,7 @@ import { powerSaveBlocker } from 'electron'
 import WebSocket from 'ws'
 import { diffLines } from 'diff'
 import log from './logger'
-import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage } from '../shared/agent-types'
+import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem } from '../shared/agent-types'
 import { trace } from './agent/event-trace'
 import { readOutputFile } from './agent/claude-session-runtime'
 import { initHighlighter, highlightCodeSync, highlightCodeByLang, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
@@ -306,8 +306,86 @@ function stripEventForRemote(event: AgentEvent, projectPath?: string): AgentEven
   return event
 }
 
+function convertCodexItemsToBlocks(items: CodexThreadItem[], projectPath?: string): ContentBlock[] {
+  const blocks: ContentBlock[] = []
+  for (const item of items) {
+    switch (item.type) {
+      case 'agent_message':
+      case 'plan':
+        blocks.push({ type: 'text', text: item.text } as ContentBlock)
+        break
+      case 'review':
+        if (item.text) blocks.push({ type: 'text', text: item.text } as ContentBlock)
+        break
+      case 'reasoning':
+        blocks.push({ type: 'thinking', thinking: item.text } as ContentBlock)
+        break
+      case 'command_execution': {
+        const action = item.commandActions?.[0]
+        const output = item.command ? `\x1b[32m$\x1b[0m ${item.command}\n${item.aggregatedOutput}` : item.aggregatedOutput
+        const truncated = truncateBashOutput(output)
+        let toolBlock: ContentBlock
+        if (action?.type === 'read') {
+          const filePath = action.path ? stripProjectPath(action.path, projectPath) : undefined
+          toolBlock = { type: 'read', toolName: 'Read', toolUseId: item.id, input: '', status: 'complete', toolFilePath: filePath } as ContentBlock
+        } else if (action?.type === 'search') {
+          const query = action.query ?? ''
+          const path = action.path ? stripProjectPath(action.path, projectPath) : undefined
+          const summary = `${query}${path ? ` in ${path.split('/').pop()}` : ''}`
+          toolBlock = { type: 'grep', toolName: 'Grep', toolUseId: item.id, input: '', status: 'complete', toolSummary: summary } as ContentBlock
+        } else {
+          toolBlock = { type: 'bash', toolName: 'Bash', toolUseId: item.id, input: '', status: 'complete', toolSummary: item.command } as ContentBlock
+        }
+        blocks.push(toolBlock)
+        if (item.aggregatedOutput) {
+          blocks.push({ type: 'bash_result', toolUseId: item.id, summary: truncated, outputTokens: parseAnsiTokens(truncated) } as ContentBlock)
+        }
+        break
+      }
+      case 'file_change':
+        for (const change of item.changes) {
+          const filePath = change.path ? stripProjectPath(change.path, projectPath) : ''
+          const block: Record<string, unknown> = { type: 'file_change', toolName: 'FileChange', toolUseId: `${item.id}:${change.path}`, input: '', status: 'complete', toolFilePath: filePath }
+          if (change.diff) {
+            block.toolDiff = change.diff
+            let added = 0, removed = 0
+            for (const line of change.diff.split('\n')) {
+              if (line.startsWith('+') && !line.startsWith('+++')) added++
+              else if (line.startsWith('-') && !line.startsWith('---')) removed++
+            }
+            if (added > 0 || removed > 0) block.toolLineDelta = { added, removed }
+            if (filePath) {
+              const newLines = change.diff.split('\n').filter((l: string) => l.startsWith('+') && !l.startsWith('+++')).map((l: string) => l.slice(1)).join('\n')
+              const oldLines = change.diff.split('\n').filter((l: string) => l.startsWith('-') && !l.startsWith('---')).map((l: string) => l.slice(1)).join('\n')
+              const addedTokens = newLines ? highlightCodeSync(newLines, filePath) : undefined
+              const removedTokens = oldLines ? highlightCodeSync(oldLines, filePath) : undefined
+              if (addedTokens || removedTokens) block.toolDiffTokens = { added: addedTokens ?? undefined, removed: removedTokens ?? undefined }
+            }
+          }
+          blocks.push(block as ContentBlock)
+        }
+        break
+      case 'web_search':
+        blocks.push({ type: 'web_search', toolName: 'WebSearch', toolUseId: item.id, input: '', status: 'complete', toolSummary: item.query } as ContentBlock)
+        break
+      case 'mcp_tool_call':
+        blocks.push({ type: 'tool_use', toolName: `${item.server}:${item.tool}`, toolUseId: item.id, input: '', status: 'complete' } as ContentBlock)
+        break
+      case 'error':
+        blocks.push({ type: 'text', text: item.message } as ContentBlock)
+        break
+    }
+  }
+  return blocks
+}
+
 export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: string): ChatMessage[] {
   return messages.map((msg) => {
+    if (msg.providerId === 'codex' && msg.metadata?.codex?.items?.length) {
+      const converted = convertCodexItemsToBlocks(msg.metadata.codex.items, projectPath)
+      const { codex: _c, ...rest } = msg.metadata
+      return { ...msg, content: converted, metadata: rest }
+    }
     const bashCmds = new Map<string, string>()
     const todoInputs = new Map<string, { toolName: string; input: string }>()
     const widgetIds = new Set<string>()

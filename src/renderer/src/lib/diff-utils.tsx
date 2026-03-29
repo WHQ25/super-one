@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useMemo, memo } from 'react'
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useMemo, useCallback, useLayoutEffect, memo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { cn } from '@/lib/utils'
 import { codePlugin, codePluginLight } from '@/components/chat/chat-shared'
@@ -211,6 +211,8 @@ export const LINE_STYLE: Record<DiffLine['kind'], { bg: string; marker: string; 
 }
 
 const ESTIMATED_LINE_HEIGHT = 20
+const DIFF_LINE_HEIGHT_RATIO = 1.625
+const DIFF_OVERSCAN = 8
 
 const DiffLineRow = memo(function DiffLineRow({ line, tokens, gw, size, start, isHighlighted }: {
   line: DiffLine
@@ -258,13 +260,34 @@ export const DiffView = forwardRef<HTMLDivElement, {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   useImperativeHandle(ref, () => scrollRef.current!, [])
+  const [estimatedLineHeight, setEstimatedLineHeight] = useState(ESTIMATED_LINE_HEIGHT)
+
+  const updateLineHeight = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const styles = window.getComputedStyle(el)
+    const fontSize = Number.parseFloat(styles.fontSize) || 11
+    const parsedLineHeight = Number.parseFloat(styles.lineHeight)
+    const nextLineHeight = Number.isFinite(parsedLineHeight) && parsedLineHeight > 0
+      ? parsedLineHeight
+      : fontSize * DIFF_LINE_HEIGHT_RATIO
+    setEstimatedLineHeight((prev) => Math.abs(prev - nextLineHeight) < 0.1 ? prev : nextLineHeight)
+  }, [])
+
+  useLayoutEffect(() => {
+    updateLineHeight()
+  }, [updateLineHeight, className, maxHeight, hideScrollbar])
 
   const virtualizer = useVirtualizer({
     count: lines.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ESTIMATED_LINE_HEIGHT,
-    overscan: 20,
+    estimateSize: () => estimatedLineHeight,
+    overscan: DIFF_OVERSCAN,
   })
+
+  useEffect(() => {
+    virtualizer.measure()
+  }, [virtualizer, estimatedLineHeight, lines.length])
 
   const [highlightIdx, setHighlightIdx] = useState<number | null>(null)
   const linesRef = useRef(lines)

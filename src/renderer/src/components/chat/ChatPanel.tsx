@@ -102,6 +102,12 @@ export function ChatPanel() {
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       const panelXY = cornerToXY(corner, panelW, panelH)
+      let nextDragPos = panelXY
+      let raf = 0
+      const flush = () => {
+        raf = 0
+        setDragPos(nextDragPos)
+      }
       dragRef.current = {
         startX: e.clientX,
         startY: e.clientY,
@@ -117,16 +123,19 @@ export function ChatPanel() {
           dragRef.current.dragging = true
         }
         if (dragRef.current.dragging) {
-          setDragPos({
+          nextDragPos = {
             x: dragRef.current.panelStartX + dx,
             y: dragRef.current.panelStartY + dy,
-          })
+          }
+          if (raf === 0) raf = requestAnimationFrame(flush)
         }
       }
 
       const handleMouseUp = (ev: MouseEvent) => {
         window.removeEventListener('mousemove', handleMouseMove)
         window.removeEventListener('mouseup', handleMouseUp)
+        cancelAnimationFrame(raf)
+        raf = 0
         if (dragRef.current.dragging) {
           const cx = dragRef.current.panelStartX + (ev.clientX - dragRef.current.startX) + panelW / 2
           const cy = dragRef.current.panelStartY + (ev.clientY - dragRef.current.startY) + panelH / 2
@@ -163,17 +172,28 @@ export function ChatPanel() {
       e.stopPropagation()
       const startY = e.clientY
       const startH = expandedH
+      let nextH = startH
+      let raf = 0
+      const flush = () => {
+        raf = 0
+        setExpandedH(nextH)
+      }
       setIsResizing(true)
 
       const handleMouseMove = (ev: MouseEvent) => {
         const dy = ev.clientY - startY
         const newH = isAtTop ? startH + dy : startH - dy
-        setExpandedH(clamp(newH, MIN_EXPANDED_H, maxExpandedH()))
+        nextH = clamp(newH, MIN_EXPANDED_H, maxExpandedH())
+        if (raf === 0) raf = requestAnimationFrame(flush)
       }
 
-      const handleMouseUp = () => {
+      const handleMouseUp = (ev: MouseEvent) => {
         window.removeEventListener('mousemove', handleMouseMove)
         window.removeEventListener('mouseup', handleMouseUp)
+        cancelAnimationFrame(raf)
+        const dy = ev.clientY - startY
+        const finalH = isAtTop ? startH + dy : startH - dy
+        setExpandedH(clamp(finalH, MIN_EXPANDED_H, maxExpandedH()))
         setIsResizing(false)
       }
 
@@ -189,18 +209,28 @@ export function ChatPanel() {
       e.stopPropagation()
       const startX = e.clientX
       const startW = panelW
+      let nextW = startW
+      let raf = 0
+      const flush = () => {
+        raf = 0
+        setPanelW(nextW)
+      }
       setIsResizing(true)
 
       const handleMouseMove = (ev: MouseEvent) => {
         const dx = ev.clientX - startX
-        // Drag left edge leftward = wider (right-anchored), drag right edge rightward = wider (left-anchored)
         const newW = isAtLeft ? startW + dx : startW - dx
-        setPanelW(clamp(newW, MIN_PANEL_W, MAX_PANEL_W))
+        nextW = clamp(newW, MIN_PANEL_W, MAX_PANEL_W)
+        if (raf === 0) raf = requestAnimationFrame(flush)
       }
 
-      const handleMouseUp = () => {
+      const handleMouseUp = (ev: MouseEvent) => {
         window.removeEventListener('mousemove', handleMouseMove)
         window.removeEventListener('mouseup', handleMouseUp)
+        cancelAnimationFrame(raf)
+        const dx = ev.clientX - startX
+        const finalW = isAtLeft ? startW + dx : startW - dx
+        setPanelW(clamp(finalW, MIN_PANEL_W, MAX_PANEL_W))
         setIsResizing(false)
       }
 

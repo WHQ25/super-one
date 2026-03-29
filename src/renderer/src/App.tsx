@@ -143,24 +143,30 @@ function App(): React.JSX.Element {
       raf = requestAnimationFrame(() => {
         const { showSidebar: sb, sidebarWidth: sw, showFilePanel: fp, filePanelWidth: fw, setSidebarWidth: setSW, setFilePanelWidth: setFW } = useAppStore.getState()
         const totalPanels = (sb ? sw : 0) + (fp ? fw : 0)
-        const overflow = totalPanels + MIN_MAIN - window.innerWidth
+        let overflow = totalPanels + MIN_MAIN - window.innerWidth
         if (overflow <= 0) return
-        if (fp && fw - overflow >= MIN_FP) {
-          setFW(fw - overflow)
-        } else if (fp && sb) {
-          const newFW = MIN_FP
-          const remaining = overflow - (fw - newFW)
-          setFW(newFW)
-          if (remaining > 0) setSW(Math.max(MIN_SIDEBAR, sw - remaining))
-        } else if (sb && sw - overflow >= MIN_SIDEBAR) {
-          setSW(sw - overflow)
+        if (sb) {
+          const shrink = Math.min(overflow, sw - MIN_SIDEBAR)
+          if (shrink > 0) { setSW(sw - shrink); overflow -= shrink }
+        }
+        if (overflow > 0 && fp) {
+          const shrink = Math.min(overflow, fw - MIN_FP)
+          if (shrink > 0) setFW(fw - shrink)
         }
       })
     }
     window.addEventListener('resize', clampPanels)
+    let prevFp = useAppStore.getState().showFilePanel
+    const unsub = useAppStore.subscribe((state) => {
+      if (state.showFilePanel !== prevFp) {
+        prevFp = state.showFilePanel
+        if (state.showFilePanel) clampPanels()
+      }
+    })
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', clampPanels)
+      unsub()
     }
   }, [])
 

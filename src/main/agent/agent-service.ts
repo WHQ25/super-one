@@ -760,11 +760,13 @@ export class AgentService {
 
             const remoteAgent = new ClaudeAgent()
             const { emit, bufferForRenderer } = this.createRemoteEventEmitter(projectPath)
-            await remoteAgent.initialize({ cwd }, emit)
+            await remoteAgent.initialize(
+              { cwd }, emit, undefined,
+              command.permissionMode ? { permissionMode: command.permissionMode as PermissionMode } : undefined,
+            )
             this.remoteSession = { projectPath, agent: remoteAgent, bufferForRenderer }
 
             if (command.effort) remoteAgent.setInitialEffort(command.effort as never)
-            if (command.permissionMode) await remoteAgent.setPermissionMode(command.permissionMode as PermissionMode)
 
             const unsub = this.addEventSubscriber((event) => {
               if (event.type === 'session_init' && event.projectPath === projectPath) {

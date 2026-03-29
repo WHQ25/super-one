@@ -104,6 +104,7 @@ export class ClaudeAgent {
     config: ClaudeAgentConfig,
     onEvent: (event: AgentEvent) => void,
     resumeSessionId?: string,
+    overrides?: { permissionMode?: PermissionMode },
   ): Promise<void> {
     this.config = config
     this.onEvent = onEvent
@@ -113,6 +114,10 @@ export class ClaudeAgent {
 
     if (!resumeSessionId) {
       this.applyPreferences()
+    }
+
+    if (overrides?.permissionMode) {
+      this.currentPermissionMode = overrides.permissionMode
     }
 
     this.createSession(resumeSessionId)

@@ -171,7 +171,8 @@ export function searchMentions(
   roots: string[],
   query: string,
   agents: AgentEntry[],
-  limit = 20
+  limit = 20,
+  scopeDir?: string
 ): MentionSearchItem[] {
   const hasMultipleRoots = roots.length > 1
 
@@ -179,10 +180,13 @@ export function searchMentions(
     const items: MentionSearchItem[] = []
     const files = collectFiles(roots)
     for (const f of files.slice(0, limit)) {
+      if (scopeDir && !f.path.startsWith(scopeDir)) continue
       items.push({ kind: 'file', path: f.path, isDirectory: f.isDirectory, matchIndices: [], score: 0, rootPath: hasMultipleRoots ? f.root : undefined })
     }
-    for (const a of agents) {
-      items.push({ kind: 'agent', name: a.name, model: a.model, matchIndices: [], score: 0 })
+    if (!scopeDir) {
+      for (const a of agents) {
+        items.push({ kind: 'agent', name: a.name, model: a.model, matchIndices: [], score: 0 })
+      }
     }
     return items
   }
@@ -191,16 +195,21 @@ export function searchMentions(
 
   const files = collectFiles(roots)
   for (const file of files) {
-    const m = fuzzyMatch(query, file.path)
+    if (scopeDir && !file.path.startsWith(scopeDir)) continue
+    const matchTarget = scopeDir ? file.path.slice(scopeDir.length) : file.path
+    const m = fuzzyMatch(query, matchTarget)
     if (m.match) {
-      results.push({ kind: 'file', path: file.path, isDirectory: file.isDirectory, matchIndices: m.indices, score: m.score, rootPath: hasMultipleRoots ? file.root : undefined })
+      const indices = scopeDir ? m.indices.map((i) => i + scopeDir.length) : m.indices
+      results.push({ kind: 'file', path: file.path, isDirectory: file.isDirectory, matchIndices: indices, score: m.score, rootPath: hasMultipleRoots ? file.root : undefined })
     }
   }
 
-  for (const agent of agents) {
-    const m = fuzzyMatch(query, agent.name)
-    if (m.match) {
-      results.push({ kind: 'agent', name: agent.name, model: agent.model, matchIndices: m.indices, score: m.score })
+  if (!scopeDir) {
+    for (const agent of agents) {
+      const m = fuzzyMatch(query, agent.name)
+      if (m.match) {
+        results.push({ kind: 'agent', name: agent.name, model: agent.model, matchIndices: m.indices, score: m.score })
+      }
     }
   }
 

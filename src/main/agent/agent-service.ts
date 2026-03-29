@@ -1514,11 +1514,11 @@ export class AgentService {
       return searchFiles(roots, query, 20)
     })
 
-    ipcMain.handle(AgentIpcChannels.SEARCH_MENTIONS, async (_event, projectPath: string, query: string, agents: AgentEntry[], additionalDirs?: string[]) => {
+    ipcMain.handle(AgentIpcChannels.SEARCH_MENTIONS, async (_event, projectPath: string, query: string, agents: AgentEntry[], additionalDirs?: string[], scopeDir?: string) => {
       const agent = this.agents.get(projectPath)
       const cwd = agent?.getCwd() ?? projectPath
       const roots = [cwd, ...(additionalDirs || [])]
-      return searchMentions(roots, query, agents, 20)
+      return searchMentions(roots, query, agents, 20, scopeDir)
     })
 
     ipcMain.handle(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, async () => {

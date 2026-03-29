@@ -23,7 +23,7 @@ interface AgentAPI {
   listDirectory(projectPath: string, relativePath: string): Promise<ListDirEntry[]>
   findLineNumber(projectPath: string, filePath: string, text: string): Promise<number | null>
   searchFiles(projectPath: string, query: string, additionalDirs?: string[]): Promise<FileSearchResult[]>
-  searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[]): Promise<MentionSearchItem[]>
+  searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string): Promise<MentionSearchItem[]>
   disconnectRemoteSession(): Promise<void>
   readProjectAdditionalDirs(projectPath: string): Promise<string[]>
   writeProjectAdditionalDirs(projectPath: string, dirs: string[]): Promise<void>

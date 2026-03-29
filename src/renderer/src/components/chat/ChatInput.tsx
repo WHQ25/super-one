@@ -221,10 +221,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     )
 
     const handleMentionSelect = useCallback(
-      (value: string, _action: 'navigate' | 'select') => {
+      (value: string, action: 'navigate' | 'select') => {
         const info = mentionInfoRef.current
         const ed = editorRef.current
         if (!info || !ed) return
+
+        if (action === 'navigate') {
+          ed.chain()
+            .focus()
+            .deleteRange({ from: info.atPos + 1, to: info.atPos + 1 + info.query.length })
+            .insertContentAt(info.atPos + 1, [{ type: 'text', text: value }])
+            .run()
+          mentionInfoRef.current = { atPos: info.atPos, query: value }
+          setMentionIndex(0)
+          return
+        }
 
         const isAgent = showAgentMentions && agents.some((a) => a.name === value)
         const kind: MentionKind = isAgent ? 'agent' : value.endsWith('/') ? 'directory' : 'file'

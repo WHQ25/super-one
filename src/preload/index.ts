@@ -63,8 +63,8 @@ const agentAPI = {
   searchFiles: (projectPath: string, query: string, additionalDirs?: string[]) =>
     ipcRenderer.invoke(AgentIpcChannels.SEARCH_FILES, projectPath, query, additionalDirs),
 
-  searchMentions: (projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[]) =>
-    ipcRenderer.invoke(AgentIpcChannels.SEARCH_MENTIONS, projectPath, query, agents, additionalDirs),
+  searchMentions: (projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SEARCH_MENTIONS, projectPath, query, agents, additionalDirs, scopeDir),
 
   disconnectRemoteSession: () =>
     ipcRenderer.invoke(AgentIpcChannels.DISCONNECT_REMOTE_SESSION),

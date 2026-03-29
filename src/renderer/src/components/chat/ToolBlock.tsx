@@ -749,7 +749,7 @@ function ExitPlanModeBlock({ result }: { result?: string }) {
   const resultOutcome = result
     ? (isDenied ? { approved: false, feedback: result.slice('[denied] '.length) } : { approved: true })
     : null
-  const outcome = liveOutcome ?? resultOutcome
+  const outcome = resultOutcome ?? liveOutcome
 
   if (!outcome) {
     return (

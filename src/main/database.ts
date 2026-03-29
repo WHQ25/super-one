@@ -219,23 +219,7 @@ function migrateProvidersToUnified(db: Database.Database): void {
   }
 }
 
-function seedDevProviders(db: Database.Database): void {
-  const count = (db.prepare('SELECT COUNT(*) as c FROM api_providers').get() as { c: number }).c
-  if (count > 0) return
-  const now = new Date().toISOString()
-  const makeClaudeConfig = (url: string, env: string) => JSON.stringify({
-    claude: { base_url: url, model_env: '{}', extra_env: env, api_format: 'anthropic' },
-  })
-  const seeds = [
-    { name: 'GLM (CN)', type: 'custom', key: 'sk-test-zhipu-123456', category: 'model_provider', agents: '["claude"]', configs: makeClaudeConfig('https://open.bigmodel.cn/api/anthropic', '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":"","ANTHROPIC_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_SONNET_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_OPUS_MODEL":"glm-5","ANTHROPIC_DEFAULT_HAIKU_MODEL":"glm-4.5-air"}'), activeClaude: 1 },
-    { name: 'Kimi', type: 'custom', key: 'sk-test-kimi-abcdef', category: 'model_provider', agents: '["claude"]', configs: makeClaudeConfig('https://api.kimi.com/coding/', '{"ANTHROPIC_MODEL":"kimi-k2","ANTHROPIC_DEFAULT_SONNET_MODEL":"kimi-k2","ANTHROPIC_DEFAULT_OPUS_MODEL":"kimi-k2","ANTHROPIC_DEFAULT_HAIKU_MODEL":"kimi-k2"}'), activeClaude: 0 },
-    { name: 'OpenRouter', type: 'openrouter', key: 'sk-or-test-999888', category: 'aggregator', agents: '["claude","codex"]', configs: JSON.stringify({ claude: { base_url: 'https://openrouter.ai/api', model_env: '{}', extra_env: '{"ANTHROPIC_API_KEY":""}', api_format: 'anthropic' }, codex: { base_url: 'https://openrouter.ai/api/v1', model_env: '{}', extra_env: '{"OPENAI_BASE_URL":"https://openrouter.ai/api/v1"}', api_format: 'openai_chat' } }), activeClaude: 0 },
-    { name: 'AWS Bedrock', type: 'bedrock', key: '', category: 'cloud_platform', agents: '["claude"]', configs: makeClaudeConfig('', '{"CLAUDE_CODE_USE_BEDROCK":"1","AWS_REGION":"us-east-1","AWS_ACCESS_KEY_ID":"","AWS_SECRET_ACCESS_KEY":"","AWS_SESSION_TOKEN":""}'), activeClaude: 0 },
-    { name: 'Google Vertex', type: 'vertex', key: '', category: 'cloud_platform', agents: '["claude"]', configs: makeClaudeConfig('', '{"CLAUDE_CODE_USE_VERTEX":"1","CLOUD_ML_REGION":"global","ANTHROPIC_VERTEX_PROJECT_ID":"my-gcp-project"}'), activeClaude: 0 },
-  ]
-  const stmt = db.prepare('INSERT INTO api_providers (id, name, provider_type, api_key, category, supported_agents, agent_configs, is_active_claude, is_active_codex, sort_order, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-  seeds.forEach((s, i) => stmt.run(randomUUID(), s.name, s.type, s.key, s.category, s.agents, s.configs, s.activeClaude, 0, i, '', now, now))
-}
+function seedDevProviders(_db: Database.Database): void {}
 
 export function getCachedResources(): { models: unknown[]; codexModels: unknown[]; account: Record<string, unknown>; slashCommands: unknown[] } | null {
   const row = getDb().prepare('SELECT models_json, codex_models_json, account_json, slash_commands_json FROM global_resource_cache WHERE id = 1').get() as

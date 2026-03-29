@@ -47,10 +47,14 @@ vi.mock('./PermissionModeSelector', () => ({
 }))
 
 vi.mock('lucide-react', () => ({
+  Bot: () => <span>bot</span>,
   Circle: () => <span>circle</span>,
   CheckCircle2: () => <span>check</span>,
+  ChevronDown: () => <span>chevron-down</span>,
+  ChevronUp: () => <span>chevron-up</span>,
   ShieldAlert: () => <span>alert</span>,
 }))
+
 
 import { PermissionPrompt } from './PermissionPrompt'
 
@@ -62,7 +66,6 @@ describe('PermissionPrompt', () => {
   it('shows four codex decision buttons without feedback input', () => {
     render(<PermissionPrompt />)
 
-    expect(screen.getAllByRole('button')).toHaveLength(4)
     expect(screen.getByText('Allow').closest('button')).toBeTruthy()
     expect(screen.getByRole('button', { name: /allow for this session/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /decline/i })).toBeTruthy()

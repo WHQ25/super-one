@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useChatStore, useActiveSession } from '@/stores/chat'
-import { Bot, Circle, CheckCircle2, ShieldAlert } from 'lucide-react'
+import { Bot, Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay } from './tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
@@ -89,6 +90,7 @@ export function PermissionPrompt() {
   const [focusedIdx, setFocusedIdx] = useState(0)
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set())
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const btnRefs = useRef<(HTMLButtonElement | null)[]>([])
   const feedbackRef = useRef<HTMLInputElement>(null)
 
@@ -104,13 +106,14 @@ export function PermissionPrompt() {
     setFocusedIdx(0)
     setSelectedSuggestions(new Set())
     setIsFeedbackFocused(false)
+    setIsCollapsed(false)
   }, [requestId, suggestionsCount])
 
   useEffect(() => {
-    if (requestId) {
+    if (requestId && !isCollapsed) {
       requestAnimationFrame(() => btnRefs.current[0]?.focus())
     }
-  }, [requestId])
+  }, [requestId, isCollapsed])
 
   const btnCount = isCodexDecisionPrompt ? 4 : 2
 
@@ -162,6 +165,14 @@ export function PermissionPrompt() {
     if (!requestId) return
 
     function onKeyDown(e: KeyboardEvent) {
+      if (isCollapsed) {
+        if (e.key === ' ') {
+          e.preventDefault()
+          setIsCollapsed(false)
+        }
+        return
+      }
+
       if (e.key === 'Tab' && e.shiftKey && isEditTool && !isCodexDecisionPrompt) {
         e.preventDefault()
         e.stopImmediatePropagation()
@@ -177,6 +188,12 @@ export function PermissionPrompt() {
           e.preventDefault()
           feedbackRef.current?.blur()
         }
+        return
+      }
+
+      if (e.key === ' ') {
+        e.preventDefault()
+        setIsCollapsed(true)
         return
       }
 
@@ -229,7 +246,7 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, suggestionsCount, toggleSuggestion])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion])
 
   if (!pendingPermission) return null
 
@@ -242,196 +259,255 @@ export function PermissionPrompt() {
   const isDebug = DEBUG_TOOL_NAMES.length > 0 &&
     DEBUG_TOOL_NAMES.some((n) => (toolName ?? '').toLowerCase().includes(n))
 
+  const collapsedSummary = isSandboxNetwork
+    ? (typeof input.host === 'string' ? input.host : 'Network Access')
+    : (display.summary || '')
+
   let btnIdx = 0
 
   return (
-    <div className="mx-3 mb-2 rounded-lg border border-border bg-muted/60 p-3">
-      {pendingPermission.sourceAgentName && (
-        <div className="mb-2 flex items-center gap-1.5 rounded bg-purple-500/10 px-2 py-1 text-xs text-purple-600 dark:text-purple-400">
-          <Bot className="size-3 shrink-0" />
-          <span className="min-w-0 truncate">{pendingPermission.sourceAgentName}</span>
-        </div>
-      )}
-      {isSandboxNetwork ? (
-        <>
-          <div className="mb-2 flex items-center gap-1.5 text-xs">
-            <ShieldAlert className="size-3.5 shrink-0 text-amber-500" />
-            <span className="font-medium text-amber-500">Allow Sandbox Network Access</span>
-          </div>
-          {typeof input.host === 'string' && input.host && (
-            <p className="mb-2 font-mono text-xs text-muted-foreground">{input.host}</p>
-          )}
-        </>
-      ) : (
-        <>
-          <div className="mb-2 flex items-center gap-1.5 text-xs">
-            <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="font-medium text-foreground">{toolName}</span>
-            {isBash && typeof input.description === 'string' && input.description && (
-              <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>
-            )}
-          </div>
-          {isBash && !!input.dangerouslyDisableSandbox && (
-            <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
-              <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-              <span className="text-xs font-medium text-amber-500">Sandbox Override</span>
-            </div>
-          )}
-        </>
-      )}
-      {!isSandboxNetwork && display.summary && (
-        <p
-          className={`mb-2 text-xs text-muted-foreground ${isBash ? 'max-h-32 overflow-y-auto whitespace-pre-wrap break-all font-mono' : 'truncate'}`}
+    <div className="mx-3 mb-2">
+      {isCollapsed ? (
+        <button
+          type="button"
+          onClick={() => setIsCollapsed(false)}
+          className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/60 px-3 py-2 text-left transition-colors hover:bg-muted"
         >
-          {display.summary}
-        </p>
-      )}
-      {(toolName === 'Edit' || toolName === 'Write') && (
-        <div className="mb-2 max-h-64 overflow-y-auto rounded bg-muted/50 text-xs">
-          {toolName === 'Edit' && <EditDiff params={input} />}
-          {toolName === 'Write' && <WriteDiff params={input} />}
-        </div>
-      )}
-      {blockedPath && (
-        <p className="mb-2 break-all text-xs text-amber-400">Blocked path: {blockedPath}</p>
-      )}
-      {decisionReason && (
-        <p className="mb-2 text-xs text-muted-foreground">{decisionReason}</p>
-      )}
-      {isDebug && (
-        <div className="mb-2 space-y-1">
-          <div>
-            <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">Input</div>
-            <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
-              {JSON.stringify(input, null, 2)}
-            </div>
-          </div>
-          {suggestions && suggestions.length > 0 && (
-            <div>
-              <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">Suggestions</div>
-              <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
-                {JSON.stringify(suggestions, null, 2)}
+          {isSandboxNetwork
+            ? <ShieldAlert className="size-3.5 shrink-0 animate-pulse text-amber-500" />
+            : <ToolIcon icon={display.icon} className="size-3.5 shrink-0 animate-pulse text-muted-foreground" />
+          }
+          <span className="text-xs font-medium text-foreground">
+            {isSandboxNetwork ? 'Sandbox Network' : toolName}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {collapsedSummary}
+          </span>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <ChevronUp className="size-3.5 shrink-0 text-muted-foreground" />
+              </TooltipTrigger>
+              <TooltipContent side="top">Collapse permission request (<Kbd variant="inline">space</Kbd> to toggle)</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </button>
+      ) : (
+        <div>
+            <div className="rounded-lg border border-border bg-muted/60 p-3">
+              {pendingPermission.sourceAgentName && (
+                <div className="mb-2 flex items-center gap-1.5 rounded bg-purple-500/10 px-2 py-1 text-xs text-purple-600 dark:text-purple-400">
+                  <Bot className="size-3 shrink-0" />
+                  <span className="min-w-0 truncate">{pendingPermission.sourceAgentName}</span>
+                </div>
+              )}
+              {isSandboxNetwork ? (
+                <>
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <ShieldAlert className="size-3.5 shrink-0 text-amber-500" />
+                      <span className="font-medium text-amber-500">Allow Sandbox Network Access</span>
+                    </div>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button type="button" onClick={() => setIsCollapsed(true)} className="cursor-pointer text-muted-foreground hover:text-foreground">
+                            <ChevronDown className="size-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Collapse permission request (<Kbd variant="inline">space</Kbd> to toggle)</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  {typeof input.host === 'string' && input.host && (
+                    <p className="mb-2 font-mono text-xs text-muted-foreground">{input.host}</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="font-medium text-foreground">{toolName}</span>
+                      {isBash && typeof input.description === 'string' && input.description && (
+                        <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>
+                      )}
+                    </div>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button type="button" onClick={() => setIsCollapsed(true)} className="cursor-pointer text-muted-foreground hover:text-foreground">
+                            <ChevronDown className="size-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Collapse permission request (<Kbd variant="inline">space</Kbd> to toggle)</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  {isBash && !!input.dangerouslyDisableSandbox && (
+                    <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
+                      <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                      <span className="text-xs font-medium text-amber-500">Sandbox Override</span>
+                    </div>
+                  )}
+                </>
+              )}
+              {!isSandboxNetwork && display.summary && (
+                <p
+                  className={`mb-2 text-xs text-muted-foreground ${isBash ? 'max-h-32 overflow-y-auto whitespace-pre-wrap break-all font-mono' : 'truncate'}`}
+                >
+                  {display.summary}
+                </p>
+              )}
+              {(toolName === 'Edit' || toolName === 'Write') && (
+                <div className="mb-2 max-h-64 overflow-y-auto rounded bg-muted/50 text-xs">
+                  {toolName === 'Edit' && <EditDiff params={input} />}
+                  {toolName === 'Write' && <WriteDiff params={input} />}
+                </div>
+              )}
+              {blockedPath && (
+                <p className="mb-2 break-all text-xs text-amber-400">Blocked path: {blockedPath}</p>
+              )}
+              {decisionReason && (
+                <p className="mb-2 text-xs text-muted-foreground">{decisionReason}</p>
+              )}
+              {isDebug && (
+                <div className="mb-2 space-y-1">
+                  <div>
+                    <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">Input</div>
+                    <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
+                      {JSON.stringify(input, null, 2)}
+                    </div>
+                  </div>
+                  {suggestions && suggestions.length > 0 && (
+                    <div>
+                      <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">Suggestions</div>
+                      <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
+                        {JSON.stringify(suggestions, null, 2)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex flex-col gap-2">
+                {isCodexDecisionPrompt ? (
+                  <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
+                    <Button
+                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      size="sm"
+                      className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
+                      onClick={handleAllow}
+                    >
+                      Allow
+                      <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
+                    </Button>
+                    <Button
+                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      size="sm"
+                      className="h-7 cursor-pointer bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                      onClick={handleAlwaysAllow}
+                    >
+                      Allow for this session
+                      <Kbd variant="inline" className="ml-1 text-blue-200/80">⇧↵</Kbd>
+                    </Button>
+                    <Button
+                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      size="sm"
+                      className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
+                      onClick={handleDeny}
+                    >
+                      Decline
+                      <Kbd variant="inline" className="ml-1 text-red-200/80">esc</Kbd>
+                    </Button>
+                    <Button
+                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      size="sm"
+                      className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-slate-400 focus:outline-none"
+                      onClick={handleCancel}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      size="sm"
+                      className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
+                      onClick={handleAllow}
+                    >
+                      Allow
+                      {selectedSuggestions.size > 0 && (
+                        <span className="ml-1 text-[10px] text-green-200/80">+{selectedSuggestions.size}</span>
+                      )}
+                      {!isFeedbackFocused && (
+                        <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
+                      )}
+                    </Button>
+                    <Button
+                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      size="sm"
+                      className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
+                      onClick={handleDeny}
+                    >
+                      Deny
+                      <Kbd variant="inline" className="ml-1 text-red-200/80">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
+                    </Button>
+                    <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
+                      <input
+                        ref={feedbackRef}
+                        data-feedback
+                        type="text"
+                        value={feedback}
+                        onChange={(e) => setFeedback(e.target.value)}
+                        onFocus={() => setIsFeedbackFocused(true)}
+                        onBlur={() => setIsFeedbackFocused(false)}
+                        placeholder="Deny reason (optional, Enter to submit)"
+                        className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
+                    </div>
+                  </div>
+                )}
+                {hasSuggestionRow && (
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {allowAlwaysAllow && !isEditTool && (!suggestions || suggestions.length === 0) && (
+                      <Button
+                        size="sm"
+                        className="h-7 w-full cursor-pointer bg-blue-600 px-3 text-xs text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                        onClick={handleAlwaysAllow}
+                      >
+                        Always Allow
+                      </Button>
+                    )}
+                    {suggestions?.map((s, i) => {
+                      const isSelected = selectedSuggestions.has(i)
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors ${
+                            isSelected
+                              ? 'border-green-500/50 bg-green-500/10 text-green-500 hover:bg-green-500/20'
+                              : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                          }`}
+                          onClick={() => toggleSuggestion(i)}
+                        >
+                          {isSelected
+                            ? <CheckCircle2 className="size-3.5 shrink-0 text-green-400" />
+                            : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
+                          }
+                          <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>
+                          <Kbd variant="square" className="ml-auto">{i + 1}</Kbd>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
-          )}
-        </div>
-      )}
-      <div className="flex flex-col gap-2">
-        {isCodexDecisionPrompt ? (
-          <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
-            <Button
-              ref={(el) => { btnRefs.current[btnIdx++] = el }}
-              size="sm"
-              className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
-              onClick={handleAllow}
-            >
-              Allow
-              <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
-            </Button>
-            <Button
-              ref={(el) => { btnRefs.current[btnIdx++] = el }}
-              size="sm"
-              className="h-7 cursor-pointer bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
-              onClick={handleAlwaysAllow}
-            >
-              Allow for this session
-              <Kbd variant="inline" className="ml-1 text-blue-200/80">⇧↵</Kbd>
-            </Button>
-            <Button
-              ref={(el) => { btnRefs.current[btnIdx++] = el }}
-              size="sm"
-              className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
-              onClick={handleDeny}
-            >
-              Decline
-              <Kbd variant="inline" className="ml-1 text-red-200/80">esc</Kbd>
-            </Button>
-            <Button
-              ref={(el) => { btnRefs.current[btnIdx++] = el }}
-              size="sm"
-              className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-slate-400 focus:outline-none"
-              onClick={handleCancel}
-            >
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              ref={(el) => { btnRefs.current[btnIdx++] = el }}
-              size="sm"
-              className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
-              onClick={handleAllow}
-            >
-              Allow
-              {selectedSuggestions.size > 0 && (
-                <span className="ml-1 text-[10px] text-green-200/80">+{selectedSuggestions.size}</span>
-              )}
-              {!isFeedbackFocused && (
-                <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
-              )}
-            </Button>
-            <Button
-              ref={(el) => { btnRefs.current[btnIdx++] = el }}
-              size="sm"
-              className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
-              onClick={handleDeny}
-            >
-              Deny
-              <Kbd variant="inline" className="ml-1 text-red-200/80">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
-            </Button>
-            <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
-              <input
-                ref={feedbackRef}
-                data-feedback
-                type="text"
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-                onFocus={() => setIsFeedbackFocused(true)}
-                onBlur={() => setIsFeedbackFocused(false)}
-                placeholder="Deny reason (optional, Enter to submit)"
-                className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
-            </div>
           </div>
         )}
-        {hasSuggestionRow && (
-          <div className="grid grid-cols-1 gap-1.5">
-            {allowAlwaysAllow && !isEditTool && (!suggestions || suggestions.length === 0) && (
-              <Button
-                size="sm"
-                className="h-7 w-full cursor-pointer bg-blue-600 px-3 text-xs text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                onClick={handleAlwaysAllow}
-              >
-                Always Allow
-              </Button>
-            )}
-            {suggestions?.map((s, i) => {
-              const isSelected = selectedSuggestions.has(i)
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors ${
-                    isSelected
-                      ? 'border-green-500/50 bg-green-500/10 text-green-500 hover:bg-green-500/20'
-                      : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                  onClick={() => toggleSuggestion(i)}
-                >
-                  {isSelected
-                    ? <CheckCircle2 className="size-3.5 shrink-0 text-green-400" />
-                    : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
-                  }
-                  <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>
-                  <Kbd variant="square" className="ml-auto">{i + 1}</Kbd>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
     </div>
   )
 }

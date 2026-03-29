@@ -193,6 +193,12 @@ export class ClaudeAgent {
       (id) => {
         this.sessionId = id
       },
+      (messageId) => {
+        this.currentMessageId = messageId
+        this.currentStartTime = Date.now()
+        this.interrupted = false
+        this.turnResolves.set(messageId, () => {})
+      },
     )
 
     this.sessionQuery = handle.query
@@ -241,85 +247,90 @@ export class ClaudeAgent {
       throw new Error('ClaudeAgent not initialized')
     }
 
-    const effortChanged = request.effort !== this.currentEffort && !!this.bridge
-    let dirsChanged = false
-    let dirNotifyLines: string[] = []
-    if (request.additionalDirs) {
-      const sorted = [...request.additionalDirs].sort()
-      const current = [...this.additionalDirs].sort()
-      dirsChanged = JSON.stringify(sorted) !== JSON.stringify(current)
-      if (dirsChanged) {
-        dirNotifyLines = [
-          ...request.additionalDirs.filter(d => !this.additionalDirs.includes(d)).map(d => `Added ${d} as a working directory`),
-          ...this.additionalDirs.filter(d => !request.additionalDirs!.includes(d)).map(d => `Removed ${d} from working directories`),
-        ]
+    const isQueued = request.priority === 'next'
+
+    if (!isQueued) {
+      const effortChanged = request.effort !== this.currentEffort && !!this.bridge
+      let dirsChanged = false
+      let dirNotifyLines: string[] = []
+      if (request.additionalDirs) {
+        const sorted = [...request.additionalDirs].sort()
+        const current = [...this.additionalDirs].sort()
+        dirsChanged = JSON.stringify(sorted) !== JSON.stringify(current)
+        if (dirsChanged) {
+          dirNotifyLines = [
+            ...request.additionalDirs.filter(d => !this.additionalDirs.includes(d)).map(d => `Added ${d} as a working directory`),
+            ...this.additionalDirs.filter(d => !request.additionalDirs!.includes(d)).map(d => `Removed ${d} from working directories`),
+          ]
+        }
+      }
+
+      if (effortChanged || dirsChanged || this.needsSessionRebuild) {
+        log.info('[ClaudeAgent] session rebuild triggered (effortChanged=%s, dirsChanged=%s, needsRebuild=%s, sessionId=%s)', effortChanged, dirsChanged, this.needsSessionRebuild, this.sessionId)
+        this.needsSessionRebuild = false
+        const prevSessionId = this.sessionId
+        await this.resetSession()
+        this.currentEffort = request.effort
+        if (dirsChanged) this.additionalDirs = request.additionalDirs!
+        this.createSession(prevSessionId || undefined)
+        this.emit({ type: 'permission_mode_change', mode: this.currentPermissionMode })
+        if (dirNotifyLines.length > 0) {
+          this.bridge!.push({
+            type: 'user',
+            message: { role: 'user', content: `<local-command-stdout>\n${dirNotifyLines.join('\n')}\n</local-command-stdout>` },
+            parent_tool_use_id: null,
+            session_id: this.sessionId!,
+          } as SDKUserMessage)
+        }
+      } else {
+        this.currentEffort = request.effort
       }
     }
 
-    if (effortChanged || dirsChanged || this.needsSessionRebuild) {
-      log.info('[ClaudeAgent] session rebuild triggered (effortChanged=%s, dirsChanged=%s, needsRebuild=%s, sessionId=%s)', effortChanged, dirsChanged, this.needsSessionRebuild, this.sessionId)
-      this.needsSessionRebuild = false
-      const prevSessionId = this.sessionId
-      await this.resetSession()
-      this.currentEffort = request.effort
-      if (dirsChanged) this.additionalDirs = request.additionalDirs!
-      this.createSession(prevSessionId || undefined)
-      this.emit({ type: 'permission_mode_change', mode: this.currentPermissionMode })
-      if (dirNotifyLines.length > 0) {
-        this.bridge!.push({
-          type: 'user',
-          message: { role: 'user', content: `<local-command-stdout>\n${dirNotifyLines.join('\n')}\n</local-command-stdout>` },
-          parent_tool_use_id: null,
-          session_id: this.sessionId!,
-        } as SDKUserMessage)
-      }
-    } else {
-      this.currentEffort = request.effort
-    }
-
-    log.debug(`[ClaudeAgent] sendMessage (sessionId=${this.sessionId}, bridge=${!!this.bridge}, iterationAlive=${this.iterationAlive}, gen=${this.sessionGeneration})`)
+    log.debug(`[ClaudeAgent] sendMessage (sessionId=${this.sessionId}, bridge=${!!this.bridge}, iterationAlive=${this.iterationAlive}, gen=${this.sessionGeneration}, queued=${isQueued})`)
     this.createSession()
 
-    const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    this.currentMessageId = messageId
-    this.currentStartTime = Date.now()
-    this.interrupted = false
-
-    const message: ChatMessage = {
-      id: messageId,
-      role: 'assistant',
-      status: 'streaming',
-      content: [],
-      createdAt: new Date().toISOString(),
-      providerId: 'claude',
-    }
-
-    this.emit({ type: 'status_change', status: 'streaming' })
-    this.emit({ type: 'message_start', message })
-
-    const turnDone = new Promise<void>((resolve) => {
-      this.turnResolves.set(messageId, resolve)
-    })
-
-    if (request.model && this.sessionQuery) {
-      try {
-        await this.sessionQuery.setModel(request.model)
-      } catch (err) { log.debug('[claude-agent] setModel skipped (transport not ready):', err) }
-    }
-
     if (!this.bridge) {
-      this.turnResolves.delete(messageId)
-      this.emit({ type: 'message_error', messageId, error: 'Session was terminated before message could be sent' })
-      this.emit({ type: 'status_change', status: 'idle' })
+      log.warn('[ClaudeAgent] sendMessage: no bridge after createSession')
       return
     }
 
-    // Push the user message into the bridge
-    const userMsg = buildUserMessage(request, this.sessionId)
-    this.bridge.push(userMsg)
+    if (!isQueued) {
+      const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      this.currentMessageId = messageId
+      this.currentStartTime = Date.now()
+      this.interrupted = false
 
-    // Wait for this turn to complete (result/error/interrupt event)
-    await turnDone
+      const message: ChatMessage = {
+        id: messageId,
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'claude',
+      }
+
+      this.emit({ type: 'status_change', status: 'streaming' })
+      this.emit({ type: 'message_start', message })
+
+      const turnDone = new Promise<void>((resolve) => {
+        this.turnResolves.set(messageId, resolve)
+      })
+
+      if (request.model && this.sessionQuery) {
+        try {
+          await this.sessionQuery.setModel(request.model)
+        } catch (err) { log.debug('[claude-agent] setModel skipped (transport not ready):', err) }
+      }
+
+      const userMsg = buildUserMessage(request, this.sessionId)
+      this.bridge.push(userMsg)
+
+      await turnDone
+    } else {
+      const userMsg = buildUserMessage(request, this.sessionId)
+      this.bridge.push(userMsg, request.clientMessageId)
+    }
   }
 
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): void {
@@ -642,6 +653,10 @@ export class ClaudeAgent {
     this.iterationAlive = false
     this.ready = false
     this.config = null
+  }
+
+  dequeueMessage(clientMessageId: string): boolean {
+    return this.bridge?.dequeue(clientMessageId) ?? false
   }
 
   isStreaming(): boolean {

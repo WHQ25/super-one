@@ -1,28 +1,44 @@
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
-/**
- * Push-pull async iterable connecting IPC calls to the SDK's streaming input.
- * Messages are pushed via push() and consumed by the SDK's query() function.
- */
+interface TaggedMessage {
+  msg: SDKUserMessage
+  tag?: string
+}
+
 export class MessageBridge {
-  private queue: SDKUserMessage[] = []
+  private queue: TaggedMessage[] = []
   private waiter: { resolve: (v: IteratorResult<SDKUserMessage>) => void } | null = null
   private closed = false
+  private _consumedTags: string[] = []
 
-  /** Push a user message. If the SDK is waiting, it receives it immediately. */
-  push(msg: SDKUserMessage): void {
+  get consumedTags(): readonly string[] {
+    return this._consumedTags
+  }
+
+  drainConsumedTag(): string | undefined {
+    return this._consumedTags.shift()
+  }
+
+  push(msg: SDKUserMessage, tag?: string): void {
     if (this.closed) return
 
     if (this.waiter) {
       const w = this.waiter
       this.waiter = null
+      if (tag) this._consumedTags.push(tag)
       w.resolve({ value: msg, done: false })
     } else {
-      this.queue.push(msg)
+      this.queue.push({ msg, tag })
     }
   }
 
-  /** Close the bridge, signaling end of input to the SDK. */
+  dequeue(tag: string): boolean {
+    const idx = this.queue.findIndex((item) => item.tag === tag)
+    if (idx === -1) return false
+    this.queue.splice(idx, 1)
+    return true
+  }
+
   close(): void {
     this.closed = true
     if (this.waiter) {
@@ -36,7 +52,9 @@ export class MessageBridge {
     return {
       next: (): Promise<IteratorResult<SDKUserMessage>> => {
         if (this.queue.length > 0) {
-          return Promise.resolve({ value: this.queue.shift()!, done: false })
+          const item = this.queue.shift()!
+          if (item.tag) this._consumedTags.push(item.tag)
+          return Promise.resolve({ value: item.msg, done: false })
         }
         if (this.closed) {
           return Promise.resolve({ value: undefined as unknown as SDKUserMessage, done: true })

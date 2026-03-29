@@ -24,6 +24,7 @@ interface ChatMessageProps {
   message: ChatMessageType
   sessionStatus: AgentStatus
   isLastAssistant: boolean
+  hideUserActions?: boolean
 }
 
 /** Tools whose consecutive calls can be collapsed into a summary group. */
@@ -389,7 +390,7 @@ export function RateLimitIndicator({
   )
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions }: ChatMessageProps) {
   const projectPath = useChatStore((s) => s.activeProject)
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
@@ -486,7 +487,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
         )}
         {!isUser && <DurationFooter message={message} copyText={assistantCopyText} parentIsStreaming={isStreaming} />}
       </div>
-      {isUser && (
+      {isUser && !hideUserActions && (
         <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
           {message.checkpointId && <RewindButton checkpointId={message.checkpointId} rewound={message.rewound} className="opacity-100" />}
           {userText.length > 0 && <CopyButton copied={userCopied} onClick={() => copyUserText(userText)} className="opacity-100" />}

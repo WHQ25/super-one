@@ -6,8 +6,7 @@ import { ArrowDown, Check, ClipboardList, Copy, GitFork, PenLine, Smartphone, Tr
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, RateLimitIndicator, UserTextBlock, parseCompactMarker } from './ChatMessage'
-import { AttachmentBar } from './AttachmentBar'
+import { ChatMessage, CompactingIndicator, CompactIndicator, RateLimitIndicator, parseCompactMarker } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -68,8 +67,8 @@ interface ChatContentProps {
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, externalHistory = false }: ChatContentProps) {
   const {
     messages, isCompacting, rateLimitInfo, pendingPlanApproval,
-    showHistory, historySessionId, hasActiveSession, worktreeRemoved, prefireMessage,
-    sessionStatus, lastAssistantMessageId,
+    showHistory, historySessionId, hasActiveSession, worktreeRemoved,
+    sessionStatus, lastAssistantMessageId, queuedMessages,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     isCompacting: s.isCompacting,
@@ -79,13 +78,13 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     historySessionId: s._activeSessionId,
     hasActiveSession: !!s.session,
     worktreeRemoved: s._worktreeRemoved,
-    prefireMessage: s.prefireMessage,
     sessionStatus: s.status,
     lastAssistantMessageId: s.lastAssistantMessageId,
+    queuedMessages: s.queuedMessages,
   })))
-  const { cancelPrefireMessage, discardPrefireMessage, disconnectRemoteSession } = useChatStore(useShallow((s) => ({
-    cancelPrefireMessage: s.cancelPrefireMessage,
-    discardPrefireMessage: s.discardPrefireMessage,
+  const { editQueuedMessage, deleteQueuedMessage, disconnectRemoteSession } = useChatStore(useShallow((s) => ({
+    editQueuedMessage: s.editQueuedMessage,
+    deleteQueuedMessage: s.deleteQueuedMessage,
     disconnectRemoteSession: s.disconnectRemoteSession,
   })))
   const isRemoteLocked = useIsRemoteLocked()
@@ -206,28 +205,21 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                       </div>
                     )
                   })}
-                  {prefireMessage && (
-                    <div className="group/prefire chat-message-wrapper opacity-50">
-                      <div className="flex w-0 min-w-full justify-end">
-                        <div className="flex min-w-0 max-w-[85%] flex-col items-end">
-                          <div className="min-w-0 break-all rounded-xl bg-secondary px-3 py-2 text-sm text-secondary-foreground">
-                            {prefireMessage.attachments.length > 0 && (
-                              <AttachmentBar attachments={prefireMessage.attachments} />
-                            )}
-                            <UserTextBlock text={prefireMessage.content} />
-                          </div>
-                          <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/prefire:opacity-100">
-                            <button onClick={cancelPrefireMessage} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
-                              <PenLine className="size-3" />
-                            </button>
-                            <button onClick={discardPrefireMessage} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
-                              <Trash2 className="size-3" />
-                            </button>
-                          </div>
+                  {queuedMessages.map((msg) => (
+                    <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
+                      <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />
+                      <div className="flex justify-end pr-1">
+                        <div className="-mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/queued:opacity-100">
+                          <button onClick={() => editQueuedMessage(msg.id)} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
+                            <PenLine className="size-3" />
+                          </button>
+                          <button onClick={() => deleteQueuedMessage(msg.id)} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
+                            <Trash2 className="size-3" />
+                          </button>
                         </div>
                       </div>
                     </div>
-                  )}
+                  ))}
                   {isCompacting && <CompactingIndicator />}
                   {showRateLimitIndicator && rateLimitInfo && (
                     <RateLimitIndicator

@@ -236,7 +236,7 @@ describe('createSessionQuery', () => {
     const startTime = Date.now() - 200
 
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       {
         cwd: '/repo',
         model: 'claude-opus',
@@ -326,7 +326,7 @@ describe('createSessionQuery', () => {
 
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
       (event) => events.push(event as unknown as Record<string, unknown>),
       () => 'msg-tokens',
@@ -353,7 +353,7 @@ describe('createSessionQuery', () => {
 
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
       (event) => events.push(event as unknown as Record<string, unknown>),
       () => 'msg-error',
@@ -378,7 +378,7 @@ describe('createSessionQuery', () => {
 
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
       (event) => events.push(event as unknown as Record<string, unknown>),
       () => 'msg-interrupted',
@@ -396,7 +396,7 @@ describe('createSessionQuery', () => {
 
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
       (event) => events.push(event as unknown as Record<string, unknown>),
       () => 'msg-catch',
@@ -427,7 +427,7 @@ describe('createSessionQuery', () => {
 
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
       (event) => events.push(event as unknown as Record<string, unknown>),
       () => 'msg-bg',
@@ -456,7 +456,7 @@ describe('createSessionQuery', () => {
 
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
       (event) => events.push(event as unknown as Record<string, unknown>),
       () => 'msg-no-progress',
@@ -485,7 +485,7 @@ describe('createSessionQuery', () => {
 
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
       (event) => events.push(event as unknown as Record<string, unknown>),
       () => 'msg-late-start',
@@ -514,7 +514,7 @@ describe('createSessionQuery', () => {
 
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
       (event) => events.push(event as unknown as Record<string, unknown>),
       () => 'msg-resume',
@@ -540,24 +540,21 @@ describe('createSessionQuery', () => {
     let currentId = 'msg-A'
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
-      (event) => {
-        events.push(event as unknown as Record<string, unknown>)
-        if ((event as Record<string, unknown>).type === 'status_change' && (event as Record<string, unknown>).status === 'idle' && currentId === 'msg-A') {
-          currentId = 'msg-B'
-        }
-      },
+      (event) => events.push(event as unknown as Record<string, unknown>),
       () => currentId,
       () => Date.now() - 50,
       () => false,
+      undefined,
+      (id) => { currentId = id },
     )
     await handle.iterationDone
 
     const completes = events.filter((e) => e.type === 'message_complete')
     expect(completes).toHaveLength(2)
     expect(completes[0].messageId).toBe('msg-A')
-    expect(completes[1].messageId).toBe('msg-B')
+    expect(completes[1].messageId).toBe(currentId)
   })
 
   it('continuation assistant in same turn keeps turn-A messageId even after sendMessage(B)', async () => {
@@ -578,17 +575,14 @@ describe('createSessionQuery', () => {
     let currentId = 'msg-A'
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
-      (event) => {
-        events.push(event as unknown as Record<string, unknown>)
-        if ((event as Record<string, unknown>).type === 'status_change' && (event as Record<string, unknown>).status === 'idle') {
-          currentId = 'msg-B'
-        }
-      },
+      (event) => events.push(event as unknown as Record<string, unknown>),
       () => currentId,
       () => Date.now() - 50,
       () => false,
+      undefined,
+      (id) => { currentId = id },
     )
     await handle.iterationDone
 
@@ -597,11 +591,11 @@ describe('createSessionQuery', () => {
       .map((e) => ({ messageId: e.messageId, thinking: (e.delta as Record<string, unknown>).thinking }))
     expect(thinkingDeltas[0]).toMatchObject({ messageId: 'msg-A', thinking: 'main done' })
     expect(thinkingDeltas[1]).toMatchObject({ messageId: 'msg-A', thinking: 'resumed after bg' })
-    expect(thinkingDeltas[2]).toMatchObject({ messageId: 'msg-B', thinking: 'turn B' })
+    expect(thinkingDeltas[2]).toMatchObject({ messageId: currentId, thinking: 'turn B' })
 
     const completes = events.filter((e) => e.type === 'message_complete')
     expect(completes[0].messageId).toBe('msg-A')
-    expect(completes[1].messageId).toBe('msg-B')
+    expect(completes[1].messageId).toBe(currentId)
   })
 
   it('new turn stream_events get correct messageId even before assistant message', async () => {
@@ -616,29 +610,26 @@ describe('createSessionQuery', () => {
     let currentId = 'msg-A'
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
-      (event) => {
-        events.push(event as unknown as Record<string, unknown>)
-        if ((event as Record<string, unknown>).type === 'status_change' && (event as Record<string, unknown>).status === 'idle' && currentId === 'msg-A') {
-          currentId = 'msg-B'
-        }
-      },
+      (event) => events.push(event as unknown as Record<string, unknown>),
       () => currentId,
       () => Date.now() - 50,
       () => false,
+      undefined,
+      (id) => { currentId = id },
     )
     await handle.iterationDone
 
     const textDelta = events.find(
       (e) => e.type === 'content_delta' && (e.delta as Record<string, unknown>)?.type === 'text' && (e.delta as Record<string, unknown>)?.text === 'hello B'
     )
-    expect(textDelta?.messageId).toBe('msg-B')
+    expect(textDelta?.messageId).toBe(currentId)
 
     const completes = events.filter((e) => e.type === 'message_complete')
     expect(completes).toHaveLength(2)
     expect(completes[0].messageId).toBe('msg-A')
-    expect(completes[1].messageId).toBe('msg-B')
+    expect(completes[1].messageId).toBe(currentId)
   })
 
   it('re-emits streaming after result when new assistant arrives (resultSeen)', async () => {
@@ -649,19 +640,26 @@ describe('createSessionQuery', () => {
       { type: 'result', subtype: 'success', usage: {} },
     ]
 
+    let currentId = 'msg-x'
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
       (event) => events.push(event as unknown as Record<string, unknown>),
-      () => 'msg-x',
+      () => currentId,
       () => Date.now() - 50,
       () => false,
+      undefined,
+      (id) => { currentId = id },
     )
     await handle.iterationDone
 
     const statusChanges = events.filter((e) => e.type === 'status_change').map((e) => e.status)
     expect(statusChanges).toEqual(['idle', 'streaming', 'idle'])
+
+    const messageStarts = events.filter((e) => e.type === 'message_start')
+    expect(messageStarts).toHaveLength(1)
+    expect((messageStarts[0].message as Record<string, unknown>).id).toBe(currentId)
   })
 
   it('maps iterator errors to interrupted status when already interrupted', async () => {
@@ -670,7 +668,7 @@ describe('createSessionQuery', () => {
     const events: Array<Record<string, unknown>> = []
     const startTime = Date.now() - 80
     const handle = createSessionQuery(
-      {} as MessageBridge,
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
       { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
       (event) => events.push(event as unknown as Record<string, unknown>),
       () => 'msg-catch-interrupted',

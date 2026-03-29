@@ -36,7 +36,8 @@ export function createSessionQuery(
   getCurrentMessageId: () => string,
   getCurrentStartTime: () => number,
   getInterrupted: () => boolean,
-  onSessionId?: (id: string) => void
+  onSessionId?: (id: string) => void,
+  onQueuedTurnStart?: (messageId: string) => void,
 ): SessionQueryHandle {
   const timing = { pausedMs: 0 }
   const timedCanUseTool: CanUseTool = async (...args) => {
@@ -102,6 +103,8 @@ export function createSessionQuery(
     getInterrupted,
     onSessionId,
     trackPlanFile: options.trackPlanFile,
+    onQueuedTurnStart,
+    bridge,
     timing,
   })
 
@@ -130,6 +133,7 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
     message: { role: 'user' as const, content },
     parent_tool_use_id: null,
     session_id: sessionId,
+    ...(request.priority ? { priority: request.priority } : {}),
   } as SDKUserMessage
   trace('agent.sdk', 'user_send', { content })
   return msg
@@ -142,11 +146,13 @@ interface IterateMessagesOptions {
   getInterrupted: () => boolean
   onSessionId?: (id: string) => void
   trackPlanFile?: (filePath: string) => void
+  onQueuedTurnStart?: (messageId: string) => void
+  bridge: MessageBridge
   timing: { pausedMs: number }
 }
 
 async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
-  const { emit: rawEmit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile, timing } = opts
+  const { emit: rawEmit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile, onQueuedTurnStart, bridge, timing } = opts
   const emit = rawEmit
   // Track content_block index → tool_use_id for input_json_delta correlation
   const activeToolBlocks = new Map<number, string>()
@@ -189,6 +195,36 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
       if ((msg.type === 'assistant' || msg.type === 'stream_event')) {
         const parent = (msg as any).parent_tool_use_id ?? null
         if (!parent) {
+          if (resultSeen) {
+            const queuedMessageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+            turnMessageId = queuedMessageId
+            onQueuedTurnStart?.(queuedMessageId)
+            if (bridge.consumedTags.length > 0) bridge.drainConsumedTag()
+            emit({ type: 'message_start', message: {
+              id: queuedMessageId,
+              role: 'assistant',
+              status: 'streaming',
+              content: [],
+              createdAt: new Date().toISOString(),
+              providerId: 'claude',
+            } })
+            if (earlyIdlePauseStart) {
+              timing.pausedMs += Date.now() - earlyIdlePauseStart
+              earlyIdlePauseStart = 0
+            }
+            emit({ type: 'status_change', status: 'streaming' })
+            earlyIdleEmitted = false
+            resultSeen = false
+            turnActive = true
+          } else if (earlyIdleEmitted) {
+            log.debug('[iterateMessages] re-emit streaming: main agent resumed after early idle')
+            if (earlyIdlePauseStart) {
+              timing.pausedMs += Date.now() - earlyIdlePauseStart
+              earlyIdlePauseStart = 0
+            }
+            emit({ type: 'status_change', status: 'streaming' })
+            earlyIdleEmitted = false
+          }
           const latestId = getCurrentMessageId()
           if (!turnActive || latestId !== turnMessageId) {
             turnMessageId = latestId
@@ -222,6 +258,23 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           }
         }
         const msgContent = userMsg.message?.content
+
+        if (!parentToolUseId && typeof msgContent === 'string' && bridge.consumedTags.length > 0) {
+          bridge.drainConsumedTag()
+          const queuedMessageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+          turnMessageId = queuedMessageId
+          messageId = queuedMessageId
+          onQueuedTurnStart?.(queuedMessageId)
+          emit({ type: 'message_start', message: {
+            id: queuedMessageId,
+            role: 'assistant',
+            status: 'streaming',
+            content: [],
+            createdAt: new Date().toISOString(),
+            providerId: 'claude',
+          } })
+          turnActive = true
+        }
 
         // Extract tool_result blocks from array content
         if (Array.isArray(msgContent)) {
@@ -425,18 +478,6 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
         case 'assistant': {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const assistantParent = (msg as any).parent_tool_use_id ?? null
-          if (!assistantParent) {
-            if (earlyIdleEmitted || resultSeen) {
-              log.debug('[iterateMessages] re-emit streaming: main agent resumed after early idle or result')
-              if (earlyIdlePauseStart) {
-                timing.pausedMs += Date.now() - earlyIdlePauseStart
-                earlyIdlePauseStart = 0
-              }
-              emit({ type: 'status_change', status: 'streaming' })
-              earlyIdleEmitted = false
-              resultSeen = false
-            }
-          }
           // Capture per-API-call usage for context window tracking
           if (msg.message?.usage) lastAssistantUsage = msg.message.usage
 

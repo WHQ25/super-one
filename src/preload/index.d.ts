@@ -4,6 +4,7 @@ import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, 
 
 interface AgentAPI {
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
+  dequeueMessage(projectPath: string, clientMessageId: string): Promise<boolean>
   interrupt(projectPath: string): Promise<boolean>
   respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string): Promise<void>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>

@@ -6,6 +6,9 @@ const agentAPI = {
   sendMessage: (projectPath: string, request: SendMessageRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.SEND_MESSAGE, projectPath, request),
 
+  dequeueMessage: (projectPath: string, clientMessageId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DEQUEUE_MESSAGE, projectPath, clientMessageId) as Promise<boolean>,
+
   interrupt: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, projectPath),
 

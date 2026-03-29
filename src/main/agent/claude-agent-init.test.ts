@@ -11,7 +11,7 @@ vi.mock('./claude-permissions', () => ({
   rejectAllPending: vi.fn(),
 }))
 vi.mock('./message-bridge', () => ({
-  MessageBridge: class { close = vi.fn(); push = vi.fn() },
+  MessageBridge: class { close = vi.fn(); push = vi.fn(); consumedTags = []; drainConsumedTag = vi.fn() },
 }))
 vi.mock('./claude-query', () => ({
   createSessionQuery: (...args: unknown[]) => mockCreateSessionQuery(...args),

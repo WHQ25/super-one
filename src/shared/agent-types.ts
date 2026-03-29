@@ -558,6 +558,7 @@ export interface SendMessageRequest {
   clientMessageId?: string
   gitBranch?: string
   worktreePath?: string
+  priority?: 'now' | 'next' | 'later'
 }
 
 // --- Model selection ---
@@ -970,6 +971,7 @@ export const AgentIpcChannels = {
 
   // Agent channels
   SEND_MESSAGE: 'agent:send-message',
+  DEQUEUE_MESSAGE: 'agent:dequeue-message',
   INTERRUPT: 'agent:interrupt',
   EVENT: 'agent:event',
   PERMISSION_RESPONSE: 'agent:permission-response',

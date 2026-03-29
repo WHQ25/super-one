@@ -43,14 +43,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       isOpen: s.isOpen,
     })))
     const {
-      setText, sendMessage, setPrefireMessage, cancelPrefireMessage,
+      setText, sendMessage, editQueuedMessage,
       interrupt, toggleOpen, addAttachment, removeAttachment, clearAttachments,
       addMention, removeMention, dismissCommandPopup, setShowDirManager, setShowReviewPanel,
     } = useChatStore(useShallow((s) => ({
       setText: s.setDraftText,
       sendMessage: s.sendMessage,
-      setPrefireMessage: s.setPrefireMessage,
-      cancelPrefireMessage: s.cancelPrefireMessage,
+      editQueuedMessage: s.editQueuedMessage,
       interrupt: s.interrupt,
       toggleOpen: s.toggleOpen,
       addAttachment: s.addAttachment,
@@ -62,15 +61,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       setShowDirManager: s.setShowDirManager,
       setShowReviewPanel: s.setShowReviewPanel,
     })))
-    const { text, status, attachments, mentions, permissionMode, prefireMessage, hasPendingInteraction } =
+    const { text, status, attachments, mentions, permissionMode, hasPendingInteraction, queuedMessages } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
         status: s.status,
         attachments: s.attachments,
         mentions: s.mentions,
         permissionMode: s.permissionMode,
-        prefireMessage: s.prefireMessage,
         hasPendingInteraction: s.hasPendingInteraction,
+        queuedMessages: s.queuedMessages,
       })))
     const {
       slashCommands, preferredProvider, sessionProvider, agents,
@@ -133,8 +132,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const activeProviderForResources = sessionProvider ?? preferredProvider
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || mentions.length > 0
-    const canSend = hasContent && !isRemoteLocked && (!isStreaming || activeProviderForResources === 'codex')
-    const canPrefire = isStreaming && !isRemoteLocked && !prefireMessage && hasContent && activeProviderForResources !== 'codex'
+    const canSend = hasContent && !isRemoteLocked
     const showAgentMentions = activeProviderForResources === 'claude'
 
     const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
@@ -289,11 +287,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       sendMessage(serializeAndClear())
     }, [canSend, sendMessage, serializeAndClear])
 
-    const handlePrefire = useCallback(() => {
-      if (!canPrefire) return
-      setPrefireMessage(serializeAndClear())
-    }, [canPrefire, setPrefireMessage, serializeAndClear])
-
     useImperativeHandle(ref, () => ({ send: handleSend }), [handleSend])
 
     const handleKeyDownCore = useCallback(
@@ -398,9 +391,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
         }
 
-        if (e.key === 'ArrowUp' && editorRef.current?.isEmpty && prefireMessage) {
+        if (e.key === 'ArrowUp' && editorRef.current?.isEmpty && queuedMessages.length > 0) {
           e.preventDefault()
-          cancelPrefireMessage()
+          editQueuedMessage(queuedMessages[queuedMessages.length - 1].id)
           return true
         }
 
@@ -412,17 +405,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         if (e.key === 'Enter') {
           e.preventDefault()
-          if (canPrefire) {
-            handlePrefire()
-          } else {
-            handleSend()
-          }
+          handleSend()
           return true
         }
 
         return false
       },
-      [handleSend, handlePrefire, canPrefire, prefireMessage, cancelPrefireMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, showDirManager, setShowDirManager, showReviewPanel, setShowReviewPanel]
+      [handleSend, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, showDirManager, setShowDirManager, showReviewPanel, setShowReviewPanel]
     )
 
     handleKeyDownRef.current = handleKeyDownCore
@@ -876,34 +865,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 <Square className="size-3" />
               </Button>
             )}
-            {isStreaming ? (
-              canPrefire && (
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  onClick={handlePrefire}
-                  className={cn(
-                    'text-muted-foreground hover:text-foreground',
-                    isCoding && 'size-7 rounded-full border border-border'
-                  )}
-                >
-                  <ArrowUp className="size-3.5" />
-                </Button>
-              )
-            ) : (
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                onClick={handleSend}
-                disabled={!canSend}
-                className={cn(
-                  'text-muted-foreground hover:text-foreground disabled:opacity-30',
-                  isCoding && 'size-7 rounded-full border border-border'
-                )}
-              >
-                <ArrowUp className="size-3.5" />
-              </Button>
-            )}
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              onClick={handleSend}
+              disabled={!canSend}
+              className={cn(
+                'text-muted-foreground hover:text-foreground disabled:opacity-30',
+                isCoding && 'size-7 rounded-full border border-border'
+              )}
+            >
+              <ArrowUp className="size-3.5" />
+            </Button>
           </div>
         </div>
 

@@ -64,7 +64,7 @@ export interface PerSessionState {
   _worktreeRemoved: boolean
   additionalDirs: string[]
   lastEventAt: number
-  prefireMessage: { content: string; attachments: ImageAttachment[]; mentions: Mention[] } | null
+  queuedMessages: ChatMessage[]
   activeCodexMessageId: string | null
   lastAssistantMessageId: string | null
   _historyHydrated: boolean
@@ -140,7 +140,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     _worktreeRemoved: false,
     additionalDirs: [],
     lastEventAt: 0,
-    prefireMessage: null,
+    queuedMessages: [],
     activeCodexMessageId: null,
     lastAssistantMessageId: null,
     _historyHydrated: true,
@@ -240,10 +240,9 @@ interface ChatStore {
   rewindConversation: (userMessageId: string) => Promise<RewindFilesResult>
   previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
 
-  // Prefire (queue message during streaming)
-  setPrefireMessage: (content: string) => void
-  cancelPrefireMessage: () => void
-  discardPrefireMessage: () => void
+  // Queued message actions
+  editQueuedMessage: (messageId: string) => void
+  deleteQueuedMessage: (messageId: string) => void
 
   // Draft text
   setDraftText: (text: string) => void
@@ -463,14 +462,22 @@ function _patchAgentBlock(messages: ChatMessage[], tid: string, patch: Record<st
 
 function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
   switch (event.type) {
-    case 'message_start':
+    case 'message_start': {
+      const hasQueued = session.queuedMessages.length > 0
+      const consumedMsg = hasQueued ? session.queuedMessages[0] : null
+      const updatedQueue = hasQueued ? session.queuedMessages.slice(1) : session.queuedMessages
+      const newMessages = consumedMsg
+        ? [...session.messages, consumedMsg, event.message]
+        : [...session.messages, event.message]
       return {
-        messages: [...session.messages, event.message],
+        messages: newMessages,
+        queuedMessages: updatedQueue,
         promptSuggestion: null,
         awaitingAssistantReply: false,
         lastEventAt: Date.now(),
         ...(event.message.role === 'assistant' ? { lastAssistantMessageId: event.message.id } : {}),
       }
+    }
 
     case 'content_delta': {
       let updatedMessages = session.messages.map((msg) => {
@@ -679,6 +686,19 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       }
 
     case 'status_change':
+      if ((event.status === 'idle' || event.status === 'error') && session.queuedMessages.length > 0) {
+        const lastAsstIdx = session.messages.findLastIndex((m) => m.role === 'assistant')
+        const insertAt = lastAsstIdx >= 0 ? lastAsstIdx : session.messages.length
+        return {
+          status: event.status,
+          messages: [
+            ...session.messages.slice(0, insertAt),
+            ...session.queuedMessages,
+            ...session.messages.slice(insertAt),
+          ],
+          queuedMessages: [],
+        }
+      }
       return { status: event.status }
 
     case 'prompt_suggestion':
@@ -1652,27 +1672,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      // Active foreground session went idle with prefire → auto-send
-      const isBackground = projectPath !== s.activeProject
-      if (event.type === 'status_change' && event.status === 'idle'
-        && targetSid === updatedProject._activeSessionId && !isBackground) {
-        const prefire = updatedSession.prefireMessage
-        if (prefire) {
-          window.app.trace?.('chat.prefire', 'auto_send', { content: prefire.content.slice(0, 50), targetSid })
-          updatedProject._sessions = {
-            ...updatedProject._sessions,
-            [targetSid]: { ...updatedSession, prefireMessage: null },
-          }
-          setTimeout(() => {
-            set((st) => updateActivePerSession(st, () => ({
-              attachments: prefire.attachments,
-              mentions: prefire.mentions,
-            })))
-            get().sendMessage(prefire.content)
-          }, 0)
-        }
-      }
-
       // Non-active session went idle → save, mark unseen, and evict from _sessions after save completes
       if (event.type === 'status_change' && event.status === 'idle' && targetSid !== updatedProject._activeSessionId) {
         if (!_isLiveSession(updatedSession)) {
@@ -1705,6 +1704,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }
         }
       }
+
+      const isBackground = projectPath !== s.activeProject
 
       // Active session went idle in a background project → mark as unseen
       if (event.type === 'status_change' && event.status === 'idle' && targetSid === updatedProject._activeSessionId && isBackground && effectiveSid) {
@@ -1883,6 +1884,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     )
     const resolvedCodexModel = resolvedCodexSelection.modelId || undefined
     const resolvedCodexReasoningEffort = resolvedCodexSelection.reasoningEffort
+    const isQueuedSend = effectiveProvider === 'claude' && session.status === 'streaming'
 
     if (!session.sessionProvider) {
       set((s) => updateActivePerSession(s, () => ({
@@ -1972,10 +1974,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
     set((s) => ({
       ...updateActivePerSession(s, (sess) => ({
-        messages: [...sess.messages, userMessage],
+        ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),
+        ...(isQueuedSend ? { queuedMessages: [...sess.queuedMessages, userMessage] } : {}),
         attachments: [],
         mentions: [],
-        ...(effectiveProvider === 'claude' ? { awaitingAssistantReply: true } : {}),
+        ...(effectiveProvider === 'claude' && !isQueuedSend ? { awaitingAssistantReply: true } : {}),
       })),
       isOpen: true,
     }))
@@ -2213,7 +2216,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     _saveSessionState(get, activeProject)
     await _ensureClaudeSessionReadyForSend(get, activeProject)
 
-    // Merge project + session additional directories (deduplicated)
     const mergedDirs = [...new Set([...project.projectAdditionalDirs, ...session.additionalDirs])]
 
     try {
@@ -2226,9 +2228,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         clientMessageId: userMessageId,
         gitBranch: session._worktreeBaseBranch ?? undefined,
         worktreePath: session._worktreePath ?? undefined,
+        ...(isQueuedSend ? { priority: 'next' as const } : {}),
       })
     } catch (err) {
-      set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))
+      if (!isQueuedSend) {
+        set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))
+      }
       throw err
     }
   },
@@ -2242,7 +2247,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     const codexSid = _getEffectiveSessionId(getProject(get(), activeProject))
-    set((s) => updateActivePerSession(s, () => ({ prefireMessage: null, awaitingAssistantReply: false })))
+    set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))
     const [claudeResult] = await Promise.allSettled([
       window.agent.interrupt(activeProject),
       codexSid ? window.app.codexInterrupt(codexSid) : Promise.resolve(false),
@@ -2288,7 +2293,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       planApprovalOutcome: null, mentions: [], subagentTokens: {},
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
       awaitingAssistantReply: false,
-      prefireMessage: null,
+      queuedMessages: [],
     })), _bashOutputs: remainingOutputs }))
   },
 
@@ -2488,33 +2493,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     return window.agent.previewRewind(activeProject, checkpointId)
   },
 
-  setPrefireMessage: (content) => {
+  editQueuedMessage: (messageId) => {
     const { activeProject } = get()
     if (!activeProject) return
     const session = getActivePerSession(get())
-    set((s) => updateActivePerSession(s, () => ({
-      prefireMessage: { content, attachments: session.attachments, mentions: session.mentions },
-      attachments: [],
-      mentions: [],
-      draftText: '',
+    const msg = session.queuedMessages.find((m) => m.id === messageId)
+    if (!msg) return
+    const text = msg.content.find((b) => b.type === 'text')
+    const attachments = msg.attachments ?? []
+    window.agent.dequeueMessage(activeProject, messageId)
+    set((s) => updateActivePerSession(s, (sess) => ({
+      queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
+      draftText: text && 'text' in text ? text.text : '',
+      attachments,
     })))
   },
 
-  cancelPrefireMessage: () => {
+  deleteQueuedMessage: (messageId) => {
     const { activeProject } = get()
     if (!activeProject) return
-    const session = getActivePerSession(get())
-    if (!session.prefireMessage) return
-    set((s) => updateActivePerSession(s, () => ({
-      draftText: session.prefireMessage!.content,
-      attachments: session.prefireMessage!.attachments,
-      mentions: session.prefireMessage!.mentions,
-      prefireMessage: null,
+    window.agent.dequeueMessage(activeProject, messageId)
+    set((s) => updateActivePerSession(s, (sess) => ({
+      queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
     })))
-  },
-
-  discardPrefireMessage: () => {
-    set((s) => updateActivePerSession(s, () => ({ prefireMessage: null })))
   },
 
   setDraftText: (text) => {

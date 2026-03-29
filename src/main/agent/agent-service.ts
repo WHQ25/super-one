@@ -1403,6 +1403,12 @@ export class AgentService {
       await agent.sendMessage(request)
     })
 
+    ipcMain.handle(AgentIpcChannels.DEQUEUE_MESSAGE, (_event, projectPath: string, clientMessageId: string) => {
+      const agent = this.agents.get(projectPath)
+      if (!agent) return false
+      return agent.dequeueMessage(clientMessageId)
+    })
+
     ipcMain.handle(AgentIpcChannels.INTERRUPT, async (_event, projectPath: string) => {
       const agent = this.agents.get(projectPath)
       if (!agent) return false
@@ -1967,6 +1973,7 @@ export class AgentService {
     }
 
     ipcMain.removeHandler(AgentIpcChannels.SEND_MESSAGE)
+    ipcMain.removeHandler(AgentIpcChannels.DEQUEUE_MESSAGE)
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
     ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)

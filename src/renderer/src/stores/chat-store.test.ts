@@ -2387,7 +2387,6 @@ describe('createDefaultPerSessionState', () => {
     expect(state._worktreeRemoved).toBe(false)
     expect(state.additionalDirs).toEqual([])
     expect(state.lastEventAt).toBe(0)
-    expect(state.prefireMessage).toBeNull()
     expect(state.activeCodexMessageId).toBeNull()
     expect(state.lastAssistantMessageId).toBeNull()
   })

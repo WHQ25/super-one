@@ -576,6 +576,8 @@ export interface ModelOption {
   defaultReasoningEffort?: CodexReasoningEffort
 }
 
+export const DEFAULT_CONTEXT_WINDOW = 200_000
+
 // --- File rewind ---
 
 export interface RewindFilesResult {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useMemo, useCallback, useLayoutEffect, memo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { cn } from '@/lib/utils'
+import { measureMaxLineWidth, getMonoFont, getMonoCharWidth } from '@/lib/pretext-utils'
 import { codePlugin, codePluginLight } from '@/components/chat/chat-shared'
 import { useIsDark } from '@/hooks/use-is-dark'
 
@@ -251,11 +252,11 @@ export const DiffView = forwardRef<HTMLDivElement, {
   const maxLine = lines.reduce((m, l) => Math.max(m, l.lineNum), 0)
   const gw = gutterWidth(maxLine)
   const minContentWidth = useMemo(() => {
-    let max = 0
-    for (const line of lines) {
-      if (line.text.length > max) max = line.text.length
-    }
-    return `${max + gw + 4}ch`
+    if (lines.length === 0) return '0px'
+    const fullText = lines.map((l) => l.text).join('\n')
+    const textW = measureMaxLineWidth(fullText, getMonoFont())
+    const gutterPx = (gw + 2) * getMonoCharWidth() + 16
+    return `${Math.ceil(textW + gutterPx)}px`
   }, [lines, gw])
 
   const scrollRef = useRef<HTMLDivElement>(null)

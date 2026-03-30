@@ -21,6 +21,7 @@ const SKIPPED_EVENTS = new Set([
   'slash_command_output', 'stream_message_start', 'stream_message_stop',
 ])
 const THROTTLED_EVENTS = new Set(['tool_progress'])
+const DRAIN_BEFORE_EVENTS = new Set(['message_complete', 'status_change', 'task_notification'])
 
 const TOOL_RESULT_MAX_LEN = 200
 const MAX_BASH_OUTPUT = 5000
@@ -977,7 +978,7 @@ export class RemoteControlService {
       return
     }
 
-    const flushed = this.drainPending(true)
+    const flushed = DRAIN_BEFORE_EVENTS.has(event.type) ? this.drainPending(true) : []
     let enriched = event
     if (event.type === 'task_progress' && event.toolUseId) {
       const outputFile = this.agentOutputFiles.get(event.toolUseId)

@@ -681,4 +681,75 @@ describe('createSessionQuery', () => {
     expect(interruptedEvent?.messageId).toBe('msg-catch-interrupted')
     expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
   })
+
+  it('first replay user echo does not trigger queued turn detection even when consumedTags is non-empty', async () => {
+    state.messages = [
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'thinking...' } } },
+      { type: 'user', message: { role: 'user', content: 'original message' }, parent_tool_use_id: null, isReplay: true },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'thinking...' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const consumedTags = ['queued-tag-1']
+    const events: Array<Record<string, unknown>> = []
+    const onQueuedTurnStart = vi.fn()
+    const handle = createSessionQuery(
+      { consumedTags, drainConsumedTag: () => consumedTags.shift() } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-A',
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      onQueuedTurnStart,
+    )
+    await handle.iterationDone
+
+    expect(onQueuedTurnStart).not.toHaveBeenCalled()
+    const messageStarts = events.filter((e) => e.type === 'message_start')
+    expect(messageStarts).toHaveLength(0)
+    const completes = events.filter((e) => e.type === 'message_complete')
+    expect(completes).toHaveLength(1)
+    expect(completes[0].messageId).toBe('msg-A')
+  })
+
+  it('second replay user echo triggers turn split with message_complete for previous turn', async () => {
+    state.messages = [
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'turn 1' } } },
+      { type: 'user', message: { role: 'user', content: 'original message' }, parent_tool_use_id: null, isReplay: true },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'turn 1' }] } },
+      { type: 'user', message: { role: 'user', content: 'queued message' }, parent_tool_use_id: null, isReplay: true },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'turn 2 response' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const consumedTags = ['queued-tag-1']
+    let currentId = 'msg-A'
+    const events: Array<Record<string, unknown>> = []
+    const onQueuedTurnStart = vi.fn((id: string) => { currentId = id })
+    const handle = createSessionQuery(
+      { consumedTags, drainConsumedTag: () => consumedTags.shift() } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      onQueuedTurnStart,
+    )
+    await handle.iterationDone
+
+    expect(onQueuedTurnStart).toHaveBeenCalledTimes(1)
+    const queuedId = onQueuedTurnStart.mock.calls[0][0] as string
+    expect(queuedId).toMatch(/^msg_\d+_\w+$/)
+
+    const completes = events.filter((e) => e.type === 'message_complete')
+    expect(completes).toHaveLength(2)
+    expect(completes[0].messageId).toBe('msg-A')
+    expect(completes[1].messageId).toBe(queuedId)
+
+    const messageStarts = events.filter((e) => e.type === 'message_start')
+    expect(messageStarts).toHaveLength(1)
+    expect((messageStarts[0].message as Record<string, unknown>).id).toBe(queuedId)
+  })
 })

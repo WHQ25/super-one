@@ -1151,7 +1151,8 @@ export type MentionSearchItem =
   | { kind: 'agent'; name: string; model: string; matchIndices: number[]; score: number }
 
 export type RemoteCommand =
-  | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[]; provider?: 'claude' | 'codex'; permissionMode?: string; permissionPreset?: string; threadId?: string; gitBranch?: string; worktreeBranch?: string; worktreeCarryLocalChanges?: boolean }
+  | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[]; provider?: 'claude' | 'codex'; permissionMode?: string; permissionPreset?: string; threadId?: string; gitBranch?: string; worktreeBranch?: string; worktreeCarryLocalChanges?: boolean; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
+  | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
   | { type: 'respond_permission'; requestId: string; decision: boolean; reason?: string; projectPath?: string; sessionId: string }
   | { type: 'answer_question'; requestId: string; answers: Record<string, string>; projectPath?: string; sessionId: string }

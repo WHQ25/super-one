@@ -221,6 +221,10 @@ export class AgentService {
   private persistClaudeRuntime(sessionId: string): void {
     const runtime = this.claudeRuntimes.get(sessionId)
     if (!runtime || runtime.messages.length === 0) return
+    trace('persist.debug', 'persist_all', {
+      sessionId,
+      messages: runtime.messages.map((m) => ({ id: m.id, role: m.role, status: m.status, contentLen: JSON.stringify(m.content).length })),
+    })
     const title = extractClaudeTitle(runtime.messages)
     createSession(
       runtime.projectPath,
@@ -359,6 +363,16 @@ export class AgentService {
       if (pending) {
         runtime = mergeClaudeRuntimes(runtime, { ...pending, sessionId: realSid, session: event.session })
       }
+      const msgSnapshot = (msgs: ChatMessage[]) => msgs.map((m) => ({ id: m.id, role: m.role, status: m.status, contentLen: JSON.stringify(m.content).length }))
+      trace('persist.debug', 'session_init_merge', {
+        realSid,
+        shouldMergeTrackedRuntime,
+        hasPending: !!pending,
+        trackedFromSid: trackedRekey?.fromSessionId,
+        runtimeMsgs: msgSnapshot(runtime.messages),
+        pendingMsgs: pending ? msgSnapshot(pending.messages) : null,
+        trackedMsgs: trackedRuntime ? msgSnapshot(trackedRuntime.messages) : null,
+      })
       const updated = applyClaudeEventToRuntime(
         syncClaudeRuntimeLocation(runtime, projectPath, runtime.gitBranch, runtime.worktreePath, event.session.cwd),
         event,
@@ -655,16 +669,16 @@ export class AgentService {
         const projectPath = command.projectPath || this.agents.keys().next().value
         if (!projectPath) break
 
-        const emitUserMessage = (remoteAgent?: RemoteAgentRef): void => {
+        const persistUserMessage = (remoteAgent?: RemoteAgentRef): void => {
           const sessionId = (remoteAgent ? remoteAgent.getSessionId() : this.agents.get(projectPath)?.getSessionId()) || undefined
           const userMessage = this.appendClaudeUserMessage(projectPath, {
             content: command.content,
             images: command.images,
-            clientMessageId: `user_${Date.now()}`,
+            clientMessageId: command.clientMessageId ?? `user_${Date.now()}`,
             gitBranch: command.gitBranch,
           }, 'remote', sessionId)
           this.trackClaudeSessionRekey(projectPath, sessionId, userMessage.id)
-          trace('remote.debug', 'emitUserMessage', { projectPath, sessionId, messageId: userMessage.id, isRemote: !!remoteAgent })
+          trace('remote.debug', 'persistUserMessage', { projectPath, sessionId, messageId: userMessage.id, isRemote: !!remoteAgent, queued: command.priority === 'next' })
           if (remoteAgent) {
             this.remoteSession?.bufferForRenderer?.({ type: 'message_start', message: userMessage, projectPath, sessionId })
           } else {
@@ -782,10 +796,17 @@ export class AgentService {
           if (agent && ('isReady' in agent) && agent.isReady()) {
             const isRemote = this.remoteSession?.agent === agent
             trace('remote.debug', 'send_message:dispatch', { isRemote, agentSid: agent.getSessionId?.() ?? 'unknown', targetSid: command.sessionId })
-            emitUserMessage(isRemote ? agent : undefined)
-            await agent.sendMessage({ content: command.content, model: command.model, effort: command.effort as never, images: command.images })
+            persistUserMessage(isRemote ? agent : undefined)
+            await agent.sendMessage({ content: command.content, model: command.model, effort: command.effort as never, images: command.images, priority: command.priority, clientMessageId: command.clientMessageId })
           }
         }
+        break
+      }
+      case 'dequeue_message': {
+        const projectPath = command.projectPath || this.agents.keys().next().value
+        if (!projectPath) break
+        const agent = this.findAgentBySessionId(projectPath, command.sessionId)
+        if (agent && 'dequeueMessage' in agent) agent.dequeueMessage(command.clientMessageId)
         break
       }
       case 'interrupt': {

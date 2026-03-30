@@ -178,6 +178,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
   let turnMessageId = getCurrentMessageId()
   let turnActive = false
   let resultSeen = false
+  let turnUserEchoSeen = false
 
   log.debug('[iterateMessages] starting iteration loop')
   try {
@@ -259,21 +260,26 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
         }
         const msgContent = userMsg.message?.content
 
-        if (!parentToolUseId && typeof msgContent === 'string' && bridge.consumedTags.length > 0) {
-          bridge.drainConsumedTag()
-          const queuedMessageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-          turnMessageId = queuedMessageId
-          messageId = queuedMessageId
-          onQueuedTurnStart?.(queuedMessageId)
-          emit({ type: 'message_start', message: {
-            id: queuedMessageId,
-            role: 'assistant',
-            status: 'streaming',
-            content: [],
-            createdAt: new Date().toISOString(),
-            providerId: 'claude',
-          } })
-          turnActive = true
+        if (!parentToolUseId && typeof msgContent === 'string') {
+          if (!turnUserEchoSeen) {
+            turnUserEchoSeen = true
+          } else if (bridge.consumedTags.length > 0) {
+            emit({ type: 'message_complete', messageId: turnMessageId, metadata: {} })
+            bridge.drainConsumedTag()
+            const queuedMessageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+            turnMessageId = queuedMessageId
+            messageId = queuedMessageId
+            onQueuedTurnStart?.(queuedMessageId)
+            emit({ type: 'message_start', message: {
+              id: queuedMessageId,
+              role: 'assistant',
+              status: 'streaming',
+              content: [],
+              createdAt: new Date().toISOString(),
+              providerId: 'claude',
+            } })
+            turnActive = true
+          }
         }
 
         // Extract tool_result blocks from array content

@@ -7,13 +7,16 @@ type PdfSource = { base64: string } | { url: string }
 const ZOOM_STEP = 0.25
 const ZOOM_MIN = 0.5
 const ZOOM_MAX = 3
+const RESIZE_DEBOUNCE_MS = 300
 
 export function PdfPreview(props: PdfSource & { className?: string }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pdfRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null)
   const pageWidthRef = useRef(0)
+  const baseScaleRef = useRef(0)
   const manualZoomRef = useRef(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [loading, setLoading] = useState(true)
   const [pageCount, setPageCount] = useState(0)
   const [zoom, setZoom] = useState(1)
@@ -25,6 +28,7 @@ export function PdfPreview(props: PdfSource & { className?: string }) {
     const pdf = pdfRef.current
     if (!container || !pdf) return
 
+    container.style.transform = ''
     container.innerHTML = ''
     const dpr = window.devicePixelRatio || 1
 
@@ -43,6 +47,8 @@ export function PdfPreview(props: PdfSource & { className?: string }) {
       const ctx = canvas.getContext('2d')!
       await page.render({ canvas, canvasContext: ctx, viewport }).promise
     }
+
+    baseScaleRef.current = scale
   }, [])
 
   useEffect(() => {
@@ -92,14 +98,22 @@ export function PdfPreview(props: PdfSource & { className?: string }) {
 
   useEffect(() => {
     const scrollEl = scrollRef.current
-    if (!scrollEl || loading) return
+    const container = containerRef.current
+    if (!scrollEl || !container || loading) return
     const ro = new ResizeObserver(() => {
-      if (manualZoomRef.current || !pageWidthRef.current) return
+      if (manualZoomRef.current || !pageWidthRef.current || !baseScaleRef.current) return
       const w = scrollEl.clientWidth || 600
-      setZoom((w - 32) / pageWidthRef.current)
+      const fitScale = (w - 32) / pageWidthRef.current
+      const ratio = fitScale / baseScaleRef.current
+      container.style.transformOrigin = 'top center'
+      container.style.transform = `scale(${ratio})`
+      clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        setZoom(fitScale)
+      }, RESIZE_DEBOUNCE_MS)
     })
     ro.observe(scrollEl)
-    return () => ro.disconnect()
+    return () => { ro.disconnect(); clearTimeout(debounceRef.current) }
   }, [loading])
 
   const zoomIn = useCallback(() => { manualZoomRef.current = true; setZoom((z) => Math.min(z + ZOOM_STEP, ZOOM_MAX)) }, [])

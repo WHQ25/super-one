@@ -130,7 +130,7 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
   const output = `${item.aggregatedOutput ?? ''}${item.exitCode !== undefined ? `\n\nExit code ${item.exitCode}` : ''}`.trim()
 
   return (
-    <div className={cn('tool-node my-0.5 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
+    <div className={cn('tool-node my-0.5 min-w-0 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" onClick={() => setExpanded((e) => !e)}>
         <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         <span className="font-medium text-foreground">
@@ -198,7 +198,7 @@ function CollabSendInputBlock({ item }: { item: CodexCollabToolCallItem }) {
     || Object.values(item.agentsStates).find((s) => s.nickname)?.nickname
   const label = `Follow-up${agentName ? ` → ${agentName}` : ''}`
   return (
-    <div className={cn('tool-node my-0.5 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
+    <div className={cn('tool-node my-0.5 min-w-0 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" onClick={() => setExpanded((e) => !e)}>
         <MessageSquare className="size-3 shrink-0 text-muted-foreground" />
         <span className="font-medium text-foreground">{label}</span>
@@ -308,7 +308,7 @@ function CodexPlanBlock({
 
   return (
     <div className={cn(
-      'mb-0.5 mt-1 rounded border border-border/60 bg-muted/30 transition-colors hover:bg-muted/50 cursor-pointer',
+      'mb-0.5 mt-1 min-w-0 rounded border border-border/60 bg-muted/30 transition-colors hover:bg-muted/50 cursor-pointer',
       expanded && 'overflow-hidden',
     )}>
       <div className="flex items-center gap-1.5 px-2 py-2 text-xs" onClick={() => setExpanded((e) => !e)}>

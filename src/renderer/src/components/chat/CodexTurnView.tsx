@@ -44,7 +44,7 @@ function CodexCommandGroup({ items, isStreaming }: { items: CodexCommandExecutio
   }, [hasRunning])
 
   return (
-    <div className="tool-group my-1">
+    <div className="tool-group my-1 min-w-0">
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70"
@@ -80,7 +80,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     if (isStreaming) return null
 
     return (
-      <div className="codex-turn my-0.5">
+      <div className="codex-turn min-w-0 w-full my-0.5">
         <CopyableMarkdown
           text={message.content
             .filter((b) => b.type === 'text')
@@ -133,7 +133,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
   flushCollab()
 
   return (
-    <div className="codex-turn space-y-2">
+    <div className="codex-turn min-w-0 w-full space-y-2">
       {segments.map((seg, segIdx) => {
         if (seg.kind === 'collab') {
           return <CodexCollabBlock key={`cb-${segIdx}`} items={seg.items} isStreaming={isStreaming} />

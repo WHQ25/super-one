@@ -172,7 +172,7 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
   const itemCount = useMemo(() => countItems(turns), [turns])
 
   return (
-    <div className="subagent-container my-1 overflow-hidden rounded border border-border/50 bg-muted/20">
+    <div className="subagent-container my-1 min-w-0 overflow-hidden rounded border border-border/50 bg-muted/20">
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-start gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"

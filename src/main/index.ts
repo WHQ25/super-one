@@ -53,8 +53,9 @@ protocol.registerSchemesAsPrivileged([
 
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport')
 
-// Isolate userData when running parallel instances (e.g. git worktrees)
-if (process.env.SUPERONE_INSTANCE) {
+if (is.dev) {
+  app.setPath('userData', join(process.cwd(), '.dev-data'))
+} else if (process.env.SUPERONE_INSTANCE) {
   app.setPath('userData', join(app.getPath('userData'), `instance-${process.env.SUPERONE_INSTANCE}`))
 }
 

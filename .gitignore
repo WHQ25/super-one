@@ -31,6 +31,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # IntelliJ based IDEs
 .idea
 
+# Dev data (userData isolation)
+.dev-data
+
 # Event trace (dev only)
 event-trace.db*
 

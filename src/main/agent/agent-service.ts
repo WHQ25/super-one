@@ -612,7 +612,7 @@ export class AgentService {
     this.eventSubscribers.forEach((cb) => cb(event))
   }
 
-  private async runCodexRemoteTurn(projectPath: string, sessionId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }): Promise<void> {
+  private async runCodexRemoteTurn(projectPath: string, sessionId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }, isNewSession?: boolean): Promise<void> {
     const userMessageId = `user_${Date.now()}`
     const assistantMessageId = `remote-${Date.now()}`
     const codexAgent: RemoteAgentRef = {
@@ -630,6 +630,13 @@ export class AgentService {
     if (this.remoteSession) await this.remoteSession.agent.dispose()
     this.remoteSession = { projectPath, agent: codexAgent }
     this.remoteControlService?.setRemoteSessionFilter(projectPath, sessionId)
+    if (isNewSession) {
+      this.remoteControlService?.broadcastAgentEvent({
+        type: 'session_init', projectPath, sessionId,
+        session: { sessionId, permissionMode: command.permissionPreset ?? 'default' },
+      } as AgentEvent)
+    }
+    this.broadcastEventToRenderer({ type: 'remote_session_start', remoteProjectPath: projectPath, remoteSessionId: sessionId })
     const { userMessage, assistantMessage } = this.beginCodexTurn(projectPath, sessionId, {
       userMessageId,
       userText: command.content,
@@ -641,6 +648,9 @@ export class AgentService {
     this.remoteControlService?.broadcastAgentEvent({ type: 'message_start', message: userMessage, projectPath, sessionId } as AgentEvent)
     this.remoteControlService?.broadcastAgentEvent({ type: 'message_start', message: assistantMessage, projectPath, sessionId } as AgentEvent)
     this.remoteControlService?.broadcastAgentEvent({ type: 'status_change', status: 'streaming', projectPath, sessionId } as AgentEvent)
+    this.broadcastEventToRenderer({ type: 'message_start', message: userMessage, projectPath, sessionId })
+    this.broadcastEventToRenderer({ type: 'message_start', message: assistantMessage, projectPath, sessionId })
+    this.broadcastEventToRenderer({ type: 'status_change', status: 'streaming', projectPath, sessionId })
     const runStart = Date.now()
     try {
       const result = await this.codexRun?.(sessionId, projectPath, {
@@ -663,6 +673,8 @@ export class AgentService {
       }
       this.remoteControlService?.broadcastAgentEvent({ type: 'message_complete', messageId: assistantMessageId, metadata: { durationMs: Date.now() - runStart }, projectPath, sessionId } as AgentEvent)
       this.remoteControlService?.broadcastAgentEvent({ type: 'status_change', status: 'idle', projectPath, sessionId } as AgentEvent)
+      this.broadcastEventToRenderer({ type: 'message_complete', messageId: assistantMessageId, projectPath, sessionId })
+      this.broadcastEventToRenderer({ type: 'status_change', status: 'idle', projectPath, sessionId })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.failCodexTurn(sessionId, {
@@ -672,7 +684,11 @@ export class AgentService {
       })
       this.remoteControlService?.broadcastAgentEvent({ type: /interrupt|abort/i.test(message) ? 'message_interrupted' : 'message_error', messageId: assistantMessageId, projectPath, sessionId } as AgentEvent)
       this.remoteControlService?.broadcastAgentEvent({ type: 'status_change', status: 'idle', projectPath, sessionId } as AgentEvent)
+      this.broadcastEventToRenderer({ type: 'status_change', status: 'idle', projectPath, sessionId })
       throw error
+    } finally {
+      this.remoteControlService?.clearRemoteSessionFilter()
+      this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId })
     }
   }
 
@@ -702,15 +718,7 @@ export class AgentService {
 
         if (command.provider === 'codex') {
           const sessionId = command.sessionId ?? `codex-remote-${Date.now()}`
-          if (!command.sessionId) {
-            this.remoteControlService?.broadcastAgentEvent({
-              type: 'session_init',
-              projectPath,
-              sessionId,
-              session: { sessionId, permissionMode: command.permissionPreset ?? 'default' },
-            } as AgentEvent)
-          }
-          await this.runCodexRemoteTurn(projectPath, sessionId, command)
+          await this.runCodexRemoteTurn(projectPath, sessionId, command, !command.sessionId)
         } else {
           let agent: RemoteAgentRef | ClaudeAgent | undefined
           const targetSid = command.sessionId

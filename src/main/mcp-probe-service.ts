@@ -27,12 +27,12 @@ function writeCache(cache: Record<string, McpServerMeta>): void {
   writeFileSync(getCachePath(), JSON.stringify(cache, null, 2))
 }
 
-function toErrorMessage(error: unknown): string {
+export function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
   return String(error)
 }
 
-function isAuthError(config: McpServerConfig, message: string): boolean {
+export function isAuthError(config: McpServerConfig, message: string): boolean {
   if (config.type !== 'http' && config.type !== 'sse') return false
   return /(^|[^0-9])(401|403)([^0-9]|$)|unauthorized|forbidden|oauth|authorization/i.test(message)
 }

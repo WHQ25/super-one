@@ -319,7 +319,7 @@ export const TreeRow = memo(function TreeRow({
         </ContextMenuItem>
         <ContextMenuItem onClick={() => window.app.showInFolder(currentFolder, item.path)}>
           <FolderOpen className="mr-2 size-3.5" />
-          Reveal in Finder
+          Open Folder
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem

@@ -73,6 +73,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           messageCount: data.messages.length,
           isWorktree: !!data._worktreeBaseBranch,
           gitBranch: data._worktreeBaseBranch ?? undefined,
+          worktreePath: data._worktreePath ?? undefined,
         })
       }
       if (live.length > 0) sessions = [...live, ...sessions]
@@ -259,7 +260,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                           </button>
                         </div>
                       </ContextMenuTrigger>
-                      <ContextMenuContent className="w-36">
+                      <ContextMenuContent className="w-48">
                         <ContextMenuItem
                           onClick={() => onRenameSession({ sessionId: session.sessionId, title: session.title, folderPath: folder.path })}
                           className="text-xs"
@@ -281,12 +282,27 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                           <EyeOff className="size-3.5" />
                           Hide
                         </ContextMenuItem>
+                        <ContextMenuSeparator />
                         <ContextMenuItem
                           onClick={() => { navigator.clipboard.writeText(session.sessionId); toast.success(`${session.provider === 'codex' ? 'Codex' : 'Claude Code'} Session ID Copied`) }}
                           className="text-xs"
                         >
                           <Copy className="size-3.5" />
                           Copy Session ID
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onClick={() => { const dir = session.worktreePath ?? folder.path; navigator.clipboard.writeText(dir); toast.success('Working Directory Copied') }}
+                          className="text-xs"
+                        >
+                          <Copy className="size-3.5" />
+                          Copy Working Directory
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onClick={() => window.app.openFolder(session.worktreePath ?? folder.path)}
+                          className="text-xs"
+                        >
+                          <FolderOpen className="size-3.5" />
+                          Open Folder
                         </ContextMenuItem>
                         <ContextMenuSeparator />
                         <ContextMenuItem

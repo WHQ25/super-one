@@ -39,7 +39,7 @@ const TOOL_TYPE_MAP: Record<string, string> = {
   Agent: 'agent', Skill: 'skill',
 }
 
-function computeTodoItems(toolName: string, input: string): Array<{ content: string; status: string; taskId?: string }> | undefined {
+export function computeTodoItems(toolName: string, input: string): Array<{ content: string; status: string; taskId?: string }> | undefined {
   try {
     const p = JSON.parse(input)
     if (!p || typeof p !== 'object') return undefined
@@ -61,18 +61,18 @@ function computeTodoItems(toolName: string, input: string): Array<{ content: str
   return undefined
 }
 
-function countLines(s: string): number {
+export function countLines(s: string): number {
   if (!s) return 0
   return s.split('\n').length
 }
 
-function stripProjectPath(value: string, projectPath?: string): string {
+export function stripProjectPath(value: string, projectPath?: string): string {
   if (!projectPath) return value
   const prefix = projectPath.endsWith('/') ? projectPath : projectPath + '/'
   return value.includes(prefix) ? value.replaceAll(prefix, '') : value
 }
 
-function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, projectPath?: string): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: Array<{ content: string; status: string; taskId?: string }>; subagentType?: string; toolPrompt?: string; runInBackground?: boolean } {
+export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, projectPath?: string): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: Array<{ content: string; status: string; taskId?: string }>; subagentType?: string; toolPrompt?: string; runInBackground?: boolean } {
   try {
     const p = JSON.parse(block.input)
     if (!p || typeof p !== 'object') return {}
@@ -198,7 +198,7 @@ function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, projectPath
   } catch { return {} }
 }
 
-function truncateBashOutput(text: string): string {
+export function truncateBashOutput(text: string): string {
   const lines = text.split('\n')
   const truncated = lines.length > MAX_BASH_LINES ? lines.slice(0, MAX_BASH_LINES).join('\n') + '\n…' : text
   return truncated.length > MAX_BASH_OUTPUT ? truncated.slice(0, MAX_BASH_OUTPUT) + '…' : truncated

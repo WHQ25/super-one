@@ -380,7 +380,7 @@ function resolveActiveSessionId(project: ProjectState): string | null {
   return project._activeSessionId
 }
 
-function upsertCodexItem(items: CodexThreadItem[], next: CodexThreadItem): CodexThreadItem[] {
+export function upsertCodexItem(items: CodexThreadItem[], next: CodexThreadItem): CodexThreadItem[] {
   const idx = items.findIndex((item) => item.id === next.id)
   if (idx === -1) return [...items, next]
   const cloned = [...items]
@@ -388,7 +388,7 @@ function upsertCodexItem(items: CodexThreadItem[], next: CodexThreadItem): Codex
   return cloned
 }
 
-function removeCodexItem(items: CodexThreadItem[], itemId: string): CodexThreadItem[] {
+export function removeCodexItem(items: CodexThreadItem[], itemId: string): CodexThreadItem[] {
   return items.filter((item) => item.id !== itemId)
 }
 
@@ -432,7 +432,7 @@ function isSameCodexUsageSnapshot(a: CodexUsageInfo | null, b: CodexUsageInfo | 
   )
 }
 
-function accumulateCodexFooterTokens(
+export function accumulateCodexFooterTokens(
   current: { input: number; output: number },
   usage: CodexUsageInfo,
   previous: CodexUsageInfo | null,
@@ -447,7 +447,7 @@ function accumulateCodexFooterTokens(
   }
 }
 
-function findLatestCodexUsage(messages: ChatMessage[]): CodexUsageInfo | null {
+export function findLatestCodexUsage(messages: ChatMessage[]): CodexUsageInfo | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const usage = messages[i].metadata?.codex?.usage
     if (hasValidCodexUsageSnapshot(usage as CodexUsageInfo | null)) return usage as CodexUsageInfo
@@ -1194,7 +1194,7 @@ async function _ensureClaudeSessionReadyForSend(get: () => ChatStore, projectPat
 
 // --- Helpers ---
 
-type CodexCommand =
+export type CodexCommand =
   | { kind: 'help' }
   | { kind: 'reset' }
   | { kind: 'auth-status' }
@@ -1211,7 +1211,7 @@ type ChatStoreSet = (
 
 type CodexRunnableCommand = Extract<CodexCommand, { kind: 'run' | 'review' | 'compact' }>
 
-function parseCodexCommand(input: string): CodexCommand | null {
+export function parseCodexCommand(input: string): CodexCommand | null {
   if (!input.startsWith('/')) return null
 
   const body = input.slice(1).trim()
@@ -1273,7 +1273,7 @@ function getCodexHelpText(): string {
   ].join('\n')
 }
 
-function formatCodexAuthStatus(status: CodexAuthStatus): string {
+export function formatCodexAuthStatus(status: CodexAuthStatus): string {
   return [
     'Codex authentication status:',
     `- configured mode: ${status.mode}`,
@@ -1284,7 +1284,7 @@ function formatCodexAuthStatus(status: CodexAuthStatus): string {
   ].join('\n')
 }
 
-function getLatestCodexThreadId(messages: ChatMessage[]): string | undefined {
+export function getLatestCodexThreadId(messages: ChatMessage[]): string | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]
     if (msg.providerId !== 'codex' || msg.role !== 'assistant') continue
@@ -1294,7 +1294,7 @@ function getLatestCodexThreadId(messages: ChatMessage[]): string | undefined {
   return undefined
 }
 
-function resolveCodexReasoningEffort(
+export function resolveCodexReasoningEffort(
   model: ModelOption | undefined,
   preferred?: CodexReasoningEffort,
 ): CodexReasoningEffort | undefined {
@@ -1308,7 +1308,7 @@ function resolveCodexReasoningEffort(
   return options[options.length - 1]?.value
 }
 
-function resolveCodexModelSelection(
+export function resolveCodexModelSelection(
   models: ModelOption[],
   selectedCodexModel: string,
   selectedCodexReasoningEffort?: CodexReasoningEffort,
@@ -3517,7 +3517,7 @@ export function useBashOutput(toolUseId: string): { content: string; finished: b
 }
 
 /** Apply a content delta to the content array, merging consecutive text blocks and deduplicating tool_use. */
-function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {
+export function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {
   if (delta.type === 'text') {
     const last = content[content.length - 1]
     if (last?.type === 'text') {

@@ -25,7 +25,7 @@ export function setBashOutputWindow(mainWindow: BrowserWindow): void {
   win = mainWindow
 }
 
-function tailLines(text: string, maxLines: number): string {
+export function tailLines(text: string, maxLines: number): string {
   const lines = text.split('\n')
   if (lines.length <= maxLines) return text
   return lines.slice(-maxLines).join('\n')

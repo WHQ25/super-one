@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback } fr
 import { useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ArrowDown, Check, ClipboardList, Copy, GitFork, PenLine, Smartphone, Trash2, X } from 'lucide-react'
+import { ArrowDown, GitFork, PenLine, Smartphone, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
@@ -15,46 +15,8 @@ import { TodoPopup } from './TodoPopup'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
 import { SessionHistory } from './SessionHistory'
 import { PlanFullscreenContext } from './codex-item-renderer'
-import { MarkdownView } from '@/components/MarkdownPreview'
-
-
-function CodexPlanFullscreenView({ text, onClose }: { text: string; onClose: () => void }) {
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.preventDefault(); onClose() }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
-  return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-        <ClipboardList className="size-4 text-muted-foreground" />
-        <span className="text-sm font-medium text-foreground">Plan</span>
-        <div className="ml-auto flex items-center gap-1">
-          <button onClick={handleCopy} className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground" title="Copy plan">
-            {copied ? <Check className="size-3.5 text-green-400" /> : <Copy className="size-3.5" />}
-          </button>
-          <button onClick={onClose} className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground" title="Close">
-            <X className="size-3.5" />
-          </button>
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        <MarkdownView content={text} className="px-6 py-4 text-sm" />
-      </div>
-    </div>
-  )
-}
+import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
+import type { CodexPlanApprovalState } from '../../../../shared/agent-types'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -88,8 +50,23 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     disconnectRemoteSession: s.disconnectRemoteSession,
   })))
   const isRemoteLocked = useIsRemoteLocked()
-  const [fullscreenPlanText, setFullscreenPlanText] = useState<string | null>(null)
-  const planFullscreenCtx = useMemo(() => ({ open: (text: string) => setFullscreenPlanText(text) }), [])
+  const [fullscreenPlan, setFullscreenPlan] = useState<{
+    text: string
+    onApprovePlan?: () => void
+    onRejectPlan?: (feedback?: string) => void
+    planApproval?: CodexPlanApprovalState
+  } | null>(null)
+  const planFullscreenCtx = useMemo(() => ({
+    open: (
+      text: string,
+      actions?: { onApprove?: () => void; onReject?: (feedback?: string) => void; planApproval?: CodexPlanApprovalState },
+    ) => setFullscreenPlan({
+      text,
+      onApprovePlan: actions?.onApprove,
+      onRejectPlan: actions?.onReject,
+      planApproval: actions?.planApproval,
+    }),
+  }), [])
   const [dismissedRateLimitKey, setDismissedRateLimitKey] = useState<string | null>(null)
   const rateLimitInfoKey = useMemo(
     () => rateLimitInfo
@@ -164,8 +141,19 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   return (
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
     <div ref={containerRef} className="relative flex min-h-0 w-full flex-1 flex-col bg-card" style={zoom !== 1 ? { zoom } : undefined}>
-      {fullscreenPlanText ? (
-        <CodexPlanFullscreenView text={fullscreenPlanText} onClose={() => setFullscreenPlanText(null)} />
+      {fullscreenPlan ? (
+        <CodexPlanFullscreenView
+          text={fullscreenPlan.text}
+          onApprovePlan={fullscreenPlan.onApprovePlan}
+          onRejectPlan={fullscreenPlan.onRejectPlan}
+          planApproval={fullscreenPlan.planApproval}
+          onClose={(reason) => {
+            setFullscreenPlan(null)
+            if (reason === 'reject') {
+              requestAnimationFrame(() => scrollToBottom?.())
+            }
+          }}
+        />
       ) : !externalHistory && showHistory ? (
         <SessionHistory />
       ) : pendingPlanApproval ? (

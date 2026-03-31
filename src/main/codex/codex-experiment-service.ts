@@ -344,9 +344,9 @@ function buildCollaborationMode(
   model?: string,
   reasoningEffort?: CodexReasoningEffort,
 ): Record<string, unknown> | undefined {
-  if (collaborationMode !== 'plan' || !model) return undefined
+  if (!collaborationMode || !model) return undefined
   return {
-    mode: 'plan',
+    mode: collaborationMode,
     settings: {
       model,
       reasoning_effort: reasoningEffort ?? null,

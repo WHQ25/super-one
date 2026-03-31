@@ -1,5 +1,5 @@
 import { Check, ClipboardList, Clock, Copy, Expand, MessageSquare, ScanSearch, TriangleAlert } from 'lucide-react'
-import type { CodexCommandExecutionItem, CodexPlanItem, CodexThreadItem } from '../../../../shared/agent-types'
+import type { CodexCommandExecutionItem, CodexPlanApprovalState, CodexPlanItem, CodexThreadItem } from '../../../../shared/agent-types'
 import { ToolBlock } from './ToolBlock'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { MarkdownView } from '@/components/MarkdownPreview'
@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { AnsiText } from '@/lib/ansi'
 import { FileChip } from './ToolBlock'
 import { FileIcon } from '@/components/ui/FileIcon'
+import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
@@ -19,7 +20,13 @@ import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '../../../../shared/agent-types'
 
-type PlanFullscreenCtx = { open: (text: string) => void }
+interface PlanFooterActions {
+  onApprove?: () => void
+  onReject?: (feedback?: string) => void
+  planApproval?: CodexPlanApprovalState
+}
+
+type PlanFullscreenCtx = { open: (text: string, actions?: PlanFooterActions) => void }
 const PlanFullscreenContext = createContext<PlanFullscreenCtx>({ open: () => {} })
 export const usePlanFullscreen = () => useContext(PlanFullscreenContext)
 export { PlanFullscreenContext }
@@ -215,7 +222,59 @@ function PlanActionButton({ icon: Icon, onClick, title }: { icon: React.ElementT
   )
 }
 
-function CodexPlanBlock({ item, isStreaming, nextItem }: { item: CodexPlanItem; isStreaming: boolean; nextItem?: CodexThreadItem }) {
+function PlanApprovalBadge({ planApproval }: { planApproval: CodexPlanApprovalState }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium',
+        planApproval.status === 'approved'
+          ? 'bg-green-500/10 text-green-400'
+          : 'bg-red-500/10 text-red-400',
+      )}
+    >
+      {planApproval.status === 'approved' ? 'Approved' : 'Rejected'}
+    </span>
+  )
+}
+
+function PlanApprovalSummary({ planApproval }: { planApproval: CodexPlanApprovalState }) {
+  if (planApproval.status === 'approved') {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-green-400">
+        <Check className="size-3 shrink-0" />
+        <span className="font-medium">Plan Approved</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded bg-red-500/10 px-2 py-1.5 text-xs text-red-400">
+      <div className="flex items-center gap-1.5">
+        <TriangleAlert className="size-3 shrink-0" />
+        <span className="font-medium">Plan Rejected</span>
+      </div>
+      {planApproval.feedback && (
+        <div className="mt-1 text-red-400/75">{planApproval.feedback}</div>
+      )}
+    </div>
+  )
+}
+
+function CodexPlanBlock({
+  item,
+  isStreaming,
+  nextItem,
+  onApprovePlan,
+  onRejectPlan,
+  planApproval,
+}: {
+  item: CodexPlanItem
+  isStreaming: boolean
+  nextItem?: CodexThreadItem
+  onApprovePlan?: () => void
+  onRejectPlan?: (feedback?: string) => void
+  planApproval?: CodexPlanApprovalState
+}) {
   const isItemStreaming = isStreaming && !nextItem
   const [expanded, setExpanded] = useState(isItemStreaming)
   const [copied, setCopied] = useState(false)
@@ -234,30 +293,58 @@ function CodexPlanBlock({ item, isStreaming, nextItem }: { item: CodexPlanItem; 
 
   const handleFullscreen = (e: React.MouseEvent) => {
     e.stopPropagation()
-    planFullscreen.open(item.text)
+    planFullscreen.open(item.text, { onApprove: onApprovePlan, onReject: onRejectPlan, planApproval })
+  }
+
+  const handleApprove = () => {
+    setExpanded(false)
+    onApprovePlan?.()
+  }
+
+  const handleReject = (feedback?: string) => {
+    setExpanded(false)
+    onRejectPlan?.(feedback)
   }
 
   return (
     <div className={cn(
-      'my-0.5 rounded transition-colors cursor-pointer border border-border/60 bg-muted/30 hover:bg-muted/50',
+      'mb-0.5 mt-1 rounded border border-border/60 bg-muted/30 transition-colors hover:bg-muted/50 cursor-pointer',
       expanded && 'overflow-hidden',
     )}>
       <div className="flex items-center gap-1.5 px-2 py-2 text-xs" onClick={() => setExpanded((e) => !e)}>
         <ClipboardList className="size-3.5 shrink-0 text-blue-400" />
         <span className="font-medium text-foreground">Plan</span>
+        {planApproval && <PlanApprovalBadge planApproval={planApproval} />}
         {!expanded && <span className="min-w-0 truncate text-muted-foreground">{item.text.split('\n')[0]}</span>}
-        {expanded && (
-          <div className="ml-auto flex items-center gap-0.5">
-            <PlanActionButton icon={copied ? Check : Copy} onClick={handleCopy} title="Copy plan" />
-            <PlanActionButton icon={Expand} onClick={handleFullscreen} title="Fullscreen" />
-          </div>
+        {!expanded && planApproval?.status === 'rejected' && planApproval.feedback && (
+          <span className="min-w-0 truncate text-red-400/75">{planApproval.feedback}</span>
         )}
+        <div className="ml-auto flex items-center gap-1">
+          {expanded && (
+            <div className="flex items-center gap-0.5">
+              <PlanActionButton icon={copied ? Check : Copy} onClick={handleCopy} title="Copy plan" />
+              <PlanActionButton icon={Expand} onClick={handleFullscreen} title="Fullscreen" />
+            </div>
+          )}
+        </div>
         <ChevronRight className={cn('size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded ? 'rotate-90' : 'ml-auto')} />
       </div>
       {expanded && (
-        <div className="max-h-96 overflow-y-auto border-t border-border/50">
-          <MarkdownView content={item.text} className="px-4 py-3 text-xs" />
-        </div>
+        <>
+          <div className="max-h-96 overflow-y-auto border-t border-border/50">
+            <MarkdownView content={item.text} className="px-4 py-3 text-xs" />
+          </div>
+          {planApproval && (
+            <div className="border-t border-border/50 px-3 py-2">
+              <PlanApprovalSummary planApproval={planApproval} />
+            </div>
+          )}
+          {!planApproval && onApprovePlan && onRejectPlan && (
+            <div className="flex items-center justify-end border-t border-border/50 px-3 py-2">
+              <CodexPlanImplementFooter onApprove={handleApprove} onReject={handleReject} />
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -268,6 +355,9 @@ export function renderCodexItem(
   index: number,
   isStreaming: boolean,
   nextItem?: CodexThreadItem,
+  onApprovePlan?: () => void,
+  onRejectPlan?: (feedback?: string) => void,
+  planApproval?: CodexPlanApprovalState,
 ) {
   switch (item.type) {
     case 'agent_message':
@@ -287,7 +377,17 @@ export function renderCodexItem(
       )
 
     case 'plan':
-      return <CodexPlanBlock key={`${item.id}-${index}`} item={item} isStreaming={isStreaming} nextItem={nextItem} />
+      return (
+        <CodexPlanBlock
+          key={`${item.id}-${index}`}
+          item={item}
+          isStreaming={isStreaming}
+          nextItem={nextItem}
+          onApprovePlan={onApprovePlan}
+          onRejectPlan={onRejectPlan}
+          planApproval={planApproval}
+        />
+      )
 
     case 'command_execution':
       return <CodexCommandBlock key={`${item.id}-${index}`} item={item} isStreaming={isStreaming} />

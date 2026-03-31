@@ -445,8 +445,8 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                 })}
               </>
           : isCodexMessage
-            ? <CodexTurnView message={message} isStreaming={isStreaming} />
-          : grouped!.segments.map((seg, segIdx, segs) => {
+            ? <CodexTurnView message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
+            : grouped!.segments.map((seg, segIdx, segs) => {
               if (seg.kind === 'subagent') {
                 return (
                   <SubagentBlock

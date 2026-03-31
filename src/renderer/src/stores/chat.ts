@@ -1,13 +1,15 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
 export const DEFAULT_PROVIDER: ChatProvider = 'claude'
 const SESSIONS_PAGE_SIZE = 30
 const CODEX_LAST_SELECTION_STORAGE_KEY = 'super-one.codex.last-selection.v1'
+const CODEX_APPROVE_PLAN_PROMPT = 'Plan approved, start implementation.'
+export const CODEX_REJECT_PLAN_PLACEHOLDER = 'Tell Codex what to do differently'
 
 export type MentionKind = 'file' | 'directory' | 'agent'
 export interface Mention {
@@ -41,6 +43,8 @@ export interface PerSessionState {
   selectedCodexReasoningEffort?: CodexReasoningEffort
   selectedCodexPermissionPreset: CodexPermissionPreset
   selectedCodexCollaborationMode: CodexCollaborationMode
+  codexPlanRejectHintActive: boolean
+  chatInputFocusNonce: number
   preferredProvider: ChatProvider
   draftText: string
   promptSuggestion: string | null
@@ -117,6 +121,8 @@ export function createDefaultPerSessionState(): PerSessionState {
     selectedCodexReasoningEffort: undefined,
     selectedCodexPermissionPreset: 'default',
     selectedCodexCollaborationMode: 'default',
+    codexPlanRejectHintActive: false,
+    chatInputFocusNonce: 0,
     preferredProvider: 'claude',
     draftText: '',
     promptSuggestion: null,
@@ -225,6 +231,8 @@ interface ChatStore {
 
   // Message actions (operate on activeProject)
   sendMessage: (content: string) => Promise<void>
+  approveCodexPlan: () => Promise<void>
+  rejectCodexPlan: (feedback?: string) => Promise<void>
   interrupt: () => Promise<void>
   disconnectRemoteSession: () => void
 
@@ -1195,6 +1203,13 @@ type CodexCommand =
   | { kind: 'review'; target: CodexReviewTarget }
   | { kind: 'compact' }
 
+type ChatStoreSet = (
+  partial: Partial<ChatStore> | ((state: ChatStore) => Partial<ChatStore>),
+  replace?: false,
+) => void
+
+type CodexRunnableCommand = Extract<CodexCommand, { kind: 'run' | 'review' | 'compact' }>
+
 function parseCodexCommand(input: string): CodexCommand | null {
   if (!input.startsWith('/')) return null
 
@@ -1229,6 +1244,10 @@ function parseCodexCommand(input: string): CodexCommand | null {
   }
 
   return null
+}
+
+function isRunnableCodexCommand(command: CodexCommand): command is CodexRunnableCommand {
+  return command.kind === 'run' || command.kind === 'review' || command.kind === 'compact'
 }
 
 function getCodexHelpText(): string {
@@ -1334,6 +1353,342 @@ function saveLastCodexSelection(modelId: string, reasoningEffort?: CodexReasonin
       JSON.stringify({ modelId, reasoningEffort }),
     )
   } catch {}
+}
+
+function createLocalTextUserMessage(id: string, text: string): ChatMessage {
+  return {
+    id,
+    role: 'user',
+    status: 'complete',
+    content: [{ type: 'text', text }],
+    createdAt: new Date().toISOString(),
+    providerId: 'local',
+  }
+}
+
+function getCodexPlanActionContext(
+  get: () => ChatStore,
+  activeProject: string,
+): {
+  project: ProjectState
+  session: PerSessionState
+  assistantMessageId: string
+  codexSessionId: string
+  resolvedCodexModel?: string
+  resolvedCodexReasoningEffort?: CodexReasoningEffort
+} | null {
+  const project = getProject(get(), activeProject)
+  const codexSessionId = _getEffectiveSessionId(project)
+  if (!codexSessionId) return null
+
+  const session = getActivePerSession(get(), activeProject)
+  const provider = session.sessionProvider ?? session.preferredProvider
+  if (provider !== 'codex' || session.selectedCodexCollaborationMode !== 'plan' || session.status !== 'idle' || project.hasPendingInteraction) {
+    return null
+  }
+
+  const lastAssistantId = session.lastAssistantMessageId
+  if (!lastAssistantId) return null
+  const lastAssistantMessage = lastAssistantId
+    ? session.messages.find((message) => message.id === lastAssistantId)
+    : null
+  const hasPlan = !!lastAssistantMessage?.metadata?.codex?.items.some((item) => item.type === 'plan')
+  if (!hasPlan) return null
+
+  const resolvedCodexSelection = resolveCodexModelSelection(
+    project.codexModels,
+    session.selectedCodexModel,
+    session.selectedCodexReasoningEffort,
+  )
+
+  return {
+    project,
+    session,
+    assistantMessageId: lastAssistantId,
+    codexSessionId,
+    resolvedCodexModel: resolvedCodexSelection.modelId || undefined,
+    resolvedCodexReasoningEffort: resolvedCodexSelection.reasoningEffort,
+  }
+}
+
+function updateCodexPlanApproval(
+  session: PerSessionState,
+  assistantMessageId: string,
+  planApproval: CodexPlanApprovalState,
+): Partial<PerSessionState> {
+  return {
+    messages: session.messages.map((message) => {
+      if (message.id !== assistantMessageId || message.role !== 'assistant' || !message.metadata?.codex) {
+        return message
+      }
+      return {
+        ...message,
+        metadata: {
+          ...message.metadata,
+          codex: {
+            ...message.metadata.codex,
+            planApproval,
+          },
+        },
+      }
+    }),
+  }
+}
+
+async function runCodexCommand(
+  set: ChatStoreSet,
+  get: () => ChatStore,
+  {
+    activeProject,
+    codexSessionId,
+    session,
+    codexCommand,
+    finalContent,
+    userMessageId,
+    attachments,
+    selectedCodexPermissionPreset,
+    collaborationMode,
+    resolvedCodexModel,
+    resolvedCodexReasoningEffort,
+  }: {
+    activeProject: string
+    codexSessionId: string
+    session: PerSessionState
+    codexCommand: CodexRunnableCommand
+    finalContent: string
+    userMessageId: string
+    attachments: ImageAttachment[]
+    selectedCodexPermissionPreset: CodexPermissionPreset
+    collaborationMode: CodexCollaborationMode
+    resolvedCodexModel?: string
+    resolvedCodexReasoningEffort?: CodexReasoningEffort
+  },
+): Promise<void> {
+  set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
+
+  const assistantId = `codex_${Date.now()}`
+  const previousCodexTurnLastUsage = session.codexTurnLastUsage
+  const codexThreadId = getLatestCodexThreadId(session.messages)
+  const updateCodexSession = (updater: (s: PerSessionState) => Partial<PerSessionState>) => {
+    set((s) => updatePerSession(s, activeProject, codexSessionId, updater))
+  }
+  const getCodexSession = () => getProject(get(), activeProject)._sessions[codexSessionId]
+  const appendAssistant = (message: ChatMessage) => {
+    updateCodexSession((sess) => ({
+      messages: [...sess.messages, message],
+      ...(message.role === 'assistant' ? { lastAssistantMessageId: message.id } : {}),
+    }))
+  }
+  const getTargetAssistantId = () => getCodexSession()?.activeCodexMessageId ?? assistantId
+  const updateAssistant = (
+    status: 'streaming' | 'complete' | 'interrupted' | 'error',
+    text: string,
+    metadata?: ChatMessage['metadata'],
+    sessionUpdates?: Partial<PerSessionState>,
+  ) => {
+    const targetAssistantId = getTargetAssistantId()
+    updateCodexSession((sess) => ({
+      status: status === 'streaming' ? 'streaming' : 'idle',
+      ...(status === 'streaming' ? { activeCodexMessageId: targetAssistantId } : { activeCodexMessageId: null }),
+      ...(sessionUpdates ?? {}),
+      messages: sess.messages.map((m) => (
+        m.id !== targetAssistantId
+          ? m
+          : {
+              ...m,
+              status,
+              content: [{ type: 'text', text }],
+              ...(metadata ? { metadata } : {}),
+            }
+      )),
+    }))
+  }
+
+  if (session.status === 'streaming' && codexCommand.kind === 'run') {
+    const steerAssistantId = `codex_${Date.now()}`
+    const previousActiveCodexMessageId = session.activeCodexMessageId
+    appendAssistant({
+      id: steerAssistantId,
+      role: 'assistant',
+      status: 'streaming',
+      content: [],
+      createdAt: new Date().toISOString(),
+      providerId: 'codex',
+    })
+    updateCodexSession(() => ({
+      status: 'streaming',
+      activeCodexMessageId: steerAssistantId,
+      codexTurnLastUsage: null,
+      streamingTokens: { input: 0, output: 0 },
+    }))
+    try {
+      await window.app.codexSteer(
+        codexSessionId,
+        codexCommand.prompt,
+        steerAssistantId,
+        userMessageId,
+        finalContent,
+        session._worktreeBaseBranch ?? undefined,
+        session._worktreePath ?? undefined,
+      )
+    } catch (error) {
+      updateCodexSession((sess) => ({
+        status: 'streaming',
+        activeCodexMessageId: previousActiveCodexMessageId ?? null,
+        codexTurnLastUsage: previousCodexTurnLastUsage,
+        messages: sess.messages.filter((m) => m.id !== steerAssistantId),
+      }))
+      console.warn('[runCodexCommand] Codex steer failed:', error)
+    }
+    return
+  }
+
+  appendAssistant({
+    id: assistantId,
+    role: 'assistant',
+    status: 'streaming',
+    content: [],
+    createdAt: new Date().toISOString(),
+    providerId: 'codex',
+  })
+  updateCodexSession(() => ({
+    status: 'streaming',
+    activeCodexMessageId: assistantId,
+    codexTurnLastUsage: null,
+    streamingTokens: { input: 0, output: 0 },
+  }))
+
+  try {
+    const runStart = Date.now()
+    const codexCwd = _getSessionCwd(activeProject, session)
+    let result: Awaited<ReturnType<typeof window.app.codexRun>>
+
+    if (codexCommand.kind === 'review') {
+      result = await window.app.codexReview(
+        codexSessionId,
+        activeProject,
+        codexCommand.target,
+        resolvedCodexModel,
+        resolvedCodexReasoningEffort,
+        selectedCodexPermissionPreset,
+        codexThreadId,
+        assistantId,
+        codexCwd,
+        userMessageId,
+        finalContent,
+        session._worktreeBaseBranch ?? undefined,
+        session._worktreePath ?? undefined,
+      )
+    } else if (codexCommand.kind === 'compact') {
+      result = await window.app.codexCompact(
+        codexSessionId,
+        activeProject,
+        resolvedCodexModel,
+        selectedCodexPermissionPreset,
+        codexThreadId,
+        assistantId,
+        codexCwd,
+        userMessageId,
+        finalContent,
+        session._worktreeBaseBranch ?? undefined,
+        session._worktreePath ?? undefined,
+      )
+    } else {
+      result = await window.app.codexRun(
+        codexSessionId,
+        activeProject,
+        codexCommand.prompt,
+        resolvedCodexModel,
+        resolvedCodexReasoningEffort,
+        selectedCodexPermissionPreset,
+        collaborationMode,
+        codexThreadId,
+        assistantId,
+        attachments.length > 0 ? attachments : undefined,
+        codexCwd,
+        userMessageId,
+        finalContent,
+        session._worktreeBaseBranch ?? undefined,
+        session._worktreePath ?? undefined,
+      )
+    }
+
+    const text = result.finalResponse?.trim() || (
+      codexCommand.kind === 'compact'
+        ? 'Conversation compacted.'
+        : 'Codex completed without returning text.'
+    )
+    const renderedItems = pruneTransientCodexItems(result.items)
+    const codexSession = getCodexSession()
+    const footerTokens = result.usage && codexSession
+      ? accumulateCodexFooterTokens(codexSession.streamingTokens, result.usage, codexSession.codexTurnLastUsage)
+      : codexSession?.streamingTokens ?? { input: 0, output: 0 }
+    const consumedTokens = footerTokens.input > 0 || footerTokens.output > 0 ? footerTokens : undefined
+    updateAssistant('complete', text, result.usage ? {
+      durationMs: Date.now() - runStart,
+      usage: {
+        inputTokens: result.usage.lastInputTokens,
+        outputTokens: result.usage.lastOutputTokens,
+        cacheReadInputTokens: result.usage.lastCachedInputTokens,
+        cacheCreationInputTokens: 0,
+      },
+      ...(consumedTokens ? { consumedTokens } : {}),
+      codex: {
+        threadId: result.threadId,
+        usage: result.usage,
+        items: renderedItems,
+      },
+    } : {
+      durationMs: Date.now() - runStart,
+      codex: {
+        threadId: result.threadId,
+        usage: null,
+        items: renderedItems,
+      },
+    }, {
+      contextTokens: result.usage
+        ? (() => {
+            const total = getCodexContextTokens(result.usage)
+            return total > 0 ? total : (codexSession?.contextTokens ?? 0)
+          })()
+        : (codexSession?.contextTokens ?? 0),
+      contextWindow: result.usage?.contextWindow && result.usage.contextWindow > 0
+        ? result.usage.contextWindow
+        : (codexSession?.contextWindow ?? null),
+      codexUsageSnapshot: result.usage ?? codexSession?.codexUsageSnapshot ?? null,
+      codexTurnLastUsage: null,
+      streamingTokens: { input: 0, output: 0 },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const interrupted = /interrupt|abort/i.test(message)
+    updateAssistant(
+      interrupted ? 'interrupted' : 'error',
+      interrupted ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
+      undefined,
+      { codexTurnLastUsage: null, streamingTokens: { input: 0, output: 0 } },
+    )
+  }
+
+  const finalCodexSession = getCodexSession()
+  if (finalCodexSession) {
+    const currentProject = getProject(get(), activeProject)
+    if (currentProject._activeSessionId !== codexSessionId) {
+      set((s) => {
+        const proj = s.projectSessions[activeProject]
+        if (!proj) return {}
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [activeProject]: {
+              ...proj,
+              unseenCompletedSessions: new Set([...proj.unseenCompletedSessions, codexSessionId]),
+            },
+          },
+        }
+      })
+    }
+  }
 }
 
 // --- Store implementation ---
@@ -1964,13 +2319,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const userMessageId = `user_${Date.now()}`
     const userMessage: ChatMessage = {
-      id: userMessageId,
-      role: 'user',
-      status: 'complete',
+      ...createLocalTextUserMessage(userMessageId, finalContent),
       content: userContent,
       attachments: attachments.length > 0 ? attachments : undefined,
-      createdAt: new Date().toISOString(),
-      providerId: 'local',
     }
     set((s) => ({
       ...updateActivePerSession(s, (sess) => ({
@@ -1978,238 +2329,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ...(isQueuedSend ? { queuedMessages: [...sess.queuedMessages, userMessage] } : {}),
         attachments: [],
         mentions: [],
+        codexPlanRejectHintActive: false,
         ...(effectiveProvider === 'claude' && !isQueuedSend ? { awaitingAssistantReply: true } : {}),
       })),
       isOpen: true,
     }))
 
     if (resolvedCodexCommand) {
-      set((s) => updateActivePerSession(s,() => ({ _pendingSlashCommand: '' })))
-
-      const codexProjectPath = activeProject
-      const codexSid = codexSessionId!
-      const assistantId = `codex_${Date.now()}`
-      const previousCodexTurnLastUsage = session.codexTurnLastUsage
-      const updateCodexSession = (updater: (s: PerSessionState) => Partial<PerSessionState>) => {
-        set((s) => updatePerSession(s, codexProjectPath, codexSid, updater))
-      }
-      const getCodexSession = () => getProject(get(), codexProjectPath)._sessions[codexSid]
-      const appendAssistant = (message: ChatMessage) => {
-        updateCodexSession((sess) => ({
-          messages: [...sess.messages, message],
-          ...(message.role === 'assistant' ? { lastAssistantMessageId: message.id } : {}),
-        }))
-      }
-      const getTargetAssistantId = () => getCodexSession()?.activeCodexMessageId ?? assistantId
-      const updateAssistant = (
-        status: 'streaming' | 'complete' | 'interrupted' | 'error',
-        text: string,
-        metadata?: ChatMessage['metadata'],
-        sessionUpdates?: Partial<PerSessionState>,
-      ) => {
-        const targetAssistantId = getTargetAssistantId()
-        updateCodexSession((sess) => ({
-          status: status === 'streaming' ? 'streaming' : 'idle',
-          ...(status === 'streaming' ? { activeCodexMessageId: targetAssistantId } : { activeCodexMessageId: null }),
-          ...(sessionUpdates ?? {}),
-          messages: sess.messages.map((m) => (
-            m.id !== targetAssistantId
-              ? m
-              : {
-                  ...m,
-                  status,
-                  content: [{ type: 'text', text }],
-                  ...(metadata ? { metadata } : {}),
-                }
-          )),
-        }))
-      }
-
-      // Steer: if streaming and command is 'run', send as steer input instead of starting a new run
-      if (session.status === 'streaming' && resolvedCodexCommand.kind === 'run') {
-        const steerAssistantId = `codex_${Date.now()}`
-        const previousActiveCodexMessageId = session.activeCodexMessageId
-        appendAssistant({
-          id: steerAssistantId,
-          role: 'assistant',
-          status: 'streaming',
-          content: [],
-          createdAt: new Date().toISOString(),
-          providerId: 'codex',
-        })
-        updateCodexSession(() => ({
-          status: 'streaming',
-          activeCodexMessageId: steerAssistantId,
-          codexTurnLastUsage: null,
-          streamingTokens: { input: 0, output: 0 },
-        }))
-        try {
-          await window.app.codexSteer(
-            codexSessionId!,
-            resolvedCodexCommand.prompt,
-            steerAssistantId,
-            userMessageId,
-            finalContent,
-            session._worktreeBaseBranch ?? undefined,
-            session._worktreePath ?? undefined,
-          )
-        } catch (error) {
-          updateCodexSession((sess) => ({
-            status: 'streaming',
-            activeCodexMessageId: previousActiveCodexMessageId ?? null,
-            codexTurnLastUsage: previousCodexTurnLastUsage,
-            messages: sess.messages.filter((m) => m.id !== steerAssistantId),
-          }))
-          console.warn('[sendMessage] Codex steer failed:', error)
-        }
-        return
-      }
-
-      appendAssistant({
-        id: assistantId,
-        role: 'assistant',
-        status: 'streaming',
-        content: [],
-        createdAt: new Date().toISOString(),
-        providerId: 'codex',
+      if (!isRunnableCodexCommand(resolvedCodexCommand) || !codexSessionId) return
+      await runCodexCommand(set, get, {
+        activeProject,
+        codexSessionId,
+        session,
+        codexCommand: resolvedCodexCommand,
+        finalContent,
+        userMessageId,
+        attachments,
+        selectedCodexPermissionPreset,
+        collaborationMode: selectedCodexCollaborationMode,
+        resolvedCodexModel,
+        resolvedCodexReasoningEffort,
       })
-      updateCodexSession(() => ({
-        status: 'streaming',
-        activeCodexMessageId: assistantId,
-        codexTurnLastUsage: null,
-        streamingTokens: { input: 0, output: 0 },
-      }))
-
-      try {
-        const runStart = Date.now()
-        let result: Awaited<ReturnType<typeof window.app.codexRun>>
-        const codexCwd = _getSessionCwd(activeProject, session)
-
-        if (resolvedCodexCommand.kind === 'review') {
-          result = await window.app.codexReview(
-            codexSessionId!,
-            activeProject,
-            resolvedCodexCommand.target,
-            resolvedCodexModel,
-            resolvedCodexReasoningEffort,
-            selectedCodexPermissionPreset,
-            codexThreadId,
-            assistantId,
-            codexCwd,
-            userMessageId,
-            finalContent,
-            session._worktreeBaseBranch ?? undefined,
-            session._worktreePath ?? undefined,
-          )
-        } else if (resolvedCodexCommand.kind === 'compact') {
-          result = await window.app.codexCompact(
-            codexSessionId!,
-            activeProject,
-            resolvedCodexModel,
-            selectedCodexPermissionPreset,
-            codexThreadId,
-            assistantId,
-            codexCwd,
-            userMessageId,
-            finalContent,
-            session._worktreeBaseBranch ?? undefined,
-            session._worktreePath ?? undefined,
-          )
-        } else {
-          result = await window.app.codexRun(
-            codexSessionId!,
-            activeProject,
-            resolvedCodexCommand.prompt,
-            resolvedCodexModel,
-            resolvedCodexReasoningEffort,
-            selectedCodexPermissionPreset,
-            selectedCodexCollaborationMode,
-            codexThreadId,
-            assistantId,
-            attachments.length > 0 ? attachments : undefined,
-            codexCwd,
-            userMessageId,
-            finalContent,
-            session._worktreeBaseBranch ?? undefined,
-            session._worktreePath ?? undefined,
-          )
-        }
-
-        const text = result.finalResponse?.trim() || (
-          resolvedCodexCommand.kind === 'compact'
-            ? 'Conversation compacted.'
-            : 'Codex completed without returning text.'
-        )
-        const renderedItems = pruneTransientCodexItems(result.items)
-        const codexSession = getCodexSession()
-        const footerTokens = result.usage && codexSession
-          ? accumulateCodexFooterTokens(codexSession.streamingTokens, result.usage, codexSession.codexTurnLastUsage)
-          : codexSession?.streamingTokens ?? { input: 0, output: 0 }
-        const consumedTokens = footerTokens.input > 0 || footerTokens.output > 0 ? footerTokens : undefined
-        updateAssistant('complete', text, result.usage ? {
-          durationMs: Date.now() - runStart,
-          usage: {
-            inputTokens: result.usage.lastInputTokens,
-            outputTokens: result.usage.lastOutputTokens,
-            cacheReadInputTokens: result.usage.lastCachedInputTokens,
-            cacheCreationInputTokens: 0,
-          },
-          ...(consumedTokens ? { consumedTokens } : {}),
-          codex: {
-            threadId: result.threadId,
-            usage: result.usage,
-            items: renderedItems,
-          },
-        } : {
-          durationMs: Date.now() - runStart,
-          codex: {
-            threadId: result.threadId,
-            usage: null,
-            items: renderedItems,
-          },
-        }, {
-          contextTokens: result.usage
-            ? (() => {
-                const total = getCodexContextTokens(result.usage)
-                return total > 0 ? total : (codexSession?.contextTokens ?? 0)
-              })()
-            : (codexSession?.contextTokens ?? 0),
-          contextWindow: result.usage?.contextWindow && result.usage.contextWindow > 0
-            ? result.usage.contextWindow
-            : (codexSession?.contextWindow ?? null),
-          codexUsageSnapshot: result.usage ?? codexSession?.codexUsageSnapshot ?? null,
-          codexTurnLastUsage: null,
-          streamingTokens: { input: 0, output: 0 },
-        })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        const interrupted = /interrupt|abort/i.test(message)
-        updateAssistant(
-          interrupted ? 'interrupted' : 'error',
-          interrupted ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
-          undefined,
-          { codexTurnLastUsage: null, streamingTokens: { input: 0, output: 0 } },
-        )
-      }
-      const finalCodexSession = getCodexSession()
-      if (finalCodexSession) {
-        const currentProject = getProject(get(), codexProjectPath)
-        if (currentProject._activeSessionId !== codexSid) {
-          set((s) => {
-            const proj = s.projectSessions[codexProjectPath]
-            if (!proj) return {}
-            return {
-              projectSessions: {
-                ...s.projectSessions,
-                [codexProjectPath]: {
-                  ...proj,
-                  unseenCompletedSessions: new Set([...proj.unseenCompletedSessions, codexSid]),
-                },
-              },
-            }
-          })
-        }
-      }
       return
     }
 
@@ -2236,6 +2376,106 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       throw err
     }
+  },
+
+  approveCodexPlan: async () => {
+    const { activeProject, remoteSession } = get()
+    if (!activeProject) return
+    if (remoteSession && remoteSession.projectPath === activeProject) {
+      const project = get().projectSessions[activeProject]
+      if (project?._activeSessionId === remoteSession.sessionId) return
+    }
+
+    const context = getCodexPlanActionContext(get, activeProject)
+    if (!context) return
+
+    const userMessageId = `user_${Date.now()}`
+    const userMessage = createLocalTextUserMessage(userMessageId, CODEX_APPROVE_PLAN_PROMPT)
+
+    set((s) => ({
+      ...updateActivePerSession(s, (sess) => {
+        const approvedSession = updateCodexPlanApproval(sess, context.assistantMessageId, { status: 'approved' })
+        return {
+          ...approvedSession,
+          selectedCodexCollaborationMode: 'default',
+          codexPlanRejectHintActive: false,
+          messages: [...(approvedSession.messages ?? sess.messages), userMessage],
+        }
+      }),
+      isOpen: true,
+    }))
+
+    await runCodexCommand(set, get, {
+      activeProject,
+      codexSessionId: context.codexSessionId,
+      session: context.session,
+      codexCommand: { kind: 'run', prompt: CODEX_APPROVE_PLAN_PROMPT },
+      finalContent: CODEX_APPROVE_PLAN_PROMPT,
+      userMessageId,
+      attachments: [],
+      selectedCodexPermissionPreset: context.session.selectedCodexPermissionPreset,
+      collaborationMode: 'default',
+      resolvedCodexModel: context.resolvedCodexModel,
+      resolvedCodexReasoningEffort: context.resolvedCodexReasoningEffort,
+    })
+  },
+
+  rejectCodexPlan: async (feedback) => {
+    const { activeProject, remoteSession } = get()
+    if (!activeProject) return
+    if (remoteSession && remoteSession.projectPath === activeProject) {
+      const project = get().projectSessions[activeProject]
+      if (project?._activeSessionId === remoteSession.sessionId) return
+    }
+
+    const context = getCodexPlanActionContext(get, activeProject)
+    if (!context) return
+
+    const trimmedFeedback = feedback?.trim()
+    if (!trimmedFeedback) {
+      set((s) => ({
+        ...updateActivePerSession(s, (sess) => ({
+          ...updateCodexPlanApproval(sess, context.assistantMessageId, { status: 'rejected' }),
+          codexPlanRejectHintActive: true,
+          chatInputFocusNonce: sess.chatInputFocusNonce + 1,
+        })),
+        isOpen: true,
+      }))
+      return
+    }
+
+    const userMessageId = `user_${Date.now()}`
+    const userMessage = createLocalTextUserMessage(userMessageId, trimmedFeedback)
+
+    set((s) => ({
+      ...updateActivePerSession(s, (sess) => {
+        const rejectedSession = updateCodexPlanApproval(
+          sess,
+          context.assistantMessageId,
+          { status: 'rejected', feedback: trimmedFeedback },
+        )
+        return {
+          ...rejectedSession,
+          codexPlanRejectHintActive: false,
+          messages: [...(rejectedSession.messages ?? sess.messages), userMessage],
+        }
+      }),
+      isOpen: true,
+    }))
+
+    await runCodexCommand(set, get, {
+      activeProject,
+      codexSessionId: context.codexSessionId,
+      session: context.session,
+      codexCommand: { kind: 'run', prompt: trimmedFeedback },
+      finalContent: trimmedFeedback,
+      userMessageId,
+      attachments: [],
+      selectedCodexPermissionPreset: context.session.selectedCodexPermissionPreset,
+      collaborationMode: 'plan',
+      resolvedCodexModel: context.resolvedCodexModel,
+      resolvedCodexReasoningEffort: context.resolvedCodexReasoningEffort,
+    })
   },
 
   disconnectRemoteSession: () => {
@@ -2293,6 +2533,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       planApprovalOutcome: null, mentions: [], subagentTokens: {},
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
       awaitingAssistantReply: false,
+      codexPlanRejectHintActive: false,
+      chatInputFocusNonce: 0,
       queuedMessages: [],
     })), _bashOutputs: remainingOutputs }))
   },
@@ -2506,6 +2748,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
       draftText: text && 'text' in text ? text.text : '',
       attachments,
+      codexPlanRejectHintActive: false,
     })))
   },
 
@@ -2521,7 +2764,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setDraftText: (text) => {
     const { activeProject } = get()
     if (!activeProject) return
-    set((s) => updateActivePerSession(s,() => ({ draftText: text })))
+    set((s) => updateActivePerSession(s,() => ({
+      draftText: text,
+      ...(text.length > 0 ? { codexPlanRejectHintActive: false } : {}),
+    })))
   },
 
   setSelectedModel: (model) => {
@@ -2581,6 +2827,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     set((s) => updateActivePerSession(s, () => ({
       selectedCodexCollaborationMode: mode,
+      codexPlanRejectHintActive: false,
     })))
   },
 

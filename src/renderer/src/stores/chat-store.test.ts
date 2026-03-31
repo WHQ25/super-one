@@ -1,8 +1,23 @@
+/** @vitest-environment jsdom */
+
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AgentEvent, ChatMessage } from '../../../shared/agent-types'
 
 const mockSetActiveWorktree = vi.fn()
 const mockClearWorktree = vi.fn().mockResolvedValue(undefined)
+const localStorageState = new Map<string, string>()
+const mockLocalStorage = {
+  getItem: vi.fn((key: string) => localStorageState.get(key) ?? null),
+  setItem: vi.fn((key: string, value: string) => {
+    localStorageState.set(key, value)
+  }),
+  removeItem: vi.fn((key: string) => {
+    localStorageState.delete(key)
+  }),
+  clear: vi.fn(() => {
+    localStorageState.clear()
+  }),
+}
 
 vi.mock('./app', () => ({
   useAppStore: {
@@ -46,7 +61,8 @@ const mockWindowApp = {
   codexInterrupt: vi.fn().mockResolvedValue(false),
 }
 
-vi.stubGlobal('window', { agent: mockWindowAgent, app: mockWindowApp })
+vi.stubGlobal('window', { agent: mockWindowAgent, app: mockWindowApp, localStorage: mockLocalStorage })
+vi.stubGlobal('localStorage', mockLocalStorage)
 
 const { useChatStore, DRAFT_SESSION_ID, createDefaultPerSessionState, createDefaultProjectState } = await import('./chat')
 
@@ -87,6 +103,7 @@ function makeMessage(id: string, role: 'user' | 'assistant'): ChatMessage {
 beforeEach(() => {
   resetStore()
   vi.clearAllMocks()
+  mockLocalStorage.clear()
   globalThis.localStorage?.removeItem('super-one.codex.last-selection.v1')
 })
 
@@ -1308,6 +1325,218 @@ describe('codex plan mode', () => {
     expect(call?.[1]).toBe('/test')
     expect(call?.[2]).toBe('hello')
     expect(call?.[6]).toBe('plan')
+  })
+
+  it('passes default collaboration mode to codex runs', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [DRAFT_SESSION_ID]: {
+              ...proj._sessions[DRAFT_SESSION_ID],
+              preferredProvider: 'codex',
+              selectedCodexModel: 'gpt-5.1-codex',
+              selectedCodexCollaborationMode: 'default',
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().sendMessage('hello')
+
+    const call = mockWindowApp.codexRun.mock.calls.at(-1)
+    expect(call).toBeTruthy()
+    expect(call?.[1]).toBe('/test')
+    expect(call?.[2]).toBe('hello')
+    expect(call?.[6]).toBe('default')
+  })
+
+  it('approves codex plan with default collaboration mode without consuming draft attachments or mentions', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const attachment = { name: 'img.png', data: 'base64', mimeType: 'image/png' } as never
+    const mention = { kind: 'file', value: '/test/src/app.ts', displayName: 'app.ts' } as never
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'codex-session',
+          hasPendingInteraction: false,
+          _sessions: {
+            ...proj._sessions,
+            'codex-session': {
+              ...createDefaultPerSessionState(),
+              preferredProvider: 'codex',
+              sessionProvider: 'codex',
+              selectedCodexCollaborationMode: 'plan',
+              draftText: 'keep this draft',
+              attachments: [attachment],
+              mentions: [mention],
+              lastAssistantMessageId: 'assistant-1',
+              messages: [{
+                id: 'assistant-1',
+                role: 'assistant',
+                status: 'complete',
+                content: [{ type: 'text', text: 'plan' }],
+                createdAt: '',
+                providerId: 'codex',
+                metadata: {
+                  codex: {
+                    threadId: 'thread-1',
+                    usage: null,
+                    items: [{ id: 'plan-1', type: 'plan', text: '## Plan' }],
+                  },
+                },
+              }] as never[],
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().approveCodexPlan()
+
+    const call = mockWindowApp.codexRun.mock.calls.at(-1)
+    expect(call).toBeTruthy()
+    expect(call?.[2]).toBe('Plan approved, start implementation.')
+    expect(call?.[6]).toBe('default')
+    expect(call?.[9]).toBeUndefined()
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions['codex-session']
+    expect(session.selectedCodexCollaborationMode).toBe('default')
+    expect(session.draftText).toBe('keep this draft')
+    expect(session.attachments).toEqual([attachment])
+    expect(session.mentions).toEqual([mention])
+    expect(session.messages.find((message) => message.id === 'assistant-1')?.metadata?.codex?.planApproval).toEqual({
+      status: 'approved',
+    })
+    expect(session.messages.findLast((message) => message.role === 'user')?.content).toEqual([{
+      type: 'text',
+      text: 'Plan approved, start implementation.',
+    }])
+  })
+
+  it('rejects codex plan with feedback without consuming draft attachments or mentions', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const attachment = { name: 'img.png', data: 'base64', mimeType: 'image/png' } as never
+    const mention = { kind: 'file', value: '/test/src/app.ts', displayName: 'app.ts' } as never
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'codex-session',
+          hasPendingInteraction: false,
+          _sessions: {
+            ...proj._sessions,
+            'codex-session': {
+              ...createDefaultPerSessionState(),
+              preferredProvider: 'codex',
+              sessionProvider: 'codex',
+              selectedCodexCollaborationMode: 'plan',
+              draftText: 'keep this draft',
+              attachments: [attachment],
+              mentions: [mention],
+              lastAssistantMessageId: 'assistant-1',
+              messages: [{
+                id: 'assistant-1',
+                role: 'assistant',
+                status: 'complete',
+                content: [{ type: 'text', text: 'plan' }],
+                createdAt: '',
+                providerId: 'codex',
+                metadata: {
+                  codex: {
+                    threadId: 'thread-1',
+                    usage: null,
+                    items: [{ id: 'plan-1', type: 'plan', text: '## Plan' }],
+                  },
+                },
+              }] as never[],
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().rejectCodexPlan('Only touch the renderer layer.')
+
+    const call = mockWindowApp.codexRun.mock.calls.at(-1)
+    expect(call?.[2]).toBe('Only touch the renderer layer.')
+    expect(call?.[6]).toBe('plan')
+    expect(call?.[9]).toBeUndefined()
+    const session = useChatStore.getState().projectSessions['/test']._sessions['codex-session']
+    expect(session.selectedCodexCollaborationMode).toBe('plan')
+    expect(session.draftText).toBe('keep this draft')
+    expect(session.attachments).toEqual([attachment])
+    expect(session.mentions).toEqual([mention])
+    expect(session.messages.find((message) => message.id === 'assistant-1')?.metadata?.codex?.planApproval).toEqual({
+      status: 'rejected',
+      feedback: 'Only touch the renderer layer.',
+    })
+    expect(session.messages.findLast((message) => message.role === 'user')?.content).toEqual([{
+      type: 'text',
+      text: 'Only touch the renderer layer.',
+    }])
+  })
+
+  it('focuses chat input instead of sending when rejecting codex plan without feedback', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'codex-session',
+          hasPendingInteraction: false,
+          _sessions: {
+            ...proj._sessions,
+            'codex-session': {
+              ...createDefaultPerSessionState(),
+              preferredProvider: 'codex',
+              sessionProvider: 'codex',
+              selectedCodexCollaborationMode: 'plan',
+              lastAssistantMessageId: 'assistant-1',
+              messages: [{
+                id: 'assistant-1',
+                role: 'assistant',
+                status: 'complete',
+                content: [{ type: 'text', text: 'plan' }],
+                createdAt: '',
+                providerId: 'codex',
+                metadata: {
+                  codex: {
+                    threadId: 'thread-1',
+                    usage: null,
+                    items: [{ id: 'plan-1', type: 'plan', text: '## Plan' }],
+                  },
+                },
+              }] as never[],
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().rejectCodexPlan()
+
+    expect(mockWindowApp.codexRun).not.toHaveBeenCalled()
+    const session = useChatStore.getState().projectSessions['/test']._sessions['codex-session']
+    expect(session.selectedCodexCollaborationMode).toBe('plan')
+    expect(session.codexPlanRejectHintActive).toBe(true)
+    expect(session.chatInputFocusNonce).toBe(1)
+    expect(session.messages.find((message) => message.id === 'assistant-1')?.metadata?.codex?.planApproval).toEqual({
+      status: 'rejected',
+    })
   })
 })
 

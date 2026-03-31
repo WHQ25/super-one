@@ -1,9 +1,11 @@
 /** @vitest-environment jsdom */
 
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '../../../../shared/agent-types'
 import { CodexTurnView } from './CodexTurnView'
+import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
+import { PlanFullscreenContext } from './codex-item-renderer'
 
 vi.mock('./CopyableMarkdown', () => ({
   CopyableMarkdown: ({ text }: { text: string }) => <div>{text}</div>,
@@ -26,9 +28,47 @@ function createMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   }
 }
 
+const mockApproveCodexPlan = vi.fn()
+const mockRejectCodexPlan = vi.fn()
+
+function setupActiveSession(overrides: Partial<ReturnType<typeof createDefaultPerSessionState>> = {}) {
+  const project = createDefaultProjectState()
+  const session: ReturnType<typeof createDefaultPerSessionState> = {
+    ...createDefaultPerSessionState(),
+    selectedCodexCollaborationMode: 'default',
+    ...overrides,
+  }
+  useChatStore.setState({
+    activeProject: '/test',
+    approveCodexPlan: mockApproveCodexPlan,
+    rejectCodexPlan: mockRejectCodexPlan,
+    projectSessions: {
+      '/test': {
+        ...project,
+        _activeSessionId: 'sid-1',
+        hasPendingInteraction: false,
+        _sessions: {
+          'sid-1': session,
+        },
+      },
+    },
+  })
+}
+
+beforeEach(() => {
+  mockApproveCodexPlan.mockReset()
+  mockRejectCodexPlan.mockReset()
+  useChatStore.setState({
+    activeProject: null,
+    projectSessions: {},
+    approveCodexPlan: mockApproveCodexPlan,
+    rejectCodexPlan: mockRejectCodexPlan,
+  })
+})
+
 describe('CodexTurnView', () => {
   it('does not show thinking placeholder before the first codex item arrives', () => {
-    render(<CodexTurnView message={createMessage()} isStreaming />)
+    render(<CodexTurnView message={createMessage()} isStreaming isLastAssistant />)
 
     expect(screen.queryByText('Thinking')).toBeNull()
   })
@@ -46,6 +86,7 @@ describe('CodexTurnView', () => {
           },
         })}
         isStreaming
+        isLastAssistant
       />,
     )
 
@@ -72,6 +113,7 @@ describe('CodexTurnView', () => {
           },
         })}
         isStreaming={false}
+        isLastAssistant
       />,
     )
 
@@ -104,6 +146,7 @@ describe('CodexTurnView', () => {
           },
         })}
         isStreaming={false}
+        isLastAssistant
       />,
     )
 
@@ -132,6 +175,7 @@ describe('CodexTurnView', () => {
           },
         })}
         isStreaming
+        isLastAssistant
       />,
     )
 
@@ -174,6 +218,7 @@ describe('CodexTurnView', () => {
       <CodexTurnView
         message={message}
         isStreaming
+        isLastAssistant
       />,
     )
 
@@ -211,6 +256,7 @@ describe('CodexTurnView', () => {
           },
         })}
         isStreaming={false}
+        isLastAssistant
       />,
     )
 
@@ -220,6 +266,7 @@ describe('CodexTurnView', () => {
   })
 
   it('renders plan item as Plan block, not as reasoning', () => {
+    setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
     render(
       <CodexTurnView
         message={createMessage({
@@ -238,6 +285,7 @@ describe('CodexTurnView', () => {
           },
         })}
         isStreaming
+        isLastAssistant
       />,
     )
 
@@ -246,6 +294,7 @@ describe('CodexTurnView', () => {
   })
 
   it('does not show fallback text when plan items exist', () => {
+    setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
     render(
       <CodexTurnView
         message={createMessage({
@@ -266,6 +315,7 @@ describe('CodexTurnView', () => {
           },
         })}
         isStreaming={false}
+        isLastAssistant
       />,
     )
 
@@ -274,6 +324,7 @@ describe('CodexTurnView', () => {
   })
 
   it('does not render codex todo lists inline', () => {
+    setupActiveSession()
     render(
       <CodexTurnView
         message={createMessage({
@@ -296,11 +347,217 @@ describe('CodexTurnView', () => {
           },
         })}
         isStreaming={false}
+        isLastAssistant
       />,
     )
 
     expect(screen.queryByText('Todos (1/2)')).toBeNull()
     expect(screen.queryByText('first task')).toBeNull()
     expect(screen.queryByText('second task')).toBeNull()
+  })
+
+  it('shows Approve and Reject only after expanding the latest completed plan in plan mode', () => {
+    setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'plan-1',
+                  type: 'plan',
+                  text: '## My plan',
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.queryByText('Approve')).toBeNull()
+    expect(screen.queryByText('Reject')).toBeNull()
+
+    fireEvent.click(screen.getByText('Plan'))
+    fireEvent.click(screen.getByText('Approve'))
+
+    expect(mockApproveCodexPlan).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Approve')).toBeNull()
+    expect(screen.queryByText('Reject')).toBeNull()
+  })
+
+  it('passes approve and reject callbacks into plan fullscreen for the latest plan', () => {
+    setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
+    const open = vi.fn()
+    render(
+      <PlanFullscreenContext.Provider value={{ open }}>
+        <CodexTurnView
+          message={createMessage({
+            status: 'complete',
+            metadata: {
+              codex: {
+                threadId: 'thread-1',
+                usage: null,
+                items: [
+                  {
+                    id: 'plan-1',
+                    type: 'plan',
+                    text: '## My plan',
+                  },
+                ],
+              },
+            },
+          })}
+          isStreaming={false}
+          isLastAssistant
+        />
+      </PlanFullscreenContext.Provider>,
+    )
+
+    fireEvent.click(screen.getByText('Plan'))
+    fireEvent.click(screen.getByTitle('Fullscreen'))
+
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(open.mock.calls[0]?.[0]).toBe('## My plan')
+    expect(open.mock.calls[0]?.[1]).toEqual({
+      onApprove: mockApproveCodexPlan,
+      onReject: mockRejectCodexPlan,
+      planApproval: undefined,
+    })
+  })
+
+  it('hides Approve and Reject outside plan mode', () => {
+    setupActiveSession({ selectedCodexCollaborationMode: 'default' })
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'plan-1',
+                  type: 'plan',
+                  text: '## My plan',
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    fireEvent.click(screen.getByText('Plan'))
+
+    expect(screen.queryByText('Approve')).toBeNull()
+    expect(screen.queryByText('Reject')).toBeNull()
+  })
+
+  it('passes footer feedback into reject action', () => {
+    setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'plan-1',
+                  type: 'plan',
+                  text: '## My plan',
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    fireEvent.click(screen.getByText('Plan'))
+    fireEvent.change(screen.getByPlaceholderText('Reject feedback (optional, Enter to submit)'), {
+      target: { value: 'Only touch the renderer layer.' },
+    })
+    fireEvent.click(screen.getByText('Reject'))
+
+    expect(mockRejectCodexPlan).toHaveBeenCalledWith('Only touch the renderer layer.')
+  })
+
+  it('rejects without feedback when the footer input is empty', () => {
+    setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'plan-1',
+                  type: 'plan',
+                  text: '## My plan',
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    fireEvent.click(screen.getByText('Plan'))
+    fireEvent.click(screen.getByText('Reject'))
+
+    expect(mockRejectCodexPlan).toHaveBeenCalledWith(undefined)
+  })
+
+  it('renders persisted rejected state for a reviewed plan', () => {
+    setupActiveSession({ selectedCodexCollaborationMode: 'default' })
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              planApproval: { status: 'rejected', feedback: 'Only update the renderer.' },
+              items: [
+                {
+                  id: 'plan-1',
+                  type: 'plan',
+                  text: '## My plan',
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant={false}
+      />,
+    )
+
+    expect(screen.getByText('Rejected')).toBeTruthy()
+    expect(screen.getByText('Only update the renderer.')).toBeTruthy()
+    fireEvent.click(screen.getByText('Plan'))
+    expect(screen.queryByText('Approve')).toBeNull()
+    expect(screen.queryByText('Reject')).toBeNull()
   })
 })

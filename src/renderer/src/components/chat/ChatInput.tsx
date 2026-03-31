@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
+import { CODEX_REJECT_PLAN_PLACEHOLDER, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { ArrowUp, Square, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
@@ -73,7 +73,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       })))
     const {
       slashCommands, preferredProvider, sessionProvider, agents,
-      selectedCodexCollaborationMode, promptSuggestion, showDirManager, showReviewPanel,
+      selectedCodexCollaborationMode, codexPlanRejectHintActive, chatInputFocusNonce,
+      promptSuggestion, showDirManager, showReviewPanel,
       activeSessionId,
     } = useActiveSession(useShallow((s) => ({
       slashCommands: s.slashCommands,
@@ -81,6 +82,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       sessionProvider: s.sessionProvider,
       agents: s.agents,
       selectedCodexCollaborationMode: s.selectedCodexCollaborationMode,
+      codexPlanRejectHintActive: s.codexPlanRejectHintActive,
+      chatInputFocusNonce: s.chatInputFocusNonce,
       promptSuggestion: s.promptSuggestion,
       showDirManager: s.showDirManager,
       showReviewPanel: s.showReviewPanel,
@@ -90,6 +93,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       s.slashCommandOutput?.mode === 'popup' ? s.slashCommandOutput : null
     )
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const compactInputRef = useRef<HTMLInputElement>(null)
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const [slashDismissed, setSlashDismissed] = useState(false)
@@ -524,8 +528,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       [processSelectedFiles, insertMention]
     )
 
+    const shouldShowCodexRejectHint = isCodexPlanMode && codexPlanRejectHintActive && text.trim().length === 0
     const placeholderText = mentions.length > 0
       ? 'Add instructions...'
+      : shouldShowCodexRejectHint
+        ? CODEX_REJECT_PLAN_PLACEHOLDER
       : isCodexPlanMode
         ? "Let's make a plan! What's in your mind?"
         : activeProviderForResources === 'codex'
@@ -654,6 +661,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     }, [compact, isOpen, editor, showReviewPanel, activeSessionId])
 
     useEffect(() => {
+      if (!chatInputFocusNonce) return
+      if (compact) {
+        compactInputRef.current?.focus()
+        return
+      }
+      if (editor && !showReviewPanel) {
+        editor.commands.focus('end')
+      }
+    }, [chatInputFocusNonce, compact, editor, showReviewPanel])
+
+    useEffect(() => {
       if (showReviewPanel && editor) {
         editor.commands.blur()
       }
@@ -703,6 +721,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     if (compact) {
       return (
         <input
+          ref={compactInputRef}
           type="text"
           value={text}
           onChange={(e) => {
@@ -715,13 +734,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             }
           }}
           onKeyDown={handleKeyDownCore}
-          placeholder={isCodexPlanMode
-            ? "Let's make a plan! What's in your mind?"
-            : activeProviderForResources === 'codex'
-              ? 'Ask Codex anything, @ to mention, / for commands'
-              : permissionMode === 'plan'
-                ? "Let's make a plan! What's in your mind?"
-                : 'Ask Claude anything, @ to mention files & agents, / for commands'}
+          placeholder={placeholderText}
           className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none"
         />
       )

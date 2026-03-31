@@ -187,4 +187,34 @@ describe('CodexExperimentService run', () => {
     expect(mockConnection.request).toHaveBeenCalledWith('turn/start', expect.any(Object))
     expect(mockConnection.request.mock.calls[0][1]).not.toHaveProperty('summary')
   })
+
+  it('sends explicit default collaboration mode when plan mode is not selected', async () => {
+    const service = new CodexExperimentService()
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({ turn: { id: 'turn-3' } }),
+    }
+
+    vi.spyOn(service as any, 'withAppServerConnection').mockImplementation(async (_auth, _signal, fn) => fn(mockConnection))
+    vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-3')
+    vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-3', usage: null, items: [] })
+
+    await service.run('sid-3', '/project', {
+      prompt: 'Test prompt',
+      model: 'gpt-5.4',
+      permissionPreset: 'default',
+      collaborationMode: 'default',
+    })
+
+    expect(mockConnection.request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+      threadId: 'thread-3',
+      collaborationMode: {
+        mode: 'default',
+        settings: {
+          model: 'gpt-5.4',
+          reasoning_effort: null,
+          developer_instructions: null,
+        },
+      },
+    }))
+  })
 })

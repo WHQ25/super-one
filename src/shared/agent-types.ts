@@ -215,6 +215,11 @@ export interface CodexCompactionItem {
   type: 'compaction'
 }
 
+export interface CodexPlanApprovalState {
+  status: 'approved' | 'rejected'
+  feedback?: string
+}
+
 export type CodexCollabTool = 'spawnAgent' | 'sendInput' | 'wait' | 'closeAgent' | 'resumeAgent'
 export type CodexCollabAgentStatus = 'pendingInit' | 'running' | 'completed' | 'errored' | 'shutdown' | 'notFound'
 
@@ -255,6 +260,7 @@ export interface CodexTurnInfo {
   threadId: string | null
   usage: CodexUsageInfo | null
   items: CodexThreadItem[]
+  planApproval?: CodexPlanApprovalState
 }
 
 export interface PermissionDenialInfo {

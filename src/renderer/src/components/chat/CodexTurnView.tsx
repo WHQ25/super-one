@@ -5,10 +5,12 @@ import { cn } from '@/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { renderCodexItem, CodexCommandBlock } from './codex-item-renderer'
 import { CodexCollabBlock } from './CodexCollabBlock'
+import { useActiveSession, useChatStore } from '@/stores/chat'
 
 interface CodexTurnViewProps {
   message: ChatMessageType
   isStreaming: boolean
+  isLastAssistant: boolean
 }
 
 const COLLAPSIBLE_COMMAND_TYPES = new Set(['read', 'search'])
@@ -67,8 +69,12 @@ function CodexCommandGroup({ items, isStreaming }: { items: CodexCommandExecutio
 }
 
 
-export function CodexTurnView({ message, isStreaming }: CodexTurnViewProps) {
+export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTurnViewProps) {
   const codex = message.metadata?.codex
+  const selectedCodexCollaborationMode = useActiveSession((s) => s.selectedCodexCollaborationMode)
+  const hasPendingInteraction = useActiveSession((s) => s.hasPendingInteraction)
+  const approveCodexPlan = useChatStore((s) => s.approveCodexPlan)
+  const rejectCodexPlan = useChatStore((s) => s.rejectCodexPlan)
 
   if (!codex) {
     if (isStreaming) return null
@@ -87,6 +93,9 @@ export function CodexTurnView({ message, isStreaming }: CodexTurnViewProps) {
   }
 
   const hasAssistantMessage = codex.items.some((i) => i.type === 'agent_message' || i.type === 'plan')
+  const lastPlanItemId = [...codex.items].reverse().find((item) => item.type === 'plan')?.id
+  const planApproval = codex.planApproval
+  const canRespondToPlan = !planApproval && !isStreaming && isLastAssistant && selectedCodexCollaborationMode === 'plan' && !hasPendingInteraction
   const fallbackText = message.content
     .filter((b) => b.type === 'text')
     .map((b) => (b.type === 'text' ? b.text : ''))
@@ -135,7 +144,23 @@ export function CodexTurnView({ message, isStreaming }: CodexTurnViewProps) {
           }
           return <CodexCommandGroup key={`cg-${segIdx}`} items={seg.items} isStreaming={isStreaming} />
         }
-        if (seg.kind === 'item') return renderCodexItem(seg.item, seg.index, isStreaming, codex.items[seg.index + 1])
+        if (seg.kind === 'item') {
+          return renderCodexItem(
+            seg.item,
+            seg.index,
+            isStreaming,
+            codex.items[seg.index + 1],
+            seg.item.type === 'plan' && seg.item.id === lastPlanItemId && canRespondToPlan
+              ? approveCodexPlan
+              : undefined,
+            seg.item.type === 'plan' && seg.item.id === lastPlanItemId && canRespondToPlan
+              ? rejectCodexPlan
+              : undefined,
+            seg.item.type === 'plan' && seg.item.id === lastPlanItemId
+              ? planApproval
+              : undefined,
+          )
+        }
         return null
       })}
 

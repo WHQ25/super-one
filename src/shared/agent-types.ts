@@ -546,6 +546,8 @@ export type AgentEventBase =
   | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean }
   | { type: 'remote_session_end'; remoteProjectPath: string; remoteSessionId: string }
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string }
+  | { type: 'codex_collaboration_mode_change'; mode: string }
+  | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
 
@@ -974,6 +976,8 @@ export const AgentIpcChannels = {
   CODEX_STEER: 'codex:steer',
   CODEX_REVIEW: 'codex:review',
   CODEX_COMPACT: 'codex:compact',
+  CODEX_PLAN_APPROVAL: 'codex:plan-approval',
+  CODEX_COLLABORATION_MODE_CHANGE: 'codex:collaboration-mode-change',
   CODEX_GET_AUTH_STATUS: 'codex:get-auth-status',
   CODEX_SET_AUTH: 'codex:set-auth',
 
@@ -1157,13 +1161,14 @@ export type MentionSearchItem =
   | { kind: 'agent'; name: string; model: string; matchIndices: number[]; score: number }
 
 export type RemoteCommand =
-  | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[]; provider?: 'claude' | 'codex'; permissionMode?: string; permissionPreset?: string; threadId?: string; gitBranch?: string; worktreeBranch?: string; worktreeCarryLocalChanges?: boolean; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
+  | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[]; provider?: 'claude' | 'codex'; permissionMode?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; gitBranch?: string; worktreeBranch?: string; worktreeCarryLocalChanges?: boolean; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
   | { type: 'respond_permission'; requestId: string; decision: boolean; reason?: string; projectPath?: string; sessionId: string }
   | { type: 'answer_question'; requestId: string; answers: Record<string, string>; projectPath?: string; sessionId: string }
   | { type: 'dismiss_question'; requestId: string; projectPath?: string; sessionId: string }
   | { type: 'respond_plan_approval'; requestId: string; approved: boolean; feedback?: string; projectPath?: string; sessionId: string }
+  | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string; projectPath?: string; sessionId: string }
   | { type: 'subscribe_session'; projectPath: string; sessionId: string }
   | { type: 'unsubscribe_session' }
   | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number }

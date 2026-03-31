@@ -59,6 +59,8 @@ const mockWindowApp = {
   codexDismissQuestion: vi.fn().mockResolvedValue(true),
   codexReset: vi.fn().mockResolvedValue(undefined),
   codexInterrupt: vi.fn().mockResolvedValue(false),
+  codexPlanApproval: vi.fn().mockResolvedValue(undefined),
+  codexCollaborationModeChange: vi.fn().mockResolvedValue(undefined),
 }
 
 vi.stubGlobal('window', { agent: mockWindowAgent, app: mockWindowApp, localStorage: mockLocalStorage })
@@ -1297,6 +1299,37 @@ describe('codex plan mode', () => {
     expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].selectedCodexCollaborationMode).toBe('default')
   })
 
+  it('activates plan mode via /plan slash command without popup or chat messages', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [DRAFT_SESSION_ID]: {
+              ...proj._sessions[DRAFT_SESSION_ID],
+              preferredProvider: 'codex',
+              selectedCodexCollaborationMode: 'default',
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().sendMessage('/plan')
+
+    const proj2 = useChatStore.getState().projectSessions['/test']
+    const activeId = proj2._activeSessionId ?? DRAFT_SESSION_ID
+    const session = proj2._sessions[activeId]
+    expect(session.selectedCodexCollaborationMode).toBe('plan')
+    expect(session.messages).toHaveLength(0)
+    expect(session.slashCommandOutput).toBeFalsy()
+    expect(mockWindowApp.codexRun).not.toHaveBeenCalled()
+  })
+
   it('passes plan collaboration mode to codex runs', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
@@ -1537,6 +1570,88 @@ describe('codex plan mode', () => {
     expect(session.messages.find((message) => message.id === 'assistant-1')?.metadata?.codex?.planApproval).toEqual({
       status: 'rejected',
     })
+    expect(mockWindowApp.codexPlanApproval).toHaveBeenCalledWith('/test', 'codex-session', 'assistant-1', 'rejected')
+  })
+
+  it('approveCodexPlan emits plan approval and mode change IPCs', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'codex-session',
+          hasPendingInteraction: false,
+          _sessions: {
+            ...proj._sessions,
+            'codex-session': {
+              ...createDefaultPerSessionState(),
+              preferredProvider: 'codex',
+              sessionProvider: 'codex',
+              selectedCodexCollaborationMode: 'plan',
+              lastAssistantMessageId: 'assistant-1',
+              messages: [{
+                id: 'assistant-1',
+                role: 'assistant',
+                status: 'complete',
+                content: [{ type: 'text', text: 'plan' }],
+                createdAt: '',
+                providerId: 'codex',
+                metadata: {
+                  codex: { threadId: 'thread-1', usage: null, items: [{ id: 'plan-1', type: 'plan', text: '## Plan' }] },
+                },
+              }] as never[],
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().approveCodexPlan()
+
+    expect(mockWindowApp.codexPlanApproval).toHaveBeenCalledWith('/test', 'codex-session', 'assistant-1', 'approved')
+    expect(mockWindowApp.codexCollaborationModeChange).toHaveBeenCalledWith('/test', 'codex-session', 'default')
+  })
+
+  it('rejectCodexPlan with feedback emits plan approval IPC', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'codex-session',
+          hasPendingInteraction: false,
+          _sessions: {
+            ...proj._sessions,
+            'codex-session': {
+              ...createDefaultPerSessionState(),
+              preferredProvider: 'codex',
+              sessionProvider: 'codex',
+              selectedCodexCollaborationMode: 'plan',
+              lastAssistantMessageId: 'assistant-1',
+              messages: [{
+                id: 'assistant-1',
+                role: 'assistant',
+                status: 'complete',
+                content: [{ type: 'text', text: 'plan' }],
+                createdAt: '',
+                providerId: 'codex',
+                metadata: {
+                  codex: { threadId: 'thread-1', usage: null, items: [{ id: 'plan-1', type: 'plan', text: '## Plan' }] },
+                },
+              }] as never[],
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().rejectCodexPlan('Use a different approach.')
+
+    expect(mockWindowApp.codexPlanApproval).toHaveBeenCalledWith('/test', 'codex-session', 'assistant-1', 'rejected', 'Use a different approach.')
   })
 })
 

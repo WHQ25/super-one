@@ -312,8 +312,10 @@ function convertCodexItemsToBlocks(items: CodexThreadItem[], projectPath?: strin
   for (const item of items) {
     switch (item.type) {
       case 'agent_message':
-      case 'plan':
         blocks.push({ type: 'text', text: item.text } as ContentBlock)
+        break
+      case 'plan':
+        blocks.push({ type: 'codex_plan', text: item.text, itemId: item.id } as ContentBlock)
         break
       case 'review':
         if (item.text) blocks.push({ type: 'text', text: item.text } as ContentBlock)
@@ -385,7 +387,7 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
     if (msg.providerId === 'codex' && msg.metadata?.codex?.items?.length) {
       const converted = convertCodexItemsToBlocks(msg.metadata.codex.items, projectPath)
       const { codex: _c, ...rest } = msg.metadata
-      return { ...msg, content: converted, metadata: rest }
+      return { ...msg, content: converted, metadata: { ...rest, ...(_c?.planApproval ? { codexPlanApproval: _c.planApproval } : {}) } }
     }
     const bashCmds = new Map<string, string>()
     const todoInputs = new Map<string, { toolName: string; input: string }>()
@@ -426,7 +428,7 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
           }
           return stripContentBlock(b, bashCmds, agentIds, projectPath)
         }),
-      metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return rest })() : undefined,
+      metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return { ...rest, ...(_c?.planApproval ? { codexPlanApproval: _c.planApproval } : {}) } })() : undefined,
     }
   })
 }

@@ -464,6 +464,19 @@ export class AgentService {
     return runtime
   }
 
+  updateCodexPlanApproval(
+    sessionId: string,
+    messageId: string,
+    planApproval: { status: 'approved' | 'rejected'; feedback?: string },
+  ): void {
+    const runtime = this.codexRuntimes.get(sessionId)
+    if (!runtime) return
+    const msg = runtime.messages.find((m) => m.id === messageId)
+    if (!msg?.metadata?.codex) return
+    msg.metadata.codex.planApproval = planApproval
+    this.persistCodexRuntime(sessionId)
+  }
+
   private persistCodexRuntime(sessionId: string): void {
     const runtime = this.codexRuntimes.get(sessionId)
     if (!runtime || runtime.messages.length === 0) return
@@ -599,7 +612,7 @@ export class AgentService {
     this.eventSubscribers.forEach((cb) => cb(event))
   }
 
-  private async runCodexRemoteTurn(projectPath: string, sessionId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }): Promise<void> {
+  private async runCodexRemoteTurn(projectPath: string, sessionId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }): Promise<void> {
     const userMessageId = `user_${Date.now()}`
     const assistantMessageId = `remote-${Date.now()}`
     const codexAgent: RemoteAgentRef = {
@@ -635,6 +648,7 @@ export class AgentService {
         model: command.model,
         reasoningEffort: command.effort as string | undefined,
         permissionPreset: command.permissionPreset,
+        collaborationMode: command.collaborationMode,
         threadId: command.threadId,
         messageId: assistantMessageId,
         images: command.images,
@@ -882,6 +896,14 @@ export class AgentService {
         } else {
           log.warn('[AgentService] respond_plan_approval: no agent for session %s', command.sessionId)
         }
+        break
+      }
+      case 'codex_plan_approval': {
+        if (!command.sessionId) break
+        this.updateCodexPlanApproval(command.sessionId, command.messageId, {
+          status: command.status,
+          ...(command.feedback ? { feedback: command.feedback } : {}),
+        })
         break
       }
       case 'set_permission_mode': {

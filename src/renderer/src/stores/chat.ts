@@ -1202,6 +1202,7 @@ type CodexCommand =
   | { kind: 'run'; prompt: string }
   | { kind: 'review'; target: CodexReviewTarget }
   | { kind: 'compact' }
+  | { kind: 'plan' }
 
 type ChatStoreSet = (
   partial: Partial<ChatStore> | ((state: ChatStore) => Partial<ChatStore>),
@@ -1219,6 +1220,7 @@ function parseCodexCommand(input: string): CodexCommand | null {
   if (body === 'help') return { kind: 'help' }
   if (body === 'reset') return { kind: 'reset' }
   if (body === 'compact') return { kind: 'compact' }
+  if (body === 'plan') return { kind: 'plan' }
 
   if (body === 'review' || body.startsWith('review ')) {
     const reviewBody = body.slice('review'.length).trim()
@@ -1263,6 +1265,7 @@ function getCodexHelpText(): string {
     '/review branch — review diff against base branch',
     '/review commit <sha> — review a specific commit',
     '/compact — compact thread context',
+    '/plan — enter plan mode',
     '',
     'Notes:',
     '- Type a message directly to send it as a prompt',
@@ -2278,7 +2281,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Utility codex commands → popup overlay (no chat messages)
     if (resolvedCodexCommand) {
       const utilityKind = resolvedCodexCommand.kind
-      if (utilityKind === 'help' || utilityKind === 'reset' || utilityKind === 'auth-status' || utilityKind === 'auth-set') {
+      if (utilityKind === 'help' || utilityKind === 'reset' || utilityKind === 'auth-status' || utilityKind === 'auth-set' || utilityKind === 'plan') {
         set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
         let popupContent: string
         try {
@@ -2290,6 +2293,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           } else if (utilityKind === 'auth-status') {
             const status = await window.app.codexGetAuthStatus(activeProject)
             popupContent = formatCodexAuthStatus(status)
+          } else if (utilityKind === 'plan') {
+            get().setSelectedCodexCollaborationMode('plan')
+            return
           } else {
             const status = await window.app.codexSetAuth(activeProject, {
               mode: resolvedCodexCommand.mode,
@@ -2405,6 +2411,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       isOpen: true,
     }))
 
+    window.app.codexPlanApproval(activeProject, context.codexSessionId, context.assistantMessageId, 'approved')
+    window.app.codexCollaborationModeChange(activeProject, context.codexSessionId, 'default')
+
     await runCodexCommand(set, get, {
       activeProject,
       codexSessionId: context.codexSessionId,
@@ -2441,6 +2450,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         })),
         isOpen: true,
       }))
+      window.app.codexPlanApproval(activeProject, context.codexSessionId, context.assistantMessageId, 'rejected')
       return
     }
 
@@ -2462,6 +2472,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }),
       isOpen: true,
     }))
+
+    window.app.codexPlanApproval(activeProject, context.codexSessionId, context.assistantMessageId, 'rejected', trimmedFeedback)
 
     await runCodexCommand(set, get, {
       activeProject,
@@ -2825,10 +2837,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setSelectedCodexCollaborationMode: (mode) => {
     const { activeProject } = get()
     if (!activeProject) return
+    const project = getProject(get(), activeProject)
+    const sessionId = _getEffectiveSessionId(project)
     set((s) => updateActivePerSession(s, () => ({
       selectedCodexCollaborationMode: mode,
       codexPlanRejectHintActive: false,
     })))
+    if (sessionId) window.app.codexCollaborationModeChange(activeProject, sessionId, mode)
   },
 
   refreshCodexModels: async (force = false) => {

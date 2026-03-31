@@ -444,6 +444,15 @@ function registerIpcHandlers(): void {
     return codexService.setAuth(projectPath, request)
   })
 
+  ipcMain.handle(AgentIpcChannels.CODEX_PLAN_APPROVAL, (_event, projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) => {
+    agentService.updateCodexPlanApproval(sessionId, messageId, { status, ...(feedback ? { feedback } : {}) })
+    emitAgentEvent({ type: 'codex_plan_approval', messageId, status, ...(feedback ? { feedback } : {}), projectPath, sessionId } as AgentEvent)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_COLLABORATION_MODE_CHANGE, (_event, projectPath: string, sessionId: string, mode: string) => {
+    emitAgentEvent({ type: 'codex_collaboration_mode_change', mode, projectPath, sessionId } as AgentEvent)
+  })
+
   ipcMain.handle(
     AgentIpcChannels.CODEX_STEER,
     (_event, sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string) => {

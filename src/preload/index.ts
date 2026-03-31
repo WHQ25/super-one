@@ -274,6 +274,12 @@ const appAPI = {
       worktreePath,
     ),
 
+  codexPlanApproval: (projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLAN_APPROVAL, projectPath, sessionId, messageId, status, feedback),
+
+  codexCollaborationModeChange: (projectPath: string, sessionId: string, mode: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_COLLABORATION_MODE_CHANGE, projectPath, sessionId, mode),
+
   codexGetAuthStatus: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_AUTH_STATUS, projectPath),
 

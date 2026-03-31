@@ -55,6 +55,8 @@ interface AppAPI {
   codexRespondToPermission(sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel'): Promise<boolean>
   codexAnswerQuestion(sessionId: string, requestId: string, answers: Record<string, string>): Promise<boolean>
   codexDismissQuestion(sessionId: string, requestId: string): Promise<boolean>
+  codexPlanApproval(projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string): Promise<void>
+  codexCollaborationModeChange(projectPath: string, sessionId: string, mode: string): Promise<void>
   codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>
   codexSetAuth(projectPath: string, request: CodexSetAuthRequest): Promise<CodexAuthStatus>
   installUpdate(): Promise<void>

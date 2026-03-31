@@ -148,6 +148,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       { name: 'auth apikey', description: 'Use API key mode', argumentHint: '<CODEX_API_KEY>', isSkill: false },
       { name: 'review', description: 'Review code changes', argumentHint: '', isSkill: false },
       { name: 'compact', description: 'Compact thread context', argumentHint: '', isSkill: false },
+      { name: 'plan', description: 'Enter plan mode', argumentHint: '', isSkill: false },
     ]), [])
 
     const activeSlashCommands = activeProviderForResources === 'codex' ? codexSlashCommands : slashCommands
@@ -195,6 +196,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           setText('')
           setSlashIndex(-1)
           setShowDirManager(true)
+          return
+        }
+        if (name === 'plan') {
+          const ed = editorRef.current
+          if (ed) {
+            ed.chain().focus().setContent('').run()
+          }
+          setText('')
+          setSlashIndex(-1)
+          useChatStore.getState().setSelectedCodexCollaborationMode('plan')
           return
         }
         if (name === 'review') {

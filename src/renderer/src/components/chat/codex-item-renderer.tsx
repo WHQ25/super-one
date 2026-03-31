@@ -334,11 +334,6 @@ function CodexPlanBlock({
           <div className="max-h-96 overflow-y-auto border-t border-border/50">
             <MarkdownView content={item.text} className="px-4 py-3 text-xs" />
           </div>
-          {planApproval && (
-            <div className="border-t border-border/50 px-3 py-2">
-              <PlanApprovalSummary planApproval={planApproval} />
-            </div>
-          )}
           {!planApproval && onApprovePlan && onRejectPlan && (
             <div className="flex items-center justify-end border-t border-border/50 px-3 py-2">
               <CodexPlanImplementFooter onApprove={handleApprove} onReject={handleReject} />

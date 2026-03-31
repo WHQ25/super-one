@@ -6,12 +6,12 @@ interface AgentAPI {
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
   dequeueMessage(projectPath: string, clientMessageId: string): Promise<boolean>
   interrupt(projectPath: string): Promise<boolean>
-  respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string): Promise<void>
+  respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): Promise<void>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
   setSandboxMode(projectPath: string, mode: SandboxMode): Promise<SandboxInfo>
-  answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations, sessionId?: string): Promise<void>
-  dismissQuestion(projectPath: string, requestId: string, sessionId?: string): Promise<void>
-  respondToPlanApproval(projectPath: string, requestId: string, approved: boolean, feedback?: string, sessionId?: string): Promise<void>
+  answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>
+  dismissQuestion(projectPath: string, requestId: string): Promise<void>
+  respondToPlanApproval(projectPath: string, requestId: string, approved: boolean, feedback?: string): Promise<void>
   resetSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   activateSession(projectPath: string, sessionId: string): Promise<void>

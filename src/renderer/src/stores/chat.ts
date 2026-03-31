@@ -1808,35 +1808,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => {
       let project = s.projectSessions[projectPath] ?? createDefaultProjectState()
 
-      let matchType: 'exact' | 'draft_session_init' | 'lazy_session' | 'fallback_active' | 'forwarded_bg'
+      let matchType: 'exact' | 'draft_session_init' | 'lazy_session' | 'fallback_active'
       let targetSid: string | null
 
-      const isInteraction = event.type === 'permission_request' || event.type === 'ask_user_question' || event.type === 'plan_approval'
-      const isRemoteSessionEvent = s.remoteSession?.projectPath === projectPath && s.remoteSession?.sessionId === eventSessionId
-      const isBgInteraction = isInteraction && eventSessionId && eventSessionId !== project._activeSessionId && project._activeSessionId && !isRemoteSessionEvent
-
-      if (isBgInteraction) {
-        const activeSession = project._sessions[project._activeSessionId!]
-        let agentName: string | undefined
-        if (activeSession) {
-          for (const msg of activeSession.messages) {
-            for (const block of msg.content) {
-              if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolSummary) {
-                agentName = block.toolSummary
-              }
-            }
-          }
-        }
-        if (event.type === 'permission_request') {
-          event = { ...event, request: { ...event.request, sourceSessionId: eventSessionId, sourceAgentName: agentName } }
-        } else if (event.type === 'ask_user_question') {
-          event = { ...event, request: { ...event.request, sourceSessionId: eventSessionId, sourceAgentName: agentName } }
-        } else if (event.type === 'plan_approval') {
-          event = { ...event, request: { ...event.request, sourceSessionId: eventSessionId, sourceAgentName: agentName } }
-        }
-        targetSid = project._activeSessionId
-        matchType = 'forwarded_bg'
-      } else if (eventSessionId && project._sessions[eventSessionId]) {
+      if (eventSessionId && project._sessions[eventSessionId]) {
         targetSid = eventSessionId
         matchType = 'exact'
       } else if (
@@ -2985,7 +2960,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const sid = _getEffectiveSessionId(getProject(get(), activeProject))
       if (sid) void window.app.codexRespondToPermission(sid, requestId, allow, alwaysAllow, reason, decision)
     } else {
-      void window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions, respondedRequest?.sourceSessionId)
+      void window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions)
     }
     const updates: Partial<PerSessionState> = {
       pendingPermissions: session.pendingPermissions.filter((p) => p.requestId !== requestId),
@@ -3025,7 +3000,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (sid) void window.app.codexAnswerQuestion(sid, requestId, answers)
     } else {
       const respondedQuestion = session.pendingQuestion
-      void window.agent.answerQuestion(activeProject, requestId, answers, annotations, respondedQuestion?.sourceSessionId)
+      void window.agent.answerQuestion(activeProject, requestId, answers, annotations)
     }
     const codexQaItem = session.sessionProvider === 'codex' && session.pendingQuestion
       ? _buildQuestionAnswerItem(session.pendingQuestion.questions, answers)
@@ -3068,7 +3043,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (sid) void window.app.codexDismissQuestion(sid, requestId)
     } else {
       const respondedQuestion = session.pendingQuestion
-      void window.agent.dismissQuestion(activeProject, requestId, respondedQuestion?.sourceSessionId)
+      void window.agent.dismissQuestion(activeProject, requestId)
     }
     set((s) => {
       const perSessionUpdate = updateActivePerSession(s, () => ({ pendingQuestion: null }))
@@ -3089,7 +3064,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     const session = getActivePerSession(get(), activeProject)
-    window.agent.respondToPlanApproval(activeProject, requestId, approved, feedback, session.pendingPlanApproval?.sourceSessionId)
+    window.agent.respondToPlanApproval(activeProject, requestId, approved, feedback)
     set((s) => {
       const perSessionUpdate = updateActivePerSession(s, () => ({
         pendingPlanApproval: null,

@@ -3063,7 +3063,7 @@ describe('remote session interaction routing', () => {
     expect(after._sessions['desktop-session'].pendingQuestion).toBeNull()
   })
 
-  it('still forwards bg session permission_request to active session', () => {
+  it('routes bg session permission_request to its own session', () => {
     setupRemoteSession()
 
     useChatStore.getState().handleAgentEvent(makeEvent({
@@ -3073,19 +3073,19 @@ describe('remote session interaction routing', () => {
     }))
 
     const after = useChatStore.getState().projectSessions['/test']
-    expect(after._sessions['desktop-session'].pendingPermissions).toHaveLength(1)
-    expect(after._sessions['desktop-session'].pendingPermissions[0].requestId).toBe('r2')
-    expect(after._sessions['desktop-session'].pendingPermissions[0].sourceSessionId).toBe('bg-agent-1')
+    expect(after._sessions['desktop-session'].pendingPermissions).toHaveLength(0)
+    expect(after._sessions['bg-agent-1'].pendingPermissions).toHaveLength(1)
+    expect(after._sessions['bg-agent-1'].pendingPermissions[0].requestId).toBe('r2')
   })
 })
 
-describe('interaction response sourceSessionId', () => {
+describe('interaction response routing', () => {
   beforeEach(() => {
     resetStore()
     vi.clearAllMocks()
   })
 
-  it('respondToPermission passes sourceSessionId to IPC', () => {
+  it('respondToPermission calls IPC without sessionId', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     useChatStore.setState({
@@ -3097,7 +3097,7 @@ describe('interaction response sourceSessionId', () => {
             a: {
               ...createDefaultPerSessionState(),
               status: 'streaming' as const,
-              pendingPermissions: [{ requestId: 'r1', toolName: 'Bash', input: {}, sourceSessionId: 'bg-1', allowAlwaysAllow: false }],
+              pendingPermissions: [{ requestId: 'r1', toolName: 'Bash', input: {}, allowAlwaysAllow: false }],
             },
           },
         },
@@ -3107,11 +3107,11 @@ describe('interaction response sourceSessionId', () => {
     useChatStore.getState().respondToPermission('r1', true)
 
     expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
-      '/test', 'r1', true, undefined, undefined, undefined, 'bg-1',
+      '/test', 'r1', true, undefined, undefined, undefined,
     )
   })
 
-  it('answerQuestion passes sourceSessionId to IPC', () => {
+  it('answerQuestion calls IPC without sessionId', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     useChatStore.setState({
@@ -3123,7 +3123,7 @@ describe('interaction response sourceSessionId', () => {
             a: {
               ...createDefaultPerSessionState(),
               status: 'streaming' as const,
-              pendingQuestion: { requestId: 'q1', questions: [], sourceSessionId: 'bg-1' } as never,
+              pendingQuestion: { requestId: 'q1', questions: [] } as never,
             },
           },
         },
@@ -3133,11 +3133,11 @@ describe('interaction response sourceSessionId', () => {
     useChatStore.getState().answerQuestion('q1', { q: 'a' })
 
     expect(mockWindowAgent.answerQuestion).toHaveBeenCalledWith(
-      '/test', 'q1', { q: 'a' }, undefined, 'bg-1',
+      '/test', 'q1', { q: 'a' }, undefined,
     )
   })
 
-  it('dismissQuestion passes sourceSessionId to IPC', () => {
+  it('dismissQuestion calls IPC without sessionId', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     useChatStore.setState({
@@ -3149,7 +3149,7 @@ describe('interaction response sourceSessionId', () => {
             a: {
               ...createDefaultPerSessionState(),
               status: 'streaming' as const,
-              pendingQuestion: { requestId: 'q1', questions: [], sourceSessionId: 'bg-1' } as never,
+              pendingQuestion: { requestId: 'q1', questions: [] } as never,
             },
           },
         },
@@ -3159,11 +3159,11 @@ describe('interaction response sourceSessionId', () => {
     useChatStore.getState().dismissQuestion('q1')
 
     expect(mockWindowAgent.dismissQuestion).toHaveBeenCalledWith(
-      '/test', 'q1', 'bg-1',
+      '/test', 'q1',
     )
   })
 
-  it('respondToPlanApproval passes sourceSessionId to IPC', () => {
+  it('respondToPlanApproval calls IPC without sessionId', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     useChatStore.setState({
@@ -3175,7 +3175,7 @@ describe('interaction response sourceSessionId', () => {
             a: {
               ...createDefaultPerSessionState(),
               status: 'streaming' as const,
-              pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [], sourceSessionId: 'bg-1' } as never,
+              pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
             },
           },
         },
@@ -3185,7 +3185,7 @@ describe('interaction response sourceSessionId', () => {
     useChatStore.getState().respondToPlanApproval('p1', true, 'ok')
 
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      '/test', 'p1', true, 'ok', 'bg-1',
+      '/test', 'p1', true, 'ok',
     )
   })
 })

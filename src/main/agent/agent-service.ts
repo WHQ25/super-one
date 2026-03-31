@@ -110,10 +110,9 @@ export class AgentService {
     this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.EVENT, event)
   }
 
-  private isRemoteLockedSession(projectPath: string, sessionId?: string): boolean {
+  private isRemoteLockedSession(projectPath: string): boolean {
     if (!this.remoteSession || this.remoteSession.projectPath !== projectPath) return false
     const remoteSid = this.remoteSession.agent.getSessionId()
-    if (sessionId) return remoteSid === sessionId
     const agent = this.agents.get(projectPath)
     return agent?.getSessionId() === remoteSid
   }
@@ -1471,15 +1470,10 @@ export class AgentService {
       return true
     })
 
-    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string) => {
+    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
-      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
-      if (agent) {
-        agent.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
-      } else {
-        this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
-      }
+      trace('agent.emit', 'permission_responded', { requestId, allow, reason })
+      this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
@@ -1492,37 +1486,22 @@ export class AgentService {
       return this.getAgent(projectPath).setSandboxMode(mode)
     })
 
-    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations, sessionId?: string) => {
-      if (this.isRemoteLockedSession(projectPath, sessionId)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'question_answered', { requestId, answers, sessionId })
-      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
-      if (agent) {
-        agent.respondToQuestion(requestId, answers, annotations)
-      } else {
-        this.getAgent(projectPath).respondToQuestion(requestId, answers, annotations)
-      }
+    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'question_answered', { requestId, answers })
+      this.getAgent(projectPath).respondToQuestion(requestId, answers, annotations)
     })
 
-    ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string, sessionId?: string) => {
-      if (this.isRemoteLockedSession(projectPath, sessionId)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'question_dismissed', { requestId, sessionId })
-      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
-      if (agent) {
-        agent.dismissQuestion(requestId)
-      } else {
-        this.getAgent(projectPath).dismissQuestion(requestId)
-      }
+    ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'question_dismissed', { requestId })
+      this.getAgent(projectPath).dismissQuestion(requestId)
     })
 
-    ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string, sessionId?: string) => {
-      if (this.isRemoteLockedSession(projectPath, sessionId)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback, sessionId })
-      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
-      if (agent) {
-        agent.respondToPlanApproval(requestId, approved, feedback)
-      } else {
-        this.getAgent(projectPath).respondToPlanApproval(requestId, approved, feedback)
-      }
+    ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback })
+      this.getAgent(projectPath).respondToPlanApproval(requestId, approved, feedback)
     })
 
     ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string) => {

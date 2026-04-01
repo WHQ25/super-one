@@ -36,6 +36,9 @@ const agentAPI = {
   parkSession: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PARK_SESSION, projectPath),
 
+  parkDraftSession: (projectPath: string, draftSessionId: string, newDraftSessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PARK_SESSION, projectPath, draftSessionId, newDraftSessionId),
+
   activateSession: (projectPath: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ACTIVATE_SESSION, projectPath, sessionId),
 

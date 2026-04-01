@@ -431,6 +431,140 @@ describe('AgentService.handleRemoteCommand', () => {
     }))
   })
 
+  it('session_init keeps concurrent draft runtimes isolated by draftSessionId', () => {
+    const service = new AgentService()
+
+    ;(service as any).recordClaudeEvent({
+      type: 'message_start',
+      projectPath: '/project',
+      draftSessionId: 'draft-a',
+      message: {
+        id: 'assistant-a',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: '',
+        providerId: 'claude',
+      },
+    })
+    ;(service as any).recordClaudeEvent({
+      type: 'message_start',
+      projectPath: '/project',
+      draftSessionId: 'draft-b',
+      message: {
+        id: 'assistant-b',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: '',
+        providerId: 'claude',
+      },
+    })
+
+    ;(service as any).recordClaudeEvent({
+      type: 'session_init',
+      projectPath: '/project',
+      draftSessionId: 'draft-a',
+      session: {
+        sessionId: 'session-a',
+        model: 'claude',
+        tools: [],
+        mcpServers: [],
+        permissionMode: 'default',
+        slashCommands: [],
+        skills: [],
+        claudeCodeVersion: '1.0.0',
+        cwd: '/project',
+      },
+    })
+    ;(service as any).recordClaudeEvent({
+      type: 'session_init',
+      projectPath: '/project',
+      draftSessionId: 'draft-b',
+      session: {
+        sessionId: 'session-b',
+        model: 'claude',
+        tools: [],
+        mcpServers: [],
+        permissionMode: 'default',
+        slashCommands: [],
+        skills: [],
+        claudeCodeVersion: '1.0.0',
+        cwd: '/project',
+      },
+    })
+
+    const saveCalls = vi.mocked(dbSessions.saveSessionState).mock.calls
+    const callA = saveCalls.filter(([sessionId]) => sessionId === 'session-a').at(-1)
+    const callB = saveCalls.filter(([sessionId]) => sessionId === 'session-b').at(-1)
+
+    expect(callA?.[1]).toEqual(expect.objectContaining({
+      messages: [expect.objectContaining({ id: 'assistant-a' })],
+      provider: 'claude',
+    }))
+    expect(callB?.[1]).toEqual(expect.objectContaining({
+      messages: [expect.objectContaining({ id: 'assistant-b' })],
+      provider: 'claude',
+    }))
+  })
+
+  it('rekeys active pending runtime from project path to draftSessionId before session_init', () => {
+    const service = new AgentService()
+
+    ;(service as any).appendClaudeUserMessage(
+      '/project',
+      { content: 'second draft', clientMessageId: 'user-draft-2' },
+      'local',
+    )
+
+    ;(service as any).recordClaudeEvent({
+      type: 'status_change',
+      projectPath: '/project',
+      draftSessionId: 'draft-b',
+      status: 'streaming',
+    })
+    ;(service as any).recordClaudeEvent({
+      type: 'message_start',
+      projectPath: '/project',
+      draftSessionId: 'draft-b',
+      message: {
+        id: 'assistant-b',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: '',
+        providerId: 'claude',
+      },
+    })
+    ;(service as any).recordClaudeEvent({
+      type: 'session_init',
+      projectPath: '/project',
+      draftSessionId: 'draft-b',
+      session: {
+        sessionId: 'session-b',
+        model: 'claude',
+        tools: [],
+        mcpServers: [],
+        permissionMode: 'default',
+        slashCommands: [],
+        skills: [],
+        claudeCodeVersion: '1.0.0',
+        cwd: '/project',
+      },
+    })
+
+    const saveCalls = vi.mocked(dbSessions.saveSessionState).mock.calls
+    const callB = saveCalls.filter(([sessionId]) => sessionId === 'session-b').at(-1)
+
+    expect(callB?.[1]).toEqual(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({ id: 'user-draft-2', role: 'user' }),
+        expect.objectContaining({ id: 'assistant-b', role: 'assistant' }),
+      ]),
+      provider: 'claude',
+    }))
+  })
+
   it('codex runtime persists turns from main without renderer snapshots', () => {
     const service = new AgentService()
 

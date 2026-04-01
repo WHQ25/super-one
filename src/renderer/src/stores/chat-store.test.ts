@@ -31,6 +31,7 @@ vi.mock('./app', () => ({
 
 const mockWindowAgent = {
   parkSession: vi.fn().mockResolvedValue(undefined),
+  parkDraftSession: vi.fn().mockResolvedValue(undefined),
   resetSession: vi.fn().mockResolvedValue(undefined),
   activateSession: vi.fn().mockResolvedValue(undefined),
   getSessionId: vi.fn().mockResolvedValue(''),
@@ -66,7 +67,23 @@ const mockWindowApp = {
 vi.stubGlobal('window', { agent: mockWindowAgent, app: mockWindowApp, localStorage: mockLocalStorage })
 vi.stubGlobal('localStorage', mockLocalStorage)
 
-const { useChatStore, DRAFT_SESSION_ID, createDefaultPerSessionState, createDefaultProjectState } = await import('./chat')
+const { useChatStore, isDraftSession, createDraftSessionId, createDefaultPerSessionState, createDefaultProjectState } = await import('./chat')
+
+function getActiveDraftSession(path: string) {
+  const proj = useChatStore.getState().projectSessions[path]
+  const sid = proj._activeSessionId
+  if (!sid || !isDraftSession(sid)) return undefined
+  return proj._sessions[sid]
+}
+
+function getActiveDraftId(path: string) {
+  const proj = useChatStore.getState().projectSessions[path]
+  return proj._activeSessionId && isDraftSession(proj._activeSessionId) ? proj._activeSessionId : null
+}
+
+function draftOf(proj: { _activeSessionId: string | null; _sessions: Record<string, unknown> }) {
+  return proj._activeSessionId!
+}
 
 function resetStore() {
   useChatStore.setState({
@@ -115,22 +132,23 @@ describe('ensureSession', () => {
     const proj = useChatStore.getState().projectSessions['/project-a']
 
     expect(proj).toBeDefined()
-    expect(proj._activeSessionId).toBe(DRAFT_SESSION_ID)
-    expect(proj._sessions[DRAFT_SESSION_ID]).toBeDefined()
-    expect(proj._sessions[DRAFT_SESSION_ID].status).toBe('idle')
+    expect(isDraftSession(proj._activeSessionId)).toBe(true)
+    expect(getActiveDraftSession('/project-a')).toBeDefined()
+    expect(getActiveDraftSession('/project-a')!.status).toBe('idle')
   })
 
   it('does not overwrite existing project', () => {
     setupProject('/project-a')
+    const draftId = getActiveDraftId('/project-a')!
     const store = useChatStore.getState()
     const proj = store.projectSessions['/project-a']
-    proj._sessions[DRAFT_SESSION_ID].draftText = 'hello'
+    proj._sessions[draftId].draftText = 'hello'
     useChatStore.setState({ projectSessions: { '/project-a': proj } })
 
     store.ensureSession('/project-a')
 
     const after = useChatStore.getState().projectSessions['/project-a']
-    expect(after._sessions[DRAFT_SESSION_ID].draftText).toBe('hello')
+    expect(after._sessions[draftId].draftText).toBe('hello')
   })
 })
 
@@ -146,7 +164,8 @@ describe('session_init re-keying', () => {
     const proj = useChatStore.getState().projectSessions['/test']
     expect(proj._activeSessionId).toBe('real-abc')
     expect(proj._sessions['real-abc']).toBeDefined()
-    expect(proj._sessions[DRAFT_SESSION_ID]).toBeUndefined()
+    const hasDraft = Object.keys(proj._sessions).some((k) => isDraftSession(k))
+    expect(hasDraft).toBe(false)
   })
 
   it('preserves session data during re-keying', () => {
@@ -282,15 +301,16 @@ describe('concurrent streaming sessions', () => {
   it('routes session_init to live draft when switched away before first reply', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
+    const draftId = getActiveDraftId('/test')!
 
     useChatStore.setState({
       projectSessions: {
         '/test': {
           ...proj,
-          _activeSessionId: 'old',
+          _activeSessionId: draftId,
           _sessions: {
             old: createDefaultPerSessionState(),
-            [DRAFT_SESSION_ID]: {
+            [draftId]: {
               ...createDefaultPerSessionState(),
               messages: [{ id: 'u1', role: 'user' as const, content: [{ type: 'text', text: 'hello' }], status: 'complete' as const, createdAt: '', providerId: 'local' }],
               awaitingAssistantReply: true,
@@ -307,7 +327,7 @@ describe('concurrent streaming sessions', () => {
     }))
 
     const after = useChatStore.getState().projectSessions['/test']
-    expect(after._sessions[DRAFT_SESSION_ID]).toBeUndefined()
+    expect(after._sessions[draftId]).toBeUndefined()
     expect(after._sessions['real-new']).toBeDefined()
     expect(after._sessions['real-new'].awaitingAssistantReply).toBe(true)
     expect(after._sessions['old']).toBeDefined()
@@ -352,7 +372,8 @@ describe('concurrent streaming sessions', () => {
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBeNull()
-    expect(after._sessions[DRAFT_SESSION_ID]).toBeUndefined()
+    const hasDraft = Object.keys(after._sessions).some((k) => isDraftSession(k))
+    expect(hasDraft).toBe(false)
     expect(after._sessions['old-session']).toBeDefined()
     expect(after._sessions['old-session'].messages.map((message) => message.id)).toEqual(['old-msg'])
   })
@@ -360,6 +381,7 @@ describe('concurrent streaming sessions', () => {
   it('routes follow-up events for an unloaded saved session to its real session id', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
+    const draftId = getActiveDraftId('/test')!
 
     useChatStore.setState({
       projectSessions: {
@@ -374,8 +396,8 @@ describe('concurrent streaming sessions', () => {
             },
           ],
           _sessions: {
-            [DRAFT_SESSION_ID]: {
-              ...proj._sessions[DRAFT_SESSION_ID],
+            [draftId]: {
+              ...proj._sessions[draftId],
               messages: [{
                 id: 'draft-user',
                 role: 'user' as const,
@@ -403,8 +425,8 @@ describe('concurrent streaming sessions', () => {
     }))
 
     const after = useChatStore.getState().projectSessions['/test']
-    expect(after._sessions[DRAFT_SESSION_ID].messages.map((message) => message.id)).toEqual(['draft-user'])
-    expect(after._sessions[DRAFT_SESSION_ID].awaitingAssistantReply).toBe(true)
+    expect(after._sessions[draftId].messages.map((message) => message.id)).toEqual(['draft-user'])
+    expect(after._sessions[draftId].awaitingAssistantReply).toBe(true)
     expect(after._sessions['old-session']).toBeDefined()
     expect(after._sessions['old-session'].status).toBe('streaming')
     expect(after._sessions['old-session'].messages.map((message) => message.id)).toContain('old-follow-up')
@@ -777,9 +799,9 @@ describe('resetSession', () => {
     await useChatStore.getState().resetSession()
 
     const after = useChatStore.getState().projectSessions['/test']
-    expect(after._activeSessionId).toBe(DRAFT_SESSION_ID)
-    expect(after._sessions[DRAFT_SESSION_ID]).toBeDefined()
-    expect(after._sessions[DRAFT_SESSION_ID].messages).toHaveLength(0)
+    expect(isDraftSession(after._activeSessionId)).toBe(true)
+    expect(getActiveDraftSession('/test')).toBeDefined()
+    expect(getActiveDraftSession('/test')!.messages).toHaveLength(0)
     expect(after._sessions['old-session']).toBeDefined()
     expect(after._sessions['old-session'].messages).toHaveLength(1)
   })
@@ -789,24 +811,92 @@ describe('resetSession', () => {
       permissionMode: 'acceptEdits' as const,
       sandboxInfo: { enabled: false, autoAllowBash: true },
     }
-    mockWindowAgent.resetSession.mockResolvedValueOnce(agentConfig)
+    mockWindowAgent.resetSession.mockReset()
+    mockWindowAgent.resetSession.mockResolvedValue(agentConfig)
 
     setupProject('/test')
 
     await useChatStore.getState().resetSession()
 
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('acceptEdits')
     const after = useChatStore.getState().projectSessions['/test']
-    expect(after._sessions[DRAFT_SESSION_ID].permissionMode).toBe('acceptEdits')
     expect(after.sandboxInfo).toEqual({ enabled: false, autoAllowBash: true })
   })
 
-  it('applies agentConfig from parkSession when streaming', async () => {
+  it('parks streaming DRAFT session instead of killing it', async () => {
+    const agentConfig = {
+      permissionMode: 'default' as const,
+      sandboxInfo: { enabled: false, autoAllowBash: false },
+    }
+    mockWindowAgent.parkSession.mockResolvedValueOnce(agentConfig)
+
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const oldDraftId = getActiveDraftId('/test')!
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: oldDraftId,
+          _sessions: {
+            [oldDraftId]: {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              messages: [makeMessage('u1', 'user'), makeMessage('a1', 'assistant')],
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().resetSession()
+
+    expect(mockWindowAgent.parkDraftSession).toHaveBeenCalledWith('/test', oldDraftId, expect.stringMatching(/^__draft_/))
+    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(isDraftSession(after._activeSessionId)).toBe(true)
+    expect(after._activeSessionId).not.toBe(oldDraftId)
+    expect(getActiveDraftSession('/test')!.messages).toHaveLength(0)
+    expect(after._sessions[oldDraftId]).toBeDefined()
+    expect(after._sessions[oldDraftId].messages).toHaveLength(2)
+  })
+
+  it('parks session when awaitingAssistantReply but not yet streaming', async () => {
+    mockWindowAgent.parkSession.mockResolvedValueOnce(undefined)
+
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const oldDraftId = getActiveDraftId('/test')!
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: oldDraftId,
+          _sessions: {
+            [oldDraftId]: {
+              ...createDefaultPerSessionState(),
+              status: 'idle' as const,
+              awaitingAssistantReply: true,
+              messages: [makeMessage('u1', 'user')],
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().resetSession()
+
+    expect(mockWindowAgent.parkDraftSession).toHaveBeenCalledWith('/test', oldDraftId, expect.stringMatching(/^__draft_/))
+    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+  })
+
+  it('applies agentConfig from parkSession for non-draft streaming session', async () => {
     const agentConfig = {
       permissionMode: 'bypassPermissions' as const,
       sandboxInfo: { enabled: true, autoAllowBash: true },
     }
-    mockWindowAgent.parkSession.mockResolvedValueOnce(agentConfig)
-
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -826,10 +916,14 @@ describe('resetSession', () => {
       },
     })
 
+    mockWindowAgent.parkSession.mockReset()
+    mockWindowAgent.parkSession.mockResolvedValue(agentConfig)
+
     await useChatStore.getState().resetSession()
 
+    expect(mockWindowAgent.parkSession).toHaveBeenCalledTimes(1)
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('bypassPermissions')
     const after = useChatStore.getState().projectSessions['/test']
-    expect(after._sessions[DRAFT_SESSION_ID].permissionMode).toBe('bypassPermissions')
     expect(after.sandboxInfo).toEqual({ enabled: true, autoAllowBash: true })
   })
 })
@@ -851,14 +945,14 @@ describe('init_ready updates session fields', () => {
     } as never)
 
     const proj = useChatStore.getState().projectSessions['/test']
-    expect(proj._sessions[DRAFT_SESSION_ID].cwd).toBe('/home/user/project')
+    expect(getActiveDraftSession('/test')!.cwd).toBe('/home/user/project')
     expect(proj.homedir).toBe('/home/user')
     expect(proj.sandboxInfo).toEqual({ enabled: false, autoAllowBash: true })
   })
 })
 
 describe('lazy session creation on early events', () => {
-  it('creates DRAFT session on init_ready when project has no sessions', () => {
+  it('creates draft session on init_ready when project has no sessions', () => {
     useChatStore.setState({
       projectSessions: { '/early': { ...createDefaultProjectState(), _activeSessionId: null, _sessions: {} } },
       activeProject: '/early',
@@ -877,12 +971,12 @@ describe('lazy session creation on early events', () => {
     } as never)
 
     const proj = useChatStore.getState().projectSessions['/early']
-    expect(proj._activeSessionId).toBe(DRAFT_SESSION_ID)
-    expect(proj._sessions[DRAFT_SESSION_ID]).toBeDefined()
-    expect(proj._sessions[DRAFT_SESSION_ID].cwd).toBe('/home/user')
+    expect(isDraftSession(proj._activeSessionId)).toBe(true)
+    expect(getActiveDraftSession('/early')).toBeDefined()
+    expect(getActiveDraftSession('/early')!.cwd).toBe('/home/user')
   })
 
-  it('creates DRAFT session on session_init when project has no sessions', () => {
+  it('creates real session on session_init when project has no sessions', () => {
     useChatStore.setState({
       projectSessions: { '/early2': { ...createDefaultProjectState(), _activeSessionId: null, _sessions: {} } },
       activeProject: '/early2',
@@ -897,7 +991,8 @@ describe('lazy session creation on early events', () => {
     const proj = useChatStore.getState().projectSessions['/early2']
     expect(proj._activeSessionId).toBe('real-sid')
     expect(proj._sessions['real-sid']).toBeDefined()
-    expect(proj._sessions[DRAFT_SESSION_ID]).toBeUndefined()
+    const hasDraft = Object.keys(proj._sessions).some((k) => isDraftSession(k))
+    expect(hasDraft).toBe(false)
   })
 
   it('still drops non-init events when no session exists', () => {
@@ -991,8 +1086,7 @@ describe('applyDefaultModel via ensureSession', () => {
     })
 
     useChatStore.getState().ensureSession('/model-test')
-    const proj = useChatStore.getState().projectSessions['/model-test']
-    const session = proj._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/model-test')!
     expect(session.selectedModel).toBe('claude-sonnet-4-6')
     expect(session.selectedEffort).toBe('medium')
   })
@@ -1003,7 +1097,7 @@ describe('applyDefaultModel via ensureSession', () => {
     })
 
     useChatStore.getState().ensureSession('/no-effort')
-    const session = useChatStore.getState().projectSessions['/no-effort']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/no-effort')!
     expect(session.selectedModel).toBe('claude-haiku-4-5')
     expect(session.selectedEffort).toBeUndefined()
   })
@@ -1012,7 +1106,7 @@ describe('applyDefaultModel via ensureSession', () => {
     useChatStore.setState({ availableModels: [] })
 
     useChatStore.getState().ensureSession('/empty-models')
-    const session = useChatStore.getState().projectSessions['/empty-models']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/empty-models')!
     expect(session.selectedModel).toBe('')
   })
 })
@@ -1036,7 +1130,7 @@ describe('codex model cache + defaults', () => {
     )
 
     useChatStore.getState().ensureSession('/codex-cache')
-    const session = useChatStore.getState().projectSessions['/codex-cache']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/codex-cache')!
     expect(session.selectedCodexModel).toBe('gpt-5.4')
     expect(session.selectedCodexReasoningEffort).toBe('high')
   })
@@ -1064,7 +1158,7 @@ describe('codex model cache + defaults', () => {
     )
 
     useChatStore.getState().ensureSession('/codex-memory')
-    const session = useChatStore.getState().projectSessions['/codex-memory']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/codex-memory')!
     expect(session.selectedCodexModel).toBe('gpt-5.4')
     expect(session.selectedCodexReasoningEffort).toBe('low')
   })
@@ -1282,8 +1376,8 @@ describe('codex plan mode', () => {
           ...proj,
           _sessions: {
             ...proj._sessions,
-            [DRAFT_SESSION_ID]: {
-              ...proj._sessions[DRAFT_SESSION_ID],
+            [draftOf(proj)]: {
+              ...proj._sessions[draftOf(proj)],
               preferredProvider: 'codex',
               selectedCodexCollaborationMode: 'default',
             },
@@ -1293,10 +1387,10 @@ describe('codex plan mode', () => {
     })
 
     useChatStore.getState().togglePlanModeShortcut()
-    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].selectedCodexCollaborationMode).toBe('plan')
+    expect(getActiveDraftSession('/test')!.selectedCodexCollaborationMode).toBe('plan')
 
     useChatStore.getState().togglePlanModeShortcut()
-    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].selectedCodexCollaborationMode).toBe('default')
+    expect(getActiveDraftSession('/test')!.selectedCodexCollaborationMode).toBe('default')
   })
 
   it('activates plan mode via /plan slash command without popup or chat messages', async () => {
@@ -1309,8 +1403,8 @@ describe('codex plan mode', () => {
           ...proj,
           _sessions: {
             ...proj._sessions,
-            [DRAFT_SESSION_ID]: {
-              ...proj._sessions[DRAFT_SESSION_ID],
+            [draftOf(proj)]: {
+              ...proj._sessions[draftOf(proj)],
               preferredProvider: 'codex',
               selectedCodexCollaborationMode: 'default',
             },
@@ -1322,7 +1416,7 @@ describe('codex plan mode', () => {
     await useChatStore.getState().sendMessage('/plan')
 
     const proj2 = useChatStore.getState().projectSessions['/test']
-    const activeId = proj2._activeSessionId ?? DRAFT_SESSION_ID
+    const activeId = proj2._activeSessionId!
     const session = proj2._sessions[activeId]
     expect(session.selectedCodexCollaborationMode).toBe('plan')
     expect(session.messages).toHaveLength(0)
@@ -1340,8 +1434,8 @@ describe('codex plan mode', () => {
           ...proj,
           _sessions: {
             ...proj._sessions,
-            [DRAFT_SESSION_ID]: {
-              ...proj._sessions[DRAFT_SESSION_ID],
+            [draftOf(proj)]: {
+              ...proj._sessions[draftOf(proj)],
               preferredProvider: 'codex',
               selectedCodexModel: 'gpt-5.1-codex',
               selectedCodexCollaborationMode: 'plan',
@@ -1370,8 +1464,8 @@ describe('codex plan mode', () => {
           ...proj,
           _sessions: {
             ...proj._sessions,
-            [DRAFT_SESSION_ID]: {
-              ...proj._sessions[DRAFT_SESSION_ID],
+            [draftOf(proj)]: {
+              ...proj._sessions[draftOf(proj)],
               preferredProvider: 'codex',
               selectedCodexModel: 'gpt-5.1-codex',
               selectedCodexCollaborationMode: 'default',
@@ -1680,8 +1774,8 @@ describe('awaitingAssistantReply state machine', () => {
             ...proj,
             _sessions: {
               ...proj._sessions,
-              [DRAFT_SESSION_ID]: {
-                ...proj._sessions[DRAFT_SESSION_ID],
+              [draftOf(proj)]: {
+                ...proj._sessions[draftOf(proj)],
                 awaitingAssistantReply: true,
               },
             },
@@ -1711,8 +1805,8 @@ describe('awaitingAssistantReply state machine', () => {
             ...proj,
             _sessions: {
               ...proj._sessions,
-              [DRAFT_SESSION_ID]: {
-                ...proj._sessions[DRAFT_SESSION_ID],
+              [draftOf(proj)]: {
+                ...proj._sessions[draftOf(proj)],
                 awaitingAssistantReply: true,
               },
             },
@@ -1727,7 +1821,7 @@ describe('awaitingAssistantReply state machine', () => {
       error: 'network error',
     }))
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     expect(session.awaitingAssistantReply).toBe(false)
   })
 
@@ -1740,12 +1834,13 @@ describe('awaitingAssistantReply state machine', () => {
 
     await expect(useChatStore.getState().sendMessage('hello')).rejects.toThrow('send failed')
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     expect(session.awaitingAssistantReply).toBe(false)
   })
 
   it('keeps awaitingAssistantReply on status_change idle', () => {
     setupProject('/test')
+    const did = getActiveDraftId('/test')!
     useChatStore.setState((s) => {
       const proj = s.projectSessions['/test']
       return {
@@ -1755,8 +1850,8 @@ describe('awaitingAssistantReply state machine', () => {
             ...proj,
             _sessions: {
               ...proj._sessions,
-              [DRAFT_SESSION_ID]: {
-                ...proj._sessions[DRAFT_SESSION_ID],
+              [draftOf(proj)]: {
+                ...proj._sessions[draftOf(proj)],
                 awaitingAssistantReply: true,
               },
             },
@@ -1767,11 +1862,11 @@ describe('awaitingAssistantReply state machine', () => {
 
     useChatStore.getState().handleAgentEvent(makeEvent({
       type: 'status_change',
-      sessionId: DRAFT_SESSION_ID,
+      sessionId: did,
       status: 'idle',
     }))
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     expect(session.awaitingAssistantReply).toBe(true)
   })
 })
@@ -1789,7 +1884,7 @@ describe('codex steer routing', () => {
           _activeSessionId: codexSid,
           _sessions: {
             [codexSid]: {
-              ...proj._sessions[DRAFT_SESSION_ID],
+              ...proj._sessions[draftOf(proj)],
               status: 'streaming',
               sessionProvider: 'codex',
               preferredProvider: 'codex',
@@ -1843,8 +1938,8 @@ describe('codex item streaming behavior', () => {
           ...proj,
           _sessions: {
             ...proj._sessions,
-            [DRAFT_SESSION_ID]: {
-              ...proj._sessions[DRAFT_SESSION_ID],
+            [draftOf(proj)]: {
+              ...proj._sessions[draftOf(proj)],
               status: 'streaming',
               messages: [
                 {
@@ -1883,7 +1978,7 @@ describe('codex item streaming behavior', () => {
       item: { id: 'reason-1', type: 'reasoning', text: 'Thinking' },
     }))
 
-    let items = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].messages[0].metadata?.codex?.items ?? []
+    let items = getActiveDraftSession('/test')!.messages[0].metadata?.codex?.items ?? []
     expect(items).toEqual([{ id: 'reason-1', type: 'reasoning', text: 'Thinking' }])
 
     useChatStore.getState().handleAgentEvent(makeEvent({
@@ -1893,7 +1988,7 @@ describe('codex item streaming behavior', () => {
       item: { id: 'cmd-1', type: 'command_execution', command: 'ls', aggregatedOutput: '', status: 'in_progress' },
     }))
 
-    items = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].messages[0].metadata?.codex?.items ?? []
+    items = getActiveDraftSession('/test')!.messages[0].metadata?.codex?.items ?? []
     expect(items).toEqual([
       { id: 'reason-1', type: 'reasoning', text: 'Thinking' },
       { id: 'cmd-1', type: 'command_execution', command: 'ls', aggregatedOutput: '', status: 'in_progress' },
@@ -1912,8 +2007,8 @@ describe('codex usage semantics', () => {
           ...proj,
           _sessions: {
             ...proj._sessions,
-            [DRAFT_SESSION_ID]: {
-              ...proj._sessions[DRAFT_SESSION_ID],
+            [draftOf(proj)]: {
+              ...proj._sessions[draftOf(proj)],
               sessionProvider: 'codex',
               preferredProvider: 'codex',
             },
@@ -1939,7 +2034,7 @@ describe('codex usage semantics', () => {
       },
     }))
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     expect(session.contextTokens).toBe(70)
     expect(session.contextWindow).toBe(258400)
     expect(session.streamingTokens).toEqual({ input: 1, output: 15 })
@@ -1961,7 +2056,7 @@ describe('codex usage semantics', () => {
       },
     }))
 
-    const updatedSession = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const updatedSession = getActiveDraftSession('/test')!
     expect(updatedSession.contextTokens).toBe(30)
     expect(updatedSession.streamingTokens).toEqual({ input: 11, output: 20 })
   })
@@ -2003,7 +2098,7 @@ describe('codex usage semantics', () => {
       },
     }))
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     expect(session.contextTokens).toBe(70)
     expect(session.streamingTokens).toEqual({ input: 1, output: 15 })
   })
@@ -2022,7 +2117,7 @@ describe('codex question routing', () => {
           _activeSessionId: codexSid,
           _sessions: {
             [codexSid]: {
-              ...proj._sessions[DRAFT_SESSION_ID],
+              ...proj._sessions[draftOf(proj)],
               sessionProvider: 'codex',
               preferredProvider: 'codex',
               pendingQuestion: {
@@ -2054,7 +2149,7 @@ describe('codex question routing', () => {
           _activeSessionId: codexSid,
           _sessions: {
             [codexSid]: {
-              ...proj._sessions[DRAFT_SESSION_ID],
+              ...proj._sessions[draftOf(proj)],
               sessionProvider: 'codex',
               preferredProvider: 'codex',
               pendingQuestion: {
@@ -2182,7 +2277,7 @@ describe('task_started event', () => {
       toolUseId: 'tool-abc',
       description: 'Running background agent',
     }))
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     const progress = session.taskProgress['tool-abc']
     expect(progress).toBeDefined()
     expect(progress.description).toBe('Running background agent')
@@ -2206,7 +2301,7 @@ describe('task_started event', () => {
       lastToolName: 'Bash',
       usage: { totalTokens: 100, toolUses: 2, durationMs: 500 },
     }))
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     const progress = session.taskProgress['tool-abc']
     expect(progress.description).toBe('progressing')
     expect(progress.totalTokens).toBe(100)
@@ -2238,7 +2333,7 @@ describe('task_started event', () => {
       usage: { totalTokens: 100, toolUses: 2, durationMs: 500 },
     }))
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     const progress = session.taskProgress['tool-abc']
     expect(progress.description).toBe('late progress')
     expect(progress.totalTokens).toBe(100)
@@ -2250,7 +2345,7 @@ describe('task_started event', () => {
   function seedAgentBlock(toolUseId: string) {
     useChatStore.setState((s) => {
       const project = s.projectSessions['/test']
-      const session = project._sessions[DRAFT_SESSION_ID]
+      const session = project._sessions[draftOf(project)]
       return {
         projectSessions: {
           ...s.projectSessions,
@@ -2258,7 +2353,7 @@ describe('task_started event', () => {
             ...project,
             _sessions: {
               ...project._sessions,
-              [DRAFT_SESSION_ID]: {
+              [draftOf(project)]: {
                 ...session,
                 messages: [{
                   id: 'msg-1', role: 'assistant' as const, status: 'streaming' as const,
@@ -2290,7 +2385,7 @@ describe('task_started event', () => {
       lastToolName: 'Read',
       usage: { totalTokens: 200, toolUses: 3, durationMs: 1000 },
     }))
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     const block = session.messages[0].content[0]
     expect(block.type).toBe('tool_use')
     if (block.type !== 'tool_use') return
@@ -2323,7 +2418,7 @@ describe('task_started event', () => {
       summary: 'Done reading all files',
       usage: { totalTokens: 500, toolUses: 8, durationMs: 3000 },
     }))
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     const block = session.messages[0].content[0]
     expect(block.type).toBe('tool_use')
     if (block.type !== 'tool_use') return
@@ -2350,7 +2445,7 @@ describe('task_started event', () => {
       summary: 'partial work',
       usage: { totalTokens: 100, toolUses: 2, durationMs: 500 },
     }))
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     const block = session.messages[0].content[0]
     expect(block.type).toBe('tool_use')
     if (block.type !== 'tool_use') return
@@ -2371,9 +2466,9 @@ describe('worktree session save isolation', () => {
           ...s.projectSessions,
           '/test': {
             ...project,
-            _activeSessionId: DRAFT_SESSION_ID,
+            _activeSessionId: draftOf(project),
             _sessions: {
-              [DRAFT_SESSION_ID]: {
+              [draftOf(project)]: {
                 ...createDefaultPerSessionState(),
                 messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: 'hello' }], status: 'complete', createdAt: '' }] as never[],
                 _worktreeBaseBranch: 'feature-a',
@@ -2393,6 +2488,7 @@ describe('worktree session save isolation', () => {
     let project = useChatStore.getState().projectSessions['/test']
     expect(project._sessions['wt-session-A']._worktreePath).toBe('/worktrees/project/wt-A')
 
+    const draftB = createDraftSessionId()
     useChatStore.setState((s) => {
       const project = s.projectSessions['/test']
       return {
@@ -2400,10 +2496,10 @@ describe('worktree session save isolation', () => {
           ...s.projectSessions,
           '/test': {
             ...project,
-            _activeSessionId: DRAFT_SESSION_ID,
+            _activeSessionId: draftB,
             _sessions: {
               ...project._sessions,
-              [DRAFT_SESSION_ID]: {
+              [draftB]: {
                 ...createDefaultPerSessionState(),
                 messages: [{ id: 'm2', role: 'user', content: [{ type: 'text', text: 'world' }], status: 'complete', createdAt: '' }] as never[],
                 _worktreeBaseBranch: 'feature-b',
@@ -2582,7 +2678,7 @@ describe('resetSession codex handling', () => {
     expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
 
     const after = useChatStore.getState().projectSessions['/test']
-    expect(after._activeSessionId).toBe(DRAFT_SESSION_ID)
+    expect(isDraftSession(after._activeSessionId)).toBe(true)
   })
 
   it('lets streaming codex session continue in background without interrupt', async () => {
@@ -2615,7 +2711,7 @@ describe('resetSession codex handling', () => {
     expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
 
     const after = useChatStore.getState().projectSessions['/test']
-    expect(after._activeSessionId).toBe(DRAFT_SESSION_ID)
+    expect(isDraftSession(after._activeSessionId)).toBe(true)
     expect(after._sessions[codexSid]).toBeDefined()
   })
 })
@@ -2772,7 +2868,7 @@ describe('handleAgentEvent supplemental', () => {
         message: { id: 'msg-a1', role: 'assistant', content: [], status: 'streaming', createdAt: '2024-01-01', providerId: 'claude' } as never,
       }))
 
-      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      const session = getActiveDraftSession('/test')!
       expect(session.messages).toHaveLength(1)
       expect(session.messages[0].id).toBe('msg-a1')
       expect(session.messages[0].role).toBe('assistant')
@@ -2791,7 +2887,7 @@ describe('handleAgentEvent supplemental', () => {
         message: { id: 'msg-u1', role: 'user', content: [], status: 'complete', createdAt: '', providerId: 'claude' } as never,
       }))
 
-      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      const session = getActiveDraftSession('/test')!
       expect(session.lastAssistantMessageId).toBeNull()
     })
   })
@@ -2811,7 +2907,7 @@ describe('handleAgentEvent supplemental', () => {
         delta: { type: 'text', text: ' world' },
       }))
 
-      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      const session = getActiveDraftSession('/test')!
       const msg = session.messages.find((m) => m.id === 'msg-d1')
       const textBlock = msg?.content.find((b) => b.type === 'text')
       expect(textBlock).toBeDefined()
@@ -2832,7 +2928,7 @@ describe('handleAgentEvent supplemental', () => {
         delta: { type: 'thinking', text: 'Let me think...' },
       }))
 
-      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      const session = getActiveDraftSession('/test')!
       const msg = session.messages.find((m) => m.id === 'msg-t1')
       const thinkingBlock = msg?.content.find((b) => b.type === 'thinking')
       expect(thinkingBlock).toBeDefined()
@@ -2858,7 +2954,7 @@ describe('handleAgentEvent supplemental', () => {
         },
       }))
 
-      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      const session = getActiveDraftSession('/test')!
       const msg = session.messages.find((m) => m.id === 'msg-c1')
       expect(msg?.status).toBe('complete')
       expect(session.totalCostUsd).toBe(0.02)
@@ -2876,7 +2972,7 @@ describe('handleAgentEvent supplemental', () => {
       }))
 
       const proj = useChatStore.getState().projectSessions['/test']
-      const session = proj._sessions[DRAFT_SESSION_ID]
+      const session = proj._sessions[draftOf(proj)]
       expect(session.pendingPermissions).toHaveLength(1)
       expect(session.pendingPermissions[0].requestId).toBe('perm-1')
       expect(session.pendingPermissions[0].toolName).toBe('Bash')
@@ -2899,7 +2995,7 @@ describe('handleAgentEvent supplemental', () => {
         error: 'API timeout',
       }))
 
-      const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+      const session = getActiveDraftSession('/test')!
       const msg = session.messages.find((m) => m.id === 'msg-e1')
       expect(msg?.status).toBe('error')
       const errorBlock = msg?.content.find((b) => b.type === 'text' && (b as { text: string }).text.includes('Error:'))
@@ -2913,20 +3009,20 @@ describe('cyclePermissionMode', () => {
   it('cycles through default → acceptEdits → plan → bypassPermissions → default', async () => {
     setupProject('/test')
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     expect(session.permissionMode).toBe('default')
 
     await useChatStore.getState().cyclePermissionMode()
-    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].permissionMode).toBe('acceptEdits')
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('acceptEdits')
 
     await useChatStore.getState().cyclePermissionMode()
-    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].permissionMode).toBe('plan')
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
 
     await useChatStore.getState().cyclePermissionMode()
-    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].permissionMode).toBe('bypassPermissions')
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('bypassPermissions')
 
     await useChatStore.getState().cyclePermissionMode()
-    expect(useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID].permissionMode).toBe('default')
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('default')
   })
 })
 
@@ -2960,7 +3056,7 @@ describe('cost/token accumulation via message_complete', () => {
       },
     }))
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     expect(session.totalCostUsd).toBeCloseTo(0.04)
     expect(session.contextTokens).toBe(260)
   })
@@ -2982,7 +3078,7 @@ describe('cost/token accumulation via message_complete', () => {
       },
     }))
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     expect(session.contextWindow).toBe(200000)
   })
 
@@ -2998,7 +3094,7 @@ describe('cost/token accumulation via message_complete', () => {
       messageId: 'nm-1',
     }))
 
-    const session = useChatStore.getState().projectSessions['/test']._sessions[DRAFT_SESSION_ID]
+    const session = getActiveDraftSession('/test')!
     expect(session.totalCostUsd).toBe(0)
     expect(session.contextTokens).toBe(0)
     const msg = session.messages.find((m) => m.id === 'nm-1')

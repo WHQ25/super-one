@@ -543,7 +543,7 @@ export type AgentEventBase =
   | { type: 'codex_collaboration_mode_change'; mode: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
 
-export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
+export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string }
 
 export type AgentStatus = 'idle' | 'streaming' | 'error'
 

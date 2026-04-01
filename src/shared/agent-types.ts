@@ -325,8 +325,6 @@ export interface PermissionRequest {
   blockedPath?: string
   allowAlwaysAllow: boolean
   suggestions?: Array<Record<string, unknown>>
-  sourceSessionId?: string
-  sourceAgentName?: string
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
@@ -356,8 +354,6 @@ export type QuestionAnnotations = Record<string, QuestionAnnotation>
 export interface AskUserQuestionRequest {
   requestId: string
   questions: UserQuestion[]
-  sourceSessionId?: string
-  sourceAgentName?: string
 }
 
 // --- Plan approval ---
@@ -367,8 +363,6 @@ export interface PlanApprovalRequest {
   planContent: string
   planFilePath: string
   allowedPrompts: Array<{ tool: string; prompt: string }>
-  sourceSessionId?: string
-  sourceAgentName?: string
 }
 
 // --- MCP server status ---
@@ -549,7 +543,7 @@ export type AgentEventBase =
   | { type: 'codex_collaboration_mode_change'; mode: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
 
-export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string }
+export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string }
 
 export type AgentStatus = 'idle' | 'streaming' | 'error'
 

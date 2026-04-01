@@ -66,6 +66,7 @@ export class AgentService {
   private bgAgents = new Map<string, { agent: ClaudeAgent; projectPath: string; gitRoot: string }>()
   private claudeRuntimes = new Map<string, ClaudeSessionRuntime>()
   private pendingClaudeRuntimes = new Map<string, ClaudeSessionRuntime>()
+  private parkedPendingRuntimes = new Map<string, ClaudeSessionRuntime>()
   private pendingClaudeSessionRekeys = new Map<string, { fromSessionId: string; userMessageId: string }>()
   private notifiedClaudeSessions = new Set<string>()
   private codexRuntimes = new Map<string, CodexSessionRuntime>()
@@ -110,10 +111,9 @@ export class AgentService {
     this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.EVENT, event)
   }
 
-  private isRemoteLockedSession(projectPath: string, sessionId?: string): boolean {
+  private isRemoteLockedSession(projectPath: string): boolean {
     if (!this.remoteSession || this.remoteSession.projectPath !== projectPath) return false
     const remoteSid = this.remoteSession.agent.getSessionId()
-    if (sessionId) return remoteSid === sessionId
     const agent = this.agents.get(projectPath)
     return agent?.getSessionId() === remoteSid
   }
@@ -199,12 +199,23 @@ export class AgentService {
       gitBranch?: string | null
       worktreePath?: string | null
     } = {},
+    pendingKey: string = projectPath,
   ): ClaudeSessionRuntime {
-    const existing = this.pendingClaudeRuntimes.get(projectPath)
+    const existing = this.pendingClaudeRuntimes.get(pendingKey)
     if (existing) {
       const updated = syncClaudeRuntimeLocation(existing, projectPath, options.gitBranch, options.worktreePath, options.cwd)
-      this.pendingClaudeRuntimes.set(projectPath, updated)
+      this.pendingClaudeRuntimes.set(pendingKey, updated)
       return updated
+    }
+
+    if (pendingKey !== projectPath) {
+      const fallback = this.pendingClaudeRuntimes.get(projectPath)
+      if (fallback) {
+        const updated = syncClaudeRuntimeLocation(fallback, projectPath, options.gitBranch, options.worktreePath, options.cwd)
+        this.pendingClaudeRuntimes.delete(projectPath)
+        this.pendingClaudeRuntimes.set(pendingKey, updated)
+        return updated
+      }
     }
 
     const runtime = syncClaudeRuntimeLocation(
@@ -214,7 +225,7 @@ export class AgentService {
       options.worktreePath ?? null,
       options.cwd,
     )
-    this.pendingClaudeRuntimes.set(projectPath, runtime)
+    this.pendingClaudeRuntimes.set(pendingKey, runtime)
     return runtime
   }
 
@@ -343,10 +354,13 @@ export class AgentService {
   private recordClaudeEvent(event: AgentEvent): void {
     const projectPath = event.projectPath
     if (!projectPath) return
+    const pendingKey = event.draftSessionId ?? projectPath
 
     if (event.type === 'session_init' && event.session?.sessionId) {
       const realSid = event.session.sessionId
-      const pending = this.pendingClaudeRuntimes.get(projectPath)
+      const pending = event.draftSessionId
+        ? this.pendingClaudeRuntimes.get(event.draftSessionId)
+        : this.pendingClaudeRuntimes.get(projectPath)
       const trackedRekey = this.pendingClaudeSessionRekeys.get(projectPath)
       const trackedRuntime = trackedRekey && trackedRekey.fromSessionId !== realSid
         ? this.claudeRuntimes.get(trackedRekey.fromSessionId)
@@ -356,9 +370,16 @@ export class AgentService {
         && trackedRuntime
         && trackedRuntime.messages.some((message) => message.id === trackedRekey.userMessageId)
       )
+      const parkedPending = event.draftSessionId
+        ? this.parkedPendingRuntimes.get(event.draftSessionId)
+        : null
       let runtime = this.loadOrCreateClaudeRuntime(projectPath, realSid, { cwd: event.session.cwd })
       if (shouldMergeTrackedRuntime && trackedRuntime) {
         runtime = mergeClaudeRuntimes(runtime, { ...trackedRuntime, sessionId: realSid, session: event.session })
+      }
+      if (parkedPending) {
+        runtime = mergeClaudeRuntimes(runtime, { ...parkedPending, sessionId: realSid, session: event.session })
+        this.parkedPendingRuntimes.delete(event.draftSessionId!)
       }
       if (pending) {
         runtime = mergeClaudeRuntimes(runtime, { ...pending, sessionId: realSid, session: event.session })
@@ -377,7 +398,9 @@ export class AgentService {
         syncClaudeRuntimeLocation(runtime, projectPath, runtime.gitBranch, runtime.worktreePath, event.session.cwd),
         event,
       )
-      this.pendingClaudeRuntimes.delete(projectPath)
+      if (pending) {
+        this.pendingClaudeRuntimes.delete(pendingKey)
+      }
       this.claudeRuntimes.set(realSid, updated)
       if (shouldMergeTrackedRuntime && trackedRekey) {
         this.rollbackTrackedClaudeUserMessage(projectPath, trackedRekey.fromSessionId)
@@ -415,10 +438,14 @@ export class AgentService {
       || event.type === 'checkpoint_captured'
     ) {
       const runtime = applyClaudeEventToRuntime(
-        this.getOrCreatePendingClaudeRuntime(projectPath, { cwd: this.getClaudeRuntimeCwd(projectPath) }),
+        this.getOrCreatePendingClaudeRuntime(
+          projectPath,
+          { cwd: this.getClaudeRuntimeCwd(projectPath) },
+          pendingKey,
+        ),
         event,
       )
-      this.pendingClaudeRuntimes.set(projectPath, runtime)
+      this.pendingClaudeRuntimes.set(pendingKey, runtime)
     }
   }
 
@@ -1268,9 +1295,9 @@ export class AgentService {
     return agent
   }
 
-  private createEventEmitter(projectPath: string): (event: AgentEvent) => void {
+  private createEventEmitter(projectPath: string, draftSessionId?: string): (event: AgentEvent) => void {
     return (event: AgentEvent) => {
-      const eventWithPath = { ...event, projectPath }
+      const eventWithPath = { ...event, projectPath, ...(draftSessionId ? { draftSessionId } : {}) }
       this.recordClaudeEvent(eventWithPath)
       trace('remote.debug', 'desktopEventEmitter', { type: event.type, projectPath, sessionId: event.sessionId })
       this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.EVENT, eventWithPath)
@@ -1345,8 +1372,6 @@ export class AgentService {
     }
   }
 
-  /** Move the current active agent into background, keyed by its sessionId.
-   *  Only parks streaming agents; idle agents are disposed immediately (Fix 4). */
   private async parkSession(projectPath: string): Promise<void> {
     const current = this.agents.get(projectPath)
     if (current) {
@@ -1471,15 +1496,10 @@ export class AgentService {
       return true
     })
 
-    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string) => {
+    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
-      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
-      if (agent) {
-        agent.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
-      } else {
-        this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
-      }
+      trace('agent.emit', 'permission_responded', { requestId, allow, reason })
+      this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
@@ -1492,37 +1512,22 @@ export class AgentService {
       return this.getAgent(projectPath).setSandboxMode(mode)
     })
 
-    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations, sessionId?: string) => {
-      if (this.isRemoteLockedSession(projectPath, sessionId)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'question_answered', { requestId, answers, sessionId })
-      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
-      if (agent) {
-        agent.respondToQuestion(requestId, answers, annotations)
-      } else {
-        this.getAgent(projectPath).respondToQuestion(requestId, answers, annotations)
-      }
+    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'question_answered', { requestId, answers })
+      this.getAgent(projectPath).respondToQuestion(requestId, answers, annotations)
     })
 
-    ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string, sessionId?: string) => {
-      if (this.isRemoteLockedSession(projectPath, sessionId)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'question_dismissed', { requestId, sessionId })
-      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
-      if (agent) {
-        agent.dismissQuestion(requestId)
-      } else {
-        this.getAgent(projectPath).dismissQuestion(requestId)
-      }
+    ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'question_dismissed', { requestId })
+      this.getAgent(projectPath).dismissQuestion(requestId)
     })
 
-    ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string, sessionId?: string) => {
-      if (this.isRemoteLockedSession(projectPath, sessionId)) throw new Error('Session is controlled remotely')
-      trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback, sessionId })
-      const agent = sessionId ? this.findAgentBySessionId(projectPath, sessionId) : undefined
-      if (agent) {
-        agent.respondToPlanApproval(requestId, approved, feedback)
-      } else {
-        this.getAgent(projectPath).respondToPlanApproval(requestId, approved, feedback)
-      }
+    ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string) => {
+      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback })
+      this.getAgent(projectPath).respondToPlanApproval(requestId, approved, feedback)
     })
 
     ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string) => {
@@ -1870,11 +1875,31 @@ export class AgentService {
       await this.resumeSession(projectPath, sessionId, worktreeCwd)
     })
 
-    ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string, draftSessionId?: string, newDraftSessionId?: string) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      const current = this.agents.get(projectPath)
+      if (current && draftSessionId) {
+        current.updateEventEmitter(this.createEventEmitter(projectPath, draftSessionId))
+      }
+      const pendingRuntimeKey = draftSessionId && this.pendingClaudeRuntimes.has(draftSessionId)
+        ? draftSessionId
+        : this.pendingClaudeRuntimes.has(projectPath)
+          ? projectPath
+          : null
+      const pendingRuntime = pendingRuntimeKey ? this.pendingClaudeRuntimes.get(pendingRuntimeKey) : null
+      if (pendingRuntime && current) {
+        const sid = current.getSessionId()
+        if (sid) {
+          const runtime = this.loadOrCreateClaudeRuntime(projectPath, sid)
+          this.claudeRuntimes.set(sid, mergeClaudeRuntimes(runtime, { ...pendingRuntime, sessionId: sid }))
+        } else if (draftSessionId) {
+          this.parkedPendingRuntimes.set(draftSessionId, pendingRuntime)
+        }
+        this.pendingClaudeRuntimes.delete(pendingRuntimeKey!)
+      }
       await this.parkSession(projectPath)
       const agent = new ClaudeAgent()
-      await agent.initialize({ cwd: projectPath }, this.createEventEmitter(projectPath))
+      await agent.initialize({ cwd: projectPath }, this.createEventEmitter(projectPath, newDraftSessionId))
       this.agents.set(projectPath, agent)
       return { permissionMode: agent.getCurrentPermissionMode(), sandboxInfo: agent.getCurrentSandboxInfo() }
     })

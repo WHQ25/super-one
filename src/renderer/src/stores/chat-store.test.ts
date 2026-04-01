@@ -3285,3 +3285,118 @@ describe('interaction response routing', () => {
     )
   })
 })
+
+describe('cross-session event routing race conditions', () => {
+  it('does not route events with stale draftSessionId to the active session (fallback_active)', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const originalDraftId = proj._activeSessionId!
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'session_init',
+      session: { sessionId: 'real-A' } as never,
+    }))
+
+    const afterRekey = useChatStore.getState().projectSessions['/test']
+    expect(afterRekey._activeSessionId).toBe('real-A')
+    expect(afterRekey._sessions[originalDraftId]).toBeUndefined()
+
+    const newDraftId = createDraftSessionId()
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...afterRekey,
+          _activeSessionId: newDraftId,
+          _sessions: {
+            ...afterRekey._sessions,
+            [newDraftId]: createDefaultPerSessionState(),
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      draftSessionId: originalDraftId,
+      message: makeMessage('leaked-msg', 'assistant'),
+    } as never))
+
+    const final = useChatStore.getState().projectSessions['/test']
+    const activeSession = final._sessions[newDraftId]
+    expect(activeSession.messages).toHaveLength(0)
+  })
+
+  it('does not route content_delta with stale draftSessionId to the active session', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const originalDraftId = proj._activeSessionId!
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: makeMessage('msg-A', 'assistant'),
+    }))
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'session_init',
+      session: { sessionId: 'real-A' } as never,
+    }))
+
+    const afterRekey = useChatStore.getState().projectSessions['/test']
+
+    const newDraftId = createDraftSessionId()
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...afterRekey,
+          _activeSessionId: newDraftId,
+          _sessions: {
+            ...afterRekey._sessions,
+            [newDraftId]: createDefaultPerSessionState(),
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'content_delta',
+      draftSessionId: originalDraftId,
+      messageId: 'msg-A',
+      delta: { type: 'text', text: 'leaked text' },
+    } as never))
+
+    const final = useChatStore.getState().projectSessions['/test']
+    const activeSession = final._sessions[newDraftId]
+    expect(activeSession.messages).toHaveLength(0)
+  })
+
+  it('does not promote background session_init to a different active draft', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const draftB = proj._activeSessionId!
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _sessions: {
+            [draftB]: {
+              ...createDefaultPerSessionState(),
+              awaitingAssistantReply: true,
+            },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'session_init',
+      draftSessionId: '__draft_stale_xyz',
+      session: { sessionId: 'real-A' } as never,
+    } as never))
+
+    const final = useChatStore.getState().projectSessions['/test']
+    expect(final._activeSessionId).toBe(draftB)
+    expect(final._sessions[draftB]).toBeDefined()
+    expect(final._sessions['real-A']).toBeUndefined()
+  })
+})

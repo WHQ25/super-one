@@ -1301,8 +1301,9 @@ export class AgentService {
   }
 
   private createEventEmitter(projectPath: string, draftSessionId?: string): (event: AgentEvent) => void {
+    let currentDraftId = draftSessionId
     return (event: AgentEvent) => {
-      const eventWithPath = { ...event, projectPath, ...(draftSessionId ? { draftSessionId } : {}) }
+      const eventWithPath = { ...event, projectPath, ...(currentDraftId ? { draftSessionId: currentDraftId } : {}) }
       this.recordClaudeEvent(eventWithPath)
       trace('remote.debug', 'desktopEventEmitter', { type: event.type, projectPath, sessionId: event.sessionId })
       this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.EVENT, eventWithPath)
@@ -1310,6 +1311,7 @@ export class AgentService {
 
       // Re-key pending background agents when session_init provides the real session ID
       if (event.type === 'session_init' && event.session?.sessionId) {
+        currentDraftId = undefined
         const realSid = event.session.sessionId
         for (const [key, bg] of this.bgAgents.entries()) {
           if (key.startsWith('__pending_') && bg.agent.getSessionId() === realSid) {

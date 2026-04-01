@@ -241,7 +241,7 @@ interface ChatStore {
   ensureSession: (projectPath: string) => void
 
   // Message actions (operate on activeProject)
-  sendMessage: (content: string) => Promise<void>
+  sendMessage: (content: string, segments?: Array<{ text: string; isPaste: boolean }>) => Promise<void>
   approveCodexPlan: () => Promise<void>
   rejectCodexPlan: (feedback?: string) => Promise<void>
   interrupt: () => Promise<void>
@@ -1203,9 +1203,10 @@ function _isLiveSession(session: PerSessionState | undefined): boolean {
   )
 }
 
-function _shouldPromoteDraftSessionInit(project: ProjectState, sessionId: string): boolean {
+function _shouldPromoteDraftSessionInit(project: ProjectState, sessionId: string, eventDraftSid?: string): boolean {
   const activeSid = project._activeSessionId
   if (!activeSid || !isDraftSession(activeSid)) return false
+  if (eventDraftSid && eventDraftSid !== activeSid) return false
   const draft = project._sessions[activeSid]
   if (!draft || !_isLiveSession(draft)) return false
   if (project._sessions[sessionId]) return false
@@ -1869,7 +1870,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       } else if (
         event.type === 'session_init'
         && event.session?.sessionId
-        && _shouldPromoteDraftSessionInit(project, event.session.sessionId)
+        && _shouldPromoteDraftSessionInit(project, event.session.sessionId, eventDraftSid)
       ) {
         targetSid = project._activeSessionId
         matchType = 'draft_session_init'
@@ -1892,9 +1893,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       } else if (eventDraftSid && project._sessions[eventDraftSid]) {
         targetSid = eventDraftSid
         matchType = 'draft_routed'
-      } else {
+      } else if (!eventSessionId && !eventDraftSid) {
         targetSid = project._activeSessionId
         matchType = 'fallback_active'
+      } else {
+        window.app.trace?.('session.route.dropped', event.type, {
+          reason: 'no_route',
+          eventSessionId,
+          eventDraftSid,
+          activeSid: project._activeSessionId,
+          knownSids: Object.keys(project._sessions),
+        })
+        return {}
       }
 
       window.app.trace?.('session.route', event.type, {
@@ -1906,7 +1916,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         knownSids: Object.keys(project._sessions),
         ...(event.type === 'session_init' ? {
           realSid: event.session?.sessionId,
-          promoteDraft: _shouldPromoteDraftSessionInit(project, event.session?.sessionId ?? ''),
+          promoteDraft: _shouldPromoteDraftSessionInit(project, event.session?.sessionId ?? '', eventDraftSid),
           existsInSessions: !!project._sessions[event.session?.sessionId ?? ''],
           existsInHistory: project.sessions.some((e) => e.sessionId === event.session?.sessionId),
         } : {}),
@@ -2228,7 +2238,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })
   },
 
-  sendMessage: async (content: string) => {
+  sendMessage: async (content: string, segments?: Array<{ text: string; isPaste: boolean }>) => {
     const { activeProject, remoteSession } = get()
     if (!activeProject) return
     if (remoteSession && remoteSession.projectPath === activeProject) {
@@ -2383,7 +2393,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ? { type: 'document' as const, name: att.name }
           : { type: 'image' as const, name: att.name }
       ),
-      ...(finalContent ? [{ type: 'text' as const, text: finalContent }] : []),
+      ...(segments && segments.length > 0
+        ? segments.map((s) => ({ type: 'text' as const, text: s.text }))
+        : finalContent ? [{ type: 'text' as const, text: finalContent }] : []),
     ]
 
     const userMessageId = `user_${Date.now()}`

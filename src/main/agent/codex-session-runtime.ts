@@ -249,7 +249,7 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
             ...message.metadata,
             codex: {
               ...prevCodex,
-              usage: event.codexUsage,
+              usage: event.codexUsage ?? null,
             },
           },
         }

@@ -16,8 +16,9 @@ function parseReleaseNotes(raw: string): ReleaseEntry[] {
       entries.push(current)
       continue
     }
-    if (current && line.startsWith('•')) {
-      current.items.push(line.slice(1).trim())
+    const bulletMatch = current && line.match(/^[·•]\s*(.+)/)
+    if (bulletMatch) {
+      current.items.push(bulletMatch[1])
     }
   }
 

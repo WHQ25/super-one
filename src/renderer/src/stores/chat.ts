@@ -76,6 +76,7 @@ export interface PerSessionState {
   _worktreePath: string | null
   _worktreeRemoved: boolean
   additionalDirs: string[]
+  apiRetry: { attempt: number; maxRetries: number; delayMs: number } | null
   lastEventAt: number
   queuedMessages: ChatMessage[]
   activeCodexMessageId: string | null
@@ -154,6 +155,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     _worktreePath: null,
     _worktreeRemoved: false,
     additionalDirs: [],
+    apiRetry: null,
     lastEventAt: 0,
     queuedMessages: [],
     activeCodexMessageId: null,
@@ -503,6 +505,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       })
 
       let extraUpdates: Partial<PerSessionState> = {}
+      if (session.apiRetry) extraUpdates.apiRetry = null
 
       if (event.delta.type === 'tool_result') {
         const resultDelta = event.delta
@@ -708,6 +711,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         const insertAt = lastAsstIdx >= 0 ? lastAsstIdx : session.messages.length
         return {
           status: event.status,
+          apiRetry: null,
           messages: [
             ...session.messages.slice(0, insertAt),
             ...session.queuedMessages,
@@ -716,7 +720,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           queuedMessages: [],
         }
       }
-      return { status: event.status }
+      return { status: event.status, ...(event.status === 'idle' ? { apiRetry: null } : {}) }
 
     case 'prompt_suggestion':
       return { promptSuggestion: event.suggestion }
@@ -884,19 +888,36 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
 
     case 'slash_command_output': {
       const cmd = session._pendingSlashCommand
+      const filtered = session.messages.filter((m) => m.id !== event.messageId)
       if (cmd === 'compact') {
-        const filtered = session.messages.filter((m) => m.id !== event.messageId)
         const lastUserIdx = filtered.findLastIndex((m) => m.role === 'user')
         if (lastUserIdx >= 0) filtered.splice(lastUserIdx, 1)
         return { _pendingSlashCommand: '', messages: filtered }
       }
-      const filtered = session.messages.filter((m) => m.id !== event.messageId)
-      const lastUserIdx = filtered.findLastIndex((m) => m.role === 'user')
-      if (lastUserIdx >= 0) filtered.splice(lastUserIdx, 1)
+      if (import.meta.env.DEV && import.meta.env.RENDERER_VITE_DEBUG_SLASH_OUTPUT === '1') {
+        const debugText = `\`\`\`\n/${cmd}\n\n${event.content}\n\`\`\``
+        const debugMsg: ChatMessage = {
+          id: `slash-debug-${Date.now()}`,
+          role: 'assistant',
+          content: [{ type: 'text', text: debugText }],
+          status: 'complete',
+          createdAt: new Date().toISOString(),
+          providerId: 'claude',
+        }
+        return { _pendingSlashCommand: '', messages: [...filtered, debugMsg] }
+      }
+      const hintMsg: ChatMessage = {
+        id: `slash-hint-${Date.now()}`,
+        role: 'assistant',
+        content: [{ type: 'text', text: `Command /${cmd} executed.` }],
+        status: 'complete',
+        createdAt: new Date().toISOString(),
+        providerId: 'claude',
+      }
       return {
         slashCommandOutput: { command: cmd, content: event.content, mode: getCommandOutputMode(cmd) },
         _pendingSlashCommand: '',
-        messages: filtered,
+        messages: [...filtered, hintMsg],
       }
     }
 
@@ -1004,6 +1025,9 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         },
       }
     }
+
+    case 'api_retry':
+      return { apiRetry: { attempt: event.attempt, maxRetries: event.maxRetries, delayMs: event.delayMs } }
 
     case 'hook_started':
     case 'hook_complete':
@@ -1873,9 +1897,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         matchType = 'fallback_active'
       }
 
-      if (import.meta.env.DEV) {
-        console.debug('[handleAgentEvent] route', { type: event.type, eventSessionId, targetSid, matchType, activeSid: project._activeSessionId, knownSids: Object.keys(project._sessions) })
-      }
+      window.app.trace?.('session.route', event.type, {
+        matchType,
+        targetSid,
+        eventSessionId,
+        eventDraftSid,
+        activeSid: project._activeSessionId,
+        knownSids: Object.keys(project._sessions),
+        ...(event.type === 'session_init' ? {
+          realSid: event.session?.sessionId,
+          promoteDraft: _shouldPromoteDraftSessionInit(project, event.session?.sessionId ?? ''),
+          existsInSessions: !!project._sessions[event.session?.sessionId ?? ''],
+          existsInHistory: project.sessions.some((e) => e.sessionId === event.session?.sessionId),
+        } : {}),
+      })
 
       if (!targetSid || !project._sessions[targetSid]) {
         if (event.type === 'init_ready' || event.type === 'session_init' || event.type === 'status_change') {
@@ -1962,6 +1997,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Handle session_init: re-key from draft to real session ID
       if (event.type === 'session_init' && event.session?.sessionId) {
         const realSid = event.session.sessionId
+        window.app.trace?.('session.rekey', 'session_init', {
+          realSid,
+          targetSid,
+          targetIsDraft: isDraftSession(targetSid),
+          realIsDraft: isDraftSession(realSid),
+          willRekey: !!(targetSid && isDraftSession(targetSid) && !isDraftSession(realSid)),
+          existingSessionAtRealSid: !!updatedSessions[realSid],
+        })
         if (targetSid && isDraftSession(targetSid) && !isDraftSession(realSid)) {
           const { [targetSid]: _, ...rest } = updatedSessions
           updatedSessions = { ...rest, [realSid]: updatedSession }
@@ -2113,7 +2156,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const activeSession = project._activeSessionId ? project._sessions[project._activeSessionId] : null
         const rs = get().remoteSession
         const isRemote = rs && rs.projectPath === currentProject && project._activeSessionId === rs.sessionId
-        if (activeSession?.status === 'streaming' && !isRemote) {
+        if ((activeSession?.status === 'streaming' || activeSession?.awaitingAssistantReply) && !isRemote) {
           await _parkActiveSession(currentProject, project._activeSessionId)
         } else {
           _saveSessionState(get, currentProject)
@@ -2191,6 +2234,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (remoteSession && remoteSession.projectPath === activeProject) {
       const project = get().projectSessions[activeProject]
       if (project?._activeSessionId === remoteSession.sessionId) return
+    }
+
+    {
+      const project = getProject(get())
+      const session = getActivePerSession(get())
+      window.app.trace?.('session.lifecycle', 'sendMessage', {
+        activeSid: project._activeSessionId,
+        isDraft: isDraftSession(project._activeSessionId),
+        status: session.status,
+        provider: session.sessionProvider,
+        msgCount: session.messages.length,
+        knownSids: Object.keys(project._sessions),
+      })
     }
 
     const { useAppStore } = await import('./app')
@@ -2611,6 +2667,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const currentSid = resolveActiveSessionId(project)
 
     const newDraftId = createDraftSessionId()
+    window.app.trace?.('session.lifecycle', 'resetSession', {
+      activeProject,
+      oldSid: currentSid,
+      newDraftId,
+      oldStatus: activeSession.status,
+      oldAwaitingReply: activeSession.awaitingAssistantReply,
+      oldProvider: activeSession.sessionProvider,
+      knownSids: Object.keys(project._sessions),
+    })
 
     set((s) => {
       const proj = getProject(s, activeProject)
@@ -3263,6 +3328,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     const project = getProject(get())
+    {
+      const activeSession = getActivePerSession(get())
+      window.app.trace?.('session.lifecycle', 'switchSession', {
+        from: project._activeSessionId,
+        to: sessionId,
+        fromStatus: activeSession.status,
+        fromAwaitingReply: activeSession.awaitingAssistantReply,
+        fromProvider: activeSession.sessionProvider,
+        toInSessions: !!project._sessions[sessionId],
+        knownSids: Object.keys(project._sessions),
+      })
+    }
 
     if (project.unseenCompletedSessions.has(sessionId)) {
       set((s) => {
@@ -3277,7 +3354,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Case A: Session already in _sessions (background streaming or parked)
     if (project._sessions[sessionId]) {
       const activeSession = getActivePerSession(get())
-      if (activeSession.status !== 'streaming') {
+      if (activeSession.status !== 'streaming' && !activeSession.awaitingAssistantReply) {
         _saveSessionState(get, activeProject)
       } else {
         await _parkActiveSession(activeProject, project._activeSessionId)

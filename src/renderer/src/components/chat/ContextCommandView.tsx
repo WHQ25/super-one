@@ -1,4 +1,17 @@
 import { useMemo } from 'react'
+import { Streamdown } from 'streamdown'
+import {
+  codePlugin,
+  streamdownPlugins,
+  streamdownControls,
+  streamdownComponents,
+  streamdownLinkSafety,
+  streamdownRehypePlugins,
+} from './chat-shared'
+import { createStreamdownCodeComponent } from './CodeBlock'
+
+const staticCodeComponent = createStreamdownCodeComponent(codePlugin)
+const mdComponents = { ...streamdownComponents, code: staticCodeComponent }
 
 interface CategoryData {
   name: string
@@ -25,18 +38,19 @@ function parseContextOutput(raw: string): {
   categories: CategoryData[]
 } | null {
   const modelMatch = raw.match(/\*\*Model:\*\*\s*(.+)/)
-  const tokensMatch = raw.match(/\*\*Tokens:\*\*\s*([\d.]+k?)\s*\/\s*([\d.]+k?)\s*\((\d+)%\)/)
+  const tokensMatch = raw.match(/\*\*Tokens:\*\*\s*([\d.]+[km]?)\s*\/\s*([\d.]+[km]?)\s*\((\d+)%\)/)
 
   if (!tokensMatch) return null
 
   const parseTokenCount = (s: string): number => {
+    if (s.endsWith('m')) return parseFloat(s) * 1_000_000
     if (s.endsWith('k')) return parseFloat(s) * 1000
     return parseFloat(s)
   }
 
   const categories: CategoryData[] = []
   // Match table rows: | Name | tokens | percentage |
-  const rowRegex = /\|\s*([^|]+?)\s*\|\s*([\d,.]+k?)\s*\|\s*([\d.]+)%\s*\|/g
+  const rowRegex = /\|\s*([^|]+?)\s*\|\s*([\d,.]+[km]?)\s*\|\s*([\d.]+)%\s*\|/g
   let match
   while ((match = rowRegex.exec(raw)) !== null) {
     const name = match[1].trim()
@@ -58,6 +72,7 @@ function parseContextOutput(raw: string): {
 }
 
 function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
   return String(Math.round(n))
 }
@@ -106,9 +121,17 @@ export function ContextCommandView({ content }: { content: string }) {
   const data = useMemo(() => parseContextOutput(content), [content])
 
   if (!data) {
-    // Fallback to raw text if parsing fails
     return (
-      <pre className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{content}</pre>
+      <Streamdown
+        className="chat-md text-xs"
+        plugins={streamdownPlugins}
+        rehypePlugins={streamdownRehypePlugins}
+        components={mdComponents}
+        controls={streamdownControls}
+        linkSafety={streamdownLinkSafety}
+      >
+        {content}
+      </Streamdown>
     )
   }
 

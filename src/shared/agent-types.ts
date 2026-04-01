@@ -49,6 +49,7 @@ export type ContentBlock =
   | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
   | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[] }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
+  | { type: 'codex_plan'; text: string; itemId: string }
   | { type: 'image'; name: string }
   | { type: 'document'; name: string }
 
@@ -325,6 +326,8 @@ export interface PermissionRequest {
   blockedPath?: string
   allowAlwaysAllow: boolean
   suggestions?: Array<Record<string, unknown>>
+  toolDiff?: string
+  toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
@@ -379,6 +382,20 @@ export interface McpServerInfo {
   scope?: string
   toolCount?: number
   tools?: McpToolInfo[]
+}
+
+export interface ContextUsageCategory {
+  name: string
+  tokens: number
+  color: string
+}
+
+export interface ContextUsageInfo {
+  categories: ContextUsageCategory[]
+  totalTokens: number
+  maxTokens: number
+  percentage: number
+  model: string
 }
 
 // --- Account info ---
@@ -542,6 +559,7 @@ export type AgentEventBase =
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string }
   | { type: 'codex_collaboration_mode_change'; mode: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
+  | { type: 'api_retry'; attempt: number; maxRetries: number; delayMs: number }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string }
 
@@ -561,6 +579,7 @@ export interface SendMessageRequest {
   gitBranch?: string
   worktreePath?: string
   priority?: 'now' | 'next' | 'later'
+  taskBudget?: number
 }
 
 // --- Model selection ---
@@ -993,11 +1012,14 @@ export const AgentIpcChannels = {
   REWIND_CONVERSATION: 'agent:rewind-conversation',
   GET_SESSION_ID: 'agent:get-session-id',
   MCP_SERVER_STATUS: 'agent:mcp-server-status',
+  GET_CONTEXT_USAGE: 'agent:get-context-usage',
   LIST_DIRECTORY: 'agent:list-directory',
   FIND_LINE_NUMBER: 'agent:find-line-number',
   SEARCH_FILES: 'agent:search-files',
   SEARCH_MENTIONS: 'agent:search-mentions',
   DISCONNECT_REMOTE_SESSION: 'agent:disconnect-remote-session',
+
+  PLUGINS_RELOAD: 'plugins:reload',
 
   // Plugins
   PLUGINS_LIST: 'plugins:list',
@@ -1158,15 +1180,16 @@ export type RemoteCommand =
   | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[]; provider?: 'claude' | 'codex'; permissionMode?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; gitBranch?: string; worktreeBranch?: string; worktreeCarryLocalChanges?: boolean; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
-  | { type: 'respond_permission'; requestId: string; decision: boolean; reason?: string; projectPath?: string; sessionId: string }
-  | { type: 'answer_question'; requestId: string; answers: Record<string, string>; projectPath?: string; sessionId: string }
+  | { type: 'respond_permission'; requestId: string; decision: boolean; reason?: string; selectedSuggestions?: number[]; projectPath?: string; sessionId: string }
+  | { type: 'answer_question'; requestId: string; answers: Record<string, string>; annotations?: QuestionAnnotations; projectPath?: string; sessionId: string }
   | { type: 'dismiss_question'; requestId: string; projectPath?: string; sessionId: string }
   | { type: 'respond_plan_approval'; requestId: string; approved: boolean; feedback?: string; projectPath?: string; sessionId: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string; projectPath?: string; sessionId: string }
   | { type: 'subscribe_session'; projectPath: string; sessionId: string }
   | { type: 'unsubscribe_session' }
   | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number }
-  | { type: 'list_directory'; requestId: string; path: string }
+  | { type: 'set_permission_mode'; mode: string; projectPath?: string; sessionId: string }
+  | { type: 'list_directory'; requestId: string; path: string; showHidden?: boolean }
   | { type: 'create_directory'; requestId: string; path: string; name: string }
   | { type: 'add_project'; requestId: string; path: string }
   | { type: 'list_projects'; requestId: string }

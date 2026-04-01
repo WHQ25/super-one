@@ -1,16 +1,51 @@
-import { useEffect, useCallback, useRef } from 'react'
+import { useEffect, useCallback, useRef, useMemo } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
+import { Streamdown } from 'streamdown'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { ContextCommandView } from './ContextCommandView'
 import { ReleaseNotesView } from './ReleaseNotesView'
+import {
+  codePlugin,
+  streamdownPlugins,
+  streamdownControls,
+  streamdownComponents,
+  streamdownLinkSafety,
+  streamdownRehypePlugins,
+} from './chat-shared'
+import { createStreamdownCodeComponent } from './CodeBlock'
 
 /** Commands that should auto-scroll to the bottom on open. */
 const SCROLL_TO_BOTTOM = new Set(['release-notes'])
 
+const MARKDOWN_COMMANDS = new Set(['usage', 'cost'])
+
+function MarkdownCommandView({ content }: { content: string }) {
+  const codeComponent = useMemo(() => createStreamdownCodeComponent(codePlugin), [])
+  const components = useMemo(
+    () => ({ ...streamdownComponents, code: codeComponent }),
+    [codeComponent],
+  )
+  return (
+    <Streamdown
+      className="chat-md text-xs"
+      plugins={streamdownPlugins}
+      rehypePlugins={streamdownRehypePlugins}
+      components={components}
+      controls={streamdownControls}
+      linkSafety={streamdownLinkSafety}
+    >
+      {content}
+    </Streamdown>
+  )
+}
+
 /** Route to specialized views based on command name, fallback to raw text. */
 function CommandContent({ command, content }: { command: string; content: string }) {
+  if (MARKDOWN_COMMANDS.has(command)) {
+    return <MarkdownCommandView content={content} />
+  }
   switch (command) {
     case 'context':
       return <ContextCommandView content={content} />

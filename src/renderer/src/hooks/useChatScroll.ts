@@ -24,13 +24,13 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
 
   const sessionSwitchRef = useRef(false)
   const sessionSwitchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const SETTLE_TIMEOUT = 300
 
   useLayoutEffect(() => {
     isNearBottomRef.current = true
     sessionSwitchRef.current = true
     setShowScrollButton(false)
     clearTimeout(sessionSwitchTimerRef.current)
-    sessionSwitchTimerRef.current = setTimeout(() => { sessionSwitchRef.current = false }, 3000)
     const el = scrollViewportRef.current
     if (el) {
       el.scrollTop = el.scrollHeight
@@ -101,6 +101,10 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
             lastScrollTopRef.current = viewport.scrollTop
           }
         })
+      }
+      if (sessionSwitchRef.current) {
+        clearTimeout(sessionSwitchTimerRef.current)
+        sessionSwitchTimerRef.current = setTimeout(() => { sessionSwitchRef.current = false }, SETTLE_TIMEOUT)
       }
     })
     observer.observe(content)

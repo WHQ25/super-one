@@ -384,11 +384,16 @@ export class AgentService {
       if (pending) {
         runtime = mergeClaudeRuntimes(runtime, { ...pending, sessionId: realSid, session: event.session })
       }
+      const existingRuntime = this.claudeRuntimes.get(realSid)
       const msgSnapshot = (msgs: ChatMessage[]) => msgs.map((m) => ({ id: m.id, role: m.role, status: m.status, contentLen: JSON.stringify(m.content).length }))
-      trace('persist.debug', 'session_init_merge', {
+      trace('session.lifecycle', 'session_init_merge', {
         realSid,
+        draftSessionId: event.draftSessionId,
+        pendingKey,
+        existingRuntimeMsgCount: existingRuntime?.messages.length ?? 0,
         shouldMergeTrackedRuntime,
         hasPending: !!pending,
+        hasParkedPending: !!parkedPending,
         trackedFromSid: trackedRekey?.fromSessionId,
         runtimeMsgs: msgSnapshot(runtime.messages),
         pendingMsgs: pending ? msgSnapshot(pending.messages) : null,
@@ -1474,6 +1479,14 @@ export class AgentService {
       const agent = this.getAgent(projectPath)
       if (!agent.isReady()) throw new Error('Agent not initialized')
       const sessionId = agent.getSessionId() || undefined
+      trace('session.lifecycle', 'ipc_sendMessage', {
+        projectPath,
+        agentSessionId: sessionId ?? '(none)',
+        hasBridge: !!(agent as any).bridge,
+        isStreaming: agent.isStreaming(),
+        pendingRuntimeKeys: [...this.pendingClaudeRuntimes.keys()],
+        runtimeKeys: [...this.claudeRuntimes.keys()].slice(0, 10),
+      })
       const userMessage = this.appendClaudeUserMessage(projectPath, request, 'local', sessionId)
       this.trackClaudeSessionRekey(projectPath, sessionId, userMessage.id)
       await agent.sendMessage(request)
@@ -1532,6 +1545,13 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string) => {
       const agent = this.getAgent(projectPath)
+      const oldSessionId = agent.getSessionId()
+      trace('session.lifecycle', 'ipc_resetSession', {
+        projectPath,
+        oldSessionId: oldSessionId || '(none)',
+        runtimeKeys: [...this.claudeRuntimes.keys()].slice(0, 10),
+        pendingRuntimeKeys: [...this.pendingClaudeRuntimes.keys()],
+      })
       await agent.resetSession()
       agent.applyPreferences()
       return { permissionMode: agent.getCurrentPermissionMode(), sandboxInfo: agent.getCurrentSandboxInfo() }
@@ -1559,6 +1579,14 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.MCP_SERVER_STATUS, async (_event, projectPath: string) => {
       return this.getAgent(projectPath).getMcpServerStatus()
+    })
+
+    ipcMain.handle(AgentIpcChannels.GET_CONTEXT_USAGE, async (_event, projectPath: string) => {
+      return this.getAgent(projectPath).getContextUsage()
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_RELOAD, async (_event, projectPath: string) => {
+      return this.getAgent(projectPath).reloadPlugins()
     })
 
     ipcMain.handle(AgentIpcChannels.LIST_DIRECTORY, async (_event, projectPath: string, relativePath: string) => {
@@ -2064,6 +2092,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.REWIND_CONVERSATION)
     ipcMain.removeHandler(AgentIpcChannels.GET_SESSION_ID)
     ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_STATUS)
+    ipcMain.removeHandler(AgentIpcChannels.GET_CONTEXT_USAGE)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_RELOAD)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
     ipcMain.removeHandler(AgentIpcChannels.FIND_LINE_NUMBER)
     ipcMain.removeHandler(AgentIpcChannels.SEARCH_FILES)

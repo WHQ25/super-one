@@ -112,7 +112,6 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
   const flushCollab = () => { if (collabGroup.length > 0) { segments.push({ kind: 'collab', items: collabGroup }); collabGroup = [] } }
   for (let i = 0; i < codex.items.length; i++) {
     const item = codex.items[i]
-    if (item.type === 'reasoning' && !item.text) continue
     if (item.type === 'collab_tool_call' && item.tool === 'spawnAgent') {
       flushCmd()
       collabGroup.push(item)

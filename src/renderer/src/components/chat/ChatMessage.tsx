@@ -331,6 +331,34 @@ export function CompactingIndicator() {
   )
 }
 
+export function ApiRetryIndicator({ info }: { info: { attempt: number; maxRetries: number; delayMs: number } }) {
+  const [remaining, setRemaining] = useState(info.delayMs)
+  const startRef = useRef(Date.now())
+
+  useEffect(() => {
+    startRef.current = Date.now()
+    setRemaining(info.delayMs)
+    if (info.delayMs <= 0) return
+    const id = setInterval(() => {
+      const left = Math.max(0, info.delayMs - (Date.now() - startRef.current))
+      setRemaining(left)
+      if (left <= 0) clearInterval(id)
+    }, 1000)
+    return () => clearInterval(id)
+  }, [info.attempt, info.delayMs])
+
+  const secs = Math.ceil(remaining / 1000)
+
+  return (
+    <div className="my-0.5 flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-xs">
+      <Loader2 className="size-3 shrink-0 animate-spin text-amber-400" />
+      <span className="font-medium text-amber-400">
+        Retrying API request ({info.attempt}/{info.maxRetries})… {secs > 0 && <>{secs}s</>}
+      </span>
+    </div>
+  )
+}
+
 function formatResetTime(resetsAt?: number): string | null {
   if (!resetsAt) return null
   const date = new Date(resetsAt * 1000)

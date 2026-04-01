@@ -136,11 +136,9 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
         <span className="font-medium text-foreground">
           {isRunning && !expanded ? <>{display.label === 'Bash' ? 'Running' : display.label === 'Read' ? 'Reading' : 'Searching'}…</> : display.label}
         </span>
-        {(!expanded) && (
-          action?.type === 'read' && action.path
-            ? <FileChip name={action.path.split('/').pop() || ''} title={display.summary} filePath={action.path} />
-            : <span className="min-w-0 truncate text-muted-foreground">{display.summary}</span>
-        )}
+        {action?.type === 'read' && action.path
+          ? <FileChip name={action.path.split('/').pop() || ''} title={display.summary} filePath={action.path} />
+          : (!expanded) && <span className="min-w-0 truncate text-muted-foreground">{display.summary}</span>}
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
       {expanded && (
@@ -368,6 +366,7 @@ export function renderCodexItem(
           key={`${item.id}-${index}`}
           text={item.text}
           blockDone={!isStreaming || !!nextItem}
+          showContent={item.text.trim().length > 0}
         />
       )
 

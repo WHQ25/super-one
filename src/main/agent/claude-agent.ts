@@ -4,7 +4,7 @@ import { join, resolve } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentEvent, AgentInfo, ChatMessage, ListDirEntry, McpServerInfo, PermissionMode, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
+import type { AgentEvent, AgentInfo, ChatMessage, ContextUsageInfo, ListDirEntry, McpServerInfo, PermissionMode, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
 import { MessageBridge } from './message-bridge'
 import { createSessionQuery, buildUserMessage } from './claude-query'
@@ -533,6 +533,32 @@ export class ClaudeAgent {
     await this.resetSession()
     this.createSession(prevSessionId || undefined)
     log.info(`[MCP] refreshSession — session recreated (resume=${prevSessionId || 'none'})`)
+  }
+
+  async getContextUsage(): Promise<ContextUsageInfo | null> {
+    if (!this.sessionQuery) return null
+    try {
+      const usage = await this.sessionQuery.getContextUsage()
+      return {
+        categories: usage.categories.map((c) => ({ name: c.name, tokens: c.tokens, color: c.color })),
+        totalTokens: usage.totalTokens,
+        maxTokens: usage.maxTokens,
+        percentage: usage.percentage,
+        model: usage.model,
+      }
+    } catch {
+      return null
+    }
+  }
+
+  async reloadPlugins(): Promise<boolean> {
+    if (!this.sessionQuery) return false
+    try {
+      await this.sessionQuery.reloadPlugins()
+      return true
+    } catch {
+      return false
+    }
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {

@@ -21,6 +21,7 @@ export interface SessionQueryOptions {
   abortController?: AbortController
   additionalDirectories?: string[]
   env?: Record<string, string | undefined>
+  taskBudget?: number
 }
 
 export interface SessionQueryHandle {
@@ -72,6 +73,8 @@ export function createSessionQuery(
         ? { enabled: true, autoAllowBashIfSandboxed: options.sandboxInfo.autoAllowBash }
         : undefined,
       enableFileCheckpointing: true,
+      agentProgressSummaries: true,
+      taskBudget: options.taskBudget ? { total: options.taskBudget } : undefined,
       extraArgs: { 'replay-user-messages': null },
       settingSources: ['user', 'project', 'local'],
       resume: options.resume,
@@ -459,6 +462,13 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               type: 'elicitation_complete',
               mcpServerName: sys.mcp_server_name ?? '',
               elicitationId: sys.elicitation_id ?? '',
+            })
+          } else if (sys.subtype === 'api_retry') {
+            emit({
+              type: 'api_retry',
+              attempt: sys.attempt ?? 1,
+              maxRetries: sys.max_retries ?? 3,
+              delayMs: sys.retry_delay_ms ?? 0,
             })
           } else if (sys.subtype === 'local_command_output') {
             const text = typeof sys.content === 'string' ? sys.content : ''

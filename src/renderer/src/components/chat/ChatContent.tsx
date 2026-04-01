@@ -6,7 +6,7 @@ import { ArrowDown, GitFork, PenLine, Smartphone, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, RateLimitIndicator, parseCompactMarker } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, RateLimitIndicator, ApiRetryIndicator, parseCompactMarker } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -28,13 +28,14 @@ interface ChatContentProps {
 
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, externalHistory = false }: ChatContentProps) {
   const {
-    messages, isCompacting, rateLimitInfo, pendingPlanApproval,
+    messages, isCompacting, rateLimitInfo, apiRetry, pendingPlanApproval,
     showHistory, historySessionId, hasActiveSession, worktreeRemoved,
     sessionStatus, lastAssistantMessageId, queuedMessages,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     isCompacting: s.isCompacting,
     rateLimitInfo: s.rateLimitInfo,
+    apiRetry: s.apiRetry,
     pendingPlanApproval: s.pendingPlanApproval,
     showHistory: s.showHistory,
     historySessionId: s._activeSessionId,
@@ -209,6 +210,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                     </div>
                   ))}
                   {isCompacting && <CompactingIndicator />}
+                  {apiRetry && <ApiRetryIndicator info={apiRetry} />}
                   {showRateLimitIndicator && rateLimitInfo && (
                     <RateLimitIndicator
                       info={rateLimitInfo}

@@ -60,6 +60,12 @@ const agentAPI = {
   getMcpServerStatus: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_SERVER_STATUS, projectPath),
 
+  getContextUsage: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_CONTEXT_USAGE, projectPath),
+
+  reloadPlugins: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_RELOAD, projectPath),
+
   listDirectory: (projectPath: string, relativePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.LIST_DIRECTORY, projectPath, relativePath),
 

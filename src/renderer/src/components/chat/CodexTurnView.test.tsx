@@ -125,6 +125,36 @@ describe('CodexTurnView', () => {
     expect(screen.getByText('working')).toBeTruthy()
   })
 
+  it('renders empty codex reasoning as a non-expandable status block', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'reasoning-1',
+                  type: 'reasoning',
+                  text: '',
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    const label = screen.getByText('Thought')
+
+    expect(label).toBeTruthy()
+    expect(label.parentElement?.className).not.toContain('cursor-pointer')
+  })
+
   it('renders recent codex text immediately when not streaming', () => {
     render(
       <CodexTurnView
@@ -179,11 +209,13 @@ describe('CodexTurnView', () => {
       />,
     )
 
+    expect(screen.getByText('file.ts')).toBeTruthy()
     expect(screen.getByText('Reading…')).toBeTruthy()
     expect(screen.queryByText(/cat src\/file\.ts/)).toBeNull()
 
     fireEvent.click(screen.getByText('Reading…'))
 
+    expect(screen.getByText('file.ts')).toBeTruthy()
     expect(screen.getByText(/cat src\/file\.ts/)).toBeTruthy()
   })
 

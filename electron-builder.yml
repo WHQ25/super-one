@@ -8,18 +8,18 @@ files:
   - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-linux"
   - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/arm64-linux"
   - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-win32"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/arm64-win32"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/audio-capture/x64-linux"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/audio-capture/arm64-linux"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/audio-capture/x64-win32"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/audio-capture/arm64-win32"
+  - "!node_modules/@img/sharp-*"
 
 asarUnpack:
   - "**/*.node"
   - "node_modules/@anthropic-ai/claude-agent-sdk/cli.js"
   - "node_modules/@anthropic-ai/claude-agent-sdk/vendor/**"
-  - "node_modules/@openai/codex/**"
-  - "node_modules/@openai/codex-darwin-arm64/**"
-  - "node_modules/@openai/codex-darwin-x64/**"
-  - "node_modules/@openai/codex-linux-x64/**"
-  - "node_modules/@openai/codex-linux-arm64/**"
-  - "node_modules/@openai/codex-win32-x64/**"
-  - "node_modules/@openai/codex-win32-arm64/**"
+  - "node_modules/@openai/codex*/**"
 
 publish:
   provider: github
@@ -28,10 +28,9 @@ publish:
 mac:
   target:
     - target: dmg
-      arch: [universal]
+      arch: [x64, arm64]
     - target: zip
-      arch: [universal]
-  x64ArchFiles: "**/app.asar.unpacked/**"
+      arch: [x64, arm64]
   category: public.app-category.developer-tools
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist

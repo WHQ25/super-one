@@ -454,3 +454,8 @@ body {
 .mention-chip-wrapper {
   display: inline;
 }
+
+.paste-chip-wrapper {
+  display: block;
+  margin: 4px 0;
+}

@@ -9,6 +9,9 @@ import { SubagentBlock } from './SubagentBlock'
 import { CodexTurnView } from './CodexTurnView'
 import { AttachmentBar } from './AttachmentBar'
 import { FileIcon } from '@/components/ui/FileIcon'
+import { FileText } from 'lucide-react'
+import { PasteChipPreview } from './PasteChipPreview'
+import { PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import {
@@ -237,44 +240,70 @@ function parseUserMentions(text: string) {
   return { mentions, rest }
 }
 
+function LongTextChip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const lineCount = text.split('\n').length
+  const preview = text.slice(0, 60).replace(/\n/g, ' ')
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-1 flex w-full items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-left text-xs text-white/80 transition-colors hover:bg-white/10"
+      >
+        <FileText className="size-3.5 shrink-0" />
+        <span className="min-w-0 truncate">{preview}</span>
+        <span className="ml-auto shrink-0 text-white/50">{lineCount} lines</span>
+      </button>
+      <PasteChipPreview open={open} onOpenChange={setOpen} text={text} lineCount={lineCount} />
+    </>
+  )
+}
+
+function RestContent({ rest }: { rest: string }) {
+  const lineCount = rest.split('\n').length
+  if (lineCount >= PASTE_CHIP_LINE_THRESHOLD || rest.length >= PASTE_CHIP_CHAR_THRESHOLD) return <LongTextChip text={rest} />
+  return <span className="whitespace-pre-wrap">{rest}</span>
+}
+
 export function UserTextBlock({ text }: { text: string }) {
   const { mentions, rest } = parseUserMentions(text)
-  if (mentions.length === 0) return <span className="whitespace-pre-wrap">{text}</span>
+
+  if (mentions.length === 0) return <RestContent rest={text} />
 
   const displayName = (v: string) => v.replace(/\/$/, '').split('/').pop() || v
 
   return (
     <span>
-      {mentions.length > 0 && (
-        <span className="mb-1 flex flex-wrap gap-1">
-          {mentions.map((m) => (
-            <span
-              key={m.value}
-              className={cn(
-                'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',
-                m.kind === 'agent'
-                  ? 'border-purple-400/40 bg-purple-400/15 text-purple-300'
-                  : 'border-white/15 bg-white/10 text-white/90'
-              )}
-            >
-              {m.kind === 'agent' ? (
-                <span className="font-medium">@{displayName(m.value)}</span>
-              ) : m.kind === 'directory' ? (
-                <>
-                  <Folder className="size-3.5 shrink-0 text-blue-400" />
-                  <span>{displayName(m.value)}</span>
-                </>
-              ) : (
-                <>
-                  <FileIcon name={displayName(m.value)} size={14} />
-                  <span>{displayName(m.value)}</span>
-                </>
-              )}
-            </span>
-          ))}
-        </span>
-      )}
-      {rest && <span className="whitespace-pre-wrap">{rest}</span>}
+      <span className="mb-1 flex flex-wrap gap-1">
+        {mentions.map((m) => (
+          <span
+            key={m.value}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',
+              m.kind === 'agent'
+                ? 'border-purple-400/40 bg-purple-400/15 text-purple-300'
+                : 'border-white/15 bg-white/10 text-white/90'
+            )}
+          >
+            {m.kind === 'agent' ? (
+              <span className="font-medium">@{displayName(m.value)}</span>
+            ) : m.kind === 'directory' ? (
+              <>
+                <Folder className="size-3.5 shrink-0 text-blue-400" />
+                <span>{displayName(m.value)}</span>
+              </>
+            ) : (
+              <>
+                <FileIcon name={displayName(m.value)} size={14} />
+                <span>{displayName(m.value)}</span>
+              </>
+            )}
+          </span>
+        ))}
+      </span>
+      {rest && <RestContent rest={rest} />}
     </span>
   )
 }

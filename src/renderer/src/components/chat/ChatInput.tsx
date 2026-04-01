@@ -12,6 +12,7 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { MentionNode } from './mention-node'
+import { PasteChipNode, PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { SlashDecoration } from './slash-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
 import type { MentionNodeAttrs } from './mention-node'
@@ -105,6 +106,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [mentionActive, setMentionActive] = useState(false)
     const [mentionIndex, setMentionIndex] = useState(0)
     const mentionRef = useRef<MentionPopupHandle>(null)
+    const [hasPasteChips, setHasPasteChips] = useState(false)
 
     const mentionInfoRef = useRef<{ atPos: number; query: string } | null>(null)
     const mentionActiveRef = useRef(mentionActive)
@@ -135,7 +137,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const isStreaming = status === 'streaming'
     const activeProviderForResources = sessionProvider ?? preferredProvider
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
-    const hasContent = text.trim().length > 0 || attachments.length > 0 || mentions.length > 0
+    const hasContent = text.trim().length > 0 || attachments.length > 0 || mentions.length > 0 || hasPasteChips
     const canSend = hasContent && !isRemoteLocked
     const showAgentMentions = activeProviderForResources === 'claude'
 
@@ -274,19 +276,25 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const serializeAndClear = useCallback(() => {
       const ed = editorRef.current
-      let serialized = ''
+      const segments: Array<{ text: string; isPaste: boolean }> = []
+      let current = ''
       if (ed) {
         ed.state.doc.descendants((node) => {
           if (node.isText) {
-            serialized += node.text ?? ''
+            current += node.text ?? ''
           } else if (node.type.name === 'mention') {
-            serialized += `@${(node.attrs as MentionNodeAttrs).value}`
-          } else if (node.isBlock && serialized.length > 0) {
-            serialized += '\n'
+            current += `@${(node.attrs as MentionNodeAttrs).value}`
+          } else if (node.type.name === 'pasteChip') {
+            if (current.trim()) segments.push({ text: current.trim(), isPaste: false })
+            current = ''
+            segments.push({ text: (node.attrs as { text: string }).text, isPaste: true })
+          } else if (node.isBlock && current.length > 0) {
+            current += '\n'
           }
         })
-      } else {
-        serialized = text
+        if (current.trim()) segments.push({ text: current.trim(), isPaste: false })
+      } else if (text.trim()) {
+        segments.push({ text: text.trim(), isPaste: false })
       }
       setText('')
       ed?.commands.clearContent()
@@ -294,12 +302,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       setMentionActive(false)
       setMentionIndex(0)
       mentionInfoRef.current = null
-      return serialized.trim()
+      return segments
     }, [text])
 
     const handleSend = useCallback(() => {
       if (!canSend) return
-      sendMessage(serializeAndClear())
+      const segments = serializeAndClear()
+      const fullText = segments.map((s) => s.text).join('\n')
+      sendMessage(fullText, segments)
     }, [canSend, sendMessage, serializeAndClear])
 
     useImperativeHandle(ref, () => ({ send: handleSend }), [handleSend])
@@ -571,6 +581,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         }),
         Placeholder.configure({ placeholder: () => placeholderTextRef.current }),
         MentionNode,
+        PasteChipNode,
         SlashDecoration.configure({ slashCommands: activeSlashCommands }),
         PromptSuggestion,
       ],
@@ -583,6 +594,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           return handleKeyDownRef.current(event)
         },
         handlePaste: (_view, event) => {
+          const plainText = event.clipboardData?.getData('text/plain')
+          if (plainText && plainText.trim()) {
+            const lineCount = plainText.split('\n').length
+            if (lineCount >= PASTE_CHIP_LINE_THRESHOLD || plainText.length >= PASTE_CHIP_CHAR_THRESHOLD) {
+              event.preventDefault()
+              const preview = plainText.slice(0, 60).replace(/\n/g, ' ')
+              editorRef.current?.chain().focus().insertContent([
+                { type: 'pasteChip', attrs: { text: plainText, lineCount, preview } },
+                { type: 'paragraph' },
+              ]).run()
+              return true
+            }
+          }
           const items = event.clipboardData?.items
           if (!items) return false
           const attachableFiles: File[] = []
@@ -614,11 +638,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         }
 
         const editorMentions: MentionNodeAttrs[] = []
+        let pasteChipCount = 0
         ed.state.doc.descendants((node) => {
           if (node.type.name === 'mention') {
             editorMentions.push(node.attrs as MentionNodeAttrs)
+          } else if (node.type.name === 'pasteChip') {
+            pasteChipCount++
           }
         })
+        setHasPasteChips(pasteChipCount > 0)
         const editorValues = new Set(editorMentions.map((m) => m.value))
         for (const m of mentionsRef.current) {
           if (!editorValues.has(m.value)) {

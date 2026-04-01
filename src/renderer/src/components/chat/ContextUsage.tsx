@@ -3,7 +3,7 @@ import { DEFAULT_CONTEXT_WINDOW } from '../../../../shared/agent-types'
 
 const EXTENDED_CONTEXT_WINDOW = 1_000_000
 
-function resolveContextWindow(modelName: string): number {
+function resolveClaudeContextWindow(modelName: string): number {
   return /\b1[Mm]\b/.test(modelName) ? EXTENDED_CONTEXT_WINDOW : DEFAULT_CONTEXT_WINDOW
 }
 
@@ -14,15 +14,24 @@ function formatTokens(n: number): string {
 
 export function ContextUsage() {
   const contextTokens = useActiveSession((s) => s.contextTokens)
+  const contextWindowFromSession = useActiveSession((s) => s.contextWindow)
   const selectedModel = useActiveSession((s) => s.selectedModel)
+  const preferredProvider = useActiveSession((s) => s.preferredProvider)
+  const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const totalCostUsd = useActiveSession((s) => s.totalCostUsd)
   const availableModels = useChatStore((s) => s.availableModels)
 
+  const activeProvider = sessionProvider ?? preferredProvider
   const currentModel = availableModels.find((m) => m.id === selectedModel)
   const modelName = currentModel?.name ?? currentModel?.description ?? ''
-  const contextWindow = resolveContextWindow(modelName)
-  const pct = Math.min(contextTokens / contextWindow, 1)
-  const exceeded = contextTokens > contextWindow
+  const contextWindow =
+    contextWindowFromSession && contextWindowFromSession > 0
+      ? contextWindowFromSession
+      : activeProvider === 'claude'
+        ? resolveClaudeContextWindow(modelName)
+        : null
+  const pct = contextWindow ? Math.min(contextTokens / contextWindow, 1) : 0
+  const exceeded = contextWindow ? contextTokens > contextWindow : false
   const radius = 5
   const circumference = 2 * Math.PI * radius
   const usedArc = circumference * pct
@@ -58,7 +67,10 @@ export function ContextUsage() {
       </svg>
 
       <div className="pointer-events-none absolute bottom-full right-0 mb-2 hidden whitespace-nowrap rounded bg-muted px-2 py-1.5 text-[10px] leading-relaxed text-foreground shadow-lg group-hover:block">
-        <div>Context: {formatTokens(contextTokens)} / {formatTokens(contextWindow)} ({(pct * 100).toFixed(0)}%)</div>
+        <div>
+          Context: {formatTokens(contextTokens)}
+          {contextWindow ? ` / ${formatTokens(contextWindow)} (${(pct * 100).toFixed(0)}%)` : ''}
+        </div>
         {exceeded && <div className="text-red-500">Exceeds current model limit</div>}
         {totalCostUsd > 0 && <div>Cost: ${totalCostUsd.toFixed(4)}</div>}
       </div>

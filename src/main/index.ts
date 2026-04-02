@@ -227,7 +227,8 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
-      zoomFactor: 1
+      zoomFactor: 1,
+      webviewTag: true,
     }
   })
 
@@ -1403,6 +1404,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_IFRAME_READY, (_e, appId: string) => {
     notifyMiniAppReady(appId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_GET_PRELOAD_PATH, () => {
+    return join(__dirname, '../preload/miniapp-preload.js')
   })
 }
 

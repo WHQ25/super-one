@@ -690,6 +690,9 @@ const miniappAPI = {
     ipcRenderer.on(AgentIpcChannels.MINIAPP_TOOL_CALL, handler)
     return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_TOOL_CALL, handler)
   },
+
+  getPreloadPath: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GET_PRELOAD_PATH) as Promise<string>,
 }
 
 if (process.contextIsolated) {

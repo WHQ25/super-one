@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
-import { MiniAppFrame } from '@/components/miniapp/MiniAppFrame'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { MiniAppDevFrame, type MiniAppDevFrameHandle } from '@/components/miniapp/MiniAppDevFrame'
+import { MiniAppBuilder } from '@/components/canvas/MiniAppBuilder'
 import type { MiniAppEntry } from '../../../../shared/miniapp-types'
 import { useAppStore } from '@/stores/app'
-import { X } from 'lucide-react'
+import { RotateCw, X, Bug } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface OpenApp {
@@ -15,10 +16,15 @@ export function CanvasPanel() {
   const [openApps, setOpenApps] = useState<OpenApp[]>([])
   const [activeAppId, setActiveAppId] = useState<string | null>(null)
   const currentFolder = useAppStore((s) => s.currentFolder)
+  const devFrameRefs = useRef<Map<string, MiniAppDevFrameHandle>>(new Map())
 
-  useEffect(() => {
+  const refreshApps = useCallback(() => {
     window.miniapp.list().then(setApps).catch(console.error)
   }, [])
+
+  useEffect(() => {
+    refreshApps()
+  }, [refreshApps])
 
   const openApp = useCallback(
     async (entry: MiniAppEntry) => {
@@ -37,6 +43,7 @@ export function CanvasPanel() {
   const closeApp = useCallback(
     async (appId: string) => {
       await window.miniapp.close(appId)
+      devFrameRefs.current.delete(appId)
       setOpenApps((prev) => {
         const next = prev.filter((a) => a.appId !== appId)
         if (activeAppId === appId) {
@@ -48,29 +55,35 @@ export function CanvasPanel() {
     [activeAppId],
   )
 
+  const reloadActive = useCallback(() => {
+    if (activeAppId) devFrameRefs.current.get(activeAppId)?.reload()
+  }, [activeAppId])
+
+  const openDevToolsActive = useCallback(() => {
+    if (activeAppId) devFrameRefs.current.get(activeAppId)?.openDevTools()
+  }, [activeAppId])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!activeAppId) return
+      const isMod = e.metaKey || e.ctrlKey
+      if (isMod && e.key === 'r') {
+        e.preventDefault()
+        e.stopPropagation()
+        reloadActive()
+      }
+      if (isMod && e.shiftKey && e.key === 'i') {
+        e.preventDefault()
+        e.stopPropagation()
+        openDevToolsActive()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [activeAppId, reloadActive, openDevToolsActive])
+
   if (openApps.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-6 p-8">
-        <h2 className="text-lg font-medium">Mini-Apps</h2>
-        {apps.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            No apps installed. Add apps to ~/.superone/apps/
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {apps.map((app) => (
-              <button
-                key={app.id}
-                onClick={() => openApp(app)}
-                className="bg-card hover:bg-accent flex flex-col items-center gap-2 rounded-lg border p-4 transition-colors"
-              >
-                <span className="text-sm font-medium">{app.manifest.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    )
+    return <MiniAppBuilder apps={apps} onOpenApp={openApp} onRefresh={refreshApps} />
   }
 
   return (
@@ -100,11 +113,31 @@ export function CanvasPanel() {
             </span>
           </button>
         ))}
+        <div className="ml-auto flex items-center gap-0.5">
+          <button
+            onClick={reloadActive}
+            className="text-muted-foreground hover:text-foreground rounded p-1"
+            title="Reload (Cmd+R)"
+          >
+            <RotateCw className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={openDevToolsActive}
+            className="text-muted-foreground hover:text-foreground rounded p-1"
+            title="DevTools (Cmd+Shift+I)"
+          >
+            <Bug className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
       <div className="relative flex-1">
         {openApps.map((app) => (
-          <MiniAppFrame
+          <MiniAppDevFrame
             key={app.appId}
+            ref={(handle) => {
+              if (handle) devFrameRefs.current.set(app.appId, handle)
+              else devFrameRefs.current.delete(app.appId)
+            }}
             appId={app.appId}
             className={cn(
               'absolute inset-0',

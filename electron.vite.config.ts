@@ -19,6 +19,10 @@ export default defineConfig(({ mode }) => {
     build: {
       externalizeDeps: false,
       rollupOptions: {
+        input: {
+          index: resolve('src/preload/index.ts'),
+          'miniapp-preload': resolve('src/preload/miniapp-preload.ts'),
+        },
         output: {
           format: 'cjs',
           entryFileNames: '[name].js'

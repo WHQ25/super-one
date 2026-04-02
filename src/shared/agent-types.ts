@@ -1171,6 +1171,7 @@ export const AgentIpcChannels = {
   MINIAPP_TOOL_RESULT: 'miniapp:tool-result',
   MINIAPP_FS_REQUEST: 'miniapp:fs-request',
   MINIAPP_IFRAME_READY: 'miniapp:iframe-ready',
+  MINIAPP_GET_PRELOAD_PATH: 'miniapp:get-preload-path',
 } as const
 
 export interface FileSearchResult {

@@ -217,6 +217,7 @@ interface MiniAppAPI {
   fsRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   iframeReady(appId: string): Promise<void>
   onToolCall(callback: (call: MiniAppToolCallRequest) => void): () => void
+  getPreloadPath(): Promise<string>
 }
 
 declare global {

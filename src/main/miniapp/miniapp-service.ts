@@ -64,6 +64,97 @@ export async function readManifest(appDir: string): Promise<MiniAppManifest | nu
   }
 }
 
+export interface CreateMiniAppOptions {
+  name: string
+  projectDir: string
+  outputDir?: string
+  additionalDirs?: string[]
+}
+
+const DEV_OUTPUT_DIR = 'dist'
+
+export function getDevAppBasePath(projectDir: string): string {
+  return join(projectDir, DEV_OUTPUT_DIR)
+}
+
+export async function createMiniApp(opts: CreateMiniAppOptions): Promise<MiniAppEntry> {
+  const outputPath = join(opts.projectDir, opts.outputDir ?? DEV_OUTPUT_DIR)
+  await mkdir(outputPath, { recursive: true })
+
+  const manifest: MiniAppManifest = {
+    name: opts.name,
+    workingDir: { scope: 'project', path: '.' },
+    permissions: { fs: 'project' },
+    tools: [
+      {
+        name: 'show_message',
+        description: `Display a message in the ${opts.name} app`,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', description: 'The message to display' },
+          },
+          required: ['text'],
+        },
+      },
+    ],
+  }
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${opts.name}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; padding: 24px; background: #fafaf9; color: #1c1917; }
+    .dark body { background: #1c1917; color: #fafaf9; }
+    h1 { font-size: 20px; margin-bottom: 16px; }
+    #messages { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+    .msg { background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; padding: 12px; }
+    .dark .msg { background: #292524; border-color: #44403c; }
+    button { background: #f97316; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; }
+    button:hover { background: #ea580c; }
+    #files { margin-top: 16px; font-size: 13px; color: #78716c; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>${opts.name}</h1>
+  <div id="messages"><p style="color:#a8a29e">Waiting for agent messages...</p></div>
+  <button id="ask-btn">Ask Agent to Greet</button>
+  <div id="files"></div>
+  <script>
+    superone.tools.handle('show_message', function(args) {
+      var container = document.getElementById('messages');
+      if (container.querySelector('p')) container.innerHTML = '';
+      var div = document.createElement('div');
+      div.className = 'msg';
+      div.textContent = args.text;
+      container.appendChild(div);
+      return { success: true, displayed: args.text };
+    });
+
+    superone.fs.readDir('.').then(function(entries) {
+      document.getElementById('files').textContent = 'Files: ' + entries.map(function(e) { return e.name; }).join(', ');
+    }).catch(function() {});
+
+    document.getElementById('ask-btn').onclick = function() {
+      superone.agent.sendPrompt('Say hello using the ${opts.name.toLowerCase().replace(/\\s+/g, '-')}__show_message tool');
+    };
+  </script>
+</body>
+</html>`
+
+  await writeFile(join(outputPath, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8')
+  await writeFile(join(outputPath, 'index.html'), html, 'utf-8')
+
+  for (const dir of opts.additionalDirs ?? []) {
+    await mkdir(join(opts.projectDir, 'additionalDirs', dir), { recursive: true })
+  }
+
+  return { id: '__dev__', manifest, basePath: outputPath }
+}
+
 const appBasePathCache = new Map<string, string>()
 
 export function getAppBasePath(appId: string): string {

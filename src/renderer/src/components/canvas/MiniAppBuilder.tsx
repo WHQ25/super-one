@@ -20,7 +20,7 @@ export function MiniAppBuilder({ apps, onOpenApp, onRefresh }: MiniAppBuilderPro
       <h2 className="text-lg font-medium">Mini-Apps</h2>
       {apps.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          No apps installed. Add apps to ~/.superone/apps/
+          No apps installed. Ask the agent to create one for you.
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

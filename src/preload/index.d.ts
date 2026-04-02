@@ -39,7 +39,7 @@ interface AppAPI {
   platform: NodeJS.Platform
   connectClaude(): Promise<ConnectResult>
   getStartupData(): Promise<StartupData>
-  selectFolder(): Promise<string | null>
+  selectFolder(defaultPath?: string): Promise<string | null>
   getRecentFolders(): Promise<RecentFolder[]>
   getMediaServerPort(): Promise<number>
   addRecentFolder(folderPath: string): Promise<boolean>
@@ -218,6 +218,8 @@ interface MiniAppAPI {
   iframeReady(appId: string): Promise<void>
   onToolCall(callback: (call: MiniAppToolCallRequest) => void): () => void
   getPreloadPath(): Promise<string>
+  detectDev(projectDir: string): Promise<MiniAppEntry | null>
+  onDevAppReady(callback: (projectDir: string) => void): () => void
 }
 
 declare global {

@@ -105,8 +105,8 @@ const appAPI = {
   getStartupData: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_STARTUP_DATA),
 
-  selectFolder: () =>
-    ipcRenderer.invoke(AgentIpcChannels.SELECT_FOLDER),
+  selectFolder: (defaultPath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SELECT_FOLDER, defaultPath),
 
   getRecentFolders: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_RECENT_FOLDERS),
@@ -693,6 +693,15 @@ const miniappAPI = {
 
   getPreloadPath: () =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GET_PRELOAD_PATH) as Promise<string>,
+
+  detectDev: (projectDir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DETECT_DEV, projectDir) as Promise<MiniAppEntry | null>,
+
+  onDevAppReady: (callback: (projectDir: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, projectDir: string) => callback(projectDir)
+    ipcRenderer.on('miniapp:dev-app-ready', handler)
+    return () => ipcRenderer.removeListener('miniapp:dev-app-ready', handler)
+  },
 }
 
 if (process.contextIsolated) {

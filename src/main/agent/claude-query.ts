@@ -96,7 +96,7 @@ export function createSessionQuery(
         preset: 'claude_code',
         append: 'You have a powerful `show_widget` tool (via the `widget` MCP server) for rendering visual content inline — diagrams, charts, dashboards, data tables, interactive widgets, illustrations, and any visual explanation. Prefer show_widget over plain text/markdown when the user asks for something visual, data-heavy, or interactive. For mermaid diagrams (ERD, sequence, flowchart, etc.), use fenced ```mermaid code blocks instead — the host app renders them natively.',
       },
-      mcpServers: { 'widget': createGenerativeUiMcpServer(), 'canvas': getCanvasMcpProxy() },
+      mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': getCanvasMcpProxy() },
     },
   })
 

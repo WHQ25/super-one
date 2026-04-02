@@ -8,7 +8,7 @@ import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setWorkingDirectory, clearWorkingDirectory, handleFsRequest } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setWorkingDirectory, clearWorkingDirectory, handleFsRequest, getDevAppBasePath } from './miniapp/miniapp-service'
 import { generateBridgeScript } from './miniapp/miniapp-bridge'
 import { initCanvasMcpProxy, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady } from './canvas/canvas-mcp-proxy'
 import { query } from '@anthropic-ai/claude-agent-sdk'
@@ -293,9 +293,10 @@ function registerIpcHandlers(): void {
   })
 
   // App-level IPC handlers
-  ipcMain.handle(AgentIpcChannels.SELECT_FOLDER, async () => {
+  ipcMain.handle(AgentIpcChannels.SELECT_FOLDER, async (_e, defaultPath?: string) => {
     const result = await dialog.showOpenDialog(getMainWindow(), {
       properties: ['openDirectory', 'createDirectory'],
+      ...(defaultPath ? { defaultPath } : {}),
     })
     return result.canceled ? null : result.filePaths[0]
   })
@@ -1408,6 +1409,15 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_GET_PRELOAD_PATH, () => {
     return join(__dirname, '../preload/miniapp-preload.js')
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DETECT_DEV, async (_e, projectDir: string) => {
+    const basePath = getDevAppBasePath(projectDir)
+    const manifest = await readManifest(basePath)
+    if (!manifest) return null
+    const entry = { id: '__dev__', manifest, basePath }
+    cacheAppBasePath('__dev__', basePath)
+    return entry
   })
 }
 

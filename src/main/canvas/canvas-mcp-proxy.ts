@@ -6,6 +6,7 @@ import { BrowserWindow } from 'electron'
 import log from '../logger'
 import type { MiniAppToolDefinition, MiniAppToolCallRequest } from '../../shared/miniapp-types'
 import { AgentIpcChannels } from '../../shared/agent-types'
+import { createMiniApp, readManifest, cacheAppBasePath, getDevAppBasePath } from '../miniapp/miniapp-service'
 
 interface PendingCall {
   resolve: (result: unknown) => void
@@ -57,23 +58,65 @@ export function initCanvasMcpProxy(windowGetter: () => BrowserWindow | null): vo
   getMainWindow = windowGetter
 }
 
+function notifyDevAppReady(projectDir: string): void {
+  const win = getMainWindow?.()
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('miniapp:dev-app-ready', projectDir)
+  }
+}
+
 export function getCanvasMcpProxy(): McpSdkServerConfigWithInstance {
   if (!mcpConfig) {
     mcpConfig = createSdkMcpServer({
-      name: 'canvas',
+      name: 'superone',
       version: '1.0.0',
       tools: [
         tool(
-          'canvas:list_apps',
+          'list_apps',
           'List all installed mini-apps available on the canvas. Returns app IDs and names.',
           { verbose: z.boolean().optional().describe('Include full manifest details') },
           async () => {
             const apps = Array.from(registeredTools.keys()).map((name) => {
-              const [appId] = name.split(':')
+              const [appId] = name.split('__')
               return appId
             })
             const uniqueApps = [...new Set(apps)]
             return { content: [{ type: 'text' as const, text: JSON.stringify(uniqueApps) }] }
+          },
+        ),
+        tool(
+          'setup_mini_app_dev',
+          'Initialize a mini-app development environment in the current project directory. Creates a hello scaffold (manifest.json + index.html) inside the output directory (default: dist/), and optional additional directories at the project root. The canvas will automatically detect and render the mini-app after setup.',
+          {
+            name: z.string().describe('Display name for the mini-app'),
+            projectDir: z.string().describe('Absolute path to the project directory'),
+            outputDir: z.string().optional().describe('Relative path from project root for the mini-app scaffold (default: "dist")'),
+            additionalDirs: z.array(z.string()).optional().describe('Additional directory names to create at the project root (e.g. ["test-data", "fixtures"])'),
+          },
+          async ({ name: appName, projectDir, outputDir, additionalDirs }) => {
+            const devBasePath = getDevAppBasePath(projectDir)
+            const existing = await readManifest(devBasePath)
+            if (existing) {
+              cacheAppBasePath('__dev__', devBasePath)
+              notifyDevAppReady(projectDir)
+              return {
+                content: [{ type: 'text' as const, text: JSON.stringify({ status: 'already_exists', name: existing.name, projectDir }) }],
+              }
+            }
+
+            await createMiniApp({
+              name: appName,
+              projectDir,
+              outputDir,
+              additionalDirs,
+            })
+
+            cacheAppBasePath('__dev__', devBasePath)
+            notifyDevAppReady(projectDir)
+
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify({ status: 'created', name: appName, projectDir, outputDir: outputDir ?? 'dist', additionalDirs: additionalDirs ?? [] }) }],
+            }
           },
         ),
       ],
@@ -89,7 +132,7 @@ export function registerAppTools(appId: string, tools: MiniAppToolDefinition[]):
   }
 
   for (const tool of tools) {
-    const namespacedName = `${appId}:${tool.name}`
+    const namespacedName = `${appId}__${tool.name}`
 
     if (registeredTools.has(namespacedName)) {
       log.warn('[canvas-mcp] tool already registered: %s', namespacedName)
@@ -147,7 +190,7 @@ export function registerAppTools(appId: string, tools: MiniAppToolDefinition[]):
 }
 
 export function unregisterAppTools(appId: string): void {
-  const prefix = `${appId}:`
+  const prefix = `${appId}__`
   for (const [name, tool] of registeredTools) {
     if (name.startsWith(prefix)) {
       tool.remove()

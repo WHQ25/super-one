@@ -4,6 +4,22 @@ on:
   push:
     tags:
       - v*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to build (e.g. v0.16.0-alpha)'
+        required: true
+        type: string
+      platforms:
+        description: 'Platforms to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - mac
+          - win
+          - linux
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -11,15 +27,19 @@ env:
 
 jobs:
   release-mac:
+    if: ${{ github.event_name == 'push' || inputs.platforms == 'all' || inputs.platforms == 'mac' }}
     runs-on: macos-latest
     strategy:
       matrix:
         arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 1
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bun run build:mac -- --arch ${{ matrix.arch }} --publish always
+      - run: bun run build:mac -- --${{ matrix.arch }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTS }}
@@ -32,9 +52,13 @@ jobs:
           SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}
 
   release-win:
+    if: ${{ github.event_name == 'push' || inputs.platforms == 'all' || inputs.platforms == 'win' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 1
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run build:win -- --publish always
@@ -45,9 +69,13 @@ jobs:
           SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}
 
   release-linux:
+    if: ${{ github.event_name == 'push' || inputs.platforms == 'all' || inputs.platforms == 'linux' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 1
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run build:linux -- --publish always

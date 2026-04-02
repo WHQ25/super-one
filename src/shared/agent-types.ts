@@ -1162,6 +1162,15 @@ export const AgentIpcChannels = {
   REMOTE_PAIRING_ALREADY_PAIRED: 'remote:pairing-already-paired',
 
   WIDGET_IFRAME_READY: 'widget:iframe-ready',
+
+  // Mini-App
+  MINIAPP_LIST: 'miniapp:list',
+  MINIAPP_OPEN: 'miniapp:open',
+  MINIAPP_CLOSE: 'miniapp:close',
+  MINIAPP_TOOL_CALL: 'miniapp:tool-call',
+  MINIAPP_TOOL_RESULT: 'miniapp:tool-result',
+  MINIAPP_FS_REQUEST: 'miniapp:fs-request',
+  MINIAPP_IFRAME_READY: 'miniapp:iframe-ready',
 } as const
 
 export interface FileSearchResult {

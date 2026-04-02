@@ -24,6 +24,7 @@ state.queryMock.mockImplementation((input: Record<string, unknown>) => {
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: state.queryMock,
+  createSdkMcpServer: vi.fn(() => ({ type: 'sdk', name: 'canvas', instance: {} })),
 }))
 
 vi.mock('../logger', () => ({
@@ -41,6 +42,10 @@ vi.mock('./resolve-cli', () => ({
 
 vi.mock('../generative-ui/mcp-server', () => ({
   createGenerativeUiMcpServer: vi.fn(),
+}))
+
+vi.mock('../canvas/canvas-mcp-proxy', () => ({
+  getCanvasMcpProxy: vi.fn(() => ({ type: 'sdk', name: 'canvas', instance: {} })),
 }))
 
 import { buildUserMessage, createSessionQuery } from './claude-query'

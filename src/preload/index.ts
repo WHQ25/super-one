@@ -664,11 +664,40 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.WIDGET_IFRAME_READY, widgetId),
 }
 
+import type { MiniAppEntry, MiniAppToolCallRequest } from '../shared/miniapp-types'
+
+const miniappAPI = {
+  list: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_LIST) as Promise<MiniAppEntry[]>,
+
+  open: (appId: string, projectDir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_OPEN, appId, projectDir),
+
+  close: (appId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CLOSE, appId),
+
+  toolResult: (callId: string, result: unknown, error?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_TOOL_RESULT, callId, result, error),
+
+  fsRequest: (appId: string, op: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_REQUEST, appId, op, args),
+
+  iframeReady: (appId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_IFRAME_READY, appId),
+
+  onToolCall: (callback: (call: MiniAppToolCallRequest) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, call: MiniAppToolCallRequest) => callback(call)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_TOOL_CALL, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_TOOL_CALL, handler)
+  },
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('agent', agentAPI)
     contextBridge.exposeInMainWorld('app', appAPI)
+    contextBridge.exposeInMainWorld('miniapp', miniappAPI)
   } catch (error) {
     console.error(error)
   }
@@ -679,4 +708,6 @@ if (process.contextIsolated) {
   window.agent = agentAPI
   // @ts-ignore
   window.app = appAPI
+  // @ts-ignore
+  window.miniapp = miniappAPI
 }

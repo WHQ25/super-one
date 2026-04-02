@@ -1,5 +1,6 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, ClaudePreferences, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, ContextUsageInfo, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
+import type { MiniAppEntry, MiniAppToolCallRequest } from '../shared/miniapp-types'
 
 
 interface AgentAPI {
@@ -208,10 +209,21 @@ interface AppAPI {
   widgetIframeReady(widgetId: string): Promise<void>
 }
 
+interface MiniAppAPI {
+  list(): Promise<MiniAppEntry[]>
+  open(appId: string, projectDir: string): Promise<void>
+  close(appId: string): Promise<void>
+  toolResult(callId: string, result: unknown, error?: string): Promise<void>
+  fsRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
+  iframeReady(appId: string): Promise<void>
+  onToolCall(callback: (call: MiniAppToolCallRequest) => void): () => void
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
     agent: AgentAPI
     app: AppAPI
+    miniapp: MiniAppAPI
   }
 }

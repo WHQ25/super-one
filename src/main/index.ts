@@ -8,6 +8,9 @@ import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
+import { getAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setWorkingDirectory, clearWorkingDirectory, handleFsRequest } from './miniapp/miniapp-service'
+import { generateBridgeScript } from './miniapp/miniapp-bridge'
+import { initCanvasMcpProxy, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady } from './canvas/canvas-mcp-proxy'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
@@ -49,6 +52,7 @@ import type { RemoteControlCallbacks } from './remote-control-service'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
+  { scheme: 'superone-app', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },
 ])
 
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport')
@@ -1360,6 +1364,44 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.WIDGET_IFRAME_READY, (_e, widgetId: string) => {
     notifyWidgetReady(widgetId)
   })
+
+  initCanvasMcpProxy(() => mainWindow)
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async () => {
+    return discoverApps()
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_OPEN, async (_e, appId: string, projectDir: string) => {
+    const manifest = await readManifest(getAppBasePath(appId))
+    if (!manifest) throw new Error(`App not found: ${appId}`)
+    const wd = manifest.workingDir ?? { scope: 'project' as const, path: '.' }
+    const resolved = wd.scope === 'user'
+      ? join(homedir(), wd.path)
+      : join(projectDir, wd.path)
+    setWorkingDirectory(appId, resolved)
+    registerAppTools(appId, manifest.tools ?? [])
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string) => {
+    unregisterAppTools(appId)
+    clearWorkingDirectory(appId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_TOOL_RESULT, (_e, callId: string, result: unknown, error?: string) => {
+    if (error) {
+      rejectToolCall(callId, error)
+    } else {
+      resolveToolCall(callId, result)
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_FS_REQUEST, async (_e, appId: string, op: string, args: Record<string, unknown>) => {
+    return handleFsRequest(appId, op as any, args)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_IFRAME_READY, (_e, appId: string) => {
+    notifyMiniAppReady(appId)
+  })
 }
 
 app.whenReady().then(() => {
@@ -1381,6 +1423,10 @@ app.whenReady().then(() => {
 
   protocol.handle('local-file', async (request) => {
     try {
+      const origin = request.headers.get('origin') || ''
+      if (origin.startsWith('superone-app://')) {
+        return new Response('Forbidden', { status: 403 })
+      }
       const rawPath = decodeURIComponent(new URL(request.url).pathname)
       const filePath = rawPath.replace(/^\/([A-Za-z]:)/, '$1')
       const resolved = resolveRealPath(filePath)
@@ -1424,6 +1470,60 @@ app.whenReady().then(() => {
       return new Response('Not found', { status: 404 })
     }
   })
+  const MINIAPP_MIME: Record<string, string> = {
+    html: 'text/html', htm: 'text/html', css: 'text/css', js: 'text/javascript',
+    mjs: 'text/javascript', json: 'application/json', wasm: 'application/wasm',
+    svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp', ico: 'image/x-icon',
+    woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
+  }
+
+  protocol.handle('superone-app', async (request) => {
+    try {
+      const url = new URL(request.url)
+      const appId = url.hostname
+      const filePath = decodeURIComponent(url.pathname || '/index.html')
+
+      const origin = request.headers.get('origin') || ''
+      if (origin.startsWith('superone-app://') && origin !== `superone-app://${appId}`) {
+        return new Response('Cross-app access forbidden', { status: 403 })
+      }
+
+      const basePath = getAppBasePath(appId)
+      const resolved = validatePath(basePath, filePath === '/' ? '/index.html' : filePath)
+      if (!resolved) {
+        log.warn('[superone-app] path traversal blocked: %s %s', appId, filePath)
+        return new Response('Forbidden', { status: 403 })
+      }
+
+      const data = await readFile(resolved)
+      const ext = resolved.split('.').pop()?.toLowerCase() ?? ''
+      const contentType = MINIAPP_MIME[ext] ?? 'application/octet-stream'
+
+      if (ext === 'html' || ext === 'htm') {
+        const html = data.toString('utf-8')
+        const bridgeScript = generateBridgeScript(appId)
+        const injected = html.includes('<head>')
+          ? html.replace('<head>', `<head>${bridgeScript}`)
+          : html.includes('<html>')
+            ? html.replace('<html>', `<html><head>${bridgeScript}</head>`)
+            : bridgeScript + html
+        const manifest = await readManifest(basePath)
+        const csp = manifest ? generateCSP(manifest) : "default-src 'none'"
+        return new Response(injected, {
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': csp },
+        })
+      }
+
+      return new Response(data, {
+        headers: { 'Content-Type': contentType, 'Content-Length': String(data.byteLength) },
+      })
+    } catch (err) {
+      log.error('[superone-app] failed:', err)
+      return new Response('Not found', { status: 404 })
+    }
+  })
+
   fixPath()
   startMediaServer().catch((err) => log.error('[media-server] failed to start:', err))
   ipcMain.handle('app:media-server-port', () => getMediaServerPort())

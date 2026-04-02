@@ -4,6 +4,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { CommandShortcut } from '@/components/ui/command'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { CodingLayout } from '@/components/coding/CodingLayout'
+import { CanvasPanel } from '@/components/canvas/CanvasPanel'
 import { FilePanel } from '@/components/coding/FilePanel'
 import { SessionHistory } from '@/components/chat/SessionHistory'
 import { AppSidebar } from '@/components/AppSidebar'
@@ -356,11 +357,8 @@ function App(): React.JSX.Element {
           </div>
         ) : (
           <>
-            <div className="flex flex-1 items-center justify-center">
-              <div className="text-center">
-                <h1 className="text-4xl font-bold">SuperOne</h1>
-                <p className="mt-2 text-muted-foreground">The one, the only! </p>
-              </div>
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+              <CanvasPanel />
             </div>
             <ChatPanel />
           </>

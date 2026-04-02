@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hello</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; padding: 24px; background: #fafaf9; color: #1c1917; }
+    .dark body { background: #1c1917; color: #fafaf9; }
+    h1 { font-size: 20px; margin-bottom: 16px; }
+    #messages { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+    .msg { background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; padding: 12px; }
+    .dark .msg { background: #292524; border-color: #44403c; }
+    button { background: #f97316; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; }
+    button:hover { background: #ea580c; }
+    #files { margin-top: 16px; font-size: 13px; color: #78716c; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Hello Mini-App</h1>
+  <div id="messages"><p style="color:#a8a29e">Waiting for agent messages...</p></div>
+  <button id="ask-btn">Ask Agent to Greet</button>
+  <div id="files"></div>
+  <script>
+    superone.tools.handle('show_message', function(args) {
+      var container = document.getElementById('messages');
+      if (container.querySelector('p')) container.innerHTML = '';
+      var div = document.createElement('div');
+      div.className = 'msg';
+      div.textContent = args.text;
+      container.appendChild(div);
+      return { success: true, displayed: args.text };
+    });
+
+    superone.fs.readDir('.').then(function(entries) {
+      document.getElementById('files').textContent = 'Files: ' + entries.map(function(e) { return e.name; }).join(', ');
+    }).catch(function() {});
+
+    document.getElementById('ask-btn').onclick = function() {
+      superone.agent.sendPrompt('Say hello using the hello:show_message tool');
+    };
+  </script>
+</body>
+</html>

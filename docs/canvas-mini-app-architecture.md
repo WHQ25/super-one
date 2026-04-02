@@ -2,36 +2,64 @@
 
 ## Overview
 
-SuperOne mini-apps are built on the [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) standard (spec version 2026-01-26) with SuperOne-specific extensions. Every mini-app is fundamentally an **MCP Server with an interactive UI** — it can be driven by the AI agent through MCP tools, and it can request the agent's help via `sendPrompt`.
+SuperOne mini-apps are lightweight, sandboxed web applications that run in iframe containers and are powered by any AI agent through a shared MCP proxy. Every mini-app is pure HTML/CSS/JS — all code executes inside the iframe sandbox. The AI agent interacts with mini-apps through standard MCP tools, routed by a single built-in MCP proxy.
 
 ```
-Mini-App = MCP App (standard) + superone.* extensions (desktop-enhanced)
+Mini-App = Sandboxed iframe (UI + logic) + Declarative MCP tools (manifest.json)
 ```
 
 ## Core Design Principles
 
-1. **MCP Apps compatible**: Any standard MCP App runs in SuperOne out of the box. SuperOne acts as a compliant MCP Apps host.
-2. **Agentic-first**: Mini-apps are not just standalone tools — they are agent-powered. The agent can operate mini-apps via MCP tools, and mini-apps can request agent actions via `sendPrompt`.
-3. **Desktop-enhanced**: SuperOne extends the standard with local filesystem access and a dedicated canvas panel (not just inline in chat).
+1. **Agent-agnostic**: Any agent that speaks MCP (Claude, Codex, Gemini, etc.) can operate mini-apps. No agent-specific code required.
+2. **Sandbox-first**: All developer code runs in iframe sandboxes. The MCP layer is SuperOne's built-in code, not developer code.
+3. **Minimal API surface**: `superone.*` provides filesystem, agent prompt, and tool handling. Everything else goes through standard web APIs + whitelisted network access.
 4. **Web-standard**: Mini-apps are pure HTML/CSS/JS. Any framework (React, Vue, Svelte, etc.) can be used as long as the build output is static web assets.
-5. **Minimal API surface**: The platform provides a small set of `superone.*` APIs. Most heavy-lifting is done by the agent through MCP.
-6. **Sandboxed isolation**: Mini-apps run in iframe sandboxes, isolated from the host application and each other.
+5. **Single MCP Server**: All mini-apps share one MCP proxy. No per-app server processes.
+6. **Declarative tools**: Tools are declared in `manifest.json`, not in code. The host registers/unregisters them dynamically.
 
 ## Architecture
 
-### Two-Way Agent Communication
+### Agent ↔ Mini-App Communication
 
 ```
-┌─────────────┐    MCP Tools     ┌─────────────┐
-│             │  ◄──────────────  │             │
-│   Agent     │                  │   Mini-app   │
-│             │  ──────────────► │             │
-└─────────────┘   sendPrompt     └─────────────┘
-                  (user confirms)
+┌──────────────────────────────────────────────────────┐
+│ SuperOne Host                                        │
+│                                                      │
+│  Agent (Claude / Codex / any MCP-compatible)         │
+│    │                                                 │
+│    │ MCP protocol (stdio)                            │
+│    ▼                                                 │
+│  ┌────────────────────────────────────┐              │
+│  │ Canvas MCP Proxy (built-in, 单例)   │              │
+│  │                                    │              │
+│  │  tools = union of all open apps    │              │
+│  │  tool call → route by namespace    │              │
+│  └────┬──────────┬──────────┬─────────┘              │
+│       │          │          │                        │
+│    postMsg    postMsg    postMsg                     │
+│       │          │          │                        │
+│  ┌────▼───┐ ┌───▼────┐ ┌──▼─────┐                   │
+│  │ iframe │ │ iframe  │ │ iframe │                   │
+│  │ App A  │ │ App B   │ │ App C  │                   │
+│  └────────┘ └────────┘ └────────┘                   │
+└──────────────────────────────────────────────────────┘
 ```
 
-- **Agent → Mini-app**: Agent calls MCP tools defined in the mini-app's `manifest.json`. Tool calls are routed to the mini-app via postMessage. The agent can update UI, push data, trigger actions in the mini-app.
+- **Agent → Mini-app**: Agent calls MCP tool → Canvas MCP Proxy routes by namespace → postMessage to target iframe → iframe handler executes → result returns via same path.
 - **Mini-app → Agent**: Mini-app calls `superone.agent.sendPrompt(text)` to pre-fill the chat input. The user decides whether to send it. The mini-app cannot silently instruct the agent.
+
+### Canvas MCP Proxy
+
+A single MCP Server instance running inside the Electron main process. It is SuperOne's built-in code — developers never write or modify it.
+
+Responsibilities:
+- Read `manifest.json` from each open app → register tools with namespace prefix
+- Route incoming `tools/call` to the correct iframe via postMessage
+- Wait for iframe response → return result to agent
+- Send `tools/list_changed` notification when apps open/close
+- Enforce permissions (fs scope, network whitelist)
+
+The proxy does zero computation. It is purely a message router between MCP protocol and postMessage.
 
 ### Inter-App Communication
 
@@ -43,38 +71,17 @@ Mini-app A  ──sendPrompt──►  Agent  ──MCP tool──►  Mini-app 
 
 The user can simply say "sync the API tester results to the dashboard" and the agent coordinates both mini-apps.
 
-### Runtime Architecture
+### Tool Namespacing
+
+Tools are namespaced by app ID to prevent collisions:
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ SuperOne (Electron Host)                                 │
-│                                                          │
-│  ┌─────────────┐    MCP Protocol    ┌─────────────────┐  │
-│  │   Agent      │◄────────────────►│   MCP Server     │  │
-│  │  (Claude)    │   tools/call      │   (per app)      │  │
-│  └──────┬───────┘                   └────────┬────────┘  │
-│         │                                    │           │
-│         │ IPC                     resources/read         │
-│         │                                    │           │
-│  ┌──────▼───────────────────────────────────▼────────┐  │
-│  │ AppBridge (host-side)                              │  │
-│  │  - JSON-RPC 2.0 over postMessage                   │  │
-│  │  - CSP enforcement                                 │  │
-│  │  - Tool input/result forwarding                    │  │
-│  └──────────────────────┬────────────────────────────┘  │
-│                         │ postMessage                    │
-│  ┌──────────────────────▼────────────────────────────┐  │
-│  │ iframe (sandboxed)                                 │  │
-│  │  ┌─────────────────────────────────────────────┐   │  │
-│  │  │ Mini-App (HTML/CSS/JS)                      │   │  │
-│  │  │  - App class (@modelcontextprotocol/ext-apps)│  │  │
-│  │  │  - superone.* extensions                    │   │  │
-│  │  └─────────────────────────────────────────────┘   │  │
-│  └────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────┘
+api-tester:show_response
+dashboard:update_chart
+todo:add_item
 ```
 
-All communication between the mini-app iframe and the host goes through JSON-RPC 2.0 over `postMessage` (MCP Apps standard protocol). The iframe has no direct access to Node.js, Electron APIs, or the host DOM.
+Developers declare tools without prefix in `manifest.json`. The host automatically adds the `<appId>:` prefix when registering with MCP.
 
 ## Directory Structure
 
@@ -107,7 +114,9 @@ All mini-apps are installed in a single centralized location:
 The mini-app's code location and its working directory are decoupled:
 
 - **Code**: always in `~/.superone/apps/<name>/`
-- **Working directory**: bound at runtime, defaults to the current project. The user can choose which project/folder the mini-app operates on.
+- **Working directory**: resolved at runtime as `<projectDir>/<workingDir>`, where `workingDir` is declared in `manifest.json` (default `"."`). The user can override it when opening the app.
+
+For example, a Markdown editor with `"workingDir": "docs"` in a project at `~/my-project/` would have its working directory at `~/my-project/docs/`.
 
 All `superone.fs.*` calls use paths relative to the working directory.
 
@@ -119,14 +128,16 @@ Each mini-app must have a `manifest.json`:
 {
   "name": "API Tester",
   "icon": "icon.svg",
+  "workingDir": { "scope": "project", "path": "." },
   "permissions": {
     "network": [
       "api.github.com",
-      "cdn.jsdelivr.net"
+      "localhost:8787",
+      "kv.example.com"
     ],
     "fs": "project"
   },
-  "mcpTools": [
+  "tools": [
     {
       "name": "show_response",
       "description": "Display an API response in the tester UI",
@@ -150,9 +161,10 @@ Each mini-app must have a `manifest.json`:
 |-------|----------|-------------|
 | `name` | Yes | Display name |
 | `icon` | No | Relative path to icon file (SVG/PNG) |
-| `permissions.network` | No | List of allowed external domains. Controls CSP `connect-src` and `script-src`. |
+| `workingDir` | No | Working directory config object with `scope` and `path`. `scope: "project"` resolves `path` against project root; `scope: "user"` resolves against user home directory. Default: `{ scope: "project", path: "." }`. |
+| `permissions.network` | No | Whitelisted domains (local or remote). Controls CSP `connect-src` and `script-src`. Apps can `fetch` these freely — enables KV stores, databases, remote APIs. |
 | `permissions.fs` | No | `"app"` (default, only own directory) or `"project"` (working directory access) |
-| `mcpTools` | No | MCP tool definitions the mini-app handles. Declared statically; agent discovers them on mini-app load. |
+| `tools` | No | MCP tool definitions the mini-app handles. Declared statically; host registers them when app opens. |
 
 ### CSP Generation
 
@@ -163,102 +175,23 @@ The Content-Security-Policy header is generated per mini-app based on its manife
 - `img-src` always includes `'self' superone-app: data: blob:`
 - `style-src` always includes `'self' 'unsafe-inline'`
 
-## MCP Apps Standard (Baseline)
-
-SuperOne is a compliant [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) host. The standard provides:
-
-### How MCP Apps Works
-
-1. MCP Server registers a **tool** with `_meta.ui.resourceUri` pointing to a `ui://` resource
-2. When the agent calls that tool, the host fetches the HTML resource via `resources/read`
-3. Host renders the HTML in a **sandboxed iframe**, injecting JSON-RPC communication
-4. The iframe uses the `App` class to receive tool input/results and call server tools back
-
-### Standard SDK Usage
-
-**Server side** (`@modelcontextprotocol/ext-apps/server`):
-
-```typescript
-import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server'
-
-const resourceUri = 'ui://my-app/view.html'
-
-registerAppTool(server, 'show-dashboard', {
-  description: 'Display interactive dashboard',
-  _meta: { ui: { resourceUri } },
-}, async (args) => {
-  return { content: [{ type: 'text', text: JSON.stringify(data) }] }
-})
-
-registerAppResource(server, 'Dashboard', resourceUri, {
-  mimeType: RESOURCE_MIME_TYPE,
-}, async () => ({
-  contents: [{
-    uri: resourceUri,
-    mimeType: RESOURCE_MIME_TYPE,
-    text: htmlContent,
-    _meta: { ui: { csp: { connectDomains: ['https://api.example.com'] } } },
-  }],
-}))
-```
-
-**Client side** (`@modelcontextprotocol/ext-apps` in iframe):
-
-```typescript
-import { App } from '@modelcontextprotocol/ext-apps'
-
-const app = new App({ name: 'My Dashboard', version: '1.0.0' })
-
-app.ontoolinput = (params) => {
-  // Tool arguments arrive (before result) — can show loading/preview
-  showLoadingState(params.arguments)
-}
-
-app.ontoolresult = (result) => {
-  // Tool execution result — update UI
-  renderDashboard(result.content)
-}
-
-// UI can call server tools back
-button.onclick = () => app.callServerTool({ name: 'refresh-data', arguments: {} })
-
-// app.updateModelContext() informs the agent of UI state changes
-await app.connect()
-```
-
-### Standard Capabilities
-
-| Feature | Description |
-|---------|-------------|
-| `ui://` resources | URI scheme for UI HTML content |
-| Tool ↔ Resource linking | `_meta.ui.resourceUri` associates tool with UI |
-| JSON-RPC 2.0 over postMessage | Bidirectional iframe ↔ host communication |
-| CSP | `csp.resourceDomains` / `csp.connectDomains` in resource metadata |
-| Tool visibility | `["model"]`, `["app"]`, or `["model", "app"]` (default) |
-| iframe permissions | `camera`, `microphone`, `geolocation`, `clipboard-write` |
-| Host theme | Theme (light/dark) + CSS variables passed to app |
-| Display modes | `inline`, `fullscreen`, `pip` |
-| updateModelContext | App informs agent of UI state changes |
-| openLink / downloadFile | App requests host to open URL or download file |
-| Partial tool input | Streaming partial arguments for progressive rendering |
-| Tool cancellation | Host notifies app when tool execution is cancelled |
-| Extension negotiation | `io.modelcontextprotocol/ui` capability in `extensions` |
-
-### Key Differences: MCP Apps Standard vs SuperOne
-
-| Capability | MCP Apps Standard | SuperOne Extension |
-|-----------|-------------------|-------------------|
-| Rendering location | Inline in chat conversation | Dedicated canvas panel (persistent) |
-| Local filesystem | ✗ | ✓ `superone.fs.*` (read/write) |
-| Agent prompt | `updateModelContext` (indirect) | `sendPrompt` (pre-fills chat input) |
-| App storage | Per MCP server (server-hosted) | Central `~/.superone/apps/` (local) |
-| Working directory | N/A (server-scoped) | User-selectable project directory |
-| Tool definition | Server-side code (runtime) | Declarative `manifest.json` (static) |
-| CSP config | Server-side `_meta.ui.csp` | `manifest.json` `permissions.network` |
-
-SuperOne's manifest-based tool declaration means mini-apps don't need a running MCP server process — the host reads `manifest.json` and registers tools when the app opens, unregisters when it closes.
-
 ## API Reference
+
+### superone.tools (Tool Handling)
+
+Register handlers for MCP tools declared in `manifest.json`. When an agent calls a tool, the handler executes in the iframe.
+
+```js
+superone.tools.handle('show_response', async (args) => {
+  document.getElementById('output').textContent = args.body
+  return { success: true, summary: `Displayed ${args.status} response` }
+})
+```
+
+Tool handlers:
+- Receive the `arguments` object from the MCP tool call
+- Must return a JSON-serializable result
+- Run in the iframe's JS context — full access to DOM, web APIs, and other `superone.*` APIs
 
 ### superone.fs (File System)
 
@@ -279,28 +212,6 @@ superone.fs.watch(callback)          // → unsubscribe function
 superone.agent.sendPrompt(text)      // Pre-fill chat input, user confirms to send
 ```
 
-### MCP Apps API (Standard)
-
-Mini-apps use the MCP Apps `App` class for tool communication (standard, works in any MCP Apps host):
-
-```js
-import { App } from '@modelcontextprotocol/ext-apps'
-
-const app = new App({ name: 'My App', version: '1.0.0' })
-
-app.ontoolinput = (params) => { /* tool arguments arrive */ }
-app.ontoolresult = (result) => { /* tool execution result */ }
-app.ontoolinputpartial = (params) => { /* streaming partial args for preview */ }
-app.ontoolcancelled = () => { /* tool execution was cancelled */ }
-app.onhostcontextchanged = (ctx) => { /* theme/locale changes */ }
-
-await app.callServerTool({ name: 'my-tool', arguments: {} })
-app.updateModelContext({ resource: { ... } })
-app.openLink({ uri: 'https://example.com' })
-
-await app.connect()
-```
-
 ### superone.theme (Theme)
 
 ```js
@@ -308,7 +219,15 @@ superone.isDarkMode()                // → boolean
 superone.onDarkModeChange(callback)  // → unsubscribe function
 ```
 
-Note: MCP Apps standard also provides theme via `app.getHostContext().theme` and CSS variables. `superone.isDarkMode()` is a convenience alias.
+### Network Access
+
+Mini-apps use standard `fetch` to access whitelisted domains declared in `permissions.network`. This enables:
+
+- **Local services**: `localhost:8787` (Cloudflare Workers local), `localhost:6379` (Redis REST), etc.
+- **Remote APIs**: `api.github.com`, `api.openai.com`, etc.
+- **KV / Database**: `kv.cloudflare.com`, `api.turso.tech`, any database with HTTP API
+
+No special SuperOne API needed — just `fetch` with CSP enforcement.
 
 ## Protocol
 
@@ -330,10 +249,46 @@ Each app gets a unique `appId` derived from its directory name. The protocol han
 
 ### Security
 
+- **Single trust boundary**: All developer code runs in iframe sandbox. The MCP proxy is SuperOne's own code, not developer code.
 - **Path validation**: All file access is validated to stay within the app directory (for app assets) or working directory (for fs API).
 - **`local-file://` blocked**: The `local-file://` protocol rejects requests from `superone-app://` origin to prevent sandbox bypass.
 - **postMessage origin**: Bridge communication uses specific origins instead of `'*'`.
 - **No direct Node.js access**: The iframe sandbox prevents any direct access to Electron or Node.js APIs.
+- **MCP proxy is read-only**: The proxy only routes messages. It cannot execute arbitrary code.
+
+### Permission Model
+
+Permissions are granted at install time and stored in a global registry at `~/.superone/app-permissions.json`:
+
+```json
+{
+  "todo": {
+    "permissions": {
+      "network": ["api.example.com"],
+      "fs": "project"
+    },
+    "grantedAt": "2026-04-02T10:00:00Z"
+  }
+}
+```
+
+**Flow:**
+
+1. **First open** — When user opens an app that has no entry in the permission registry, SuperOne reads `manifest.json` and shows a single permission dialog listing all requested permissions (filesystem scope, network domains, MCP tools).
+2. **Grant** — User approves. All permissions are saved to `~/.superone/app-permissions.json`. App opens normally.
+3. **Deny** — User declines. App does not open.
+4. **Subsequent opens** — No dialog. Permissions are read from the registry.
+5. **Manifest change** — If a new version of the app requests additional permissions not in the registry, the dialog re-appears showing only the new permissions.
+6. **Runtime enforcement** — On each `superone.fs.*` call or `fetch`, the host checks the granted permissions. If an app requests something not granted, the call is rejected.
+7. **Revoke** — User can revoke permissions from settings. Next open will re-trigger the dialog.
+
+This applies equally to installed apps and apps under local development — any app in `~/.superone/apps/` that hasn't been granted permissions will trigger the dialog on first open.
+
+**Design principles:**
+
+- Permissions are app-level, not project-level — granting `fs: "project"` means the app can access the working directory in any project.
+- The manifest declares what the app *requests*; the registry records what the user *granted*. They may differ if the manifest is updated.
+- Uninstalling an app (removing its directory) does not automatically remove its permission entry, allowing re-install without re-authorization.
 
 ## Capability Boundaries
 
@@ -343,42 +298,41 @@ Each app gets a unique `appId` derived from its directory name. The protocol han
 |-----------|-----|
 | Read/write project files | `superone.fs.*` API |
 | Render any UI | HTML/CSS/JS, Canvas, WebGL, SVG |
-| Call external APIs | `fetch` with manifest-declared domains |
+| Call whitelisted APIs | `fetch` with manifest-declared domains |
+| Use KV / databases | `fetch` to whitelisted local or remote services |
 | Load CDN resources | Manifest-declared domains |
-| Receive agent commands | MCP tool handlers |
-| Request agent actions | `sendPrompt` (user confirms) |
+| Receive agent commands | `superone.tools.handle()` |
+| Request agent actions | `superone.agent.sendPrompt()` (user confirms) |
 | Play audio/video | Web Audio API, `<video>` with local files |
-| Complex computation | Delegate to agent (calls CLI tools like ffmpeg, etc.) |
-| Persist data | Write to working directory as JSON/files |
+| Complex computation | Delegate to agent via `sendPrompt` |
+| Persist data | Write to working directory or whitelisted remote storage |
 
 ### What Mini-Apps CANNOT Do
 
 | Limitation | Reason |
 |-----------|--------|
+| Run Node.js code | Sandboxed iframe, no server-side process |
 | Embed external websites | `X-Frame-Options` / iframe nesting restrictions |
-| Access Electron native APIs | Sandboxed iframe, no Node.js |
+| Access Electron native APIs | Sandboxed iframe |
 | Run in background | iframe unloads when user navigates away |
 | Access hardware (camera, USB) | Requires Electron webContents permissions |
 | Create native OS windows | No access to Electron BrowserWindow |
-| Register OS-level integrations | No file associations, URL schemes, etc. |
+| Access non-whitelisted domains | CSP enforcement |
 
-Note: Many tasks that seem to require these capabilities can be achieved indirectly through the agent. For example, running shell commands, complex file operations, or compute-intensive tasks can all be delegated to the agent via `sendPrompt`.
+Note: Many tasks that seem to require Node.js can be achieved indirectly through the agent. For example, running shell commands, complex file operations, or compute-intensive tasks can all be delegated to the agent via `sendPrompt`.
 
 ## App Lifecycle
 
 1. **Discovery** — SuperOne scans `~/.superone/apps/*/manifest.json` on startup
 2. **Selection** — User picks an app from the canvas app directory
 3. **Launch** — iframe created with `superone-app://<appId>/index.html`, bridge script injected
-4. **Handshake** — MCP Apps `initialize` exchange: host sends capabilities/theme, app responds
-5. **MCP registration** — App's `mcpTools` from manifest registered with the agent's tool list
-6. **Interactive** — Bidirectional communication: agent ↔ MCP tools ↔ UI ↔ superone.* APIs
-7. **Teardown** — User closes app → `teardownResource` sent → MCP tools unregistered → iframe destroyed
+4. **Tool registration** — App's `tools` from manifest registered to Canvas MCP Proxy with `<appId>:` namespace prefix → `tools/list_changed` sent to agent
+5. **Interactive** — Bidirectional communication: agent ↔ MCP proxy ↔ postMessage ↔ iframe ↔ superone.* APIs
+6. **Teardown** — User closes app → tools unregistered from MCP proxy → `tools/list_changed` → iframe destroyed
 
 ## Development
 
 ### Simple App (No Build Step)
-
-A pure local tool using superone.fs + agent integration:
 
 ```html
 <!-- ~/.superone/apps/hello/index.html -->
@@ -389,32 +343,45 @@ A pure local tool using superone.fs + agent integration:
   <h1>Hello</h1>
   <pre id="files"></pre>
   <button id="btn">Ask Agent to Analyze</button>
-  <script type="module">
-    import { App } from '@modelcontextprotocol/ext-apps'
+  <script>
+    superone.tools.handle('show_analysis', (args) => {
+      document.getElementById('files').textContent = args.result
+      return { success: true }
+    })
 
-    const app = new App({ name: 'Hello', version: '1.0.0' })
-
-    // Receive data from agent via MCP tool
-    app.ontoolinput = (params) => {
-      document.getElementById('files').textContent = JSON.stringify(params.arguments, null, 2)
-    }
-
-    // Load file list on startup using superone extension
     const entries = await superone.fs.readDir('.')
     document.getElementById('files').textContent = entries.map(e => e.name).join('\n')
 
-    // Request agent help
     document.getElementById('btn').onclick = () => {
       superone.agent.sendPrompt('Analyze the project structure and suggest improvements')
     }
-
-    await app.connect()
   </script>
 </body>
 </html>
 ```
 
-Note: For simple apps that don't need MCP tool communication with the agent, the `App` class import and `connect()` can be omitted. The `superone.*` APIs work independently.
+```json
+// ~/.superone/apps/hello/manifest.json
+{
+  "name": "Hello",
+  "tools": [
+    {
+      "name": "show_analysis",
+      "description": "Display analysis result in the Hello app",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "result": { "type": "string" }
+        },
+        "required": ["result"]
+      }
+    }
+  ],
+  "permissions": {
+    "fs": "project"
+  }
+}
+```
 
 ### Framework App (With Build Step)
 
@@ -430,15 +397,47 @@ cp -r dist/ ~/.superone/apps/my-app/
 # Add manifest.json to ~/.superone/apps/my-app/
 ```
 
+### App with External Services
+
+```json
+{
+  "name": "Data Dashboard",
+  "permissions": {
+    "network": [
+      "localhost:8787",
+      "api.turso.tech"
+    ],
+    "fs": "project"
+  },
+  "tools": [
+    {
+      "name": "refresh",
+      "description": "Refresh dashboard with latest data",
+      "inputSchema": { "type": "object", "properties": {} }
+    }
+  ]
+}
+```
+
+```js
+// In iframe — fetch whitelisted services directly
+const kv = await fetch('http://localhost:8787/api/get?key=dashboard-state')
+const db = await fetch('https://api.turso.tech/v2/pipeline', {
+  method: 'POST',
+  headers: { 'Authorization': 'Bearer ...' },
+  body: JSON.stringify({ statements: [{ q: 'SELECT * FROM metrics' }] })
+})
+```
+
 ## Implementation Layers
 
 | Layer | File | Responsibility |
 |-------|------|---------------|
-| Types | `src/shared/canvas-types.ts` | Shared types (manifest, app registry) |
+| Types | `src/shared/canvas-types.ts` | Shared types (manifest, app registry, tool messages) |
+| MCP Proxy | `src/main/canvas-mcp-proxy.ts` | Single MCP Server: tool registration, routing, lifecycle |
 | Service | `src/main/canvas-service.ts` | App discovery, registry, manifest parsing, fs operations |
-| Bridge | `src/main/canvas-bridge.ts` | Inject `superone.*` bridge + MCP Apps `PostMessageTransport` |
-| AppBridge | `src/main/canvas-app-bridge.ts` | Host-side MCP Apps bridge (tool input/result forwarding) |
+| Bridge | `src/main/canvas-bridge.ts` | Inject `superone.*` bridge script into iframe HTML |
 | Protocol | `src/main/index.ts` | `superone-app://` protocol handler + CSP enforcement |
-| IPC | `src/main/index.ts` | Canvas IPC handlers |
+| IPC | `src/main/index.ts` | Canvas IPC handlers (postMessage relay) |
 | Preload | `src/preload/index.ts` | Expose canvas APIs to renderer |
 | UI | `src/renderer/src/components/canvas/` | App catalog, canvas layout, bridge hook |

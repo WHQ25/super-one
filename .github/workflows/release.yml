@@ -18,6 +18,8 @@ on:
         options:
           - all
           - mac
+          - mac-x64
+          - mac-arm64
           - win
           - linux
 
@@ -26,12 +28,13 @@ env:
   SO_CF_RELAY_URL: ${{ secrets.SO_CF_RELAY_URL }}
 
 jobs:
-  release-mac:
-    if: ${{ github.event_name == 'push' || inputs.platforms == 'all' || inputs.platforms == 'mac' }}
+  release-mac-x64:
+    if: >-
+      github.event_name == 'push' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'mac' ||
+      inputs.platforms == 'mac-x64'
     runs-on: macos-latest
-    strategy:
-      matrix:
-        arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +42,33 @@ jobs:
           fetch-depth: 1
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bun run build:mac -- --${{ matrix.arch }} --publish always
+      - run: bun run build:mac -- --x64 --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
+          SO_SUPABASE_URL: ${{ secrets.SO_SUPABASE_URL }}
+          SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}
+
+  release-mac-arm64:
+    if: >-
+      github.event_name == 'push' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'mac' ||
+      inputs.platforms == 'mac-arm64'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run build:mac -- --arm64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTS }}
@@ -52,7 +81,10 @@ jobs:
           SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}
 
   release-win:
-    if: ${{ github.event_name == 'push' || inputs.platforms == 'all' || inputs.platforms == 'win' }}
+    if: >-
+      github.event_name == 'push' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'win'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +101,10 @@ jobs:
           SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}
 
   release-linux:
-    if: ${{ github.event_name == 'push' || inputs.platforms == 'all' || inputs.platforms == 'linux' }}
+    if: >-
+      github.event_name == 'push' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'linux'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

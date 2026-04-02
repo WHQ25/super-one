@@ -27,10 +27,8 @@ publish:
 
 mac:
   target:
-    - target: dmg
-      arch: [x64, arm64]
-    - target: zip
-      arch: [x64, arm64]
+    - dmg
+    - zip
   category: public.app-category.developer-tools
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
@@ -39,11 +37,9 @@ mac:
 
 win:
   target:
-    - target: nsis
-      arch: [x64, arm64]
+    - nsis
 
 linux:
   target:
-    - target: AppImage
-      arch: [x64, arm64]
+    - AppImage
   category: Development

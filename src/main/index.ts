@@ -8,7 +8,7 @@ import { execFile, execFileSync, spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setWorkingDirectory, clearWorkingDirectory, handleFsRequest } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setWorkingDirectory, clearWorkingDirectory, handleFsRequest } from './miniapp/miniapp-service'
 import { generateBridgeScript } from './miniapp/miniapp-bridge'
 import { initCanvasMcpProxy, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady } from './canvas/canvas-mcp-proxy'
 import { query } from '@anthropic-ai/claude-agent-sdk'
@@ -1368,7 +1368,9 @@ function registerIpcHandlers(): void {
   initCanvasMcpProxy(() => mainWindow)
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async () => {
-    return discoverApps()
+    const apps = await discoverApps()
+    for (const app of apps) cacheAppBasePath(app.id, app.basePath)
+    return apps
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_OPEN, async (_e, appId: string, projectDir: string) => {

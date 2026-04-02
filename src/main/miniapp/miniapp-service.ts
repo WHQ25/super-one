@@ -1,10 +1,12 @@
 import { readdir, readFile, writeFile, stat, mkdir, glob } from 'fs/promises'
 import { join, resolve, sep } from 'path'
 import { app } from 'electron'
+import { is } from '@electron-toolkit/utils'
 import log from '../logger'
 import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp } from '../../shared/miniapp-types'
 
-const appsDir = () => join(app.getPath('home'), '.superone', 'apps')
+const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
+const devAppsDir = () => join(process.cwd(), 'examples', 'miniapp')
 
 const workingDirs = new Map<string, string>()
 
@@ -16,8 +18,7 @@ export function clearWorkingDirectory(appId: string): void {
   workingDirs.delete(appId)
 }
 
-export async function discoverApps(): Promise<MiniAppEntry[]> {
-  const base = appsDir()
+async function scanDir(base: string): Promise<MiniAppEntry[]> {
   let dirs: string[]
   try {
     dirs = await readdir(base)
@@ -30,6 +31,20 @@ export async function discoverApps(): Promise<MiniAppEntry[]> {
     const manifest = await readManifest(basePath)
     if (manifest) {
       entries.push({ id: name, manifest, basePath })
+    }
+  }
+  return entries
+}
+
+export async function discoverApps(): Promise<MiniAppEntry[]> {
+  const entries = await scanDir(userAppsDir())
+  if (is.dev) {
+    const devEntries = await scanDir(devAppsDir())
+    const existingIds = new Set(entries.map((e) => e.id))
+    for (const entry of devEntries) {
+      if (!existingIds.has(entry.id)) {
+        entries.push(entry)
+      }
     }
   }
   return entries
@@ -49,8 +64,16 @@ export async function readManifest(appDir: string): Promise<MiniAppManifest | nu
   }
 }
 
+const appBasePathCache = new Map<string, string>()
+
 export function getAppBasePath(appId: string): string {
-  return join(appsDir(), appId)
+  const cached = appBasePathCache.get(appId)
+  if (cached) return cached
+  return join(userAppsDir(), appId)
+}
+
+export function cacheAppBasePath(appId: string, basePath: string): void {
+  appBasePathCache.set(appId, basePath)
 }
 
 export function generateCSP(manifest: MiniAppManifest): string {

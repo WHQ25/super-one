@@ -279,10 +279,12 @@ body {
 
 /* --- Tables (GitHub style) --- */
 .chat-md [data-streamdown="table-wrapper"] {
-  overflow-x: auto;
-  margin: 0.4em 0;
-  border-radius: 0.375rem;
-  border: 1px solid var(--border);
+  border: 0 !important;
+  padding: 0 !important;
+  scrollbar-width: none;
+}
+.chat-md [data-streamdown="table-wrapper"] > div {
+  scrollbar-width: none;
 }
 .chat-md [data-streamdown="table"] {
   border-collapse: collapse;

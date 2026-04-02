@@ -116,7 +116,7 @@ export function MarkdownView({
 }) {
   const { meta, body } = parseFrontmatter(content)
   return (
-    <div className={cn('github-md px-8 py-6 text-sm', className)}>
+    <div className={cn('github-md px-2 py-6 text-sm', className)}>
       {meta && <FrontmatterTable meta={meta} />}
       <Streamdown
         plugins={streamdownPlugins}

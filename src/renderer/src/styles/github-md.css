@@ -136,13 +136,20 @@
 
 /* --- Tables --- */
 .github-md [data-streamdown="table-wrapper"] {
+  border: 0 !important;
+  padding: 0 !important;
   overflow-x: auto;
   margin: 0 0 16px;
+  scrollbar-width: none;
+}
+.github-md [data-streamdown="table-wrapper"] > div {
+  scrollbar-width: none;
 }
 
 .github-md [data-streamdown="table"] {
   border-collapse: collapse;
   border-spacing: 0;
+  white-space: nowrap;
   width: 100%;
 }
 

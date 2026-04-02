@@ -90,7 +90,7 @@ export function ContextUsage() {
 
   return (
     <div className="relative flex items-center" ref={popoverRef}>
-      <button onClick={toggleOpen} className="flex items-center">
+      <button onClick={toggleOpen} className="flex items-center rounded-sm p-1 transition-colors hover:bg-muted">
         <svg width="14" height="14" viewBox="0 0 14 14" className="shrink-0">
           <circle cx="7" cy="7" r={radius} fill="none" className="stroke-border" strokeWidth="2" />
           {pct > 0 && (

@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
     build: {
       externalizeDeps: false,
       rollupOptions: {
+        external: ['electron'],
         input: {
           index: resolve('src/preload/index.ts'),
           'miniapp-preload': resolve('src/preload/miniapp-preload.ts'),

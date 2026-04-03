@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { ExternalLink, Copy, Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -34,7 +35,7 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
 
   if (!isOpen) return null
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
@@ -79,6 +80,7 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

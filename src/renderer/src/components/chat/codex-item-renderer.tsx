@@ -13,7 +13,7 @@ import { AnsiText } from '@/lib/ansi'
 import { FileChip } from './ToolBlock'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
-import { useAppStore } from '@/stores/app'
+import { openFileTab } from '@/components/activity/activity-panel-api'
 import { useChatStore } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
@@ -52,8 +52,7 @@ function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath
     if (!projectPath) return
     const relative = filePath.startsWith(projectPath + '/') ? filePath.slice(projectPath.length + 1) : filePath
     useSourceControlStore.getState().selectFile(projectPath, relative, lineNumber)
-    useAppStore.getState().setShowFilePanel(true)
-    useAppStore.getState().setFilePanelView('file')
+    openFileTab(relative)
   }
   return (
     <span

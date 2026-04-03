@@ -1,12 +1,19 @@
 import { useEffect, useRef } from 'react'
 import { useAppStore } from '@/stores/app'
+import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useActiveSession } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
 import { useFileTreeStore } from '@/stores/file-tree'
+import { getDockApi } from '@/components/activity/activity-panel-api'
+
+function hasFileTab() {
+  const api = getDockApi()
+  return api?.panels.some((p) => p.id.startsWith('file:')) ?? false
+}
 
 export function GitAutoRefresh() {
   const status = useActiveSession((s) => s.status)
-  const showFilePanel = useAppStore((s) => s.showFilePanel)
+  const showPanel = useActivityPanelStore((s) => s.showPanel)
   const sidebarTab = useAppStore((s) => s.sidebarTab)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const wtActivePath = useAppStore((s) => currentFolder ? s._worktrees[currentFolder]?.activePath : null)
@@ -14,13 +21,15 @@ export function GitAutoRefresh() {
   const prevStatusRef = useRef(status)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
+  const fileTabActive = showPanel && hasFileTab()
+
   useEffect(() => {
     const prev = prevStatusRef.current
     prevStatusRef.current = status
 
     if (!fileRoot) return
 
-    const needsRefresh = showFilePanel || sidebarTab === 'files'
+    const needsRefresh = fileTabActive || sidebarTab === 'files'
     if (!needsRefresh) return
 
     const shouldRefresh = prev === 'streaming' && status === 'idle'
@@ -28,18 +37,18 @@ export function GitAutoRefresh() {
 
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      if (showFilePanel) useSourceControlStore.getState().refresh(fileRoot)
+      if (fileTabActive) useSourceControlStore.getState().refresh(fileRoot)
       if (sidebarTab === 'files') useFileTreeStore.getState().refreshTree(fileRoot)
     }, 500)
 
     return () => clearTimeout(debounceRef.current)
-  }, [status, showFilePanel, sidebarTab, fileRoot])
+  }, [status, fileTabActive, sidebarTab, fileRoot])
 
   useEffect(() => {
-    if (showFilePanel && fileRoot) {
+    if (fileTabActive && fileRoot) {
       useSourceControlStore.getState().fetchFiles(fileRoot)
     }
-  }, [showFilePanel, fileRoot])
+  }, [fileTabActive, fileRoot])
 
   useEffect(() => {
     if (sidebarTab === 'files' && fileRoot) {
@@ -47,7 +56,7 @@ export function GitAutoRefresh() {
     }
   }, [sidebarTab, fileRoot])
 
-  const needsWatch = showFilePanel || sidebarTab === 'files'
+  const needsWatch = fileTabActive || sidebarTab === 'files'
 
   useEffect(() => {
     if (!fileRoot || !needsWatch) {
@@ -63,8 +72,10 @@ export function GitAutoRefresh() {
         const { currentFolder: cf, _worktrees: wts } = useAppStore.getState()
         const root = cf ? (wts[cf]?.activePath ?? cf) : null
         if (!root) return
-        const { showFilePanel: fp, sidebarTab: tab } = useAppStore.getState()
-        if (fp) useSourceControlStore.getState().refresh(root)
+        const ap = useActivityPanelStore.getState()
+        const ft = ap.showPanel && hasFileTab()
+        const tab = useAppStore.getState().sidebarTab
+        if (ft) useSourceControlStore.getState().refresh(root)
         if (tab === 'files') useFileTreeStore.getState().refreshTree(root)
       }, 500)
     }

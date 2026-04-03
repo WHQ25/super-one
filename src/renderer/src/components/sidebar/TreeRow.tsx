@@ -9,10 +9,10 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
-import { useAppStore } from '@/stores/app'
 import { chatInputAPI } from '@/components/chat/ChatInput'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
+import { openFileTab, openNewFileTab } from '@/components/activity/activity-panel-api'
 import type { GitFileStatus } from '../../../../shared/agent-types'
 
 const STATUS_COLOR: Record<string, string> = {
@@ -141,16 +141,26 @@ export const TreeRow = memo(function TreeRow({
     }
   }, [])
 
+  const clickTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+
   const handleClick = useCallback(() => {
     if (isRenaming) return
     if (item.isDirectory) {
       toggleDir(currentFolder, item.path)
-    } else {
-      useSourceControlStore.getState().selectFile(currentFolder, item.path)
-      useAppStore.getState().setShowFilePanel(true)
-      useAppStore.getState().setFilePanelView('file')
+      return
     }
+    clearTimeout(clickTimer.current)
+    clickTimer.current = setTimeout(() => {
+      useSourceControlStore.getState().selectFile(currentFolder, item.path)
+      openFileTab(item.path)
+    }, 200)
   }, [item.path, item.isDirectory, currentFolder, toggleDir, isRenaming])
+
+  const handleDoubleClick = useCallback(() => {
+    if (isRenaming || item.isDirectory) return
+    clearTimeout(clickTimer.current)
+    openNewFileTab(item.path)
+  }, [item.path, item.isDirectory, isRenaming])
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.dataTransfer.setData(TREE_DND_MIME, item.path)
@@ -258,6 +268,7 @@ export const TreeRow = memo(function TreeRow({
     <button
       draggable={!isRenaming}
       onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onDragEnter={handleDragEnter}

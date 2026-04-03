@@ -4,7 +4,7 @@ import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
 import { inferLanguage, useHighlightedTokens, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
 import { useChatStore, useActiveSession, useBashOutput } from '@/stores/chat'
-import { useAppStore } from '@/stores/app'
+import { openFileTab } from '@/components/activity/activity-panel-api'
 import { useSettingsStore } from '@/stores/settings'
 import { useSourceControlStore } from '@/stores/source-control'
 import { ToolIcon } from './ToolIcon'
@@ -291,8 +291,7 @@ export function FileChip({ name, title, filePath, lineNumber, className }: { nam
     if (!projectPath) return
     const relative = filePath.startsWith(projectPath + '/') ? filePath.slice(projectPath.length + 1) : filePath
     useSourceControlStore.getState().selectFile(projectPath, relative, lineNumber)
-    useAppStore.getState().setShowFilePanel(true)
-    useAppStore.getState().setFilePanelView('file')
+    openFileTab(relative)
   }
   return (
     <span

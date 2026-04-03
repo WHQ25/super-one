@@ -7,6 +7,17 @@ vi.mock('./source-control', () => ({
   },
 }))
 
+const mockSetShowPanel = vi.fn()
+vi.mock('./activity-panel', () => ({
+  useActivityPanelStore: {
+    getState: () => ({ setShowPanel: mockSetShowPanel }),
+  },
+}))
+
+vi.mock('@/components/activity/activity-panel-api', () => ({
+  openFileTab: vi.fn(),
+}))
+
 vi.mock('./chat', () => {
   const state = { projectSessions: {} as Record<string, unknown>, activeProject: null as string | null }
   const resetSessionForWorktreeSwitch = vi.fn()
@@ -160,13 +171,12 @@ describe('openFolderDirect (via selectAndOpenFolder)', () => {
 })
 
 describe('currentFolder subscription', () => {
-  it('should reset file panel and stores when project changes', async () => {
-    resetStore({ currentFolder: '/projA', showFilePanel: true })
+  it('should reset stores when project changes', async () => {
+    resetStore({ currentFolder: '/projA' })
 
     useAppStore.setState({ currentFolder: '/projB' })
     await vi.dynamicImportSettled()
 
-    expect(useAppStore.getState().showFilePanel).toBe(false)
     expect(mockSourceControlReset).toHaveBeenCalled()
   })
 
@@ -175,10 +185,9 @@ describe('currentFolder subscription', () => {
     await vi.dynamicImportSettled()
     mockSourceControlReset.mockClear()
 
-    useAppStore.setState({ showFilePanel: true, layoutMode: 'canvas' })
+    useAppStore.setState({ layoutMode: 'canvas' })
     await vi.dynamicImportSettled()
 
-    expect(useAppStore.getState().showFilePanel).toBe(true)
     expect(mockSourceControlReset).not.toHaveBeenCalled()
   })
 })

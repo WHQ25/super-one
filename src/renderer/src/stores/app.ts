@@ -7,7 +7,6 @@ type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' 
 export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'preferences' | 'remote'
 export type LayoutMode = 'canvas' | 'coding'
 export type SidebarTab = 'sessions' | 'files'
-export type FilePanelView = 'file' | 'history'
 
 interface WorktreeState {
   pendingBaseBranch: string | null
@@ -75,12 +74,6 @@ interface AppState {
   setShowSidebar: (show: boolean) => void
   sidebarWidth: number
   setSidebarWidth: (width: number) => void
-  showFilePanel: boolean
-  setShowFilePanel: (show: boolean) => void
-  filePanelView: FilePanelView
-  setFilePanelView: (view: FilePanelView) => void
-  filePanelWidth: number
-  setFilePanelWidth: (width: number) => void
 
   fetchRecentFolders: () => Promise<void>
   selectAndOpenFolder: () => Promise<void>
@@ -174,11 +167,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarTab: 'sessions',
   setSidebarTab: (tab) => {
     set({ sidebarTab: tab })
-    if (tab === 'sessions') {
-      set({ showFilePanel: false, filePanelView: 'file' as FilePanelView })
-    } else {
+    if (tab === 'files') {
       import('./source-control').then(({ useSourceControlStore }) => {
-        if (useSourceControlStore.getState().selectedFile) set({ showFilePanel: true, filePanelView: 'file' as FilePanelView })
+        const file = useSourceControlStore.getState().selectedFile
+        if (file) {
+          import('@/components/activity/activity-panel-api').then(({ openFileTab }) => openFileTab(file))
+        }
       })
     }
   },
@@ -186,12 +180,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowSidebar: (show) => set({ showSidebar: show }),
   sidebarWidth: 320,
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
-  showFilePanel: false,
-  setShowFilePanel: (show) => set({ showFilePanel: show, ...(!show && { filePanelView: 'file' as FilePanelView }) }),
-  filePanelView: 'file' as FilePanelView,
-  setFilePanelView: (view) => set({ filePanelView: view }),
-  filePanelWidth: 560,
-  setFilePanelWidth: (width) => set({ filePanelWidth: width }),
 
   fetchRecentFolders: async () => {
     const folders = await window.app.getRecentFolders()
@@ -473,7 +461,9 @@ let _prevFolder = useAppStore.getState().currentFolder
 useAppStore.subscribe((state) => {
   if (state.currentFolder === _prevFolder) return
   _prevFolder = state.currentFolder
-  useAppStore.setState({ showFilePanel: false })
+  import('./activity-panel').then(({ useActivityPanelStore }) => {
+    useActivityPanelStore.getState().setShowPanel(false)
+  })
   import('./source-control').then(({ useSourceControlStore }) => {
     useSourceControlStore.getState().reset()
   })

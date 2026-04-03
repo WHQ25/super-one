@@ -1,0 +1,80 @@
+.dockview-theme-superone {
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tabs-and-actions-container-height: 32px;
+  --dv-tab-font-size: 12px;
+  --dv-border-radius: 0px;
+  --dv-tab-margin: 0;
+  --dv-overlay-z-index: 999;
+
+  --dv-sash-color: transparent;
+  --dv-active-sash-transition-duration: 0.1s;
+  --dv-active-sash-transition-delay: 0.4s;
+}
+
+:root .dockview-theme-superone {
+  --dv-drag-over-background-color: oklch(0.65 0.22 42 / 0.08);
+  --dv-drag-over-border-color: oklch(0.65 0.22 42 / 0.3);
+  --dv-tabs-container-scrollbar-color: oklch(0.52 0.02 50 / 0.4);
+  --dv-icon-hover-background-color: oklch(0.96 0.01 65);
+  --dv-active-sash-color: oklch(0.65 0.22 42 / 0.3);
+
+  --dv-group-view-background-color: oklch(0.99 0.005 70);
+  --dv-tabs-and-actions-container-background-color: oklch(0.97 0.01 63);
+  --dv-activegroup-visiblepanel-tab-background-color: oklch(0.99 0.005 70);
+  --dv-activegroup-hiddenpanel-tab-background-color: oklch(0.97 0.01 63);
+  --dv-inactivegroup-visiblepanel-tab-background-color: oklch(0.99 0.005 70);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: oklch(0.97 0.01 63);
+  --dv-tab-divider-color: oklch(0.91 0.012 65);
+
+  --dv-activegroup-visiblepanel-tab-color: oklch(0.18 0.01 50);
+  --dv-activegroup-hiddenpanel-tab-color: oklch(0.52 0.02 50);
+  --dv-inactivegroup-visiblepanel-tab-color: oklch(0.52 0.02 50);
+  --dv-inactivegroup-hiddenpanel-tab-color: oklch(0.52 0.02 50 / 0.6);
+
+  --dv-separator-border: oklch(0.91 0.012 65);
+  --dv-paneview-header-border-color: oklch(0.91 0.012 65);
+  --dv-paneview-active-outline-color: oklch(0.65 0.22 42);
+  --dv-floating-box-shadow: 0 4px 12px oklch(0 0 0 / 0.1);
+  --dv-scrollbar-background-color: oklch(0.52 0.02 50 / 0.25);
+}
+
+.dark .dockview-theme-superone {
+  --dv-drag-over-background-color: oklch(0.922 0 0 / 0.08);
+  --dv-drag-over-border-color: oklch(0.922 0 0 / 0.3);
+  --dv-tabs-container-scrollbar-color: oklch(0.708 0 0 / 0.4);
+  --dv-icon-hover-background-color: oklch(0.269 0 0);
+  --dv-active-sash-color: oklch(0.922 0 0 / 0.3);
+
+  --dv-group-view-background-color: oklch(0.145 0 0);
+  --dv-tabs-and-actions-container-background-color: oklch(0.18 0 0);
+  --dv-activegroup-visiblepanel-tab-background-color: oklch(0.145 0 0);
+  --dv-activegroup-hiddenpanel-tab-background-color: oklch(0.18 0 0);
+  --dv-inactivegroup-visiblepanel-tab-background-color: oklch(0.145 0 0);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: oklch(0.18 0 0);
+  --dv-tab-divider-color: oklch(0.269 0 0);
+
+  --dv-activegroup-visiblepanel-tab-color: oklch(0.985 0 0);
+  --dv-activegroup-hiddenpanel-tab-color: oklch(0.708 0 0);
+  --dv-inactivegroup-visiblepanel-tab-color: oklch(0.708 0 0);
+  --dv-inactivegroup-hiddenpanel-tab-color: oklch(0.708 0 0 / 0.6);
+
+  --dv-separator-border: oklch(0.269 0 0);
+  --dv-paneview-header-border-color: oklch(0.269 0 0);
+  --dv-paneview-active-outline-color: oklch(0.488 0.243 264.376);
+  --dv-floating-box-shadow: 0 4px 12px oklch(0 0 0 / 0.3);
+  --dv-scrollbar-background-color: oklch(0.708 0 0 / 0.25);
+}
+
+.dockview-theme-superone .dv-tab:focus-within::after,
+.dockview-theme-superone .dv-tab:focus::after {
+  outline: none !important;
+}
+
+.dockview-theme-superone .dv-tab.dv-active-tab {
+  border-left: 1px solid var(--dv-tab-divider-color);
+  border-right: 1px solid var(--dv-tab-divider-color);
+}
+
+.dockview-theme-superone .dv-tab.dv-active-tab:first-child {
+  border-left: none;
+}

@@ -1,0 +1,137 @@
+import { useRef, useCallback, useEffect } from 'react'
+import { motion } from 'motion/react'
+import { DockviewReact } from 'dockview'
+import type { DockviewReadyEvent, DockviewApi } from 'dockview-core'
+import 'dockview/dist/styles/dockview.css'
+import { useAppStore } from '@/stores/app'
+import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useFullscreen } from '@/hooks/useFullscreen'
+import { useResizeHandle } from '@/hooks/useResizeHandle'
+import { LayoutToggle } from '@/components/coding/LayoutToggle'
+import { setDockApi, openNewFileTab } from './activity-panel-api'
+import { activityPanelComponents } from './panels'
+import { activityTabComponents } from './ActivityTab'
+import { ActivityWatermark } from './ActivityWatermark'
+import { TREE_DND_MIME, TREE_DND_DIR_MIME } from '@/components/sidebar/TreeRow'
+import { cn } from '@/lib/utils'
+
+interface ActivityPanelProps {
+  getMaxWidth: () => number
+  hidden?: boolean
+}
+
+export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
+  const { showPanel, side, panelWidth, setPanelWidth } = useActivityPanelStore()
+  const showSidebar = useAppStore((s) => s.showSidebar)
+  const isFullscreen = useFullscreen()
+  const isMac = window.app.platform === 'darwin'
+  const visible = showPanel && !hidden
+  const isLeftmost = !showSidebar && side === 'left'
+  const needsTrafficLightPadding = isMac && !isFullscreen && isLeftmost
+  const outerRef = useRef<HTMLDivElement>(null)
+  const innerRef = useRef<HTMLDivElement>(null)
+  const apiRef = useRef<DockviewApi | null>(null)
+
+  const getWidth = useCallback(() => useActivityPanelStore.getState().panelWidth, [])
+
+  const onResizeStart = useResizeHandle({
+    getWidth,
+    setWidth: setPanelWidth,
+    minWidth: 200,
+    getMaxWidth,
+    direction: side === 'right' ? 'rtl' : 'ltr',
+    outerRef,
+    innerRef,
+  })
+
+  const onReady = useCallback((event: DockviewReadyEvent) => {
+    apiRef.current = event.api
+    setDockApi(event.api)
+
+    const d1 = event.api.onDidRemovePanel(() => {
+      if (event.api.panels.length === 0) {
+        useActivityPanelStore.getState().setShowPanel(false)
+      }
+    })
+
+    const d2 = event.api.onUnhandledDragOverEvent((e) => {
+      const types = e.nativeEvent.dataTransfer?.types
+      if (types?.includes(TREE_DND_MIME)) e.accept()
+    })
+
+    const d3 = event.api.onDidDrop((e) => {
+      const filePath = e.nativeEvent.dataTransfer?.getData(TREE_DND_MIME)
+      if (!filePath) return
+      const isDir = e.nativeEvent.dataTransfer?.getData(TREE_DND_DIR_MIME) === '1'
+      if (isDir) return
+      const activePanel = e.group?.activePanel
+      const isSameFile = activePanel?.id === `file:${filePath}`
+      if (isSameFile) return
+      const posMap = { top: 'above', bottom: 'below', left: 'left', right: 'right', center: 'within' } as const
+      const dir = posMap[e.position as keyof typeof posMap] ?? 'within'
+      if (activePanel && dir !== 'within') {
+        openNewFileTab(filePath, { direction: dir as 'right' | 'below', referencePanel: activePanel.id })
+      } else {
+        openNewFileTab(filePath)
+      }
+    })
+
+    const d4 = event.api.onWillShowOverlay((e) => {
+      const data = e.options.getData()
+      if (!data) return
+      if (e.group && data.groupId === e.group.id && e.group.panels.length <= 1) {
+        e.preventDefault()
+      }
+    })
+
+    return () => { d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose() }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      setDockApi(null)
+      apiRef.current = null
+    }
+  }, [])
+
+
+  return (
+    <motion.div
+      ref={outerRef}
+      layout="position"
+      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+      className={cn('relative shrink-0 overflow-hidden', side === 'right' ? 'bg-card' : 'bg-sidebar')}
+      style={{ width: visible ? panelWidth : 0, order: side === 'left' ? 0 : 2 }}
+    >
+      <div ref={innerRef} className="flex h-full flex-col rounded-l-2xl bg-background overflow-hidden" style={{ width: panelWidth }}>
+        {isLeftmost && (
+          <div className={cn('flex shrink-0 items-center pt-[2px]', needsTrafficLightPadding ? 'pl-[18px]' : 'pl-2')} style={{ height: needsTrafficLightPadding ? 44 : 36, WebkitAppRegion: 'drag' } as React.CSSProperties}>
+            {needsTrafficLightPadding && <div className="w-[66px] shrink-0" />}
+            <LayoutToggle />
+          </div>
+        )}
+        <div className="min-h-0 flex-1">
+          <DockviewReact
+            className="dockview-theme-superone"
+            onReady={onReady}
+            components={activityPanelComponents}
+            tabComponents={activityTabComponents}
+            watermarkComponent={ActivityWatermark}
+          />
+        </div>
+      </div>
+
+      {visible && (
+        <div
+          onMouseDown={onResizeStart}
+          className={cn(
+            'group absolute inset-y-0 w-2 cursor-col-resize',
+            side === 'right' ? '-left-1' : '-right-1',
+          )}
+        >
+          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
+        </div>
+      )}
+    </motion.div>
+  )
+}

@@ -1,9 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Plus, Settings, PanelLeftDashed, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, GitFork, Pin, Copy, Check } from 'lucide-react'
+import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, GitFork, Pin, Copy, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Checkbox } from '@/components/ui/checkbox'
-import { CommandShortcut } from '@/components/ui/command'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   DropdownMenu,
@@ -31,13 +29,15 @@ import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
 import type { RecentFolder, SessionHistoryEntry, PinnedSessionEntry } from '../../../shared/agent-types'
 import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from './session-delete-helpers'
+import { openHistoryTab } from '@/components/activity/activity-panel-api'
+import { LayoutToggle } from '@/components/coding/LayoutToggle'
 
 type SortMode = 'recent' | 'added'
 
 const MAX_SESSIONS = 10
 
 export function AppSidebar() {
-  const { setShowSidebar, navigateTo, selectAndOpenFolder, openFolder, removeRecentFolder, setSidebarTab } = useAppStore(useShallow((s) => ({ setShowSidebar: s.setShowSidebar, navigateTo: s.navigateTo, selectAndOpenFolder: s.selectAndOpenFolder, openFolder: s.openFolder, removeRecentFolder: s.removeRecentFolder, setSidebarTab: s.setSidebarTab })))
+  const { navigateTo, selectAndOpenFolder, openFolder, removeRecentFolder, setSidebarTab } = useAppStore(useShallow((s) => ({ navigateTo: s.navigateTo, selectAndOpenFolder: s.selectAndOpenFolder, openFolder: s.openFolder, removeRecentFolder: s.removeRecentFolder, setSidebarTab: s.setSidebarTab })))
   const sidebarTab = useAppStore((s) => s.sidebarTab)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
@@ -294,7 +294,7 @@ export function AppSidebar() {
   const handleOpenHistory = useCallback((folderPath: string) => {
     openFolder(folderPath).then(() => {
       useChatStore.getState().fetchSessions()
-      useAppStore.setState({ showFilePanel: true, filePanelView: 'history' })
+      openHistoryTab()
     })
   }, [openFolder])
 
@@ -318,24 +318,7 @@ export function AppSidebar() {
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {isMac && !isFullscreen && <div className="w-[66px] shrink-0" />}
-        {isMac && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => setShowSidebar(false)}
-                  className="rounded-md p-1 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                >
-                  <PanelLeftDashed className="size-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" sideOffset={4}>
-                <span>Toggle Sidebar</span> <CommandShortcut>⌘B</CommandShortcut>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
+        <LayoutToggle />
       </div>
 
       {/* New session button */}

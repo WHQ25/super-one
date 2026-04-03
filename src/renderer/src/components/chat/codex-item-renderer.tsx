@@ -69,8 +69,9 @@ function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath
 }
 
 function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-  const { href, children, ...rest } = props
+  const { href: rawHref, children, ...rest } = props
   const projectPath = useChatStore.getState().activeProject
+  const href = rawHref ? decodeURIComponent(rawHref) : rawHref
   if (href && projectPath) {
     const lineMatch = href.match(/#L(\d+)$/)
     const cleanHref = lineMatch ? href.slice(0, -lineMatch[0].length) : href
@@ -80,7 +81,7 @@ function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
       return <InlineFileChip name={text} filePath={cleanHref} lineNumber={lineNumber} />
     }
   }
-  return <a href={href} {...rest}>{children}</a>
+  return <a href={rawHref} {...rest}>{children}</a>
 }
 
 const codexComponents = { a: FileLink }

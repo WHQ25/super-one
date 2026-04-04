@@ -602,7 +602,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     }
 
     case 'message_complete': {
-      const newCost = session.totalCostUsd + (event.metadata?.costUsd ?? 0)
+      const newCost = event.metadata?.costUsd ?? session.totalCostUsd
       const lastAssistantId = session.messages.findLast((m) => m.role === 'assistant')?.id
       const isCurrentTurn = event.messageId === lastAssistantId
       const ft = session.streamingTokens

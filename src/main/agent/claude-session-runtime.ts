@@ -265,7 +265,7 @@ export function applyClaudeEventToRuntime(
         : runtime.contextTokens
       return {
         ...runtime,
-        totalCostUsd: runtime.totalCostUsd + (event.metadata?.costUsd ?? 0),
+        totalCostUsd: event.metadata?.costUsd ?? runtime.totalCostUsd,
         contextTokens: contextTokens > 0 ? contextTokens : runtime.contextTokens,
         messages: runtime.messages.map((message) => (
           message.id !== event.messageId

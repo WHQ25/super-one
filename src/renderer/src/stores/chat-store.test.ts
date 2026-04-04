@@ -3026,8 +3026,8 @@ describe('cyclePermissionMode', () => {
   })
 })
 
-describe('cost/token accumulation via message_complete', () => {
-  it('accumulates cost across multiple message_complete events', () => {
+describe('cost/token via message_complete', () => {
+  it('uses latest cumulative cost from SDK (not additive)', () => {
     setupProject('/test')
 
     useChatStore.getState().handleAgentEvent(makeEvent({
@@ -3057,7 +3057,7 @@ describe('cost/token accumulation via message_complete', () => {
     }))
 
     const session = getActiveDraftSession('/test')!
-    expect(session.totalCostUsd).toBeCloseTo(0.04)
+    expect(session.totalCostUsd).toBe(0.03)
     expect(session.contextTokens).toBe(260)
   })
 

@@ -12,7 +12,7 @@ import { FileIcon } from '@/components/ui/FileIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, formatReadMeta } from './tool-display'
 import { codePlugin } from './chat-shared'
-import { useStallLevel, getStallColor, type StallLevel } from '@/lib/stall-utils'
+import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
 import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, tryPrettifyJson, parseQAPairs } from './tool-block-utils'
 import { WidgetBlock } from './WidgetBlock'
@@ -88,8 +88,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         fallbackResult={isDenied ? undefined : (result ?? undefined)}
         isStreaming={isStreaming}
         isDenied={isDenied}
-        elapsedSeconds={elapsedSeconds}
-        stallLevel={stallLevel}
         timeoutMs={timeout}
         isTimedOut={isTimedOut}
         resultOutputPath={resultOutputPath}
@@ -316,8 +314,6 @@ function BashTerminalView({
   fallbackResult,
   isStreaming,
   isDenied,
-  elapsedSeconds,
-  stallLevel,
   timeoutMs,
   isTimedOut,
   resultOutputPath,
@@ -331,8 +327,6 @@ function BashTerminalView({
   fallbackResult?: string
   isStreaming: boolean
   isDenied?: boolean
-  elapsedSeconds?: number
-  stallLevel?: StallLevel
   timeoutMs?: number
   isTimedOut?: boolean
   resultOutputPath?: string
@@ -354,7 +348,7 @@ function BashTerminalView({
   const holdOpenForBackgroundTask = treatAsBackground
     ? (hasTaskState ? taskProgress.completed !== true : isRunning)
     : false
-  const autoExpanded = holdOpenForBackgroundTask || isRunning
+  const autoExpanded = holdOpenForBackgroundTask
   const [expanded, setExpanded] = useState(autoExpand ? autoExpanded : false)
   const [extraContent, setExtraContent] = useState('')
   const [loadedLines, setLoadedLines] = useState(BASH_LOAD_CHUNK)
@@ -466,13 +460,15 @@ function BashTerminalView({
         ) : (
           <ToolIcon icon="terminal" className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground')}>
-          {isStreaming && !expanded ? <>Running…</> : 'Bash'}
+        <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground', isRunning && !isDenied && 'animate-shimmer')}>
+          {isRunning && !isDenied ? 'Running…' : 'Bash'}
         </span>
+        {isRunning && localElapsed >= 1 && <span className="text-muted-foreground tabular-nums">{localElapsed}s</span>}
         {description
           ? <span className="min-w-0 truncate text-muted-foreground">{description}</span>
           : (!expanded || fileExpired) && <span className="min-w-0 truncate text-muted-foreground">{command}</span>
         }
+        {timeoutMs && <span className="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{Math.round(timeoutMs / 1000)}s</span>}
         {isDenied && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>}
         {isTimedOut && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Timed out</span>}
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />

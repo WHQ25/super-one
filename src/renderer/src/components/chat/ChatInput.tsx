@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo
 import { cn } from '@/lib/utils'
 import { CODEX_REJECT_PLAN_PLACEHOLDER, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
-import { ArrowUp, Square, Paperclip, X } from 'lucide-react'
+import { ArrowUp, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
@@ -24,6 +24,7 @@ import { AttachmentBar } from './AttachmentBar'
 import { ModelSelector } from './ModelSelector'
 import { DirManagerPanel } from './DirManagerPanel'
 import { ReviewPanel } from './ReviewPanel'
+import { StopButton } from './StopButton'
 
 export interface ChatInputHandle {
   send: () => void
@@ -905,17 +906,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           <div className="flex items-center gap-1.5">
             <ContextUsage />
             {isStreaming && (
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                onClick={() => interrupt()}
-                className={cn(
-                  'text-muted-foreground hover:text-foreground',
-                  isCoding && 'size-7 rounded-full border border-border'
-                )}
-              >
-                <Square className="size-3" />
-              </Button>
+              <StopButton onInterrupt={interrupt} rounded={isCoding} />
             )}
             <Button
               size="icon-xs"

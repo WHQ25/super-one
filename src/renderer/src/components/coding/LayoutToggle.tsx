@@ -1,4 +1,4 @@
-import { PanelLeft, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
+import { PanelLeft, PanelLeftDashed, PanelRight } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
 import { useAppStore } from '@/stores/app'
@@ -40,11 +40,11 @@ export function LayoutToggle() {
                 onClick={toggleSide}
                 className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
-                {side === 'right' ? <PanelRightDashed className="size-3.5" /> : <PanelLeftDashed className="size-3.5" />}
+                {side === 'left' ? <PanelLeft className="size-3.5" /> : <PanelRight className="size-3.5" />}
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" sideOffset={4}>
-              Move panel to {side === 'right' ? 'left' : 'right'}
+              Move Chat to {side === 'left' ? 'Left' : 'Right'}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

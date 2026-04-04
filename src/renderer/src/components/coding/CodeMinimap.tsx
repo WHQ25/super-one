@@ -1,10 +1,12 @@
-import { useRef, useEffect, useCallback, memo } from 'react'
+import { useRef, useState, useEffect, useCallback, memo } from 'react'
 import type { RefObject } from 'react'
 import type { DiffLine, HLToken } from '@/lib/diff-utils'
 
 const CHAR_W = 1.2
 const LINE_H = 3
-const MINIMAP_W = 100
+const DEFAULT_MINIMAP_W = 100
+const SMALL_MINIMAP_W = 60
+const MINIMAP_BREAKPOINT = 400
 const GUTTER_W = 3
 const MINIMAP_DETAIL_LIMIT = 5000
 const MAX_VISIBLE_LINES = 500
@@ -14,6 +16,19 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
   tokens: HLToken[][] | null
   scrollRef: RefObject<HTMLDivElement | null>
 }) {
+  const [minimapW, setMinimapW] = useState(DEFAULT_MINIMAP_W)
+  useEffect(() => {
+    const scrollEl = scrollRef.current?.parentElement
+    if (!scrollEl) return
+    const update = () => {
+      const w = scrollEl.clientWidth
+      setMinimapW(w < MINIMAP_BREAKPOINT ? SMALL_MINIMAP_W : DEFAULT_MINIMAP_W)
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(scrollEl)
+    return () => ro.disconnect()
+  }, [scrollRef])
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const vpRef = useRef<HTMLDivElement>(null)
@@ -27,16 +42,16 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
     if (!canvas || !canvasH) return
 
     const dpr = window.devicePixelRatio || 1
-    canvas.width = MINIMAP_W * dpr
+    canvas.width = minimapW * dpr
     canvas.height = canvasH * dpr
-    canvas.style.width = `${MINIMAP_W}px`
+    canvas.style.width = `${minimapW}px`
     canvas.style.height = `${canvasH}px`
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     ctx.scale(dpr, dpr)
-    ctx.clearRect(0, 0, MINIMAP_W, canvasH)
+    ctx.clearRect(0, 0, minimapW, canvasH)
 
     const drawDetail = lines.length <= MINIMAP_DETAIL_LIMIT
 
@@ -46,12 +61,12 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
 
       if (line.kind === 'added') {
         ctx.fillStyle = 'rgba(34, 197, 94, 0.5)'
-        ctx.fillRect(0, y, MINIMAP_W, LINE_H)
+        ctx.fillRect(0, y, minimapW, LINE_H)
         ctx.fillStyle = 'rgba(34, 197, 94, 1)'
         ctx.fillRect(0, y, GUTTER_W, LINE_H)
       } else if (line.kind === 'removed') {
         ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'
-        ctx.fillRect(0, y, MINIMAP_W, LINE_H)
+        ctx.fillRect(0, y, minimapW, LINE_H)
         ctx.fillStyle = 'rgba(239, 68, 68, 1)'
         ctx.fillRect(0, y, GUTTER_W, LINE_H)
       }
@@ -65,24 +80,24 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
           ctx.fillStyle = token.style?.color || 'rgba(150, 150, 150, 0.3)'
           for (const ch of token.content) {
             if (ch === ' ' || ch === '\t') { x += CHAR_W * (ch === '\t' ? 4 : 1); continue }
-            if (x >= MINIMAP_W) break
+            if (x >= minimapW) break
             ctx.fillRect(x, y + 0.5, Math.max(CHAR_W * 0.9, 0.8), Math.max(LINE_H - 1, 1))
             x += CHAR_W
           }
-          if (x >= MINIMAP_W) break
+          if (x >= minimapW) break
         }
       } else if (line.text) {
         ctx.fillStyle = 'rgba(150, 150, 150, 0.2)'
         let x = 0
         for (const ch of line.text) {
           if (ch === ' ' || ch === '\t') { x += CHAR_W * (ch === '\t' ? 4 : 1); continue }
-          if (x >= MINIMAP_W) break
+          if (x >= minimapW) break
           ctx.fillRect(x, y + 0.5, Math.max(CHAR_W * 0.9, 0.8), Math.max(LINE_H - 1, 1))
           x += CHAR_W
         }
       }
     }
-  }, [lines, tokens, canvasH])
+  }, [lines, tokens, canvasH, minimapW])
 
   const syncViewport = useCallback(() => {
     const scrollEl = scrollRef.current
@@ -110,10 +125,11 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
     const onScroll = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(syncViewport) }
     syncViewport()
     scrollEl.addEventListener('scroll', onScroll, { passive: true })
-    const ro = new ResizeObserver(syncViewport)
+    let roRaf = 0
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(roRaf); roRaf = requestAnimationFrame(syncViewport) })
     ro.observe(scrollEl)
     if (containerRef.current) ro.observe(containerRef.current)
-    return () => { scrollEl.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf); ro.disconnect() }
+    return () => { scrollEl.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf); cancelAnimationFrame(roRaf); ro.disconnect() }
   }, [scrollRef, syncViewport])
 
   const scrollToY = useCallback((clientY: number) => {
@@ -153,8 +169,8 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
   return (
     <div
       ref={containerRef}
-      className="relative cursor-pointer overflow-hidden opacity-50 transition-opacity hover:opacity-70"
-      style={{ width: MINIMAP_W, maxHeight: maxContainerH }}
+      className="relative shrink-0 cursor-pointer overflow-hidden opacity-50 transition-[opacity,width] hover:opacity-70"
+      style={{ width: minimapW, maxHeight: maxContainerH, contain: 'strict' }}
       onClick={handleClick}
     >
       <canvas ref={canvasRef} className="block" />

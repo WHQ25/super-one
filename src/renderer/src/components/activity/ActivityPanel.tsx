@@ -37,7 +37,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
   const onResizeStart = useResizeHandle({
     getWidth,
     setWidth: setPanelWidth,
-    minWidth: 200,
+    minWidth: 320,
     getMaxWidth,
     direction: side === 'right' ? 'rtl' : 'ltr',
     outerRef,
@@ -98,12 +98,13 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
   return (
     <motion.div
       ref={outerRef}
+      data-activity-outer=""
       layout="position"
       transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
       className={cn('relative shrink-0 overflow-hidden', side === 'right' ? 'bg-card' : 'bg-sidebar')}
       style={{ width: visible ? panelWidth : 0, order: side === 'left' ? 0 : 2 }}
     >
-      <div ref={innerRef} className="flex h-full flex-col rounded-l-2xl bg-background overflow-hidden" style={{ width: panelWidth }}>
+      <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col rounded-l-2xl bg-background overflow-hidden" style={{ width: panelWidth }}>
         {isLeftmost && (
           <div className={cn('flex shrink-0 items-center pt-[2px]', needsTrafficLightPadding ? 'pl-[18px]' : 'pl-2')} style={{ height: needsTrafficLightPadding ? 44 : 36, WebkitAppRegion: 'drag' } as React.CSSProperties}>
             {needsTrafficLightPadding && <div className="w-[66px] shrink-0" />}

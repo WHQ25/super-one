@@ -66,9 +66,39 @@ function App(): React.JSX.Element {
   }, [])
 
   const MIN_MAIN = 400
-  const MIN_SIDEBAR = 200
+  const MIN_SIDEBAR = 320
+  const MIN_AP = 320
   const sidebarRef = useRef<HTMLDivElement>(null)
   const sidebarInnerRef = useRef<HTMLDivElement>(null)
+
+  const getLinkedPanel = useCallback((newW: number, prevW: number) => {
+    const ap = useActivityPanelStore.getState()
+    if (!ap.showPanel || ap.side !== 'left') return null
+    const outer = document.querySelector<HTMLElement>('[data-activity-outer]')
+    const inner = document.querySelector<HTMLElement>('[data-activity-inner]')
+    if (!outer || !inner) return null
+    const delta = newW - prevW
+    if (delta === 0) return null
+    const currentApW = parseFloat(outer.style.width) || ap.panelWidth
+    let newApW: number
+    if (delta > 0) {
+      newApW = Math.max(MIN_AP, currentApW - delta)
+    } else {
+      const maxAp = window.innerWidth - newW - MIN_MAIN
+      newApW = Math.min(maxAp, currentApW - delta)
+    }
+    return { width: newApW, outer, inner }
+  }, [])
+
+  const onSidebarDragEnd = useCallback(() => {
+    const outer = document.querySelector<HTMLElement>('[data-activity-outer]')
+    if (!outer) return
+    const w = parseFloat(outer.style.width)
+    if (w && w !== useActivityPanelStore.getState().panelWidth) {
+      outer.style.transition = ''
+      useActivityPanelStore.getState().setPanelWidth(w)
+    }
+  }, [])
 
   const onResizeStart = useResizeHandle({
     getWidth: () => useAppStore.getState().sidebarWidth,
@@ -76,14 +106,16 @@ function App(): React.JSX.Element {
     minWidth: MIN_SIDEBAR,
     getMaxWidth: () => {
       const ap = useActivityPanelStore.getState()
-      return window.innerWidth - (ap.showPanel ? ap.panelWidth : 0) - MIN_MAIN
+      if (!ap.showPanel) return window.innerWidth - MIN_MAIN
+      return window.innerWidth - MIN_AP - MIN_MAIN
     },
     direction: 'ltr',
     outerRef: sidebarRef,
     innerRef: sidebarInnerRef,
+    getLinkedPanel,
+    onDragEnd: onSidebarDragEnd,
   })
 
-  const MIN_AP = 200
   useEffect(() => {
     let raf = 0
     const clampPanels = () => {

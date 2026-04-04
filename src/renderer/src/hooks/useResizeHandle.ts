@@ -1,5 +1,11 @@
 import { useCallback, type RefObject } from 'react'
 
+interface LinkedPanel {
+  width: number
+  outer: HTMLElement
+  inner: HTMLElement
+}
+
 interface UseResizeHandleOptions {
   getWidth: () => number
   setWidth: (w: number) => void
@@ -8,6 +14,8 @@ interface UseResizeHandleOptions {
   direction: 'ltr' | 'rtl'
   outerRef: RefObject<HTMLDivElement | null>
   innerRef: RefObject<HTMLDivElement | null>
+  getLinkedPanel?: (newWidth: number, prevWidth: number) => LinkedPanel | null
+  onDragEnd?: () => void
 }
 
 export function useResizeHandle({
@@ -18,6 +26,8 @@ export function useResizeHandle({
   direction,
   outerRef,
   innerRef,
+  getLinkedPanel,
+  onDragEnd,
 }: UseResizeHandleOptions) {
   return useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -32,6 +42,7 @@ export function useResizeHandle({
     document.body.style.userSelect = 'none'
 
     const sign = direction === 'ltr' ? 1 : -1
+    let prevW = startW
 
     const calc = (clientX: number) => {
       const maxW = getMaxWidth()
@@ -42,6 +53,13 @@ export function useResizeHandle({
       const w = calc(ev.clientX)
       outer.style.width = `${w}px`
       inner.style.width = `${w}px`
+      const linked = getLinkedPanel?.(w, prevW)
+      if (linked) {
+        linked.outer.style.transition = 'none'
+        linked.outer.style.width = `${linked.width}px`
+        linked.inner.style.width = `${linked.width}px`
+      }
+      prevW = w
     }
 
     const onUp = (ev: MouseEvent) => {
@@ -50,11 +68,12 @@ export function useResizeHandle({
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       setWidth(w)
+      onDragEnd?.()
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
     }
 
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [getWidth, setWidth, minWidth, getMaxWidth, direction, outerRef, innerRef])
+  }, [getWidth, setWidth, minWidth, getMaxWidth, direction, outerRef, innerRef, getLinkedPanel, onDragEnd])
 }

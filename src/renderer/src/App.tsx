@@ -272,7 +272,7 @@ function App(): React.JSX.Element {
 
         {/* Content */}
         {layoutMode === 'coding' ? (
-          <div className="relative flex min-h-0 flex-1 flex-col">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
             <CodingLayout />
           </div>

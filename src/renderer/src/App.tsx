@@ -118,13 +118,23 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     let raf = 0
+    let prevWidth = window.innerWidth
     const clampPanels = () => {
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
         const { showSidebar: sb, sidebarWidth: sw, setSidebarWidth: setSW } = useAppStore.getState()
         const ap = useActivityPanelStore.getState()
+        const curWidth = window.innerWidth
+        const delta = curWidth - prevWidth
+        prevWidth = curWidth
+
+        if (delta !== 0 && ap.showPanel) {
+          const maxAp = curWidth - (sb ? sw : 0) - MIN_MAIN
+          ap.setPanelWidth(Math.max(MIN_AP, Math.min(ap.panelWidth + delta, maxAp)))
+        }
+
         const totalPanels = (sb ? sw : 0) + (ap.showPanel ? ap.panelWidth : 0)
-        let overflow = totalPanels + MIN_MAIN - window.innerWidth
+        let overflow = totalPanels + MIN_MAIN - curWidth
         if (overflow <= 0) return
         if (sb) {
           const shrink = Math.min(overflow, sw - MIN_SIDEBAR)

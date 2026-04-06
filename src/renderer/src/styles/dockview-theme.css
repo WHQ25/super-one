@@ -78,3 +78,7 @@
 .dockview-theme-superone .dv-tab.dv-active-tab:first-child {
   border-left: none;
 }
+
+.dockview-theme-superone.single-group .dv-void-container {
+  pointer-events: none;
+}

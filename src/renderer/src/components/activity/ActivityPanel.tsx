@@ -84,7 +84,15 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
       }
     })
 
-    return () => { d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose() }
+    const container = innerRef.current?.querySelector<HTMLElement>('.dockview-theme-superone')
+    const updateSingleGroupClass = () => {
+      container?.classList.toggle('single-group', event.api.groups.length <= 1)
+    }
+    updateSingleGroupClass()
+    const d5 = event.api.onDidAddGroup(updateSingleGroupClass)
+    const d6 = event.api.onDidRemoveGroup(updateSingleGroupClass)
+
+    return () => { d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose(); d5.dispose(); d6.dispose() }
   }, [])
 
   useEffect(() => {

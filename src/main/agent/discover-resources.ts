@@ -31,7 +31,13 @@ function parseFrontmatter(content: string): Record<string, string> {
       currentKey = match[1]
       const val = match[2].trim()
       // Handle YAML block scalar indicators (>, |, >-, |-)
-      currentValue = /^[>|][-+]?\s*$/.test(val) ? '' : val
+      if (/^[>|][-+]?\s*$/.test(val)) {
+        currentValue = ''
+      } else if (/^(["'])(.*)(\1)$/.test(val)) {
+        currentValue = val.slice(1, -1)
+      } else {
+        currentValue = val
+      }
     } else {
       currentKey = ''
       currentValue = ''
@@ -96,7 +102,7 @@ function scanSkillDir(dir: string): SlashCommandInfo[] {
     skills.push({
       name: entry.name,
       description: fm['description'] ?? '',
-      argumentHint: fm['argument-hint'] ?? '',
+      argumentHint: fm['arguments'] ?? fm['argument-hint'] ?? '',
       isSkill: true,
     })
   }

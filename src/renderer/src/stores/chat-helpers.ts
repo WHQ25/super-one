@@ -8,8 +8,14 @@ export function buildSlashCommands(
   projectSkills: SlashCommandInfo[],
   projectCommands: SlashCommandInfo[],
 ): SlashCommandInfo[] {
-  const skillSet = new Set([...userSkills, ...projectSkills].map((sk) => sk.name))
-  const tagged = globalSlashCommands.map((c) => ({ ...c, isSkill: skillSet.has(c.name) }))
+  const allSkills = [...userSkills, ...projectSkills]
+  const skillMap = new Map(allSkills.map((sk) => [sk.name, sk]))
+  const tagged = globalSlashCommands.map((c) => {
+    const skill = skillMap.get(c.name)
+    return skill
+      ? { ...c, isSkill: true, argumentHint: c.argumentHint || skill.argumentHint }
+      : c
+  })
   const seen = new Set(tagged.map((c) => c.name))
   const extra: SlashCommandInfo[] = []
   for (const c of [...userSkills, ...userCommands, ...projectSkills, ...projectCommands]) {

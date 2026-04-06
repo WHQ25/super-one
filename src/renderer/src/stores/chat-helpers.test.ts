@@ -50,6 +50,18 @@ describe('buildSlashCommands', () => {
     expect(result.filter((c) => c.name === 'foo')).toHaveLength(1)
   })
 
+  it('merges argumentHint from skill when global command has none', () => {
+    const global = [cmd('release')]
+    const projectSkills: SlashCommandInfo[] = [
+      { name: 'release', description: 'Release app', argumentHint: '[channel] [bump]', isSkill: true },
+    ]
+    const result = buildSlashCommands(global, [], [], projectSkills, [])
+
+    const release = result.find((c) => c.name === 'release')!
+    expect(release.isSkill).toBe(true)
+    expect(release.argumentHint).toBe('[channel] [bump]')
+  })
+
   it('does not add extras that already exist in globalSlashCommands', () => {
     const global = [cmd('context')]
     const userSkills = [cmd('context', 'overridden')]

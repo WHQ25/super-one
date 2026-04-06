@@ -206,6 +206,30 @@ describe('discoverSkills', () => {
     expect(shared.description).toBe('User skill')
     expect(result).toHaveLength(2)
   })
+
+  it('reads arguments frontmatter as argumentHint', () => {
+    existsSyncMock.mockImplementation((p: string) => {
+      if (p.includes('plugins')) return false
+      return p === '/home/user/.claude/skills' || p === '/home/user/.claude/skills/release/SKILL.md'
+    })
+    readdirSyncMock.mockReturnValue([dirent('release', false)])
+    readFileSyncMock.mockReturnValue('---\ndescription: Release app\narguments: "[channel] [bump]"\n---\n')
+
+    const result = discoverSkills('/project')
+    expect(result[0]).toMatchObject({ name: 'release', argumentHint: '[channel] [bump]' })
+  })
+
+  it('prefers arguments over argument-hint for skills', () => {
+    existsSyncMock.mockImplementation((p: string) => {
+      if (p.includes('plugins')) return false
+      return p === '/home/user/.claude/skills' || p === '/home/user/.claude/skills/deploy/SKILL.md'
+    })
+    readdirSyncMock.mockReturnValue([dirent('deploy', false)])
+    readFileSyncMock.mockReturnValue('---\narguments: <env>\nargument-hint: <old>\n---\n')
+
+    const result = discoverSkills('/project')
+    expect(result[0]?.argumentHint).toBe('<env>')
+  })
 })
 
 describe('discoverAllAgents', () => {

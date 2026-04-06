@@ -482,7 +482,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
   const { copied: userCopied, copy: copyUserText } = useCopyText()
   return (
     <div className={cn('w-0 min-w-full flex', isUser ? 'justify-end' : 'mb-2 justify-start')}>
-      <div className={cn(isUser ? 'group/copy relative mb-0 flex min-w-0 max-w-[85%] flex-col items-end' : 'w-full')}>
+      <div className={cn(isUser ? 'group/copy relative mb-0 flex min-w-0 max-w-[90%] flex-col items-end' : 'w-full')}>
         <div
           className={cn(
             'min-w-0 text-sm',

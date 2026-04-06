@@ -67,6 +67,7 @@ function App(): React.JSX.Element {
 
   const MIN_MAIN = 400
   const MIN_SIDEBAR = 320
+  const MAX_SIDEBAR = 500
   const MIN_AP = 320
   const sidebarRef = useRef<HTMLDivElement>(null)
   const sidebarInnerRef = useRef<HTMLDivElement>(null)
@@ -106,8 +107,10 @@ function App(): React.JSX.Element {
     minWidth: MIN_SIDEBAR,
     getMaxWidth: () => {
       const ap = useActivityPanelStore.getState()
-      if (!ap.showPanel) return window.innerWidth - MIN_MAIN
-      return window.innerWidth - MIN_AP - MIN_MAIN
+      const layoutMax = ap.showPanel
+        ? window.innerWidth - MIN_AP - MIN_MAIN
+        : window.innerWidth - MIN_MAIN
+      return Math.min(MAX_SIDEBAR, layoutMax)
     },
     direction: 'ltr',
     outerRef: sidebarRef,
@@ -119,6 +122,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     let raf = 0
     let prevWidth = window.innerWidth
+    let prevSidebar = useAppStore.getState().showSidebar
     const clampPanels = () => {
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
@@ -128,21 +132,32 @@ function App(): React.JSX.Element {
         const delta = curWidth - prevWidth
         prevWidth = curWidth
 
-        if (delta !== 0 && ap.showPanel) {
+        const sidebarJustHidden = prevSidebar && !sb
+        prevSidebar = sb
+
+        if (sidebarJustHidden && ap.showPanel) {
+          const maxAp = curWidth - MIN_MAIN
+          ap.setPanelWidth(Math.min(maxAp, ap.panelWidth + sw))
+        } else if (delta !== 0 && ap.showPanel) {
           const maxAp = curWidth - (sb ? sw : 0) - MIN_MAIN
           ap.setPanelWidth(Math.max(MIN_AP, Math.min(ap.panelWidth + delta, maxAp)))
         }
 
-        const totalPanels = (sb ? sw : 0) + (ap.showPanel ? ap.panelWidth : 0)
+        if (sb) {
+          const maxSw = Math.min(MAX_SIDEBAR, curWidth - (ap.showPanel ? ap.panelWidth : 0) - MIN_MAIN)
+          if (sw > maxSw) setSW(Math.max(MIN_SIDEBAR, maxSw))
+        }
+
+        const totalPanels = (sb ? Math.min(sw, MAX_SIDEBAR) : 0) + (ap.showPanel ? ap.panelWidth : 0)
         let overflow = totalPanels + MIN_MAIN - curWidth
         if (overflow <= 0) return
-        if (sb) {
-          const shrink = Math.min(overflow, sw - MIN_SIDEBAR)
-          if (shrink > 0) { setSW(sw - shrink); overflow -= shrink }
-        }
-        if (overflow > 0 && ap.showPanel) {
+        if (ap.showPanel) {
           const shrink = Math.min(overflow, ap.panelWidth - MIN_AP)
-          if (shrink > 0) ap.setPanelWidth(ap.panelWidth - shrink)
+          if (shrink > 0) { ap.setPanelWidth(ap.panelWidth - shrink); overflow -= shrink }
+        }
+        if (overflow > 0 && sb) {
+          const shrink = Math.min(overflow, sw - MIN_SIDEBAR)
+          if (shrink > 0) setSW(sw - shrink)
         }
       })
     }
@@ -162,7 +177,7 @@ function App(): React.JSX.Element {
   }, [])
 
   const hasLeftPanel = showSidebar || (showActivityPanel && activitySide === 'left')
-  const hasRightPanel = showActivityPanel && activitySide === 'right'
+
   const getActivityMaxWidth = useCallback(() => {
     const sb = useAppStore.getState()
     return window.innerWidth - (sb.showSidebar ? sb.sidebarWidth : 0) - MIN_MAIN
@@ -215,11 +230,14 @@ function App(): React.JSX.Element {
   return (
     <div className="flex h-screen overflow-hidden bg-sidebar text-foreground" style={enterAnimation}>
       <GitAutoRefresh />
-      {/* Sidebar — only in coding mode, animated width */}
+      <LayoutGroup>
+      {/* Sidebar — only in coding mode */}
       {layoutMode === 'coding' && (
-        <div
+        <motion.div
           ref={sidebarRef}
-          className="relative shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
+          layout="position"
+          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+          className="relative shrink-0 overflow-hidden"
           style={{ width: showSidebar ? sidebarWidth : 0 }}
         >
           <div ref={sidebarInnerRef} className="h-full" style={{ width: sidebarWidth }}>
@@ -233,11 +251,10 @@ function App(): React.JSX.Element {
               <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
             </div>
           )}
-        </div>
+        </motion.div>
       )}
 
       {/* Main area wrapper */}
-      <LayoutGroup>
       <div className={cn(
         'flex min-w-0 flex-1',
         layoutMode === 'coding' && hasLeftPanel && 'rounded-l-2xl bg-background/70 overflow-hidden'
@@ -246,7 +263,7 @@ function App(): React.JSX.Element {
         <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={layoutMode !== 'coding'} />
 
         {/* Main area */}
-        <motion.div layout="position" transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && hasLeftPanel && 'rounded-l-2xl bg-background overflow-hidden')} style={{ order: 1 }}>
+        <motion.div layout="position" transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && hasLeftPanel && 'rounded-l-2xl bg-background')} style={{ order: 1 }}>
         {/* Main header — drag region */}
         <div
           className={cn('flex h-11 shrink-0 items-center bg-card pt-[2px] transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !(layoutMode === 'coding' && hasLeftPanel)) ? 'pl-2' : 'pl-[18px]')}
@@ -302,6 +319,7 @@ function App(): React.JSX.Element {
       </div>
       </LayoutGroup>
       <UpdateNotification />
+
     </div>
   )
 }

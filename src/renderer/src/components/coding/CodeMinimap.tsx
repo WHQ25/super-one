@@ -4,9 +4,11 @@ import type { DiffLine, HLToken } from '@/lib/diff-utils'
 
 const CHAR_W = 1.2
 const LINE_H = 3
-const DEFAULT_MINIMAP_W = 100
+const LARGE_MINIMAP_W = 100
+const MEDIUM_MINIMAP_W = 80
 const SMALL_MINIMAP_W = 60
-const MINIMAP_BREAKPOINT = 400
+const LARGE_BREAKPOINT = 500
+const SMALL_BREAKPOINT = 350
 const GUTTER_W = 3
 const MINIMAP_DETAIL_LIMIT = 5000
 const MAX_VISIBLE_LINES = 500
@@ -16,18 +18,23 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
   tokens: HLToken[][] | null
   scrollRef: RefObject<HTMLDivElement | null>
 }) {
-  const [minimapW, setMinimapW] = useState(DEFAULT_MINIMAP_W)
+  const [minimapW, setMinimapW] = useState(LARGE_MINIMAP_W)
   useEffect(() => {
     const scrollEl = scrollRef.current?.parentElement
     if (!scrollEl) return
+    let raf = 0
+    const calcWidth = (w: number) => w >= LARGE_BREAKPOINT ? LARGE_MINIMAP_W : w >= SMALL_BREAKPOINT ? MEDIUM_MINIMAP_W : SMALL_MINIMAP_W
     const update = () => {
-      const w = scrollEl.clientWidth
-      setMinimapW(w < MINIMAP_BREAKPOINT ? SMALL_MINIMAP_W : DEFAULT_MINIMAP_W)
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const next = calcWidth(scrollEl.clientWidth)
+        setMinimapW((prev) => prev === next ? prev : next)
+      })
     }
     update()
     const ro = new ResizeObserver(update)
     ro.observe(scrollEl)
-    return () => ro.disconnect()
+    return () => { cancelAnimationFrame(raf); ro.disconnect() }
   }, [scrollRef])
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -37,9 +44,13 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
   const canvasH = lines.length * LINE_H
   const maxContainerH = MAX_VISIBLE_LINES * LINE_H
 
+  const prevDrawRef = useRef<{ lines: DiffLine[]; tokens: HLToken[][] | null; w: number }>({ lines: [], tokens: null, w: 0 })
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !canvasH) return
+    const prev = prevDrawRef.current
+    if (prev.lines === lines && prev.tokens === tokens && prev.w === minimapW) return
+    prevDrawRef.current = { lines, tokens, w: minimapW }
 
     const dpr = window.devicePixelRatio || 1
     canvas.width = minimapW * dpr
@@ -169,8 +180,8 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
   return (
     <div
       ref={containerRef}
-      className="relative shrink-0 cursor-pointer overflow-hidden opacity-50 transition-[opacity,width] hover:opacity-70"
-      style={{ width: minimapW, maxHeight: maxContainerH, contain: 'strict' }}
+      className="relative shrink-0 cursor-pointer overflow-hidden opacity-50 transition-opacity hover:opacity-70"
+      style={{ width: minimapW, maxHeight: maxContainerH, contain: 'strict', willChange: 'transform' }}
       onClick={handleClick}
     >
       <canvas ref={canvasRef} className="block" />

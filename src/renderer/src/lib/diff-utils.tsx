@@ -250,7 +250,7 @@ export const DiffView = forwardRef<HTMLDivElement, {
   hideScrollbar?: boolean
   scrollToLine?: { line: number; seq: number } | null
 }>(function DiffView({ lines, oldTokens, newTokens, fontSize, maxHeight, className, hideScrollbar, scrollToLine }, ref) {
-  const maxLine = lines.reduce((m, l) => Math.max(m, l.lineNum), 0)
+  const maxLine = useMemo(() => lines.reduce((m, l) => Math.max(m, l.lineNum), 0), [lines])
   const gw = gutterWidth(maxLine)
   const minContentWidth = useMemo(() => {
     if (lines.length === 0) return '0px'
@@ -312,7 +312,7 @@ export const DiffView = forwardRef<HTMLDivElement, {
   }, [scrollToLine])
 
   return (
-    <div ref={scrollRef} className={cn('overflow-auto rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground', maxHeight ?? 'max-h-[300px]', hideScrollbar && 'hide-scrollbar', className)}>
+    <div ref={scrollRef} className={cn('overflow-auto rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground', maxHeight ?? 'max-h-[300px]', hideScrollbar && 'hide-scrollbar', className)} style={{ contain: 'inline-size' }}>
       <div className="relative min-w-full" style={{ height: virtualizer.getTotalSize(), minWidth: minContentWidth }}>
         {virtualizer.getVirtualItems().map((vItem) => {
           const line = lines[vItem.index]

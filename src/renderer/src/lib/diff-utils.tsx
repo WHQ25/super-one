@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useMemo, useCallback, useLayoutEffect, memo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { cn } from '@/lib/utils'
-import { measureMaxLineWidth, getMonoFont, getMonoCharWidth } from '@/lib/pretext-utils'
+import { measureMaxLineWidth, getMonoFont, getMonoCharWidth, MONO_FONT_FAMILY } from '@/lib/pretext-utils'
 import { codePlugin, codePluginLight } from '@/components/chat/chat-shared'
 import { useIsDark } from '@/hooks/use-is-dark'
 
@@ -244,20 +244,23 @@ export const DiffView = forwardRef<HTMLDivElement, {
   lines: DiffLine[]
   oldTokens?: HLToken[][] | null
   newTokens?: HLToken[][] | null
+  fontSize?: number
   maxHeight?: string
   className?: string
   hideScrollbar?: boolean
   scrollToLine?: { line: number; seq: number } | null
-}>(function DiffView({ lines, oldTokens, newTokens, maxHeight, className, hideScrollbar, scrollToLine }, ref) {
+}>(function DiffView({ lines, oldTokens, newTokens, fontSize, maxHeight, className, hideScrollbar, scrollToLine }, ref) {
   const maxLine = lines.reduce((m, l) => Math.max(m, l.lineNum), 0)
   const gw = gutterWidth(maxLine)
   const minContentWidth = useMemo(() => {
     if (lines.length === 0) return '0px'
+    const font = fontSize ? `${fontSize}px ${MONO_FONT_FAMILY}` : getMonoFont()
     const fullText = lines.map((l) => l.text).join('\n')
-    const textW = measureMaxLineWidth(fullText, getMonoFont())
-    const gutterPx = (gw + 2) * getMonoCharWidth() + 16
+    const textW = measureMaxLineWidth(fullText, font)
+    const charW = fontSize ? measureMaxLineWidth('0', font) : getMonoCharWidth()
+    const gutterPx = (gw + 2) * charW + 16
     return `${Math.ceil(textW + gutterPx)}px`
-  }, [lines, gw])
+  }, [lines, gw, fontSize])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   useImperativeHandle(ref, () => scrollRef.current!, [])

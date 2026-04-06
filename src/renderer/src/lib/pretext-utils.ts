@@ -1,6 +1,7 @@
 import { prepareWithSegments, walkLineRanges } from '@chenglou/pretext'
 
-const MONO_FONT = '11px ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace'
+export const MONO_FONT_FAMILY = 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace'
+const MONO_FONT = `11px ${MONO_FONT_FAMILY}`
 
 let cachedMonoCharWidth: number | null = null
 

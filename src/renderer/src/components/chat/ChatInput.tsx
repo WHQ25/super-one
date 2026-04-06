@@ -285,6 +285,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             current += node.text ?? ''
           } else if (node.type.name === 'mention') {
             current += `@${(node.attrs as MentionNodeAttrs).value}`
+          } else if (node.type.name === 'hardBreak') {
+            current += '\n'
           } else if (node.type.name === 'pasteChip') {
             if (current.trim()) segments.push({ text: current.trim(), isPaste: false })
             current = ''

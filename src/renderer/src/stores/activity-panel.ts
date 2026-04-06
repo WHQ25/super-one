@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 export type ActivityPanelSide = 'left' | 'right'
 
@@ -13,13 +14,21 @@ interface ActivityPanelState {
   toggleSide: () => void
 }
 
-export const useActivityPanelStore = create<ActivityPanelState>((set, get) => ({
-  showPanel: false,
-  side: 'right',
-  panelWidth: 560,
+export const useActivityPanelStore = create<ActivityPanelState>()(
+  persist(
+    (set, get) => ({
+      showPanel: false,
+      side: 'left',
+      panelWidth: 560,
 
-  setShowPanel: (show) => set({ showPanel: show }),
-  setSide: (side) => set({ side }),
-  setPanelWidth: (w) => set({ panelWidth: w }),
-  toggleSide: () => set({ side: get().side === 'left' ? 'right' : 'left' }),
-}))
+      setShowPanel: (show) => set({ showPanel: show }),
+      setSide: (side) => set({ side }),
+      setPanelWidth: (w) => set({ panelWidth: w }),
+      toggleSide: () => set({ side: get().side === 'left' ? 'right' : 'left' }),
+    }),
+    {
+      name: 'activity-panel',
+      partialize: ({ side, panelWidth }) => ({ side, panelWidth }),
+    },
+  ),
+)

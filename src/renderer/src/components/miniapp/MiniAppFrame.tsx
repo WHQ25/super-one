@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { useChatStore } from '@/stores/chat'
+import { useIsDark } from '@/hooks/use-is-dark'
+import { readThemeVars } from './miniapp-theme'
 import type { MiniAppToolCallRequest } from '../../../../shared/miniapp-types'
 
 interface MiniAppFrameProps {
@@ -10,7 +12,15 @@ interface MiniAppFrameProps {
 export const MiniAppFrame = forwardRef<HTMLIFrameElement, MiniAppFrameProps>(
   function MiniAppFrame({ appId, className }, ref) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const isDark = useIsDark()
+  const isDarkRef = useRef(isDark)
+  isDarkRef.current = isDark
+  const readyRef = useRef(false)
   useImperativeHandle(ref, () => iframeRef.current!, [])
+
+  const sendToFrame = useCallback((msg: unknown) => {
+    iframeRef.current?.contentWindow?.postMessage(msg, '*')
+  }, [])
 
   const handlePostMessage = useCallback(
     (e: MessageEvent) => {
@@ -31,24 +41,43 @@ export const MiniAppFrame = forwardRef<HTMLIFrameElement, MiniAppFrameProps>(
           window.miniapp
             .fsRequest(data.appId, data.op, data.args)
             .then((result) => {
-              iframeRef.current?.contentWindow?.postMessage(
-                { type: 'miniapp-fs-response', id: data.id, result },
-                '*',
-              )
+              sendToFrame({ type: 'miniapp-fs-response', id: data.id, result })
             })
             .catch((err) => {
-              iframeRef.current?.contentWindow?.postMessage(
-                { type: 'miniapp-fs-response', id: data.id, error: err.message },
-                '*',
-              )
+              sendToFrame({ type: 'miniapp-fs-response', id: data.id, error: err.message })
             })
           break
+        case 'miniapp-git-request':
+          window.miniapp
+            .gitRequest(appId, data.op as string, data.args as Record<string, unknown>)
+            .then((result) => {
+              sendToFrame({ type: 'miniapp-git-response', id: data.id, result })
+            })
+            .catch((err) => {
+              sendToFrame({ type: 'miniapp-git-response', id: data.id, error: err.message })
+            })
+          break
+        case 'miniapp-fs-watch':
+          window.miniapp
+            .fsWatch(appId, data.path)
+            .then((watchId) => {
+              sendToFrame({ type: 'miniapp-fs-watch-ack', id: data.id, watchId })
+            })
+            .catch((err) => {
+              sendToFrame({ type: 'miniapp-fs-watch-ack', id: data.id, error: err.message })
+            })
+          break
+        case 'miniapp-fs-unwatch':
+          window.miniapp.fsUnwatch(data.watchId)
+          break
         case 'miniapp-ready':
+          readyRef.current = true
           window.miniapp.iframeReady(appId)
+          sendToFrame({ type: 'miniapp-theme', vars: readThemeVars(), isDark: isDarkRef.current })
           break
       }
     },
-    [appId],
+    [appId, sendToFrame],
   )
 
   useEffect(() => {
@@ -57,20 +86,38 @@ export const MiniAppFrame = forwardRef<HTMLIFrameElement, MiniAppFrameProps>(
   }, [handlePostMessage])
 
   useEffect(() => {
-    const cleanup = window.miniapp.onToolCall((call: MiniAppToolCallRequest) => {
-      if (call.appId !== appId) return
-      iframeRef.current?.contentWindow?.postMessage(
-        {
-          type: 'miniapp-tool-call',
-          callId: call.callId,
-          toolName: call.toolName,
-          arguments: call.arguments,
-        },
-        '*',
-      )
+    if (!readyRef.current) return
+    sendToFrame({ type: 'miniapp-theme', vars: readThemeVars(), isDark })
+  }, [isDark, sendToFrame])
+
+  useEffect(() => {
+    const cleanup = window.miniapp.onGitHeadChangeEvent((event) => {
+      if (event.appId !== appId) return
+      sendToFrame({ type: 'miniapp-git-head-change' })
     })
     return cleanup
-  }, [appId])
+  }, [appId, sendToFrame])
+
+  useEffect(() => {
+    const cleanup = window.miniapp.onFsWatchEvent((event) => {
+      if (event.appId !== appId) return
+      sendToFrame({ type: 'miniapp-fs-watch-event', watchId: event.watchId, eventType: event.type, path: event.path })
+    })
+    return cleanup
+  }, [appId, sendToFrame])
+
+  useEffect(() => {
+    const cleanup = window.miniapp.onToolCall((call: MiniAppToolCallRequest) => {
+      if (call.appId !== appId) return
+      sendToFrame({
+        type: 'miniapp-tool-call',
+        callId: call.callId,
+        toolName: call.toolName,
+        arguments: call.arguments,
+      })
+    })
+    return cleanup
+  }, [appId, sendToFrame])
 
   return (
     <iframe

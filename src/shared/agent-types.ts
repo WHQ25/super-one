@@ -465,6 +465,7 @@ export interface GitInfo {
 
 export interface GitLogEntry {
   sha: string
+  parents: string[]
   message: string
   author: string
   date: string
@@ -1170,6 +1171,11 @@ export const AgentIpcChannels = {
   MINIAPP_TOOL_CALL: 'miniapp:tool-call',
   MINIAPP_TOOL_RESULT: 'miniapp:tool-result',
   MINIAPP_FS_REQUEST: 'miniapp:fs-request',
+  MINIAPP_FS_WATCH: 'miniapp:fs-watch',
+  MINIAPP_FS_UNWATCH: 'miniapp:fs-unwatch',
+  MINIAPP_FS_WATCH_EVENT: 'miniapp:fs-watch-event',
+  MINIAPP_GIT_REQUEST: 'miniapp:git-request',
+  MINIAPP_GIT_HEAD_CHANGE: 'miniapp:git-head-change',
   MINIAPP_IFRAME_READY: 'miniapp:iframe-ready',
   MINIAPP_GET_PRELOAD_PATH: 'miniapp:get-preload-path',
   MINIAPP_DETECT_DEV: 'miniapp:detect-dev',

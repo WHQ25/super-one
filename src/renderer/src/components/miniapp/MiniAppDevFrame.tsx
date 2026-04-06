@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { useChatStore } from '@/stores/chat'
+import { useIsDark } from '@/hooks/use-is-dark'
+import { readThemeVars } from './miniapp-theme'
 
 export interface MiniAppDevFrameHandle {
   reload: () => void
@@ -14,6 +16,10 @@ interface MiniAppDevFrameProps {
 export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrameProps>(
   function MiniAppDevFrame({ appId, className }, ref) {
     const webviewRef = useRef<Electron.WebviewTag>(null)
+    const isDark = useIsDark()
+    const isDarkRef = useRef(isDark)
+    isDarkRef.current = isDark
+    const readyRef = useRef(false)
     const [preloadPath, setPreloadPath] = useState<string | null>(null)
 
     useEffect(() => {
@@ -61,8 +67,33 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
                 wv.send('miniapp-fs-response', { id: data.id, error: err.message })
               })
             break
+          case 'miniapp-git-request':
+            window.miniapp
+              .gitRequest(appId, data.op as string, data.args as Record<string, unknown>)
+              .then((result) => {
+                wv.send('miniapp-git-response', { id: data.id, result })
+              })
+              .catch((err: Error) => {
+                wv.send('miniapp-git-response', { id: data.id, error: err.message })
+              })
+            break
+          case 'miniapp-fs-watch':
+            window.miniapp
+              .fsWatch(appId, data.path as string)
+              .then((watchId) => {
+                wv.send('miniapp-fs-watch-ack', { id: data.id, watchId })
+              })
+              .catch((err: Error) => {
+                wv.send('miniapp-fs-watch-ack', { id: data.id, error: err.message })
+              })
+            break
+          case 'miniapp-fs-unwatch':
+            window.miniapp.fsUnwatch(data.watchId as number)
+            break
           case 'miniapp-ready':
+            readyRef.current = true
             window.miniapp.iframeReady(appId)
+            wv.send('miniapp-theme', { vars: readThemeVars(), isDark: isDarkRef.current })
             break
         }
       }
@@ -70,6 +101,31 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
       wv.addEventListener('ipc-message', handleIpcMessage)
       return () => { wv.removeEventListener('ipc-message', handleIpcMessage) }
     }, [appId, preloadPath])
+
+    useEffect(() => {
+      if (!readyRef.current) return
+      webviewRef.current?.send('miniapp-theme', { vars: readThemeVars(), isDark })
+    }, [isDark])
+
+    useEffect(() => {
+      const cleanup = window.miniapp.onGitHeadChangeEvent((event) => {
+        if (event.appId !== appId) return
+        webviewRef.current?.send('miniapp-git-head-change', {})
+      })
+      return cleanup
+    }, [appId])
+
+    useEffect(() => {
+      const cleanup = window.miniapp.onFsWatchEvent((event) => {
+        if (event.appId !== appId) return
+        webviewRef.current?.send('miniapp-fs-watch-event', {
+          watchId: event.watchId,
+          eventType: event.type,
+          path: event.path,
+        })
+      })
+      return cleanup
+    }, [appId])
 
     useEffect(() => {
       const cleanup = window.miniapp.onToolCall((call) => {

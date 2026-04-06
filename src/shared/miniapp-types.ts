@@ -70,6 +70,8 @@ export interface MiniAppToolCallResponse {
 
 export type MiniAppFsOp = 'readFile' | 'readDir' | 'writeFile' | 'exists' | 'glob'
 
+export type MiniAppGitOp = 'info' | 'branches' | 'log' | 'status' | 'diff' | 'show'
+
 export interface MiniAppFsRequest {
   appId: string
   op: MiniAppFsOp
@@ -88,10 +90,25 @@ export interface MiniAppInstallResult {
   upgraded: boolean
 }
 
+export interface MiniAppFsWatchEvent {
+  watchId: number
+  appId: string
+  type: 'change' | 'rename'
+  path: string
+}
+
 export type MiniAppBridgeMessageType =
   | 'miniapp-tool-call'
   | 'miniapp-tool-result'
   | 'miniapp-fs-request'
   | 'miniapp-fs-response'
+  | 'miniapp-fs-watch'
+  | 'miniapp-fs-unwatch'
+  | 'miniapp-fs-watch-ack'
+  | 'miniapp-fs-watch-event'
+  | 'miniapp-theme'
+  | 'miniapp-git-request'
+  | 'miniapp-git-response'
+  | 'miniapp-git-head-change'
   | 'miniapp-sendPrompt'
   | 'miniapp-ready'

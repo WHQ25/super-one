@@ -26,6 +26,21 @@ const exists = await superone.fs.exists('package.json') // → boolean
 const files = await superone.fs.glob('**/*.ts')         // → string[]
 ```
 
+### File Watching
+
+Watch a file or directory for changes. The callback receives `{ type, path }` where `type` is `'change'` or `'rename'`.
+
+```js
+const watchId = await superone.fs.watch('src', (event) => {
+  console.log(event.type, event.path)  // e.g. 'change', 'src/main.ts'
+})
+
+// Stop watching
+superone.fs.unwatch(watchId)
+```
+
+Watching is recursive by default. All watchers are automatically cleaned up when the mini-app is closed.
+
 ## superone.agent — Request Agent Actions
 
 ```js
@@ -34,12 +49,100 @@ superone.agent.sendPrompt('Analyze this data and create a summary')
 
 This pre-fills the chat input. The user decides whether to send it. The mini-app cannot silently instruct the agent.
 
-## superone.theme — Dark Mode
+## superone.git — Git Integration
+
+Read-only access to the project's Git repository. All operations are scoped to the mini-app's working directory.
+
+```js
+const info = await superone.git.info()
+// → { branch: 'main', dirty?: { files: 3, insertions: 42, deletions: 7 } }
+
+const branches = await superone.git.branches()
+// → ['main', 'feature/auth', 'fix/typo']
+
+const log = await superone.git.log({ limit: 20 })
+// → [{ sha, parents: ['abc123'], message, author, date }, ...]
+
+const files = await superone.git.status()
+// → [{ path: 'src/main.ts', status: 'M', staged: false }, ...]
+
+const diff = await superone.git.diff('src/main.ts')
+// → { path: 'src/main.ts', diff: '--- a/src/main.ts\n+++ b/...' }
+
+const file = await superone.git.show('HEAD~1', 'package.json')
+// → { ref: 'HEAD~1', path: 'package.json', content: '...' }
+```
+
+### Watching for Changes
+
+Subscribe to HEAD changes (branch switch, commit, rebase, etc.):
+
+```js
+const unsub = superone.git.onHeadChange(() => {
+  // Re-fetch git data
+})
+```
+
+### Status Codes
+
+`M` Modified, `A` Added, `D` Deleted, `R` Renamed, `C` Copied, `U` Unmerged, `?` Untracked, `!` Ignored.
+
+### Write Operations
+
+Git write operations (commit, push, merge, etc.) are not exposed directly. Use `superone.agent.sendPrompt()` to request the AI agent to perform them on your behalf.
+
+## Theme
+
+The host app injects its design tokens as CSS custom properties on the mini-app's `:root`. These variables update automatically when the user switches between light and dark mode. You are free to use them or ignore them — they are provided so you can match the host theme if you choose to.
+
+### CSS Variables
+
+Use standard `var()` references in your CSS:
+
+```css
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+button {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: var(--radius);
+}
+.card {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+}
+.sidebar {
+  background: var(--sidebar);
+  color: var(--sidebar-foreground);
+}
+```
+
+**Core variables:** `--background`, `--foreground`, `--card`, `--card-foreground`, `--popover`, `--popover-foreground`, `--primary`, `--primary-foreground`, `--secondary`, `--secondary-foreground`, `--muted`, `--muted-foreground`, `--accent`, `--accent-foreground`, `--destructive`, `--destructive-foreground`, `--border`, `--ring`, `--radius`.
+
+**Sidebar variables:** `--sidebar`, `--sidebar-foreground`, `--sidebar-primary`, `--sidebar-primary-foreground`, `--sidebar-accent`, `--sidebar-accent-foreground`, `--sidebar-border`, `--sidebar-ring`.
+
+### superone.theme — Programmatic Access
+
+```js
+const vars = superone.theme.getVars()
+// → { background: 'oklch(...)', primary: 'oklch(...)', radius: '0.625rem', ... }
+
+const unsub = superone.theme.onChange((vars) => {
+  // Called when theme changes (e.g., light ↔ dark toggle)
+})
+```
+
+### Dark Mode
+
+The host syncs the `dark` class on `<html>` and provides helpers:
 
 ```js
 const isDark = superone.isDarkMode()
 const unsub = superone.onDarkModeChange((isDark) => {
-  document.body.classList.toggle('dark', isDark)
+  // isDark: boolean
 })
 ```
 

@@ -3,14 +3,29 @@ export function generateBridgeScript(appId: string): string {
 (function() {
   var handlers = new Map();
   var pendingFs = new Map();
+  var pendingWatch = new Map();
+  var watchCallbacks = new Map();
   var fsReqId = 0;
+  var watchReqId = 0;
+  var pendingGit = new Map();
+  var gitReqId = 0;
+  var gitHeadListeners = [];
   var darkModeListeners = [];
+  var themeListeners = [];
 
   function bridgeFsCall(op, args) {
     return new Promise(function(resolve, reject) {
       var id = ++fsReqId;
       pendingFs.set(id, { resolve: resolve, reject: reject });
       parent.postMessage({ type: 'miniapp-fs-request', id: id, appId: '${appId}', op: op, args: args }, '*');
+    });
+  }
+
+  function bridgeGitCall(op, args) {
+    return new Promise(function(resolve, reject) {
+      var id = ++gitReqId;
+      pendingGit.set(id, { resolve: resolve, reject: reject });
+      parent.postMessage({ type: 'miniapp-git-request', id: id, appId: '${appId}', op: op, args: args }, '*');
     });
   }
 
@@ -25,11 +40,57 @@ export function generateBridgeScript(appId: string): string {
       readDir: function(path) { return bridgeFsCall('readDir', { path: path || '.' }); },
       writeFile: function(path, content) { return bridgeFsCall('writeFile', { path: path, content: content }); },
       exists: function(path) { return bridgeFsCall('exists', { path: path }); },
-      glob: function(pattern) { return bridgeFsCall('glob', { pattern: pattern }); }
+      glob: function(pattern) { return bridgeFsCall('glob', { pattern: pattern }); },
+      watch: function(path, callback) {
+        return new Promise(function(resolve, reject) {
+          var id = ++watchReqId;
+          pendingWatch.set(id, { resolve: resolve, reject: reject, callback: callback });
+          parent.postMessage({ type: 'miniapp-fs-watch', id: id, path: path }, '*');
+        });
+      },
+      unwatch: function(watchId) {
+        watchCallbacks.delete(watchId);
+        parent.postMessage({ type: 'miniapp-fs-unwatch', watchId: watchId }, '*');
+      }
     },
     agent: {
       sendPrompt: function(text) {
         parent.postMessage({ type: 'miniapp-sendPrompt', text: text }, '*');
+      }
+    },
+    git: {
+      info: function() { return bridgeGitCall('info', {}); },
+      branches: function() { return bridgeGitCall('branches', {}); },
+      log: function(opts) { return bridgeGitCall('log', opts || {}); },
+      status: function() { return bridgeGitCall('status', {}); },
+      diff: function(path, staged) { return bridgeGitCall('diff', { path: path, staged: !!staged }); },
+      show: function(ref, path) { return bridgeGitCall('show', { ref: ref, path: path }); },
+      onHeadChange: function(cb) {
+        gitHeadListeners.push(cb);
+        return function() {
+          var idx = gitHeadListeners.indexOf(cb);
+          if (idx >= 0) gitHeadListeners.splice(idx, 1);
+        };
+      }
+    },
+    theme: {
+      getVars: function() {
+        var style = document.documentElement.style;
+        var vars = {};
+        for (var i = 0; i < style.length; i++) {
+          var prop = style[i];
+          if (prop.startsWith('--')) {
+            vars[prop.slice(2)] = style.getPropertyValue(prop).trim();
+          }
+        }
+        return vars;
+      },
+      onChange: function(cb) {
+        themeListeners.push(cb);
+        return function() {
+          var idx = themeListeners.indexOf(cb);
+          if (idx >= 0) themeListeners.splice(idx, 1);
+        };
       }
     },
     isDarkMode: function() {
@@ -75,14 +136,59 @@ export function generateBridgeScript(appId: string): string {
       }
     }
 
-    if (data.type === 'miniapp-dark-mode') {
+    if (data.type === 'miniapp-fs-watch-ack') {
+      var pw = pendingWatch.get(data.id);
+      if (pw) {
+        pendingWatch.delete(data.id);
+        if (data.error) {
+          pw.reject(new Error(data.error));
+        } else {
+          watchCallbacks.set(data.watchId, pw.callback);
+          pw.resolve(data.watchId);
+        }
+      }
+    }
+
+    if (data.type === 'miniapp-fs-watch-event') {
+      var wcb = watchCallbacks.get(data.watchId);
+      if (wcb) {
+        wcb({ type: data.eventType, path: data.path });
+      }
+    }
+
+    if (data.type === 'miniapp-git-response') {
+      var pg = pendingGit.get(data.id);
+      if (pg) {
+        pendingGit.delete(data.id);
+        if (data.error) {
+          pg.reject(new Error(data.error));
+        } else {
+          pg.resolve(data.result);
+        }
+      }
+    }
+
+    if (data.type === 'miniapp-git-head-change') {
+      gitHeadListeners.forEach(function(cb) { cb(); });
+    }
+
+    if (data.type === 'miniapp-theme') {
+      var root = document.documentElement;
       if (data.isDark) {
-        document.documentElement.classList.add('dark');
+        root.classList.add('dark');
       } else {
-        document.documentElement.classList.remove('dark');
+        root.classList.remove('dark');
+      }
+      if (data.vars) {
+        var keys = Object.keys(data.vars);
+        for (var i = 0; i < keys.length; i++) {
+          root.style.setProperty('--' + keys[i], data.vars[keys[i]]);
+        }
       }
       darkModeListeners.forEach(function(cb) { cb(data.isDark); });
+      themeListeners.forEach(function(cb) { cb(data.vars || {}); });
     }
+
   });
 
   parent.postMessage({ type: 'miniapp-ready', appId: '${appId}' }, '*');

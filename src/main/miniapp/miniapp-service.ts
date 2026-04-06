@@ -1,21 +1,139 @@
-import { readdir, readFile, writeFile, stat, mkdir, glob } from 'fs/promises'
-import { join, resolve, sep } from 'path'
+import { readdir, readFile, writeFile, stat, mkdir, glob, watch } from 'fs/promises'
+import { watch as watchSync } from 'fs'
+import type { FSWatcher } from 'fs'
+import { join, resolve, sep, relative } from 'path'
 import { app } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import log from '../logger'
+import { gitRun } from '../git-run'
+import { sanitizeGitRef } from '../path-security'
+import { parseGitStatusFiles } from '../git-status-utils'
 import { parseManifest } from './miniapp-schema'
-import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp } from '../../shared/miniapp-types'
+import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp } from '../../shared/miniapp-types'
 
 const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
 const devAppsDir = () => join(process.cwd(), 'examples', 'miniapp')
 
 const workingDirs = new Map<string, string>()
 
+let watchIdCounter = 0
+const activeWatchers = new Map<number, { appId: string; controller: AbortController }>()
+
+type WatchEventCallback = (event: MiniAppFsWatchEvent) => void
+let watchEventCallback: WatchEventCallback | null = null
+
+export function onFsWatchEvent(cb: WatchEventCallback): void {
+  watchEventCallback = cb
+}
+
+export function startWatch(appId: string, watchPath: string): number {
+  const workingDir = workingDirs.get(appId)
+  if (!workingDir) throw new Error(`No working directory set for app: ${appId}`)
+
+  const resolved = resolveSafePath(workingDir, watchPath)
+
+  const watchId = ++watchIdCounter
+  const controller = new AbortController()
+  activeWatchers.set(watchId, { appId, controller })
+
+  ;(async () => {
+    try {
+      const watcher = watch(resolved, { recursive: true, signal: controller.signal })
+      let debounceTimer: ReturnType<typeof setTimeout> | null = null
+      const pending = new Map<string, 'change' | 'rename'>()
+      const flush = () => {
+        for (const [path, type] of pending) {
+          watchEventCallback?.({ watchId, appId, type, path })
+        }
+        pending.clear()
+        debounceTimer = null
+      }
+      for await (const event of watcher) {
+        const relPath = event.filename
+          ? relative(workingDir, resolve(resolved, event.filename))
+          : relative(workingDir, resolved)
+        pending.set(relPath, event.eventType as 'change' | 'rename')
+        if (!debounceTimer) {
+          debounceTimer = setTimeout(flush, 100)
+        }
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') return
+      log.warn(`[miniapp] fs.watch error for ${watchPath}:`, err)
+    } finally {
+      activeWatchers.delete(watchId)
+    }
+  })()
+
+  return watchId
+}
+
+export function stopWatch(watchId: number): void {
+  const entry = activeWatchers.get(watchId)
+  if (entry) {
+    entry.controller.abort()
+    activeWatchers.delete(watchId)
+  }
+}
+
+function clearWatchersForApp(appId: string): void {
+  for (const [id, entry] of activeWatchers) {
+    if (entry.appId === appId) {
+      entry.controller.abort()
+      activeWatchers.delete(id)
+    }
+  }
+}
+
+function resolveSafePath(workingDir: string, relativePath: string): string {
+  const resolved = resolve(workingDir, relativePath)
+  const normalizedBase = workingDir.endsWith(sep) ? workingDir : workingDir + sep
+  if (!resolved.startsWith(normalizedBase) && resolved !== workingDir) {
+    throw new Error(`Path traversal blocked: ${relativePath}`)
+  }
+  return resolved
+}
+
+type GitHeadChangeCallback = (event: { appId: string }) => void
+let gitHeadChangeCallback: GitHeadChangeCallback | null = null
+const gitHeadWatchers = new Map<string, FSWatcher>()
+
+export function onGitHeadChangeEvent(cb: GitHeadChangeCallback): void {
+  gitHeadChangeCallback = cb
+}
+
+function startGitHeadWatch(appId: string, workingDir: string): void {
+  if (gitHeadWatchers.has(appId)) return
+  const headPath = join(workingDir, '.git', 'HEAD')
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    const watcher = watchSync(headPath, () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => gitHeadChangeCallback?.({ appId }), 100)
+    })
+    watcher.on('error', () => {
+      watcher.close()
+      gitHeadWatchers.delete(appId)
+    })
+    gitHeadWatchers.set(appId, watcher)
+  } catch { /* not a git repo */ }
+}
+
+function stopGitHeadWatch(appId: string): void {
+  const watcher = gitHeadWatchers.get(appId)
+  if (watcher) {
+    watcher.close()
+    gitHeadWatchers.delete(appId)
+  }
+}
+
 export function setWorkingDirectory(appId: string, dir: string): void {
   workingDirs.set(appId, dir)
 }
 
 export function clearWorkingDirectory(appId: string): void {
+  clearWatchersForApp(appId)
+  stopGitHeadWatch(appId)
   workingDirs.delete(appId)
 }
 
@@ -202,35 +320,26 @@ export async function handleFsRequest(
   const workingDir = workingDirs.get(appId)
   if (!workingDir) throw new Error(`No working directory set for app: ${appId}`)
 
-  const resolveSafe = (relativePath: string): string => {
-    const resolved = resolve(workingDir, relativePath)
-    const normalizedBase = workingDir.endsWith(sep) ? workingDir : workingDir + sep
-    if (!resolved.startsWith(normalizedBase) && resolved !== workingDir) {
-      throw new Error(`Path traversal blocked: ${relativePath}`)
-    }
-    return resolved
-  }
+  const safe = (p: string) => resolveSafePath(workingDir, p)
 
   switch (op) {
     case 'readFile': {
-      const p = resolveSafe(args.path as string)
-      return await readFile(p, 'utf-8')
+      return await readFile(safe(args.path as string), 'utf-8')
     }
     case 'readDir': {
-      const p = resolveSafe((args.path as string) || '.')
+      const p = safe((args.path as string) || '.')
       const entries = await readdir(p, { withFileTypes: true })
       return entries.map((e) => ({ name: e.name, isDir: e.isDirectory() }))
     }
     case 'writeFile': {
-      const p = resolveSafe(args.path as string)
+      const p = safe(args.path as string)
       await mkdir(join(p, '..'), { recursive: true })
       await writeFile(p, args.content as string, 'utf-8')
       return undefined
     }
     case 'exists': {
-      const p = resolveSafe(args.path as string)
       try {
-        await stat(p)
+        await stat(safe(args.path as string))
         return true
       } catch {
         return false
@@ -246,5 +355,74 @@ export async function handleFsRequest(
     }
     default:
       throw new Error(`Unknown fs operation: ${op}`)
+  }
+}
+
+export async function handleGitRequest(
+  appId: string,
+  op: MiniAppGitOp,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  const workingDir = workingDirs.get(appId)
+  if (!workingDir) throw new Error(`No working directory set for app: ${appId}`)
+
+  startGitHeadWatch(appId, workingDir)
+
+  switch (op) {
+    case 'info': {
+      const branchP = gitRun(workingDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+        .catch(() => gitRun(workingDir, ['symbolic-ref', 'HEAD']).then((ref) => ref.replace('refs/heads/', '')))
+      const statusP = gitRun(workingDir, ['status', '--porcelain'])
+      const [branch, porcelain] = await Promise.all([branchP, statusP])
+      const files = porcelain ? porcelain.split('\n').filter(Boolean).length : 0
+      if (files === 0) return { branch }
+      let insertions = 0, deletions = 0
+      try {
+        const shortstat = await gitRun(workingDir, ['diff', 'HEAD', '--shortstat'])
+        const insMatch = shortstat.match(/(\d+) insertion/)
+        const delMatch = shortstat.match(/(\d+) deletion/)
+        if (insMatch) insertions = parseInt(insMatch[1])
+        if (delMatch) deletions = parseInt(delMatch[1])
+      } catch { /* empty */ }
+      return { branch, dirty: { files, insertions, deletions } }
+    }
+    case 'branches': {
+      const raw = await gitRun(workingDir, ['branch', '--format=%(refname:short)'])
+      return raw ? raw.split('\n').filter(Boolean) : []
+    }
+    case 'log': {
+      const limit = (args.limit as number) || 50
+      const raw = await gitRun(workingDir, [
+        'log', '--format=%H%x00%P%x00%s%x00%an%x00%ai', `-${limit}`,
+      ])
+      if (!raw) return []
+      return raw.split('\n').filter(Boolean).map((line) => {
+        const [sha, parents, message, author, date] = line.split('\0')
+        return { sha, parents: parents ? parents.split(' ') : [], message, author, date }
+      })
+    }
+    case 'status': {
+      const raw = await gitRun(workingDir, ['status', '--porcelain=v1'])
+      if (!raw) return []
+      return parseGitStatusFiles(raw)
+    }
+    case 'diff': {
+      const filePath = args.path as string
+      const staged = args.staged as boolean ?? false
+      const gitArgs = staged
+        ? ['diff', '--cached', '--', filePath]
+        : ['diff', '--', filePath]
+      const diff = await gitRun(workingDir, gitArgs)
+      return { path: filePath, diff }
+    }
+    case 'show': {
+      const ref = sanitizeGitRef(args.ref as string)
+      const filePath = args.path as string
+      if (filePath.includes('\0')) throw new Error('Invalid path')
+      const content = await gitRun(workingDir, ['show', `${ref}:${filePath}`])
+      return { ref, path: filePath, content }
+    }
+    default:
+      throw new Error(`Unknown git operation: ${op}`)
   }
 }

@@ -664,7 +664,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.WIDGET_IFRAME_READY, widgetId),
 }
 
-import type { MiniAppEntry, MiniAppToolCallRequest, MiniAppInstallMeta } from '../shared/miniapp-types'
+import type { MiniAppEntry, MiniAppToolCallRequest, MiniAppInstallMeta, MiniAppFsWatchEvent } from '../shared/miniapp-types'
 
 const miniappAPI = {
   list: () =>
@@ -681,6 +681,27 @@ const miniappAPI = {
 
   fsRequest: (appId: string, op: string, args: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_REQUEST, appId, op, args),
+
+  gitRequest: (appId: string, op: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GIT_REQUEST, appId, op, args),
+
+  onGitHeadChangeEvent: (callback: (event: { appId: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { appId: string }) => callback(event)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, handler)
+  },
+
+  fsWatch: (appId: string, path: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_WATCH, appId, path) as Promise<number>,
+
+  fsUnwatch: (watchId: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_UNWATCH, watchId),
+
+  onFsWatchEvent: (callback: (event: MiniAppFsWatchEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: MiniAppFsWatchEvent) => callback(event)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_FS_WATCH_EVENT, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_FS_WATCH_EVENT, handler)
+  },
 
   iframeReady: (appId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_IFRAME_READY, appId),

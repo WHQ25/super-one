@@ -4,11 +4,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, readdir, rename, cp, rm, access, stat } from 'fs/promises'
 import { homedir } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-security'
-import { execFile, execFileSync, spawn } from 'child_process'
+import { execFileSync, spawn } from 'child_process'
+import { gitRun } from './git-run'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setWorkingDirectory, clearWorkingDirectory, handleFsRequest, getDevAppBasePath } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setWorkingDirectory, clearWorkingDirectory, handleFsRequest, handleGitRequest, getDevAppBasePath, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent } from './miniapp/miniapp-service'
 import { generateBridgeScript } from './miniapp/miniapp-bridge'
 import { installApp, uninstallApp, packApp, getInstallMeta } from './miniapp/miniapp-packager'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady } from './mcp/superone-mcp-server'
@@ -598,14 +599,6 @@ function registerIpcHandlers(): void {
     },
   )
 
-  const gitRun = (folderPath: string, args: string[]) =>
-    new Promise<string>((resolve, reject) => {
-      execFile('git', args, { cwd: folderPath }, (err, stdout) => {
-        if (err) reject(err)
-        else resolve(stdout.trimEnd())
-      })
-    })
-
   ipcMain.handle(AgentIpcChannels.GIT_INFO, async (_event, folderPath: string) => {
     try {
       let branch: string
@@ -652,13 +645,13 @@ function registerIpcHandlers(): void {
     try {
       const normalizedQuery = query?.trim().toLowerCase()
       const args = normalizedQuery
-        ? ['log', '--format=%H%x00%s%x00%an%x00%ai']
-        : ['log', '--format=%H%x00%s%x00%an%x00%ai', '-50']
+        ? ['log', '--format=%H%x00%P%x00%s%x00%an%x00%ai']
+        : ['log', '--format=%H%x00%P%x00%s%x00%an%x00%ai', '-50']
       const raw = await gitRun(folderPath, args)
       if (!raw) return []
       const entries = raw.split('\n').filter(Boolean).map((line) => {
-        const [sha, message, author, date] = line.split('\0')
-        return { sha, message, author, date }
+        const [sha, parents, message, author, date] = line.split('\0')
+        return { sha, parents: parents ? parents.split(' ') : [], message, author, date }
       })
       if (!normalizedQuery) return entries
       return entries
@@ -1402,6 +1395,26 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_FS_REQUEST, async (_e, appId: string, op: string, args: Record<string, unknown>) => {
     return handleFsRequest(appId, op as any, args)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_FS_WATCH, (_e, appId: string, path: string) => {
+    return startWatch(appId, path)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_FS_UNWATCH, (_e, watchId: number) => {
+    stopWatch(watchId)
+  })
+
+  onFsWatchEvent((event) => {
+    mainWindow?.webContents.send(AgentIpcChannels.MINIAPP_FS_WATCH_EVENT, event)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_GIT_REQUEST, async (_e, appId: string, op: string, args: Record<string, unknown>) => {
+    return handleGitRequest(appId, op as any, args)
+  })
+
+  onGitHeadChangeEvent((event) => {
+    mainWindow?.webContents.send(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, event)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_IFRAME_READY, (_e, appId: string) => {

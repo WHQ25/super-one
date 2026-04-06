@@ -9,13 +9,31 @@ const handlers = new Map<string, ToolHandler>()
 let fsReqId = 0
 const pendingFs = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
 
+type WatchCallback = (event: { type: string; path: string }) => void
+const pendingWatch = new Map<number, { resolve: (v: number) => void; reject: (e: Error) => void; callback: WatchCallback }>()
+const watchCallbacks = new Map<number, WatchCallback>()
+let watchReqId = 0
+
+let gitReqId = 0
+const pendingGit = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
+const gitHeadListeners: Array<() => void> = []
+
 const darkModeListeners: Array<(isDark: boolean) => void> = []
+const themeListeners: Array<(vars: Record<string, string>) => void> = []
 
 function bridgeFsCall(op: string, args: Record<string, unknown>): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = ++fsReqId
     pendingFs.set(id, { resolve, reject })
     ipcRenderer.sendToHost('miniapp-fs-request', { id, op, args })
+  })
+}
+
+function bridgeGitCall(op: string, args: Record<string, unknown>): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const id = ++gitReqId
+    pendingGit.set(id, { resolve, reject })
+    ipcRenderer.sendToHost('miniapp-git-request', { id, op, args })
   })
 }
 
@@ -31,10 +49,56 @@ contextBridge.exposeInMainWorld('superone', {
     writeFile: (path: string, content: string) => bridgeFsCall('writeFile', { path, content }),
     exists: (path: string) => bridgeFsCall('exists', { path }),
     glob: (pattern: string) => bridgeFsCall('glob', { pattern }),
+    watch(path: string, callback: WatchCallback): Promise<number> {
+      return new Promise((resolve, reject) => {
+        const id = ++watchReqId
+        pendingWatch.set(id, { resolve, reject, callback })
+        ipcRenderer.sendToHost('miniapp-fs-watch', { id, path })
+      })
+    },
+    unwatch(watchId: number) {
+      watchCallbacks.delete(watchId)
+      ipcRenderer.sendToHost('miniapp-fs-unwatch', { watchId })
+    },
   },
   agent: {
     sendPrompt(text: string) {
       ipcRenderer.sendToHost('miniapp-sendPrompt', { text })
+    },
+  },
+  git: {
+    info: () => bridgeGitCall('info', {}),
+    branches: () => bridgeGitCall('branches', {}),
+    log: (opts?: { limit?: number }) => bridgeGitCall('log', opts ?? {}),
+    status: () => bridgeGitCall('status', {}),
+    diff: (path: string, staged?: boolean) => bridgeGitCall('diff', { path, staged: !!staged }),
+    show: (ref: string, path: string) => bridgeGitCall('show', { ref, path }),
+    onHeadChange(cb: () => void) {
+      gitHeadListeners.push(cb)
+      return () => {
+        const idx = gitHeadListeners.indexOf(cb)
+        if (idx >= 0) gitHeadListeners.splice(idx, 1)
+      }
+    },
+  },
+  theme: {
+    getVars(): Record<string, string> {
+      const style = document.documentElement.style
+      const vars: Record<string, string> = {}
+      for (let i = 0; i < style.length; i++) {
+        const prop = style[i]
+        if (prop.startsWith('--')) {
+          vars[prop.slice(2)] = style.getPropertyValue(prop).trim()
+        }
+      }
+      return vars
+    },
+    onChange(cb: (vars: Record<string, string>) => void) {
+      themeListeners.push(cb)
+      return () => {
+        const idx = themeListeners.indexOf(cb)
+        if (idx >= 0) themeListeners.splice(idx, 1)
+      }
     },
   },
   isDarkMode() {
@@ -79,13 +143,52 @@ ipcRenderer.on('miniapp-fs-response', (_e, data) => {
   }
 })
 
-ipcRenderer.on('miniapp-dark-mode', (_e, data) => {
+ipcRenderer.on('miniapp-fs-watch-ack', (_e, data) => {
+  const pw = pendingWatch.get(data.id)
+  if (pw) {
+    pendingWatch.delete(data.id)
+    if (data.error) {
+      pw.reject(new Error(data.error))
+    } else {
+      watchCallbacks.set(data.watchId, pw.callback)
+      pw.resolve(data.watchId)
+    }
+  }
+})
+
+ipcRenderer.on('miniapp-fs-watch-event', (_e, data) => {
+  const cb = watchCallbacks.get(data.watchId)
+  if (cb) cb({ type: data.eventType, path: data.path })
+})
+
+ipcRenderer.on('miniapp-git-response', (_e, data) => {
+  const pg = pendingGit.get(data.id)
+  if (pg) {
+    pendingGit.delete(data.id)
+    if (data.error) pg.reject(new Error(data.error))
+    else pg.resolve(data.result)
+  }
+})
+
+ipcRenderer.on('miniapp-git-head-change', () => {
+  gitHeadListeners.forEach((cb) => cb())
+})
+
+ipcRenderer.on('miniapp-theme', (_e, data) => {
+  const root = document.documentElement
   if (data.isDark) {
-    document.documentElement.classList.add('dark')
+    root.classList.add('dark')
   } else {
-    document.documentElement.classList.remove('dark')
+    root.classList.remove('dark')
+  }
+  if (data.vars) {
+    for (const [key, value] of Object.entries(data.vars)) {
+      root.style.setProperty(`--${key}`, value as string)
+    }
   }
   darkModeListeners.forEach((cb) => cb(data.isDark))
+  themeListeners.forEach((cb) => cb(data.vars ?? {}))
 })
+
 
 ipcRenderer.sendToHost('miniapp-ready', {})

@@ -1,6 +1,6 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, ClaudePreferences, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, ContextUsageInfo, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
-import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppToolCallRequest } from '../shared/miniapp-types'
+import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppToolCallRequest, MiniAppFsWatchEvent } from '../shared/miniapp-types'
 
 
 interface AgentAPI {
@@ -215,6 +215,11 @@ interface MiniAppAPI {
   close(appId: string): Promise<void>
   toolResult(callId: string, result: unknown, error?: string): Promise<void>
   fsRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
+  gitRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
+  onGitHeadChangeEvent(callback: (event: { appId: string }) => void): () => void
+  fsWatch(appId: string, path: string): Promise<number>
+  fsUnwatch(watchId: number): Promise<void>
+  onFsWatchEvent(callback: (event: MiniAppFsWatchEvent) => void): () => void
   iframeReady(appId: string): Promise<void>
   onToolCall(callback: (call: MiniAppToolCallRequest) => void): () => void
   getPreloadPath(): Promise<string>

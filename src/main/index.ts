@@ -10,7 +10,8 @@ import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setWorkingDirectory, clearWorkingDirectory, handleFsRequest, getDevAppBasePath } from './miniapp/miniapp-service'
 import { generateBridgeScript } from './miniapp/miniapp-bridge'
-import { initCanvasMcpProxy, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady } from './canvas/canvas-mcp-proxy'
+import { installApp, uninstallApp, packApp, getInstallMeta } from './miniapp/miniapp-packager'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady } from './mcp/superone-mcp-server'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
@@ -1367,7 +1368,7 @@ function registerIpcHandlers(): void {
     notifyWidgetReady(widgetId)
   })
 
-  initCanvasMcpProxy(() => mainWindow)
+  initSuperoneMcpServer(() => mainWindow)
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async () => {
     const apps = await discoverApps()
@@ -1418,6 +1419,22 @@ function registerIpcHandlers(): void {
     const entry = { id: '__dev__', manifest, basePath }
     cacheAppBasePath('__dev__', basePath)
     return entry
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_INSTALL, async (_e, s1appPath: string) => {
+    return installApp(s1appPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_UNINSTALL, async (_e, appId: string) => {
+    return uninstallApp(appId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_PACK, async (_e, appDir: string, outputDir: string) => {
+    return packApp(appDir, outputDir)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_GET_INSTALL_META, async (_e, appId: string) => {
+    return getInstallMeta(appId)
   })
 }
 

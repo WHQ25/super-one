@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { useChatStore } from '@/stores/chat'
 import type { MiniAppToolCallRequest } from '../../../../shared/miniapp-types'
 
@@ -7,8 +7,10 @@ interface MiniAppFrameProps {
   className?: string
 }
 
-export function MiniAppFrame({ appId, className }: MiniAppFrameProps) {
+export const MiniAppFrame = forwardRef<HTMLIFrameElement, MiniAppFrameProps>(
+  function MiniAppFrame({ appId, className }, ref) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  useImperativeHandle(ref, () => iframeRef.current!, [])
 
   const handlePostMessage = useCallback(
     (e: MessageEvent) => {
@@ -79,4 +81,4 @@ export function MiniAppFrame({ appId, className }: MiniAppFrameProps) {
       style={{ border: 'none', width: '100%', height: '100%' }}
     />
   )
-}
+})

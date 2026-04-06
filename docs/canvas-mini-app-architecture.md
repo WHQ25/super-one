@@ -434,7 +434,7 @@ const db = await fetch('https://api.turso.tech/v2/pipeline', {
 | Layer | File | Responsibility |
 |-------|------|---------------|
 | Types | `src/shared/canvas-types.ts` | Shared types (manifest, app registry, tool messages) |
-| MCP Proxy | `src/main/canvas-mcp-proxy.ts` | Single MCP Server: tool registration, routing, lifecycle |
+| MCP Server | `src/main/mcp/superone-mcp-server.ts` | Single MCP Server: tool registration, routing, lifecycle |
 | Service | `src/main/canvas-service.ts` | App discovery, registry, manifest parsing, fs operations |
 | Bridge | `src/main/canvas-bridge.ts` | Inject `superone.*` bridge script into iframe HTML |
 | Protocol | `src/main/index.ts` | `superone-app://` protocol handler + CSP enforcement |

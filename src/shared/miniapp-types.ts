@@ -3,12 +3,39 @@ export interface MiniAppWorkingDir {
   path: string
 }
 
-export interface MiniAppManifest {
+export type MiniAppType = 'sidebar' | 'panel' | 'in-chat' | 'fullscreen'
+
+export interface MiniAppAuthor {
   name: string
-  icon?: string
+  email?: string
+  url?: string
+}
+
+export interface MiniAppManifest {
+  appId: string
+  name: string
+  version?: string
+  author?: MiniAppAuthor
+  description?: string
+  logo?: string
+  isDev?: boolean
+  type?: MiniAppType
   workingDir?: MiniAppWorkingDir
   permissions?: MiniAppPermissions
   tools?: MiniAppToolDefinition[]
+}
+
+export interface MiniAppInstallMeta {
+  appId: string
+  version: string
+  installedAt: string
+  source: 'local' | 'url' | 'github'
+  integrityVerified: boolean
+  sourceUri?: string
+}
+
+export interface MiniAppIntegrity {
+  files: Record<string, string>
 }
 
 export interface MiniAppPermissions {
@@ -47,6 +74,18 @@ export interface MiniAppFsRequest {
   appId: string
   op: MiniAppFsOp
   args: Record<string, unknown>
+}
+
+export interface MiniAppPackResult {
+  outputPath: string
+  manifest: MiniAppManifest
+  fileCount: number
+}
+
+export interface MiniAppInstallResult {
+  entry: MiniAppEntry
+  meta: MiniAppInstallMeta
+  upgraded: boolean
 }
 
 export type MiniAppBridgeMessageType =

@@ -1,6 +1,6 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, ClaudePreferences, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, ContextUsageInfo, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
-import type { MiniAppEntry, MiniAppToolCallRequest } from '../shared/miniapp-types'
+import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppToolCallRequest } from '../shared/miniapp-types'
 
 
 interface AgentAPI {
@@ -13,7 +13,7 @@ interface AgentAPI {
   answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>
   dismissQuestion(projectPath: string, requestId: string): Promise<void>
   respondToPlanApproval(projectPath: string, requestId: string, approved: boolean, feedback?: string): Promise<void>
-  resetSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
+  resetSession(projectPath: string, newDraftSessionId?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   parkDraftSession(projectPath: string, draftSessionId: string, newDraftSessionId: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   activateSession(projectPath: string, sessionId: string): Promise<void>
@@ -220,6 +220,10 @@ interface MiniAppAPI {
   getPreloadPath(): Promise<string>
   detectDev(projectDir: string): Promise<MiniAppEntry | null>
   onDevAppReady(callback: (projectDir: string) => void): () => void
+  install(s1appPath: string): Promise<MiniAppInstallResult>
+  uninstall(appId: string): Promise<void>
+  pack(appDir: string, outputDir: string): Promise<MiniAppPackResult>
+  getInstallMeta(appId: string): Promise<MiniAppInstallMeta | null>
 }
 
 declare global {

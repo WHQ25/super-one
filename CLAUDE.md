@@ -55,11 +55,12 @@ Navigation via `navigateTo()` action. The `main` view has two layout modes: `can
 
 ### State Management (Zustand)
 
-Three stores with clear responsibilities:
+Four stores with clear responsibilities:
 
 - **`useAppStore`** — App lifecycle, folder/project management, layout mode, sidebar state, auto-update status, worktree management
 - **`useChatStore`** — Multi-project chat sessions (`projectSessions: Record<path, SessionState>`), message streaming, permission handling, background sessions (`_bgSessions`)
 - **`useSettingsStore`** — Resource CRUD (agents, skills, MCP configs, plugins), lazy-loaded per settings view
+- **`useMiniAppStore`** — Mini-app discovery, install/uninstall actions, app list caching
 
 Use `useActiveSession<T>(selector)` hook to read the active project's session state.
 
@@ -69,8 +70,9 @@ Two namespaces exposed via preload:
 
 - **`window.agent`** — AI agent interaction, scoped by `projectPath`: `sendMessage()`, `interrupt()`, `respondToPermission()`, `resetSession()`, `parkSession()`, `activateSession()`, `onAgentEvent()`
 - **`window.app`** — Global operations: folder management, git ops (including worktrees), session DB (CRUD), resource discovery, Claude setup/install, auto-update, Codex integration, plugin/skill/MCP/agent management, window state
+- **`window.miniapp`** — Mini-app lifecycle: `list()`, `open()`, `close()`, `install()`, `uninstall()`, `pack()`, `getInstallMeta()`, tool/fs bridging, dev app detection
 
-All IPC channels are defined as constants in `AgentIpcChannels` (`src/shared/agent-types.ts`), grouped by namespace prefix (`app:`, `agent:`, `codex:`, `plugins:`, `skills:`, `mcp:`, `sessions:`, `updater:`).
+All IPC channels are defined as constants in `AgentIpcChannels` (`src/shared/agent-types.ts`), grouped by namespace prefix (`app:`, `agent:`, `codex:`, `plugins:`, `skills:`, `mcp:`, `miniapp:`, `sessions:`, `updater:`).
 
 ### Component Structure
 
@@ -82,6 +84,8 @@ src/renderer/src/components/
 │   ├── slash-decoration.ts — Tiptap /command decoration
 │   └── chat-shared.ts      — Streamdown plugins, formatting
 ├── coding/       — CodingLayout, ProjectSelector, StatusBar, TerminalPanel
+├── miniapp/      — MiniAppFrame, MiniAppView, MiniAppIcon, MiniAppDevFrame
+├── sidebar/      — FileTree, ProjectSidebarRow, AppsPanel (drag-and-drop .s1app install)
 ├── AppSidebar    — Session list, folder tree, pending interaction badges
 └── *Page.tsx     — Settings pages (Agents, Skills, MCP, Plugins), Startup, Setup
 ```
@@ -270,6 +274,24 @@ Follow **Test-Driven Development** — write tests before implementation.
 - **Naming**: Use descriptive `describe` / `it` blocks: `describe('functionName', () => { it('should return X when given Y', ...) })`.
 - **No mocking by default**: Prefer testing real logic. Only mock external boundaries (IPC, filesystem, network).
 - **Regression tests for bug fixes**: Every bug fix must include a test that reproduces the bug scenario. This prevents the same bug from reappearing in the future.
+
+### Mini-App Platform
+
+Mini-apps are sandboxed web apps (HTML/CSS/JS) that run in iframes and are controlled by AI agents through MCP tools.
+
+**Key modules:**
+
+| Module | Path | Purpose |
+|--------|------|---------|
+| MCP Server | `src/main/mcp/superone-mcp-server.ts` | Built-in MCP tools (`read_miniapp_guide`, `list_apps`, `setup_mini_app_dev`, `pack_mini_app`) + dynamic tool registration per app. Guide content in `src/main/mcp/guides/` |
+| Service | `src/main/miniapp/miniapp-service.ts` | App discovery, manifest parsing (Zod validated), filesystem operations |
+| Schema | `src/main/miniapp/miniapp-schema.ts` | Zod v4 manifest validation schema |
+| Packager | `src/main/miniapp/miniapp-packager.ts` | `.s1app` packaging (zip + integrity), install/uninstall, SHA-256 verification |
+| Bridge | `src/main/miniapp/miniapp-bridge.ts` | `window.superone.*` API injection into iframe HTML |
+
+**Installation flow:** `.s1app` file (zip) → extract to temp → validate manifest (Zod) → verify integrity (SHA-256) → copy to `~/.superone/apps/<appId>/` → write `install.json` metadata. Users can drag-and-drop `.s1app` files onto the Apps panel in the sidebar.
+
+**Manifest** requires `appId` and `name`; `version` and `author` are required for packaging. Schema enforces `appId` format (`^[a-z0-9][a-z0-9_-]*$`) and tool name format (`^[a-z0-9_]+$`).
 
 ## Conventions
 

@@ -44,8 +44,8 @@ vi.mock('../generative-ui/mcp-server', () => ({
   createGenerativeUiMcpServer: vi.fn(),
 }))
 
-vi.mock('../canvas/canvas-mcp-proxy', () => ({
-  getCanvasMcpProxy: vi.fn(() => ({ type: 'sdk', name: 'superone', instance: {} })),
+vi.mock('../mcp/superone-mcp-server', () => ({
+  getSuperoneMcpServer: vi.fn(() => ({ type: 'sdk', name: 'superone', instance: {} })),
 }))
 
 import { buildUserMessage, createSessionQuery } from './claude-query'

@@ -30,8 +30,8 @@ const agentAPI = {
   respondToPlanApproval: (projectPath: string, requestId: string, approved: boolean, feedback?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.RESPOND_PLAN_APPROVAL, projectPath, requestId, approved, feedback),
 
-  resetSession: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, projectPath),
+  resetSession: (projectPath: string, newDraftSessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, projectPath, newDraftSessionId),
 
   parkSession: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PARK_SESSION, projectPath),
@@ -664,7 +664,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.WIDGET_IFRAME_READY, widgetId),
 }
 
-import type { MiniAppEntry, MiniAppToolCallRequest } from '../shared/miniapp-types'
+import type { MiniAppEntry, MiniAppToolCallRequest, MiniAppInstallMeta } from '../shared/miniapp-types'
 
 const miniappAPI = {
   list: () =>
@@ -702,6 +702,18 @@ const miniappAPI = {
     ipcRenderer.on('miniapp:dev-app-ready', handler)
     return () => ipcRenderer.removeListener('miniapp:dev-app-ready', handler)
   },
+
+  install: (s1appPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_INSTALL, s1appPath),
+
+  uninstall: (appId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_UNINSTALL, appId) as Promise<void>,
+
+  pack: (appDir: string, outputDir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_PACK, appDir, outputDir),
+
+  getInstallMeta: (appId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GET_INSTALL_META, appId) as Promise<MiniAppInstallMeta | null>,
 }
 
 if (process.contextIsolated) {

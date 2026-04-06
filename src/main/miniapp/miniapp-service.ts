@@ -3,6 +3,7 @@ import { join, resolve, sep } from 'path'
 import { app } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import log from '../logger'
+import { parseManifest } from './miniapp-schema'
 import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp } from '../../shared/miniapp-types'
 
 const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
@@ -30,7 +31,7 @@ async function scanDir(base: string): Promise<MiniAppEntry[]> {
     const basePath = join(base, name)
     const manifest = await readManifest(basePath)
     if (manifest) {
-      entries.push({ id: name, manifest, basePath })
+      entries.push({ id: manifest.appId, manifest, basePath })
     }
   }
   return entries
@@ -54,11 +55,12 @@ export async function readManifest(appDir: string): Promise<MiniAppManifest | nu
   try {
     const raw = await readFile(join(appDir, 'manifest.json'), 'utf-8')
     const parsed = JSON.parse(raw)
-    if (!parsed.name || typeof parsed.name !== 'string') {
-      log.warn('[miniapp] invalid manifest in %s: missing name', appDir)
+    const result = parseManifest(parsed)
+    if (!result.ok) {
+      log.warn('[miniapp] invalid manifest in %s: %s', appDir, result.errors.join('; '))
       return null
     }
-    return parsed as MiniAppManifest
+    return result.manifest as MiniAppManifest
   } catch {
     return null
   }
@@ -82,6 +84,7 @@ export async function createMiniApp(opts: CreateMiniAppOptions): Promise<MiniApp
   await mkdir(outputPath, { recursive: true })
 
   const manifest: MiniAppManifest = {
+    appId: '__dev__',
     name: opts.name,
     workingDir: { scope: 'project', path: '.' },
     permissions: { fs: 'project' },

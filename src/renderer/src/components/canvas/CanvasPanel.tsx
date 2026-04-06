@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { MiniAppDevFrame, type MiniAppDevFrameHandle } from '@/components/miniapp/MiniAppDevFrame'
+import { MiniAppView, type MiniAppViewHandle } from '@/components/miniapp/MiniAppView'
 import { MiniAppBuilder } from '@/components/canvas/MiniAppBuilder'
+import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import type { MiniAppEntry } from '../../../../shared/miniapp-types'
 import { useAppStore } from '@/stores/app'
+import { useMiniAppStore } from '@/stores/miniapp'
 import { RotateCw, X, Bug } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -14,19 +16,21 @@ interface OpenApp {
 }
 
 export function CanvasPanel() {
-  const [apps, setApps] = useState<MiniAppEntry[]>([])
+  const apps = useMiniAppStore((s) => s.apps)
+  const fetchApps = useMiniAppStore((s) => s.fetchApps)
   const [openApps, setOpenApps] = useState<OpenApp[]>([])
   const [activeAppId, setActiveAppId] = useState<string | null>(null)
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const devFrameRefs = useRef<Map<string, MiniAppDevFrameHandle>>(new Map())
+  const devFrameRefs = useRef<Map<string, MiniAppViewHandle>>(new Map())
 
   const refreshApps = useCallback(() => {
-    window.miniapp.list().then(setApps).catch(console.error)
-  }, [])
+    useMiniAppStore.setState({ loaded: false })
+    fetchApps()
+  }, [fetchApps])
 
   useEffect(() => {
-    refreshApps()
-  }, [refreshApps])
+    fetchApps()
+  }, [fetchApps])
 
   const openApp = useCallback(
     async (entry: MiniAppEntry) => {
@@ -117,6 +121,15 @@ export function CanvasPanel() {
     return cleanup
   }, [currentFolder, openDevApp])
 
+  const pendingOpenAppId = useMiniAppStore((s) => s.pendingOpenAppId)
+  useEffect(() => {
+    if (!pendingOpenAppId) return
+    const entry = apps.find((a) => a.id === pendingOpenAppId)
+    if (!entry) return
+    useMiniAppStore.getState().consumePendingOpen()
+    openApp(entry)
+  }, [pendingOpenAppId, apps, openApp])
+
   if (openApps.length === 0) {
     return <MiniAppBuilder apps={apps} onOpenApp={openApp} onRefresh={refreshApps} />
   }
@@ -135,6 +148,7 @@ export function CanvasPanel() {
                 : 'text-muted-foreground hover:bg-accent/50',
             )}
           >
+            <MiniAppIcon appId={app.appId} className="size-3.5" />
             <span>{app.entry.manifest.name}</span>
             <span
               role="button"
@@ -167,7 +181,7 @@ export function CanvasPanel() {
       </div>
       <div className="relative flex-1">
         {openApps.map((app) => (
-          <MiniAppDevFrame
+          <MiniAppView
             key={app.appId}
             ref={(handle) => {
               if (handle) devFrameRefs.current.set(app.appId, handle)

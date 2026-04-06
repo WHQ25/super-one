@@ -5,7 +5,7 @@ import log from '../logger'
 import { trace } from './event-trace'
 import { getNodeRuntime, resolveSdkCli } from './resolve-cli'
 import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
-import { getCanvasMcpProxy } from '../canvas/canvas-mcp-proxy'
+import { getSuperoneMcpServer } from '../mcp/superone-mcp-server'
 
 export interface SessionQueryOptions {
   cwd: string
@@ -94,9 +94,9 @@ export function createSessionQuery(
       systemPrompt: {
         type: 'preset',
         preset: 'claude_code',
-        append: 'You have a powerful `show_widget` tool (via the `widget` MCP server) for rendering visual content inline — diagrams, charts, dashboards, data tables, interactive widgets, illustrations, and any visual explanation. Prefer show_widget over plain text/markdown when the user asks for something visual, data-heavy, or interactive. For mermaid diagrams (ERD, sequence, flowchart, etc.), use fenced ```mermaid code blocks instead — the host app renders them natively.',
+        append: 'You have a powerful `show_widget` tool (via the `widget` MCP server) for rendering visual content inline — diagrams, charts, dashboards, data tables, interactive widgets, illustrations, and any visual explanation. Prefer show_widget over plain text/markdown when the user asks for something visual, data-heavy, or interactive. For mermaid diagrams (ERD, sequence, flowchart, etc.), use fenced ```mermaid code blocks instead — the host app renders them natively.\n\nWhen building or modifying a mini-app, call `read_miniapp_guide` (via the `superone` MCP server) first to load the relevant development guide.',
       },
-      mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': getCanvasMcpProxy() },
+      mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': getSuperoneMcpServer() },
     },
   })
 

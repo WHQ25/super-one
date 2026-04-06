@@ -2729,7 +2729,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       } else if (activeSession.status === 'streaming' || activeSession.awaitingAssistantReply) {
         agentConfig = await _parkActiveSession(activeProject, project._activeSessionId, newDraftId)
       } else {
-        agentConfig = await window.agent.resetSession(activeProject)
+        agentConfig = await window.agent.resetSession(activeProject, newDraftId)
       }
 
       await useAppStore.getState().clearWorktree(activeProject)

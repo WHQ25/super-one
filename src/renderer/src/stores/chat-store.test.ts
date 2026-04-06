@@ -823,6 +823,21 @@ describe('resetSession', () => {
     expect(after.sandboxInfo).toEqual({ enabled: false, autoAllowBash: true })
   })
 
+  it('passes newDraftSessionId to resetSession for idle non-streaming sessions', async () => {
+    mockWindowAgent.resetSession.mockReset()
+    mockWindowAgent.resetSession.mockResolvedValue({
+      permissionMode: 'default' as const,
+      sandboxInfo: { enabled: false, autoAllowBash: false },
+    })
+
+    setupProject('/test')
+
+    await useChatStore.getState().resetSession()
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith('/test', after._activeSessionId)
+  })
+
   it('parks streaming DRAFT session instead of killing it', async () => {
     const agentConfig = {
       permissionMode: 'default' as const,

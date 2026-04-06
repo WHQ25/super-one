@@ -1,6 +1,7 @@
 import { RefreshCw, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useChatStore } from '@/stores/chat'
+import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import type { MiniAppEntry } from '../../../../shared/miniapp-types'
 
 interface MiniAppBuilderProps {
@@ -30,6 +31,7 @@ export function MiniAppBuilder({ apps, onOpenApp, onRefresh }: MiniAppBuilderPro
               onClick={() => onOpenApp(app)}
               className="bg-card hover:bg-accent flex flex-col items-center gap-2 rounded-lg border p-4 transition-colors"
             >
+              <MiniAppIcon appId={app.id} className={app.manifest.logo ? 'size-10' : 'size-8 text-muted-foreground'} />
               <span className="text-sm font-medium">{app.manifest.name}</span>
             </button>
           ))}

@@ -113,6 +113,7 @@ export function openMiniAppTab(appId: string, label: string) {
     dockApi.addPanel({
       id: panelId,
       component: 'miniapp',
+      tabComponent: 'miniapp-tab',
       title: label,
       params: { appId },
     })

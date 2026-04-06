@@ -1090,9 +1090,11 @@ export class AgentService {
         try {
           const isClaude = command.provider !== 'codex'
           const cached = getCachedResources()
+          log.info('[get_system_info] provider=%s hasCached=%s cachedModels=%d projectPath=%s', command.provider, !!cached, cached?.models?.length ?? 0, command.projectPath)
           if (isClaude) {
             const cachedModels = cached?.models as ModelOption[] | undefined
             const models = cachedModels?.length ? cachedModels : await fetchModels(command.projectPath)
+            log.info('[get_system_info] resolvedModels=%d source=%s', models.length, cachedModels?.length ? 'cache' : 'fetch')
             const skills = listSkills(command.projectPath)
             const agents = discoverAllAgents(command.projectPath)
             const projectSlashCommands = discoverProjectCommands(command.projectPath)
@@ -1124,6 +1126,7 @@ export class AgentService {
             })
           }
         } catch (err) {
+          log.error('[get_system_info] error: %s', err instanceof Error ? err.message : String(err))
           await respond?.(command.requestId, { error: (err as Error).message })
         }
         break
@@ -1545,16 +1548,20 @@ export class AgentService {
       this.getAgent(projectPath).respondToPlanApproval(requestId, approved, feedback)
     })
 
-    ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string, newDraftSessionId?: string) => {
       const agent = this.getAgent(projectPath)
       const oldSessionId = agent.getSessionId()
       trace('session.lifecycle', 'ipc_resetSession', {
         projectPath,
         oldSessionId: oldSessionId || '(none)',
+        newDraftSessionId: newDraftSessionId || '(none)',
         runtimeKeys: [...this.claudeRuntimes.keys()].slice(0, 10),
         pendingRuntimeKeys: [...this.pendingClaudeRuntimes.keys()],
       })
       await agent.resetSession()
+      if (newDraftSessionId) {
+        agent.updateEventEmitter(this.createEventEmitter(projectPath, newDraftSessionId))
+      }
       agent.applyPreferences()
       return { permissionMode: agent.getCurrentPermissionMode(), sandboxInfo: agent.getCurrentSandboxInfo() }
     })

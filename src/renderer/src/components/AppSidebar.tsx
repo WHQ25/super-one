@@ -31,6 +31,9 @@ import type { RecentFolder, SessionHistoryEntry, PinnedSessionEntry } from '../.
 import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from './session-delete-helpers'
 import { openHistoryTab } from '@/components/activity/activity-panel-api'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
+import { useMiniAppStore } from '@/stores/miniapp'
+import { MiniAppView } from '@/components/miniapp/MiniAppView'
+import { AppDrawer } from '@/components/sidebar/AppDrawer'
 
 type SortMode = 'recent' | 'added'
 
@@ -51,6 +54,40 @@ export function AppSidebar() {
 
   const [filesMounted, setExplorerMounted] = useState(sidebarTab === 'files')
   if (sidebarTab === 'files' && !filesMounted) setExplorerMounted(true)
+
+  const fetchApps = useMiniAppStore((s) => s.fetchApps)
+  useEffect(() => { fetchApps() }, [fetchApps])
+
+  const [mountedMiniApps, setMountedMiniApps] = useState<Set<string>>(new Set())
+  const openedMiniAppIds = useRef<Set<string>>(new Set())
+  const activeMiniAppId = sidebarTab.startsWith('miniapp:') ? sidebarTab.slice(8) : null
+
+  if (activeMiniAppId && !mountedMiniApps.has(activeMiniAppId)) {
+    setMountedMiniApps((prev) => new Set(prev).add(activeMiniAppId))
+  }
+
+  useEffect(() => {
+    if (!activeMiniAppId || openedMiniAppIds.current.has(activeMiniAppId)) return
+    openedMiniAppIds.current.add(activeMiniAppId)
+    window.miniapp.open(activeMiniAppId, currentFolder ?? '')
+  }, [activeMiniAppId, currentFolder])
+
+  const sidebarTabs: SidebarTab[] = ['sessions', 'files']
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = isMac ? e.metaKey : e.ctrlKey
+      if (e.shiftKey || e.altKey) return
+      const digit = e.key >= '0' && e.key <= '9' ? (e.key === '0' ? 10 : parseInt(e.key)) : -1
+      if (digit < 0) return
+      if (mod && digit >= 1 && digit <= sidebarTabs.length) {
+        e.preventDefault()
+        setSidebarTab(sidebarTabs[digit - 1])
+        return
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [isMac, setSidebarTab])
 
   const [sortMode, setSortMode] = useState<SortMode>('added')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
@@ -346,8 +383,9 @@ export function AppSidebar() {
         </TabsList>
       </Tabs>
 
-      {/* Pinned sessions (always visible) */}
-      {pinnedSessions.length > 0 && (
+      <AppDrawer />
+
+      {pinnedSessions.length > 0 && sidebarTab === 'sessions' && (
         <div className="flex flex-col px-1.5 pb-1">
           <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">Pinned</span>
           {pinnedSessions.map((s) => (
@@ -380,11 +418,18 @@ export function AppSidebar() {
         </div>
       )}
 
+      {[...mountedMiniApps].map((appId) => (
+        <div key={appId} className={cn('min-h-0 flex-1', sidebarTab !== `miniapp:${appId}` && 'hidden')}>
+          <MiniAppView appId={appId} className="h-full w-full" />
+        </div>
+      ))}
+
       {filesMounted && (
         <div className={cn('min-h-0 flex-1', sidebarTab !== 'files' && 'hidden')}>
           <FileTree />
         </div>
       )}
+
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
       {/* Projects header */}
       <div className="flex items-center justify-between pl-4 pr-3 pt-1.5 pb-0.5">

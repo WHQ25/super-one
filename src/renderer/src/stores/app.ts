@@ -6,7 +6,7 @@ type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
 export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'preferences' | 'remote'
 export type LayoutMode = 'canvas' | 'coding'
-export type SidebarTab = 'sessions' | 'files'
+export type SidebarTab = 'sessions' | 'files' | `miniapp:${string}`
 
 interface WorktreeState {
   pendingBaseBranch: string | null
@@ -165,17 +165,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   sidebarTab: 'sessions',
-  setSidebarTab: (tab) => {
-    set({ sidebarTab: tab })
-    if (tab === 'files') {
-      import('./source-control').then(({ useSourceControlStore }) => {
-        const file = useSourceControlStore.getState().selectedFile
-        if (file) {
-          import('@/components/activity/activity-panel-api').then(({ openFileTab }) => openFileTab(file))
-        }
-      })
-    }
-  },
+  setSidebarTab: (tab) => set({ sidebarTab: tab }),
   showSidebar: true,
   setShowSidebar: (show) => set({ showSidebar: show }),
   sidebarWidth: 320,

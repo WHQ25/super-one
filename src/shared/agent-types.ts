@@ -1173,6 +1173,10 @@ export const AgentIpcChannels = {
   MINIAPP_IFRAME_READY: 'miniapp:iframe-ready',
   MINIAPP_GET_PRELOAD_PATH: 'miniapp:get-preload-path',
   MINIAPP_DETECT_DEV: 'miniapp:detect-dev',
+  MINIAPP_INSTALL: 'miniapp:install',
+  MINIAPP_UNINSTALL: 'miniapp:uninstall',
+  MINIAPP_PACK: 'miniapp:pack',
+  MINIAPP_GET_INSTALL_META: 'miniapp:get-install-meta',
 } as const
 
 export interface FileSearchResult {

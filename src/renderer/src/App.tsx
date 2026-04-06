@@ -147,13 +147,17 @@ function App(): React.JSX.Element {
       })
     }
     window.addEventListener('resize', clampPanels)
-    const unsub = useActivityPanelStore.subscribe((state, prev) => {
-      if (state.showPanel && !prev.showPanel) clampPanels()
+    const unsubAP = useActivityPanelStore.subscribe((state, prev) => {
+      if (state.showPanel !== prev.showPanel || state.panelWidth !== prev.panelWidth || state.side !== prev.side) clampPanels()
+    })
+    const unsubApp = useAppStore.subscribe((state, prev) => {
+      if (state.showSidebar !== prev.showSidebar) clampPanels()
     })
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', clampPanels)
-      unsub()
+      unsubAP()
+      unsubApp()
     }
   }, [])
 

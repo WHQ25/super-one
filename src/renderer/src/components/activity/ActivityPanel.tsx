@@ -102,6 +102,13 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     }
   }, [])
 
+  const onKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
+      e.preventDefault()
+      e.stopPropagation()
+      apiRef.current?.activePanel?.api.close()
+    }
+  }, [])
 
   return (
     <motion.div
@@ -119,7 +126,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
             <LayoutToggle />
           </div>
         )}
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1" onKeyDown={onKeyDown}>
           <DockviewReact
             className="dockview-theme-superone"
             onReady={onReady}

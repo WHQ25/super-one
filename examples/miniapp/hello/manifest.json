@@ -6,8 +6,7 @@
   "description": "A simple greeting sidebar app",
   "logo": "logo.png",
   "type": "sidebar",
-  "workingDir": { "scope": "project", "path": "." },
-  "permissions": { "fs": "project" },
+  "permissions": { "fs": [{ "scope": "project", "path": ".", "access": "readwrite", "reason": "Read and write project files" }] },
   "tools": [
     {
       "name": "show_message",

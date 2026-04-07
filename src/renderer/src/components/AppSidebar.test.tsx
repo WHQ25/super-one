@@ -61,6 +61,7 @@ vi.mock('@/stores/chat', () => ({
     (selector: (state: typeof chatState) => unknown) => selector(chatState),
     { getState: () => chatState },
   ),
+  isDraftSession: (id: string | null) => id === '__draft__' || (!!id && id.startsWith('__draft_')),
 }))
 
 vi.mock('@/hooks/useFullscreen', () => ({
@@ -355,6 +356,54 @@ describe('AppSidebar interactions', () => {
     render(<AppSidebar />)
 
     await screen.findByText('Pending first reply')
+  })
+
+  it('does not prepend idle sessions from _sessions that are beyond the DB pagination limit', async () => {
+    sessionsByFolder = {
+      '/project-a': Array.from({ length: 10 }, (_, i) => ({
+        sessionId: `sid-${i}`,
+        title: `Session ${i}`,
+        lastActiveAt: new Date(2026, 3, 7, 10 - i).toISOString(),
+        messageCount: 2,
+      })),
+    }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: 'sid-0',
+        _sessions: {
+          'sid-0': {
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'current' }] }],
+            status: 'streaming',
+            pendingPermissions: [],
+            pendingQuestion: null,
+            pendingPlanApproval: null,
+            awaitingAssistantReply: false,
+            sessionProvider: 'claude',
+            _worktreeBaseBranch: null,
+          },
+          'sid-old-beyond-page': {
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'old browsed session' }] }],
+            status: 'idle',
+            pendingPermissions: [],
+            pendingQuestion: null,
+            pendingPlanApproval: null,
+            awaitingAssistantReply: false,
+            sessionProvider: 'claude',
+            _worktreeBaseBranch: null,
+            _historyHydrated: true,
+          },
+        },
+        unseenCompletedSessions: new Set<string>(),
+      },
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    fireEvent.click(screen.getByText('project-a'))
+    await screen.findByText('Session 0')
+
+    expect(screen.queryByText('old browsed session')).toBeNull()
   })
 
   it('does not submit session rename while IME composition is active', async () => {

@@ -4,7 +4,7 @@ import { Bot, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, Folde
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
-import { useChatStore } from '@/stores/chat'
+import { isDraftSession, useChatStore } from '@/stores/chat'
 import { cn } from '@/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import type { RecentFolder, SessionHistoryEntry } from '../../../../shared/agent-types'
@@ -63,7 +63,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         if (dbEntry?.isHidden) continue
         if (dbEntry) continue
         const isUnseen = projectSession.unseenCompletedSessions.has(sid)
-        if (!isActive && !isLiveSession(data, isUnseen)) continue
+        if (!isLiveSession(data, isUnseen) && !isDraftSession(sid)) continue
         if (!title && !data._historyHydrated) continue
         live.push({
           sessionId: sid,

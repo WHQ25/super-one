@@ -153,6 +153,9 @@ export class ClaudeAgent {
     }
 
     this.bridge = new MessageBridge()
+    this.bridge.onConsumed = (tag) => {
+      this.emit({ type: 'queued_message_consumed', clientMessageId: tag })
+    }
     this.sessionAbort = new AbortController()
     const { canUseTool, trackPlanFile } = createCanUseTool(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, (e) => this.emit(e))
 

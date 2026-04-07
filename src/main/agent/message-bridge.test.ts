@@ -77,6 +77,36 @@ describe('MessageBridge', () => {
     expect(result.done).toBe(true)
   })
 
+  it('should call onConsumed when tagged message is consumed from queue', async () => {
+    const bridge = new MessageBridge()
+    const consumed: string[] = []
+    bridge.onConsumed = (tag) => consumed.push(tag)
+
+    bridge.push(msg('a'), 'tag-a')
+    bridge.push(msg('b'))
+    bridge.push(msg('c'), 'tag-c')
+
+    const iter = bridge[Symbol.asyncIterator]()
+    await iter.next()
+    await iter.next()
+    await iter.next()
+
+    expect(consumed).toEqual(['tag-a', 'tag-c'])
+  })
+
+  it('should call onConsumed immediately when waiter is present (fast path)', async () => {
+    const bridge = new MessageBridge()
+    const consumed: string[] = []
+    bridge.onConsumed = (tag) => consumed.push(tag)
+
+    const iter = bridge[Symbol.asyncIterator]()
+    const promise = iter.next()
+    bridge.push(msg('fast'), 'tag-fast')
+    await promise
+
+    expect(consumed).toEqual(['tag-fast'])
+  })
+
   it('should handle alternating push and next calls', async () => {
     const bridge = new MessageBridge()
     const iter = bridge[Symbol.asyncIterator]()

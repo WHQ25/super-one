@@ -481,16 +481,21 @@ function _patchAgentBlock(messages: ChatMessage[], tid: string, patch: Record<st
 
 function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
   switch (event.type) {
-    case 'message_start': {
-      const hasQueued = session.queuedMessages.length > 0
-      const consumedMsg = hasQueued ? session.queuedMessages[0] : null
-      const updatedQueue = hasQueued ? session.queuedMessages.slice(1) : session.queuedMessages
-      const newMessages = consumedMsg
-        ? [...session.messages, consumedMsg, event.message]
-        : [...session.messages, event.message]
+    case 'queued_message_consumed': {
+      const idx = session.queuedMessages.findIndex((m) => m.id === event.clientMessageId)
+      if (idx === -1) return {}
+      const consumed = session.queuedMessages[idx]
       return {
-        messages: newMessages,
-        queuedMessages: updatedQueue,
+        messages: [...session.messages, consumed],
+        queuedMessages: session.queuedMessages.filter((_, i) => i !== idx),
+        awaitingAssistantReply: true,
+        lastEventAt: Date.now(),
+      }
+    }
+
+    case 'message_start': {
+      return {
+        messages: [...session.messages, event.message],
         promptSuggestion: null,
         awaitingAssistantReply: false,
         lastEventAt: Date.now(),
@@ -2902,7 +2907,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     const modelInfo = availableModels.find((m) => m.id === model)
     const defaultEffort = modelInfo?.supportedEffortLevels?.length ? 'medium' as EffortLevel : undefined
-    set((s) => updateActivePerSession(s,() => ({ selectedModel: model, selectedEffort: defaultEffort })))
+    set((s) => updateActivePerSession(s,() => ({ selectedModel: model, selectedEffort: defaultEffort, contextWindow: null })))
   },
 
   setSelectedEffort: (effort) => {

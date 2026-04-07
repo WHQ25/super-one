@@ -10,6 +10,7 @@ export class MessageBridge {
   private waiter: { resolve: (v: IteratorResult<SDKUserMessage>) => void } | null = null
   private closed = false
   private _consumedTags: string[] = []
+  private _onConsumed: ((tag: string) => void) | null = null
 
   get consumedTags(): readonly string[] {
     return this._consumedTags
@@ -19,13 +20,20 @@ export class MessageBridge {
     return this._consumedTags.shift()
   }
 
+  set onConsumed(cb: ((tag: string) => void) | null) {
+    this._onConsumed = cb
+  }
+
   push(msg: SDKUserMessage, tag?: string): void {
     if (this.closed) return
 
     if (this.waiter) {
       const w = this.waiter
       this.waiter = null
-      if (tag) this._consumedTags.push(tag)
+      if (tag) {
+        this._consumedTags.push(tag)
+        this._onConsumed?.(tag)
+      }
       w.resolve({ value: msg, done: false })
     } else {
       this.queue.push({ msg, tag })
@@ -53,7 +61,10 @@ export class MessageBridge {
       next: (): Promise<IteratorResult<SDKUserMessage>> => {
         if (this.queue.length > 0) {
           const item = this.queue.shift()!
-          if (item.tag) this._consumedTags.push(item.tag)
+          if (item.tag) {
+            this._consumedTags.push(item.tag)
+            this._onConsumed?.(item.tag)
+          }
           return Promise.resolve({ value: item.msg, done: false })
         }
         if (this.closed) {

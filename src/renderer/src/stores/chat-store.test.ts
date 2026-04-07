@@ -3527,3 +3527,67 @@ describe('cross-session event routing race conditions', () => {
     expect(final._sessions['real-A']).toBeUndefined()
   })
 })
+
+describe('queued_message_consumed', () => {
+  it('moves matching queued message into messages immediately', () => {
+    setupProject('/test')
+    const draftId = getActiveDraftId('/test')!
+
+    const userMsg = makeMessage('user-q1', 'user')
+    const asstMsg = makeMessage('asst-1', 'assistant')
+
+    const proj = useChatStore.getState().projectSessions['/test']
+    proj._sessions[draftId].messages = [asstMsg]
+    proj._sessions[draftId].queuedMessages = [userMsg]
+    proj._sessions[draftId].status = 'streaming'
+    useChatStore.setState({ projectSessions: { '/test': proj } })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'queued_message_consumed',
+      clientMessageId: 'user-q1',
+    } as never))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[draftId]
+    expect(session.messages).toHaveLength(2)
+    expect(session.messages[1].id).toBe('user-q1')
+    expect(session.queuedMessages).toHaveLength(0)
+  })
+
+  it('does nothing when clientMessageId is not in queue', () => {
+    setupProject('/test')
+    const draftId = getActiveDraftId('/test')!
+
+    const userMsg = makeMessage('user-q1', 'user')
+    const proj = useChatStore.getState().projectSessions['/test']
+    proj._sessions[draftId].queuedMessages = [userMsg]
+    useChatStore.setState({ projectSessions: { '/test': proj } })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'queued_message_consumed',
+      clientMessageId: 'nonexistent',
+    } as never))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[draftId]
+    expect(session.queuedMessages).toHaveLength(1)
+    expect(session.messages).toHaveLength(0)
+  })
+
+  it('message_start no longer dequeues from queuedMessages', () => {
+    setupProject('/test')
+    const draftId = getActiveDraftId('/test')!
+
+    const userMsg = makeMessage('user-q1', 'user')
+    const proj = useChatStore.getState().projectSessions['/test']
+    proj._sessions[draftId].queuedMessages = [userMsg]
+    useChatStore.setState({ projectSessions: { '/test': proj } })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: makeMessage('asst-new', 'assistant'),
+    }))
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[draftId]
+    expect(session.queuedMessages).toHaveLength(1)
+    expect(session.messages.find((m) => m.id === 'user-q1')).toBeUndefined()
+  })
+})

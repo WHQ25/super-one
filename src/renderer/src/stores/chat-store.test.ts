@@ -242,6 +242,118 @@ describe('no data loss on session switch', () => {
     expect(result._sessions['a'].selectedModel).toBe('claude-opus-4-6')
     expect(result._sessions['b'].selectedModel).toBe('claude-sonnet-4-6')
   })
+
+  it('setDraftText only affects active session, not other sessions', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    const sessionA = { ...createDefaultPerSessionState(), draftText: 'draft-a' }
+    const sessionB = { ...createDefaultPerSessionState(), draftText: 'draft-b' }
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: { a: sessionA, b: sessionB },
+        },
+      },
+    })
+
+    useChatStore.getState().setDraftText('updated-a')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['a'].draftText).toBe('updated-a')
+    expect(after._sessions['b'].draftText).toBe('draft-b')
+  })
+
+  it('switching active session exposes correct draftText without mutating other sessions', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    const sessionA = { ...createDefaultPerSessionState(), draftText: 'draft-a' }
+    const sessionB = { ...createDefaultPerSessionState(), draftText: 'draft-b' }
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: { a: sessionA, b: sessionB },
+        },
+      },
+    })
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...useChatStore.getState().projectSessions['/test'],
+          _activeSessionId: 'b',
+        },
+      },
+    })
+
+    useChatStore.getState().setDraftText('updated-b')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['a'].draftText).toBe('draft-a')
+    expect(after._sessions['b'].draftText).toBe('updated-b')
+  })
+
+  it('rapid session switches preserve all drafts independently', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: {
+            a: { ...createDefaultPerSessionState(), draftText: '' },
+            b: { ...createDefaultPerSessionState(), draftText: '' },
+            c: { ...createDefaultPerSessionState(), draftText: '' },
+          },
+        },
+      },
+    })
+
+    useChatStore.getState().setDraftText('typed-in-a')
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...useChatStore.getState().projectSessions['/test'],
+          _activeSessionId: 'b',
+        },
+      },
+    })
+    useChatStore.getState().setDraftText('typed-in-b')
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...useChatStore.getState().projectSessions['/test'],
+          _activeSessionId: 'c',
+        },
+      },
+    })
+    useChatStore.getState().setDraftText('typed-in-c')
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...useChatStore.getState().projectSessions['/test'],
+          _activeSessionId: 'a',
+        },
+      },
+    })
+
+    const final = useChatStore.getState().projectSessions['/test']
+    expect(final._sessions['a'].draftText).toBe('typed-in-a')
+    expect(final._sessions['b'].draftText).toBe('typed-in-b')
+    expect(final._sessions['c'].draftText).toBe('typed-in-c')
+  })
 })
 
 describe('concurrent streaming sessions', () => {

@@ -683,17 +683,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const isEditorUpdateRef = useRef(false)
     const isProgrammaticSetRef = useRef(false)
+    const prevSessionIdRef = useRef(activeSessionId)
     useEffect(() => {
-      if (isEditorUpdateRef.current) {
+      const sessionChanged = prevSessionIdRef.current !== activeSessionId
+      prevSessionIdRef.current = activeSessionId
+      if (!sessionChanged && isEditorUpdateRef.current) {
         isEditorUpdateRef.current = false
         return
       }
+      isEditorUpdateRef.current = false
       if (editor && text !== editor.getText()) {
         isProgrammaticSetRef.current = true
         editor.commands.setContent(text ? `<p>${text}</p>` : '')
         editor.commands.focus('end')
       }
-    }, [text, editor])
+    }, [text, editor, activeSessionId])
 
     useEffect(() => {
       if (!compact && isOpen && editor && !showReviewPanel) {

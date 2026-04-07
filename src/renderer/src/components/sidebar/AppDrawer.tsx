@@ -8,6 +8,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 import { openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { MarqueeText } from '@/components/ui/marquee-text'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
 import type { MiniAppEntry } from '../../../../shared/miniapp-types'
 import { AnimatePresence, motion } from 'motion/react'
@@ -44,32 +45,35 @@ function SortableAppRow({ app, index, onClick }: { app: MiniAppEntry; index: num
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: app.id })
   const style = { transform: CSS.Transform.toString(transform ? { ...transform, x: 0 } : null), transition }
   const typeLabel = TYPE_LABELS[app.manifest.type ?? 'panel'] ?? 'Panel'
+  const [hovered, setHovered] = useState(false)
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
-        'group/sapp flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent',
+        'group/sapp flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent',
         isDragging && 'z-10 opacity-80 shadow-sm',
       )}
       onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <MiniAppIcon appId={app.id} className="size-6 shrink-0" />
-      <div className="flex min-w-0 flex-col">
+      <div className="flex w-0 flex-1 flex-col overflow-hidden">
         <span className="flex items-center gap-1.5 text-[13px]">
           <span className="truncate">{app.manifest.name}</span>
           <span className="inline-flex h-4 shrink-0 items-center rounded bg-sidebar-accent px-1 text-[10px] leading-none text-sidebar-foreground/50">{typeLabel}</span>
           {index <= 9 && <span className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sidebar-accent text-[10px] leading-none text-sidebar-foreground/60">{index < 9 ? index + 1 : 0}</span>}
         </span>
         {app.manifest.description && (
-          <span className="truncate text-[11px] text-sidebar-foreground/50">{app.manifest.description}</span>
+          <MarqueeText className="text-[11px] text-sidebar-foreground/50" hovered={hovered}>{app.manifest.description}</MarqueeText>
         )}
       </div>
       <div
         {...attributes}
         {...listeners}
-        className="ml-auto shrink-0 cursor-grab rounded p-0.5 text-sidebar-foreground/30 opacity-0 transition-opacity hover:text-sidebar-foreground/60 group-hover/sapp:opacity-100 active:cursor-grabbing"
+        className="shrink-0 cursor-grab rounded p-0.5 text-sidebar-foreground/30 opacity-0 transition-opacity hover:text-sidebar-foreground/60 group-hover/sapp:opacity-100 active:cursor-grabbing"
       >
         <GripVertical className="size-3.5" />
       </div>

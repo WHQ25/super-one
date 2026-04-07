@@ -57,14 +57,14 @@ Every mini-app requires a `manifest.json` in its root directory.
 
 ## Display Types
 
-| Type | Where | Behavior |
-|------|-------|----------|
-| `panel` | Activity Panel / Canvas | Resizable, supports tabs. Default type. |
-| `sidebar` | Left sidebar | Narrow view, replaces sidebar content area. |
-| `in-chat` | Chat messages | Inline in conversation (future). |
-| `fullscreen` | Canvas (full area) | Auto-switches to canvas mode, takes the entire canvas area. |
+| Type | Where | Width | Behavior |
+|------|-------|-------|----------|
+| `panel` | Activity Panel | 320–800px, resizable | Default type. Design for ~400px min width. |
+| `sidebar` | Left sidebar | ~240–280px | Very narrow — use vertical layouts. |
+| `in-chat` | Chat messages | — | Inline in conversation (future). |
+| `fullscreen` | Canvas (full area) | Full window | Most space available. |
 
-Each app has exactly one type and runs in one location at a time.
+Each app has exactly one type and runs in one location at a time. The iframe scrolls internally — wide content won't stretch the host panel. See the `api` guide for layout tips.
 
 ## File System Scopes
 

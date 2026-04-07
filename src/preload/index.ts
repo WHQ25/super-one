@@ -667,8 +667,8 @@ const appAPI = {
 import type { MiniAppEntry, MiniAppToolCallRequest, MiniAppInstallMeta, MiniAppFsWatchEvent } from '../shared/miniapp-types'
 
 const miniappAPI = {
-  list: () =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_LIST) as Promise<MiniAppEntry[]>,
+  list: (projectDir?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_LIST, projectDir) as Promise<MiniAppEntry[]>,
 
   open: (appId: string, projectDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_OPEN, appId, projectDir),

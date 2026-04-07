@@ -210,7 +210,7 @@ interface AppAPI {
 }
 
 interface MiniAppAPI {
-  list(): Promise<MiniAppEntry[]>
+  list(projectDir?: string): Promise<MiniAppEntry[]>
   open(appId: string, projectDir: string): Promise<void>
   close(appId: string): Promise<void>
   toolResult(callId: string, result: unknown, error?: string): Promise<void>
@@ -223,7 +223,7 @@ interface MiniAppAPI {
   iframeReady(appId: string): Promise<void>
   onToolCall(callback: (call: MiniAppToolCallRequest) => void): () => void
   getPreloadPath(): Promise<string>
-  detectDev(projectDir: string): Promise<MiniAppEntry | null>
+  detectDev(projectDir: string): Promise<MiniAppEntry[]>
   onDevAppReady(callback: (projectDir: string) => void): () => void
   preview(s1appPath: string): Promise<MiniAppPreviewResult>
   confirmInstall(tempDir: string): Promise<MiniAppInstallResult>

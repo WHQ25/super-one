@@ -56,7 +56,7 @@ export function AppSidebar() {
   if (sidebarTab === 'files' && !filesMounted) setExplorerMounted(true)
 
   const fetchApps = useMiniAppStore((s) => s.fetchApps)
-  useEffect(() => { fetchApps() }, [fetchApps])
+  useEffect(() => { fetchApps(currentFolder ?? undefined) }, [fetchApps, currentFolder])
 
   const [mountedMiniApps, setMountedMiniApps] = useState<Set<string>>(new Set())
   const openedMiniAppIds = useRef<Set<string>>(new Set())

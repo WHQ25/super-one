@@ -162,6 +162,33 @@ describe('createCanUseTool', () => {
     }
   }
 
+  it('should auto-approve mcp__widget__ tools without permission prompt', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+    const result = await canUseTool('mcp__widget__show_widget', { title: 'test' }, makeContext())
+    expect(result.behavior).toBe('allow')
+    expect(events).toHaveLength(0)
+    expect(perms.size).toBe(0)
+  })
+
+  it('should auto-approve mcp__superone__read_miniapp_guide without permission prompt', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+    const result = await canUseTool('mcp__superone__read_miniapp_guide', { topic: 'overview' }, makeContext())
+    expect(result.behavior).toBe('allow')
+    expect(result.updatedInput).toEqual({ topic: 'overview' })
+    expect(events).toHaveLength(0)
+    expect(perms.size).toBe(0)
+  })
+
+  it('should not auto-approve other superone MCP tools', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+    const promise = canUseTool('mcp__superone__setup_mini_app_dev', { name: 'Test' }, makeContext())
+    expect(events).toHaveLength(1)
+    expect(events[0].type).toBe('permission_request')
+    const [id] = [...perms.keys()]
+    respondToPermission(perms, id, true)
+    await promise
+  })
+
   it('should emit permission_request with correct shape', async () => {
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
     const input = { file_path: '/tmp/test.txt' }

@@ -1,7 +1,7 @@
 import { readdir, readFile, writeFile, stat, mkdir, glob, watch } from 'fs/promises'
 import { watch as watchSync } from 'fs'
 import type { FSWatcher } from 'fs'
-import { join, resolve, sep, relative } from 'path'
+import { join, resolve, sep, relative, dirname } from 'path'
 import { app } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import log from '../logger'
@@ -10,6 +10,7 @@ import { sanitizeGitRef } from '../path-security'
 import { parseGitStatusFiles } from '../git-status-utils'
 import { parseManifest } from './miniapp-schema'
 import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp, MiniAppFsAccess } from '../../shared/miniapp-types'
+import { generateVanillaFiles, generateReactFiles, slugify, type GeneratedFile } from './miniapp-templates'
 
 const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
 const devAppsDir = () => join(process.cwd(), 'examples', 'miniapp')
@@ -151,15 +152,14 @@ async function scanDir(base: string): Promise<MiniAppEntry[]> {
   } catch {
     return []
   }
-  const entries: MiniAppEntry[] = []
-  for (const name of dirs) {
-    const basePath = join(base, name)
-    const manifest = await readManifest(basePath)
-    if (manifest) {
-      entries.push({ id: manifest.appId, manifest, basePath })
-    }
-  }
-  return entries
+  const results = await Promise.all(
+    dirs.map(async (name) => {
+      const basePath = join(base, name)
+      const manifest = await readManifest(basePath)
+      return manifest ? { id: manifest.appId, manifest, basePath } : null
+    }),
+  )
+  return results.filter((e): e is MiniAppEntry => e !== null)
 }
 
 export async function discoverApps(): Promise<MiniAppEntry[]> {
@@ -191,95 +191,106 @@ export async function readManifest(appDir: string): Promise<MiniAppManifest | nu
   }
 }
 
+export type CreateMiniAppMode = 'project' | 'standalone'
+export type CreateMiniAppTemplate = 'vanilla' | 'react'
+
 export interface CreateMiniAppOptions {
   name: string
   projectDir: string
-  outputDir?: string
+  mode?: CreateMiniAppMode
+  template?: CreateMiniAppTemplate
   additionalDirs?: string[]
+  type?: MiniAppManifest['type']
+  description?: string
+  permissions?: MiniAppManifest['permissions']
+  tools?: MiniAppManifest['tools']
 }
 
-const DEV_OUTPUT_DIR = 'dist'
-
-export function getDevAppBasePath(projectDir: string): string {
-  return join(projectDir, DEV_OUTPUT_DIR)
+export interface CreateMiniAppResult {
+  entry: MiniAppEntry
+  appPath: string
+  buildRequired: boolean
 }
 
-export async function createMiniApp(opts: CreateMiniAppOptions): Promise<MiniAppEntry> {
-  const outputPath = join(opts.projectDir, opts.outputDir ?? DEV_OUTPUT_DIR)
-  await mkdir(outputPath, { recursive: true })
+const PROJECT_APPS_DIR = '.superone/apps'
+
+export function getProjectAppsDir(projectDir: string): string {
+  return join(projectDir, PROJECT_APPS_DIR)
+}
+
+export async function discoverProjectApps(projectDir: string): Promise<MiniAppEntry[]> {
+  return scanDir(getProjectAppsDir(projectDir))
+}
+
+export async function detectStandaloneApp(projectDir: string): Promise<MiniAppEntry | null> {
+  const rootManifest = await readManifest(projectDir)
+  if (rootManifest) return { id: rootManifest.appId, manifest: rootManifest, basePath: projectDir }
+
+  const distDir = join(projectDir, 'dist')
+  const distManifest = await readManifest(distDir)
+  if (distManifest) return { id: distManifest.appId, manifest: distManifest, basePath: distDir }
+
+  return null
+}
+
+async function writeGeneratedFiles(baseDir: string, files: GeneratedFile[]): Promise<void> {
+  for (const file of files) {
+    const filePath = join(baseDir, file.path)
+    await mkdir(dirname(filePath), { recursive: true })
+    await writeFile(filePath, file.content, 'utf-8')
+  }
+}
+
+export async function createMiniApp(opts: CreateMiniAppOptions): Promise<CreateMiniAppResult> {
+  const mode = opts.mode ?? 'project'
+  const template = opts.template ?? 'vanilla'
+  const appId = slugify(opts.name)
+
+  const tools = opts.tools ?? [
+    {
+      name: 'show_message',
+      description: `Display a message in the ${opts.name} app`,
+      inputSchema: {
+        type: 'object',
+        properties: { text: { type: 'string', description: 'The message to display' } },
+        required: ['text'],
+      },
+    },
+  ]
 
   const manifest: MiniAppManifest = {
-    appId: '__dev__',
+    appId,
     name: opts.name,
-    permissions: { fs: [{ scope: 'project', path: '.', access: 'readwrite', reason: 'Read and write project files' }] },
-    tools: [
-      {
-        name: 'show_message',
-        description: `Display a message in the ${opts.name} app`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            text: { type: 'string', description: 'The message to display' },
-          },
-          required: ['text'],
-        },
-      },
-    ],
+    ...(opts.type && { type: opts.type }),
+    ...(opts.description && { description: opts.description }),
+    permissions: opts.permissions ?? { fs: [{ scope: 'project', path: '.', access: 'readwrite', reason: 'Read and write project files' }] },
+    tools,
   }
 
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>${opts.name}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; padding: 24px; background: #fafaf9; color: #1c1917; }
-    .dark body { background: #1c1917; color: #fafaf9; }
-    h1 { font-size: 20px; margin-bottom: 16px; }
-    #messages { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
-    .msg { background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; padding: 12px; }
-    .dark .msg { background: #292524; border-color: #44403c; }
-    button { background: #f97316; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; }
-    button:hover { background: #ea580c; }
-    #files { margin-top: 16px; font-size: 13px; color: #78716c; white-space: pre-wrap; }
-  </style>
-</head>
-<body>
-  <h1>${opts.name}</h1>
-  <div id="messages"><p style="color:#a8a29e">Waiting for agent messages...</p></div>
-  <button id="ask-btn">Ask Agent to Greet</button>
-  <div id="files"></div>
-  <script>
-    superone.tools.handle('show_message', function(args) {
-      var container = document.getElementById('messages');
-      if (container.querySelector('p')) container.innerHTML = '';
-      var div = document.createElement('div');
-      div.className = 'msg';
-      div.textContent = args.text;
-      container.appendChild(div);
-      return { success: true, displayed: args.text };
-    });
+  const templateOpts = { name: opts.name, manifest, tools }
+  const appPath = mode === 'project'
+    ? join(getProjectAppsDir(opts.projectDir), appId)
+    : opts.projectDir
+  const files = template === 'react'
+    ? generateReactFiles(templateOpts)
+    : generateVanillaFiles(templateOpts)
+  const buildRequired = template === 'react'
 
-    superone.fs.readDir('.').then(function(entries) {
-      document.getElementById('files').textContent = 'Files: ' + entries.map(function(e) { return e.name; }).join(', ');
-    }).catch(function() {});
-
-    document.getElementById('ask-btn').onclick = function() {
-      superone.agent.sendPrompt('Say hello using the ${opts.name.toLowerCase().replace(/\\s+/g, '-')}__show_message tool');
-    };
-  </script>
-</body>
-</html>`
-
-  await writeFile(join(outputPath, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8')
-  await writeFile(join(outputPath, 'index.html'), html, 'utf-8')
+  await writeGeneratedFiles(appPath, files)
 
   for (const dir of opts.additionalDirs ?? []) {
-    await mkdir(join(opts.projectDir, 'additionalDirs', dir), { recursive: true })
+    await mkdir(join(opts.projectDir, dir), { recursive: true })
   }
 
-  return { id: '__dev__', manifest, basePath: outputPath }
+  const basePath = template === 'react' && mode === 'standalone'
+    ? join(appPath, 'dist')
+    : appPath
+
+  return {
+    entry: { id: appId, manifest, basePath },
+    appPath,
+    buildRequired,
+  }
 }
 
 const appBasePathCache = new Map<string, string>()

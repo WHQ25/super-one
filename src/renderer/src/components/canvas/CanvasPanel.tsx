@@ -8,8 +8,6 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { RotateCw, X, Bug } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const DEV_APP_ID = '__dev__'
-
 interface OpenApp {
   appId: string
   entry: MiniAppEntry
@@ -25,12 +23,12 @@ export function CanvasPanel() {
 
   const refreshApps = useCallback(() => {
     useMiniAppStore.setState({ loaded: false })
-    fetchApps()
-  }, [fetchApps])
+    fetchApps(currentFolder ?? undefined)
+  }, [fetchApps, currentFolder])
 
   useEffect(() => {
-    fetchApps()
-  }, [fetchApps])
+    fetchApps(currentFolder ?? undefined)
+  }, [fetchApps, currentFolder])
 
   const openApp = useCallback(
     async (entry: MiniAppEntry) => {
@@ -88,38 +86,31 @@ export function CanvasPanel() {
     return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [activeAppId, reloadActive, openDevToolsActive])
 
-  const openDevApp = useCallback(
+  const reloadOpenDevApps = useCallback(
     async (projectDir: string) => {
-      const entry = await window.miniapp.detectDev(projectDir)
-      if (!entry) return
-      setOpenApps((prev) => {
-        if (prev.some((a) => a.appId === DEV_APP_ID)) {
-          devFrameRefs.current.get(DEV_APP_ID)?.reload()
+      const entries = await window.miniapp.detectDev(projectDir)
+      for (const entry of entries) {
+        setOpenApps((prev) => {
+          const existing = prev.find((a) => a.appId === entry.id)
+          if (existing) {
+            devFrameRefs.current.get(entry.id)?.reload()
+          }
           return prev
-        }
-        window.miniapp.open(DEV_APP_ID, projectDir)
-        return [...prev, { appId: DEV_APP_ID, entry }]
-      })
-      setActiveAppId(DEV_APP_ID)
+        })
+      }
     },
     [],
   )
 
   useEffect(() => {
-    if (!currentFolder) return
-    window.miniapp.detectDev(currentFolder).then((entry) => {
-      if (entry) openDevApp(currentFolder)
-    })
-  }, [currentFolder, openDevApp])
-
-  useEffect(() => {
     const cleanup = window.miniapp.onDevAppReady((projectDir) => {
       if (projectDir === currentFolder) {
-        openDevApp(projectDir)
+        reloadOpenDevApps(projectDir)
+        refreshApps()
       }
     })
     return cleanup
-  }, [currentFolder, openDevApp])
+  }, [currentFolder, reloadOpenDevApps, refreshApps])
 
   const pendingOpenAppId = useMiniAppStore((s) => s.pendingOpenAppId)
   useEffect(() => {

@@ -1,6 +1,6 @@
-import { Blocks } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMiniAppStore } from '@/stores/miniapp'
+import defaultIcon from '@/assets/default-app-icon.svg'
 
 interface MiniAppIconProps {
   appId: string
@@ -9,10 +9,10 @@ interface MiniAppIconProps {
 
 export function MiniAppIcon({ appId, className }: MiniAppIconProps) {
   const logo = useMiniAppStore((s) => s.apps.find((a) => a.id === appId)?.manifest.logo)
-  if (!logo) return <Blocks className={className} />
+  const src = logo ? `superone-app://${appId}/${logo}` : defaultIcon
   return (
     <img
-      src={`superone-app://${appId}/${logo}`}
+      src={src}
       alt=""
       className={cn('rounded-[22%] object-contain', className)}
     />

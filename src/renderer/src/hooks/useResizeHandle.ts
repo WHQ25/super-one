@@ -41,6 +41,10 @@ export function useResizeHandle({
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
 
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;cursor:col-resize'
+    document.body.appendChild(overlay)
+
     const sign = direction === 'ltr' ? 1 : -1
     let prevW = startW
 
@@ -62,18 +66,31 @@ export function useResizeHandle({
       prevW = w
     }
 
-    const onUp = (ev: MouseEvent) => {
-      const w = calc(ev.clientX)
+    const cleanup = () => {
       outer.style.transition = ''
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
-      setWidth(w)
-      onDragEnd?.()
+      overlay.remove()
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      window.removeEventListener('blur', onBlur)
+    }
+
+    const onUp = (ev: MouseEvent) => {
+      const w = calc(ev.clientX)
+      cleanup()
+      setWidth(w)
+      onDragEnd?.()
+    }
+
+    const onBlur = () => {
+      cleanup()
+      setWidth(prevW)
+      onDragEnd?.()
     }
 
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
+    window.addEventListener('blur', onBlur)
   }, [getWidth, setWidth, minWidth, getMaxWidth, direction, outerRef, innerRef, getLinkedPanel, onDragEnd])
 }

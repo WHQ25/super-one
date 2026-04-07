@@ -120,12 +120,13 @@ export const MiniAppFrame = forwardRef<HTMLIFrameElement, MiniAppFrameProps>(
   }, [appId, sendToFrame])
 
   return (
-    <iframe
-      ref={iframeRef}
-      src={`superone-app://${appId}/index.html`}
-      sandbox="allow-scripts"
-      className={className}
-      style={{ border: 'none', width: '100%', height: '100%' }}
-    />
+    <div className={className} style={{ position: 'relative', minWidth: 0 }}>
+      <iframe
+        ref={iframeRef}
+        src={`superone-app://${appId}/index.html`}
+        sandbox="allow-scripts"
+        style={{ position: 'absolute', inset: 0, border: 'none', width: '100%', height: '100%' }}
+      />
+    </div>
   )
 })

@@ -142,13 +142,14 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
     if (!preloadPath) return null
 
     return (
-      <webview
-        ref={webviewRef}
-        src={`superone-app://${appId}/index.html`}
-        preload={`file://${preloadPath}`}
-        className={className}
-        style={{ border: 'none', width: '100%', height: '100%' }}
-      />
+      <div className={className} style={{ position: 'relative', minWidth: 0 }}>
+        <webview
+          ref={webviewRef}
+          src={`superone-app://${appId}/index.html`}
+          preload={`file://${preloadPath}`}
+          style={{ position: 'absolute', inset: 0, border: 'none', width: '100%', height: '100%' }}
+        />
+      </div>
     )
   },
 )

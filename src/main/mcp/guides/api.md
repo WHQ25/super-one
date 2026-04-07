@@ -155,6 +155,35 @@ Mini-apps use standard `fetch()` to access whitelisted domains. No special API n
 const res = await fetch('https://api.example.com/data')
 ```
 
+## Display Types & Frame Constraints
+
+Mini-apps render inside an iframe that fills its container. The available space depends on the `type` declared in `manifest.json`:
+
+| Type | Container | Typical Width | Notes |
+|------|-----------|---------------|-------|
+| `sidebar` | Left sidebar panel | ~240–280px | Very narrow — use vertical layouts, avoid wide tables |
+| `panel` | Activity panel (right side) | 320–800px, user-resizable | Default type. Design for ~400px minimum width |
+| `fullscreen` | Full canvas area | Window width minus sidebar | Most space available |
+
+### Layout Guidelines
+
+- The iframe has its own scrolling — content that exceeds the container will scroll automatically
+- **Avoid fixed widths** — use `width: 100%`, `max-width`, or CSS Grid/Flexbox for responsive layouts
+- **Wide content** (tables, charts) should use `overflow-x: auto` on the container so they scroll horizontally within the iframe
+- **Sidebar apps** are very narrow — prefer stacked/vertical layouts over side-by-side columns
+- Use `var(--background)`, `var(--foreground)` etc. to match the host theme (see Theme section above)
+
+```css
+/* Responsive table example */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+}
+table {
+  min-width: 600px; /* scrolls horizontally in narrow containers */
+}
+```
+
 ## Common Patterns
 
 ### App That Displays Agent Output

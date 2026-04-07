@@ -52,6 +52,43 @@ For framework apps (React, Vue, Svelte), the build output goes here. The user de
 - If tools aren't showing up, verify `manifest.json` is valid JSON with correct `tools` array
 - If `superone` is undefined, check that `index.html` has a `<head>` tag (bridge is injected there)
 
+## Choosing a Template
+
+Use `vanilla` (default) when:
+- Simple to moderate UI: displays, forms, lists, visualizations
+- Third-party libraries can be loaded via CDN (declare domain in `permissions.network`)
+- Single-file HTML is manageable for the app's complexity
+
+Use `react` when:
+- Required libraries are npm-only (no CDN available)
+- App complexity makes single-file HTML unmaintainable (many components, complex state)
+- User explicitly asks for React or a framework
+
+Most mini-apps should use vanilla. CDN libraries (Chart.js, D3, Alpine.js, Three.js, etc.) work great in vanilla apps — add a `<script>` tag and declare the CDN domain in `permissions.network`.
+
+## Choosing a Mode
+
+Use `project` (default) when:
+- Building a utility or tool for the current project
+- App lives alongside the project's code (stored in `.superone/apps/<appId>/`)
+
+Use `standalone` when:
+- The user wants to create a dedicated mini-app project
+- The app will be packaged and distributed as `.s1app`
+- The entire project directory is the mini-app
+
+## React Template Setup Flow
+
+1. Check for a package manager: `which bun || which npm`
+2. If neither found, install bun:
+   - macOS/Linux: `curl -fsSL https://bun.sh/install | bash`
+   - Windows: `powershell -c "irm bun.sh/install.ps1 | iex"`
+3. Call `setup_mini_app_dev` with `template: "react"`
+4. Run `<pm> install && <pm> run build` in the app directory
+5. For ongoing development with auto-rebuild: `<pm> run build --watch`
+
+Prefer bun over npm when both are available (faster installs and builds).
+
 ## Example
 
 See `examples/miniapp/hello/` for a working reference:

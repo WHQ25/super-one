@@ -9,7 +9,7 @@ import { gitRun } from './git-run'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, getDevAppBasePath, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, detectStandaloneApp, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent } from './miniapp/miniapp-service'
 import { generateBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta } from './miniapp/miniapp-packager'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady } from './mcp/superone-mcp-server'
@@ -1363,8 +1363,17 @@ function registerIpcHandlers(): void {
 
   initSuperoneMcpServer(() => mainWindow)
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async () => {
+  ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async (_e, projectDir?: string) => {
     const apps = await discoverApps()
+    if (projectDir) {
+      const projectApps = await discoverProjectApps(projectDir)
+      const standaloneApp = await detectStandaloneApp(projectDir)
+      const existingIds = new Set(apps.map((a) => a.id))
+      for (const app of projectApps) {
+        if (!existingIds.has(app.id)) apps.push(app)
+      }
+      if (standaloneApp && !existingIds.has(standaloneApp.id)) apps.push(standaloneApp)
+    }
     for (const app of apps) cacheAppBasePath(app.id, app.basePath)
     return apps
   })
@@ -1431,12 +1440,11 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_DETECT_DEV, async (_e, projectDir: string) => {
-    const basePath = getDevAppBasePath(projectDir)
-    const manifest = await readManifest(basePath)
-    if (!manifest) return null
-    const entry = { id: '__dev__', manifest, basePath }
-    cacheAppBasePath('__dev__', basePath)
-    return entry
+    const projectApps = await discoverProjectApps(projectDir)
+    const standaloneApp = await detectStandaloneApp(projectDir)
+    const allApps = [...projectApps, ...(standaloneApp ? [standaloneApp] : [])]
+    for (const app of allApps) cacheAppBasePath(app.id, app.basePath)
+    return allApps
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_PREVIEW, async (_e, s1appPath: string) => {

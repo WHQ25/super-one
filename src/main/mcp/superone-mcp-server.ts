@@ -6,7 +6,7 @@ import { BrowserWindow } from 'electron'
 import log from '../logger'
 import type { MiniAppToolDefinition, MiniAppToolCallRequest } from '../../shared/miniapp-types'
 import { AgentIpcChannels } from '../../shared/agent-types'
-import { createMiniApp, readManifest, cacheAppBasePath, getDevAppBasePath } from '../miniapp/miniapp-service'
+import { createMiniApp, readManifest, cacheAppBasePath, discoverProjectApps, detectStandaloneApp, getProjectAppsDir } from '../miniapp/miniapp-service'
 import { packApp } from '../miniapp/miniapp-packager'
 import overviewMd from './guides/overview.md?raw'
 import manifestMd from './guides/manifest.md?raw'
@@ -115,36 +115,73 @@ export function getSuperoneMcpServer(): McpSdkServerConfigWithInstance {
       ),
       tool(
         'setup_mini_app_dev',
-        'Initialize a mini-app development environment in the current project directory. Creates a hello scaffold (manifest.json + index.html) inside the output directory (default: dist/), and optional additional directories at the project root. The canvas will automatically detect and render the mini-app after setup.',
+        `Initialize a mini-app development environment. Creates a scaffold with manifest.json, HTML/source files, and tool handler boilerplate.
+
+All fields except name and projectDir are optional — omit any that aren't needed.`,
         {
           name: z.string().describe('Display name for the mini-app'),
           projectDir: z.string().describe('Absolute path to the project directory'),
-          outputDir: z.string().optional().describe('Relative path from project root for the mini-app scaffold (default: "dist")'),
-          additionalDirs: z.array(z.string()).optional().describe('Additional directory names to create at the project root (e.g. ["test-data", "fixtures"])'),
+          mode: z.enum(['project', 'standalone']).optional().describe('project (default): mini-app for the current project, placed in .superone/apps/<appId>/. standalone: the project IS the mini-app.'),
+          template: z.enum(['vanilla', 'react']).optional().describe('vanilla (default): plain HTML, no build needed. react: React + TypeScript + Tailwind, requires build step.'),
+          additionalDirs: z.array(z.string()).optional().describe('Additional directory names to create at the project root'),
+          type: z.enum(['sidebar', 'panel', 'fullscreen']).optional().describe('Where the app appears: panel (resizable, default), sidebar (narrow left panel), fullscreen (full canvas)'),
+          description: z.string().optional().describe('Short description of what the app does'),
+          permissions: z.object({
+            fs: z.array(z.object({
+              scope: z.enum(['project', 'user', 'app']),
+              path: z.string().optional().describe('Relative path within the scope (required for project/user)'),
+              access: z.enum(['read', 'readwrite']).optional().describe('Access level (required for project/user)'),
+              reason: z.string().describe('Why this permission is needed'),
+            })).optional(),
+            network: z.array(z.object({
+              domain: z.string().describe('Whitelisted domain (e.g. "api.github.com")'),
+              reason: z.string().describe('Why this domain is needed'),
+            })).optional(),
+          }).optional().describe('Permissions the app needs'),
+          tools: z.array(z.object({
+            name: z.string().describe('Tool name (lowercase, underscores only, e.g. "render_chart")'),
+            description: z.string().describe('What this tool does — the agent reads this to decide when to use it'),
+            inputSchema: z.object({
+              type: z.literal('object'),
+              properties: z.record(z.string(), z.object({
+                type: z.string(),
+                description: z.string().optional(),
+              })).optional(),
+              required: z.array(z.string()).optional(),
+            }).describe('JSON Schema for the tool input'),
+          })).optional().describe('MCP tools the agent can call on this app'),
         },
-        async ({ name: appName, projectDir, outputDir, additionalDirs }) => {
-          const devBasePath = getDevAppBasePath(projectDir)
-          const existing = await readManifest(devBasePath)
-          if (existing) {
-            cacheAppBasePath('__dev__', devBasePath)
-            notifyDevAppReady(projectDir)
-            return {
-              content: [{ type: 'text' as const, text: JSON.stringify({ status: 'already_exists', name: existing.name, projectDir }) }],
-            }
-          }
-
-          await createMiniApp({
+        async ({ name: appName, projectDir, mode, template, additionalDirs, type, description, permissions, tools }) => {
+          const result = await createMiniApp({
             name: appName,
             projectDir,
-            outputDir,
+            mode,
+            template,
             additionalDirs,
+            type,
+            description,
+            permissions,
+            tools,
           })
 
-          cacheAppBasePath('__dev__', devBasePath)
-          notifyDevAppReady(projectDir)
+          if (!result.buildRequired) {
+            cacheAppBasePath(result.entry.id, result.entry.basePath)
+            notifyDevAppReady(projectDir)
+          }
 
           return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ status: 'created', name: appName, projectDir, outputDir: outputDir ?? 'dist', additionalDirs: additionalDirs ?? [] }) }],
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                status: 'created',
+                appId: result.entry.id,
+                name: appName,
+                appPath: result.appPath,
+                template: template ?? 'vanilla',
+                mode: mode ?? 'project',
+                buildRequired: result.buildRequired,
+              }),
+            }],
           }
         },
       ),

@@ -60,7 +60,7 @@ export function createCanUseTool(
     }
 
 
-    if (toolName.startsWith('mcp__widget__')) {
+    if (toolName.startsWith('mcp__widget__') || toolName === 'mcp__superone__read_miniapp_guide') {
       return { behavior: 'allow' as const, updatedInput: input, toolUseID: context.toolUseID }
     }
 

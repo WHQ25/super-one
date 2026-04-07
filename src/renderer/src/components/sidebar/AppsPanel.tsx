@@ -7,6 +7,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 import { openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { MarqueeText } from '@/components/ui/marquee-text'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
 import type { MiniAppEntry } from '../../../../shared/miniapp-types'
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
@@ -35,7 +36,7 @@ function SortableSidebarApp({ app, index, onOpen }: { app: MiniAppEntry; index: 
           <span className="truncate">{app.manifest.name}</span>
           {index <= 9 && <span className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sidebar-accent text-[10px] leading-none text-sidebar-foreground/60">{index < 9 ? index + 1 : 0}</span>}
         </span>
-        {app.manifest.description && <span className="truncate text-[11px] text-sidebar-foreground/50">{app.manifest.description}</span>}
+        {app.manifest.description && <MarqueeText className="text-[11px] text-sidebar-foreground/50">{app.manifest.description}</MarqueeText>}
       </div>
       <div
         {...attributes}
@@ -222,7 +223,7 @@ export function AppsPanel() {
                     <MiniAppIcon appId={app.id} className="size-7 shrink-0" />
                     <div className="flex min-w-0 flex-col">
                       <span className="truncate text-[13px]">{app.manifest.name}</span>
-                      {app.manifest.description && <span className="truncate text-[11px] text-sidebar-foreground/50">{app.manifest.description}</span>}
+                      {app.manifest.description && <MarqueeText className="text-[11px] text-sidebar-foreground/50">{app.manifest.description}</MarqueeText>}
                     </div>
                   </button>
                 ))}
@@ -245,7 +246,7 @@ export function AppsPanel() {
                     <MiniAppIcon appId={app.id} className="size-7 shrink-0" />
                     <div className="flex min-w-0 flex-col">
                       <span className="truncate text-[13px]">{app.manifest.name}</span>
-                      {app.manifest.description && <span className="truncate text-[11px] text-sidebar-foreground/50">{app.manifest.description}</span>}
+                      {app.manifest.description && <MarqueeText className="text-[11px] text-sidebar-foreground/50">{app.manifest.description}</MarqueeText>}
                     </div>
                   </button>
                 ))}

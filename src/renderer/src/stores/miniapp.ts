@@ -4,10 +4,11 @@ import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult } from '.
 interface MiniAppStoreState {
   apps: MiniAppEntry[]
   loaded: boolean
+  _lastProjectDir: string | undefined
   pendingOpenAppId: string | null
   pendingInstall: MiniAppPreviewResult | null
-  fetchApps: () => Promise<void>
-  refreshApps: () => Promise<void>
+  fetchApps: (projectDir?: string) => Promise<void>
+  refreshApps: (projectDir?: string) => Promise<void>
   previewInstall: (s1appPath: string) => Promise<MiniAppPreviewResult>
   confirmInstall: () => Promise<MiniAppInstallResult>
   cancelInstall: () => Promise<void>
@@ -19,16 +20,18 @@ interface MiniAppStoreState {
 export const useMiniAppStore = create<MiniAppStoreState>((set, get) => ({
   apps: [],
   loaded: false,
+  _lastProjectDir: undefined,
   pendingOpenAppId: null,
   pendingInstall: null,
-  fetchApps: async () => {
-    if (get().loaded) return
-    const apps = await window.miniapp.list()
-    set({ apps, loaded: true })
+  fetchApps: async (projectDir?: string) => {
+    const state = get()
+    if (state.loaded && state._lastProjectDir === projectDir) return
+    const apps = await window.miniapp.list(projectDir)
+    set({ apps, loaded: true, _lastProjectDir: projectDir })
   },
-  refreshApps: async () => {
-    const apps = await window.miniapp.list()
-    set({ apps, loaded: true })
+  refreshApps: async (projectDir?: string) => {
+    const apps = await window.miniapp.list(projectDir)
+    set({ apps, loaded: true, _lastProjectDir: projectDir })
   },
   previewInstall: async (s1appPath: string) => {
     const preview = await window.miniapp.preview(s1appPath)
@@ -40,7 +43,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => ({
     if (!pending) throw new Error('No pending install')
     set({ pendingInstall: null })
     const result = await window.miniapp.confirmInstall(pending.tempDir)
-    await get().refreshApps()
+    await get().refreshApps(get()._lastProjectDir)
     return result
   },
   cancelInstall: async () => {
@@ -51,7 +54,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => ({
   },
   uninstallApp: async (appId: string) => {
     await window.miniapp.uninstall(appId)
-    await get().refreshApps()
+    await get().refreshApps(get()._lastProjectDir)
   },
   requestOpenInCanvas: (appId: string) => set({ pendingOpenAppId: appId }),
   consumePendingOpen: () => {

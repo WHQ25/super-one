@@ -1,4 +1,6 @@
-import { forwardRef, useRef, useImperativeHandle } from 'react'
+import { forwardRef, useRef, useImperativeHandle, useCallback } from 'react'
+import { RotateCw, Bug } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppFrame } from './MiniAppFrame'
 import { MiniAppDevFrame, type MiniAppDevFrameHandle } from './MiniAppDevFrame'
@@ -19,17 +21,42 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
     const devRef = useRef<MiniAppDevFrameHandle>(null)
     const iframeRef = useRef<HTMLIFrameElement>(null)
 
-    useImperativeHandle(ref, () => ({
-      reload: () => {
-        if (isDev) devRef.current?.reload()
-        else if (iframeRef.current) iframeRef.current.src = iframeRef.current.src
-      },
-      openDevTools: () => {
-        if (isDev) devRef.current?.openDevTools()
-      },
-    }), [isDev])
+    const reload = useCallback(() => {
+      if (isDev) devRef.current?.reload()
+      else if (iframeRef.current) iframeRef.current.src = iframeRef.current.src
+    }, [isDev])
 
-    if (isDev) return <MiniAppDevFrame ref={devRef} appId={appId} className={className} />
-    return <MiniAppFrame ref={iframeRef} appId={appId} className={className} />
+    const openDevTools = useCallback(() => {
+      if (isDev) devRef.current?.openDevTools()
+    }, [isDev])
+
+    useImperativeHandle(ref, () => ({ reload, openDevTools }), [reload, openDevTools])
+
+    return (
+      <div className={cn('relative', className)}>
+        <div className="absolute bottom-2 left-2 z-10 flex items-center gap-0.5 rounded-md bg-black/60 p-0.5 backdrop-blur-sm">
+          <button
+            onClick={reload}
+            className="rounded p-1 text-white/70 hover:text-white"
+            title="Reload"
+          >
+            <RotateCw className="size-3.5" />
+          </button>
+          {isDev && (
+            <button
+              onClick={openDevTools}
+              className="rounded p-1 text-white/70 hover:text-white"
+              title="DevTools"
+            >
+              <Bug className="size-3.5" />
+            </button>
+          )}
+        </div>
+        {isDev
+          ? <MiniAppDevFrame ref={devRef} appId={appId} className="h-full w-full" />
+          : <MiniAppFrame ref={iframeRef} appId={appId} className="h-full w-full" />
+        }
+      </div>
+    )
   },
 )

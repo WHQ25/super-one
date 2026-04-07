@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare const document: any
+declare const ResizeObserver: any
+declare const requestAnimationFrame: (cb: () => void) => number
 
 import { contextBridge, ipcRenderer } from 'electron'
 
@@ -37,11 +39,19 @@ function bridgeGitCall(op: string, args: Record<string, unknown>): Promise<unkno
   })
 }
 
+type InitCallback = (data: Record<string, unknown>) => void
+const initCallbacks: InitCallback[] = []
+let initData: Record<string, unknown> | null = null
+
 contextBridge.exposeInMainWorld('superone', {
   tools: {
     handle(name: string, callback: ToolHandler) {
       handlers.set(name, callback)
     },
+  },
+  onInit(callback: InitCallback) {
+    if (initData !== null) { callback(initData) }
+    else { initCallbacks.push(callback) }
   },
   fs: {
     readFile: (path: string) => bridgeFsCall('readFile', { path }),
@@ -190,5 +200,35 @@ ipcRenderer.on('miniapp-theme', (_e, data) => {
   themeListeners.forEach((cb) => cb(data.vars ?? {}))
 })
 
+
+ipcRenderer.on('miniapp-inchat-init', (_e, data) => {
+  initData = data.data
+  initCallbacks.forEach((cb) => cb(initData!))
+  initCallbacks.length = 0
+})
+
+function startResizeObserver() {
+  if (!document.body) return
+  let lastH = 0
+  let pending = false
+  new ResizeObserver(() => {
+    if (pending) return
+    pending = true
+    requestAnimationFrame(() => {
+      pending = false
+      const h = document.body.offsetHeight
+      if (h > 0 && h !== lastH) {
+        lastH = h
+        ipcRenderer.sendToHost('miniapp-resize', { height: h })
+      }
+    })
+  }).observe(document.body)
+}
+
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  startResizeObserver()
+} else {
+  document.addEventListener('DOMContentLoaded', startResizeObserver)
+}
 
 ipcRenderer.sendToHost('miniapp-ready', {})

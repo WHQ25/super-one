@@ -1,10 +1,13 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Globe, HardDrive, FolderOpen, Package, ArrowUpCircle, Link, Check } from 'lucide-react'
+import { Globe, HardDrive, FolderOpen, Package, ArrowUpCircle, Link, Check, User, Folder } from 'lucide-react'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useAppStore } from '@/stores/app'
 import { cn } from '@/lib/utils'
 import type { MiniAppFsEntry } from '../../../../shared/miniapp-types'
+
+type InstallTarget = 'personal' | 'project'
 
 function formatFsLabel(entry: MiniAppFsEntry): { label: string; detail: string } {
   switch (entry.scope) {
@@ -26,8 +29,10 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
   const pendingInstall = useMiniAppStore((s) => s.pendingInstall)
   const confirmInstall = useMiniAppStore((s) => s.confirmInstall)
   const cancelInstall = useMiniAppStore((s) => s.cancelInstall)
+  const currentFolder = useAppStore((s) => s.currentFolder)
   const [approved, setApproved] = useState<Set<string>>(new Set())
-  useEffect(() => { setApproved(new Set()) }, [pendingInstall])
+  const [installTarget, setInstallTarget] = useState<InstallTarget>('personal')
+  useEffect(() => { setApproved(new Set()); setInstallTarget('personal') }, [pendingInstall])
 
   const manifest = pendingInstall?.manifest
   const existingVersion = pendingInstall?.existingVersion
@@ -64,7 +69,10 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
 
   const handleConfirm = async () => {
     try {
-      const result = await confirmInstall()
+      const installDir = installTarget === 'project' && currentFolder
+        ? `${currentFolder}/.superone/apps`
+        : undefined
+      const result = await confirmInstall(installDir)
       onInstalled(result.entry.manifest.name, result.upgraded)
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Install failed')
@@ -74,6 +82,8 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
   const handleCancel = () => {
     cancelInstall()
   }
+
+  const folderName = currentFolder?.split('/').pop()
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) handleCancel() }}>
@@ -110,6 +120,40 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
             {isUpgrade && (
               <div className="mt-1.5 text-xs text-orange-500">{existingVersion} → {manifest.version}</div>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Install to</div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setInstallTarget('personal')}
+                className="flex flex-1 items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">Personal</div>
+                  <div className="text-xs text-muted-foreground">All projects</div>
+                </div>
+                <div className={cn('flex size-4 shrink-0 items-center justify-center rounded border transition-colors', installTarget === 'personal' ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-muted-foreground/30')}>
+                  {installTarget === 'personal' && <Check className="size-3" />}
+                </div>
+              </button>
+              <button
+                onClick={() => currentFolder && setInstallTarget('project')}
+                disabled={!currentFolder}
+                className={cn(
+                  'flex flex-1 items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50',
+                  !currentFolder && 'cursor-not-allowed opacity-40',
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">Project</div>
+                  <div className="truncate text-xs text-muted-foreground">{folderName ?? 'No project open'}</div>
+                </div>
+                <div className={cn('flex size-4 shrink-0 items-center justify-center rounded border transition-colors', installTarget === 'project' ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-muted-foreground/30')}>
+                  {installTarget === 'project' && <Check className="size-3" />}
+                </div>
+              </button>
+            </div>
           </div>
 
           {hasPermissions && (

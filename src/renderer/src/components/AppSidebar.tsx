@@ -419,7 +419,7 @@ export function AppSidebar() {
       )}
 
       {[...mountedMiniApps].map((appId) => (
-        <div key={appId} className={cn('min-h-0 flex-1', sidebarTab !== `miniapp:${appId}` && 'hidden')}>
+        <div key={appId} className={cn('mt-1 min-h-0 flex-1', sidebarTab !== `miniapp:${appId}` && 'hidden')}>
           <MiniAppView appId={appId} className="h-full w-full" />
         </div>
       ))}

@@ -10,16 +10,34 @@ import { useSourceControlStore } from '@/stores/source-control'
 import { ToolIcon } from './ToolIcon'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
-import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, formatReadMeta } from './tool-display'
+import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
 import { codePlugin } from './chat-shared'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
 import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, tryPrettifyJson, parseQAPairs } from './tool-block-utils'
 import { WidgetBlock } from './WidgetBlock'
 import { parseWidgetResult, parsePartialWidgetInput } from '../../../../shared/generative-ui/types'
+import { parseInChatResult } from '../../../../shared/miniapp-types'
+import { InChatMiniAppBlock } from './InChatMiniAppBlock'
+import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { useMiniAppStore } from '@/stores/miniapp'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
+}
+
+const INCHAT_TOOL_PREFIX = 'inchat__'
+const SUPERONE_SERVER = 'superone'
+
+function CompactToolRow({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="tool-node my-0.5 rounded bg-muted/50">
+      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
+        {icon}
+        {children}
+      </div>
+    </div>
+  )
 }
 
 /** Dev-only: comma-separated tool names to show raw debug UI. e.g. RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate */
@@ -52,6 +70,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   const display = useMemo(() => getToolDisplay(toolName, params, cwd, homedir), [toolName, params, cwd, homedir])
   const mcpInfo = parseMcpToolName(toolName)
   const isMcp = mcpInfo !== null
+  const inchatToolName = mcpInfo?.serverName === SUPERONE_SERVER && mcpInfo.mcpToolName.startsWith(INCHAT_TOOL_PREFIX)
+    ? mcpInfo.mcpToolName.slice(INCHAT_TOOL_PREFIX.length) : null
+  const inchatApp = useMiniAppStore((s) => inchatToolName ? s.apps.find((a) => a.manifest.inChatToolName === inchatToolName) : undefined)
   const mcpMeta = useSettingsStore((s) => s.mcpMeta)
   const mcpLibrary = useSettingsStore((s) => s.mcpLibrary)
   const mcpIconSrc = isMcp
@@ -155,15 +176,43 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
 
   if (mcpInfo?.mcpToolName === 'read_guidelines') {
     return (
-      <div className="tool-node my-0.5 rounded bg-muted/50">
-        <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
-          <ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />
-          <span className="font-medium text-foreground">
-            {isStreaming ? <>Reading widget guidelines…</> : 'Read widget guidelines'}
-          </span>
-        </div>
-      </div>
+      <CompactToolRow icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}>
+        <span className="font-medium text-foreground">
+          {isStreaming ? <>Reading widget guidelines…</> : 'Read widget guidelines'}
+        </span>
+      </CompactToolRow>
     )
+  }
+
+  if (mcpInfo?.serverName === SUPERONE_SERVER && !mcpInfo.mcpToolName.startsWith(INCHAT_TOOL_PREFIX)) {
+    const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string }> = {
+      read_miniapp_guide: { icon: 'book-open', streaming: 'Reading mini-app guide…', done: 'Read mini-app guide' },
+      setup_mini_app_dev: { icon: 'file-plus', streaming: 'Setting up mini-app…', done: 'Set up mini-app' },
+      pack_mini_app: { icon: 'toolbox', streaming: 'Packing mini-app…', done: 'Packed mini-app' },
+    }
+    const d = superoneToolDisplay[mcpInfo.mcpToolName]
+    if (d) {
+      return (
+        <CompactToolRow icon={<ToolIcon icon={d.icon} className="size-3 shrink-0 text-muted-foreground" />}>
+          <span className="font-medium text-foreground">{isStreaming ? d.streaming : d.done}</span>
+        </CompactToolRow>
+      )
+    }
+    const appToolMatch = mcpInfo.mcpToolName.match(/^(.+?)__(.+)$/)
+    if (appToolMatch) {
+      const [, mcpSlug, mcpToolNamePart] = appToolMatch
+      const canvasApp = useMiniAppStore.getState().apps.find((a) => (a.manifest.toolSlug ?? a.id) === mcpSlug)
+      const toolDef = canvasApp?.manifest.tools?.find((t) => t.name === mcpToolNamePart)
+      const appName = canvasApp?.manifest.name ?? mcpSlug
+      const displayText = toolDef?.runningText ?? mcpToolNamePart.replace(/_/g, ' ')
+      return (
+        <CompactToolRow icon={canvasApp ? <MiniAppIcon appId={canvasApp.id} className="size-3.5 shrink-0" /> : <ToolIcon icon="plug" className="size-3 shrink-0 text-muted-foreground" />}>
+          <span className="font-medium text-foreground">{appName}</span>
+          <span className="text-muted-foreground">·</span>
+          <span className="text-muted-foreground">{isStreaming ? <>{displayText}…</> : displayText}</span>
+        </CompactToolRow>
+      )
+    }
   }
 
   if (mcpInfo?.mcpToolName === 'show_widget') {
@@ -175,14 +224,27 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     }
     if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} />
     return (
-      <div className="tool-node my-0.5 rounded bg-muted/50">
-        <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
-          <ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />
-          <span className="font-medium text-foreground">
-            {isStreaming ? <>Generating widget…</> : 'Generate widget'}
-          </span>
-        </div>
-      </div>
+      <CompactToolRow icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}>
+        <span className="font-medium text-foreground">
+          {isStreaming ? <>Generating widget…</> : 'Generate widget'}
+        </span>
+      </CompactToolRow>
+    )
+  }
+
+  if (inchatToolName) {
+    if (result) {
+      const inchat = parseInChatResult(result)
+      if (inchat) return <InChatMiniAppBlock appId={inchat.appId} data={inchat.data} />
+    }
+    const appName = inchatApp?.manifest.name ?? inchatToolName.replace(/_/g, ' ')
+    const runningText = inchatApp?.manifest.runningText
+    return (
+      <CompactToolRow icon={inchatApp ? <MiniAppIcon appId={inchatApp.id} className="size-3.5 shrink-0" /> : <ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}>
+        <span className="font-medium text-foreground">
+          {isStreaming ? (runningText ?? <>{appName}…</>) : appName}
+        </span>
+      </CompactToolRow>
     )
   }
 

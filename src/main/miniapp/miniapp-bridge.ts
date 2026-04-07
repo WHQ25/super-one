@@ -29,11 +29,18 @@ export function generateBridgeScript(appId: string): string {
     });
   }
 
+  var initCallbacks = [];
+  var initData = null;
+
   window.superone = {
     tools: {
       handle: function(name, callback) {
         handlers.set(name, callback);
       }
+    },
+    onInit: function(callback) {
+      if (initData !== null) { callback(initData); }
+      else { initCallbacks.push(callback); }
     },
     fs: {
       readFile: function(path) { return bridgeFsCall('readFile', { path: path }); },
@@ -172,6 +179,12 @@ export function generateBridgeScript(appId: string): string {
       gitHeadListeners.forEach(function(cb) { cb(); });
     }
 
+    if (data.type === 'miniapp-inchat-init') {
+      initData = data.data;
+      initCallbacks.forEach(function(cb) { cb(initData); });
+      initCallbacks = [];
+    }
+
     if (data.type === 'miniapp-theme') {
       var root = document.documentElement;
       if (data.isDark) {
@@ -191,7 +204,37 @@ export function generateBridgeScript(appId: string): string {
 
   });
 
-  parent.postMessage({ type: 'miniapp-ready', appId: '${appId}' }, '*');
+  function startResizeObserver() {
+    if (!document.body) return;
+    var lastH = 0;
+    var pending = false;
+    new ResizeObserver(function() {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(function() {
+        pending = false;
+        var h = document.body.offsetHeight;
+        if (h > 0 && h !== lastH) {
+          lastH = h;
+          parent.postMessage({ type: 'miniapp-resize', appId: '${appId}', height: h }, '*');
+        }
+      });
+    }).observe(document.body);
+  }
+
+  if (document.body) {
+    startResizeObserver();
+  } else {
+    document.addEventListener('DOMContentLoaded', startResizeObserver);
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    parent.postMessage({ type: 'miniapp-ready', appId: '${appId}' }, '*');
+  } else {
+    document.addEventListener('DOMContentLoaded', function() {
+      parent.postMessage({ type: 'miniapp-ready', appId: '${appId}' }, '*');
+    });
+  }
 })();
 </script>`
 }

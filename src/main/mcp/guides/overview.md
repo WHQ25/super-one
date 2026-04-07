@@ -1,6 +1,9 @@
 # Mini-App Development Guide
 
-A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe on the SuperOne canvas and can be controlled by any AI agent through MCP tools.
+A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe and can be controlled by any AI agent through MCP tools. Mini-apps come in two flavors:
+
+- **Canvas apps** (`panel`, `sidebar`, `fullscreen`): Persistent interactive apps opened by the user on the canvas. The agent interacts via tool calls declared in `tools[]`.
+- **In-chat apps** (`in-chat`): Data-driven rendering templates displayed inline in chat messages. The agent passes structured data, and the app renders it. No tool call interaction needed — the app receives data via `superone.onInit(data)`.
 
 ## Architecture
 
@@ -11,7 +14,19 @@ A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe o
 - Apps are packaged as `.s1app` files (zip + integrity checksums) and installed via drag-and-drop
 - Manifest is validated with Zod schema; invalid manifests are rejected
 
-## Requirements Checklist
+## Choosing Canvas vs In-Chat
+
+Use **canvas app** when:
+- The app needs persistent UI (user opens it, interacts over time)
+- The agent needs bidirectional tool call communication with the app
+- Examples: code editor, file browser, kanban board, API tester
+
+Use **in-chat app** when:
+- The app renders structured data inline in chat (no persistent window)
+- The agent provides all data upfront, the app just renders it
+- Examples: daily report, news cards, image gallery, data table, chart
+
+## Requirements Checklist (Canvas Apps)
 
 Before building, clarify:
 1. What does the app do? (e.g., "markdown editor", "API tester", "todo list")
@@ -19,6 +34,13 @@ Before building, clarify:
 3. Does it need user-level storage? → add `{ scope: "user", path: ".config/<app>" }` to `permissions.fs`
 4. Does it need network access? → determines `permissions.network`
 5. What tools should the agent be able to call on this app? → determines `tools`
+
+## Requirements Checklist (In-Chat Apps)
+
+Before building, clarify:
+1. What data does the agent pass to the app? → determines `inputSchema`
+2. What should the MCP tool be called? → determines `inChatToolName` (registered as `inchat__<inChatToolName>`)
+3. Does the app need network access (e.g., load images from CDN)? → determines `permissions.network`
 
 ## App Directory Structure
 

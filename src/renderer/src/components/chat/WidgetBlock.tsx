@@ -255,7 +255,7 @@ export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
   const displayTitle = data.title.replace(/_/g, ' ')
 
   return (
-    <div className="group/widget my-0.5 w-full">
+    <div className="group/widget my-2 w-full">
       <div className="flex h-5 items-center justify-end gap-1.5 px-1 opacity-0 transition-opacity group-hover/widget:opacity-100">
         <span className="text-xs text-muted-foreground/70">
           {displayTitle}

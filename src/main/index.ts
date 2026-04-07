@@ -12,7 +12,7 @@ import { startMediaServer, getMediaServerPort } from './media-server'
 import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, detectStandaloneApp, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent } from './miniapp/miniapp-service'
 import { generateBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta } from './miniapp/miniapp-packager'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp } from './mcp/superone-mcp-server'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
@@ -275,6 +275,20 @@ function createWindow(): void {
 }
 
 /** Register all IPC handlers once at app startup. */
+function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Array<{ scope: string; path?: string; access?: string; reason: string }> } }, projectDir: string, basePath: string): void {
+  const fsEntries = manifest.permissions?.fs ?? []
+  if (fsEntries.length === 0) return
+  const dirs = fsEntries.flatMap((entry) => {
+    switch (entry.scope) {
+      case 'project': return [{ path: join(projectDir, entry.path!), access: entry.access as 'read' | 'readwrite' } as const]
+      case 'user': return [{ path: join(homedir(), entry.path!), access: entry.access as 'read' | 'readwrite' } as const]
+      case 'app': return [{ path: basePath, access: 'readwrite' as const }]
+      default: return []
+    }
+  })
+  setAllowedDirectories(appId, dirs)
+}
+
 function registerIpcHandlers(): void {
   // Setup agent IPC handlers (does NOT auto-initialize)
   agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))
@@ -1374,7 +1388,13 @@ function registerIpcHandlers(): void {
       }
       if (standaloneApp && !existingIds.has(standaloneApp.id)) apps.push(standaloneApp)
     }
-    for (const app of apps) cacheAppBasePath(app.id, app.basePath)
+    for (const app of apps) {
+      cacheAppBasePath(app.id, app.basePath)
+      if (app.manifest.type === 'in-chat') {
+        registerInChatApp(app.manifest)
+        if (projectDir) setAppFsPermissions(app.id, app.manifest, projectDir, app.basePath)
+      }
+    }
     return apps
   })
 
@@ -1382,16 +1402,8 @@ function registerIpcHandlers(): void {
     const basePath = getAppBasePath(appId)
     const manifest = await readManifest(basePath)
     if (!manifest) throw new Error(`App not found: ${appId}`)
-    const fsEntries = manifest.permissions?.fs ?? []
-    const dirs = fsEntries.map((entry) => {
-      switch (entry.scope) {
-        case 'project': return { path: join(projectDir, entry.path!), access: entry.access! } as const
-        case 'user': return { path: join(homedir(), entry.path!), access: entry.access! } as const
-        case 'app': return { path: basePath, access: 'readwrite' as const }
-      }
-    })
-    setAllowedDirectories(appId, dirs)
-    registerAppTools(appId, manifest.tools ?? [])
+    setAppFsPermissions(appId, manifest, projectDir, basePath)
+    registerAppTools(appId, manifest.toolSlug ?? appId, manifest.tools ?? [])
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string) => {
@@ -1451,8 +1463,8 @@ function registerIpcHandlers(): void {
     return previewApp(s1appPath)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, async (_e, tempDir: string) => {
-    return confirmInstall(tempDir)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, async (_e, tempDir: string, installDir?: string) => {
+    return confirmInstall(tempDir, installDir)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CANCEL_INSTALL, async (_e, tempDir: string) => {

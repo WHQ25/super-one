@@ -2,7 +2,22 @@
 
 The bridge script providing `window.superone` is auto-injected into `<head>` before any other scripts run.
 
-## superone.tools — Handle Agent Tool Calls
+## superone.onInit — Receive Data (In-Chat Apps)
+
+For in-chat apps, this is the primary entry point. The agent passes structured data via the MCP tool, and the app receives it here.
+
+```js
+superone.onInit((data) => {
+  // data is the object the agent passed to the inchat__<inChatToolName> MCP tool
+  document.getElementById('root').innerHTML = renderContent(data)
+})
+```
+
+The callback fires once after the iframe is ready and data is injected. If the callback is registered after data has already arrived, it fires immediately (late-subscriber safe).
+
+Canvas apps can also use `onInit`, but it will never fire since canvas apps don't receive initialization data this way.
+
+## superone.tools — Handle Agent Tool Calls (Canvas Apps)
 
 ```js
 superone.tools.handle('tool_name', async (args) => {
@@ -163,6 +178,7 @@ Mini-apps render inside an iframe that fills its container. The available space 
 |------|-----------|---------------|-------|
 | `sidebar` | Left sidebar panel | ~240–280px | Very narrow — use vertical layouts, avoid wide tables |
 | `panel` | Activity panel (right side) | 320–800px, user-resizable | Default type. Design for ~400px minimum width |
+| `in-chat` | Inline in chat messages | Chat panel width | Auto-height via ResizeObserver. Use `superone.onInit()` for data. |
 | `fullscreen` | Full canvas area | Window width minus sidebar | Most space available |
 
 ### Layout Guidelines
@@ -186,7 +202,18 @@ table {
 
 ## Common Patterns
 
-### App That Displays Agent Output
+### In-Chat Data Renderer
+
+Agent collects data → calls `inchat__render_xxx(data)` → app renders inline in chat. No tool call round-trip needed.
+
+```js
+superone.onInit((data) => {
+  // data = { title: "Daily Report", sections: [...] }
+  document.getElementById('root').innerHTML = buildReport(data)
+})
+```
+
+### App That Displays Agent Output (Canvas)
 
 Agent calls a "render" tool → app updates DOM → returns confirmation.
 

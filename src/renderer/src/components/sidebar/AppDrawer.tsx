@@ -38,6 +38,7 @@ function getS1AppPaths(e: DragEvent): string[] {
 const TYPE_LABELS: Record<string, string> = {
   sidebar: 'Sidebar',
   panel: 'Panel',
+  'in-chat': 'In-Chat',
   fullscreen: 'Fullscreen',
 }
 
@@ -63,6 +64,7 @@ function SortableAppRow({ app, index, onClick }: { app: MiniAppEntry; index: num
       <div className="flex w-0 flex-1 flex-col overflow-hidden">
         <span className="flex items-center gap-1.5 text-[13px]">
           <span className="truncate">{app.manifest.name}</span>
+          {app.manifest.isDev && <span className="inline-flex h-4 shrink-0 items-center rounded bg-orange-500/15 px-1 text-[10px] leading-none text-orange-500">Dev</span>}
           <span className="inline-flex h-4 shrink-0 items-center rounded bg-sidebar-accent px-1 text-[10px] leading-none text-sidebar-foreground/50">{typeLabel}</span>
           {index <= 9 && <span className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sidebar-accent text-[10px] leading-none text-sidebar-foreground/60">{index < 9 ? index + 1 : 0}</span>}
         </span>
@@ -81,6 +83,28 @@ function SortableAppRow({ app, index, onClick }: { app: MiniAppEntry; index: num
   )
 }
 
+function InChatAppRow({ app }: { app: MiniAppEntry }) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <div
+      className="flex items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <MiniAppIcon appId={app.id} className="size-6 shrink-0" />
+      <div className="flex w-0 flex-1 flex-col overflow-hidden">
+        <span className="flex items-center gap-1.5 text-[13px]">
+          <span className="truncate">{app.manifest.name}</span>
+          {app.manifest.isDev && <span className="inline-flex h-4 shrink-0 items-center rounded bg-orange-500/15 px-1 text-[10px] leading-none text-orange-500">Dev</span>}
+        </span>
+        {app.manifest.description && (
+          <MarqueeText className="text-[11px] text-sidebar-foreground/50" hovered={hovered}>{app.manifest.description}</MarqueeText>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function AppDrawer() {
   const [expanded, setExpanded] = useState(false)
   const currentFolder = useAppStore((s) => s.currentFolder)
@@ -88,6 +112,8 @@ export function AppDrawer() {
   const setLayoutMode = useAppStore((s) => s.setLayoutMode)
 
   const allApps = useMiniAppStore(useShallow((s) => s.apps))
+  const canvasApps = useMemo(() => allApps.filter((a) => a.manifest.type !== 'in-chat'), [allApps])
+  const inChatApps = useMemo(() => allApps.filter((a) => a.manifest.type === 'in-chat'), [allApps])
   const requestOpenInCanvas = useMiniAppStore((s) => s.requestOpenInCanvas)
   const previewInstall = useMiniAppStore((s) => s.previewInstall)
   const setDraftText = useChatStore((s) => s.setDraftText)
@@ -97,10 +123,10 @@ export function AppDrawer() {
 
   const [appOrder, setAppOrder] = useState<string[]>([])
   const orderedApps = useMemo(() => {
-    if (appOrder.length === 0) return allApps
+    if (appOrder.length === 0) return canvasApps
     const orderMap = new Map(appOrder.map((id, i) => [id, i]))
-    return [...allApps].sort((a, b) => (orderMap.get(a.id) ?? Infinity) - (orderMap.get(b.id) ?? Infinity))
-  }, [allApps, appOrder])
+    return [...canvasApps].sort((a, b) => (orderMap.get(a.id) ?? Infinity) - (orderMap.get(b.id) ?? Infinity))
+  }, [canvasApps, appOrder])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
@@ -302,6 +328,15 @@ export function AppDrawer() {
                     </DndContext>
                   </div>
                 </ScrollArea>
+
+                {inChatApps.length > 0 && (
+                  <div className="px-1 py-1">
+                    <span className="px-2 py-1 text-[10px] font-medium text-sidebar-foreground/40">In-Chat</span>
+                    {inChatApps.map((app) => (
+                      <InChatAppRow key={app.id} app={app} />
+                    ))}
+                  </div>
+                )}
 
                 <div className="flex gap-1 px-1 pb-1">
                   <button

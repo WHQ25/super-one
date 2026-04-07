@@ -226,7 +226,7 @@ interface MiniAppAPI {
   detectDev(projectDir: string): Promise<MiniAppEntry[]>
   onDevAppReady(callback: (projectDir: string) => void): () => void
   preview(s1appPath: string): Promise<MiniAppPreviewResult>
-  confirmInstall(tempDir: string): Promise<MiniAppInstallResult>
+  confirmInstall(tempDir: string, installDir?: string): Promise<MiniAppInstallResult>
   cancelInstall(tempDir: string): Promise<void>
   uninstall(appId: string): Promise<void>
   pack(appDir: string, outputDir: string): Promise<MiniAppPackResult>

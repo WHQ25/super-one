@@ -4,7 +4,7 @@ import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server
 import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
 import log from '../logger'
-import type { MiniAppToolDefinition, MiniAppToolCallRequest } from '../../shared/miniapp-types'
+import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppManifest } from '../../shared/miniapp-types'
 import { AgentIpcChannels } from '../../shared/agent-types'
 import { createMiniApp, readManifest, cacheAppBasePath, discoverProjectApps, detectStandaloneApp, getProjectAppsDir } from '../miniapp/miniapp-service'
 import { packApp } from '../miniapp/miniapp-packager'
@@ -41,8 +41,17 @@ const TOOL_CALL_TIMEOUT_MS = 60_000
 let mcpServer: McpServer | null = null
 const registeredTools = new Map<string, RegisteredTool>()
 const pendingCalls = new Map<string, PendingCall>()
-const appToolDefs = new Map<string, MiniAppToolDefinition[]>()
+const appToolDefs = new Map<string, { toolSlug: string; tools: MiniAppToolDefinition[] }>()
 const appReadyGates = new Map<string, GateEntry>()
+
+interface InChatAppDef {
+  appId: string
+  inChatToolName: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+const inchatAppDefs = new Map<string, InChatAppDef>()
+const inchatToolNames = new Map<string, string>()
 
 let getMainWindow: (() => BrowserWindow | null) | null = null
 
@@ -101,19 +110,6 @@ export function getSuperoneMcpServer(): McpSdkServerConfigWithInstance {
         }),
       ),
       tool(
-        'list_apps',
-        'List all installed mini-apps available on the canvas. Returns app IDs and names.',
-        { verbose: z.boolean().optional().describe('Include full manifest details') },
-        async () => {
-          const apps = Array.from(registeredTools.keys()).map((name) => {
-            const [appId] = name.split('__')
-            return appId
-          })
-          const uniqueApps = [...new Set(apps)]
-          return { content: [{ type: 'text' as const, text: JSON.stringify(uniqueApps) }] }
-        },
-      ),
-      tool(
         'setup_mini_app_dev',
         `Initialize a mini-app development environment. Creates a scaffold with manifest.json, HTML/source files, and tool handler boilerplate.
 
@@ -124,7 +120,7 @@ All fields except name and projectDir are optional — omit any that aren't need
           mode: z.enum(['project', 'standalone']).optional().describe('project (default): mini-app for the current project, placed in .superone/apps/<appId>/. standalone: the project IS the mini-app.'),
           template: z.enum(['vanilla', 'react']).optional().describe('vanilla (default): plain HTML, no build needed. react: React + TypeScript + Tailwind, requires build step.'),
           additionalDirs: z.array(z.string()).optional().describe('Additional directory names to create at the project root'),
-          type: z.enum(['sidebar', 'panel', 'fullscreen']).optional().describe('Where the app appears: panel (resizable, default), sidebar (narrow left panel), fullscreen (full canvas)'),
+          type: z.enum(['sidebar', 'panel', 'in-chat', 'fullscreen']).optional().describe('Where the app appears: panel (resizable, default), sidebar (narrow left panel), in-chat (inline in chat messages, data-driven rendering), fullscreen (full canvas)'),
           description: z.string().optional().describe('Short description of what the app does'),
           permissions: z.object({
             fs: z.array(z.object({
@@ -138,6 +134,7 @@ All fields except name and projectDir are optional — omit any that aren't need
               reason: z.string().describe('Why this domain is needed'),
             })).optional(),
           }).optional().describe('Permissions the app needs'),
+          toolSlug: z.string().optional().describe('Namespace prefix for MCP tool names (lowercase, underscores only). Required when tools are declared. Tools are registered as {toolSlug}__{toolName}.'),
           tools: z.array(z.object({
             name: z.string().describe('Tool name (lowercase, underscores only, e.g. "render_chart")'),
             description: z.string().describe('What this tool does — the agent reads this to decide when to use it'),
@@ -149,9 +146,20 @@ All fields except name and projectDir are optional — omit any that aren't need
               })).optional(),
               required: z.array(z.string()).optional(),
             }).describe('JSON Schema for the tool input'),
-          })).optional().describe('MCP tools the agent can call on this app'),
+          })).optional().describe('MCP tools the agent can call on this app (not for in-chat type)'),
+          inChatToolName: z.string().optional().describe('For in-chat type only: MCP tool name registered as inchat__{inChatToolName} (lowercase, underscores only)'),
+          inChatToolDescription: z.string().optional().describe('For in-chat type only: description shown to the agent explaining when to use this tool. Falls back to description if not set.'),
+          runningText: z.string().optional().describe('For in-chat type only: text shown while the tool input is streaming'),
+          inputSchema: z.object({
+            type: z.literal('object'),
+            properties: z.record(z.string(), z.object({
+              type: z.string(),
+              description: z.string().optional(),
+            })).optional(),
+            required: z.array(z.string()).optional(),
+          }).optional().describe('For in-chat type only: JSON Schema for the data the agent passes to the app'),
         },
-        async ({ name: appName, projectDir, mode, template, additionalDirs, type, description, permissions, tools }) => {
+        async ({ name: appName, projectDir, mode, template, additionalDirs, type, description, permissions, toolSlug, tools, inChatToolName, inChatToolDescription, runningText, inputSchema }) => {
           const result = await createMiniApp({
             name: appName,
             projectDir,
@@ -161,11 +169,19 @@ All fields except name and projectDir are optional — omit any that aren't need
             type,
             description,
             permissions,
+            toolSlug,
             tools,
+            inChatToolName,
+            inChatToolDescription,
+            runningText,
+            inputSchema,
           })
 
           if (!result.buildRequired) {
             cacheAppBasePath(result.entry.id, result.entry.basePath)
+            if (result.entry.manifest.type === 'in-chat') {
+              registerInChatApp(result.entry.manifest)
+            }
             notifyDevAppReady(projectDir)
           }
 
@@ -204,16 +220,19 @@ All fields except name and projectDir are optional — omit any that aren't need
   mcpServer = config.instance as unknown as McpServer
 
   registeredTools.clear()
-  for (const [appId, tools] of appToolDefs) {
-    registerToolsOnServer(appId, tools)
+  for (const [appId, { toolSlug, tools }] of appToolDefs) {
+    registerToolsOnServer(appId, toolSlug, tools)
+  }
+  for (const [, def] of inchatAppDefs) {
+    registerInChatToolOnServer(def)
   }
 
   return config
 }
 
-function registerToolsOnServer(appId: string, tools: MiniAppToolDefinition[]): void {
+function registerToolsOnServer(appId: string, toolSlug: string, tools: MiniAppToolDefinition[]): void {
   for (const t of tools) {
-    const namespacedName = `${appId}__${t.name}`
+    const namespacedName = `${toolSlug}__${t.name}`
 
     if (registeredTools.has(namespacedName)) continue
 
@@ -265,21 +284,22 @@ function registerToolsOnServer(appId: string, tools: MiniAppToolDefinition[]): v
   }
 }
 
-export function registerAppTools(appId: string, tools: MiniAppToolDefinition[]): void {
-  appToolDefs.set(appId, tools)
+export function registerAppTools(appId: string, toolSlug: string, tools: MiniAppToolDefinition[]): void {
+  appToolDefs.set(appId, { toolSlug, tools })
 
   if (!mcpServer) {
     log.info('[superone-mcp] no active session; tools cached for %s', appId)
     return
   }
 
-  registerToolsOnServer(appId, tools)
+  registerToolsOnServer(appId, toolSlug, tools)
   mcpServer.sendToolListChanged()
 }
 
 export function unregisterAppTools(appId: string): void {
+  const entry = appToolDefs.get(appId)
   appToolDefs.delete(appId)
-  const prefix = `${appId}__`
+  const prefix = entry ? `${entry.toolSlug}__` : `${appId}__`
   for (const [name, tool] of registeredTools) {
     if (name.startsWith(prefix)) {
       tool.remove()
@@ -339,4 +359,74 @@ export function clearAllPendingCalls(): void {
     pending.reject(new Error('All pending calls cleared'))
   }
   pendingCalls.clear()
+}
+
+function registerInChatToolOnServer(def: InChatAppDef): void {
+  const namespacedName = `inchat__${def.inChatToolName}`
+
+  if (registeredTools.has(namespacedName)) {
+    const existingAppId = inchatToolNames.get(def.inChatToolName)
+    if (existingAppId && existingAppId !== def.appId) {
+      log.warn('[superone-mcp] in-chat toolName conflict: %s (owned by %s, skipping %s)', def.inChatToolName, existingAppId, def.appId)
+    }
+    return
+  }
+
+  const zodShape = jsonSchemaToZodShape(def.inputSchema)
+  const registered = mcpServer!.registerTool(
+    namespacedName,
+    {
+      description: def.description,
+      inputSchema: zodShape,
+    },
+    async (args: Record<string, unknown>) => {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({
+          __inchat: true,
+          appId: def.appId,
+          data: args,
+        })}],
+      }
+    },
+  )
+
+  registeredTools.set(namespacedName, registered)
+  inchatToolNames.set(def.inChatToolName, def.appId)
+  log.info('[superone-mcp] registered in-chat tool: %s (app: %s)', namespacedName, def.appId)
+}
+
+export function registerInChatApp(manifest: MiniAppManifest): void {
+  if (manifest.type !== 'in-chat' || !manifest.inChatToolName || !manifest.inputSchema) return
+
+  const def: InChatAppDef = {
+    appId: manifest.appId,
+    inChatToolName: manifest.inChatToolName,
+    description: manifest.inChatToolDescription || manifest.description || manifest.name,
+    inputSchema: manifest.inputSchema,
+  }
+  inchatAppDefs.set(manifest.appId, def)
+
+  if (!mcpServer) {
+    log.info('[superone-mcp] no active session; in-chat app cached for %s', manifest.appId)
+    return
+  }
+
+  registerInChatToolOnServer(def)
+  mcpServer.sendToolListChanged()
+}
+
+export function unregisterInChatApp(appId: string): void {
+  const def = inchatAppDefs.get(appId)
+  if (!def) return
+
+  inchatAppDefs.delete(appId)
+  const namespacedName = `inchat__${def.inChatToolName}`
+  const tool = registeredTools.get(namespacedName)
+  if (tool) {
+    tool.remove()
+    registeredTools.delete(namespacedName)
+    inchatToolNames.delete(def.inChatToolName)
+    log.info('[superone-mcp] unregistered in-chat tool: %s', namespacedName)
+  }
+  mcpServer?.sendToolListChanged()
 }

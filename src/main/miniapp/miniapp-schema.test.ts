@@ -7,6 +7,7 @@ describe('parseManifest', () => {
     name: 'Hello',
     version: '1.0.0',
     type: 'sidebar',
+    toolSlug: 'hello',
     tools: [
       {
         name: 'show_message',
@@ -18,6 +19,21 @@ describe('parseManifest', () => {
         },
       },
     ],
+  }
+
+  const validInChatManifest = {
+    appId: 'daily-report',
+    name: 'Daily Report',
+    type: 'in-chat' as const,
+    description: 'Render daily reports',
+    inChatToolName: 'render_daily_report',
+    inChatToolDescription: 'Render a daily work report for the user',
+    runningText: 'Generating report…',
+    inputSchema: {
+      type: 'object',
+      properties: { title: { type: 'string' } },
+      required: ['title'],
+    },
   }
 
   it('should accept a valid manifest', () => {
@@ -230,5 +246,71 @@ describe('parseManifest', () => {
       permissions: { fs: 'project' },
     })
     expect(result.ok).toBe(false)
+  })
+
+  it('should accept a valid in-chat manifest', () => {
+    const result = parseManifest(validInChatManifest)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.manifest.type).toBe('in-chat')
+      expect(result.manifest.inChatToolName).toBe('render_daily_report')
+      expect(result.manifest.inChatToolDescription).toBe('Render a daily work report for the user')
+      expect(result.manifest.runningText).toBe('Generating report…')
+    }
+  })
+
+  it('should reject in-chat manifest without inChatToolName', () => {
+    const { inChatToolName, ...rest } = validInChatManifest
+    const result = parseManifest(rest)
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject in-chat manifest without inputSchema', () => {
+    const { inputSchema, ...rest } = validInChatManifest
+    const result = parseManifest(rest)
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject in-chat manifest with tools[]', () => {
+    const result = parseManifest({
+      ...validInChatManifest,
+      tools: [{ name: 'bad', description: 'nope', inputSchema: { type: 'object' } }],
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should accept in-chat manifest without inChatToolDescription', () => {
+    const { inChatToolDescription, ...rest } = validInChatManifest
+    const result = parseManifest(rest)
+    expect(result.ok).toBe(true)
+  })
+
+  it('should require toolSlug when tools are declared', () => {
+    const { toolSlug, ...rest } = validManifest
+    const result = parseManifest(rest)
+    expect(result.ok).toBe(false)
+  })
+
+  it('should accept manifest with toolSlug and tools', () => {
+    const result = parseManifest(validManifest)
+    expect(result.ok).toBe(true)
+  })
+
+  it('should not require toolSlug when no tools declared', () => {
+    const result = parseManifest({ appId: 'notool', name: 'No Tool' })
+    expect(result.ok).toBe(true)
+  })
+
+  it('should accept runningText on tool definitions', () => {
+    const result = parseManifest({
+      ...validManifest,
+      tools: [{
+        name: 'do_thing',
+        description: 'Does a thing',
+        runningText: 'Doing the thing…',
+        inputSchema: { type: 'object' },
+      }],
+    })
+    expect(result.ok).toBe(true)
   })
 })

@@ -61,10 +61,54 @@ Every mini-app requires a `manifest.json` in its root directory.
 |------|-------|-------|----------|
 | `panel` | Activity Panel | 320–800px, resizable | Default type. Design for ~400px min width. |
 | `sidebar` | Left sidebar | ~240–280px | Very narrow — use vertical layouts. |
-| `in-chat` | Chat messages | — | Inline in conversation (future). |
+| `in-chat` | Chat messages | Chat width | Inline rendering. Agent passes data, app renders it. See below. |
 | `fullscreen` | Canvas (full area) | Full window | Most space available. |
 
 Each app has exactly one type and runs in one location at a time. The iframe scrolls internally — wide content won't stretch the host panel. See the `api` guide for layout tips.
+
+## In-Chat App Manifest
+
+In-chat apps use `inChatToolName` + `inputSchema` instead of `tools[]`. The MCP tool is registered as `inchat__<inChatToolName>`.
+
+```json
+{
+  "appId": "daily-report",
+  "name": "Daily Report",
+  "type": "in-chat",
+  "description": "Render a daily work report with timeline and categories. Use when the user asks to summarize work or create a report.",
+  "inChatToolName": "render_daily_report",
+  "inChatToolDescription": "Render a daily work report. Use when the user asks to summarize work or create a report.",
+  "runningText": "Generating report...",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "title": { "type": "string", "description": "Report title" },
+      "sections": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "category": { "type": "string" },
+            "items": { "type": "array", "items": { "type": "object", "properties": { "content": { "type": "string" } }, "required": ["content"] } }
+          },
+          "required": ["category", "items"]
+        }
+      }
+    },
+    "required": ["title", "sections"]
+  }
+}
+```
+
+### In-Chat Specific Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `inChatToolName` | Yes (in-chat) | MCP tool name. Lowercase + underscores. Registered as `inchat__<inChatToolName>`. |
+| `inChatToolDescription` | No | Description for the AI agent explaining when to use this tool. Falls back to `description` if not set. |
+| `inputSchema` | Yes (in-chat) | JSON Schema for the data the agent passes. This becomes the MCP tool's input schema. |
+| `runningText` | No | Text shown while the agent is streaming the tool call input. Defaults to "Loading...". |
+| `tools` | Must NOT be set | In-chat apps do not declare tools. Use canvas apps if you need bidirectional tool calls. |
 
 ## File System Scopes
 

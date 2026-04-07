@@ -90,6 +90,12 @@ export async function packApp(appDir: string, outputDir: string): Promise<MiniAp
     throw new Error('manifest.version is required for packaging')
   }
 
+  if (manifest.isDev) {
+    const cleanManifest = { ...JSON.parse(raw) }
+    delete cleanManifest.isDev
+    await writeFile(join(appDir, 'manifest.json'), JSON.stringify(cleanManifest, null, 2))
+  }
+
   const integrity = await generateIntegrity(appDir)
   await writeFile(join(appDir, INTEGRITY_FILE), JSON.stringify(integrity, null, 2))
 
@@ -158,12 +164,12 @@ export async function previewApp(s1appPath: string): Promise<MiniAppPreviewResul
   }
 }
 
-export async function confirmInstall(tempDir: string): Promise<MiniAppInstallResult> {
+export async function confirmInstall(tempDir: string, installDir?: string): Promise<MiniAppInstallResult> {
   try {
     const raw = await readFile(join(tempDir, 'manifest.json'), 'utf-8')
     const manifest = JSON.parse(raw) as MiniAppManifest
 
-    const targetDir = join(userAppsDir(), manifest.appId)
+    const targetDir = join(installDir ?? userAppsDir(), manifest.appId)
     let upgraded = false
 
     try {

@@ -232,28 +232,26 @@ function App(): React.JSX.Element {
     <div className="flex h-screen overflow-hidden bg-sidebar text-foreground" style={enterAnimation}>
       <GitAutoRefresh />
       <LayoutGroup>
-      {/* Sidebar — only in coding mode */}
-      {layoutMode === 'coding' && (
-        <motion.div
-          ref={sidebarRef}
-          layout="position"
-          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-          className="relative shrink-0 overflow-hidden"
-          style={{ width: showSidebar ? sidebarWidth : 0 }}
-        >
-          <div ref={sidebarInnerRef} className="h-full" style={{ width: sidebarWidth }}>
-            <AppSidebar />
+      {/* Sidebar — hidden in canvas mode */}
+      <motion.div
+        ref={sidebarRef}
+        layout="position"
+        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+        className={cn('relative shrink-0 overflow-hidden', layoutMode !== 'coding' && 'hidden')}
+        style={{ width: showSidebar ? sidebarWidth : 0 }}
+      >
+        <div ref={sidebarInnerRef} className="h-full" style={{ width: sidebarWidth }}>
+          <AppSidebar />
+        </div>
+        {showSidebar && (
+          <div
+            onMouseDown={onResizeStart}
+            className="group absolute inset-y-0 -right-1 w-2 cursor-col-resize"
+          >
+            <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
           </div>
-          {showSidebar && (
-            <div
-              onMouseDown={onResizeStart}
-              className="group absolute inset-y-0 -right-1 w-2 cursor-col-resize"
-            >
-              <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
-            </div>
-          )}
-        </motion.div>
-      )}
+        )}
+      </motion.div>
 
       {/* Main area wrapper */}
       <div className={cn(

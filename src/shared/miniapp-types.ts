@@ -30,7 +30,12 @@ export interface MiniAppManifest {
   isDev?: boolean
   type?: MiniAppType
   permissions?: MiniAppPermissions
+  toolSlug?: string
   tools?: MiniAppToolDefinition[]
+  inChatToolName?: string
+  inChatToolDescription?: string
+  runningText?: string
+  inputSchema?: Record<string, unknown>
 }
 
 export interface MiniAppInstallMeta {
@@ -54,6 +59,7 @@ export interface MiniAppPermissions {
 export interface MiniAppToolDefinition {
   name: string
   description: string
+  runningText?: string
   inputSchema: Record<string, unknown>
 }
 
@@ -111,6 +117,22 @@ export interface MiniAppFsWatchEvent {
   path: string
 }
 
+export interface InChatMiniAppResult {
+  __inchat: true
+  appId: string
+  data: Record<string, unknown>
+}
+
+export function parseInChatResult(resultText: string): InChatMiniAppResult | null {
+  try {
+    const parsed = JSON.parse(resultText)
+    if (parsed && parsed.__inchat === true && parsed.appId && parsed.data) {
+      return parsed as InChatMiniAppResult
+    }
+  } catch {}
+  return null
+}
+
 export type MiniAppBridgeMessageType =
   | 'miniapp-tool-call'
   | 'miniapp-tool-result'
@@ -126,3 +148,5 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-git-head-change'
   | 'miniapp-sendPrompt'
   | 'miniapp-ready'
+  | 'miniapp-inchat-init'
+  | 'miniapp-resize'

@@ -16,7 +16,7 @@ The return value is JSON-serialized and sent back to the agent. Return meaningfu
 
 ## superone.fs — File System Access
 
-Requires `permissions.fs: "project"`. All paths are relative to the working directory.
+Requires at least one entry in `permissions.fs`. All paths are relative to the declared directories.
 
 ```js
 const content = await superone.fs.readFile('README.md')

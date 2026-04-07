@@ -13,10 +13,16 @@ Every mini-app requires a `manifest.json` in its root directory.
   "icon": "icon.svg",
   "logo": "logo.png",
   "type": "panel",
-  "workingDir": { "scope": "project", "path": "." },
   "permissions": {
-    "fs": "project",
-    "network": ["api.example.com"]
+    "fs": [
+      { "scope": "project", "path": ".", "access": "readwrite", "reason": "Manage project configuration files" },
+      { "scope": "project", "path": "src", "access": "read", "reason": "Analyze source code for diagnostics" },
+      { "scope": "user", "path": ".config/my-app", "access": "readwrite", "reason": "Store user preferences" },
+      { "scope": "app", "reason": "Persist app data between sessions" }
+    ],
+    "network": [
+      { "domain": "api.example.com", "reason": "Fetch data from the example API" }
+    ]
   },
   "tools": [
     {
@@ -45,9 +51,8 @@ Every mini-app requires a `manifest.json` in its root directory.
 | `icon` | No | Monochrome icon: SVG file path or `lucide:<name>`. Read `icon` topic for spec. |
 | `logo` | No | Full-color brand image (PNG recommended). Read `icon` topic for spec. |
 | `type` | No | Display type (see table below). Default: `"panel"`. |
-| `workingDir` | No | `{ scope, path }`. `scope: "project"` resolves relative to project root. `scope: "user"` resolves relative to home directory. Default: `{ scope: "project", path: "." }` |
-| `permissions.fs` | No | `"app"` (own directory only) or `"project"` (working directory access) |
-| `permissions.network` | No | Whitelisted domains for `fetch`. Affects CSP headers. |
+| `permissions.fs` | No | Array of directory entries. Each entry has `scope`, `path` (for project/user), `access` (`"read"` or `"readwrite"`), and `reason` (required). See scopes below. |
+| `permissions.network` | No | Array of `{ domain, reason }` objects. Whitelisted domains for `fetch`. Affects CSP headers. |
 | `tools` | No | MCP tools the app handles. Each needs `name`, `description`, and `inputSchema` (JSON Schema format). |
 
 ## Display Types
@@ -60,6 +65,20 @@ Every mini-app requires a `manifest.json` in its root directory.
 | `fullscreen` | Canvas (full area) | Auto-switches to canvas mode, takes the entire canvas area. |
 
 Each app has exactly one type and runs in one location at a time.
+
+## File System Scopes
+
+| Scope | Resolves to | Use case |
+|-------|------------|----------|
+| `project` | `<projectDir>/<path>` | Project files. Requires `path` and `access`. |
+| `user` | `~/<path>` | User-level config or data. Requires `path` and `access`. |
+| `app` | App's install directory | Persistent app storage. No `path` or `access` needed (always readwrite). |
+
+Each entry requires a `reason` field explaining why the permission is needed — this is shown to the user during installation.
+
+The `access` field controls enforcement: `"read"` allows only read operations (`readFile`, `readDir`, `exists`, `glob`), while `"readwrite"` also permits `writeFile`.
+
+An app can declare multiple entries to access several directories. If no `fs` is declared, the app has no filesystem access.
 
 ## Tool Design Tips
 

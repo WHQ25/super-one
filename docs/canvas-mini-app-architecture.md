@@ -109,16 +109,16 @@ All mini-apps are installed in a single centralized location:
 - **Uninstall** = remove the folder
 - **Discovery** = scan the directory
 
-### Working Directory
+### Allowed Directories
 
-The mini-app's code location and its working directory are decoupled:
+The mini-app's code location and its accessible directories are decoupled:
 
 - **Code**: always in `~/.superone/apps/<name>/`
-- **Working directory**: resolved at runtime as `<projectDir>/<workingDir>`, where `workingDir` is declared in `manifest.json` (default `"."`). The user can override it when opening the app.
+- **Allowed directories**: resolved at runtime from `permissions.fs` entries. Each entry specifies a `scope` (`project`, `user`, or `app`) and an optional `path`.
 
-For example, a Markdown editor with `"workingDir": "docs"` in a project at `~/my-project/` would have its working directory at `~/my-project/docs/`.
+For example, a Markdown editor with `permissions.fs: [{ scope: "project", path: "docs" }]` in a project at `~/my-project/` can access `~/my-project/docs/`.
 
-All `superone.fs.*` calls use paths relative to the working directory.
+Apps can declare multiple directories. All `superone.fs.*` calls are validated against the full list of allowed directories.
 
 ## Manifest
 
@@ -128,14 +128,15 @@ Each mini-app must have a `manifest.json`:
 {
   "name": "API Tester",
   "icon": "icon.svg",
-  "workingDir": { "scope": "project", "path": "." },
   "permissions": {
-    "network": [
-      "api.github.com",
-      "localhost:8787",
-      "kv.example.com"
+    "fs": [
+      { "scope": "project", "path": ".", "access": "readwrite", "reason": "Read and write project files" }
     ],
-    "fs": "project"
+    "network": [
+      { "domain": "api.github.com", "reason": "Fetch repository data" },
+      { "domain": "localhost:8787", "reason": "Connect to local dev server" },
+      { "domain": "kv.example.com", "reason": "Access key-value storage" }
+    ]
   },
   "tools": [
     {
@@ -161,9 +162,8 @@ Each mini-app must have a `manifest.json`:
 |-------|----------|-------------|
 | `name` | Yes | Display name |
 | `icon` | No | Relative path to icon file (SVG/PNG) |
-| `workingDir` | No | Working directory config object with `scope` and `path`. `scope: "project"` resolves `path` against project root; `scope: "user"` resolves against user home directory. Default: `{ scope: "project", path: "." }`. |
+| `permissions.fs` | No | Array of directory entries: `{ scope: "project"\|"user", path: "..." }` or `{ scope: "app" }`. Controls which directories the app can access via `superone.fs.*`. |
 | `permissions.network` | No | Whitelisted domains (local or remote). Controls CSP `connect-src` and `script-src`. Apps can `fetch` these freely — enables KV stores, databases, remote APIs. |
-| `permissions.fs` | No | `"app"` (default, only own directory) or `"project"` (working directory access) |
 | `tools` | No | MCP tool definitions the mini-app handles. Declared statically; host registers them when app opens. |
 
 ### CSP Generation
@@ -195,7 +195,7 @@ Tool handlers:
 
 ### superone.fs (File System)
 
-Read/write access to the working directory (requires `permissions.fs: "project"`).
+Read/write access to declared directories (requires at least one entry in `permissions.fs`).
 
 ```js
 superone.fs.readFile(relativePath)    // → Promise<string>
@@ -264,8 +264,8 @@ Permissions are granted at install time and stored in a global registry at `~/.s
 {
   "todo": {
     "permissions": {
-      "network": ["api.example.com"],
-      "fs": "project"
+      "network": [{ "domain": "api.example.com", "reason": "Fetch task data" }],
+      "fs": [{ "scope": "project", "path": ".", "access": "readwrite", "reason": "Manage todo files" }]
     },
     "grantedAt": "2026-04-02T10:00:00Z"
   }
@@ -404,10 +404,10 @@ cp -r dist/ ~/.superone/apps/my-app/
   "name": "Data Dashboard",
   "permissions": {
     "network": [
-      "localhost:8787",
-      "api.turso.tech"
+      { "domain": "localhost:8787", "reason": "Connect to local Cloudflare Workers dev server" },
+      { "domain": "api.turso.tech", "reason": "Query Turso database for dashboard data" }
     ],
-    "fs": "project"
+    "fs": [{ "scope": "project", "path": ".", "access": "read", "reason": "Read project data files for visualization" }]
   },
   "tools": [
     {

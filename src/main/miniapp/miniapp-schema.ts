@@ -8,14 +8,20 @@ const authorSchema = z.object({
   url: z.url().optional(),
 })
 
-const workingDirSchema = z.object({
-  scope: z.enum(['project', 'user']),
-  path: z.string().min(1),
+const fsEntrySchema = z.discriminatedUnion('scope', [
+  z.object({ scope: z.literal('project'), path: z.string().min(1), access: z.enum(['read', 'readwrite']), reason: z.string().min(1) }),
+  z.object({ scope: z.literal('user'), path: z.string().min(1), access: z.enum(['read', 'readwrite']), reason: z.string().min(1) }),
+  z.object({ scope: z.literal('app'), reason: z.string().min(1) }),
+])
+
+const networkEntrySchema = z.object({
+  domain: z.string().min(1),
+  reason: z.string().min(1),
 })
 
 const permissionsSchema = z.object({
-  network: z.array(z.string()).optional(),
-  fs: z.enum(['app', 'project']).optional(),
+  network: z.array(networkEntrySchema).optional(),
+  fs: z.array(fsEntrySchema).optional(),
 })
 
 const toolInputSchemaSchema = z.looseObject({
@@ -39,7 +45,6 @@ export const manifestSchema = z.object({
   logo: z.string().optional(),
   isDev: z.boolean().optional(),
   type: z.enum(['sidebar', 'panel', 'in-chat', 'fullscreen']).optional(),
-  workingDir: workingDirSchema.optional(),
   permissions: permissionsSchema.optional(),
   tools: z.array(toolDefinitionSchema).optional(),
 })

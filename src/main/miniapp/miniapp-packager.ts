@@ -7,7 +7,7 @@ import { Extract as unzipExtract } from 'unzipper'
 import { app } from 'electron'
 import log from '../logger'
 import { parseManifest } from './miniapp-schema'
-import type { MiniAppInstallMeta, MiniAppInstallResult, MiniAppIntegrity, MiniAppManifest, MiniAppPackResult } from '../../shared/miniapp-types'
+import type { MiniAppInstallMeta, MiniAppInstallResult, MiniAppIntegrity, MiniAppManifest, MiniAppPackResult, MiniAppPreviewResult } from '../../shared/miniapp-types'
 
 const INTEGRITY_FILE = 'integrity.json'
 const INSTALL_META_FILE = 'install.json'
@@ -115,7 +115,7 @@ export async function packApp(appDir: string, outputDir: string): Promise<MiniAp
   })
 }
 
-export async function installApp(s1appPath: string): Promise<MiniAppInstallResult> {
+export async function previewApp(s1appPath: string): Promise<MiniAppPreviewResult> {
   const tmpDir = join(app.getPath('temp'), `s1app-install-${Date.now()}`)
   await mkdir(tmpDir, { recursive: true })
 
@@ -143,6 +143,26 @@ export async function installApp(s1appPath: string): Promise<MiniAppInstallResul
       throw new Error(`Integrity check failed:\n${integrityResult.errors.join('\n')}`)
     }
 
+    let existingVersion: string | undefined
+    try {
+      const existingMeta = JSON.parse(
+        await readFile(join(userAppsDir(), manifest.appId, INSTALL_META_FILE), 'utf-8'),
+      ) as MiniAppInstallMeta
+      existingVersion = existingMeta.version
+    } catch { /* not installed */ }
+
+    return { manifest, tempDir: tmpDir, existingVersion }
+  } catch (err) {
+    await rm(tmpDir, { recursive: true, force: true })
+    throw err
+  }
+}
+
+export async function confirmInstall(tempDir: string): Promise<MiniAppInstallResult> {
+  try {
+    const raw = await readFile(join(tempDir, 'manifest.json'), 'utf-8')
+    const manifest = JSON.parse(raw) as MiniAppManifest
+
     const targetDir = join(userAppsDir(), manifest.appId)
     let upgraded = false
 
@@ -151,20 +171,18 @@ export async function installApp(s1appPath: string): Promise<MiniAppInstallResul
         await readFile(join(targetDir, INSTALL_META_FILE), 'utf-8'),
       ) as MiniAppInstallMeta
       upgraded = existingMeta.version !== manifest.version
-    } catch {
-      // no existing installation
-    }
+    } catch { /* not installed */ }
 
     if (upgraded || !(await dirExists(targetDir))) {
       await rm(targetDir, { recursive: true, force: true })
     }
 
     await mkdir(targetDir, { recursive: true })
-    await cp(tmpDir, targetDir, { recursive: true })
+    await cp(tempDir, targetDir, { recursive: true })
 
     const meta: MiniAppInstallMeta = {
       appId: manifest.appId,
-      version: manifest.version,
+      version: manifest.version!,
       installedAt: new Date().toISOString(),
       source: 'local',
       integrityVerified: true,
@@ -179,8 +197,12 @@ export async function installApp(s1appPath: string): Promise<MiniAppInstallResul
       upgraded,
     }
   } finally {
-    await rm(tmpDir, { recursive: true, force: true })
+    await rm(tempDir, { recursive: true, force: true })
   }
+}
+
+export async function cancelInstall(tempDir: string): Promise<void> {
+  await rm(tempDir, { recursive: true, force: true })
 }
 
 export async function uninstallApp(appId: string): Promise<void> {

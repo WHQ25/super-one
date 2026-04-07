@@ -9,12 +9,17 @@ import { gitRun } from '../git-run'
 import { sanitizeGitRef } from '../path-security'
 import { parseGitStatusFiles } from '../git-status-utils'
 import { parseManifest } from './miniapp-schema'
-import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp } from '../../shared/miniapp-types'
+import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp, MiniAppFsAccess } from '../../shared/miniapp-types'
 
 const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
 const devAppsDir = () => join(process.cwd(), 'examples', 'miniapp')
 
-const workingDirs = new Map<string, string>()
+export interface AllowedDir {
+  path: string
+  access: MiniAppFsAccess
+}
+
+const allowedDirs = new Map<string, AllowedDir[]>()
 
 let watchIdCounter = 0
 const activeWatchers = new Map<number, { appId: string; controller: AbortController }>()
@@ -27,10 +32,10 @@ export function onFsWatchEvent(cb: WatchEventCallback): void {
 }
 
 export function startWatch(appId: string, watchPath: string): number {
-  const workingDir = workingDirs.get(appId)
-  if (!workingDir) throw new Error(`No working directory set for app: ${appId}`)
+  const dirs = allowedDirs.get(appId)
+  if (!dirs?.length) throw new Error(`No allowed directories for app: ${appId}`)
 
-  const resolved = resolveSafePath(workingDir, watchPath)
+  const { resolved } = resolveSafePathMulti(dirs, watchPath)
 
   const watchId = ++watchIdCounter
   const controller = new AbortController()
@@ -50,8 +55,8 @@ export function startWatch(appId: string, watchPath: string): number {
       }
       for await (const event of watcher) {
         const relPath = event.filename
-          ? relative(workingDir, resolve(resolved, event.filename))
-          : relative(workingDir, resolved)
+          ? relative(resolved, resolve(resolved, event.filename))
+          : '.'
         pending.set(relPath, event.eventType as 'change' | 'rename')
         if (!debounceTimer) {
           debounceTimer = setTimeout(flush, 100)
@@ -85,13 +90,15 @@ function clearWatchersForApp(appId: string): void {
   }
 }
 
-function resolveSafePath(workingDir: string, relativePath: string): string {
-  const resolved = resolve(workingDir, relativePath)
-  const normalizedBase = workingDir.endsWith(sep) ? workingDir : workingDir + sep
-  if (!resolved.startsWith(normalizedBase) && resolved !== workingDir) {
-    throw new Error(`Path traversal blocked: ${relativePath}`)
+function resolveSafePathMulti(dirs: AllowedDir[], relativePath: string): { resolved: string; access: MiniAppFsAccess } {
+  for (const dir of dirs) {
+    const resolved = resolve(dir.path, relativePath)
+    const normalizedBase = dir.path.endsWith(sep) ? dir.path : dir.path + sep
+    if (resolved.startsWith(normalizedBase) || resolved === dir.path) {
+      return { resolved, access: dir.access }
+    }
   }
-  return resolved
+  throw new Error(`Path not within allowed directories: ${relativePath}`)
 }
 
 type GitHeadChangeCallback = (event: { appId: string }) => void
@@ -127,14 +134,14 @@ function stopGitHeadWatch(appId: string): void {
   }
 }
 
-export function setWorkingDirectory(appId: string, dir: string): void {
-  workingDirs.set(appId, dir)
+export function setAllowedDirectories(appId: string, dirs: AllowedDir[]): void {
+  allowedDirs.set(appId, dirs)
 }
 
-export function clearWorkingDirectory(appId: string): void {
+export function clearAllowedDirectories(appId: string): void {
   clearWatchersForApp(appId)
   stopGitHeadWatch(appId)
-  workingDirs.delete(appId)
+  allowedDirs.delete(appId)
 }
 
 async function scanDir(base: string): Promise<MiniAppEntry[]> {
@@ -204,8 +211,7 @@ export async function createMiniApp(opts: CreateMiniAppOptions): Promise<MiniApp
   const manifest: MiniAppManifest = {
     appId: '__dev__',
     name: opts.name,
-    workingDir: { scope: 'project', path: '.' },
-    permissions: { fs: 'project' },
+    permissions: { fs: [{ scope: 'project', path: '.', access: 'readwrite', reason: 'Read and write project files' }] },
     tools: [
       {
         name: 'show_message',
@@ -289,9 +295,9 @@ export function cacheAppBasePath(appId: string, basePath: string): void {
 }
 
 export function generateCSP(manifest: MiniAppManifest): string {
-  const networkDomains = manifest.permissions?.network ?? []
-  const connectSrc = ["'self'", 'superone-app:', ...networkDomains].join(' ')
-  const scriptSrc = ["'self'", "'unsafe-inline'", ...networkDomains].join(' ')
+  const networkEntries = manifest.permissions?.network ?? []
+  const connectSrc = ["'self'", 'superone-app:', ...networkEntries.map((e) => e.domain)].join(' ')
+  const scriptSrc = "'self' 'unsafe-inline'"
   return [
     "default-src 'none'",
     `script-src ${scriptSrc}`,
@@ -317,10 +323,18 @@ export async function handleFsRequest(
   op: MiniAppFsOp,
   args: Record<string, unknown>,
 ): Promise<unknown> {
-  const workingDir = workingDirs.get(appId)
-  if (!workingDir) throw new Error(`No working directory set for app: ${appId}`)
+  const dirs = allowedDirs.get(appId)
+  if (!dirs?.length) throw new Error(`No allowed directories for app: ${appId}`)
 
-  const safe = (p: string) => resolveSafePath(workingDir, p)
+  const WRITE_OPS: Set<MiniAppFsOp> = new Set(['writeFile'])
+
+  const safe = (p: string) => {
+    const result = resolveSafePathMulti(dirs, p)
+    if (WRITE_OPS.has(op) && result.access === 'read') {
+      throw new Error(`Write access denied: ${p} (read-only permission)`)
+    }
+    return result.resolved
+  }
 
   switch (op) {
     case 'readFile': {
@@ -347,15 +361,22 @@ export async function handleFsRequest(
     }
     case 'glob': {
       const pattern = args.pattern as string
-      const files: string[] = []
-      for await (const entry of glob(pattern, { cwd: workingDir })) {
-        files.push(entry)
+      const allFiles: string[] = []
+      for (const dir of dirs) {
+        for await (const entry of glob(pattern, { cwd: dir.path })) {
+          allFiles.push(entry)
+        }
       }
-      return files
+      return allFiles
     }
     default:
       throw new Error(`Unknown fs operation: ${op}`)
   }
+}
+
+export function getGitDirectory(appId: string): string | undefined {
+  const dirs = allowedDirs.get(appId)
+  return dirs?.[0]?.path
 }
 
 export async function handleGitRequest(
@@ -363,8 +384,8 @@ export async function handleGitRequest(
   op: MiniAppGitOp,
   args: Record<string, unknown>,
 ): Promise<unknown> {
-  const workingDir = workingDirs.get(appId)
-  if (!workingDir) throw new Error(`No working directory set for app: ${appId}`)
+  const workingDir = getGitDirectory(appId)
+  if (!workingDir) throw new Error(`No allowed directories for app: ${appId}`)
 
   startGitHeadWatch(appId, workingDir)
 

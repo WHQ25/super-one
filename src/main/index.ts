@@ -9,9 +9,9 @@ import { gitRun } from './git-run'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setWorkingDirectory, clearWorkingDirectory, handleFsRequest, handleGitRequest, getDevAppBasePath, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, getDevAppBasePath, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent } from './miniapp/miniapp-service'
 import { generateBridgeScript } from './miniapp/miniapp-bridge'
-import { installApp, uninstallApp, packApp, getInstallMeta } from './miniapp/miniapp-packager'
+import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta } from './miniapp/miniapp-packager'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady } from './mcp/superone-mcp-server'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
@@ -1370,19 +1370,24 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_OPEN, async (_e, appId: string, projectDir: string) => {
-    const manifest = await readManifest(getAppBasePath(appId))
+    const basePath = getAppBasePath(appId)
+    const manifest = await readManifest(basePath)
     if (!manifest) throw new Error(`App not found: ${appId}`)
-    const wd = manifest.workingDir ?? { scope: 'project' as const, path: '.' }
-    const resolved = wd.scope === 'user'
-      ? join(homedir(), wd.path)
-      : join(projectDir, wd.path)
-    setWorkingDirectory(appId, resolved)
+    const fsEntries = manifest.permissions?.fs ?? []
+    const dirs = fsEntries.map((entry) => {
+      switch (entry.scope) {
+        case 'project': return { path: join(projectDir, entry.path!), access: entry.access! } as const
+        case 'user': return { path: join(homedir(), entry.path!), access: entry.access! } as const
+        case 'app': return { path: basePath, access: 'readwrite' as const }
+      }
+    })
+    setAllowedDirectories(appId, dirs)
     registerAppTools(appId, manifest.tools ?? [])
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string) => {
     unregisterAppTools(appId)
-    clearWorkingDirectory(appId)
+    clearAllowedDirectories(appId)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_TOOL_RESULT, (_e, callId: string, result: unknown, error?: string) => {
@@ -1434,8 +1439,16 @@ function registerIpcHandlers(): void {
     return entry
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_INSTALL, async (_e, s1appPath: string) => {
-    return installApp(s1appPath)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_PREVIEW, async (_e, s1appPath: string) => {
+    return previewApp(s1appPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, async (_e, tempDir: string) => {
+    return confirmInstall(tempDir)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_CANCEL_INSTALL, async (_e, tempDir: string) => {
+    return cancelInstall(tempDir)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_UNINSTALL, async (_e, appId: string) => {

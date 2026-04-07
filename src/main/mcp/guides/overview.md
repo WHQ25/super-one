@@ -15,10 +15,10 @@ A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe o
 
 Before building, clarify:
 1. What does the app do? (e.g., "markdown editor", "API tester", "todo list")
-2. Does it need to read/write project files? → determines `permissions.fs`
-3. Does it need network access? → determines `permissions.network`
-4. What tools should the agent be able to call on this app? → determines `tools`
-5. Should data live in the project or in a personal directory? → determines `workingDir.scope`
+2. Does it need to read/write project files? → add `{ scope: "project", path: "." }` to `permissions.fs`
+3. Does it need user-level storage? → add `{ scope: "user", path: ".config/<app>" }` to `permissions.fs`
+4. Does it need network access? → determines `permissions.network`
+5. What tools should the agent be able to call on this app? → determines `tools`
 
 ## App Directory Structure
 

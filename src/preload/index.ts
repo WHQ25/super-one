@@ -724,8 +724,14 @@ const miniappAPI = {
     return () => ipcRenderer.removeListener('miniapp:dev-app-ready', handler)
   },
 
-  install: (s1appPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_INSTALL, s1appPath),
+  preview: (s1appPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_PREVIEW, s1appPath),
+
+  confirmInstall: (tempDir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, tempDir),
+
+  cancelInstall: (tempDir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CANCEL_INSTALL, tempDir) as Promise<void>,
 
   uninstall: (appId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_UNINSTALL, appId) as Promise<void>,

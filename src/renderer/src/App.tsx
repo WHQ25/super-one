@@ -11,6 +11,7 @@ import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
 import { SettingsLayout } from '@/components/SettingsLayout'
 import { UpdateNotification } from '@/components/UpdateNotification'
+import { DebugPanel } from '@/components/DebugPanel'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useRemoteControl } from '@/hooks/useRemoteControl'
@@ -319,7 +320,7 @@ function App(): React.JSX.Element {
       </div>
       </LayoutGroup>
       <UpdateNotification />
-
+      {import.meta.env.DEV && <DebugPanel />}
     </div>
   )
 }

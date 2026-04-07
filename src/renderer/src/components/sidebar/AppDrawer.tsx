@@ -8,6 +8,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 import { openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
 import type { MiniAppEntry } from '../../../../shared/miniapp-types'
 import { AnimatePresence, motion } from 'motion/react'
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
@@ -84,7 +85,7 @@ export function AppDrawer() {
 
   const allApps = useMiniAppStore(useShallow((s) => s.apps))
   const requestOpenInCanvas = useMiniAppStore((s) => s.requestOpenInCanvas)
-  const installApp = useMiniAppStore((s) => s.installApp)
+  const previewInstall = useMiniAppStore((s) => s.previewInstall)
   const setDraftText = useChatStore((s) => s.setDraftText)
 
   const totalApps = allApps.length
@@ -184,23 +185,29 @@ export function AppDrawer() {
       return
     }
 
-    for (const path of paths) {
-      try {
-        const result = await installApp(path)
-        const label = result.entry.manifest.name
-        setInstallStatus({
-          type: 'success',
-          message: result.upgraded ? `${label} upgraded` : `${label} installed`,
-        })
-      } catch (err) {
-        setInstallStatus({
-          type: 'error',
-          message: err instanceof Error ? err.message : 'Install failed',
-        })
-      }
+    try {
+      await previewInstall(paths[0])
+    } catch (err) {
+      setInstallStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Invalid package',
+      })
+      setTimeout(() => setInstallStatus(null), 3000)
     }
+  }, [previewInstall])
+
+  const handleInstalled = useCallback((name: string, upgraded: boolean) => {
+    setInstallStatus({
+      type: 'success',
+      message: upgraded ? `${name} upgraded` : `${name} installed`,
+    })
     setTimeout(() => setInstallStatus(null), 3000)
-  }, [installApp])
+  }, [])
+
+  const handleInstallError = useCallback((message: string) => {
+    setInstallStatus({ type: 'error', message })
+    setTimeout(() => setInstallStatus(null), 3000)
+  }, [])
 
   const handleBuildApp = useCallback(() => {
     setDraftText('Help me build a mini app for SuperOne. Guide me through the process step by step.')
@@ -215,6 +222,7 @@ export function AppDrawer() {
       onDragLeave={handleFileDragLeave}
       onDrop={handleFileDrop}
     >
+      <InstallPermissionDialog onInstalled={handleInstalled} onError={handleInstallError} />
       <div className="overflow-hidden rounded-lg border border-sidebar-border">
         <button
           onClick={() => setExpanded((v) => !v)}

@@ -1,16 +1,16 @@
 {
-  "appId": "world",
-  "name": "World",
+  "appId": "hello",
+  "name": "Hello",
   "version": "0.1.0",
   "author": { "name": "SuperOne", "url": "https://github.com/WHQ25/super-one" },
-  "description": "A panel app for exploring the world",
+  "description": "A simple greeting sidebar app",
   "logo": "logo.png",
-  "type": "panel",
+  "type": "sidebar",
   "permissions": { "fs": [{ "scope": "project", "path": ".", "access": "readwrite", "reason": "Read and write project files" }] },
   "tools": [
     {
       "name": "show_message",
-      "description": "Display a message in the World app",
+      "description": "Display a message in the Hello app",
       "inputSchema": {
         "type": "object",
         "properties": {

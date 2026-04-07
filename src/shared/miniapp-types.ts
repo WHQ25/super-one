@@ -1,6 +1,15 @@
-export interface MiniAppWorkingDir {
-  scope: 'project' | 'user'
-  path: string
+export type MiniAppFsAccess = 'read' | 'readwrite'
+
+export interface MiniAppFsEntry {
+  scope: 'project' | 'user' | 'app'
+  path?: string
+  access?: MiniAppFsAccess
+  reason: string
+}
+
+export interface MiniAppNetworkEntry {
+  domain: string
+  reason: string
 }
 
 export type MiniAppType = 'sidebar' | 'panel' | 'in-chat' | 'fullscreen'
@@ -20,7 +29,6 @@ export interface MiniAppManifest {
   logo?: string
   isDev?: boolean
   type?: MiniAppType
-  workingDir?: MiniAppWorkingDir
   permissions?: MiniAppPermissions
   tools?: MiniAppToolDefinition[]
 }
@@ -39,8 +47,8 @@ export interface MiniAppIntegrity {
 }
 
 export interface MiniAppPermissions {
-  network?: string[]
-  fs?: 'app' | 'project'
+  network?: MiniAppNetworkEntry[]
+  fs?: MiniAppFsEntry[]
 }
 
 export interface MiniAppToolDefinition {
@@ -82,6 +90,12 @@ export interface MiniAppPackResult {
   outputPath: string
   manifest: MiniAppManifest
   fileCount: number
+}
+
+export interface MiniAppPreviewResult {
+  manifest: MiniAppManifest
+  tempDir: string
+  existingVersion?: string
 }
 
 export interface MiniAppInstallResult {

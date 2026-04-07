@@ -1,6 +1,6 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AgentEvent, AgentInfo, ApiProvider, BashOutputEvent, ChatMessage, ClaudePreferences, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, ContextUsageInfo, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
-import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppToolCallRequest, MiniAppFsWatchEvent } from '../shared/miniapp-types'
+import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent } from '../shared/miniapp-types'
 
 
 interface AgentAPI {
@@ -225,7 +225,9 @@ interface MiniAppAPI {
   getPreloadPath(): Promise<string>
   detectDev(projectDir: string): Promise<MiniAppEntry | null>
   onDevAppReady(callback: (projectDir: string) => void): () => void
-  install(s1appPath: string): Promise<MiniAppInstallResult>
+  preview(s1appPath: string): Promise<MiniAppPreviewResult>
+  confirmInstall(tempDir: string): Promise<MiniAppInstallResult>
+  cancelInstall(tempDir: string): Promise<void>
   uninstall(appId: string): Promise<void>
   pack(appDir: string, outputDir: string): Promise<MiniAppPackResult>
   getInstallMeta(appId: string): Promise<MiniAppInstallMeta | null>

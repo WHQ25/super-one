@@ -129,4 +129,106 @@ describe('parseManifest', () => {
     })
     expect(result.ok).toBe(true)
   })
+
+  it('should accept permissions.fs with project scope', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { fs: [{ scope: 'project', path: '.', access: 'readwrite', reason: 'Read project files' }] },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('should accept permissions.fs with read-only access', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { fs: [{ scope: 'project', path: 'src', access: 'read', reason: 'Analyze source code' }] },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('should accept permissions.fs with multiple entries', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: {
+        fs: [
+          { scope: 'project', path: 'src', access: 'read', reason: 'Read source' },
+          { scope: 'user', path: '.config/hello', access: 'readwrite', reason: 'Store config' },
+          { scope: 'app', reason: 'Persist app data' },
+        ],
+      },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('should reject permissions.fs project scope without path', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { fs: [{ scope: 'project', access: 'read', reason: 'test' }] },
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject permissions.fs user scope without path', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { fs: [{ scope: 'user', access: 'readwrite', reason: 'test' }] },
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject permissions.fs without access', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { fs: [{ scope: 'project', path: '.', reason: 'test' }] },
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject permissions.fs without reason', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { fs: [{ scope: 'project', path: '.', access: 'read' }] },
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should accept permissions.fs app scope without path or access', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { fs: [{ scope: 'app', reason: 'Store data' }] },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('should accept permissions.network with structured entries', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { network: [{ domain: 'api.github.com', reason: 'Fetch repo data' }] },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('should reject permissions.network without reason', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { network: [{ domain: 'api.github.com' }] },
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject permissions.network as plain strings', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { network: ['api.github.com'] },
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject old string-based permissions.fs format', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { fs: 'project' },
+    })
+    expect(result.ok).toBe(false)
+  })
 })

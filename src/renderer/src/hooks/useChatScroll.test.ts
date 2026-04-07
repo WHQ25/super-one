@@ -164,7 +164,8 @@ describe('useChatScroll', () => {
     const ref = { current: el }
 
     const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
-    vi.advanceTimersByTime(3000)
+    act(() => { fireResize() })
+    vi.advanceTimersByTime(500)
 
     const scrolledPos = 0
     act(() => {
@@ -241,7 +242,8 @@ describe('useChatScroll', () => {
     const ref = { current: el }
 
     renderHook(() => useChatScroll({ scrollViewportRef: ref }))
-    vi.advanceTimersByTime(3000)
+    act(() => { fireResize() })
+    vi.advanceTimersByTime(500)
 
     state.scrollHeight = 800
     fireResize()

@@ -31,6 +31,10 @@ export function ContextUsage() {
   const prevStatusRef = useRef(status)
 
   useEffect(() => {
+    setDetailedUsage(null)
+  }, [selectedModel])
+
+  useEffect(() => {
     const wasStreaming = prevStatusRef.current === 'streaming'
     prevStatusRef.current = status
     if (!wasStreaming || status !== 'idle' || !activeProject) return

@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const chatState = {
   availableModels: [] as Array<{ id: string; name: string; description: string }>,
+  activeProject: '/test',
 }
 
 const activeSessionState = {
@@ -14,6 +15,7 @@ const activeSessionState = {
   preferredProvider: 'claude' as 'claude' | 'codex',
   sessionProvider: null as 'claude' | 'codex' | null,
   totalCostUsd: 0,
+  status: 'idle' as string,
 }
 
 vi.mock('@/stores/chat', () => ({
@@ -31,6 +33,7 @@ beforeEach(() => {
   activeSessionState.preferredProvider = 'claude'
   activeSessionState.sessionProvider = null
   activeSessionState.totalCostUsd = 0
+  activeSessionState.status = 'idle'
 })
 
 describe('ContextUsage', () => {
@@ -43,6 +46,7 @@ describe('ContextUsage', () => {
     activeSessionState.sessionProvider = 'codex'
 
     render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
 
     expect(screen.getByText('Context: 120.0k / 258.4k (46%)')).toBeTruthy()
     expect(screen.queryByText(/1000\.0k/)).toBeNull()
@@ -56,6 +60,7 @@ describe('ContextUsage', () => {
     activeSessionState.sessionProvider = 'codex'
 
     render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
 
     expect(screen.getByText('Context: 120.0k')).toBeTruthy()
     expect(screen.queryByText(/1000\.0k/)).toBeNull()
@@ -69,6 +74,7 @@ describe('ContextUsage', () => {
     activeSessionState.sessionProvider = 'claude'
 
     render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
 
     expect(screen.getByText('Context: 120.0k / 1000.0k (12%)')).toBeTruthy()
   })

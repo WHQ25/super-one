@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useState } from 'react'
+import { useRef, useCallback, useEffect, useState, memo } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { ChevronUp, ChevronDown, Plus, ArrowUp, Square, Clock } from 'lucide-react'
@@ -53,7 +53,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
-export function ChatPanel() {
+export const ChatPanel = memo(function ChatPanel() {
   const isOpen = useChatStore((s) => s.isOpen)
   const corner = useChatStore((s) => s.corner)
   const setCorner = useChatStore((s) => s.setCorner)
@@ -351,4 +351,4 @@ export function ChatPanel() {
       <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} />
     </div>
   )
-}
+})

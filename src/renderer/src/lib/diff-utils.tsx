@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useMemo, useCallback, useLayoutEffect, memo } from 'react'
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useMemo, useCallback, useLayoutEffect, memo, startTransition } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { cn } from '@/lib/utils'
 import { measureMaxLineWidth, getMonoFont, getMonoCharWidth, MONO_FONT_FAMILY } from '@/lib/pretext-utils'
@@ -40,6 +40,27 @@ export interface HLToken { content: string; style?: React.CSSProperties }
 const HIGHLIGHT_LINE_LIMIT = 10000
 
 
+type HighlightRawToken = { content: string; color?: string; bgColor?: string; htmlStyle?: Record<string, string> }
+type HighlightResult = { tokens: HighlightRawToken[][] }
+
+const globalStyleCache = new Map<string, React.CSSProperties | undefined>()
+
+function internStyle(t: HighlightRawToken): React.CSSProperties | undefined {
+  const key = `${t.color ?? ''}|${t.bgColor ?? ''}|${t.htmlStyle ? JSON.stringify(t.htmlStyle) : ''}`
+  let cached = globalStyleCache.get(key)
+  if (cached !== undefined || globalStyleCache.has(key)) return cached
+  const s: React.CSSProperties = { ...(t.htmlStyle ?? {}) }
+  if (t.color) s.color = t.color
+  if (t.bgColor) s.backgroundColor = t.bgColor
+  cached = Object.keys(s).length ? s : undefined
+  globalStyleCache.set(key, cached)
+  return cached
+}
+
+function extractTokens(res: HighlightResult): HLToken[][] {
+  return res.tokens.map((line) => line.map((t) => ({ content: t.content, style: internStyle(t) })))
+}
+
 export function useHighlightedTokens(code: string, language: string): HLToken[][] | null {
   const [tokens, setTokens] = useState<HLToken[][] | null>(null)
   const isDark = useIsDark()
@@ -48,20 +69,26 @@ export function useHighlightedTokens(code: string, language: string): HLToken[][
   useEffect(() => {
     if (!code) { setTokens(null); return }
     if (code.split('\n').length > HIGHLIGHT_LINE_LIMIT) { setTokens(null); return }
+    let cancelled = false
+    let handled = false
     const lang = plugin.supportsLanguage(language as never) ? language : 'md'
     const themes = plugin.getThemes()
-    const extract = (res: { tokens: Array<Array<{ content: string; color?: string; bgColor?: string; htmlStyle?: Record<string, string> }>> }): HLToken[][] =>
-      res.tokens.map((line) => line.map((t) => {
-        const s: React.CSSProperties = { ...(t.htmlStyle ?? {}) }
-        if (t.color) s.color = t.color
-        if (t.bgColor) s.backgroundColor = t.bgColor
-        return { content: t.content, style: Object.keys(s).length ? s : undefined }
-      }))
-    const result = plugin.highlight(
-      { code, language: lang as never, themes },
-      (res) => setTokens(extract(res)),
-    )
-    if (result) setTokens(extract(result))
+
+    const apply = (res: HighlightResult) => {
+      if (cancelled || handled) return
+      handled = true
+      const extracted = extractTokens(res)
+      startTransition(() => { if (!cancelled) setTokens(extracted) })
+    }
+
+    const run = () => {
+      if (cancelled) return
+      const result = plugin.highlight({ code, language: lang as never, themes }, apply)
+      if (result) apply(result)
+    }
+
+    const idleId = requestIdleCallback(run, { timeout: 80 })
+    return () => { cancelled = true; cancelIdleCallback(idleId) }
   }, [code, language, isDark, plugin])
 
   return tokens
@@ -211,28 +238,47 @@ export const LINE_STYLE: Record<DiffLine['kind'], { bg: string; marker: string; 
   unchanged: { bg: '', marker: ' ', markerColor: 'text-transparent' },
 }
 
+const ROW_BASE = 'absolute left-0 right-0 whitespace-pre px-2'
+const ROW_HIGHLIGHT = `${ROW_BASE} bg-yellow-400/25`
+const ROW_CLASS: Record<DiffLine['kind'], string> = {
+  removed: `${ROW_BASE} bg-red-500/15`,
+  added: `${ROW_BASE} bg-green-500/15`,
+  unchanged: ROW_BASE,
+}
+const ROW_CLASS_FADE: Record<DiffLine['kind'], string> = {
+  removed: `${ROW_BASE} bg-red-500/15 transition-colors duration-1000`,
+  added: `${ROW_BASE} bg-green-500/15 transition-colors duration-1000`,
+  unchanged: `${ROW_BASE} transition-colors duration-1000`,
+}
+const MARKER_CLASS: Record<DiffLine['kind'], string> = {
+  removed: 'inline-block w-[1ch] select-none text-center mr-1 text-red-400/60',
+  added: 'inline-block w-[1ch] select-none text-center mr-1 text-green-400/60',
+  unchanged: 'inline-block w-[1ch] select-none text-center mr-1 text-transparent',
+}
+
 const ESTIMATED_LINE_HEIGHT = 20
 const DIFF_LINE_HEIGHT_RATIO = 1.625
 const DIFF_OVERSCAN = 8
 
-const DiffLineRow = memo(function DiffLineRow({ line, tokens, gw, size, start, isHighlighted }: {
+const DiffLineRow = memo(function DiffLineRow({ line, tokens, gw, size, start, isHighlighted, wasFading }: {
   line: DiffLine
   tokens: HLToken[] | undefined
   gw: number
   size: number
   start: number
   isHighlighted: boolean
+  wasFading: boolean
 }) {
   const s = LINE_STYLE[line.kind]
   return (
     <div
-      className={cn('absolute left-0 right-0 whitespace-pre px-2', isHighlighted ? 'bg-yellow-400/25' : cn('transition-colors duration-1000', s.bg))}
+      className={isHighlighted ? ROW_HIGHLIGHT : wasFading ? ROW_CLASS_FADE[line.kind] : ROW_CLASS[line.kind]}
       style={{ height: size, transform: `translateY(${start}px)` }}
     >
       <span className="inline-block select-none text-right text-muted-foreground/50 mr-1" style={{ width: `${gw}ch` }}>
         {line.lineNum}
       </span>
-      <span className={cn('inline-block w-[1ch] select-none text-center mr-1', s.markerColor)}>{s.marker}</span>
+      <span className={MARKER_CLASS[line.kind]}>{s.marker}</span>
       {tokens
         ? tokens.map((t, j) => <span key={j} style={t.style}>{t.content}</span>)
         : (line.text || ' ')}
@@ -252,14 +298,21 @@ export const DiffView = forwardRef<HTMLDivElement, {
 }>(function DiffView({ lines, oldTokens, newTokens, fontSize, maxHeight, className, hideScrollbar, scrollToLine }, ref) {
   const maxLine = useMemo(() => lines.reduce((m, l) => Math.max(m, l.lineNum), 0), [lines])
   const gw = gutterWidth(maxLine)
-  const minContentWidth = useMemo(() => {
-    if (lines.length === 0) return '0px'
-    const font = fontSize ? `${fontSize}px ${MONO_FONT_FAMILY}` : getMonoFont()
-    const fullText = lines.map((l) => l.text).join('\n')
-    const textW = measureMaxLineWidth(fullText, font)
-    const charW = fontSize ? measureMaxLineWidth('0', font) : getMonoCharWidth()
-    const gutterPx = (gw + 2) * charW + 16
-    return `${Math.ceil(textW + gutterPx)}px`
+  const [minContentWidth, setMinContentWidth] = useState('0px')
+  useEffect(() => {
+    if (lines.length === 0) { setMinContentWidth('0px'); return }
+    const id = requestIdleCallback(() => {
+      const font = fontSize ? `${fontSize}px ${MONO_FONT_FAMILY}` : getMonoFont()
+      const charW = fontSize ? measureMaxLineWidth('0', font) : getMonoCharWidth()
+      const gutterPx = (gw + 2) * charW + 16
+      let longest = ''
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].text.length > longest.length) longest = lines[i].text
+      }
+      const textW = measureMaxLineWidth(longest, font)
+      setMinContentWidth(`${Math.ceil(textW + gutterPx)}px`)
+    }, { timeout: 100 })
+    return () => cancelIdleCallback(id)
   }, [lines, gw, fontSize])
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -294,25 +347,38 @@ export const DiffView = forwardRef<HTMLDivElement, {
   }, [virtualizer, estimatedLineHeight, lines.length])
 
   const [highlightIdx, setHighlightIdx] = useState<number | null>(null)
+  const [fadingIdx, setFadingIdx] = useState<number | null>(null)
   const linesRef = useRef(lines)
   linesRef.current = lines
   const virtualizerRef = useRef(virtualizer)
   virtualizerRef.current = virtualizer
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const fadeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     clearTimeout(highlightTimer.current)
-    if (scrollToLine == null) { setHighlightIdx(null); return }
+    clearTimeout(fadeTimer.current)
+    if (scrollToLine == null) { setHighlightIdx(null); setFadingIdx(null); return }
     const idx = linesRef.current.findIndex((l) => l.lineNum >= scrollToLine.line)
     if (idx >= 0) {
       virtualizerRef.current.scrollToIndex(idx, { align: 'center' })
       setHighlightIdx(idx)
-      highlightTimer.current = setTimeout(() => setHighlightIdx(null), 5000)
+      setFadingIdx(null)
+      highlightTimer.current = setTimeout(() => {
+        setHighlightIdx(null)
+        setFadingIdx(idx)
+        fadeTimer.current = setTimeout(() => setFadingIdx(null), 1100)
+      }, 5000)
     }
   }, [scrollToLine])
 
+  const outerClassName = useMemo(() =>
+    cn('overflow-auto rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground', maxHeight ?? 'max-h-[300px]', hideScrollbar && 'hide-scrollbar', className),
+    [maxHeight, hideScrollbar, className],
+  )
+
   return (
-    <div ref={scrollRef} className={cn('overflow-auto rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground', maxHeight ?? 'max-h-[300px]', hideScrollbar && 'hide-scrollbar', className)} style={{ contain: 'inline-size' }}>
+    <div ref={scrollRef} className={outerClassName} style={{ contain: 'inline-size' }}>
       <div className="relative min-w-full" style={{ height: virtualizer.getTotalSize(), minWidth: minContentWidth }}>
         {virtualizer.getVirtualItems().map((vItem) => {
           const line = lines[vItem.index]
@@ -328,6 +394,7 @@ export const DiffView = forwardRef<HTMLDivElement, {
               size={vItem.size}
               start={vItem.start}
               isHighlighted={vItem.index === highlightIdx}
+              wasFading={vItem.index === fadingIdx}
             />
           )
         })}

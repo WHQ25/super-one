@@ -94,13 +94,6 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
         viewport.scrollTop = viewport.scrollHeight
         lastScrollTopRef.current = viewport.scrollTop
         setShowScrollButton(false)
-        cancelAnimationFrame(rafId)
-        rafId = requestAnimationFrame(() => {
-          if (isNearBottomRef.current) {
-            viewport.scrollTop = viewport.scrollHeight
-            lastScrollTopRef.current = viewport.scrollTop
-          }
-        })
       }
       if (sessionSwitchRef.current) {
         clearTimeout(sessionSwitchTimerRef.current)

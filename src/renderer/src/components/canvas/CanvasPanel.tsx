@@ -1,10 +1,10 @@
-import { useEffect, useCallback, useRef } from 'react'
+import { useEffect, useCallback, useRef, memo } from 'react'
 import { MiniAppView, type MiniAppViewHandle } from '@/components/miniapp/MiniAppView'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { X } from 'lucide-react'
 
-export function CanvasPanel() {
+export const CanvasPanel = memo(function CanvasPanel() {
   const apps = useMiniAppStore((s) => s.apps)
   const fullscreenApps = apps.filter((a) => a.manifest.type === 'fullscreen')
   const fetchApps = useMiniAppStore((s) => s.fetchApps)
@@ -100,4 +100,4 @@ export function CanvasPanel() {
       />
     </div>
   )
-}
+})

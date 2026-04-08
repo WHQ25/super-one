@@ -1,10 +1,10 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, memo } from 'react'
 import { useChatStore } from '@/stores/chat'
 import { ChatContent } from '@/components/chat/ChatContent'
 import { useChatScroll } from '@/hooks/useChatScroll'
 import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 
-export function CodingLayout() {
+export const CodingLayout = memo(function CodingLayout() {
   const scrollViewportRef = useRef<HTMLDivElement>(null)
 
   const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
@@ -23,4 +23,4 @@ export function CodingLayout() {
       </div>
     </div>
   )
-}
+})

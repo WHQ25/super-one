@@ -125,9 +125,13 @@ export function ChatStatusBar() {
   useEffect(() => {
     const node = barRef.current
     if (!node) return
-    const observer = new ResizeObserver(() => updateCompactState())
+    let rafId = 0
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(updateCompactState)
+    })
     observer.observe(node)
-    return () => observer.disconnect()
+    return () => { cancelAnimationFrame(rafId); observer.disconnect() }
   }, [updateCompactState])
 
   useEffect(() => {

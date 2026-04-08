@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
 import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, GitFork, Pin, Copy, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -39,7 +39,7 @@ type SortMode = 'recent' | 'added'
 
 const MAX_SESSIONS = 10
 
-export function AppSidebar() {
+export const AppSidebar = memo(function AppSidebar() {
   const { navigateTo, selectAndOpenFolder, openFolder, removeRecentFolder, setSidebarTab } = useAppStore(useShallow((s) => ({ navigateTo: s.navigateTo, selectAndOpenFolder: s.selectAndOpenFolder, openFolder: s.openFolder, removeRecentFolder: s.removeRecentFolder, setSidebarTab: s.setSidebarTab })))
   const sidebarTab = useAppStore((s) => s.sidebarTab)
   const currentFolder = useAppStore((s) => s.currentFolder)
@@ -600,4 +600,4 @@ export function AppSidebar() {
       </Dialog>
     </div>
   )
-}
+})

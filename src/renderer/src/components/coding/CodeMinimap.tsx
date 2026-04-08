@@ -13,6 +13,91 @@ const GUTTER_W = 3
 const MINIMAP_DETAIL_LIMIT = 5000
 const MAX_VISIBLE_LINES = 500
 
+function drawMinimap(canvas: HTMLCanvasElement, lines: DiffLine[], tokens: HLToken[][] | null, canvasH: number, minimapW: number) {
+  const dpr = window.devicePixelRatio || 1
+  canvas.width = minimapW * dpr
+  canvas.height = canvasH * dpr
+  canvas.style.width = `${minimapW}px`
+  canvas.style.height = `${canvasH}px`
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  ctx.scale(dpr, dpr)
+  ctx.clearRect(0, 0, minimapW, canvasH)
+
+  const drawDetail = lines.length <= MINIMAP_DETAIL_LIMIT
+  const rectW = Math.max(CHAR_W * 0.9, 0.8)
+  const rectH = Math.max(LINE_H - 1, 1)
+
+  const addedBg = new Path2D()
+  const addedGutter = new Path2D()
+  const removedBg = new Path2D()
+  const removedGutter = new Path2D()
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const y = i * LINE_H
+
+    if (line.kind === 'added') {
+      addedBg.rect(0, y, minimapW, LINE_H)
+      addedGutter.rect(0, y, GUTTER_W, LINE_H)
+    } else if (line.kind === 'removed') {
+      removedBg.rect(0, y, minimapW, LINE_H)
+      removedGutter.rect(0, y, GUTTER_W, LINE_H)
+    }
+  }
+
+  ctx.fillStyle = 'rgba(34, 197, 94, 0.5)'; ctx.fill(addedBg)
+  ctx.fillStyle = 'rgba(34, 197, 94, 1)'; ctx.fill(addedGutter)
+  ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'; ctx.fill(removedBg)
+  ctx.fillStyle = 'rgba(239, 68, 68, 1)'; ctx.fill(removedGutter)
+
+  if (drawDetail) {
+    const colorPaths = new Map<string, Path2D>()
+    const getPath = (color: string) => {
+      let p = colorPaths.get(color)
+      if (!p) { p = new Path2D(); colorPaths.set(color, p) }
+      return p
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      const y = i * LINE_H + 0.5
+
+      const lineTokens = line.kind !== 'removed' ? tokens?.[line.sourceIdx] : null
+      if (lineTokens) {
+        let x = 0
+        for (const token of lineTokens) {
+          const color = token.style?.color || 'rgba(150, 150, 150, 0.3)'
+          const path = getPath(color)
+          for (const ch of token.content) {
+            if (ch === ' ' || ch === '\t') { x += CHAR_W * (ch === '\t' ? 4 : 1); continue }
+            if (x >= minimapW) break
+            path.rect(x, y, rectW, rectH)
+            x += CHAR_W
+          }
+          if (x >= minimapW) break
+        }
+      } else if (line.text) {
+        const path = getPath('rgba(150, 150, 150, 0.2)')
+        let x = 0
+        for (const ch of line.text) {
+          if (ch === ' ' || ch === '\t') { x += CHAR_W * (ch === '\t' ? 4 : 1); continue }
+          if (x >= minimapW) break
+          path.rect(x, y, rectW, rectH)
+          x += CHAR_W
+        }
+      }
+    }
+
+    for (const [color, path] of colorPaths) {
+      ctx.fillStyle = color
+      ctx.fill(path)
+    }
+  }
+}
+
 export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef }: {
   lines: DiffLine[]
   tokens: HLToken[][] | null
@@ -50,64 +135,12 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
     if (!canvas || !canvasH) return
     const prev = prevDrawRef.current
     if (prev.lines === lines && prev.tokens === tokens && prev.w === minimapW) return
-    prevDrawRef.current = { lines, tokens, w: minimapW }
 
-    const dpr = window.devicePixelRatio || 1
-    canvas.width = minimapW * dpr
-    canvas.height = canvasH * dpr
-    canvas.style.width = `${minimapW}px`
-    canvas.style.height = `${canvasH}px`
-
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    ctx.scale(dpr, dpr)
-    ctx.clearRect(0, 0, minimapW, canvasH)
-
-    const drawDetail = lines.length <= MINIMAP_DETAIL_LIMIT
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      const y = i * LINE_H
-
-      if (line.kind === 'added') {
-        ctx.fillStyle = 'rgba(34, 197, 94, 0.5)'
-        ctx.fillRect(0, y, minimapW, LINE_H)
-        ctx.fillStyle = 'rgba(34, 197, 94, 1)'
-        ctx.fillRect(0, y, GUTTER_W, LINE_H)
-      } else if (line.kind === 'removed') {
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'
-        ctx.fillRect(0, y, minimapW, LINE_H)
-        ctx.fillStyle = 'rgba(239, 68, 68, 1)'
-        ctx.fillRect(0, y, GUTTER_W, LINE_H)
-      }
-
-      if (!drawDetail) continue
-
-      const lineTokens = line.kind !== 'removed' ? tokens?.[line.sourceIdx] : null
-      if (lineTokens) {
-        let x = 0
-        for (const token of lineTokens) {
-          ctx.fillStyle = token.style?.color || 'rgba(150, 150, 150, 0.3)'
-          for (const ch of token.content) {
-            if (ch === ' ' || ch === '\t') { x += CHAR_W * (ch === '\t' ? 4 : 1); continue }
-            if (x >= minimapW) break
-            ctx.fillRect(x, y + 0.5, Math.max(CHAR_W * 0.9, 0.8), Math.max(LINE_H - 1, 1))
-            x += CHAR_W
-          }
-          if (x >= minimapW) break
-        }
-      } else if (line.text) {
-        ctx.fillStyle = 'rgba(150, 150, 150, 0.2)'
-        let x = 0
-        for (const ch of line.text) {
-          if (ch === ' ' || ch === '\t') { x += CHAR_W * (ch === '\t' ? 4 : 1); continue }
-          if (x >= minimapW) break
-          ctx.fillRect(x, y + 0.5, Math.max(CHAR_W * 0.9, 0.8), Math.max(LINE_H - 1, 1))
-          x += CHAR_W
-        }
-      }
-    }
+    const idleId = requestIdleCallback(() => {
+      prevDrawRef.current = { lines, tokens, w: minimapW }
+      drawMinimap(canvas, lines, tokens, canvasH, minimapW)
+    }, { timeout: 150 })
+    return () => cancelIdleCallback(idleId)
   }, [lines, tokens, canvasH, minimapW])
 
   const syncViewport = useCallback(() => {

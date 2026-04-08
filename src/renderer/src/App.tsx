@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react'
 import { Sun, Moon, Code, Paintbrush } from 'lucide-react'
-import { LayoutGroup, motion } from 'motion/react'
+import { motion } from 'motion/react'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { CodingLayout } from '@/components/coding/CodingLayout'
@@ -177,6 +177,7 @@ function App(): React.JSX.Element {
     }
   }, [])
 
+
   const hasLeftPanel = showSidebar || (showActivityPanel && activitySide === 'left')
 
   const getActivityMaxWidth = useCallback(() => {
@@ -231,7 +232,7 @@ function App(): React.JSX.Element {
   return (
     <div className="flex h-screen overflow-hidden bg-sidebar text-foreground" style={enterAnimation}>
       <GitAutoRefresh />
-      <LayoutGroup>
+      <>
       {/* Sidebar — hidden in canvas mode */}
       <motion.div
         ref={sidebarRef}
@@ -316,7 +317,7 @@ function App(): React.JSX.Element {
         )}
       </motion.div>
       </div>
-      </LayoutGroup>
+      </>
       <UpdateNotification />
       {import.meta.env.DEV && <DebugPanel />}
     </div>

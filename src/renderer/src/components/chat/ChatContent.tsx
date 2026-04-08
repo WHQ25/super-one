@@ -120,11 +120,16 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     const parent = containerRef.current?.parentElement
     if (!parent) return
     setZoom(computeZoom(parent.getBoundingClientRect().width))
+    let rafId = 0
     const observer = new ResizeObserver((entries) => {
-      setZoom(computeZoom(entries[0]?.contentRect.width ?? 0))
+      cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        const next = computeZoom(entries[0]?.contentRect.width ?? 0)
+        setZoom((prev) => prev === next ? prev : next)
+      })
     })
     observer.observe(parent)
-    return () => observer.disconnect()
+    return () => { cancelAnimationFrame(rafId); observer.disconnect() }
   }, [computeZoom])
 
   useLayoutEffect(() => {

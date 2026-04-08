@@ -1186,6 +1186,8 @@ export const AgentIpcChannels = {
   MINIAPP_UNINSTALL: 'miniapp:uninstall',
   MINIAPP_PACK: 'miniapp:pack',
   MINIAPP_GET_INSTALL_META: 'miniapp:get-install-meta',
+  MINIAPP_GET_PREAPPROVED: 'miniapp:get-preapproved',
+  MINIAPP_SET_PREAPPROVED: 'miniapp:set-preapproved',
 } as const
 
 export interface FileSearchResult {

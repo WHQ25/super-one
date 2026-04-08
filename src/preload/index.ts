@@ -727,8 +727,8 @@ const miniappAPI = {
   preview: (s1appPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_PREVIEW, s1appPath),
 
-  confirmInstall: (tempDir: string, installDir?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, tempDir, installDir),
+  confirmInstall: (tempDir: string, installDir?: string, preapprovedTools?: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, tempDir, installDir, preapprovedTools),
 
   cancelInstall: (tempDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CANCEL_INSTALL, tempDir) as Promise<void>,
@@ -741,6 +741,12 @@ const miniappAPI = {
 
   getInstallMeta: (appId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GET_INSTALL_META, appId) as Promise<MiniAppInstallMeta | null>,
+
+  getPreapproved: (appId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GET_PREAPPROVED, appId) as Promise<string[]>,
+
+  setPreapproved: (appId: string, tools: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_SET_PREAPPROVED, appId, tools) as Promise<void>,
 }
 
 if (process.contextIsolated) {

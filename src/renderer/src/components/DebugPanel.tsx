@@ -42,6 +42,37 @@ const MOCK_INSTALL_UPGRADE: MiniAppPreviewResult = {
   existingVersion: '1.0.0',
 }
 
+const MOCK_INSTALL_WITH_TOOLS: MiniAppPreviewResult = {
+  manifest: {
+    ...MOCK_INSTALL_FULL.manifest,
+    appId: 'debug-tools-app',
+    name: 'Debug Tools App',
+    description: 'An app with both permissions and tools for preapproval testing',
+    toolSlug: 'debug_tools',
+    tools: [
+      { name: 'analyze', description: 'Analyze project files and generate insights', inputSchema: { type: 'object', properties: { path: { type: 'string' } } } },
+      { name: 'render_chart', description: 'Render data as interactive charts', inputSchema: { type: 'object', properties: { data: { type: 'array' } } } },
+      { name: 'export_report', description: 'Export analysis results to various formats', inputSchema: { type: 'object', properties: { format: { type: 'string' } } } },
+    ],
+  },
+  tempDir: '/tmp/debug-mock',
+}
+
+const MOCK_INSTALL_TOOLS_ONLY: MiniAppPreviewResult = {
+  manifest: {
+    appId: 'debug-tools-only',
+    name: 'Tools Only App',
+    version: '1.0.0',
+    description: 'An app with tools but no fs/network permissions',
+    toolSlug: 'tools_only',
+    tools: [
+      { name: 'process', description: 'Process input data and return results', inputSchema: { type: 'object', properties: { input: { type: 'string' } } } },
+      { name: 'summarize', description: 'Summarize content into key points', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } },
+    ],
+  },
+  tempDir: '/tmp/debug-mock',
+}
+
 const MOCK_INSTALL_NO_PERMS: MiniAppPreviewResult = {
   manifest: {
     appId: 'debug-no-perms',
@@ -64,6 +95,18 @@ const DEBUG_TRIGGERS: DebugTrigger[] = [
     label: 'Install Dialog (Upgrade)',
     description: 'Version 1.0.0 → 2.0.0',
     action: () => useMiniAppStore.setState({ pendingInstall: MOCK_INSTALL_UPGRADE }),
+  },
+  {
+    id: 'install-dialog-tools',
+    label: 'Install Dialog (Perms + Tools)',
+    description: 'Permissions + tool preapproval tabs',
+    action: () => useMiniAppStore.setState({ pendingInstall: MOCK_INSTALL_WITH_TOOLS }),
+  },
+  {
+    id: 'install-dialog-tools-only',
+    label: 'Install Dialog (Tools Only)',
+    description: 'Tools only, no fs/network permissions',
+    action: () => useMiniAppStore.setState({ pendingInstall: MOCK_INSTALL_TOOLS_ONLY }),
   },
   {
     id: 'install-dialog-no-perms',

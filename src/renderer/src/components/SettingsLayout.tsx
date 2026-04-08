@@ -1,4 +1,4 @@
-import { ArrowLeft, Blocks, Bot, Globe, Palette, Puzzle, Server, Smartphone } from 'lucide-react'
+import { ArrowLeft, Blocks, Bot, Globe, LayoutGrid, Palette, Puzzle, Server, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
 import { AgentsPage } from './AgentsPage'
@@ -8,11 +8,16 @@ import { PluginsPage } from './PluginsPage'
 import { PreferencesPage } from './PreferencesPage'
 import { ProvidersPage } from './ProvidersPage'
 import { RemotePage } from './RemotePage'
+import { AppsSettingsPage } from './AppsSettingsPage'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { SettingsProvider } from '../../../shared/agent-types'
 
-const allTabs = [
+const globalTabs = [
+  { id: 'apps' as const, label: 'Mini Apps', icon: LayoutGrid },
+]
+
+const providerTabs = [
   { id: 'providers' as const, label: 'Providers', icon: Globe },
   { id: 'agents' as const, label: 'Subagents', icon: Bot },
   { id: 'skills' as const, label: 'Skills', icon: Puzzle },
@@ -35,9 +40,9 @@ export function SettingsLayout() {
   const setSettingsProvider = useAppStore((s) => s.setSettingsProvider)
   const navigateTo = useAppStore((s) => s.navigateTo)
 
-  const visibleTabs = settingsProvider === 'codex'
-    ? allTabs.filter((t) => codexTabs.has(t.id))
-    : allTabs
+  const visibleProviderTabs = settingsProvider === 'codex'
+    ? providerTabs.filter((t) => codexTabs.has(t.id))
+    : providerTabs
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -56,7 +61,7 @@ export function SettingsLayout() {
         <button
           onClick={() => setSettingsTab('remote')}
           className={cn(
-            'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors mb-4',
+            'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors mb-2',
             settingsTab === 'remote'
               ? 'bg-accent text-accent-foreground'
               : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -66,19 +71,38 @@ export function SettingsLayout() {
           Remote Control
         </button>
 
-        {/* Provider toggle */}
-        <Tabs value={settingsProvider} onValueChange={(v) => setSettingsProvider(v as SettingsProvider)} className={cn('mb-4', settingsTab === 'remote' && 'pointer-events-none opacity-40')}>
-          <TabsList className="border-0 bg-muted">
-            {providers.map((p) => (
-              <TabsTrigger key={p.id} value={p.id} className="py-1">
-                {p.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <nav className="flex flex-col gap-1 mb-3">
+          {globalTabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setSettingsTab(tab.id)}
+              className={cn(
+                'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+                settingsTab === tab.id
+                  ? 'bg-accent text-accent-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              <tab.icon className="size-4" />
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="border-t border-border pt-3 mb-3">
+          <Tabs value={settingsProvider} onValueChange={(v) => setSettingsProvider(v as SettingsProvider)} className={cn(settingsTab === 'remote' && 'pointer-events-none opacity-40')}>
+            <TabsList className="border-0 bg-muted">
+              {providers.map((p) => (
+                <TabsTrigger key={p.id} value={p.id} className="py-1">
+                  {p.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
 
         <nav className="flex flex-col gap-1">
-          {visibleTabs.map((tab) => (
+          {visibleProviderTabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setSettingsTab(tab.id)}
@@ -103,6 +127,7 @@ export function SettingsLayout() {
         {settingsTab === 'skills' && <SkillsPage />}
         {settingsTab === 'mcp' && <McpPage />}
         {settingsTab === 'plugins' && <PluginsPage />}
+        {settingsTab === 'apps' && <AppsSettingsPage />}
         {settingsTab === 'preferences' && <PreferencesPage />}
         {settingsTab === 'remote' && <RemotePage />}
       </div>

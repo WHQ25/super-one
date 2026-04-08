@@ -23,7 +23,7 @@ vi.mock('../git-run', () => ({ gitRun: vi.fn() }))
 vi.mock('../path-security', () => ({ sanitizeGitRef: vi.fn((s: string) => s) }))
 vi.mock('../git-status-utils', () => ({ parseGitStatusFiles: vi.fn(() => []) }))
 
-import { discoverProjectApps, detectStandaloneApp, createMiniApp, getProjectAppsDir } from './miniapp-service'
+import { discoverProjectApps, detectStandaloneApp, createMiniApp, getProjectAppsDir, setAllowedDirectories, handleFsRequest } from './miniapp-service'
 
 function mockManifest(appId: string, name: string) {
   return { appId, name, tools: [] }
@@ -227,4 +227,33 @@ describe('createMiniApp', () => {
     })
   })
 
+})
+
+describe('.superone directory protection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('blocks project scope from accessing .superone', async () => {
+    setAllowedDirectories('test-app', [{ path: '/projects/my-app', access: 'read' }])
+    mockReadFile.mockResolvedValue('secret')
+    await expect(
+      handleFsRequest('test-app', 'readFile', { path: '.superone/apps/other/manifest.json' })
+    ).rejects.toThrow('.superone is a protected directory')
+  })
+
+  it('blocks user scope from accessing .superone', async () => {
+    setAllowedDirectories('test-app', [{ path: '/mock-home', access: 'read' }])
+    mockReadFile.mockResolvedValue('secret')
+    await expect(
+      handleFsRequest('test-app', 'readFile', { path: '.superone/apps/other/data/file.txt' })
+    ).rejects.toThrow('.superone is a protected directory')
+  })
+
+  it('allows app scope data dir within .superone', async () => {
+    setAllowedDirectories('test-app', [{ path: '/projects/my-app/.superone/apps/test-app/data', access: 'readwrite' }])
+    mockReadFile.mockResolvedValue('ok')
+    const result = await handleFsRequest('test-app', 'readFile', { path: 'test.txt' })
+    expect(result).toBe('ok')
+  })
 })

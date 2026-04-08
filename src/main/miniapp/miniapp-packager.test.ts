@@ -39,12 +39,14 @@ describe('integrity', () => {
       expect(Object.keys(integrity.files)).toHaveLength(2)
     })
 
-    it('should exclude integrity.json and install.json', async () => {
+    it('should exclude integrity.json, install.json, and preapproved.json', async () => {
       await writeFile(join(appDir, 'integrity.json'), '{}')
       await writeFile(join(appDir, 'install.json'), '{}')
+      await writeFile(join(appDir, 'preapproved.json'), '{"tools":["render"]}')
       const integrity = await generateIntegrity(appDir)
       expect(integrity.files).not.toHaveProperty('integrity.json')
       expect(integrity.files).not.toHaveProperty('install.json')
+      expect(integrity.files).not.toHaveProperty('preapproved.json')
     })
 
     it('should handle nested directories', async () => {

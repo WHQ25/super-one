@@ -7,7 +7,7 @@ import log from '../logger'
 import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppManifest } from '../../shared/miniapp-types'
 import { AgentIpcChannels } from '../../shared/agent-types'
 import { createMiniApp, readManifest, cacheAppBasePath, discoverProjectApps, detectStandaloneApp, getProjectAppsDir } from '../miniapp/miniapp-service'
-import { packApp } from '../miniapp/miniapp-packager'
+import { packApp, getPreapprovedByPath } from '../miniapp/miniapp-packager'
 import overviewMd from './guides/overview.md?raw'
 import standardMd from './guides/standard.md?raw'
 import inchatMd from './guides/inchat.md?raw'
@@ -53,6 +53,7 @@ const registeredTools = new Map<string, RegisteredTool>()
 const pendingCalls = new Map<string, PendingCall>()
 const appToolDefs = new Map<string, { toolSlug: string; tools: MiniAppToolDefinition[] }>()
 const appReadyGates = new Map<string, GateEntry>()
+const preapprovedTools = new Set<string>()
 
 interface InChatAppDef {
   appId: string
@@ -257,6 +258,33 @@ export function registerAppTools(appId: string, toolSlug: string, tools: MiniApp
 
   registerToolsOnServer(appId, toolSlug, tools)
   mcpServer.sendToolListChanged()
+}
+
+export async function loadPreapprovedTools(appId: string, toolSlug: string, basePath: string): Promise<void> {
+  const tools = await getPreapprovedByPath(basePath)
+  for (const t of tools) {
+    preapprovedTools.add(`${toolSlug}__${t}`)
+  }
+}
+
+export function updatePreapprovedTools(appId: string, tools: string[]): void {
+  const entry = appToolDefs.get(appId)
+  if (!entry) return
+  const prefix = `${entry.toolSlug}__`
+  for (const name of preapprovedTools) {
+    if (name.startsWith(prefix)) preapprovedTools.delete(name)
+  }
+  for (const t of tools) {
+    preapprovedTools.add(`${prefix}${t}`)
+  }
+}
+
+const MCP_SUPERONE_PREFIX = 'mcp__superone__'
+
+export function isToolPreapproved(toolName: string): boolean {
+  if (!toolName.startsWith(MCP_SUPERONE_PREFIX)) return false
+  const namespacedName = toolName.slice(MCP_SUPERONE_PREFIX.length)
+  return preapprovedTools.has(namespacedName)
 }
 
 export function unregisterAppTools(appId: string): void {

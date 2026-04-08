@@ -11,6 +11,7 @@ import type { MiniAppInstallMeta, MiniAppInstallResult, MiniAppIntegrity, MiniAp
 
 const INTEGRITY_FILE = 'integrity.json'
 const INSTALL_META_FILE = 'install.json'
+const PREAPPROVED_FILE = 'preapproved.json'
 const S1APP_EXT = '.s1app'
 
 const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
@@ -38,7 +39,7 @@ export async function generateIntegrity(appDir: string): Promise<MiniAppIntegrit
   const allFiles = await collectFiles(appDir)
   const files: Record<string, string> = {}
   for (const rel of allFiles) {
-    if (rel === INTEGRITY_FILE || rel === INSTALL_META_FILE) continue
+    if (rel === INTEGRITY_FILE || rel === INSTALL_META_FILE || rel === PREAPPROVED_FILE) continue
     const data = await readFile(join(appDir, rel))
     files[rel] = sha256(data)
   }
@@ -69,7 +70,7 @@ export async function verifyIntegrity(appDir: string): Promise<{ ok: boolean; er
 
   const currentFiles = await collectFiles(appDir)
   for (const rel of currentFiles) {
-    if (rel === INTEGRITY_FILE || rel === INSTALL_META_FILE) continue
+    if (rel === INTEGRITY_FILE || rel === INSTALL_META_FILE || rel === PREAPPROVED_FILE) continue
     if (!(rel in integrity.files)) {
       errors.push(`unexpected file: ${rel}`)
     }
@@ -164,7 +165,7 @@ export async function previewApp(s1appPath: string): Promise<MiniAppPreviewResul
   }
 }
 
-export async function confirmInstall(tempDir: string, installDir?: string): Promise<MiniAppInstallResult> {
+export async function confirmInstall(tempDir: string, installDir?: string, preapprovedTools?: string[]): Promise<MiniAppInstallResult> {
   try {
     const raw = await readFile(join(tempDir, 'manifest.json'), 'utf-8')
     const manifest = JSON.parse(raw) as MiniAppManifest
@@ -194,6 +195,9 @@ export async function confirmInstall(tempDir: string, installDir?: string): Prom
       integrityVerified: true,
     }
     await writeFile(join(targetDir, INSTALL_META_FILE), JSON.stringify(meta, null, 2))
+    if (preapprovedTools?.length) {
+      await writeFile(join(targetDir, PREAPPROVED_FILE), JSON.stringify({ tools: preapprovedTools }, null, 2))
+    }
 
     log.info('[miniapp] installed %s@%s → %s', manifest.appId, manifest.version, targetDir)
 
@@ -226,6 +230,32 @@ export async function getInstallMeta(appId: string): Promise<MiniAppInstallMeta 
     return JSON.parse(raw)
   } catch {
     return null
+  }
+}
+
+export async function getPreapproved(appId: string): Promise<string[]> {
+  return getPreapprovedByPath(join(userAppsDir(), appId))
+}
+
+export async function getPreapprovedByPath(basePath: string): Promise<string[]> {
+  try {
+    const raw = await readFile(join(basePath, PREAPPROVED_FILE), 'utf-8')
+    const data = JSON.parse(raw)
+    return Array.isArray(data?.tools) ? data.tools : []
+  } catch {
+    return []
+  }
+}
+
+export async function setPreapproved(appId: string, tools: string[]): Promise<void> {
+  return setPreapprovedByPath(join(userAppsDir(), appId), tools)
+}
+
+export async function setPreapprovedByPath(basePath: string, tools: string[]): Promise<void> {
+  if (tools.length === 0) {
+    await rm(join(basePath, PREAPPROVED_FILE), { force: true })
+  } else {
+    await writeFile(join(basePath, PREAPPROVED_FILE), JSON.stringify({ tools }, null, 2))
   }
 }
 

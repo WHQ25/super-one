@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { useAppStore } from './app'
+import { openMiniAppTab } from '@/components/activity/activity-panel-api'
 import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult } from '../../../shared/miniapp-types'
 
 interface MiniAppStoreState {
@@ -11,7 +13,7 @@ interface MiniAppStoreState {
   fetchApps: (projectDir?: string) => Promise<void>
   refreshApps: (projectDir?: string) => Promise<void>
   previewInstall: (s1appPath: string) => Promise<MiniAppPreviewResult>
-  confirmInstall: (installDir?: string) => Promise<MiniAppInstallResult>
+  confirmInstall: (installDir?: string, preapprovedTools?: string[]) => Promise<MiniAppInstallResult>
   cancelInstall: () => Promise<void>
   uninstallApp: (appId: string) => Promise<void>
   requestOpenInCanvas: (appId: string) => void
@@ -20,7 +22,30 @@ interface MiniAppStoreState {
   closeFullscreenApp: () => Promise<void>
 }
 
-export const useMiniAppStore = create<MiniAppStoreState>((set, get) => ({
+export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
+  if (typeof window !== 'undefined' && window.miniapp?.onDevAppReady) {
+    window.miniapp.onDevAppReady(async (projectDir) => {
+      const dir = get()._lastProjectDir ?? projectDir
+      const [, devApps] = await Promise.all([
+        get().refreshApps(dir),
+        window.miniapp.detectDev(projectDir),
+      ])
+      for (const entry of devApps) {
+        const type = entry.manifest.type ?? 'panel'
+        if (type === 'sidebar') {
+          useAppStore.getState().setSidebarTab(`miniapp:${entry.id}`)
+        } else if (type === 'fullscreen') {
+          useAppStore.getState().setLayoutMode('canvas')
+          get().requestOpenInCanvas(entry.id)
+        } else if (type === 'panel') {
+          window.miniapp.open(entry.id, projectDir)
+          openMiniAppTab(entry.id, entry.manifest.name)
+        }
+      }
+    })
+  }
+
+  return {
   apps: [],
   loaded: false,
   _lastProjectDir: undefined,
@@ -42,11 +67,11 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => ({
     set({ pendingInstall: preview })
     return preview
   },
-  confirmInstall: async (installDir?: string) => {
+  confirmInstall: async (installDir?: string, preapprovedTools?: string[]) => {
     const pending = get().pendingInstall
     if (!pending) throw new Error('No pending install')
     set({ pendingInstall: null })
-    const result = await window.miniapp.confirmInstall(pending.tempDir, installDir)
+    const result = await window.miniapp.confirmInstall(pending.tempDir, installDir, preapprovedTools)
     await get().refreshApps(get()._lastProjectDir)
     return result
   },
@@ -79,4 +104,4 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => ({
     await window.miniapp.close(current.appId)
     set({ fullscreenApp: null })
   },
-}))
+}})

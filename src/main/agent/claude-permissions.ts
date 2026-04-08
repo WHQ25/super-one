@@ -2,6 +2,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import log from '../logger'
+import { isToolPreapproved } from '../mcp/superone-mcp-server'
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, QuestionAnnotations } from '../../shared/agent-types'
 
@@ -61,6 +62,10 @@ export function createCanUseTool(
 
 
     if (toolName.startsWith('mcp__widget__') || toolName === 'mcp__superone__read_miniapp_guide') {
+      return { behavior: 'allow' as const, updatedInput: input, toolUseID: context.toolUseID }
+    }
+
+    if (isToolPreapproved(toolName)) {
       return { behavior: 'allow' as const, updatedInput: input, toolUseID: context.toolUseID }
     }
 

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, memo } from 'react'
+import { useEffect, useRef, memo } from 'react'
 import { MiniAppView, type MiniAppViewHandle } from '@/components/miniapp/MiniAppView'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -13,11 +13,6 @@ export const CanvasPanel = memo(function CanvasPanel() {
   const closeFullscreenApp = useMiniAppStore((s) => s.closeFullscreenApp)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const devFrameRef = useRef<MiniAppViewHandle>(null)
-
-  const refreshApps = useCallback(() => {
-    useMiniAppStore.setState({ loaded: false })
-    fetchApps(currentFolder ?? undefined)
-  }, [fetchApps, currentFolder])
 
   useEffect(() => {
     fetchApps(currentFolder ?? undefined)
@@ -41,28 +36,6 @@ export const CanvasPanel = memo(function CanvasPanel() {
     window.addEventListener('keydown', handleKeyDown, true)
     return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [openApp])
-
-  const reloadOpenDevApps = useCallback(
-    async (projectDir: string) => {
-      const entries = await window.miniapp.detectDev(projectDir)
-      for (const entry of entries) {
-        if (openApp?.appId === entry.id) {
-          devFrameRef.current?.reload()
-        }
-      }
-    },
-    [openApp],
-  )
-
-  useEffect(() => {
-    const cleanup = window.miniapp.onDevAppReady((projectDir) => {
-      if (projectDir === currentFolder) {
-        reloadOpenDevApps(projectDir)
-        refreshApps()
-      }
-    })
-    return cleanup
-  }, [currentFolder, reloadOpenDevApps, refreshApps])
 
   const pendingOpenAppId = useMiniAppStore((s) => s.pendingOpenAppId)
   useEffect(() => {

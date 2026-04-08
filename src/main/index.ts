@@ -11,8 +11,8 @@ import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, detectStandaloneApp, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent } from './miniapp/miniapp-service'
 import { generateBridgeScript } from './miniapp/miniapp-bridge'
-import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta } from './miniapp/miniapp-packager'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp } from './mcp/superone-mcp-server'
+import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools } from './mcp/superone-mcp-server'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
@@ -282,7 +282,7 @@ function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Arr
     switch (entry.scope) {
       case 'project': return [{ path: join(projectDir, entry.path!), access: entry.access as 'read' | 'readwrite' } as const]
       case 'user': return [{ path: join(homedir(), entry.path!), access: entry.access as 'read' | 'readwrite' } as const]
-      case 'app': return [{ path: basePath, access: 'readwrite' as const }]
+      case 'app': return [{ path: join(basePath, 'data'), access: 'readwrite' as const }]
       default: return []
     }
   })
@@ -1403,7 +1403,9 @@ function registerIpcHandlers(): void {
     const manifest = await readManifest(basePath)
     if (!manifest) throw new Error(`App not found: ${appId}`)
     setAppFsPermissions(appId, manifest, projectDir, basePath)
-    registerAppTools(appId, manifest.toolSlug ?? appId, manifest.tools ?? [])
+    const toolSlug = manifest.toolSlug ?? appId
+    registerAppTools(appId, toolSlug, manifest.tools ?? [])
+    loadPreapprovedTools(appId, toolSlug, basePath)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string) => {
@@ -1463,8 +1465,8 @@ function registerIpcHandlers(): void {
     return previewApp(s1appPath)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, async (_e, tempDir: string, installDir?: string) => {
-    return confirmInstall(tempDir, installDir)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, async (_e, tempDir: string, installDir?: string, preapprovedTools?: string[]) => {
+    return confirmInstall(tempDir, installDir, preapprovedTools)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CANCEL_INSTALL, async (_e, tempDir: string) => {
@@ -1481,6 +1483,17 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_GET_INSTALL_META, async (_e, appId: string) => {
     return getInstallMeta(appId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_GET_PREAPPROVED, async (_e, appId: string) => {
+    const basePath = getAppBasePath(appId)
+    return getPreapprovedByPath(basePath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_SET_PREAPPROVED, async (_e, appId: string, tools: string[]) => {
+    const basePath = getAppBasePath(appId)
+    await setPreapprovedByPath(basePath, tools)
+    updatePreapprovedTools(appId, tools)
   })
 }
 

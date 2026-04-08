@@ -1,13 +1,23 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Globe, HardDrive, FolderOpen, Package, ArrowUpCircle, Link, Check, User, Folder } from 'lucide-react'
+import { Globe, HardDrive, FolderOpen, Package, ArrowUpCircle, Link, Check, Wrench } from 'lucide-react'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useAppStore } from '@/stores/app'
 import { cn } from '@/lib/utils'
 import type { MiniAppFsEntry } from '../../../../shared/miniapp-types'
 
 type InstallTarget = 'personal' | 'project'
+type ReviewTab = 'permissions' | 'tools'
+
+function ApprovalCheck({ checked }: { checked: boolean }) {
+  return (
+    <div className={cn('flex size-4 shrink-0 items-center justify-center rounded border transition-colors', checked ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-muted-foreground/30')}>
+      {checked && <Check className="size-3" />}
+    </div>
+  )
+}
 
 function formatFsLabel(entry: MiniAppFsEntry): { label: string; detail: string } {
   switch (entry.scope) {
@@ -16,7 +26,7 @@ function formatFsLabel(entry: MiniAppFsEntry): { label: string; detail: string }
     case 'user':
       return { label: 'Home', detail: `~/${entry.path}` }
     case 'app':
-      return { label: 'App', detail: 'Own storage' }
+      return { label: 'App', detail: 'Own data storage' }
   }
 }
 
@@ -32,21 +42,29 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const [approved, setApproved] = useState<Set<string>>(new Set())
   const [installTarget, setInstallTarget] = useState<InstallTarget>('personal')
-  useEffect(() => { setApproved(new Set()); setInstallTarget('personal') }, [pendingInstall])
+  const [activeTab, setActiveTab] = useState<ReviewTab>('permissions')
+  useEffect(() => { setApproved(new Set()); setInstallTarget('personal'); setActiveTab('permissions') }, [pendingInstall])
 
   const manifest = pendingInstall?.manifest
   const existingVersion = pendingInstall?.existingVersion
   const fsEntries = manifest?.permissions?.fs ?? []
   const networkEntries = manifest?.permissions?.network ?? []
+  const tools = manifest?.tools ?? []
   const hasPermissions = fsEntries.length > 0 || networkEntries.length > 0
+  const hasTools = tools.length > 0
   const isUpgrade = !!existingVersion && existingVersion !== manifest?.version
 
-  const totalPermissions = fsEntries.length + networkEntries.length
-  const allApproved = !hasPermissions || approved.size >= totalPermissions
   const permissionKeys = useMemo(() => [
     ...fsEntries.map((_, i) => `fs:${i}`),
     ...networkEntries.map((e) => `net:${e.domain}`),
   ], [fsEntries, networkEntries])
+
+  const toolKeys = useMemo(() => tools.map((_, i) => `tool:${i}`), [tools])
+  const allPermissionsApproved = !hasPermissions || permissionKeys.every((k) => approved.has(k))
+
+  const preapprovedToolNames = useMemo(() => {
+    return tools.filter((_, i) => approved.has(`tool:${i}`)).map((t) => t.name)
+  }, [tools, approved])
 
   const toggleApproval = (key: string) => {
     setApproved((prev) => {
@@ -57,12 +75,13 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
     })
   }
 
-  const toggleAll = () => {
-    if (allApproved) {
-      setApproved(new Set())
-    } else {
-      setApproved(new Set(permissionKeys))
-    }
+  const toggleAllKeys = (keys: string[]) => {
+    setApproved((prev) => {
+      const next = new Set(prev)
+      const allChecked = keys.every((k) => next.has(k))
+      for (const k of keys) allChecked ? next.delete(k) : next.add(k)
+      return next
+    })
   }
 
   if (!pendingInstall || !manifest) return null
@@ -72,7 +91,7 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
       const installDir = installTarget === 'project' && currentFolder
         ? `${currentFolder}/.superone/apps`
         : undefined
-      const result = await confirmInstall(installDir)
+      const result = await confirmInstall(installDir, preapprovedToolNames.length > 0 ? preapprovedToolNames : undefined)
       onInstalled(result.entry.manifest.name, result.upgraded)
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Install failed')
@@ -84,6 +103,7 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
   }
 
   const folderName = currentFolder?.split('/').pop()
+  const showTabs = hasPermissions && hasTools
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) handleCancel() }}>
@@ -133,9 +153,7 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
                   <div className="font-medium">Personal</div>
                   <div className="text-xs text-muted-foreground">All projects</div>
                 </div>
-                <div className={cn('flex size-4 shrink-0 items-center justify-center rounded border transition-colors', installTarget === 'personal' ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-muted-foreground/30')}>
-                  {installTarget === 'personal' && <Check className="size-3" />}
-                </div>
+                <ApprovalCheck checked={installTarget === 'personal'} />
               </button>
               <button
                 onClick={() => currentFolder && setInstallTarget('project')}
@@ -149,75 +167,61 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
                   <div className="font-medium">Project</div>
                   <div className="truncate text-xs text-muted-foreground">{folderName ?? 'No project open'}</div>
                 </div>
-                <div className={cn('flex size-4 shrink-0 items-center justify-center rounded border transition-colors', installTarget === 'project' ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-muted-foreground/30')}>
-                  {installTarget === 'project' && <Check className="size-3" />}
-                </div>
+                <ApprovalCheck checked={installTarget === 'project'} />
               </button>
             </div>
           </div>
 
-          {hasPermissions && (
-            <div className="space-y-3">
-              <div>
-                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Permissions</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">Review and approve each permission to continue. You can revoke permissions by uninstalling the app.</div>
-              </div>
-
-              <button onClick={toggleAll} className="flex w-full items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                <div className={cn('flex size-4 shrink-0 items-center justify-center rounded border transition-colors', allApproved ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-muted-foreground/30')}>
-                  {allApproved && <Check className="size-3" />}
-                </div>
-                Allow all permissions
-              </button>
-
-              <div className="max-h-80 space-y-1.5 overflow-y-auto">
-                {fsEntries.map((entry, i) => {
-                  const key = permissionKeys[i]
-                  const isApproved = approved.has(key)
-                  const { label, detail } = formatFsLabel(entry)
-                  const accessLabel = entry.scope === 'app' ? 'Read & Write' : entry.access === 'read' ? 'Read only' : 'Read & Write'
-                  return (
-                    <button key={key} onClick={() => toggleApproval(key)} className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50">
-                      {entry.scope === 'project' ? (
-                        <FolderOpen className="size-5 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <HardDrive className="size-5 shrink-0 text-muted-foreground" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 text-sm">
-                          <span className="font-medium">{label}</span>
-                          <span className="text-muted-foreground">{detail}</span>
-                          <span className={cn('inline-flex h-4 shrink-0 items-center rounded px-1 text-[10px] leading-none', entry.access === 'read' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400')}>{accessLabel}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">{entry.reason}</div>
-                      </div>
-                      <div className={cn('flex size-4 shrink-0 items-center justify-center rounded border transition-colors', isApproved ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-muted-foreground/30')}>
-                        {isApproved && <Check className="size-3" />}
-                      </div>
-                    </button>
-                  )
-                })}
-                {networkEntries.map((entry) => {
-                  const key = `net:${entry.domain}`
-                  const isApproved = approved.has(key)
-                  return (
-                    <button key={key} onClick={() => toggleApproval(key)} className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50">
-                      <Globe className="size-5 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-mono">{entry.domain}</div>
-                        <div className="text-xs text-muted-foreground">{entry.reason}</div>
-                      </div>
-                      <div className={cn('flex size-4 shrink-0 items-center justify-center rounded border transition-colors', isApproved ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-muted-foreground/30')}>
-                        {isApproved && <Check className="size-3" />}
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+          {(hasPermissions || hasTools) && (
+            showTabs ? (
+              <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ReviewTab)}>
+                <TabsList className="w-full">
+                  <TabsTrigger value="permissions" className="flex-1">Permissions</TabsTrigger>
+                  <TabsTrigger value="tools" className="flex-1">Tools</TabsTrigger>
+                </TabsList>
+                <TabsContent value="permissions" className="mt-3">
+                  <PermissionsSection
+                    fsEntries={fsEntries}
+                    networkEntries={networkEntries}
+                    permissionKeys={permissionKeys}
+                    approved={approved}
+                    allApproved={allPermissionsApproved}
+                    onToggle={toggleApproval}
+                    onToggleAll={() => toggleAllKeys(permissionKeys)}
+                  />
+                </TabsContent>
+                <TabsContent value="tools" className="mt-3">
+                  <ToolsSection
+                    tools={tools}
+                    toolKeys={toolKeys}
+                    approved={approved}
+                    onToggle={toggleApproval}
+                    onToggleAll={() => toggleAllKeys(toolKeys)}
+                  />
+                </TabsContent>
+              </Tabs>
+            ) : hasPermissions ? (
+              <PermissionsSection
+                fsEntries={fsEntries}
+                networkEntries={networkEntries}
+                permissionKeys={permissionKeys}
+                approved={approved}
+                allApproved={allPermissionsApproved}
+                onToggle={toggleApproval}
+                onToggleAll={() => toggleAllKeys(permissionKeys)}
+              />
+            ) : (
+              <ToolsSection
+                tools={tools}
+                toolKeys={toolKeys}
+                approved={approved}
+                onToggle={toggleApproval}
+                onToggleAll={() => toggleAllKeys(toolKeys)}
+              />
+            )
           )}
 
-          {!hasPermissions && (
+          {!hasPermissions && !hasTools && (
             <div className="text-center text-sm text-muted-foreground py-2">
               This app requires no special permissions.
             </div>
@@ -226,11 +230,131 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
 
         <DialogFooter>
           <Button variant="outline" onClick={handleCancel}>Cancel</Button>
-          <Button onClick={handleConfirm} disabled={!allApproved}>
+          <Button onClick={handleConfirm} disabled={!allPermissionsApproved}>
             {isUpgrade ? 'Upgrade' : 'Install'}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function PermissionsSection({
+  fsEntries,
+  networkEntries,
+  permissionKeys,
+  approved,
+  allApproved,
+  onToggle,
+  onToggleAll,
+}: {
+  fsEntries: MiniAppFsEntry[]
+  networkEntries: { domain: string; reason: string }[]
+  permissionKeys: string[]
+  approved: Set<string>
+  allApproved: boolean
+  onToggle: (key: string) => void
+  onToggleAll: () => void
+}) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Permissions</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">Review and approve each permission to continue.</div>
+      </div>
+
+      <button onClick={onToggleAll} className="flex w-full items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
+        <ApprovalCheck checked={allApproved} />
+        Allow all permissions
+      </button>
+
+      <div className="max-h-80 space-y-1.5 overflow-y-auto">
+        {fsEntries.map((entry, i) => {
+          const key = permissionKeys[i]
+          const isApproved = approved.has(key)
+          const { label, detail } = formatFsLabel(entry)
+          const accessLabel = entry.scope === 'app' ? 'Read & Write' : entry.access === 'read' ? 'Read only' : 'Read & Write'
+          return (
+            <button key={key} onClick={() => onToggle(key)} className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50">
+              {entry.scope === 'project' ? (
+                <FolderOpen className="size-5 shrink-0 text-muted-foreground" />
+              ) : (
+                <HardDrive className="size-5 shrink-0 text-muted-foreground" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-sm">
+                  <span className="font-medium">{label}</span>
+                  <span className="text-muted-foreground">{detail}</span>
+                  <span className={cn('inline-flex h-4 shrink-0 items-center rounded px-1 text-[10px] leading-none', entry.access === 'read' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400')}>{accessLabel}</span>
+                </div>
+                <div className="text-xs text-muted-foreground">{entry.reason}</div>
+              </div>
+              <ApprovalCheck checked={isApproved} />
+            </button>
+          )
+        })}
+        {networkEntries.map((entry) => {
+          const key = `net:${entry.domain}`
+          const isApproved = approved.has(key)
+          return (
+            <button key={key} onClick={() => onToggle(key)} className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50">
+              <Globe className="size-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-mono">{entry.domain}</div>
+                <div className="text-xs text-muted-foreground">{entry.reason}</div>
+              </div>
+              <ApprovalCheck checked={isApproved} />
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ToolsSection({
+  tools,
+  toolKeys,
+  approved,
+  onToggle,
+  onToggleAll,
+}: {
+  tools: { name: string; description: string }[]
+  toolKeys: string[]
+  approved: Set<string>
+  onToggle: (key: string) => void
+  onToggleAll: () => void
+}) {
+  const allToolsApproved = toolKeys.every((k) => approved.has(k))
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tool Preapproval</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">Pre-approve tools to skip permission prompts when the agent uses them. You can change this later in Settings.</div>
+      </div>
+
+      <button onClick={onToggleAll} className="flex w-full items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
+        <ApprovalCheck checked={allToolsApproved} />
+        Pre-approve all tools
+      </button>
+
+      <div className="max-h-80 space-y-1.5 overflow-y-auto">
+        {tools.map((tool, i) => {
+          const key = toolKeys[i]
+          const isApproved = approved.has(key)
+          return (
+            <button key={key} onClick={() => onToggle(key)} className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50">
+              <Wrench className="size-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-mono">{tool.name}</div>
+                <div className="text-xs text-muted-foreground">{tool.description}</div>
+              </div>
+              <ApprovalCheck checked={isApproved} />
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }

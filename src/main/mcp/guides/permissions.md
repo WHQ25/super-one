@@ -23,7 +23,7 @@ Mini-apps are sandboxed by default with no filesystem or network access. Add per
 |-------|------------|----------|
 | `project` | `<projectDir>/<path>` | `path` + `access` |
 | `user` | `~/<path>` | `path` + `access` |
-| `app` | App's install directory | Nothing (always readwrite) |
+| `app` | App's data directory (`<appDir>/data/`) | Nothing (always readwrite) |
 
 ### Access Levels
 

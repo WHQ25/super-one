@@ -92,10 +92,14 @@ function clearWatchersForApp(appId: string): void {
 }
 
 function resolveSafePathMulti(dirs: AllowedDir[], relativePath: string): { resolved: string; access: MiniAppFsAccess } {
+  const superoneSeg = `${sep}.superone${sep}`
   for (const dir of dirs) {
     const resolved = resolve(dir.path, relativePath)
     const normalizedBase = dir.path.endsWith(sep) ? dir.path : dir.path + sep
     if (resolved.startsWith(normalizedBase) || resolved === dir.path) {
+      if (resolved.includes(superoneSeg) && !dir.path.includes(superoneSeg)) {
+        throw new Error('Access denied: .superone is a protected directory')
+      }
       return { resolved, access: dir.access }
     }
   }

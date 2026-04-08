@@ -1767,7 +1767,7 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.MCP_TOGGLE_CONFIG, async (_event, projectPath: string, name: string, disabled: boolean, scope: ResourceScope) => {
-      toggleMcpConfig(name, disabled, scope, projectPath)
+      if (scope !== 'claudeai') toggleMcpConfig(name, disabled, scope, projectPath)
       try {
         await this.getAgent(projectPath).toggleMcpServer(name, !disabled)
         await this.getAgent(projectPath).refreshSession()
@@ -1777,6 +1777,13 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.MCP_CHECK_SERVERS, async (_event, projectPath: string) => {
       const configs = listMcpConfigs(projectPath)
       const result = await checkMcpServers(configs)
+      try {
+        const sdkStatus = await this.getAgent(projectPath).getMcpServerStatus()
+        const claudeaiServers = sdkStatus.filter((s) => s.scope === 'claudeai')
+        if (claudeaiServers.length > 0) {
+          result.status.push(...claudeaiServers)
+        }
+      } catch (err) { log.debug('[agent] claudeai MCP status fetch skipped:', err) }
       const connectedNames = new Set(result.status.filter((s) => s.status === 'connected').map((s) => s.name))
       const connectedMeta = Object.fromEntries(
         Object.entries(result.meta).filter(([name]) => connectedNames.has(name))

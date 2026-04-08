@@ -584,6 +584,106 @@ function LibraryView({ onClose }: { onClose: () => void }) {
   )
 }
 
+function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onToggle: (name: string, disabled: boolean) => void }) {
+  const { selectMcp } = useSettingsStore()
+  const isDisabled = server.status === 'disabled'
+  const isConnected = server.status === 'connected'
+  const tools = server.tools ?? []
+
+  return (
+    <div className="mx-auto max-w-2xl">
+      <div className="mb-6">
+        <button
+          onClick={() => selectMcp(null)}
+          className="mb-3 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="size-3" />
+          Back
+        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-base font-medium uppercase text-muted-foreground">
+            {server.name[0]}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold">{server.name}</h2>
+              <span className={cn('size-2 rounded-full', isConnected ? 'bg-green-500' : 'bg-red-500')} />
+            </div>
+            <span className="text-xs text-muted-foreground">claude.ai</span>
+          </div>
+          <Switch checked={!isDisabled} onCheckedChange={(checked) => onToggle(server.name, !checked)} />
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card p-4">
+        <h3 className="mb-3 text-sm font-medium">
+          Tools
+          {server.toolCount != null && (
+            <span className="ml-2 text-xs text-muted-foreground">({server.toolCount})</span>
+          )}
+        </h3>
+        {tools.length > 0 ? (
+          <div className="space-y-2">
+            {tools.map((tool) => (
+              <div key={tool.name} className="rounded-md border border-border px-3 py-2">
+                <p className="text-sm font-medium font-mono">{tool.name}</p>
+                {tool.description && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">{tool.description}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {isConnected ? 'No tools available' : isDisabled ? 'Enable the server to see available tools' : 'Connect the server to see available tools'}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ClaudeAiSection({ servers, onToggle }: { servers: McpServerInfo[]; onToggle: (name: string, disabled: boolean) => void }) {
+  const { selectMcp } = useSettingsStore()
+  if (servers.length === 0) return null
+  return (
+    <div>
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Claude.ai</h3>
+      <div className="grid grid-cols-2 gap-3">
+        {servers.map((server) => {
+          const isDisabled = server.status === 'disabled'
+          const isConnected = server.status === 'connected'
+          const isPending = server.status === 'pending'
+          const dotColor = isConnected ? 'bg-green-500' : isPending ? 'bg-yellow-500' : isDisabled ? 'bg-red-500' : 'bg-red-500'
+          const statusText = isDisabled ? 'disabled' : isPending ? 'connecting...' : isConnected ? `${server.toolCount ?? 0} tool${(server.toolCount ?? 0) !== 1 ? 's' : ''}` : server.error ?? 'failed'
+          return (
+            <div
+              key={server.name}
+              onClick={() => selectMcp(server.name)}
+              className={cn('flex items-center gap-3 rounded-lg border border-border bg-card p-3 cursor-pointer transition-colors hover:bg-accent/50', isDisabled && 'opacity-50')}
+            >
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium uppercase text-muted-foreground">
+                {server.name[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{server.name}</p>
+                <div className="mt-0.5 flex items-center gap-1.5">
+                  <span className={cn('size-2 shrink-0 rounded-full', dotColor)} />
+                  <span className="text-xs text-muted-foreground">{statusText}</span>
+                </div>
+              </div>
+              <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                <Switch checked={!isDisabled} onCheckedChange={(checked) => onToggle(server.name, !checked)} />
+              </div>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function ServerSection({ title, configs, mcpStatus, mcpMeta, readOnly }: { title: string; configs: McpServerConfig[]; mcpStatus: McpServerInfo[]; mcpMeta: Record<string, McpServerMeta>; readOnly?: boolean }) {
   if (configs.length === 0) return null
   return (
@@ -601,7 +701,7 @@ function ServerSection({ title, configs, mcpStatus, mcpMeta, readOnly }: { title
 export function McpPage() {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const settingsProvider = useAppStore((s) => s.settingsProvider)
-  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, codexMcpConfigs, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchCodexMcpConfigs, selectMcp } = useSettingsStore()
+  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, codexMcpConfigs, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchCodexMcpConfigs, selectMcp, toggleMcpConfig } = useSettingsStore()
   const [addView, setAddView] = useState<'none' | 'form' | 'library'>('none')
   const [refreshing, setRefreshing] = useState(false)
   const isCodex = settingsProvider === 'codex'
@@ -627,7 +727,11 @@ export function McpPage() {
     }
   }
 
+  const claudeaiServers = isCodex ? [] : mcpStatus.filter((s) => s.scope === 'claudeai')
+
   if (!isCodex && selectedMcpName) {
+    const claudeaiServer = claudeaiServers.find((s) => s.name === selectedMcpName)
+    if (claudeaiServer) return <ClaudeAiDetailPage server={claudeaiServer} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />
     const config = mcpConfigs.find((c) => c.name === selectedMcpName)
     const status = mcpStatus.find((s) => s.name === selectedMcpName)
     if (config) return <McpDetailPage config={config} status={status} meta={mcpMeta[config.name]} />
@@ -636,6 +740,8 @@ export function McpPage() {
   const currentConfigs = isCodex ? codexMcpConfigs : mcpConfigs
   const userConfigs = currentConfigs.filter((c) => c.scope === 'user')
   const projectConfigs = currentConfigs.filter((c) => c.scope === 'project')
+
+  const hasAnyServer = currentConfigs.length > 0 || claudeaiServers.length > 0
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -682,7 +788,7 @@ export function McpPage() {
         </div>
       )}
 
-      {currentConfigs.length === 0 ? (
+      {!hasAnyServer ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">No MCP servers configured</p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -691,6 +797,7 @@ export function McpPage() {
         </div>
       ) : (
         <div className="space-y-6">
+          <ClaudeAiSection servers={claudeaiServers} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />
           <ServerSection title="User" configs={userConfigs} mcpStatus={isCodex ? [] : mcpStatus} mcpMeta={isCodex ? {} : mcpMeta} readOnly={isCodex} />
           <ServerSection title="Project" configs={projectConfigs} mcpStatus={isCodex ? [] : mcpStatus} mcpMeta={isCodex ? {} : mcpMeta} readOnly={isCodex} />
         </div>

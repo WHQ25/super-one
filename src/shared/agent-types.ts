@@ -632,7 +632,7 @@ export interface RecentFolder {
 
 // --- Resource scope ---
 
-export type ResourceScope = 'user' | 'project'
+export type ResourceScope = 'user' | 'project' | 'claudeai'
 
 // --- Settings provider ---
 

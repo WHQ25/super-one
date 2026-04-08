@@ -643,12 +643,18 @@ function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onTog
   )
 }
 
-function ClaudeAiSection({ servers, onToggle }: { servers: McpServerInfo[]; onToggle: (name: string, disabled: boolean) => void }) {
+function ClaudeAiSection({ servers, loading, onToggle }: { servers: McpServerInfo[]; loading?: boolean; onToggle: (name: string, disabled: boolean) => void }) {
   const { selectMcp } = useSettingsStore()
-  if (servers.length === 0) return null
+  if (servers.length === 0 && !loading) return null
   return (
     <div>
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Claude.ai</h3>
+      {loading && servers.length === 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-4">
+          <RefreshCw className="size-3.5 animate-spin text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Fetching claude.ai servers...</span>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         {servers.map((server) => {
           const isDisabled = server.status === 'disabled'
@@ -704,6 +710,7 @@ export function McpPage() {
   const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, codexMcpConfigs, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchCodexMcpConfigs, selectMcp, toggleMcpConfig } = useSettingsStore()
   const [addView, setAddView] = useState<'none' | 'form' | 'library'>('none')
   const [refreshing, setRefreshing] = useState(false)
+  const [checking, setChecking] = useState(false)
   const isCodex = settingsProvider === 'codex'
 
   useEffect(() => {
@@ -713,7 +720,8 @@ export function McpPage() {
       fetchCodexMcpConfigs()
     } else {
       fetchMcpConfigs()
-      checkMcpServers()
+      setChecking(true)
+      checkMcpServers().finally(() => setChecking(false))
       fetchMcpLibrary()
     }
   }, [currentFolder, isCodex, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchCodexMcpConfigs, selectMcp])
@@ -797,7 +805,7 @@ export function McpPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          <ClaudeAiSection servers={claudeaiServers} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />
+          <ClaudeAiSection servers={claudeaiServers} loading={checking} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />
           <ServerSection title="User" configs={userConfigs} mcpStatus={isCodex ? [] : mcpStatus} mcpMeta={isCodex ? {} : mcpMeta} readOnly={isCodex} />
           <ServerSection title="Project" configs={projectConfigs} mcpStatus={isCodex ? [] : mcpStatus} mcpMeta={isCodex ? {} : mcpMeta} readOnly={isCodex} />
         </div>

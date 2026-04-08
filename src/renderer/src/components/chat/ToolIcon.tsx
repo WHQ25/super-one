@@ -1,4 +1,4 @@
-import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox } from 'lucide-react'
+import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package } from 'lucide-react'
 import type { ToolIcon as ToolIconName } from './tool-display'
 
 const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
@@ -17,6 +17,7 @@ const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
   'book-open': BookOpen,
   'canvas': Paintbrush,
   'toolbox': Toolbox,
+  'package': Package,
 }
 
 interface ToolIconProps {

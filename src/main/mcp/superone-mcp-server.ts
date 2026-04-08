@@ -9,15 +9,25 @@ import { AgentIpcChannels } from '../../shared/agent-types'
 import { createMiniApp, readManifest, cacheAppBasePath, discoverProjectApps, detectStandaloneApp, getProjectAppsDir } from '../miniapp/miniapp-service'
 import { packApp } from '../miniapp/miniapp-packager'
 import overviewMd from './guides/overview.md?raw'
-import manifestMd from './guides/manifest.md?raw'
-import apiMd from './guides/api.md?raw'
+import standardMd from './guides/standard.md?raw'
+import inchatMd from './guides/inchat.md?raw'
+import permissionsMd from './guides/permissions.md?raw'
+import apiFsMd from './guides/api/fs.md?raw'
+import apiGitMd from './guides/api/git.md?raw'
+import apiThemeMd from './guides/api/theme.md?raw'
+import apiAgentMd from './guides/api/agent.md?raw'
 import packagingMd from './guides/packaging.md?raw'
 import iconMd from './guides/icon.md?raw'
 
 const MINIAPP_GUIDES: Record<string, string> = {
   overview: overviewMd,
-  manifest: manifestMd,
-  api: apiMd,
+  standard: standardMd,
+  inchat: inchatMd,
+  permissions: permissionsMd,
+  'api-fs': apiFsMd,
+  'api-git': apiGitMd,
+  'api-theme': apiThemeMd,
+  'api-agent': apiAgentMd,
   packaging: packagingMd,
   icon: iconMd,
 }
@@ -102,7 +112,7 @@ export function getSuperoneMcpServer(): McpSdkServerConfigWithInstance {
         'The guide is ONLY available through this tool — do NOT use Read or any other tool to access it.',
         {
           topic: z.enum(MINIAPP_GUIDE_TOPICS).describe(
-            'Which guide topic to read: overview (architecture, setup, testing), manifest (format, fields, types), api (bridge APIs, patterns), packaging (distribution), icon (visual assets)'
+            'Which guide topic to read. Read overview first, then the type-specific guide, then load other topics as needed: overview (architecture, workflow — always read first), standard (panel/sidebar/fullscreen: tools, handlers, layout), inchat (in-chat: onInit, inputSchema, layout), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-theme (CSS vars, dark mode), api-agent (sendPrompt), packaging (.s1app distribution), icon (visual assets)'
           ),
         },
         async ({ topic }) => ({
@@ -111,79 +121,32 @@ export function getSuperoneMcpServer(): McpSdkServerConfigWithInstance {
       ),
       tool(
         'setup_mini_app_dev',
-        `Initialize a mini-app development environment. Creates a scaffold with manifest.json, HTML/source files, and tool handler boilerplate.
+        `Initialize a mini-app development environment. Creates a minimal scaffold with manifest.json and HTML/source files.
 
-All fields except name and projectDir are optional — omit any that aren't needed.`,
+This tool only sets up the basic structure. To add tools, permissions, or in-chat config, edit manifest.json directly after scaffolding.`,
         {
           name: z.string().describe('Display name for the mini-app'),
           projectDir: z.string().describe('Absolute path to the project directory'),
           mode: z.enum(['project', 'standalone']).optional().describe('project (default): mini-app for the current project, placed in .superone/apps/<appId>/. standalone: the project IS the mini-app.'),
           template: z.enum(['vanilla', 'react']).optional().describe('vanilla (default): plain HTML, no build needed. react: React + TypeScript + Tailwind, requires build step.'),
-          additionalDirs: z.array(z.string()).optional().describe('Additional directory names to create at the project root'),
           type: z.enum(['sidebar', 'panel', 'in-chat', 'fullscreen']).optional().describe('Where the app appears: panel (resizable, default), sidebar (narrow left panel), in-chat (inline in chat messages, data-driven rendering), fullscreen (full canvas)'),
           description: z.string().optional().describe('Short description of what the app does'),
-          permissions: z.object({
-            fs: z.array(z.object({
-              scope: z.enum(['project', 'user', 'app']),
-              path: z.string().optional().describe('Relative path within the scope (required for project/user)'),
-              access: z.enum(['read', 'readwrite']).optional().describe('Access level (required for project/user)'),
-              reason: z.string().describe('Why this permission is needed'),
-            })).optional(),
-            network: z.array(z.object({
-              domain: z.string().describe('Whitelisted domain (e.g. "api.github.com")'),
-              reason: z.string().describe('Why this domain is needed'),
-            })).optional(),
-          }).optional().describe('Permissions the app needs'),
-          toolSlug: z.string().optional().describe('Namespace prefix for MCP tool names (lowercase, underscores only). Required when tools are declared. Tools are registered as {toolSlug}__{toolName}.'),
-          tools: z.array(z.object({
-            name: z.string().describe('Tool name (lowercase, underscores only, e.g. "render_chart")'),
-            description: z.string().describe('What this tool does — the agent reads this to decide when to use it'),
-            inputSchema: z.object({
-              type: z.literal('object'),
-              properties: z.record(z.string(), z.object({
-                type: z.string(),
-                description: z.string().optional(),
-              })).optional(),
-              required: z.array(z.string()).optional(),
-            }).describe('JSON Schema for the tool input'),
-          })).optional().describe('MCP tools the agent can call on this app (not for in-chat type)'),
-          inChatToolName: z.string().optional().describe('For in-chat type only: MCP tool name registered as inchat__{inChatToolName} (lowercase, underscores only)'),
-          inChatToolDescription: z.string().optional().describe('For in-chat type only: description shown to the agent explaining when to use this tool. Falls back to description if not set.'),
-          runningText: z.string().optional().describe('For in-chat type only: text shown while the tool input is streaming'),
-          inputSchema: z.object({
-            type: z.literal('object'),
-            properties: z.record(z.string(), z.object({
-              type: z.string(),
-              description: z.string().optional(),
-            })).optional(),
-            required: z.array(z.string()).optional(),
-          }).optional().describe('For in-chat type only: JSON Schema for the data the agent passes to the app'),
         },
-        async ({ name: appName, projectDir, mode, template, additionalDirs, type, description, permissions, toolSlug, tools, inChatToolName, inChatToolDescription, runningText, inputSchema }) => {
+        async ({ name: appName, projectDir, mode, template, type, description }) => {
           const result = await createMiniApp({
             name: appName,
             projectDir,
             mode,
             template,
-            additionalDirs,
             type,
             description,
-            permissions,
-            toolSlug,
-            tools,
-            inChatToolName,
-            inChatToolDescription,
-            runningText,
-            inputSchema,
           })
 
-          if (!result.buildRequired) {
-            cacheAppBasePath(result.entry.id, result.entry.basePath)
-            if (result.entry.manifest.type === 'in-chat') {
-              registerInChatApp(result.entry.manifest)
-            }
-            notifyDevAppReady(projectDir)
+          cacheAppBasePath(result.entry.id, result.entry.basePath)
+          if (result.entry.manifest.type === 'in-chat') {
+            registerInChatApp(result.entry.manifest)
           }
+          notifyDevAppReady(projectDir)
 
           return {
             content: [{

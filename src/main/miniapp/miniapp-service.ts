@@ -199,16 +199,8 @@ export interface CreateMiniAppOptions {
   projectDir: string
   mode?: CreateMiniAppMode
   template?: CreateMiniAppTemplate
-  additionalDirs?: string[]
   type?: MiniAppManifest['type']
   description?: string
-  permissions?: MiniAppManifest['permissions']
-  toolSlug?: string
-  tools?: MiniAppManifest['tools']
-  inChatToolName?: string
-  inChatToolDescription?: string
-  runningText?: string
-  inputSchema?: Record<string, unknown>
 }
 
 export interface CreateMiniAppResult {
@@ -251,36 +243,15 @@ export async function createMiniApp(opts: CreateMiniAppOptions): Promise<CreateM
   const template = opts.template ?? 'vanilla'
   const appId = slugify(opts.name)
 
-  const isInChat = opts.type === 'in-chat'
-
-  const tools = isInChat ? undefined : (opts.tools ?? [
-    {
-      name: 'show_message',
-      description: `Display a message in the ${opts.name} app`,
-      inputSchema: {
-        type: 'object',
-        properties: { text: { type: 'string', description: 'The message to display' } },
-        required: ['text'],
-      },
-    },
-  ])
-
   const manifest: MiniAppManifest = {
     appId,
     name: opts.name,
     isDev: true,
     ...(opts.type && { type: opts.type }),
     ...(opts.description && { description: opts.description }),
-    permissions: opts.permissions ?? (isInChat ? undefined : { fs: [{ scope: 'project', path: '.', access: 'readwrite', reason: 'Read and write project files' }] }),
-    ...(opts.toolSlug && { toolSlug: opts.toolSlug }),
-    ...(tools && { tools }),
-    ...(opts.inChatToolName && { inChatToolName: opts.inChatToolName }),
-    ...(opts.inChatToolDescription && { inChatToolDescription: opts.inChatToolDescription }),
-    ...(opts.runningText && { runningText: opts.runningText }),
-    ...(opts.inputSchema && { inputSchema: opts.inputSchema }),
   }
 
-  const templateOpts = { name: opts.name, manifest, tools: tools ?? [] }
+  const templateOpts = { name: opts.name, manifest }
   const appPath = mode === 'project'
     ? join(getProjectAppsDir(opts.projectDir), appId)
     : opts.projectDir
@@ -291,11 +262,7 @@ export async function createMiniApp(opts: CreateMiniAppOptions): Promise<CreateM
 
   await writeGeneratedFiles(appPath, files)
 
-  for (const dir of opts.additionalDirs ?? []) {
-    await mkdir(join(opts.projectDir, dir), { recursive: true })
-  }
-
-  const basePath = template === 'react' && mode === 'standalone'
+  const basePath = template === 'react'
     ? join(appPath, 'dist')
     : appPath
 

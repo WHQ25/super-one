@@ -141,16 +141,10 @@ describe('createMiniApp', () => {
     expect(result.entry.id).toBe('my-cool-app')
   })
 
-  it('creates default show_message tool when none provided', async () => {
+  it('creates minimal manifest without tools or permissions', async () => {
     const result = await createMiniApp({ name: 'Test', projectDir: '/p' })
-    expect(result.entry.manifest.tools).toHaveLength(1)
-    expect(result.entry.manifest.tools![0].name).toBe('show_message')
-  })
-
-  it('uses provided tools', async () => {
-    const tools = [{ name: 'render', description: 'Render', inputSchema: { type: 'object' as const } }]
-    const result = await createMiniApp({ name: 'Test', projectDir: '/p', tools })
-    expect(result.entry.manifest.tools).toEqual(tools)
+    expect(result.entry.manifest.tools).toBeUndefined()
+    expect(result.entry.manifest.permissions).toBeUndefined()
   })
 
   it('sets type and description in manifest', async () => {
@@ -194,9 +188,9 @@ describe('createMiniApp', () => {
       expect(result.buildRequired).toBe(true)
     })
 
-    it('returns basePath=appPath (not dist)', async () => {
+    it('returns basePath pointing to dist/', async () => {
       const result = await createMiniApp({ name: 'Test', projectDir: '/p', mode: 'project', template: 'react' })
-      expect(result.entry.basePath).toBe(result.appPath)
+      expect(result.entry.basePath).toBe(result.appPath + '/dist')
     })
   })
 
@@ -233,13 +227,4 @@ describe('createMiniApp', () => {
     })
   })
 
-  describe('additionalDirs', () => {
-    it('creates additional directories in projectDir', async () => {
-      await createMiniApp({ name: 'Test', projectDir: '/p', additionalDirs: ['fixtures', 'data'] })
-
-      const mkdirPaths = mockMkdir.mock.calls.map((c: string[]) => c[0])
-      expect(mkdirPaths).toContain('/p/fixtures')
-      expect(mkdirPaths).toContain('/p/data')
-    })
-  })
 })

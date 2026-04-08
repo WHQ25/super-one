@@ -7,23 +7,10 @@ function makeOpts(overrides?: Partial<TemplateOptions>): TemplateOptions {
   const manifest: MiniAppManifest = {
     appId: 'test-app',
     name: 'Test App',
-    permissions: { fs: [{ scope: 'project', path: '.', access: 'readwrite', reason: 'Test' }] },
-    tools: [
-      {
-        name: 'render_data',
-        description: 'Render data in the app',
-        inputSchema: {
-          type: 'object',
-          properties: { data: { type: 'string', description: 'Data to render' } },
-          required: ['data'],
-        },
-      },
-    ],
   }
   return {
     name: 'Test App',
     manifest,
-    tools: manifest.tools!,
     ...overrides,
   }
 }
@@ -40,14 +27,13 @@ describe('generateVanillaFiles', () => {
     const manifest = JSON.parse(files[0].content)
     expect(manifest.appId).toBe('test-app')
     expect(manifest.name).toBe('Test App')
-    expect(manifest.tools).toHaveLength(1)
   })
 
-  it('includes tool handler in HTML', () => {
+  it('generates clean HTML without tool handlers', () => {
     const files = generateVanillaFiles(makeOpts())
     const html = files[1].content
-    expect(html).toContain("superone.tools.handle('render_data'")
-    expect(html).toContain('JSON.stringify(args, null, 2)')
+    expect(html).toContain('<div id="output"></div>')
+    expect(html).not.toContain('superone.tools.handle')
   })
 
   it('uses CSS variables for theming', () => {
@@ -56,29 +42,6 @@ describe('generateVanillaFiles', () => {
     expect(html).toContain('var(--background')
     expect(html).toContain('var(--foreground')
     expect(html).toContain('var(--card')
-  })
-
-  it('handles empty tools array', () => {
-    const opts = makeOpts({ tools: [] })
-    opts.manifest = { ...opts.manifest, tools: [] }
-    const files = generateVanillaFiles(opts)
-    expect(files).toHaveLength(2)
-    const html = files[1].content
-    expect(html).toContain('<div id="output"></div>')
-    expect(html).not.toContain('superone.tools.handle')
-  })
-
-  it('handles tool with no properties', () => {
-    const opts = makeOpts({
-      tools: [{
-        name: 'ping',
-        description: 'Ping the app',
-        inputSchema: { type: 'object' },
-      }],
-    })
-    const files = generateVanillaFiles(opts)
-    const html = files[1].content
-    expect(html).toContain("'Tool ping called'")
   })
 })
 
@@ -143,12 +106,11 @@ describe('generateReactFiles', () => {
     expect(pkg.scripts.dev).toBe('vite')
   })
 
-  it('App.tsx includes tool handlers in useEffect', () => {
+  it('App.tsx is a clean component without tool handlers', () => {
     const files = generateReactFiles(makeOpts())
     const app = files.find((f) => f.path === 'src/App.tsx')!
-    expect(app.content).toContain("window.superone.tools.handle('render_data'")
-    expect(app.content).toContain('useEffect')
-    expect(app.content).toContain('setMessages')
+    expect(app.content).toContain('Test App')
+    expect(app.content).not.toContain('window.superone.tools.handle')
   })
 
   it('index.css imports tailwindcss', () => {
@@ -157,13 +119,18 @@ describe('generateReactFiles', () => {
     expect(css.content).toContain('@import "tailwindcss"')
   })
 
-  it('handles empty tools array', () => {
-    const opts = makeOpts({ tools: [] })
-    opts.manifest = { ...opts.manifest, tools: [] }
-    const files = generateReactFiles(opts)
-    const app = files.find((f) => f.path === 'src/App.tsx')!
-    expect(app.content).toContain('useEffect')
-    expect(app.content).not.toContain('window.superone.tools.handle')
+  it('generates dist/ placeholder with manifest and index.html', () => {
+    const files = generateReactFiles(makeOpts())
+    const paths = files.map((f) => f.path)
+    expect(paths).toContain('dist/manifest.json')
+    expect(paths).toContain('dist/index.html')
+  })
+
+  it('dist/manifest.json matches public/manifest.json', () => {
+    const files = generateReactFiles(makeOpts())
+    const pubManifest = files.find((f) => f.path === 'public/manifest.json')!
+    const distManifest = files.find((f) => f.path === 'dist/manifest.json')!
+    expect(distManifest.content).toBe(pubManifest.content)
   })
 })
 
@@ -176,7 +143,7 @@ describe('generateVanillaFiles (in-chat)', () => {
       inChatToolName: 'render_report',
       inputSchema: { type: 'object', properties: { title: { type: 'string' } } },
     }
-    return { name: 'Daily Report', manifest, tools: [] }
+    return { name: 'Daily Report', manifest }
   }
 
   it('generates in-chat template with onInit', () => {

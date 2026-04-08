@@ -186,15 +186,40 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
 
   if (mcpInfo?.serverName === SUPERONE_SERVER && !mcpInfo.mcpToolName.startsWith(INCHAT_TOOL_PREFIX)) {
     const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string }> = {
-      read_miniapp_guide: { icon: 'book-open', streaming: 'Reading mini-app guide…', done: 'Read mini-app guide' },
+      read_miniapp_guide: { icon: 'book-open', streaming: 'Reading mini-app guide', done: 'Read mini-app guide' },
       setup_mini_app_dev: { icon: 'file-plus', streaming: 'Setting up mini-app…', done: 'Set up mini-app' },
-      pack_mini_app: { icon: 'toolbox', streaming: 'Packing mini-app…', done: 'Packed mini-app' },
+    }
+    if (mcpInfo.mcpToolName === 'pack_mini_app') {
+      const appDir = String(params.appDir ?? '')
+      const outputDir = String(params.outputDir ?? '')
+      const packApp = appDir ? useMiniAppStore.getState().apps.find((a) => a.basePath === appDir) : undefined
+      const s1appName = packApp ? `${packApp.manifest.appId}-${packApp.manifest.version}.s1app` : null
+      return (
+        <CompactToolRow icon={<ToolIcon icon="package" className="size-3 shrink-0 text-muted-foreground" />}>
+          {isStreaming ? (
+            <>
+              <span className="font-medium text-foreground">Packing…</span>
+              {packApp && <MiniAppIcon appId={packApp.id} className="size-3.5 shrink-0" />}
+              <span className="text-muted-foreground">{packApp?.manifest.name ?? appDir.split('/').pop()}</span>
+            </>
+          ) : (
+            <>
+              <span className="font-medium text-foreground">Mini-app packed</span>
+              {s1appName && <>
+                <span className="text-muted-foreground">:</span>
+                <button className="min-w-0 truncate text-muted-foreground hover:text-foreground hover:underline" onClick={(e) => { e.stopPropagation(); window.app.showInFolder(outputDir, s1appName) }}>{s1appName}</button>
+              </>}
+            </>
+          )}
+        </CompactToolRow>
+      )
     }
     const d = superoneToolDisplay[mcpInfo.mcpToolName]
     if (d) {
+      const topic = mcpInfo.mcpToolName === 'read_miniapp_guide' ? String(params.topic ?? '') : ''
       return (
         <CompactToolRow icon={<ToolIcon icon={d.icon} className="size-3 shrink-0 text-muted-foreground" />}>
-          <span className="font-medium text-foreground">{isStreaming ? d.streaming : d.done}</span>
+          <span className="font-medium text-foreground">{isStreaming ? <>{d.streaming}…</> : d.done}{topic && <>: <span className="text-muted-foreground">{topic}</span></>}</span>
         </CompactToolRow>
       )
     }

@@ -1,4 +1,4 @@
-import type { MiniAppManifest, MiniAppToolDefinition } from '../../shared/miniapp-types'
+import type { MiniAppManifest } from '../../shared/miniapp-types'
 
 export interface GeneratedFile {
   path: string
@@ -8,13 +8,12 @@ export interface GeneratedFile {
 export interface TemplateOptions {
   name: string
   manifest: MiniAppManifest
-  tools: MiniAppToolDefinition[]
 }
 
 export function generateVanillaFiles(opts: TemplateOptions): GeneratedFile[] {
   const html = opts.manifest.type === 'in-chat'
     ? generateInChatVanillaHtml(opts.name)
-    : generateVanillaHtml(opts.name, opts.tools)
+    : generateVanillaHtml(opts.name)
   return [
     { path: 'manifest.json', content: JSON.stringify(opts.manifest, null, 2) },
     { path: 'index.html', content: html },
@@ -22,6 +21,7 @@ export function generateVanillaFiles(opts: TemplateOptions): GeneratedFile[] {
 }
 
 export function generateReactFiles(opts: TemplateOptions): GeneratedFile[] {
+  const placeholderHtml = generatePlaceholderHtml(opts.name)
   const files: GeneratedFile[] = [
     { path: 'public/manifest.json', content: JSON.stringify(opts.manifest, null, 2) },
     { path: 'package.json', content: generatePackageJson(opts.name) },
@@ -29,32 +29,42 @@ export function generateReactFiles(opts: TemplateOptions): GeneratedFile[] {
     { path: 'tsconfig.json', content: generateTsconfig() },
     { path: 'index.html', content: generateReactEntryHtml(opts.name) },
     { path: 'src/main.tsx', content: generateReactMain() },
-    { path: 'src/App.tsx', content: generateReactApp(opts.name, opts.tools) },
+    { path: 'src/App.tsx', content: generateReactApp(opts.name) },
     { path: 'src/superone.d.ts', content: generateSuperoneDts() },
     { path: 'src/index.css', content: '@import "tailwindcss";\n' },
     { path: '.gitignore', content: 'node_modules\ndist\n' },
+    { path: 'dist/manifest.json', content: JSON.stringify(opts.manifest, null, 2) },
+    { path: 'dist/index.html', content: placeholderHtml },
   ]
   return files
 }
 
-function generateVanillaToolHandler(tool: MiniAppToolDefinition): string {
-  const props = (tool.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}
-  const paramNames = Object.keys(props)
-  const displayExpr = paramNames.length > 0
-    ? 'JSON.stringify(args, null, 2)'
-    : `'Tool ${tool.name} called'`
-  return `  superone.tools.handle('${tool.name}', function(args) {
-    var container = document.getElementById('output');
-    var div = document.createElement('div');
-    div.className = 'msg';
-    div.textContent = ${displayExpr};
-    container.appendChild(div);
-    return { success: true };
-  });`
+function generatePlaceholderHtml(name: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${name}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      padding: 24px;
+      background: var(--background, #fafaf9);
+      color: var(--foreground, #1c1917);
+    }
+    h1 { font-size: 20px; margin-bottom: 16px; }
+    p { color: var(--muted-foreground, #78716c); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>${name}</h1>
+  <p>Run <code>bun run build</code> to see the React app.</p>
+</body>
+</html>`
 }
 
-function generateVanillaHtml(name: string, tools: MiniAppToolDefinition[]): string {
-  const handlers = tools.map(generateVanillaToolHandler).join('\n\n')
+function generateVanillaHtml(name: string): string {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -83,9 +93,6 @@ function generateVanillaHtml(name: string, tools: MiniAppToolDefinition[]): stri
 <body>
   <h1>${name}</h1>
   <div id="output"></div>
-  <script>
-${handlers}
-  </script>
 </body>
 </html>`
 }
@@ -219,47 +226,11 @@ function generateReactMain(): string {
   return lines.join('\n')
 }
 
-function generateReactToolHandler(tool: MiniAppToolDefinition): string {
-  const props = (tool.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}
-  const paramNames = Object.keys(props)
-  const displayExpr = paramNames.length > 0
-    ? 'JSON.stringify(args, null, 2)'
-    : `'Tool ${tool.name} called'`
-  return `    window.superone.tools.handle('${tool.name}', (args) => {
-      setMessages((prev) => [...prev, ${displayExpr}])
-      return { success: true }
-    })`
-}
-
-function generateReactApp(name: string, tools: MiniAppToolDefinition[]): string {
-  const handlers = tools.map(generateReactToolHandler).join('\n')
-  const head = "import { useState, useEffect } from 'react'"
-  return `${head}
-
-function App() {
-  const [messages, setMessages] = useState<string[]>([])
-
-  useEffect(() => {
-${handlers}
-  }, [])
-
+function generateReactApp(name: string): string {
+  return `function App() {
   return (
     <div className="p-6 font-sans">
       <h1 className="text-xl font-bold mb-4">${name}</h1>
-      <div className="flex flex-col gap-2">
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className="rounded-lg border p-3 text-sm whitespace-pre-wrap"
-            style={{
-              background: 'var(--card, #fff)',
-              borderColor: 'var(--border, #e7e5e4)',
-            }}
-          >
-            {msg}
-          </div>
-        ))}
-      </div>
     </div>
   )
 }

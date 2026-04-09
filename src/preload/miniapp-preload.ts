@@ -20,6 +20,9 @@ let gitReqId = 0
 const pendingGit = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
 const gitHeadListeners: Array<() => void> = []
 
+let clipboardReqId = 0
+const pendingClipboard = new Map<number, { resolve: (v: string) => void; reject: (e: Error) => void }>()
+
 const darkModeListeners: Array<(isDark: boolean) => void> = []
 const themeListeners: Array<(vars: Record<string, string>) => void> = []
 
@@ -74,6 +77,24 @@ contextBridge.exposeInMainWorld('superone', {
   agent: {
     sendPrompt(text: string) {
       ipcRenderer.sendToHost('miniapp-sendPrompt', { text })
+    },
+  },
+  openFolder(path: string) {
+    ipcRenderer.sendToHost('miniapp-open-folder', { path })
+  },
+  openExternalLink(url: string) {
+    ipcRenderer.sendToHost('miniapp-open-external-link', { url })
+  },
+  clipboard: {
+    read(): Promise<string> {
+      return new Promise((resolve, reject) => {
+        const id = ++clipboardReqId
+        pendingClipboard.set(id, { resolve, reject })
+        ipcRenderer.sendToHost('miniapp-clipboard-read', { id })
+      })
+    },
+    write(text: string) {
+      ipcRenderer.sendToHost('miniapp-clipboard-write', { text })
     },
   },
   git: {
@@ -182,6 +203,15 @@ ipcRenderer.on('miniapp-git-response', (_e, data) => {
 
 ipcRenderer.on('miniapp-git-head-change', () => {
   gitHeadListeners.forEach((cb) => cb())
+})
+
+ipcRenderer.on('miniapp-clipboard-response', (_e, data) => {
+  const pc = pendingClipboard.get(data.id)
+  if (pc) {
+    pendingClipboard.delete(data.id)
+    if (data.error) pc.reject(new Error(data.error))
+    else pc.resolve(data.text)
+  }
 })
 
 ipcRenderer.on('miniapp-theme', (_e, data) => {

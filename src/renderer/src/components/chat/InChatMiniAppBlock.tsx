@@ -3,7 +3,7 @@ import { Bug, RotateCw } from 'lucide-react'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppBridge } from '@/hooks/useMiniAppBridge'
-import { useChatStore } from '@/stores/chat'
+import { handleMiniAppMessage } from '@/hooks/miniapp-message-handler'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { readThemeVars } from '@/components/miniapp/miniapp-theme'
 
@@ -68,9 +68,14 @@ function InChatWebview({ appId, data, onWebviewRef }: InChatMiniAppBlockProps & 
     onWebviewRef?.(wv)
     if (!wv) { handleIpcRef.current = null; return }
 
+    const wvSend = (msg: unknown) => { const m = msg as Record<string, unknown>; wv.send(m.type as string, m) }
+
     const handleIpc = (event: Electron.IpcMessageEvent) => {
       const { channel, args } = event
       const d = args[0] as Record<string, unknown>
+
+      if (handleMiniAppMessage(channel, d, appId, wvSend)) return
+
       switch (channel) {
         case 'miniapp-ready':
           readyRef.current = true
@@ -82,32 +87,6 @@ function InChatWebview({ appId, data, onWebviewRef }: InChatMiniAppBlockProps & 
           if (typeof d.height === 'number' && d.height > 0) {
             setHeight(d.height)
           }
-          break
-        case 'miniapp-sendPrompt':
-          if (typeof d.text === 'string') {
-            useChatStore.getState().setDraftText(d.text)
-          }
-          break
-        case 'miniapp-fs-request':
-          window.miniapp
-            .fsRequest(appId, d.op as string, d.args as Record<string, unknown>)
-            .then((result) => wv.send('miniapp-fs-response', { id: d.id, result }))
-            .catch((err: Error) => wv.send('miniapp-fs-response', { id: d.id, error: err.message }))
-          break
-        case 'miniapp-git-request':
-          window.miniapp
-            .gitRequest(appId, d.op as string, d.args as Record<string, unknown>)
-            .then((result) => wv.send('miniapp-git-response', { id: d.id, result }))
-            .catch((err: Error) => wv.send('miniapp-git-response', { id: d.id, error: err.message }))
-          break
-        case 'miniapp-fs-watch':
-          window.miniapp
-            .fsWatch(appId, d.path as string)
-            .then((watchId) => wv.send('miniapp-fs-watch-ack', { id: d.id, watchId }))
-            .catch((err: Error) => wv.send('miniapp-fs-watch-ack', { id: d.id, error: err.message }))
-          break
-        case 'miniapp-fs-unwatch':
-          window.miniapp.fsUnwatch(d.watchId as number)
           break
       }
     }

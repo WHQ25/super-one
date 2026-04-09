@@ -11,6 +11,8 @@ import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
 import { SettingsLayout } from '@/components/SettingsLayout'
 import { UpdateNotification } from '@/components/UpdateNotification'
+import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
+import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { DebugPanel } from '@/components/DebugPanel'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
@@ -319,6 +321,8 @@ function App(): React.JSX.Element {
       </div>
       </>
       <UpdateNotification />
+      <ExternalLinkConfirm />
+      <MiniAppClipboardGuard />
       {import.meta.env.DEV && <DebugPanel />}
     </div>
   )

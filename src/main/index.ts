@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, powerMonitor, protocol, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, protocol, shell } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir } from 'fs/promises'
@@ -1108,6 +1108,21 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.FILE_SHOW_IN_FOLDER, (_event, folderPath: string, relPath: string) => {
     const absPath = validatePathInProject(folderPath, relPath)
     shell.showItemInFolder(absPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.OPEN_EXTERNAL_LINK, (_event, url: string) => {
+    if (!/^https?:\/\//i.test(url)) {
+      throw new Error(`Blocked: only http/https URLs are allowed, got: ${url}`)
+    }
+    return shell.openExternal(url)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CLIPBOARD_READ, () => {
+    return clipboard.readText()
+  })
+
+  ipcMain.handle(AgentIpcChannels.CLIPBOARD_WRITE, (_event, text: string) => {
+    clipboard.writeText(text)
   })
 
   const testInstall = process.env.TEST_INSTALL_CLAUDE === '1'

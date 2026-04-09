@@ -16,6 +16,7 @@ import apiFsMd from './guides/api/fs.md?raw'
 import apiGitMd from './guides/api/git.md?raw'
 import apiThemeMd from './guides/api/theme.md?raw'
 import apiAgentMd from './guides/api/agent.md?raw'
+import apiSystemMd from './guides/api/system.md?raw'
 import packagingMd from './guides/packaging.md?raw'
 import iconMd from './guides/icon.md?raw'
 
@@ -28,6 +29,7 @@ const MINIAPP_GUIDES: Record<string, string> = {
   'api-git': apiGitMd,
   'api-theme': apiThemeMd,
   'api-agent': apiAgentMd,
+  'api-system': apiSystemMd,
   packaging: packagingMd,
   icon: iconMd,
 }

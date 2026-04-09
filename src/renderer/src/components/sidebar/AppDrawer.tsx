@@ -106,12 +106,17 @@ export function AppDrawer() {
   const setSidebarTab = useAppStore((s) => s.setSidebarTab)
   const setLayoutMode = useAppStore((s) => s.setLayoutMode)
 
+  const refreshApps = useMiniAppStore((s) => s.refreshApps)
   const allApps = useMiniAppStore(useShallow((s) => s.apps))
   const canvasApps = useMemo(() => allApps.filter((a) => a.manifest.type !== 'in-chat'), [allApps])
   const inChatApps = useMemo(() => allApps.filter((a) => a.manifest.type === 'in-chat'), [allApps])
   const requestOpenInCanvas = useMiniAppStore((s) => s.requestOpenInCanvas)
   const previewInstall = useMiniAppStore((s) => s.previewInstall)
   const setDraftText = useChatStore((s) => s.setDraftText)
+
+  useEffect(() => {
+    if (expanded) refreshApps(currentFolder ?? undefined)
+  }, [expanded, refreshApps, currentFolder])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const totalApps = allApps.length

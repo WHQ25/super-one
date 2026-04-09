@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, type RefObject } from 'react'
-import { useChatStore } from '@/stores/chat'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { readThemeVars } from '@/components/miniapp/miniapp-theme'
+import { handleMiniAppMessage } from '@/hooks/miniapp-message-handler'
 import type { MiniAppToolCallRequest } from '../../../shared/miniapp-types'
 
 export interface MiniAppBridgeOptions {
@@ -28,48 +28,9 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
       const data = e.data
       if (!data?.type) return
 
+      if (handleMiniAppMessage(data.type, data, appId, sendToFrame)) return
+
       switch (data.type) {
-        case 'miniapp-tool-result':
-          window.miniapp.toolResult(data.callId, data.result, data.error)
-          break
-        case 'miniapp-sendPrompt':
-          if (typeof data.text === 'string') {
-            useChatStore.getState().setDraftText(data.text)
-          }
-          break
-        case 'miniapp-fs-request':
-          window.miniapp
-            .fsRequest(data.appId, data.op, data.args)
-            .then((result) => {
-              sendToFrame({ type: 'miniapp-fs-response', id: data.id, result })
-            })
-            .catch((err) => {
-              sendToFrame({ type: 'miniapp-fs-response', id: data.id, error: err.message })
-            })
-          break
-        case 'miniapp-git-request':
-          window.miniapp
-            .gitRequest(appId, data.op as string, data.args as Record<string, unknown>)
-            .then((result) => {
-              sendToFrame({ type: 'miniapp-git-response', id: data.id, result })
-            })
-            .catch((err) => {
-              sendToFrame({ type: 'miniapp-git-response', id: data.id, error: err.message })
-            })
-          break
-        case 'miniapp-fs-watch':
-          window.miniapp
-            .fsWatch(appId, data.path)
-            .then((watchId) => {
-              sendToFrame({ type: 'miniapp-fs-watch-ack', id: data.id, watchId })
-            })
-            .catch((err) => {
-              sendToFrame({ type: 'miniapp-fs-watch-ack', id: data.id, error: err.message })
-            })
-          break
-        case 'miniapp-fs-unwatch':
-          window.miniapp.fsUnwatch(data.watchId)
-          break
         case 'miniapp-resize':
           if (typeof data.height === 'number' && data.height > 0) {
             onResize?.(data.height)

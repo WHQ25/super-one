@@ -2,7 +2,7 @@ import { readdir, readFile, writeFile, stat, mkdir, glob, watch, rm, rename } fr
 import { watch as watchSync } from 'fs'
 import type { FSWatcher } from 'fs'
 import { join, resolve, sep, relative, dirname } from 'path'
-import { app } from 'electron'
+import { app, shell } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import log from '../logger'
 import { gitRun } from '../git-run'
@@ -388,6 +388,10 @@ export async function handleFsRequest(
     }
     case 'mkdir': {
       await mkdir(safe(args.path as string), { recursive: true })
+      return undefined
+    }
+    case 'showInFolder': {
+      shell.showItemInFolder(safe(args.path as string))
       return undefined
     }
     default:

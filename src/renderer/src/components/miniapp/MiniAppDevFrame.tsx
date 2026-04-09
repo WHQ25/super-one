@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
-import { useChatStore } from '@/stores/chat'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { readThemeVars } from './miniapp-theme'
+import { handleMiniAppMessage } from '@/hooks/miniapp-message-handler'
 
 export interface MiniAppDevFrameHandle {
   reload: () => void
@@ -40,56 +40,15 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
       const wv = webviewRef.current
       if (!wv) return
 
+      const wvSend = (msg: unknown) => { const m = msg as Record<string, unknown>; wv.send(m.type as string, m) }
+
       const handleIpcMessage = (event: Electron.IpcMessageEvent) => {
         const { channel, args } = event
         const data = args[0] as Record<string, unknown>
 
+        if (handleMiniAppMessage(channel, data, appId, wvSend)) return
+
         switch (channel) {
-          case 'miniapp-tool-result':
-            window.miniapp.toolResult(
-              data.callId as string,
-              data.result,
-              data.error as string | undefined,
-            )
-            break
-          case 'miniapp-sendPrompt':
-            if (typeof data.text === 'string') {
-              useChatStore.getState().setDraftText(data.text)
-            }
-            break
-          case 'miniapp-fs-request':
-            window.miniapp
-              .fsRequest(appId, data.op as string, data.args as Record<string, unknown>)
-              .then((result) => {
-                wv.send('miniapp-fs-response', { id: data.id, result })
-              })
-              .catch((err: Error) => {
-                wv.send('miniapp-fs-response', { id: data.id, error: err.message })
-              })
-            break
-          case 'miniapp-git-request':
-            window.miniapp
-              .gitRequest(appId, data.op as string, data.args as Record<string, unknown>)
-              .then((result) => {
-                wv.send('miniapp-git-response', { id: data.id, result })
-              })
-              .catch((err: Error) => {
-                wv.send('miniapp-git-response', { id: data.id, error: err.message })
-              })
-            break
-          case 'miniapp-fs-watch':
-            window.miniapp
-              .fsWatch(appId, data.path as string)
-              .then((watchId) => {
-                wv.send('miniapp-fs-watch-ack', { id: data.id, watchId })
-              })
-              .catch((err: Error) => {
-                wv.send('miniapp-fs-watch-ack', { id: data.id, error: err.message })
-              })
-            break
-          case 'miniapp-fs-unwatch':
-            window.miniapp.fsUnwatch(data.watchId as number)
-            break
           case 'miniapp-ready':
             readyRef.current = true
             window.miniapp.iframeReady(appId)

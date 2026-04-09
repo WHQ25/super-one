@@ -440,6 +440,12 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.FILE_RENAME, folderPath, relPath, newName),
   showInFolder: (folderPath: string, relPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FILE_SHOW_IN_FOLDER, folderPath, relPath),
+  openExternalLink: (url: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.OPEN_EXTERNAL_LINK, url),
+  clipboardRead: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_READ) as Promise<string>,
+  clipboardWrite: (text: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_WRITE, text),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 
   // File watcher

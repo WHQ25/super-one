@@ -127,6 +127,9 @@ interface AppAPI {
   deleteFile(folderPath: string, relPath: string): Promise<FileOpResult>
   renameFile(folderPath: string, relPath: string, newName: string): Promise<FileOpResult>
   showInFolder(folderPath: string, relPath: string): Promise<void>
+  openExternalLink(url: string): Promise<void>
+  clipboardRead(): Promise<string>
+  clipboardWrite(text: string): Promise<void>
   getPathForFile(file: File): string
 
   // File watcher

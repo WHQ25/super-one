@@ -10,6 +10,8 @@ export function generateBridgeScript(appId: string): string {
   var pendingGit = new Map();
   var gitReqId = 0;
   var gitHeadListeners = [];
+  var pendingClipboard = new Map();
+  var clipboardReqId = 0;
   var darkModeListeners = [];
   var themeListeners = [];
 
@@ -86,6 +88,24 @@ export function generateBridgeScript(appId: string): string {
     agent: {
       sendPrompt: function(text) {
         parent.postMessage({ type: 'miniapp-sendPrompt', text: text }, '*');
+      }
+    },
+    openFolder: function(path) {
+      parent.postMessage({ type: 'miniapp-open-folder', appId: '${appId}', path: path }, '*');
+    },
+    openExternalLink: function(url) {
+      parent.postMessage({ type: 'miniapp-open-external-link', appId: '${appId}', url: url }, '*');
+    },
+    clipboard: {
+      read: function() {
+        return new Promise(function(resolve, reject) {
+          var id = ++clipboardReqId;
+          pendingClipboard.set(id, { resolve: resolve, reject: reject });
+          parent.postMessage({ type: 'miniapp-clipboard-read', appId: '${appId}', id: id }, '*');
+        });
+      },
+      write: function(text) {
+        parent.postMessage({ type: 'miniapp-clipboard-write', appId: '${appId}', text: text }, '*');
       }
     },
     git: {
@@ -200,6 +220,15 @@ export function generateBridgeScript(appId: string): string {
 
     if (data.type === 'miniapp-git-head-change') {
       gitHeadListeners.forEach(function(cb) { cb(); });
+    }
+
+    if (data.type === 'miniapp-clipboard-response') {
+      var pc = pendingClipboard.get(data.id);
+      if (pc) {
+        pendingClipboard.delete(data.id);
+        if (data.error) { pc.reject(new Error(data.error)); }
+        else { pc.resolve(data.text); }
+      }
     }
 
     if (data.type === 'miniapp-inchat-init') {

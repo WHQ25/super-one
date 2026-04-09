@@ -1088,6 +1088,9 @@ export const AgentIpcChannels = {
   FILE_DELETE: 'app:file-delete',
   FILE_RENAME: 'app:file-rename',
   FILE_SHOW_IN_FOLDER: 'app:file-show-in-folder',
+  OPEN_EXTERNAL_LINK: 'app:open-external-link',
+  CLIPBOARD_READ: 'app:clipboard-read',
+  CLIPBOARD_WRITE: 'app:clipboard-write',
   GIT_DIFF_FILE: 'app:git-diff-file',
   GIT_READ_FILE: 'app:git-read-file',
 

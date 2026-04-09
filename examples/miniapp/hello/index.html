@@ -20,6 +20,16 @@
   <h1>Hello Mini-App</h1>
   <div id="messages"><p style="color:#a8a29e">Waiting for agent messages...</p></div>
   <button id="ask-btn">Ask Agent to Greet</button>
+  <div id="system-api" style="margin-top:20px">
+    <h2 style="font-size:16px;margin-bottom:8px">System APIs</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button id="btn-folder">Open Folder</button>
+      <button id="btn-link">Open Link</button>
+      <button id="btn-copy">Copy Text</button>
+      <button id="btn-paste">Read Clipboard</button>
+    </div>
+    <div id="api-result" style="margin-top:8px;font-size:13px;color:#78716c"></div>
+  </div>
   <div id="files"></div>
   <script>
     superone.tools.handle('show_message', function(args) {
@@ -38,6 +48,27 @@
 
     document.getElementById('ask-btn').onclick = function() {
       superone.agent.sendPrompt('Say hello using the hello__show_message tool');
+    };
+
+    var apiResult = document.getElementById('api-result');
+    document.getElementById('btn-folder').onclick = function() {
+      superone.openFolder('.');
+      apiResult.textContent = 'Opening project folder in Finder...';
+    };
+    document.getElementById('btn-link').onclick = function() {
+      superone.openExternalLink('https://github.com');
+      apiResult.textContent = 'Opening GitHub in browser...';
+    };
+    document.getElementById('btn-copy').onclick = function() {
+      superone.clipboard.write('Hello from SuperOne miniapp!');
+      apiResult.textContent = 'Copied "Hello from SuperOne miniapp!" to clipboard';
+    };
+    document.getElementById('btn-paste').onclick = function() {
+      superone.clipboard.read().then(function(text) {
+        apiResult.textContent = 'Clipboard: ' + text;
+      }).catch(function(err) {
+        apiResult.textContent = 'Error: ' + err.message;
+      });
     };
   </script>
 </body>

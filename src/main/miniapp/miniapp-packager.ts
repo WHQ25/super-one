@@ -117,7 +117,7 @@ export async function packApp(appDir: string, outputDir: string): Promise<MiniAp
 
     archive.on('error', reject)
     archive.pipe(output)
-    archive.directory(appDir, false)
+    archive.glob('**/*', { cwd: appDir, ignore: [PREAPPROVED_FILE, INSTALL_META_FILE] })
     archive.finalize()
   })
 }

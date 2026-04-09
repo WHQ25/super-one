@@ -2,8 +2,10 @@ import { forwardRef, useRef, useImperativeHandle, useCallback } from 'react'
 import { RotateCw, Bug } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useMiniAppOverlay } from '@/hooks/useMiniAppOverlay'
 import { MiniAppFrame } from './MiniAppFrame'
 import { MiniAppDevFrame, type MiniAppDevFrameHandle } from './MiniAppDevFrame'
+import { MiniAppOverlayPortal } from './MiniAppOverlayPortal'
 
 export interface MiniAppViewHandle {
   reload: () => void
@@ -20,6 +22,8 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
     const isDev = useMiniAppStore((s) => s.apps.find((a) => a.id === appId)?.manifest.isDev)
     const devRef = useRef<MiniAppDevFrameHandle>(null)
     const iframeRef = useRef<HTMLIFrameElement>(null)
+    const containerRef = useRef<HTMLDivElement>(null)
+    const { tooltip, contextMenu, dismissContextMenu, overlayCallbacks } = useMiniAppOverlay(containerRef)
 
     const reload = useCallback(() => {
       if (isDev) devRef.current?.reload()
@@ -33,7 +37,7 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
     useImperativeHandle(ref, () => ({ reload, openDevTools }), [reload, openDevTools])
 
     return (
-      <div className={cn('relative', className)}>
+      <div ref={containerRef} className={cn('relative', className)}>
         <div className="absolute bottom-2 left-2 z-10 flex items-center gap-0.5 rounded-md bg-black/60 p-0.5 backdrop-blur-sm">
           <button
             onClick={reload}
@@ -53,9 +57,14 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
           )}
         </div>
         {isDev
-          ? <MiniAppDevFrame ref={devRef} appId={appId} className="h-full w-full" />
-          : <MiniAppFrame ref={iframeRef} appId={appId} className="h-full w-full" />
+          ? <MiniAppDevFrame ref={devRef} appId={appId} className="h-full w-full" overlay={overlayCallbacks} />
+          : <MiniAppFrame ref={iframeRef} appId={appId} className="h-full w-full" overlay={overlayCallbacks} />
         }
+        <MiniAppOverlayPortal
+          tooltip={tooltip}
+          contextMenu={contextMenu}
+          onDismissContextMenu={dismissContextMenu}
+        />
       </div>
     )
   },

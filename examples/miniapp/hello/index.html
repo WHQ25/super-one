@@ -14,6 +14,8 @@
     button { background: #f97316; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; }
     button:hover { background: #ea580c; }
     #files { margin-top: 16px; font-size: 13px; color: #78716c; white-space: pre-wrap; }
+    .tooltip-target { display: inline-block; padding: 6px 12px; background: #e7e5e4; border-radius: 6px; font-size: 13px; cursor: default; }
+    .dark .tooltip-target { background: #44403c; }
   </style>
 </head>
 <body>
@@ -29,6 +31,17 @@
       <button id="btn-paste">Read Clipboard</button>
     </div>
     <div id="api-result" style="margin-top:8px;font-size:13px;color:#78716c"></div>
+  </div>
+  <div id="ui-api" style="margin-top:20px">
+    <h2 style="font-size:16px;margin-bottom:8px">UI Overlay APIs</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button id="btn-toast-success">Toast Success</button>
+      <button id="btn-toast-error">Toast Error</button>
+      <button id="btn-toast-warning">Toast Warning</button>
+      <span id="tooltip-target" class="tooltip-target">Hover me for tooltip</span>
+      <span id="contextmenu-target" class="tooltip-target">Right-click me for menu</span>
+    </div>
+    <div id="ui-result" style="margin-top:8px;font-size:13px;color:#78716c"></div>
   </div>
   <div id="files"></div>
   <script>
@@ -68,6 +81,54 @@
         apiResult.textContent = 'Clipboard: ' + text;
       }).catch(function(err) {
         apiResult.textContent = 'Error: ' + err.message;
+      });
+    };
+
+    var uiResult = document.getElementById('ui-result');
+
+    document.getElementById('btn-toast-success').onclick = function() {
+      superone.ui.toast('Operation completed successfully!', 'success');
+    };
+    document.getElementById('btn-toast-error').onclick = function() {
+      superone.ui.toast('Something went wrong.', 'error');
+    };
+    document.getElementById('btn-toast-warning').onclick = function() {
+      superone.ui.toast('Careful, this is a warning.', 'warning');
+    };
+
+    var tooltipTarget = document.getElementById('tooltip-target');
+    tooltipTarget.onmouseenter = function() {
+      var rect = tooltipTarget.getBoundingClientRect();
+      superone.ui.showTooltip(
+        { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+        'This is a tooltip from the mini-app!',
+        'top'
+      );
+    };
+    tooltipTarget.onmouseleave = function() {
+      superone.ui.hideTooltip();
+    };
+
+    document.getElementById('contextmenu-target').oncontextmenu = function(e) {
+      e.preventDefault();
+      superone.ui.showContextMenu(
+        { x: e.clientX, y: e.clientY },
+        [
+          { id: 'edit', label: 'Edit', icon: 'pencil', group: 'Actions' },
+          { id: 'duplicate', label: 'Duplicate', icon: 'copy', group: 'Actions' },
+          { id: 'move', label: 'Move to...', icon: 'folder-input', group: 'Actions' },
+          { id: 'sep1', label: '', separator: true },
+          { id: 'share', label: 'Share', icon: 'share-2', group: 'More' },
+          { id: 'export', label: 'Export', icon: 'download', group: 'More' },
+          { id: 'sep2', label: '', separator: true },
+          { id: 'delete', label: 'Delete', icon: 'trash-2', variant: 'destructive' }
+        ]
+      ).then(function(itemId) {
+        if (itemId) {
+          uiResult.textContent = 'Context menu selected: ' + itemId;
+        } else {
+          uiResult.textContent = 'Context menu dismissed';
+        }
       });
     };
   </script>

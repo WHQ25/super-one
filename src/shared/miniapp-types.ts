@@ -133,6 +133,29 @@ export function parseInChatResult(resultText: string): InChatMiniAppResult | nul
   return null
 }
 
+export type MiniAppToastType = 'success' | 'error' | 'info' | 'warning'
+
+export interface MiniAppTooltipRequest {
+  anchorRect: { x: number; y: number; width: number; height: number }
+  text: string
+  side?: 'top' | 'bottom' | 'left' | 'right'
+}
+
+export interface MiniAppContextMenuItem {
+  id: string
+  label: string
+  icon?: string
+  disabled?: boolean
+  variant?: 'default' | 'destructive'
+  separator?: boolean
+  group?: string
+}
+
+export interface MiniAppContextMenuRequest {
+  position: { x: number; y: number }
+  items: MiniAppContextMenuItem[]
+}
+
 export type MiniAppBridgeMessageType =
   | 'miniapp-tool-call'
   | 'miniapp-tool-result'
@@ -150,3 +173,8 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-ready'
   | 'miniapp-inchat-init'
   | 'miniapp-resize'
+  | 'miniapp-ui-toast'
+  | 'miniapp-ui-tooltip-show'
+  | 'miniapp-ui-tooltip-hide'
+  | 'miniapp-ui-contextmenu'
+  | 'miniapp-ui-contextmenu-result'

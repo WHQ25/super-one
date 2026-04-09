@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { readThemeVars } from './miniapp-theme'
-import { handleMiniAppMessage } from '@/hooks/miniapp-message-handler'
+import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 
 export interface MiniAppDevFrameHandle {
   reload: () => void
@@ -11,10 +11,11 @@ export interface MiniAppDevFrameHandle {
 interface MiniAppDevFrameProps {
   appId: string
   className?: string
+  overlay?: MiniAppOverlayCallbacks
 }
 
 export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrameProps>(
-  function MiniAppDevFrame({ appId, className }, ref) {
+  function MiniAppDevFrame({ appId, className, overlay }, ref) {
     const webviewRef = useRef<Electron.WebviewTag>(null)
     const isDark = useIsDark()
     const isDarkRef = useRef(isDark)
@@ -46,7 +47,7 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
         const { channel, args } = event
         const data = args[0] as Record<string, unknown>
 
-        if (handleMiniAppMessage(channel, data, appId, wvSend)) return
+        if (handleMiniAppMessage(channel, data, appId, wvSend, overlay)) return
 
         switch (channel) {
           case 'miniapp-ready':
@@ -57,9 +58,15 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
         }
       }
 
+      const suppressContextMenu = (e: Event) => { e.preventDefault() }
+
       wv.addEventListener('ipc-message', handleIpcMessage)
-      return () => { wv.removeEventListener('ipc-message', handleIpcMessage) }
-    }, [appId, preloadPath])
+      wv.addEventListener('context-menu', suppressContextMenu)
+      return () => {
+        wv.removeEventListener('ipc-message', handleIpcMessage)
+        wv.removeEventListener('context-menu', suppressContextMenu)
+      }
+    }, [appId, preloadPath, overlay])
 
     useEffect(() => {
       if (!readyRef.current) return

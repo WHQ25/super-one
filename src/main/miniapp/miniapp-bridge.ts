@@ -14,6 +14,8 @@ export function generateBridgeScript(appId: string): string {
   var clipboardReqId = 0;
   var darkModeListeners = [];
   var themeListeners = [];
+  var pendingContextMenu = new Map();
+  var contextMenuReqId = 0;
 
   function bridgeFsCall(op, args) {
     return new Promise(function(resolve, reject) {
@@ -143,6 +145,24 @@ export function generateBridgeScript(appId: string): string {
         };
       }
     },
+    ui: {
+      toast: function(message, type) {
+        parent.postMessage({ type: 'miniapp-ui-toast', appId: '${appId}', message: message, toastType: type || 'info' }, '*');
+      },
+      showTooltip: function(anchorRect, text, side) {
+        parent.postMessage({ type: 'miniapp-ui-tooltip-show', appId: '${appId}', anchorRect: anchorRect, text: text, side: side || 'top' }, '*');
+      },
+      hideTooltip: function() {
+        parent.postMessage({ type: 'miniapp-ui-tooltip-hide', appId: '${appId}' }, '*');
+      },
+      showContextMenu: function(position, items) {
+        return new Promise(function(resolve) {
+          var id = ++contextMenuReqId;
+          pendingContextMenu.set(id, resolve);
+          parent.postMessage({ type: 'miniapp-ui-contextmenu', appId: '${appId}', id: id, position: position, items: items }, '*');
+        });
+      }
+    },
     isDarkMode: function() {
       return document.documentElement.classList.contains('dark');
     },
@@ -228,6 +248,14 @@ export function generateBridgeScript(appId: string): string {
         pendingClipboard.delete(data.id);
         if (data.error) { pc.reject(new Error(data.error)); }
         else { pc.resolve(data.text); }
+      }
+    }
+
+    if (data.type === 'miniapp-ui-contextmenu-result') {
+      var pcm = pendingContextMenu.get(data.id);
+      if (pcm) {
+        pendingContextMenu.delete(data.id);
+        pcm(data.itemId != null ? data.itemId : null);
       }
     }
 

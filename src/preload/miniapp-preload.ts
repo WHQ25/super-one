@@ -26,6 +26,9 @@ const pendingClipboard = new Map<number, { resolve: (v: string) => void; reject:
 const darkModeListeners: Array<(isDark: boolean) => void> = []
 const themeListeners: Array<(vars: Record<string, string>) => void> = []
 
+let contextMenuReqId = 0
+const pendingContextMenu = new Map<number, (itemId: string | null) => void>()
+
 function bridgeFsCall(op: string, args: Record<string, unknown>): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = ++fsReqId
@@ -132,6 +135,24 @@ contextBridge.exposeInMainWorld('superone', {
       }
     },
   },
+  ui: {
+    toast(message: string, type?: string) {
+      ipcRenderer.sendToHost('miniapp-ui-toast', { message, toastType: type || 'info' })
+    },
+    showTooltip(anchorRect: { x: number; y: number; width: number; height: number }, text: string, side?: string) {
+      ipcRenderer.sendToHost('miniapp-ui-tooltip-show', { anchorRect, text, side: side || 'top' })
+    },
+    hideTooltip() {
+      ipcRenderer.sendToHost('miniapp-ui-tooltip-hide', {})
+    },
+    showContextMenu(position: { x: number; y: number }, items: Array<{ id: string; label: string; disabled?: boolean; variant?: string; separator?: boolean }>): Promise<string | null> {
+      return new Promise((resolve) => {
+        const id = ++contextMenuReqId
+        pendingContextMenu.set(id, resolve)
+        ipcRenderer.sendToHost('miniapp-ui-contextmenu', { id, position, items })
+      })
+    },
+  },
   isDarkMode() {
     return document.documentElement.classList.contains('dark')
   },
@@ -211,6 +232,14 @@ ipcRenderer.on('miniapp-clipboard-response', (_e, data) => {
     pendingClipboard.delete(data.id)
     if (data.error) pc.reject(new Error(data.error))
     else pc.resolve(data.text)
+  }
+})
+
+ipcRenderer.on('miniapp-ui-contextmenu-result', (_e, data) => {
+  const resolve = pendingContextMenu.get(data.id)
+  if (resolve) {
+    pendingContextMenu.delete(data.id)
+    resolve(data.itemId ?? null)
   }
 })
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, type RefObject } from 'react'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { readThemeVars } from '@/components/miniapp/miniapp-theme'
-import { handleMiniAppMessage } from '@/hooks/miniapp-message-handler'
+import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 import type { MiniAppToolCallRequest } from '../../../shared/miniapp-types'
 
 export interface MiniAppBridgeOptions {
@@ -10,9 +10,10 @@ export interface MiniAppBridgeOptions {
   onReady?: () => void
   onResize?: (height: number) => void
   inChatMode?: boolean
+  overlay?: MiniAppOverlayCallbacks
 }
 
-export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMode }: MiniAppBridgeOptions) {
+export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMode, overlay }: MiniAppBridgeOptions) {
   const isDark = useIsDark()
   const isDarkRef = useRef(isDark)
   isDarkRef.current = isDark
@@ -28,7 +29,7 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
       const data = e.data
       if (!data?.type) return
 
-      if (handleMiniAppMessage(data.type, data, appId, sendToFrame)) return
+      if (handleMiniAppMessage(data.type, data, appId, sendToFrame, overlay)) return
 
       switch (data.type) {
         case 'miniapp-resize':
@@ -44,7 +45,7 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
           break
       }
     },
-    [appId, sendToFrame, onReady, onResize, iframeRef],
+    [appId, sendToFrame, onReady, onResize, iframeRef, overlay],
   )
 
   useEffect(() => {

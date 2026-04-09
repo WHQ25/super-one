@@ -1,12 +1,20 @@
 import { useChatStore } from '@/stores/chat'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { requestClipboardRead, requestClipboardWrite } from '@/lib/miniapp-clipboard'
+import { toast } from 'sonner'
+import type { MiniAppTooltipRequest, MiniAppContextMenuRequest } from '../../../shared/miniapp-types'
+
+export interface MiniAppOverlayCallbacks {
+  onTooltip?: (req: MiniAppTooltipRequest | null) => void
+  onContextMenu?: (req: MiniAppContextMenuRequest, respond: (itemId: string | null) => void) => void
+}
 
 export function handleMiniAppMessage(
   type: string,
   data: Record<string, unknown>,
   appId: string,
   send: (msg: unknown) => void,
+  overlay?: MiniAppOverlayCallbacks,
 ): boolean {
   switch (type) {
     case 'miniapp-tool-result':
@@ -54,6 +62,36 @@ export function handleMiniAppMessage(
     case 'miniapp-clipboard-write':
       if (typeof data.text === 'string') requestClipboardWrite(appId, data.text)
       return true
+    case 'miniapp-ui-toast': {
+      const msg = data.message as string
+      const dispatch: Record<string, (m: string) => void> = {
+        success: toast.success, error: toast.error, warning: toast.warning, info: toast.info,
+      }
+      ;(dispatch[data.toastType as string] ?? toast.info)(msg)
+      return true
+    }
+    case 'miniapp-ui-tooltip-show':
+      overlay?.onTooltip?.({
+        anchorRect: data.anchorRect as MiniAppTooltipRequest['anchorRect'],
+        text: data.text as string,
+        side: data.side as MiniAppTooltipRequest['side'],
+      })
+      return true
+    case 'miniapp-ui-tooltip-hide':
+      overlay?.onTooltip?.(null)
+      return true
+    case 'miniapp-ui-contextmenu': {
+      const reqId = data.id as number
+      if (overlay?.onContextMenu) {
+        overlay.onContextMenu(
+          { position: data.position as MiniAppContextMenuRequest['position'], items: data.items as MiniAppContextMenuRequest['items'] },
+          (itemId) => { send({ type: 'miniapp-ui-contextmenu-result', id: reqId, itemId }) },
+        )
+      } else {
+        send({ type: 'miniapp-ui-contextmenu-result', id: reqId, itemId: null })
+      }
+      return true
+    }
     default:
       return false
   }

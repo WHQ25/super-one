@@ -1,17 +1,19 @@
 import { useRef, forwardRef, useImperativeHandle } from 'react'
 import { useMiniAppBridge } from '@/hooks/useMiniAppBridge'
+import type { MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 
 interface MiniAppFrameProps {
   appId: string
   className?: string
+  overlay?: MiniAppOverlayCallbacks
 }
 
 export const MiniAppFrame = forwardRef<HTMLIFrameElement, MiniAppFrameProps>(
-  function MiniAppFrame({ appId, className }, ref) {
+  function MiniAppFrame({ appId, className, overlay }, ref) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   useImperativeHandle(ref, () => iframeRef.current!, [])
 
-  useMiniAppBridge({ appId, iframeRef })
+  useMiniAppBridge({ appId, iframeRef, overlay })
 
   return (
     <div className={className} style={{ position: 'relative', minWidth: 0 }}>

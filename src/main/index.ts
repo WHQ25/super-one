@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, powerMonitor, protocol, shell } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { readFile, readdir, rename, cp, rm, access, stat } from 'fs/promises'
+import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir } from 'fs/promises'
 import { homedir } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-security'
 import { execFileSync, spawn } from 'child_process'
@@ -9,7 +9,7 @@ import { gitRun } from './git-run'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, detectStandaloneApp, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, detectStandaloneApp, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti } from './miniapp/miniapp-service'
 import { generateBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools } from './mcp/superone-mcp-server'
@@ -55,6 +55,7 @@ import type { RemoteControlCallbacks } from './remote-control-service'
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: 'superone-app', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },
+  { scheme: 'superone-fs', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },
 ])
 
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport')
@@ -1406,11 +1407,13 @@ function registerIpcHandlers(): void {
     const toolSlug = manifest.toolSlug ?? appId
     registerAppTools(appId, toolSlug, manifest.tools ?? [])
     loadPreapprovedTools(appId, toolSlug, basePath)
+    if (manifest.tools?.length) agentService.markAllNeedsRebuild()
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string) => {
     unregisterAppTools(appId)
     clearAllowedDirectories(appId)
+    agentService.markAllNeedsRebuild()
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_TOOL_RESULT, (_e, callId: string, result: unknown, error?: string) => {
@@ -1614,6 +1617,57 @@ app.whenReady().then(() => {
     } catch (err) {
       log.error('[superone-app] failed:', err)
       return new Response('Not found', { status: 404 })
+    }
+  })
+
+  protocol.handle('superone-fs', async (request) => {
+    try {
+      const url = new URL(request.url)
+      const appId = url.hostname
+      const relativePath = decodeURIComponent(url.pathname).replace(/^\//, '')
+      if (!relativePath) return new Response('Bad request', { status: 400 })
+
+      const origin = request.headers.get('origin') || ''
+      if (origin && origin !== 'null' && origin !== `superone-app://${appId}`) {
+        return new Response('Forbidden', { status: 403 })
+      }
+
+      const dirs = getAllowedDirs(appId)
+      if (!dirs?.length) return new Response('No allowed directories', { status: 403 })
+
+      const { resolved, access: dirAccess } = resolveSafePathMulti(dirs, relativePath)
+
+      if (request.method === 'GET') {
+        const data = await readFile(resolved)
+        const ext = resolved.split('.').pop()?.toLowerCase() ?? ''
+        const contentType = MINIAPP_MIME[ext] ?? 'application/octet-stream'
+        return new Response(data, {
+          headers: { 'Content-Type': contentType, 'Content-Length': String(data.byteLength) },
+        })
+      }
+
+      if (request.method === 'PUT') {
+        if (dirAccess === 'read') return new Response('Write access denied', { status: 403 })
+        await mkdir(dirname(resolved), { recursive: true })
+        const ct = request.headers.get('content-type') || ''
+        if (ct.startsWith('text/') || ct.includes('json')) {
+          const text = await request.text()
+          await writeFile(resolved, text, 'utf-8')
+        } else {
+          const buf = Buffer.from(await request.arrayBuffer())
+          await writeFile(resolved, buf)
+        }
+        return new Response(null, { status: 204 })
+      }
+
+      return new Response('Method not allowed', { status: 405 })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.error('[superone-fs] failed:', err)
+      if (msg.includes('Access denied') || msg.includes('not within allowed')) {
+        return new Response(msg, { status: 403 })
+      }
+      return new Response(msg, { status: 500 })
     }
   })
 

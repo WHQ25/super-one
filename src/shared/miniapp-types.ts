@@ -82,7 +82,7 @@ export interface MiniAppToolCallResponse {
   error?: string
 }
 
-export type MiniAppFsOp = 'readFile' | 'readDir' | 'writeFile' | 'exists' | 'glob'
+export type MiniAppFsOp = 'readFile' | 'readDir' | 'writeFile' | 'exists' | 'glob' | 'deleteFile' | 'rename' | 'stat' | 'mkdir'
 
 export type MiniAppGitOp = 'info' | 'branches' | 'log' | 'status' | 'diff' | 'show'
 

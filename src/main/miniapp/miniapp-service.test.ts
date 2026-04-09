@@ -29,8 +29,12 @@ function mockManifest(appId: string, name: string) {
   return { appId, name, tools: [] }
 }
 
+const MOCK_TS = 1700000000000
+const MOCK_TS_B36 = MOCK_TS.toString(36)
+
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.spyOn(Date, 'now').mockReturnValue(MOCK_TS)
   mockMkdir.mockResolvedValue(undefined)
   mockWriteFile.mockResolvedValue(undefined)
 })
@@ -128,75 +132,77 @@ describe('detectStandaloneApp', () => {
 })
 
 describe('createMiniApp', () => {
+  const appId = `dev-test-app-${MOCK_TS_B36}`
+
   it('defaults to project mode + vanilla template', async () => {
-    const result = await createMiniApp({ name: 'Test App', projectDir: '/projects/test' })
+    const result = await createMiniApp({ name: 'Test App', slug: 'test-app', projectDir: '/projects/test' })
 
     expect(result.buildRequired).toBe(false)
-    expect(result.appPath).toBe('/projects/test/.superone/apps/test-app')
-    expect(result.entry.id).toBe('test-app')
+    expect(result.appPath).toBe(`/projects/test/.superone/apps/${appId}`)
+    expect(result.entry.id).toBe(appId)
   })
 
-  it('slugifies app name for appId', async () => {
-    const result = await createMiniApp({ name: 'My Cool App!', projectDir: '/p' })
-    expect(result.entry.id).toBe('my-cool-app')
+  it('generates appId from slug + timestamp', async () => {
+    const result = await createMiniApp({ name: 'My Cool App!', slug: 'my-cool-app', projectDir: '/p' })
+    expect(result.entry.id).toBe(`dev-my-cool-app-${MOCK_TS_B36}`)
   })
 
   it('creates minimal manifest without tools or permissions', async () => {
-    const result = await createMiniApp({ name: 'Test', projectDir: '/p' })
+    const result = await createMiniApp({ name: 'Test', slug: 'test', projectDir: '/p' })
     expect(result.entry.manifest.tools).toBeUndefined()
     expect(result.entry.manifest.permissions).toBeUndefined()
   })
 
   it('sets type and description in manifest', async () => {
-    const result = await createMiniApp({ name: 'Test', projectDir: '/p', type: 'sidebar', description: 'A test app' })
+    const result = await createMiniApp({ name: 'Test', slug: 'test', projectDir: '/p', type: 'sidebar', description: 'A test app' })
     expect(result.entry.manifest.type).toBe('sidebar')
     expect(result.entry.manifest.description).toBe('A test app')
   })
 
   describe('project + vanilla', () => {
     it('writes files to .superone/apps/<appId>/', async () => {
-      await createMiniApp({ name: 'Dashboard', projectDir: '/projects/test', mode: 'project', template: 'vanilla' })
+      await createMiniApp({ name: 'Dashboard', slug: 'dashboard', projectDir: '/projects/test', mode: 'project', template: 'vanilla' })
 
       const writtenPaths = mockWriteFile.mock.calls.map((c: string[]) => c[0])
-      expect(writtenPaths.some((p: string) => p.includes('.superone/apps/dashboard/manifest.json'))).toBe(true)
-      expect(writtenPaths.some((p: string) => p.includes('.superone/apps/dashboard/index.html'))).toBe(true)
+      expect(writtenPaths.some((p: string) => p.includes(`dev-dashboard-${MOCK_TS_B36}/manifest.json`))).toBe(true)
+      expect(writtenPaths.some((p: string) => p.includes(`dev-dashboard-${MOCK_TS_B36}/index.html`))).toBe(true)
     })
 
     it('returns buildRequired=false', async () => {
-      const result = await createMiniApp({ name: 'Test', projectDir: '/p', mode: 'project', template: 'vanilla' })
+      const result = await createMiniApp({ name: 'Test', slug: 'test', projectDir: '/p', mode: 'project', template: 'vanilla' })
       expect(result.buildRequired).toBe(false)
     })
 
     it('returns basePath=appPath', async () => {
-      const result = await createMiniApp({ name: 'Test', projectDir: '/p', mode: 'project', template: 'vanilla' })
+      const result = await createMiniApp({ name: 'Test', slug: 'test', projectDir: '/p', mode: 'project', template: 'vanilla' })
       expect(result.entry.basePath).toBe(result.appPath)
     })
   })
 
   describe('project + react', () => {
     it('writes react files to .superone/apps/<appId>/', async () => {
-      await createMiniApp({ name: 'Dashboard', projectDir: '/projects/test', mode: 'project', template: 'react' })
+      await createMiniApp({ name: 'Dashboard', slug: 'dashboard', projectDir: '/projects/test', mode: 'project', template: 'react' })
 
       const writtenPaths = mockWriteFile.mock.calls.map((c: string[]) => c[0])
-      expect(writtenPaths.some((p: string) => p.includes('.superone/apps/dashboard/package.json'))).toBe(true)
-      expect(writtenPaths.some((p: string) => p.includes('.superone/apps/dashboard/src/App.tsx'))).toBe(true)
-      expect(writtenPaths.some((p: string) => p.includes('.superone/apps/dashboard/public/manifest.json'))).toBe(true)
+      expect(writtenPaths.some((p: string) => p.includes(`dev-dashboard-${MOCK_TS_B36}/package.json`))).toBe(true)
+      expect(writtenPaths.some((p: string) => p.includes(`dev-dashboard-${MOCK_TS_B36}/src/App.tsx`))).toBe(true)
+      expect(writtenPaths.some((p: string) => p.includes(`dev-dashboard-${MOCK_TS_B36}/public/manifest.json`))).toBe(true)
     })
 
     it('returns buildRequired=true', async () => {
-      const result = await createMiniApp({ name: 'Test', projectDir: '/p', mode: 'project', template: 'react' })
+      const result = await createMiniApp({ name: 'Test', slug: 'test', projectDir: '/p', mode: 'project', template: 'react' })
       expect(result.buildRequired).toBe(true)
     })
 
     it('returns basePath pointing to dist/', async () => {
-      const result = await createMiniApp({ name: 'Test', projectDir: '/p', mode: 'project', template: 'react' })
+      const result = await createMiniApp({ name: 'Test', slug: 'test', projectDir: '/p', mode: 'project', template: 'react' })
       expect(result.entry.basePath).toBe(result.appPath + '/dist')
     })
   })
 
   describe('standalone + vanilla', () => {
     it('writes files to projectDir root', async () => {
-      await createMiniApp({ name: 'My App', projectDir: '/projects/my-app', mode: 'standalone', template: 'vanilla' })
+      await createMiniApp({ name: 'My App', slug: 'my-app', projectDir: '/projects/my-app', mode: 'standalone', template: 'vanilla' })
 
       const writtenPaths = mockWriteFile.mock.calls.map((c: string[]) => c[0])
       expect(writtenPaths).toContain('/projects/my-app/manifest.json')
@@ -204,7 +210,7 @@ describe('createMiniApp', () => {
     })
 
     it('returns buildRequired=false and basePath=projectDir', async () => {
-      const result = await createMiniApp({ name: 'My App', projectDir: '/projects/my-app', mode: 'standalone', template: 'vanilla' })
+      const result = await createMiniApp({ name: 'My App', slug: 'my-app', projectDir: '/projects/my-app', mode: 'standalone', template: 'vanilla' })
       expect(result.buildRequired).toBe(false)
       expect(result.entry.basePath).toBe('/projects/my-app')
       expect(result.appPath).toBe('/projects/my-app')
@@ -213,7 +219,7 @@ describe('createMiniApp', () => {
 
   describe('standalone + react', () => {
     it('writes react files to projectDir root', async () => {
-      await createMiniApp({ name: 'My App', projectDir: '/projects/my-app', mode: 'standalone', template: 'react' })
+      await createMiniApp({ name: 'My App', slug: 'my-app', projectDir: '/projects/my-app', mode: 'standalone', template: 'react' })
 
       const writtenPaths = mockWriteFile.mock.calls.map((c: string[]) => c[0])
       expect(writtenPaths.some((p: string) => p.includes('/projects/my-app/package.json'))).toBe(true)
@@ -221,7 +227,7 @@ describe('createMiniApp', () => {
     })
 
     it('returns buildRequired=true and basePath=projectDir/dist', async () => {
-      const result = await createMiniApp({ name: 'My App', projectDir: '/projects/my-app', mode: 'standalone', template: 'react' })
+      const result = await createMiniApp({ name: 'My App', slug: 'my-app', projectDir: '/projects/my-app', mode: 'standalone', template: 'react' })
       expect(result.buildRequired).toBe(true)
       expect(result.entry.basePath).toBe('/projects/my-app/dist')
     })

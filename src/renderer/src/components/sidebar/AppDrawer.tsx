@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, type DragEvent } from 'react'
-import { Blocks, ChevronDown, ChevronRight, GripVertical, PackagePlus, Plus, Store } from 'lucide-react'
+import { Blocks, ChevronDown, ChevronRight, PackagePlus, Plus, Store } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -12,7 +12,7 @@ import { MarqueeText } from '@/components/ui/marquee-text'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
 import type { MiniAppEntry } from '../../../../shared/miniapp-types'
 import { AnimatePresence, motion } from 'motion/react'
-import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
@@ -52,8 +52,10 @@ function SortableAppRow({ app, index, onClick }: { app: MiniAppEntry; index: num
     <div
       ref={setNodeRef}
       style={style}
+      {...attributes}
+      {...listeners}
       className={cn(
-        'group/sapp flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent',
+        'group/sapp flex cursor-grab items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent active:cursor-grabbing',
         isDragging && 'z-10 opacity-80 shadow-sm',
       )}
       onClick={onClick}
@@ -71,13 +73,6 @@ function SortableAppRow({ app, index, onClick }: { app: MiniAppEntry; index: num
         {app.manifest.description && (
           <MarqueeText className="text-[11px] text-sidebar-foreground/50" hovered={hovered}>{app.manifest.description}</MarqueeText>
         )}
-      </div>
-      <div
-        {...attributes}
-        {...listeners}
-        className="shrink-0 cursor-grab rounded p-0.5 text-sidebar-foreground/30 opacity-0 transition-opacity hover:text-sidebar-foreground/60 group-hover/sapp:opacity-100 active:cursor-grabbing"
-      >
-        <GripVertical className="size-3.5" />
       </div>
     </div>
   )
@@ -118,6 +113,7 @@ export function AppDrawer() {
   const previewInstall = useMiniAppStore((s) => s.previewInstall)
   const setDraftText = useChatStore((s) => s.setDraftText)
 
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const totalApps = allApps.length
   const stackedApps = allApps.slice(0, MAX_STACKED_ICONS)
 
@@ -319,7 +315,7 @@ export function AppDrawer() {
 
                 <ScrollArea className="max-h-96">
                   <div className="px-1 py-1">
-                    <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                       <SortableContext items={orderedApps.map((a) => a.id)} strategy={verticalListSortingStrategy}>
                         {orderedApps.map((app, i) => (
                           <SortableAppRow key={app.id} app={app} index={i} onClick={() => openApp(app)} />

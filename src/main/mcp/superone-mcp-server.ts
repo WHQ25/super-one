@@ -127,15 +127,17 @@ export function getSuperoneMcpServer(): McpSdkServerConfigWithInstance {
 This tool only sets up the basic structure. To add tools, permissions, or in-chat config, edit manifest.json directly after scaffolding.`,
         {
           name: z.string().describe('Display name for the mini-app'),
+          slug: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).describe('URL-safe lowercase identifier (e.g. "weather-app"). Used to build the appId. Must be lowercase alphanumeric with hyphens.'),
           projectDir: z.string().describe('Absolute path to the project directory'),
           mode: z.enum(['project', 'standalone']).optional().describe('project (default): mini-app for the current project, placed in .superone/apps/<appId>/. standalone: the project IS the mini-app.'),
           template: z.enum(['vanilla', 'react']).optional().describe('vanilla (default): plain HTML, no build needed. react: React + TypeScript + Tailwind, requires build step.'),
           type: z.enum(['sidebar', 'panel', 'in-chat', 'fullscreen']).optional().describe('Where the app appears: panel (resizable, default), sidebar (narrow left panel), in-chat (inline in chat messages, data-driven rendering), fullscreen (full canvas)'),
           description: z.string().optional().describe('Short description of what the app does'),
         },
-        async ({ name: appName, projectDir, mode, template, type, description }) => {
+        async ({ name: appName, slug, projectDir, mode, template, type, description }) => {
           const result = await createMiniApp({
             name: appName,
+            slug,
             projectDir,
             mode,
             template,
@@ -195,10 +197,14 @@ This tool only sets up the basic structure. To add tools, permissions, or in-cha
 }
 
 function registerToolsOnServer(appId: string, toolSlug: string, tools: MiniAppToolDefinition[]): void {
+  log.debug('[superone-mcp] registerToolsOnServer appId=%s toolSlug=%s toolCount=%d existingCount=%d', appId, toolSlug, tools.length, registeredTools.size)
   for (const t of tools) {
     const namespacedName = `${toolSlug}__${t.name}`
 
-    if (registeredTools.has(namespacedName)) continue
+    if (registeredTools.has(namespacedName)) {
+      log.debug('[superone-mcp] skipping already-registered tool: %s', namespacedName)
+      continue
+    }
 
     const zodShape = jsonSchemaToZodShape(t.inputSchema)
     const registered = mcpServer!.registerTool(
@@ -208,6 +214,10 @@ function registerToolsOnServer(appId: string, toolSlug: string, tools: MiniAppTo
         inputSchema: zodShape,
       },
       async (args: Record<string, unknown>) => {
+        if (!appToolDefs.has(appId)) {
+          return { content: [{ type: 'text' as const, text: `[Error] App "${appId}" has been closed. This tool is no longer available.` }] }
+        }
+
         await waitForAppReady(appId)
 
         const callId = randomUUID()
@@ -249,6 +259,7 @@ function registerToolsOnServer(appId: string, toolSlug: string, tools: MiniAppTo
 }
 
 export function registerAppTools(appId: string, toolSlug: string, tools: MiniAppToolDefinition[]): void {
+  log.debug('[superone-mcp] registerAppTools appId=%s toolSlug=%s tools=%d mcpServer=%s connected=%s', appId, toolSlug, tools.length, !!mcpServer, mcpServer?.isConnected?.() ?? 'N/A')
   appToolDefs.set(appId, { toolSlug, tools })
 
   if (!mcpServer) {
@@ -258,6 +269,7 @@ export function registerAppTools(appId: string, toolSlug: string, tools: MiniApp
 
   registerToolsOnServer(appId, toolSlug, tools)
   mcpServer.sendToolListChanged()
+  log.debug('[superone-mcp] sendToolListChanged called, registeredCount=%d', registeredTools.size)
 }
 
 export async function loadPreapprovedTools(appId: string, toolSlug: string, basePath: string): Promise<void> {
@@ -289,6 +301,7 @@ export function isToolPreapproved(toolName: string): boolean {
 
 export function unregisterAppTools(appId: string): void {
   const entry = appToolDefs.get(appId)
+  log.debug('[superone-mcp] unregisterAppTools appId=%s entry=%s registeredBefore=%s', appId, !!entry, [...registeredTools.keys()].join(','))
   appToolDefs.delete(appId)
   const prefix = entry ? `${entry.toolSlug}__` : `${appId}__`
   for (const [name, tool] of registeredTools) {
@@ -299,6 +312,7 @@ export function unregisterAppTools(appId: string): void {
     }
   }
   appReadyGates.delete(appId)
+  log.debug('[superone-mcp] registeredAfterUnregister=%s', [...registeredTools.keys()].join(','))
   mcpServer?.sendToolListChanged()
 }
 

@@ -125,11 +125,10 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
         {/* Tools section */}
         <div className="rounded-lg border border-border bg-card p-4">
           <h3 className="mb-1 text-sm font-medium">
-            Tools
-            {tools.length > 0 && <span className="ml-2 text-xs text-muted-foreground">({tools.length})</span>}
+            Tool Pre-approval
           </h3>
           <p className="mb-3 text-xs text-muted-foreground">
-            Pre-approved tools skip permission prompts when the agent uses them.
+            Enabled tools skip permission prompts when the agent uses them.
           </p>
           {tools.length > 0 ? (
             loading ? (

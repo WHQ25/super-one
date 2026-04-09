@@ -43,9 +43,32 @@ export function generateBridgeScript(appId: string): string {
       else { initCallbacks.push(callback); }
     },
     fs: {
-      readFile: function(path) { return bridgeFsCall('readFile', { path: path }); },
+      readFile: function(path, opts) {
+        if (opts && opts.binary) {
+          return fetch('superone-fs://${appId}/' + encodeURIComponent(path))
+            .then(function(r) {
+              if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
+              return r.arrayBuffer();
+            });
+        }
+        return bridgeFsCall('readFile', { path: path });
+      },
       readDir: function(path) { return bridgeFsCall('readDir', { path: path || '.' }); },
-      writeFile: function(path, content) { return bridgeFsCall('writeFile', { path: path, content: content }); },
+      writeFile: function(path, content) {
+        var headers = {};
+        if (typeof content === 'string') {
+          headers['Content-Type'] = 'text/plain; charset=utf-8';
+        }
+        return fetch('superone-fs://${appId}/' + encodeURIComponent(path), {
+          method: 'PUT', headers: headers, body: content
+        }).then(function(r) {
+          if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
+        });
+      },
+      deleteFile: function(path) { return bridgeFsCall('deleteFile', { path: path }); },
+      rename: function(from, to) { return bridgeFsCall('rename', { from: from, to: to }); },
+      stat: function(path) { return bridgeFsCall('stat', { path: path }); },
+      mkdir: function(path) { return bridgeFsCall('mkdir', { path: path }); },
       exists: function(path) { return bridgeFsCall('exists', { path: path }); },
       glob: function(pattern) { return bridgeFsCall('glob', { pattern: pattern }); },
       watch: function(path, callback) {

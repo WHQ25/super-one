@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile, stat, mkdir, glob, watch } from 'fs/promises'
+import { readdir, readFile, writeFile, stat, mkdir, glob, watch, rm, rename } from 'fs/promises'
 import { watch as watchSync } from 'fs'
 import type { FSWatcher } from 'fs'
 import { join, resolve, sep, relative, dirname } from 'path'
@@ -10,7 +10,7 @@ import { sanitizeGitRef } from '../path-security'
 import { parseGitStatusFiles } from '../git-status-utils'
 import { parseManifest } from './miniapp-schema'
 import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp, MiniAppFsAccess } from '../../shared/miniapp-types'
-import { generateVanillaFiles, generateReactFiles, slugify, type GeneratedFile } from './miniapp-templates'
+import { generateVanillaFiles, generateReactFiles, type GeneratedFile } from './miniapp-templates'
 
 const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
 const devAppsDir = () => join(process.cwd(), 'examples', 'miniapp')
@@ -91,7 +91,7 @@ function clearWatchersForApp(appId: string): void {
   }
 }
 
-function resolveSafePathMulti(dirs: AllowedDir[], relativePath: string): { resolved: string; access: MiniAppFsAccess } {
+export function resolveSafePathMulti(dirs: AllowedDir[], relativePath: string): { resolved: string; access: MiniAppFsAccess } {
   const superoneSeg = `${sep}.superone${sep}`
   for (const dir of dirs) {
     const resolved = resolve(dir.path, relativePath)
@@ -137,6 +137,10 @@ function stopGitHeadWatch(appId: string): void {
     watcher.close()
     gitHeadWatchers.delete(appId)
   }
+}
+
+export function getAllowedDirs(appId: string): AllowedDir[] | undefined {
+  return allowedDirs.get(appId)
 }
 
 export function setAllowedDirectories(appId: string, dirs: AllowedDir[]): void {
@@ -200,6 +204,7 @@ export type CreateMiniAppTemplate = 'vanilla' | 'react'
 
 export interface CreateMiniAppOptions {
   name: string
+  slug: string
   projectDir: string
   mode?: CreateMiniAppMode
   template?: CreateMiniAppTemplate
@@ -245,7 +250,7 @@ async function writeGeneratedFiles(baseDir: string, files: GeneratedFile[]): Pro
 export async function createMiniApp(opts: CreateMiniAppOptions): Promise<CreateMiniAppResult> {
   const mode = opts.mode ?? 'project'
   const template = opts.template ?? 'vanilla'
-  const appId = slugify(opts.name)
+  const appId = `dev-${opts.slug}-${Date.now().toString(36)}`
 
   const manifest: MiniAppManifest = {
     appId,
@@ -292,7 +297,7 @@ export function cacheAppBasePath(appId: string, basePath: string): void {
 export function generateCSP(manifest: MiniAppManifest): string {
   const networkEntries = manifest.permissions?.network ?? []
   const domains = networkEntries.map((e) => e.domain.includes('://') ? e.domain : `https://${e.domain}`)
-  const connectSrc = ["'self'", 'superone-app:', ...domains].join(' ')
+  const connectSrc = ["'self'", 'superone-app:', 'superone-fs:', ...domains].join(' ')
   const scriptSrc = ["'self'", "'unsafe-inline'", ...domains].join(' ')
   const styleSrc = ["'self'", "'unsafe-inline'", ...domains].join(' ')
   return [
@@ -315,6 +320,8 @@ export function validatePath(basePath: string, requestedPath: string): string | 
   return resolved
 }
 
+const WRITE_OPS: Set<MiniAppFsOp> = new Set(['writeFile', 'deleteFile', 'rename', 'mkdir'])
+
 export async function handleFsRequest(
   appId: string,
   op: MiniAppFsOp,
@@ -322,8 +329,6 @@ export async function handleFsRequest(
 ): Promise<unknown> {
   const dirs = allowedDirs.get(appId)
   if (!dirs?.length) throw new Error(`No allowed directories for app: ${appId}`)
-
-  const WRITE_OPS: Set<MiniAppFsOp> = new Set(['writeFile'])
 
   const safe = (p: string) => {
     const result = resolveSafePathMulti(dirs, p)
@@ -344,7 +349,7 @@ export async function handleFsRequest(
     }
     case 'writeFile': {
       const p = safe(args.path as string)
-      await mkdir(join(p, '..'), { recursive: true })
+      await mkdir(dirname(p), { recursive: true })
       await writeFile(p, args.content as string, 'utf-8')
       return undefined
     }
@@ -365,6 +370,25 @@ export async function handleFsRequest(
         }
       }
       return allFiles
+    }
+    case 'deleteFile': {
+      await rm(safe(args.path as string))
+      return undefined
+    }
+    case 'rename': {
+      const from = safe(args.from as string)
+      const to = safe(args.to as string)
+      await mkdir(dirname(to), { recursive: true })
+      await rename(from, to)
+      return undefined
+    }
+    case 'stat': {
+      const s = await stat(safe(args.path as string))
+      return { size: s.size, isDir: s.isDirectory(), isFile: s.isFile(), mtime: s.mtimeMs, ctime: s.ctimeMs }
+    }
+    case 'mkdir': {
+      await mkdir(safe(args.path as string), { recursive: true })
+      return undefined
     }
     default:
       throw new Error(`Unknown fs operation: ${op}`)

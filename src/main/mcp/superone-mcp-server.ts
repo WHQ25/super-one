@@ -17,6 +17,7 @@ import apiGitMd from './guides/api/git.md?raw'
 import apiThemeMd from './guides/api/theme.md?raw'
 import apiAgentMd from './guides/api/agent.md?raw'
 import apiSystemMd from './guides/api/system.md?raw'
+import apiUiMd from './guides/api/ui.md?raw'
 import packagingMd from './guides/packaging.md?raw'
 import iconMd from './guides/icon.md?raw'
 
@@ -30,6 +31,7 @@ const MINIAPP_GUIDES: Record<string, string> = {
   'api-theme': apiThemeMd,
   'api-agent': apiAgentMd,
   'api-system': apiSystemMd,
+  'api-ui': apiUiMd,
   packaging: packagingMd,
   icon: iconMd,
 }
@@ -115,7 +117,7 @@ export function getSuperoneMcpServer(): McpSdkServerConfigWithInstance {
         'The guide is ONLY available through this tool — do NOT use Read or any other tool to access it.',
         {
           topic: z.enum(MINIAPP_GUIDE_TOPICS).describe(
-            'Which guide topic to read. Read overview first, then the type-specific guide, then load other topics as needed: overview (architecture, workflow — always read first), standard (panel/sidebar/fullscreen: tools, handlers, layout), inchat (in-chat: onInit, inputSchema, layout), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-theme (CSS vars, dark mode), api-agent (sendPrompt), packaging (.s1app distribution), icon (visual assets)'
+            'Which guide topic to read. Read overview first, then the type-specific guide, then load other topics as needed: overview (architecture, workflow — always read first), standard (panel/sidebar/fullscreen: tools, handlers, layout), inchat (in-chat: onInit, inputSchema, layout), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-theme (CSS vars, dark mode), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), packaging (.s1app distribution), icon (visual assets)'
           ),
         },
         async ({ topic }) => ({

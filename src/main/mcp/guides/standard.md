@@ -102,5 +102,6 @@ The return value is JSON-serialized and sent back to the agent. Return meaningfu
 - `permissions` — file system and network access
 - `api-fs`, `api-git`, `api-theme`, `api-agent` — bridge APIs
 - `api-system` — open folders, external links, clipboard
+- `api-ui` — toast, tooltip, context menu overlays
 - `packaging` — distribute as .s1app
 - `icon` — visual assets

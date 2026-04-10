@@ -56,12 +56,16 @@ function App(): React.JSX.Element {
     })
   }, [])
 
-  // ⌘B keyboard shortcut to toggle sidebar
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.metaKey && e.key === 'b') {
+      if (!e.metaKey) return
+      if (e.key === 'b') {
         e.preventDefault()
         useAppStore.getState().setShowSidebar(!useAppStore.getState().showSidebar)
+      } else if (e.key === ',') {
+        e.preventDefault()
+        const { view, navigateTo } = useAppStore.getState()
+        navigateTo(view === 'settings' ? 'main' : 'settings')
       }
     }
     window.addEventListener('keydown', handler)

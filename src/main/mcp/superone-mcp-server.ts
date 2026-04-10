@@ -25,6 +25,7 @@ import apiUiMd from './guides/api/ui.md?raw'
 import packagingMd from './guides/packaging.md?raw'
 import iconMd from './guides/icon.md?raw'
 import recipesMd from './guides/recipes.md?raw'
+import toolsMd from './guides/tools.md?raw'
 
 const MINIAPP_GUIDES: Record<string, string> = {
   overview: overviewMd,
@@ -40,6 +41,7 @@ const MINIAPP_GUIDES: Record<string, string> = {
   packaging: packagingMd,
   icon: iconMd,
   recipes: recipesMd,
+  tools: toolsMd,
 }
 
 const MINIAPP_GUIDE_TOPICS = Object.keys(MINIAPP_GUIDES) as [string, ...string[]]

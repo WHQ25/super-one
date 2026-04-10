@@ -40,6 +40,57 @@ function CompactToolRow({ icon, children }: { icon: React.ReactNode; children: R
   )
 }
 
+function AppToolHeader({ appName, toolText, isStreaming, summary }: { appName?: string; toolText: string; isStreaming: boolean; summary: string }) {
+  return (
+    <>
+      {appName && <><span className="shrink-0 font-medium text-foreground">{appName}</span><span className="shrink-0 text-muted-foreground">·</span></>}
+      <span className="shrink-0 text-foreground">{isStreaming ? <>{toolText}…</> : toolText}</span>
+      {summary && <span className="min-w-0 truncate text-muted-foreground">{summary}</span>}
+    </>
+  )
+}
+
+function AppToolBlock({ icon, appName, toolText, summary, isStreaming, expandable, result }: {
+  icon: React.ReactNode
+  appName?: string
+  toolText: string
+  summary: string
+  isStreaming: boolean
+  expandable: boolean
+  result?: string
+}) {
+  const [expanded, setExpanded] = useState(false)
+  if (!expandable) {
+    return (
+      <CompactToolRow icon={icon}>
+        <AppToolHeader appName={appName} toolText={toolText} isStreaming={isStreaming} summary={summary} />
+      </CompactToolRow>
+    )
+  }
+  return (
+    <div className={cn('tool-node my-0.5 rounded bg-muted/50', 'cursor-pointer hover:bg-muted/70')}>
+      <div
+        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        {icon}
+        <AppToolHeader appName={appName} toolText={toolText} isStreaming={isStreaming} summary={summary} />
+        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
+      </div>
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-out"
+        style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
+      >
+        <div className="overflow-hidden">
+          <div className="px-2 pb-1.5">
+            <PrettyJSONCodeBlock text={result!} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Dev-only: comma-separated tool names to show raw debug UI. e.g. RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate */
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
   ? (import.meta.env.RENDERER_VITE_DEBUG_TOOL_NAMES ?? '').split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
@@ -56,6 +107,7 @@ interface ToolBlockProps {
   resultOutputPath?: string
   autoExpand?: boolean
   backgroundActivity?: boolean
+  grouped?: boolean
 }
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
@@ -63,7 +115,7 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 
-export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, resultOutputPath, autoExpand = true, backgroundActivity = false }: ToolBlockProps) {
+export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, resultOutputPath, autoExpand = true, backgroundActivity = false, grouped = false }: ToolBlockProps) {
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const params = useMemo(() => parseToolInput(input, toolName), [input, toolName])
@@ -229,13 +281,24 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
       const canvasApp = useMiniAppStore.getState().apps.find((a) => (a.manifest.toolSlug ?? a.id) === mcpSlug)
       const toolDef = canvasApp?.manifest.tools?.find((t) => t.name === mcpToolNamePart)
       const appName = canvasApp?.manifest.name ?? mcpSlug
-      const displayText = toolDef?.runningText ?? mcpToolNamePart.replace(/_/g, ' ')
+      const toolReadableName = toolDef?.displayName ?? mcpToolNamePart.replace(/_/g, ' ')
+      const runningText = toolDef?.runningText ?? toolReadableName
+      const appToolExpandable = !!(toolDef?.showResult && result && !isStreaming)
+      const inputSummary = toolDef?.inputSummaryField ? String(params[toolDef.inputSummaryField] ?? '') : ''
+      let resultSummary = ''
+      if (!isStreaming && result && toolDef?.resultSummaryField) {
+        try { resultSummary = String(JSON.parse(result)[toolDef.resultSummaryField] ?? '') } catch {}
+      }
       return (
-        <CompactToolRow icon={canvasApp ? <MiniAppIcon appId={canvasApp.id} className="size-3.5 shrink-0" /> : <ToolIcon icon="plug" className="size-3 shrink-0 text-muted-foreground" />}>
-          <span className="font-medium text-foreground">{appName}</span>
-          <span className="text-muted-foreground">·</span>
-          <span className="text-muted-foreground">{isStreaming ? <>{displayText}…</> : displayText}</span>
-        </CompactToolRow>
+        <AppToolBlock
+          icon={canvasApp ? <MiniAppIcon appId={canvasApp.id} className="size-3.5 shrink-0" /> : <ToolIcon icon="plug" className="size-3 shrink-0 text-muted-foreground" />}
+          appName={grouped ? undefined : appName}
+          toolText={isStreaming ? runningText : toolReadableName}
+          summary={isStreaming ? inputSummary : (resultSummary || inputSummary)}
+          isStreaming={isStreaming}
+          expandable={appToolExpandable}
+          result={result}
+        />
       )
     }
   }

@@ -4,7 +4,9 @@ import { cn } from '@/lib/utils'
 import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
-import { parseToolInput } from './tool-display'
+import { AppToolGroup } from './AppToolGroup'
+import { parseToolInput, parseMcpToolName } from './tool-display'
+import { useMiniAppStore } from '@/stores/miniapp'
 import { SubagentBlock } from './SubagentBlock'
 import { CodexTurnView } from './CodexTurnView'
 import { AttachmentBar } from './AttachmentBar'
@@ -36,6 +38,7 @@ const COLLAPSIBLE_TOOLS = new Set(['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetc
 type RenderSegment =
   | { kind: 'block'; block: ContentBlock; index: number }
   | { kind: 'tools'; blocks: ContentBlock[]; startIndex: number }
+  | { kind: 'app-tools'; appId: string; blocks: ContentBlock[]; startIndex: number }
   | { kind: 'subagent'; taskBlock: ContentBlock & { type: 'tool_use' }; childBlocks: ContentBlock[]; resultBlock?: ContentBlock; startIndex: number }
 
 interface GroupResult {
@@ -64,9 +67,32 @@ function groupContent(content: ContentBlock[]): GroupResult {
     }
   }
 
+  // Build a set of tool_use IDs that belong to groupable app tools
+  const appToolIdToAppId = new Map<string, string>()
+  const apps = useMiniAppStore.getState().apps
+  const slugToApp = new Map(apps.flatMap((a) => {
+    const slug = a.manifest.toolSlug ?? a.id
+    return slug ? [[slug, a] as const] : []
+  }))
+  for (const block of content) {
+    if (block.type !== 'tool_use') continue
+    const mcp = parseMcpToolName(block.toolName)
+    if (!mcp || mcp.serverName !== 'superone') continue
+    const appToolMatch = mcp.mcpToolName.match(/^(.+?)__(.+)$/)
+    if (!appToolMatch) continue
+    const [, slug, toolNamePart] = appToolMatch
+    const app = slugToApp.get(slug)
+    if (!app) continue
+    const toolDef = app.manifest.tools?.find((t) => t.name === toolNamePart)
+    if (toolDef?.groupable) appToolIdToAppId.set(block.toolUseId, app.id)
+  }
+
   const segments: RenderSegment[] = []
   let group: ContentBlock[] = []
   let groupStart = 0
+  let appGroup: ContentBlock[] = []
+  let appGroupId: string | null = null
+  let appGroupStart = 0
 
   // Active subagent collectors: taskToolUseId → segment reference
   const activeSubagents = new Map<string, RenderSegment & { kind: 'subagent' }>()
@@ -75,6 +101,13 @@ function groupContent(content: ContentBlock[]): GroupResult {
     if (group.length === 0) return
     segments.push({ kind: 'tools', blocks: group, startIndex: groupStart })
     group = []
+  }
+
+  const flushAppGroup = () => {
+    if (appGroup.length === 0) return
+    segments.push({ kind: 'app-tools', appId: appGroupId!, blocks: appGroup, startIndex: appGroupStart })
+    appGroup = []
+    appGroupId = null
   }
 
   for (let i = 0; i < content.length; i++) {
@@ -97,6 +130,7 @@ function groupContent(content: ContentBlock[]): GroupResult {
     // Start a new subagent segment for Task tool_use
     if (block.type === 'tool_use' && block.toolName === 'Agent') {
       flush()
+      flushAppGroup()
       const seg: RenderSegment & { kind: 'subagent' } = {
         kind: 'subagent',
         taskBlock: block,
@@ -108,7 +142,25 @@ function groupContent(content: ContentBlock[]): GroupResult {
       continue
     }
 
+    // App tool grouping (separate from COLLAPSIBLE_TOOLS)
+    if (block.type === 'tool_use' && appToolIdToAppId.has(block.toolUseId)) {
+      flush()
+      const blockAppId = appToolIdToAppId.get(block.toolUseId)!
+      if (appGroupId !== blockAppId) {
+        flushAppGroup()
+        appGroupId = blockAppId
+        appGroupStart = i
+      }
+      appGroup.push(block)
+      continue
+    }
+    if (block.type === 'tool_result' && appToolIdToAppId.has(block.toolUseId)) {
+      appGroup.push(block)
+      continue
+    }
+
     // Normal grouping for collapsible tools
+    flushAppGroup()
     if (block.type === 'tool_use' && COLLAPSIBLE_TOOLS.has(block.toolName)) {
       if (group.length === 0) groupStart = i
       group.push(block)
@@ -120,6 +172,7 @@ function groupContent(content: ContentBlock[]): GroupResult {
     }
   }
   flush()
+  flushAppGroup()
   return { segments, toolNameMap, toolResultMap, timedOutToolIds, outputPathMap }
 }
 
@@ -512,6 +565,21 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                     childBlocks={seg.childBlocks}
                     resultBlock={seg.resultBlock}
                     isStreaming={isStreaming}
+                  />
+                )
+              }
+              if (seg.kind === 'app-tools') {
+                const appToolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
+                if (appToolUseCount <= 1) {
+                  return seg.blocks.map((block, i) =>
+                    renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type, projectPath)
+                  )
+                }
+                return (
+                  <AppToolGroup
+                    key={`atg-${seg.startIndex}`}
+                    appId={seg.appId}
+                    blocks={seg.blocks}
                   />
                 )
               }

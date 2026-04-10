@@ -7,6 +7,7 @@ interface MiniAppStoreState {
   apps: MiniAppEntry[]
   loaded: boolean
   _lastProjectDir: string | undefined
+  _iconRev: number
   pendingOpenAppId: string | null
   pendingInstall: MiniAppPreviewResult | null
   fullscreenApp: { appId: string; entry: MiniAppEntry } | null
@@ -49,6 +50,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
   apps: [],
   loaded: false,
   _lastProjectDir: undefined,
+  _iconRev: 0,
   pendingOpenAppId: null,
   pendingInstall: null,
   fullscreenApp: null,
@@ -60,7 +62,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
   },
   refreshApps: async (projectDir?: string) => {
     const apps = await window.miniapp.list(projectDir)
-    set({ apps, loaded: true, _lastProjectDir: projectDir })
+    set({ apps, loaded: true, _lastProjectDir: projectDir, _iconRev: get()._iconRev + 1 })
   },
   previewInstall: async (s1appPath: string) => {
     const preview = await window.miniapp.preview(s1appPath)

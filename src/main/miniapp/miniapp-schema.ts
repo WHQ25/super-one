@@ -33,7 +33,12 @@ const toolInputSchemaSchema = z.looseObject({
 const toolDefinitionSchema = z.object({
   name: z.string().min(1).regex(/^[a-z0-9_]+$/, { message: 'Tool name must be lowercase alphanumeric with underscores' }),
   description: z.string().min(1),
+  displayName: z.string().optional(),
   runningText: z.string().optional(),
+  inputSummaryField: z.string().optional(),
+  resultSummaryField: z.string().optional(),
+  showResult: z.boolean().optional(),
+  groupable: z.boolean().optional(),
   inputSchema: toolInputSchemaSchema,
 })
 

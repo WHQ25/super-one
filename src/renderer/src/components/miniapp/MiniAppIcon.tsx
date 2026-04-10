@@ -8,8 +8,11 @@ interface MiniAppIconProps {
 }
 
 export function MiniAppIcon({ appId, className }: MiniAppIconProps) {
-  const logo = useMiniAppStore((s) => s.apps.find((a) => a.id === appId)?.manifest.logo)
-  const src = logo ? `superone-app://${appId}/${logo}` : defaultIcon
+  const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
+  const isDev = app?.manifest.isDev
+  const logo = app?.manifest.logo
+  const rev = useMiniAppStore((s) => isDev ? s._iconRev : 0)
+  const src = logo ? `superone-app://${appId}/${logo}${isDev ? `?v=${rev}` : ''}` : defaultIcon
   return (
     <img
       src={src}

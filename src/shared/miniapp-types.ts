@@ -59,7 +59,12 @@ export interface MiniAppPermissions {
 export interface MiniAppToolDefinition {
   name: string
   description: string
+  displayName?: string
   runningText?: string
+  inputSummaryField?: string
+  resultSummaryField?: string
+  showResult?: boolean
+  groupable?: boolean
   inputSchema: Record<string, unknown>
 }
 

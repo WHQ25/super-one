@@ -27,8 +27,8 @@ Mini-apps are sandboxed by default with no filesystem or network access. Add per
 
 ### Access Levels
 
-- `"read"` — `readFile`, `readDir`, `exists`, `glob`, `watch`
-- `"readwrite"` — all read operations + `writeFile`
+- `"read"` — `readFile`, `readDir`, `exists`, `glob`, `stat`, `watch`
+- `"readwrite"` — all read operations + `writeFile`, `deleteFile`, `rename`, `mkdir`
 
 Each entry requires a `reason` field — shown to the user during installation.
 
@@ -49,7 +49,9 @@ Once declared, use the `api-fs` bridge API to read/write files.
 }
 ```
 
-Whitelisted domains for `fetch()`. Also affects the Content Security Policy (CSP) headers injected into the iframe.
+Whitelisted domains are added to the Content Security Policy (CSP) injected into the iframe. This affects **both** `fetch()` requests and `<script src="...">` tags — any domain not declared here will be blocked by the browser.
+
+If a resource fails to load silently, check the browser console (DevTools) for CSP violation errors.
 
 Use standard `fetch()` — no special bridge API needed:
 

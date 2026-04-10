@@ -19,7 +19,6 @@ my-app-1.0.0.s1app (zip)
 ├── manifest.json      # Validated app manifest
 ├── integrity.json     # SHA-256 checksums for all files
 ├── index.html         # App entry point
-├── icon.svg           # Optional
 ├── logo.png           # Optional
 └── ...                # Other app files
 ```

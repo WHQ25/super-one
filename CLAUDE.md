@@ -84,7 +84,7 @@ src/renderer/src/components/
 │   ├── slash-decoration.ts — Tiptap /command decoration
 │   └── chat-shared.ts      — Streamdown plugins, formatting
 ├── coding/       — CodingLayout, ProjectSelector, StatusBar, TerminalPanel
-├── miniapp/      — MiniAppFrame, MiniAppView, MiniAppIcon, MiniAppDevFrame
+├── miniapp/      — MiniAppFrame, MiniAppView, MiniAppIcon, MiniAppDevFrame, MiniAppOverlayPortal
 ├── sidebar/      — FileTree, ProjectSidebarRow, AppsPanel (drag-and-drop .s1app install)
 ├── AppSidebar    — Session list, folder tree, pending interaction badges
 └── *Page.tsx     — Settings pages (Agents, Skills, MCP, Plugins), Startup, Setup
@@ -287,11 +287,28 @@ Mini-apps are sandboxed web apps (HTML/CSS/JS) that run in iframes and are contr
 | Service | `src/main/miniapp/miniapp-service.ts` | App discovery, manifest parsing (Zod validated), filesystem operations |
 | Schema | `src/main/miniapp/miniapp-schema.ts` | Zod v4 manifest validation schema |
 | Packager | `src/main/miniapp/miniapp-packager.ts` | `.s1app` packaging (zip + integrity), install/uninstall, SHA-256 verification |
-| Bridge | `src/main/miniapp/miniapp-bridge.ts` | `window.superone.*` API injection into iframe HTML |
+| API Runtime | `src/shared/miniapp-api-runtime.js` | Shared `window.superone.*` API logic (transport-agnostic). Single source of truth for both bridge and preload |
+| Bridge | `src/main/miniapp/miniapp-bridge.ts` | Inlines API runtime (`?raw`) + postMessage transport → `<script>` tag for iframe |
+| Preload | `src/preload/miniapp-preload.ts` | Imports API runtime + ipcRenderer transport → `contextBridge` for webview |
+| Overlay | `src/renderer/src/components/miniapp/MiniAppOverlayPortal.tsx` | Host-rendered toast/tooltip/context menu for sandboxed mini-apps |
 
 **Installation flow:** `.s1app` file (zip) → extract to temp → validate manifest (Zod) → verify integrity (SHA-256) → copy to `~/.superone/apps/<appId>/` → write `install.json` metadata. Users can drag-and-drop `.s1app` files onto the Apps panel in the sidebar.
 
 **Manifest** requires `appId` and `name`; `version` and `author` are required for packaging. Schema enforces `appId` format (`^[a-z0-9][a-z0-9_-]*$`) and tool name format (`^[a-z0-9_]+$`).
+
+**Adding a new mini-app bridge API:**
+
+1. `src/shared/miniapp-api-runtime.js` — Add the method to `createSuperoneApi()`. Use `transport.send()` for fire-and-forget, `transport.request()` for request-response.
+2. `src/shared/miniapp-api-runtime.d.ts` — Add TypeScript signature to `SuperoneApi` interface.
+3. `src/main/miniapp/miniapp-templates.ts` — Update `generateSuperoneDts()` to include the new API in the React template's type declarations.
+4. `src/shared/miniapp-types.ts` — If a new message type is added, append it to `MiniAppBridgeMessageType`.
+5. If the API needs host-side handling: add a case in `src/renderer/src/hooks/miniapp-message-handler.ts`.
+6. If the API needs main process handling: add a handler in `src/main/miniapp/miniapp-service.ts` or `src/main/index.ts`.
+7. If the API needs a new IPC response channel: add `ipcRenderer.on(channel, dispatchResponse)` in `src/preload/miniapp-preload.ts`.
+8. Update the relevant guide in `src/main/mcp/guides/api/`.
+9. Update `examples/miniapp/hello/index.html` to demo the new API.
+
+Bridge and preload share the same runtime — **no need to update API logic in two places**.
 
 ## Conventions
 

@@ -245,6 +245,14 @@ export function generateSuperoneDts(): string {
   isDir: boolean
 }
 
+interface SuperOneFsStat {
+  size: number
+  isDir: boolean
+  isFile: boolean
+  mtime: number
+  ctime: number
+}
+
 interface SuperOneFsWatchEvent {
   type: 'change' | 'rename'
   path: string
@@ -284,6 +292,16 @@ interface SuperOneThemeVars {
   [key: string]: string
 }
 
+interface SuperOneContextMenuItem {
+  id: string
+  label: string
+  icon?: string
+  disabled?: boolean
+  variant?: 'default' | 'destructive'
+  separator?: boolean
+  group?: string
+}
+
 interface SuperOne {
   tools: {
     handle(name: string, callback: (args: Record<string, unknown>) => unknown | Promise<unknown>): void
@@ -291,8 +309,13 @@ interface SuperOne {
   onInit(callback: (data: Record<string, unknown>) => void): void
   fs: {
     readFile(path: string): Promise<string>
+    readFile(path: string, opts: { binary: true }): Promise<ArrayBuffer>
     readDir(path?: string): Promise<SuperOneFsEntry[]>
-    writeFile(path: string, content: string): Promise<void>
+    writeFile(path: string, content: string | ArrayBuffer | Uint8Array): Promise<void>
+    deleteFile(path: string): Promise<void>
+    rename(from: string, to: string): Promise<void>
+    stat(path: string): Promise<SuperOneFsStat>
+    mkdir(path: string): Promise<void>
     exists(path: string): Promise<boolean>
     glob(pattern: string): Promise<string[]>
     watch(path: string, callback: (event: SuperOneFsWatchEvent) => void): Promise<number>
@@ -300,6 +323,12 @@ interface SuperOne {
   }
   agent: {
     sendPrompt(text: string): void
+  }
+  openFolder(path: string): void
+  openExternalLink(url: string): void
+  clipboard: {
+    read(): Promise<string>
+    write(text: string): void
   }
   git: {
     info(): Promise<SuperOneGitInfo>
@@ -313,6 +342,12 @@ interface SuperOne {
   theme: {
     getVars(): SuperOneThemeVars
     onChange(callback: (vars: SuperOneThemeVars) => void): () => void
+  }
+  ui: {
+    toast(message: string, type?: 'success' | 'error' | 'warning' | 'info'): void
+    showTooltip(anchorRect: { x: number; y: number; width: number; height: number }, text: string, side?: 'top' | 'bottom' | 'left' | 'right'): void
+    hideTooltip(): void
+    showContextMenu(position: { x: number; y: number }, items: SuperOneContextMenuItem[]): Promise<string | null>
   }
   isDarkMode(): boolean
   onDarkModeChange(callback: (isDark: boolean) => void): () => void

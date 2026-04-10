@@ -75,11 +75,10 @@ Prefer bun over npm when both are available (faster installs and builds).
 ## App Directory Structure
 
 ```
-<app-name>/
+<appId>/
 ├── manifest.json     # Required: app metadata
 ├── index.html        # Required: entry point (bridge auto-injected)
-├── icon.svg          # Optional: monochrome icon (see `icon` topic)
-├── logo.png          # Optional: full-color brand image
+├── logo.png          # Optional: app icon (see `icon` topic)
 └── ...               # CSS, JS, assets
 ```
 

@@ -179,7 +179,12 @@ describe('generateSuperoneDts', () => {
 
   it('covers fs API', () => {
     expect(dts).toContain('readFile(path: string): Promise<string>')
-    expect(dts).toContain('writeFile(path: string, content: string): Promise<void>')
+    expect(dts).toContain("readFile(path: string, opts: { binary: true }): Promise<ArrayBuffer>")
+    expect(dts).toContain('writeFile(path: string, content: string | ArrayBuffer | Uint8Array): Promise<void>')
+    expect(dts).toContain('deleteFile(path: string): Promise<void>')
+    expect(dts).toContain('rename(from: string, to: string): Promise<void>')
+    expect(dts).toContain('stat(path: string): Promise<SuperOneFsStat>')
+    expect(dts).toContain('mkdir(path: string): Promise<void>')
     expect(dts).toContain('readDir(path?: string): Promise<SuperOneFsEntry[]>')
     expect(dts).toContain('glob(pattern: string): Promise<string[]>')
     expect(dts).toContain('watch(path: string')
@@ -198,6 +203,20 @@ describe('generateSuperoneDts', () => {
 
   it('covers agent API', () => {
     expect(dts).toContain('sendPrompt(text: string): void')
+  })
+
+  it('covers system API', () => {
+    expect(dts).toContain('openFolder(path: string): void')
+    expect(dts).toContain('openExternalLink(url: string): void')
+    expect(dts).toContain('read(): Promise<string>')
+    expect(dts).toContain('write(text: string): void')
+  })
+
+  it('covers ui API', () => {
+    expect(dts).toContain('toast(message: string')
+    expect(dts).toContain('showTooltip(anchorRect:')
+    expect(dts).toContain('hideTooltip(): void')
+    expect(dts).toContain('showContextMenu(position:')
   })
 
   it('covers theme API', () => {

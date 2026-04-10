@@ -82,6 +82,10 @@ Prefer bun over npm when both are available (faster installs and builds).
 └── ...               # CSS, JS, assets
 ```
 
+## Updating Type Definitions
+
+If a mini-app was created with an older version of SuperOne and needs access to newly added APIs, call `update_superone_types` with the app directory path. This regenerates `superone.d.ts` with the latest API definitions.
+
 ## Testing
 
 1. Run `bun run dev` to start SuperOne in development mode

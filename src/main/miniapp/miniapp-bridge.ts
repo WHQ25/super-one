@@ -1,7 +1,7 @@
 // @ts-expect-error — ?raw import returns string
 import runtimeSrc from '../../shared/miniapp-api-runtime.js?raw'
 
-export function generateBridgeScript(appId: string): string {
+export function generateBridgeScript(appId: string, version: string): string {
   return `<script>
 (function() {
   ${runtimeSrc}
@@ -45,7 +45,7 @@ export function generateBridgeScript(appId: string): string {
     if (handler) handler(data);
   });
 
-  window.superone = createSuperoneApi(transport);
+  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)});
   startSuperoneResize(transport);
 
   if (document.readyState === 'complete' || document.readyState === 'interactive') {

@@ -2,12 +2,16 @@ import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from '@
 import { z, type ZodTypeAny } from 'zod'
 import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { randomUUID } from 'crypto'
+import { existsSync } from 'fs'
+import { writeFile } from 'fs/promises'
+import { join } from 'path'
 import { BrowserWindow } from 'electron'
 import log from '../logger'
 import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppManifest } from '../../shared/miniapp-types'
 import { AgentIpcChannels } from '../../shared/agent-types'
 import { createMiniApp, readManifest, cacheAppBasePath, discoverProjectApps, detectStandaloneApp, getProjectAppsDir } from '../miniapp/miniapp-service'
 import { packApp, getPreapprovedByPath } from '../miniapp/miniapp-packager'
+import { generateSuperoneDts } from '../miniapp/miniapp-templates'
 import overviewMd from './guides/overview.md?raw'
 import standardMd from './guides/standard.md?raw'
 import inchatMd from './guides/inchat.md?raw'
@@ -184,6 +188,29 @@ This tool only sets up the basic structure. To add tools, permissions, or in-cha
           const result = await packApp(appDir, outputDir)
           return {
             content: [{ type: 'text' as const, text: JSON.stringify({ status: 'packed', outputPath: result.outputPath, appId: result.manifest.appId, version: result.manifest.version, fileCount: result.fileCount }) }],
+          }
+        },
+      ),
+      tool(
+        'update_superone_types',
+        'Update the superone.d.ts type definitions in an existing mini-app project to the latest version. Use this when the mini-app needs access to newly added SuperOne APIs.',
+        {
+          appDir: z.string().describe('Absolute path to the mini-app directory'),
+        },
+        async ({ appDir }) => {
+          const srcPath = join(appDir, 'src', 'superone.d.ts')
+          const rootPath = join(appDir, 'superone.d.ts')
+          const targetPath = existsSync(srcPath) ? srcPath : existsSync(rootPath) ? rootPath : null
+
+          if (!targetPath) {
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', message: 'No existing superone.d.ts found. This tool is for updating existing type definitions. For new mini-apps, use setup_mini_app_dev with template "react".' }) }],
+            }
+          }
+
+          await writeFile(targetPath, generateSuperoneDts(), 'utf-8')
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ status: 'updated', path: targetPath }) }],
           }
         },
       ),

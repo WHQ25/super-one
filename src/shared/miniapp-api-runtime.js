@@ -13,7 +13,7 @@
  */
 
 // eslint-disable-next-line no-unused-vars
-function createSuperoneApi(transport) {
+function createSuperoneApi(transport, version) {
   const toolHandlers = new Map()
   const watchCallbacks = new Map()
   const gitHeadListeners = []
@@ -78,6 +78,7 @@ function createSuperoneApi(transport) {
   }
 
   return {
+    version: version || '0.0.0',
     tools: {
       handle(name, callback) { toolHandlers.set(name, callback) },
     },

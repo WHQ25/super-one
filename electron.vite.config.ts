@@ -2,6 +2,9 @@ import { defineConfig, loadEnv } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
+import { readFileSync } from 'fs'
+
+const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf-8'))
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -16,6 +19,9 @@ export default defineConfig(({ mode }) => {
     }
   },
   preload: {
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
     build: {
       externalizeDeps: false,
       rollupOptions: {

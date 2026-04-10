@@ -5,6 +5,7 @@ export interface MiniAppTransport {
 }
 
 export interface SuperoneApi {
+  version: string
   tools: { handle(name: string, callback: (args: Record<string, unknown>) => unknown): void }
   onInit(callback: (data: Record<string, unknown>) => void): void
   fs: {
@@ -50,5 +51,5 @@ export interface SuperoneApi {
   onDarkModeChange(cb: (isDark: boolean) => void): () => void
 }
 
-export function createSuperoneApi(transport: MiniAppTransport): SuperoneApi
+export function createSuperoneApi(transport: MiniAppTransport, version: string): SuperoneApi
 export function startSuperoneResize(transport: MiniAppTransport): void

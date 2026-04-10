@@ -8,7 +8,7 @@ describe('bridge/preload shared runtime', () => {
   const preloadSrc = readFileSync(join(__dirname, '../../preload/miniapp-preload.ts'), 'utf-8')
 
   it('runtime exports createSuperoneApi', () => {
-    expect(runtimeSrc).toContain('function createSuperoneApi(transport)')
+    expect(runtimeSrc).toContain('function createSuperoneApi(transport, version)')
   })
 
   it('runtime exports startSuperoneResize', () => {
@@ -17,13 +17,13 @@ describe('bridge/preload shared runtime', () => {
 
   it('bridge inlines the shared runtime', () => {
     expect(bridgeSrc).toContain("miniapp-api-runtime.js?raw")
-    expect(bridgeSrc).toContain('createSuperoneApi(transport)')
+    expect(bridgeSrc).toContain('createSuperoneApi(transport,')
     expect(bridgeSrc).toContain('startSuperoneResize(transport)')
   })
 
   it('preload imports the shared runtime', () => {
     expect(preloadSrc).toContain("from '../shared/miniapp-api-runtime'")
-    expect(preloadSrc).toContain('createSuperoneApi(transport)')
+    expect(preloadSrc).toContain('createSuperoneApi(transport,')
     expect(preloadSrc).toContain('startSuperoneResize(transport)')
   })
 

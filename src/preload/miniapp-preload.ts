@@ -57,6 +57,7 @@ for (const ch of eventChannels) {
   })
 }
 
-contextBridge.exposeInMainWorld('superone', createSuperoneApi(transport))
+declare const __APP_VERSION__: string
+contextBridge.exposeInMainWorld('superone', createSuperoneApi(transport, __APP_VERSION__))
 startSuperoneResize(transport)
 ipcRenderer.sendToHost('miniapp-ready', {})

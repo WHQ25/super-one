@@ -1613,7 +1613,7 @@ app.whenReady().then(() => {
 
       if (ext === 'html' || ext === 'htm') {
         const html = data.toString('utf-8')
-        const bridgeScript = generateBridgeScript(appId)
+        const bridgeScript = generateBridgeScript(appId, app.getVersion())
         const injected = html.includes('<head>')
           ? html.replace('<head>', `<head>${bridgeScript}`)
           : html.includes('<html>')

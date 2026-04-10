@@ -303,6 +303,7 @@ interface SuperOneContextMenuItem {
 }
 
 interface SuperOne {
+  readonly version: string
   tools: {
     handle(name: string, callback: (args: Record<string, unknown>) => unknown | Promise<unknown>): void
   }

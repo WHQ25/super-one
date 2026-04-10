@@ -244,8 +244,6 @@ export function AppDrawer() {
     setDraftText('Help me build a mini app for SuperOne. Guide me through the process step by step.')
   }, [setDraftText])
 
-  if (totalApps === 0 && !expanded) return null
-
   return (
     <div
       className="mx-2 mt-1 mb-1 shrink-0"
@@ -260,12 +258,12 @@ export function AppDrawer() {
           className="flex min-h-[30px] w-full cursor-pointer items-center justify-between px-2.5 py-1 transition-colors hover:bg-sidebar-accent"
         >
           <div className="flex items-center gap-2">
-            {expanded ? (
+            {expanded || totalApps === 0 ? (
               <>
                 <Blocks className="size-3.5 text-sidebar-foreground/50" />
                 <span className="text-xs text-sidebar-foreground/50">Apps</span>
               </>
-            ) : totalApps > 0 ? (
+            ) : (
               <>
                 <div className="flex items-center">
                   {stackedApps.map((app, i) => (
@@ -277,11 +275,6 @@ export function AppDrawer() {
                 <span className="text-xs text-sidebar-foreground/50">
                   {totalApps} App{totalApps > 1 ? 's' : ''}
                 </span>
-              </>
-            ) : (
-              <>
-                <PackagePlus className="size-3.5 text-sidebar-foreground/50" />
-                <span className="text-xs text-sidebar-foreground/50">Apps</span>
               </>
             )}
           </div>

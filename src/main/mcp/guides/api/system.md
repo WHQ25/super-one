@@ -15,7 +15,7 @@ superone.openFolder('src/utils')   // open a subdirectory
 
 Open a URL in the user's default browser. A confirmation dialog is shown before opening — the user must approve.
 
-Only `http://` and `https://` URLs are allowed. Other schemes (e.g., `file://`) are blocked.
+Only `http://` and `https://` URLs are allowed. Other schemes (e.g., `file://`) are silently ignored.
 
 ```js
 superone.openExternalLink('https://docs.example.com')
@@ -42,4 +42,4 @@ try {
 }
 ```
 
-The Promise rejects if the user denies the request.
+The Promise rejects if the user denies the request (error message: `"User denied clipboard access"`). Always wrap in try/catch.

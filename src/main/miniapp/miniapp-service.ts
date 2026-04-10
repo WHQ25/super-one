@@ -342,6 +342,10 @@ export async function handleFsRequest(
     case 'readFile': {
       return await readFile(safe(args.path as string), 'utf-8')
     }
+    case 'readFileBinary': {
+      const buf = await readFile(safe(args.path as string))
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+    }
     case 'readDir': {
       const p = safe((args.path as string) || '.')
       const entries = await readdir(p, { withFileTypes: true })
@@ -350,7 +354,12 @@ export async function handleFsRequest(
     case 'writeFile': {
       const p = safe(args.path as string)
       await mkdir(dirname(p), { recursive: true })
-      await writeFile(p, args.content as string, 'utf-8')
+      const content = args.content
+      if (content instanceof ArrayBuffer || content instanceof Uint8Array || Buffer.isBuffer(content)) {
+        await writeFile(p, Buffer.from(content as ArrayBuffer))
+      } else {
+        await writeFile(p, content as string, 'utf-8')
+      }
       return undefined
     }
     case 'exists': {

@@ -83,3 +83,23 @@ element.oncontextmenu = async (e) => {
 | `separator` | `boolean` | Renders a divider line instead of a menu item |
 
 The menu is dismissed when the user clicks an item, clicks outside, or presses Escape. In all cases the Promise resolves (`id` or `null`).
+
+## Example: Context Menu on List Items
+
+```js
+document.querySelectorAll('.item').forEach(function(el) {
+  el.oncontextmenu = function(e) {
+    e.preventDefault()
+    superone.ui.showContextMenu(
+      { x: e.clientX, y: e.clientY },
+      [
+        { id: 'edit', label: 'Edit', icon: 'pencil' },
+        { id: 'delete', label: 'Delete', icon: 'trash-2', variant: 'destructive' }
+      ]
+    ).then(function(id) {
+      if (id === 'edit') editItem(el.dataset.id)
+      if (id === 'delete') deleteItem(el.dataset.id)
+    })
+  }
+})
+```

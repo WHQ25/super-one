@@ -43,3 +43,12 @@ const unsub = superone.onDarkModeChange((isDark) => {
 - In-chat apps should use `background: transparent` on `<body>` to blend with chat
 - Standard apps can use `var(--background)` for a solid background matching the host
 - Sidebar apps should use the `--sidebar-*` variables for consistency
+
+## Example: Updating a Chart on Theme Change
+
+```js
+superone.onDarkModeChange(function(isDark) {
+  chart.options.scales.x.ticks.color = isDark ? '#fafaf9' : '#1c1917'
+  chart.update()
+})
+```

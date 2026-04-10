@@ -49,6 +49,18 @@ superone.fs.unwatch(watchId)  // stop watching
 
 All watchers are automatically cleaned up when the mini-app is closed.
 
+## Example: Read → Modify → Write JSON
+
+```js
+superone.fs.readFile('config.json').then(function(text) {
+  var config = JSON.parse(text)
+  config.updatedAt = Date.now()
+  return superone.fs.writeFile('config.json', JSON.stringify(config, null, 2))
+})
+```
+
+Requires `permissions.fs` with `"access": "readwrite"` on the target directory.
+
 ## TypeScript Types
 
 ```ts

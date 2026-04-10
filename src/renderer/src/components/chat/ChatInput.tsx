@@ -201,7 +201,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           setShowDirManager(true)
           return
         }
-        if (name === 'plan') {
+        if (name === 'plan' && activeProviderForResources === 'codex') {
           const ed = editorRef.current
           if (ed) {
             ed.chain().focus().setContent('').run()
@@ -211,7 +211,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           useChatStore.getState().setSelectedCodexCollaborationMode('plan')
           return
         }
-        if (name === 'review') {
+        if (name === 'review' && activeProviderForResources === 'codex') {
           const ed = editorRef.current
           if (ed) {
             ed.chain().focus().setContent('').run()

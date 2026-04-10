@@ -71,7 +71,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const [dismissedRateLimitKey, setDismissedRateLimitKey] = useState<string | null>(null)
   const rateLimitInfoKey = useMemo(
     () => rateLimitInfo
-      ? `${rateLimitInfo.status}:${rateLimitInfo.resetsAt ?? ''}:${rateLimitInfo.rateLimitType ?? ''}:${rateLimitInfo.utilization ?? ''}`
+      ? `${rateLimitInfo.status}:${rateLimitInfo.resetsAt ?? ''}:${rateLimitInfo.rateLimitType ?? ''}:${rateLimitInfo.utilization != null ? Math.floor(rateLimitInfo.utilization * 20) : ''}`
       : null,
     [rateLimitInfo],
   )
@@ -140,9 +140,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     prevScrollHeightRef.current = 0
   }, [expandLevel])
 
-  useEffect(() => {
-    if (!rateLimitInfo) setDismissedRateLimitKey(null)
-  }, [rateLimitInfo])
 
   return (
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>

@@ -72,6 +72,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const isAudioFile = AUDIO_EXTS.has(ext)
   const hasDiff = !!fileDiff?.diff
   const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile
+  const fullFilePath = selectedFile.startsWith('/') ? selectedFile : `${currentFolder}/${selectedFile}`
 
   const resolvedContent = useMemo(() => {
     const raw = fileContent?.content ?? ''
@@ -150,19 +151,19 @@ export function FilePreview({ filePath }: FilePreviewProps) {
         {effectiveTab === 'changes' && hasDiff ? (
           <FileDiffView filePath={selectedFile} diff={fileDiff?.diff ?? ''} />
         ) : effectiveTab === 'preview' && isBinImg ? (
-          <ImagePreview src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)} alt={fileName} />
+          <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
         ) : effectiveTab === 'preview' && isPdfFile ? (
-          <PdfPreview url={toLocalFileUrl(`${currentFolder}/${selectedFile}`)} className="h-full" />
+          <PdfPreview url={toLocalFileUrl(fullFilePath)} className="h-full" />
         ) : effectiveTab === 'preview' && isVideoFile ? (
           <div className="flex h-full items-center justify-center p-4">
-            <video src={toMediaUrl(`${currentFolder}/${selectedFile}`)} controls preload="auto" className="max-h-full max-w-full" />
+            <video src={toMediaUrl(fullFilePath)} controls preload="auto" className="max-h-full max-w-full" />
           </div>
         ) : effectiveTab === 'preview' && isAudioFile ? (
           <div className="flex h-full items-center justify-center p-4">
-            <audio src={toMediaUrl(`${currentFolder}/${selectedFile}`)} controls preload="auto" />
+            <audio src={toMediaUrl(fullFilePath)} controls preload="auto" />
           </div>
         ) : effectiveTab === 'preview' && isSvgFile ? (
-          <ImagePreview src={toLocalFileUrl(`${currentFolder}/${selectedFile}`)} alt={fileName} />
+          <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
         ) : effectiveTab === 'preview' && isMd ? (
           <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
         ) : (

@@ -1,7 +1,7 @@
 import { createHash } from 'crypto'
 import { createReadStream, createWriteStream } from 'fs'
 import { readdir, readFile, writeFile, rm, stat, mkdir, cp } from 'fs/promises'
-import { join, relative } from 'path'
+import { basename, dirname, join, relative } from 'path'
 import archiver from 'archiver'
 import { Extract as unzipExtract } from 'unzipper'
 import { app } from 'electron'
@@ -243,7 +243,15 @@ export async function getPreapprovedByPath(basePath: string): Promise<string[]> 
     const data = JSON.parse(raw)
     return Array.isArray(data?.tools) ? data.tools : []
   } catch {
-    return []
+    const publicDir = await resolvePublicDir(basePath)
+    if (!publicDir) return []
+    try {
+      const raw = await readFile(join(publicDir, PREAPPROVED_FILE), 'utf-8')
+      const data = JSON.parse(raw)
+      return Array.isArray(data?.tools) ? data.tools : []
+    } catch {
+      return []
+    }
   }
 }
 
@@ -252,11 +260,27 @@ export async function setPreapproved(appId: string, tools: string[]): Promise<vo
 }
 
 export async function setPreapprovedByPath(basePath: string, tools: string[]): Promise<void> {
+  const json = JSON.stringify({ tools }, null, 2)
   if (tools.length === 0) {
     await rm(join(basePath, PREAPPROVED_FILE), { force: true })
   } else {
-    await writeFile(join(basePath, PREAPPROVED_FILE), JSON.stringify({ tools }, null, 2))
+    await writeFile(join(basePath, PREAPPROVED_FILE), json)
   }
+  const publicDir = await resolvePublicDir(basePath)
+  if (publicDir) {
+    if (tools.length === 0) {
+      await rm(join(publicDir, PREAPPROVED_FILE), { force: true })
+    } else {
+      await writeFile(join(publicDir, PREAPPROVED_FILE), json)
+    }
+  }
+}
+
+async function resolvePublicDir(basePath: string): Promise<string | null> {
+  if (basename(basePath) !== 'dist') return null
+  const publicDir = join(dirname(basePath), 'public')
+  if (!(await dirExists(publicDir))) return null
+  return publicDir
 }
 
 async function dirExists(path: string): Promise<boolean> {

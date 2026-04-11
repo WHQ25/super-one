@@ -1574,12 +1574,12 @@ export class AgentService {
       return this.getAgent(projectPath).previewRewind(userMessageId)
     })
 
-    ipcMain.handle(AgentIpcChannels.REWIND_CODE_AND_CHAT, async (_event, projectPath: string, userMessageId: string, resumePointId: string) => {
-      return this.getAgent(projectPath).rewindCodeAndChat(userMessageId, resumePointId)
+    ipcMain.handle(AgentIpcChannels.REWIND_CODE_AND_CHAT, async (_event, projectPath: string, userMessageId: string) => {
+      return this.getAgent(projectPath).rewindCodeAndChat(userMessageId)
     })
 
-    ipcMain.handle(AgentIpcChannels.REWIND_CONVERSATION, async (_event, projectPath: string, userMessageId: string, resumePointId: string) => {
-      return this.getAgent(projectPath).rewindConversation(userMessageId, resumePointId)
+    ipcMain.handle(AgentIpcChannels.REWIND_CONVERSATION, async (_event, projectPath: string) => {
+      return this.getAgent(projectPath).rewindConversation()
     })
 
     ipcMain.handle(AgentIpcChannels.GET_SESSION_ID, (_event, projectPath: string) => {

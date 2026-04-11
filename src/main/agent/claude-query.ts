@@ -167,6 +167,8 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
   let lastAssistantUsage: any = null
   // Track the most recent top-level assistant message UUID for resumeSessionAt
   let lastTopLevelAssistantUuid = ''
+  // Last replay user message UUID — SDK creates file-history snapshots for replay UUIDs only
+  let lastReplayCheckpointId = ''
   // Per-step dedup: track processed step IDs (SDK message IDs) and latest step tokens
   const processedStepIds = new Set<string>()
   let messageInputTokens = 0
@@ -324,12 +326,19 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           }
         }
 
-        // Capture file checkpoint UUID from top-level user messages (skip replays — their checkpoint data is not available)
+        // SDK file-history snapshots are keyed by replay UUIDs, not new message UUIDs.
+        // Use getCurrentMessageId() because user echo may arrive before sendMessage updates messageId.
         const uuid = userMsg.uuid as string | undefined
         log.info('[checkpoint] user msg: uuid=%s parent=%s isReplay=%s isSynthetic=%s', uuid ?? 'none', userMsg.parent_tool_use_id ?? 'none', userMsg.isReplay ?? false, userMsg.isSynthetic ?? false)
-        if (uuid && !userMsg.parent_tool_use_id && !userMsg.isReplay) {
-          log.info('[checkpoint] captured: checkpointId=%s resumePointId=%s', uuid, lastTopLevelAssistantUuid)
-          emit({ type: 'checkpoint_captured', messageId, checkpointId: uuid, resumePointId: lastTopLevelAssistantUuid })
+        if (uuid && !userMsg.parent_tool_use_id) {
+          if (userMsg.isReplay) {
+            lastReplayCheckpointId = uuid
+          } else {
+            const checkpointId = lastReplayCheckpointId || uuid
+            const latestMessageId = getCurrentMessageId() || messageId
+            log.info('[checkpoint] captured: checkpointId=%s resumePointId=%s messageId=%s', checkpointId, lastTopLevelAssistantUuid, latestMessageId)
+            emit({ type: 'checkpoint_captured', messageId: latestMessageId, checkpointId, resumePointId: lastTopLevelAssistantUuid })
+          }
         }
       }
 
@@ -744,6 +753,12 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
         }
 
         case 'result': {
+          if (lastReplayCheckpointId) {
+            const latestMid = getCurrentMessageId() || messageId
+            log.info('[checkpoint] captured (flush at result): checkpointId=%s resumePointId=%s messageId=%s', lastReplayCheckpointId, lastTopLevelAssistantUuid, latestMid)
+            emit({ type: 'checkpoint_captured', messageId: latestMid, checkpointId: lastReplayCheckpointId, resumePointId: lastTopLevelAssistantUuid })
+            lastReplayCheckpointId = ''
+          }
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result = msg as any
           log.debug(`[iterateMessages] result subtype=${result.subtype} session_id=${result.session_id ?? '(none)'}`)

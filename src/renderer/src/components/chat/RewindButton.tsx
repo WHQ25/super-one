@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Check, History, TriangleAlert } from 'lucide-react'
+import { toast } from 'sonner'
+import { History, TriangleAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import {
@@ -25,11 +26,6 @@ interface RewindButtonProps {
   className?: string
 }
 
-const rewoundLabels: Record<RewindMode, string> = {
-  code: 'Code restored',
-  conversation: 'Conversation restored',
-  code_and_chat: 'Code & conversation restored',
-}
 
 interface RewindOption {
   key: RewindMode | 'cancel'
@@ -73,10 +69,11 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
     }
   }, [loading, previewRewind, checkpointId])
 
+  const codeAlreadyRestored = rewound === 'code'
+
   const handleClick = () => {
-    if (rewound) return
     setDialogOpen(true)
-    fetchPreview()
+    if (!codeAlreadyRestored) fetchPreview()
   }
 
   const handleRewind = async (mode: RewindMode) => {
@@ -84,10 +81,13 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
     try {
       if (mode === 'code_and_chat') {
         await rewindCodeAndChat(checkpointId)
+        toast.success('Code & conversation restored')
       } else if (mode === 'conversation') {
         await rewindConversation(checkpointId)
+        toast.success('Conversation restored')
       } else {
         await rewindFiles(checkpointId)
+        toast.success('Code restored')
       }
     } finally {
       setRewindingMode(null)
@@ -108,7 +108,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
   const ins = preview?.insertions ?? 0
   const del = preview?.deletions ?? 0
   const hasCodeChanges = fileCount > 0
-  const options = hasCodeChanges ? codeOptions : chatOnlyOptions
+  const options = codeAlreadyRestored ? chatOnlyOptions : hasCodeChanges ? codeOptions : chatOnlyOptions
 
   useEffect(() => {
     if (!dialogOpen || !preview?.canRewind) return
@@ -131,21 +131,15 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
             <button
               onClick={handleClick}
               className={cn(
-                'cursor-pointer rounded p-0.5 transition-opacity',
-                rewound
-                  ? 'text-green-500'
-                  : 'text-muted-foreground hover:text-foreground',
+                'cursor-pointer rounded p-0.5 transition-opacity text-muted-foreground hover:text-foreground',
                 className,
               )}
             >
-              {rewound ? <Check className="size-3" /> : <History className="size-3" />}
+              <History className="size-3" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            {rewound
-              ? <span className="text-green-400">{rewoundLabels[rewound]}</span>
-              : <span>Rewind</span>
-            }
+            <span>Rewind</span>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -153,40 +147,39 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="gap-4 sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Rewind</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><History className="size-4" /> Rewind</DialogTitle>
           </DialogHeader>
 
           <p className="text-sm text-muted-foreground">
             Confirm you want to restore to the point before you sent this message.
           </p>
 
-          {!preview && loading && (
+          {!rewound && !preview && loading && (
             <p className="text-sm text-muted-foreground">Loading...</p>
           )}
 
-          {preview && !preview.canRewind && (
+          {!rewound && preview && !preview.canRewind && (
             <p className="text-sm text-destructive">
               {preview.error ?? 'Cannot restore to this checkpoint.'}
             </p>
           )}
 
-          {preview?.canRewind && (
+          {(codeAlreadyRestored || preview?.canRewind) && (
             <>
-              <div className="space-y-0.5 text-sm text-muted-foreground">
-                <p>The conversation will be forked.</p>
-                {hasCodeChanges && (
-                  <p>
-                    The code will be restored{' '}
-                    {ins > 0 && <span className="text-green-500">+{ins}</span>}
-                    {ins > 0 && del > 0 && ' '}
-                    {del > 0 && <span className="text-red-500">-{del}</span>}
-                    {' in '}
-                    <span className="text-foreground">{preview.filesChanged![0].split('/').pop()}</span>
-                    {fileCount > 1 && ` and ${fileCount - 1} other file${fileCount - 1 !== 1 ? 's' : ''}`}
-                    .
-                  </p>
-                )}
-              </div>
+              {!rewound && hasCodeChanges && (
+                <p className="text-sm text-muted-foreground">
+                  Changes: <span className="text-green-500">+{ins}</span>
+                  {' '}
+                  <span className="text-red-500">-{del}</span>
+                  {' in '}
+                  <span className="text-foreground">{preview!.filesChanged![0].split('/').pop()}</span>
+                  {fileCount > 1 && ` and ${fileCount - 1} other file${fileCount - 1 !== 1 ? 's' : ''}`}
+                </p>
+              )}
+
+              {codeAlreadyRestored && (
+                <p className="text-sm text-green-500">Code already restored.</p>
+              )}
 
               <div className="space-y-0.5">
                 {options.map((opt, i) => (
@@ -204,7 +197,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
                 ))}
               </div>
 
-              {hasCodeChanges && (
+              {!rewound && hasCodeChanges && (
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <TriangleAlert className="size-3 shrink-0" />
                   Rewinding does not affect files edited manually or via bash.

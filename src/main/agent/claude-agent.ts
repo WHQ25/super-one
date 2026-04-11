@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import log from '../logger'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
-import { randomUUID } from 'crypto'
 import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, AgentInfo, ChatMessage, ContextUsageInfo, ListDirEntry, McpServerInfo, PermissionMode, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
@@ -429,6 +428,7 @@ export class ClaudeAgent {
 
   /** Rewind files to the state before a given user message. */
   async rewindFiles(userMessageId: string): Promise<RewindFilesResult> {
+    this.createSession()
     log.info('[rewind] rewindFiles called: userMessageId=%s hasQuery=%s', userMessageId, !!this.sessionQuery)
     if (!this.sessionQuery) {
       return { canRewind: false, error: 'No active session' }
@@ -451,6 +451,7 @@ export class ClaudeAgent {
 
   /** Preview file rewind without modifying files (dry run). */
   async previewRewind(userMessageId: string): Promise<RewindFilesResult> {
+    this.createSession()
     log.info('[rewind] previewRewind called: userMessageId=%s hasQuery=%s', userMessageId, !!this.sessionQuery)
     if (!this.sessionQuery) {
       return { canRewind: false, error: 'No active session' }
@@ -471,45 +472,12 @@ export class ClaudeAgent {
     }
   }
 
-  async rewindCodeAndChat(userMessageId: string, resumePointId: string): Promise<RewindFilesResult> {
-    if (!this.sessionQuery) {
-      return { canRewind: false, error: 'No active session' }
-    }
-    try {
-      const result = await this.sessionQuery.rewindFiles(userMessageId)
-      if (!result.canRewind) return result
-
-      const prevSessionId = this.sessionId
-      const forkedId = randomUUID()
-      await this.resetSession()
-      this.createSession(prevSessionId, resumePointId, true, forkedId)
-
-      return {
-        canRewind: result.canRewind,
-        error: result.error,
-        filesChanged: result.filesChanged,
-        insertions: result.insertions,
-        deletions: result.deletions,
-        forkedSessionId: forkedId,
-      }
-    } catch (err) {
-      return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
-    }
+  async rewindCodeAndChat(userMessageId: string): Promise<RewindFilesResult> {
+    return this.rewindFiles(userMessageId)
   }
 
-  async rewindConversation(_userMessageId: string, resumePointId: string): Promise<RewindFilesResult> {
-    if (!this.sessionQuery) {
-      return { canRewind: false, error: 'No active session' }
-    }
-    try {
-      const prevSessionId = this.sessionId
-      const forkedId = randomUUID()
-      await this.resetSession()
-      this.createSession(prevSessionId, resumePointId, true, forkedId)
-      return { canRewind: true, forkedSessionId: forkedId }
-    } catch (err) {
-      return { canRewind: false, error: err instanceof Error ? err.message : String(err) }
-    }
+  async rewindConversation(): Promise<RewindFilesResult> {
+    return { canRewind: true }
   }
 
   async reconnectMcpServer(serverName: string): Promise<void> {

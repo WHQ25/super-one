@@ -237,3 +237,61 @@ describe('extractResultText', () => {
     expect(extractResultText(jsonl)).toBe('ok')
   })
 })
+
+function userMsg(id: string, extra?: Partial<ChatMessage>): ChatMessage {
+  return { id, role: 'user', content: [], status: 'complete', createdAt: '', providerId: 'claude', ...extra }
+}
+function assistantMsg(id: string): ChatMessage {
+  return { id, role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'claude' }
+}
+
+describe('checkpoint_captured', () => {
+  it('assigns checkpointId to the user message before the assistant message', () => {
+    const rt = makeRuntime([userMsg('u1'), assistantMsg('a1')])
+    const updated = applyClaudeEventToRuntime(rt, {
+      type: 'checkpoint_captured', messageId: 'a1', checkpointId: 'cp1', resumePointId: 'rp1',
+    } as AgentEvent)
+    expect(updated.messages[0].checkpointId).toBe('cp1')
+    expect(updated.messages[0].resumePointId).toBe('rp1')
+  })
+
+  it('overwrites existing checkpointId (replay then new message)', () => {
+    const rt = makeRuntime([userMsg('u1', { checkpointId: 'old' }), assistantMsg('a1')])
+    const updated = applyClaudeEventToRuntime(rt, {
+      type: 'checkpoint_captured', messageId: 'a1', checkpointId: 'new', resumePointId: 'rp2',
+    } as AgentEvent)
+    expect(updated.messages[0].checkpointId).toBe('new')
+    expect(updated.messages[0].resumePointId).toBe('rp2')
+  })
+
+  it('falls back to last user message when assistant message is not found', () => {
+    const rt = makeRuntime([userMsg('u1'), assistantMsg('a1')])
+    const updated = applyClaudeEventToRuntime(rt, {
+      type: 'checkpoint_captured', messageId: 'unknown', checkpointId: 'cp1', resumePointId: 'rp1',
+    } as AgentEvent)
+    expect(updated.messages[0].checkpointId).toBe('cp1')
+  })
+
+  it('returns runtime unchanged when there are no user messages', () => {
+    const rt = makeRuntime([assistantMsg('a1')])
+    const updated = applyClaudeEventToRuntime(rt, {
+      type: 'checkpoint_captured', messageId: 'a1', checkpointId: 'cp1', resumePointId: 'rp1',
+    } as AgentEvent)
+    expect(updated).toBe(rt)
+  })
+
+  it('handles multiple turns with independent checkpoints', () => {
+    const rt = makeRuntime([
+      userMsg('u1'), assistantMsg('a1'),
+      userMsg('u2'), assistantMsg('a2'),
+    ])
+    let updated = applyClaudeEventToRuntime(rt, {
+      type: 'checkpoint_captured', messageId: 'a1', checkpointId: 'cp1', resumePointId: 'rp1',
+    } as AgentEvent)
+    updated = applyClaudeEventToRuntime(updated, {
+      type: 'checkpoint_captured', messageId: 'a2', checkpointId: 'cp2', resumePointId: 'rp2',
+    } as AgentEvent)
+    expect(updated.messages[0].checkpointId).toBe('cp1')
+    expect(updated.messages[2].checkpointId).toBe('cp2')
+  })
+})

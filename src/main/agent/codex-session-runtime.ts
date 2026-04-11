@@ -311,7 +311,6 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
       const messages = [...runtime.messages]
       const targetIndex = findCheckpointTarget(messages, event.messageId)
       if (targetIndex === -1) return runtime
-      if (messages[targetIndex].checkpointId) return runtime
       messages[targetIndex] = {
         ...messages[targetIndex],
         checkpointId: event.checkpointId,

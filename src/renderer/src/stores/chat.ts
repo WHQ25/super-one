@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
-import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
+import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode } from './chat-helpers'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
@@ -938,9 +938,12 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
 
     case 'checkpoint_captured': {
       const msgs = [...session.messages]
-      const targetIdx = findCheckpointTarget(msgs, event.messageId)
+      let targetIdx = findCheckpointTarget(msgs, event.messageId)
       if (targetIdx === -1) return {}
-      if (msgs[targetIdx].checkpointId) return {}
+      if (msgs[targetIdx].checkpointId) {
+        const laterIdx = msgs.findLastIndex((m, i) => i > targetIdx && m.role === 'user' && !m.checkpointId)
+        if (laterIdx !== -1) targetIdx = laterIdx
+      }
       msgs[targetIdx] = { ...msgs[targetIdx], checkpointId: event.checkpointId, resumePointId: event.resumePointId }
       return { messages: msgs }
     }
@@ -1168,12 +1171,26 @@ function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   const sessionId = _getEffectiveSessionId(project)
   if (!sessionId) return
   const session = project._sessions[sessionId]
-  if (!session || session.messages.length === 0) return
+  if (!session) return
+  window.app.saveSessionState(sessionId, {
+    messages: session.messages,
+    totalCostUsd: session.totalCostUsd,
+    contextTokens: session.contextTokens,
+  })
 }
 
-function _savePerSessionSnapshot(projectPath: string, sessionId: string, session: PerSessionState): Promise<void> {
-  if (!projectPath || !sessionId || !session) return Promise.resolve()
-  return Promise.resolve()
+function _truncateAtCheckpoint(
+  set: (fn: (s: ChatStore) => Partial<ChatStore>) => void,
+  get: () => ChatStore,
+  projectPath: string,
+  checkpointId: string,
+): void {
+  set((s) => updateActivePerSession(s, (sess) => {
+    const idx = sess.messages.findIndex((m) => m.checkpointId === checkpointId)
+    const truncated = idx >= 0 ? sess.messages.slice(0, idx) : sess.messages
+    return { messages: truncated, session: null, totalCostUsd: 0, contextTokens: 0 }
+  }))
+  _saveSessionState(get, projectPath)
 }
 
 function _buildQuestionAnswerItem(
@@ -2784,39 +2801,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   rewindCodeAndChat: async (userMessageId: string) => {
     const { activeProject } = get()
     if (!activeProject) throw new Error('No active project')
-    const sess = getActivePerSession(get())
-    const msg = sess.messages.find((m) => m.checkpointId === userMessageId)
-    const resumePointId = msg?.resumePointId ?? ''
-    const result = await window.agent.rewindCodeAndChat(activeProject, userMessageId, resumePointId)
+    const result = await window.agent.rewindCodeAndChat(activeProject, userMessageId)
     if (result.canRewind !== false) {
-      set((s) => {
-        const proj = getProject(s, activeProject)
-        const activeSid = proj._activeSessionId
-        if (!activeSid) return {}
-        const currentSess = proj._sessions[activeSid]
-        if (!currentSess) return {}
-        const idx = currentSess.messages.findIndex((m) => m.checkpointId === userMessageId)
-        const truncated = idx >= 0 ? currentSess.messages.slice(0, idx) : currentSess.messages
-        const forkedMessages = result.forkedSessionId
-          ? remapMessagesForFork(truncated, result.forkedSessionId)
-          : truncated
-        const newSid = result.forkedSessionId ?? activeSid
-        const updatedSess = { ...currentSess, messages: forkedMessages, session: null, totalCostUsd: 0, contextTokens: 0 }
-        const { [activeSid]: _, ...rest } = proj._sessions
-        return {
-          projectSessions: {
-            ...s.projectSessions,
-            [activeProject]: {
-              ...proj,
-              _activeSessionId: newSid,
-              _sessions: { ...rest, [newSid]: updatedSess },
-            },
-          },
-        }
-      })
-      if (result.forkedSessionId) {
-        _saveSessionState(get, activeProject)
-      }
+      _truncateAtCheckpoint(set, get, activeProject, userMessageId)
     }
     return result
   },
@@ -2824,39 +2811,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   rewindConversation: async (userMessageId: string) => {
     const { activeProject } = get()
     if (!activeProject) throw new Error('No active project')
-    const sess = getActivePerSession(get())
-    const msg = sess.messages.find((m) => m.checkpointId === userMessageId)
-    const resumePointId = msg?.resumePointId ?? ''
-    const result = await window.agent.rewindConversation(activeProject, userMessageId, resumePointId)
+    const result = await window.agent.rewindConversation(activeProject)
     if (result.canRewind !== false) {
-      set((s) => {
-        const proj = getProject(s, activeProject)
-        const activeSid = proj._activeSessionId
-        if (!activeSid) return {}
-        const currentSess = proj._sessions[activeSid]
-        if (!currentSess) return {}
-        const idx = currentSess.messages.findIndex((m) => m.checkpointId === userMessageId)
-        const truncated = idx >= 0 ? currentSess.messages.slice(0, idx) : currentSess.messages
-        const forkedMessages = result.forkedSessionId
-          ? remapMessagesForFork(truncated, result.forkedSessionId)
-          : truncated
-        const newSid = result.forkedSessionId ?? activeSid
-        const updatedSess = { ...currentSess, messages: forkedMessages, session: null, totalCostUsd: 0, contextTokens: 0 }
-        const { [activeSid]: _, ...rest } = proj._sessions
-        return {
-          projectSessions: {
-            ...s.projectSessions,
-            [activeProject]: {
-              ...proj,
-              _activeSessionId: newSid,
-              _sessions: { ...rest, [newSid]: updatedSess },
-            },
-          },
-        }
-      })
-      if (result.forkedSessionId) {
-        _saveSessionState(get, activeProject)
-      }
+      _truncateAtCheckpoint(set, get, activeProject, userMessageId)
     }
     return result
   },

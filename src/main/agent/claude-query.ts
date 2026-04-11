@@ -40,6 +40,7 @@ export function createSessionQuery(
   getInterrupted: () => boolean,
   onSessionId?: (id: string) => void,
   onQueuedTurnStart?: (messageId: string) => void,
+  onStepBoundary?: () => void,
 ): SessionQueryHandle {
   const timing = { pausedMs: 0 }
   const timedCanUseTool: CanUseTool = async (...args) => {
@@ -108,6 +109,7 @@ export function createSessionQuery(
     onSessionId,
     trackPlanFile: options.trackPlanFile,
     onQueuedTurnStart,
+    onStepBoundary,
     bridge,
     timing,
   })
@@ -151,12 +153,13 @@ interface IterateMessagesOptions {
   onSessionId?: (id: string) => void
   trackPlanFile?: (filePath: string) => void
   onQueuedTurnStart?: (messageId: string) => void
+  onStepBoundary?: () => void
   bridge: MessageBridge
   timing: { pausedMs: number }
 }
 
 async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
-  const { emit: rawEmit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile, onQueuedTurnStart, bridge, timing } = opts
+  const { emit: rawEmit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile, onQueuedTurnStart, onStepBoundary, bridge, timing } = opts
   const emit = rawEmit
   // Track content_block index → tool_use_id for input_json_delta correlation
   const activeToolBlocks = new Map<number, string>()
@@ -290,8 +293,10 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
 
         // Extract tool_result blocks from array content
         if (Array.isArray(msgContent)) {
+          let hasToolResult = false
           for (const block of msgContent) {
             if (block.type === 'tool_result' && block.tool_use_id) {
+              hasToolResult = true
               const toolName = toolIdToName.get(block.tool_use_id)
               const text = extractToolResultText(block.content)
               const isBash = toolName === 'Bash'
@@ -313,6 +318,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               })
             }
           }
+          if (hasToolResult && !parentToolUseId) onStepBoundary?.()
         }
 
         const raw = typeof msgContent === 'string' ? msgContent : ''
@@ -779,6 +785,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
 
           resultSeen = true
           turnActive = false
+          onStepBoundary?.()
           if (messageId === getCurrentMessageId()) {
             emit({ type: 'status_change', status: 'idle' })
           }

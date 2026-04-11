@@ -757,4 +757,65 @@ describe('createSessionQuery', () => {
     expect(messageStarts).toHaveLength(1)
     expect((messageStarts[0].message as Record<string, unknown>).id).toBe(queuedId)
   })
+
+  it('calls onStepBoundary when top-level tool_result is received', async () => {
+    state.messages = [
+      {
+        type: 'user',
+        message: {
+          content: [
+            { type: 'tool_result', tool_use_id: 'tool-1', content: 'done' },
+          ],
+        },
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const onStepBoundary = vi.fn()
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      () => {},
+      () => 'msg-step',
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      undefined,
+      onStepBoundary,
+    )
+    await handle.iterationDone
+
+    expect(onStepBoundary).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not call onStepBoundary for subagent tool_result', async () => {
+    state.messages = [
+      {
+        type: 'user',
+        parent_tool_use_id: 'sub-agent-1',
+        message: {
+          content: [
+            { type: 'tool_result', tool_use_id: 'tool-sub', content: 'sub done' },
+          ],
+        },
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const onStepBoundary = vi.fn()
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      () => {},
+      () => 'msg-sub-step',
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      undefined,
+      onStepBoundary,
+    )
+    await handle.iterationDone
+
+    expect(onStepBoundary).toHaveBeenCalledTimes(1)
+  })
 })

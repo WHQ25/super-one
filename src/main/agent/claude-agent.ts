@@ -88,6 +88,7 @@ export class ClaudeAgent {
   private currentStartTime = 0
   private interrupted = false
   private turnResolves = new Map<string, () => void>()
+  private pendingQueued: Array<{ msg: SDKUserMessage; clientMessageId: string }> = []
 
   private ready = false
   private currentPermissionMode: PermissionMode = 'default'
@@ -201,6 +202,7 @@ export class ClaudeAgent {
         this.interrupted = false
         this.turnResolves.set(messageId, () => {})
       },
+      () => this.flushPendingQueued(),
     )
 
     this.sessionQuery = handle.query
@@ -331,7 +333,11 @@ export class ClaudeAgent {
       await turnDone
     } else {
       const userMsg = buildUserMessage(request, this.sessionId)
-      this.bridge.push(userMsg, request.clientMessageId)
+      if (this.turnResolves.size > 0) {
+        this.pendingQueued.push({ msg: userMsg, clientMessageId: request.clientMessageId! })
+      } else {
+        this.bridge.push(userMsg, request.clientMessageId)
+      }
     }
   }
 
@@ -402,6 +408,7 @@ export class ClaudeAgent {
   async interrupt(): Promise<void> {
     log.debug(`[ClaudeAgent] interrupt (sessionId=${this.sessionId}, iterationAlive=${this.iterationAlive}, hasQuery=${!!this.sessionQuery}, pendingPerms=${this.pendingPermissions.size}, pendingQs=${this.pendingQuestions.size})`)
     this.interrupted = true
+    this.flushPendingQueued()
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
     if (this.sessionQuery) {
       await this.sessionQuery.interrupt()
@@ -602,6 +609,7 @@ export class ClaudeAgent {
   }
 
   async resetSession(): Promise<void> {
+    this.pendingQueued = []
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()
 
@@ -634,6 +642,7 @@ export class ClaudeAgent {
   }
 
   async dispose(): Promise<void> {
+    this.pendingQueued = []
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()
     this.onEvent = null
@@ -652,7 +661,20 @@ export class ClaudeAgent {
     this.config = null
   }
 
+  private flushPendingQueued(): void {
+    if (!this.bridge || this.pendingQueued.length === 0) return
+    for (const item of this.pendingQueued) {
+      this.bridge.push(item.msg, item.clientMessageId)
+    }
+    this.pendingQueued = []
+  }
+
   dequeueMessage(clientMessageId: string): boolean {
+    const idx = this.pendingQueued.findIndex((p) => p.clientMessageId === clientMessageId)
+    if (idx !== -1) {
+      this.pendingQueued.splice(idx, 1)
+      return true
+    }
     return this.bridge?.dequeue(clientMessageId) ?? false
   }
 

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useEffect } from 'react'
+import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
 import { FileX2, ChevronRight } from 'lucide-react'
 import { defaultRehypePlugins } from 'streamdown'
 import { FileIcon } from '@/components/ui/FileIcon'
@@ -11,6 +11,7 @@ import type { GitFileDiff, GitFileContent } from '../../../../shared/agent-types
 import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
 import { ImagePreview } from './ImagePreview'
+import { MarkdownEditor } from './MarkdownEditor'
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown'])
 const BINARY_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'])
@@ -41,9 +42,8 @@ function useOwnFileData(filePath: string | undefined) {
       setDiff(d)
       setContent(c)
       const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio'
-      const isMd = /\.(?:md|mdx|markdown)$/i.test(filePath)
       const isSvg = c.language === 'svg'
-      setTab(isBin ? 'preview' : d.diff ? 'changes' : (isMd || isSvg) ? 'preview' : 'file')
+      setTab(isBin ? 'preview' : d.diff ? 'changes' : isSvg ? 'preview' : 'file')
     }).catch(() => {
       if (!cancelled) { setDiff(null); setContent(null) }
     })
@@ -59,6 +59,9 @@ interface FilePreviewProps {
 
 export function FilePreview({ filePath }: FilePreviewProps) {
   const currentFolder = useAppStore((s) => s.currentFolder)
+  const [isDirty, setIsDirty] = useState(false)
+  const [liveContent, setLiveContent] = useState<string | null>(null)
+  const liveContentRef = useRef<string | null>(null)
   const { diff: fileDiff, content: fileContent, tab: activeTab, setTab: setActiveTab } = useOwnFileData(filePath)
   const selectedFile = filePath
 
@@ -75,7 +78,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const fullFilePath = selectedFile.startsWith('/') ? selectedFile : `${currentFolder}/${selectedFile}`
 
   const resolvedContent = useMemo(() => {
-    const raw = fileContent?.content ?? ''
+    const raw = (isMd ? liveContent : null) ?? fileContent?.content ?? ''
     if (!currentFolder || !selectedFile) return raw
     const dir = selectedFile.includes('/') ? selectedFile.substring(0, selectedFile.lastIndexOf('/')) : ''
     const baseDir = currentFolder + (dir ? '/' + dir : '')
@@ -89,7 +92,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
         return `![${alt}](${resolved}${rest})`
       },
     )
-  }, [currentFolder, selectedFile, fileContent?.content])
+  }, [currentFolder, selectedFile, fileContent?.content, liveContent, isMd])
 
   const previewRehypePlugins = useMemo(() => [defaultRehypePlugins.raw], [])
 
@@ -103,7 +106,15 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   }, [hasDiff, isMd, isBinaryPreview, isSvgFile])
 
   const effectiveTab = tabs.find((t) => t.key === activeTab) ? activeTab : tabs[0]?.key ?? 'file'
-  const handleTabChange = useCallback((v: string) => setActiveTab(v as TabKey), [setActiveTab])
+  const handleTabChange = useCallback((v: string) => {
+    if (v !== 'file' && liveContentRef.current !== null) {
+      setLiveContent(liveContentRef.current)
+    }
+    setActiveTab(v as TabKey)
+  }, [setActiveTab])
+
+  const handleDirtyChange = useCallback((dirty: boolean) => setIsDirty(dirty), [])
+  const handleContentChange = useCallback((text: string) => { liveContentRef.current = text }, [])
 
   if (!selectedFile) {
     return (
@@ -134,6 +145,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
             </span>
           ))}
         </div>
+        {isDirty && <span className="size-1.5 rounded-full bg-orange-400" title="Unsaved changes" />}
         {tabs.length > 1 && (
           <Tabs value={effectiveTab} onValueChange={handleTabChange}>
             <TabsList>
@@ -148,6 +160,11 @@ export function FilePreview({ filePath }: FilePreviewProps) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
+        {isMd && (
+          <div className={effectiveTab === 'file' ? 'size-full' : 'hidden'}>
+            <MarkdownEditor content={fileContent?.content ?? ''} filePath={selectedFile} onDirtyChange={handleDirtyChange} onContentChange={handleContentChange} />
+          </div>
+        )}
         {effectiveTab === 'changes' && hasDiff ? (
           <FileDiffView filePath={selectedFile} diff={fileDiff?.diff ?? ''} />
         ) : effectiveTab === 'preview' && isBinImg ? (
@@ -166,9 +183,9 @@ export function FilePreview({ filePath }: FilePreviewProps) {
           <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
         ) : effectiveTab === 'preview' && isMd ? (
           <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
-        ) : (
+        ) : !isMd ? (
           <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />
-        )}
+        ) : null}
       </div>
     </div>
   )

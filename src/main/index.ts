@@ -844,6 +844,16 @@ function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle(AgentIpcChannels.SAVE_FILE, async (_event, folderPath: string, filePath: string, content: string) => {
+    try {
+      const fullPath = validatePathInProject(folderPath, isAbsolute(filePath) ? filePath : join(folderPath, filePath))
+      await writeFile(fullPath, content, 'utf-8')
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
   const SKIP_DIRS = new Set(['.git'])
 
   const GIT_STATUS_PRIORITY: Record<string, number> = { D: 4, M: 3, A: 2, '?': 1 }

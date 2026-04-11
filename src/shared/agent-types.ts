@@ -1093,6 +1093,7 @@ export const AgentIpcChannels = {
   CLIPBOARD_WRITE: 'app:clipboard-write',
   GIT_DIFF_FILE: 'app:git-diff-file',
   GIT_READ_FILE: 'app:git-read-file',
+  SAVE_FILE: 'app:save-file',
 
   // Concurrent session management
   PARK_SESSION: 'agent:park-session',

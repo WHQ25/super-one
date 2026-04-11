@@ -438,6 +438,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.FILE_DELETE, folderPath, relPath),
   renameFile: (folderPath: string, relPath: string, newName: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FILE_RENAME, folderPath, relPath, newName),
+  saveFile: (folderPath: string, filePath: string, content: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE, folderPath, filePath, content),
   showInFolder: (folderPath: string, relPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FILE_SHOW_IN_FOLDER, folderPath, relPath),
   openExternalLink: (url: string) =>

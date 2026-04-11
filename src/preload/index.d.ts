@@ -126,6 +126,7 @@ interface AppAPI {
   moveFilesIn(folderPath: string, destDirRelPath: string, absolutePaths: string[]): Promise<FileOpResult>
   deleteFile(folderPath: string, relPath: string): Promise<FileOpResult>
   renameFile(folderPath: string, relPath: string, newName: string): Promise<FileOpResult>
+  saveFile(folderPath: string, filePath: string, content: string): Promise<FileOpResult>
   showInFolder(folderPath: string, relPath: string): Promise<void>
   openExternalLink(url: string): Promise<void>
   clipboardRead(): Promise<string>

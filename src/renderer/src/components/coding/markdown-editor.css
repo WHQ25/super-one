@@ -1,0 +1,86 @@
+.markdown-editor .hljs {
+  color: #24292e;
+  background: transparent;
+}
+.markdown-editor .hljs-doctag,
+.markdown-editor .hljs-keyword,
+.markdown-editor .hljs-meta .hljs-keyword,
+.markdown-editor .hljs-template-tag,
+.markdown-editor .hljs-template-variable,
+.markdown-editor .hljs-type,
+.markdown-editor .hljs-variable.language_ { color: #d73a49 }
+.markdown-editor .hljs-title,
+.markdown-editor .hljs-title.class_,
+.markdown-editor .hljs-title.class_.inherited__,
+.markdown-editor .hljs-title.function_ { color: #6f42c1 }
+.markdown-editor .hljs-attr,
+.markdown-editor .hljs-attribute,
+.markdown-editor .hljs-literal,
+.markdown-editor .hljs-meta,
+.markdown-editor .hljs-number,
+.markdown-editor .hljs-operator,
+.markdown-editor .hljs-variable,
+.markdown-editor .hljs-selector-attr,
+.markdown-editor .hljs-selector-class,
+.markdown-editor .hljs-selector-id { color: #005cc5 }
+.markdown-editor .hljs-regexp,
+.markdown-editor .hljs-string,
+.markdown-editor .hljs-meta .hljs-string { color: #032f62 }
+.markdown-editor .hljs-built_in,
+.markdown-editor .hljs-symbol { color: #e36209 }
+.markdown-editor .hljs-comment,
+.markdown-editor .hljs-code,
+.markdown-editor .hljs-formula { color: #6a737d }
+.markdown-editor .hljs-name,
+.markdown-editor .hljs-quote,
+.markdown-editor .hljs-selector-tag,
+.markdown-editor .hljs-selector-pseudo { color: #22863a }
+.markdown-editor .hljs-subst { color: #24292e }
+.markdown-editor .hljs-section { color: #005cc5; font-weight: bold }
+.markdown-editor .hljs-bullet { color: #735c0f }
+.markdown-editor .hljs-emphasis { color: #24292e; font-style: italic }
+.markdown-editor .hljs-strong { color: #24292e; font-weight: bold }
+.markdown-editor .hljs-addition { color: #22863a; background-color: #f0fff4 }
+.markdown-editor .hljs-deletion { color: #b31d28; background-color: #ffeef0 }
+
+.dark .markdown-editor .hljs { color: #c9d1d9 }
+.dark .markdown-editor .hljs-doctag,
+.dark .markdown-editor .hljs-keyword,
+.dark .markdown-editor .hljs-meta .hljs-keyword,
+.dark .markdown-editor .hljs-template-tag,
+.dark .markdown-editor .hljs-template-variable,
+.dark .markdown-editor .hljs-type,
+.dark .markdown-editor .hljs-variable.language_ { color: #ff7b72 }
+.dark .markdown-editor .hljs-title,
+.dark .markdown-editor .hljs-title.class_,
+.dark .markdown-editor .hljs-title.class_.inherited__,
+.dark .markdown-editor .hljs-title.function_ { color: #d2a8ff }
+.dark .markdown-editor .hljs-attr,
+.dark .markdown-editor .hljs-attribute,
+.dark .markdown-editor .hljs-literal,
+.dark .markdown-editor .hljs-meta,
+.dark .markdown-editor .hljs-number,
+.dark .markdown-editor .hljs-operator,
+.dark .markdown-editor .hljs-variable,
+.dark .markdown-editor .hljs-selector-attr,
+.dark .markdown-editor .hljs-selector-class,
+.dark .markdown-editor .hljs-selector-id { color: #79c0ff }
+.dark .markdown-editor .hljs-regexp,
+.dark .markdown-editor .hljs-string,
+.dark .markdown-editor .hljs-meta .hljs-string { color: #a5d6ff }
+.dark .markdown-editor .hljs-built_in,
+.dark .markdown-editor .hljs-symbol { color: #ffa657 }
+.dark .markdown-editor .hljs-comment,
+.dark .markdown-editor .hljs-code,
+.dark .markdown-editor .hljs-formula { color: #8b949e }
+.dark .markdown-editor .hljs-name,
+.dark .markdown-editor .hljs-quote,
+.dark .markdown-editor .hljs-selector-tag,
+.dark .markdown-editor .hljs-selector-pseudo { color: #7ee787 }
+.dark .markdown-editor .hljs-subst { color: #c9d1d9 }
+.dark .markdown-editor .hljs-section { color: #1f6feb; font-weight: bold }
+.dark .markdown-editor .hljs-bullet { color: #f2cc60 }
+.dark .markdown-editor .hljs-emphasis { color: #c9d1d9; font-style: italic }
+.dark .markdown-editor .hljs-strong { color: #c9d1d9; font-weight: bold }
+.dark .markdown-editor .hljs-addition { color: #aff5b4; background-color: #033a16 }
+.dark .markdown-editor .hljs-deletion { color: #ffdcd7; background-color: #67060c }

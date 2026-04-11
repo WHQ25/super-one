@@ -38,6 +38,7 @@ export function inferLanguage(filePath: string): string {
 export interface HLToken { content: string; style?: React.CSSProperties }
 
 const HIGHLIGHT_LINE_LIMIT = 10000
+const HIGHLIGHT_CHUNK_SIZE = 100
 
 
 type HighlightRawToken = { content: string; color?: string; bgColor?: string; htmlStyle?: Record<string, string> }
@@ -68,26 +69,53 @@ export function useHighlightedTokens(code: string, language: string): HLToken[][
 
   useEffect(() => {
     if (!code) { setTokens(null); return }
-    if (code.split('\n').length > HIGHLIGHT_LINE_LIMIT) { setTokens(null); return }
+    const lineCount = code.split('\n').length
+    if (lineCount > HIGHLIGHT_LINE_LIMIT) { setTokens(null); return }
     let cancelled = false
-    let handled = false
     const lang = plugin.supportsLanguage(language as never) ? language : 'md'
     const themes = plugin.getThemes()
 
-    const apply = (res: HighlightResult) => {
-      if (cancelled || handled) return
-      handled = true
-      const extracted = extractTokens(res)
-      startTransition(() => { if (!cancelled) setTokens(extracted) })
+    if (lineCount <= HIGHLIGHT_CHUNK_SIZE) {
+      let handled = false
+      const apply = (res: HighlightResult) => {
+        if (cancelled || handled) return
+        handled = true
+        const extracted = extractTokens(res)
+        startTransition(() => { if (!cancelled) setTokens(extracted) })
+      }
+      const idleId = requestIdleCallback(() => {
+        if (cancelled) return
+        const result = plugin.highlight({ code, language: lang as never, themes }, apply)
+        if (result) apply(result)
+      }, { timeout: 80 })
+      return () => { cancelled = true; cancelIdleCallback(idleId) }
     }
 
-    const run = () => {
+    const codeLines = code.split('\n')
+    const accumulated: (HLToken[] | undefined)[] = new Array(codeLines.length)
+
+    const processChunk = (chunkIdx: number) => {
       if (cancelled) return
-      const result = plugin.highlight({ code, language: lang as never, themes }, apply)
+      const start = chunkIdx * HIGHLIGHT_CHUNK_SIZE
+      if (start >= codeLines.length) return
+      const end = Math.min(start + HIGHLIGHT_CHUNK_SIZE, codeLines.length)
+      const chunkCode = codeLines.slice(start, end).join('\n')
+
+      let handled = false
+      const apply = (res: HighlightResult) => {
+        if (cancelled || handled) return
+        handled = true
+        const extracted = extractTokens(res)
+        for (let i = 0; i < extracted.length; i++) accumulated[start + i] = extracted[i]
+        startTransition(() => { if (!cancelled) setTokens([...accumulated] as HLToken[][]) })
+        requestIdleCallback(() => processChunk(chunkIdx + 1), { timeout: 16 })
+      }
+
+      const result = plugin.highlight({ code: chunkCode, language: lang as never, themes }, apply)
       if (result) apply(result)
     }
 
-    const idleId = requestIdleCallback(run, { timeout: 80 })
+    const idleId = requestIdleCallback(() => processChunk(0), { timeout: 50 })
     return () => { cancelled = true; cancelIdleCallback(idleId) }
   }, [code, language, isDark, plugin])
 
@@ -238,7 +266,7 @@ export const LINE_STYLE: Record<DiffLine['kind'], { bg: string; marker: string; 
   unchanged: { bg: '', marker: ' ', markerColor: 'text-transparent' },
 }
 
-const ROW_BASE = 'absolute left-0 right-0 whitespace-pre px-2'
+const ROW_BASE = 'absolute left-0 right-0 whitespace-pre pr-2'
 const ROW_HIGHLIGHT = `${ROW_BASE} bg-yellow-400/25`
 const ROW_CLASS: Record<DiffLine['kind'], string> = {
   removed: `${ROW_BASE} bg-red-500/15`,
@@ -275,7 +303,7 @@ const DiffLineRow = memo(function DiffLineRow({ line, tokens, gw, size, start, i
       className={isHighlighted ? ROW_HIGHLIGHT : wasFading ? ROW_CLASS_FADE[line.kind] : ROW_CLASS[line.kind]}
       style={{ height: size, transform: `translateY(${start}px)` }}
     >
-      <span className="inline-block select-none text-right text-muted-foreground/50 mr-1" style={{ width: `${gw}ch` }}>
+      <span className="sticky left-0 z-10 inline-block select-none bg-background text-right text-muted-foreground/50 pl-2 pr-1" style={{ width: `calc(${gw}ch + 0.75rem)` }}>
         {line.lineNum}
       </span>
       <span className={MARKER_CLASS[line.kind]}>{s.marker}</span>

@@ -1165,6 +1165,27 @@ function _hydrateSessionState(
     .catch((err) => console.warn('[sessionHydrate] failed:', err))
 }
 
+let _cachedDefaultPermissionMode: PermissionMode | null = null
+async function _getDefaultPermissionMode(): Promise<PermissionMode> {
+  if (_cachedDefaultPermissionMode !== null) return _cachedDefaultPermissionMode
+  try {
+    const prefs = await window.app.getUserPreferences()
+    _cachedDefaultPermissionMode = (prefs.defaultPermissionMode as PermissionMode) || 'default'
+  } catch {
+    _cachedDefaultPermissionMode = 'default'
+  }
+  return _cachedDefaultPermissionMode
+}
+export function invalidateDefaultPermissionModeCache(): void {
+  _cachedDefaultPermissionMode = null
+}
+
+async function _syncAndResumeSession(projectPath: string, sessionId: string, get: () => ChatStore, cwd: string): Promise<void> {
+  const targetMode = getActivePerSession(get()).permissionMode
+  await window.agent.setPermissionMode(projectPath, targetMode)
+  await window.app.resumeSession(projectPath, sessionId, cwd)
+}
+
 function _saveSessionState(get: () => ChatStore, projectPath: string): void {
   const project = get().projectSessions[projectPath]
   if (!project) return
@@ -3165,7 +3186,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   respondToPlanApproval: (requestId, approved, feedback) => {
     const { activeProject } = get()
     if (!activeProject) return
-    const session = getActivePerSession(get(), activeProject)
     window.agent.respondToPlanApproval(activeProject, requestId, approved, feedback)
     set((s) => {
       const perSessionUpdate = updateActivePerSession(s, () => ({
@@ -3390,7 +3410,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       if (targetSession.sessionProvider !== 'codex') {
         try {
-          await window.app.resumeSession(activeProject, sessionId, _getSessionCwd(activeProject, runtimeSession))
+          await _syncAndResumeSession(activeProject, sessionId, get, _getSessionCwd(activeProject, runtimeSession))
         } catch (err) {
           console.warn('[chat] resumeSession failed:', err)
         }
@@ -3428,6 +3448,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       _saveSessionState(get, activeProject)
     }
 
+    const defaultPermissionMode = await _getDefaultPermissionMode()
     const restoredSession: PerSessionState = {
       ...createDefaultPerSessionState(),
       cwd: _getSessionCwd(activeProject, { _worktreePath: savedWorktreePath ?? null, _worktreeRemoved: false }),
@@ -3444,6 +3465,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       sessionProvider: restoredProvider,
       lastAssistantMessageId: savedMessages.findLast((m) => m.role === 'assistant')?.id ?? null,
       _historyHydrated: true,
+      permissionMode: defaultPermissionMode,
     }
     if (restoredProvider !== 'codex') {
       applyDefaultModel(restoredSession, get().availableModels)
@@ -3494,7 +3516,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     if (restoredSession.sessionProvider !== 'codex') {
       try {
-        await window.app.resumeSession(activeProject, sessionId, _getSessionCwd(activeProject, getProject(get())._sessions[sessionId]))
+        await _syncAndResumeSession(activeProject, sessionId, get, _getSessionCwd(activeProject, getProject(get())._sessions[sessionId]))
       } catch (err) {
         console.warn('[chat] resumeSession failed:', err)
       }

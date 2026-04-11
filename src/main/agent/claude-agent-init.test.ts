@@ -103,3 +103,43 @@ describe('ClaudeAgent.initialize permission mode', () => {
     expect(modeUsed).toBe('acceptEdits')
   })
 })
+
+describe('ClaudeAgent.setPermissionMode', () => {
+  it('emits permission_mode_change before awaiting SDK', async () => {
+    setupMocks()
+    const agent = new ClaudeAgent()
+    const events: { type: string; mode?: PermissionMode }[] = []
+    let sdkResolve: () => void
+    const sdkPromise = new Promise<void>((r) => { sdkResolve = r })
+    mockCreateSessionQuery.mockReturnValue({
+      query: { setPermissionMode: () => sdkPromise },
+      iterationDone: new Promise<void>(() => {}),
+    })
+    await agent.initialize({ cwd: '/tmp/test' }, (e) => events.push(e as never))
+    events.length = 0
+
+    const promise = agent.setPermissionMode('acceptEdits')
+    expect(events).toEqual([{ type: 'permission_mode_change', mode: 'acceptEdits' }])
+
+    sdkResolve!()
+    await promise
+  })
+
+  it('skips SDK call when session is not alive', async () => {
+    setupMocks()
+    const agent = new ClaudeAgent()
+    const events: { type: string; mode?: PermissionMode }[] = []
+    const sdkSetMode = vi.fn()
+    mockCreateSessionQuery.mockReturnValue({
+      query: { setPermissionMode: sdkSetMode },
+      iterationDone: Promise.resolve(),
+    })
+    await agent.initialize({ cwd: '/tmp/test' }, (e) => events.push(e as never))
+    await new Promise((r) => setTimeout(r, 0))
+    events.length = 0
+
+    await agent.setPermissionMode('acceptEdits')
+    expect(events).toEqual([{ type: 'permission_mode_change', mode: 'acceptEdits' }])
+    expect(sdkSetMode).not.toHaveBeenCalled()
+  })
+})

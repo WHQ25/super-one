@@ -285,4 +285,53 @@ describe('useChatScroll', () => {
     rerender()
     expect(state.scrollTop).toBe(600)
   })
+
+  it('scrolls to bottom after plan approval dismissal via ResizeObserver', () => {
+    vi.useFakeTimers()
+    mockSessionState = {
+      ...mockSessionState,
+      status: 'idle',
+      pendingPlanApproval: { requestId: 'plan-1', planContent: 'test', planFilePath: '', allowedPrompts: [] },
+    }
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    state.scrollTop = 0
+
+    const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    act(() => { fireResize() })
+    vi.advanceTimersByTime(500)
+
+    mockSessionState = { ...mockSessionState, pendingPlanApproval: null }
+    rerender()
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(500)
+    vi.useRealTimers()
+  })
+
+  it('scrolls to bottom immediately when ResizeObserver effect re-runs after plan dismissal', () => {
+    vi.useFakeTimers()
+    mockSessionState = {
+      ...mockSessionState,
+      status: 'idle',
+      pendingPlanApproval: { requestId: 'plan-1', planContent: 'test', planFilePath: '', allowedPrompts: [] },
+    }
+    const ref = { current: null as HTMLDivElement | null }
+
+    const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    vi.advanceTimersByTime(500)
+
+    const { el, state } = createMockViewport()
+    ref.current = el
+    state.scrollTop = 0
+    state.scrollHeight = 800
+
+    mockSessionState = { ...mockSessionState, pendingPlanApproval: null }
+    rerender()
+    vi.advanceTimersByTime(0)
+
+    expect(state.scrollTop).toBe(500)
+    vi.useRealTimers()
+  })
 })

@@ -3,7 +3,7 @@ import { Check, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, invalidateDefaultPermissionModeCache } from '@/stores/chat'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,6 +60,7 @@ export function PreferencesPage() {
     try {
       const result = await window.app.saveUserPreferences({ defaultPermissionMode: mode })
       setDefaultPermissionMode(result.defaultPermissionMode as PermissionMode || '')
+      invalidateDefaultPermissionModeCache()
       toast.success('Default permission mode updated')
     } finally {
       setSaving(false)

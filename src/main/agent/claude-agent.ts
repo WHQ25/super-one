@@ -390,11 +390,13 @@ export class ClaudeAgent {
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     const prev = this.currentPermissionMode
+    if (prev === mode) return
     this.currentPermissionMode = mode
+    this.emit({ type: 'permission_mode_change', mode })
     const bypassChanged = (prev === 'bypassPermissions') !== (mode === 'bypassPermissions')
     if (bypassChanged) {
       this.needsSessionRebuild = true
-    } else if (this.sessionQuery) {
+    } else if (this.sessionQuery && this.iterationAlive) {
       try {
         await this.sessionQuery.setPermissionMode(mode)
       } catch (err) {
@@ -402,7 +404,6 @@ export class ClaudeAgent {
         this.needsSessionRebuild = true
       }
     }
-    this.emit({ type: 'permission_mode_change', mode })
   }
 
   async interrupt(): Promise<void> {

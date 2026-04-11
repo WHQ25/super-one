@@ -62,12 +62,13 @@ const mockWindowApp = {
   codexInterrupt: vi.fn().mockResolvedValue(false),
   codexPlanApproval: vi.fn().mockResolvedValue(undefined),
   codexCollaborationModeChange: vi.fn().mockResolvedValue(undefined),
+  getUserPreferences: vi.fn().mockResolvedValue({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' }),
 }
 
 vi.stubGlobal('window', { agent: mockWindowAgent, app: mockWindowApp, localStorage: mockLocalStorage })
 vi.stubGlobal('localStorage', mockLocalStorage)
 
-const { useChatStore, isDraftSession, createDraftSessionId, createDefaultPerSessionState, createDefaultProjectState } = await import('./chat')
+const { useChatStore, isDraftSession, createDraftSessionId, createDefaultPerSessionState, createDefaultProjectState, invalidateDefaultPermissionModeCache } = await import('./chat')
 
 function getActiveDraftSession(path: string) {
   const proj = useChatStore.getState().projectSessions[path]
@@ -124,6 +125,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockLocalStorage.clear()
   globalThis.localStorage?.removeItem('super-one.codex.last-selection.v1')
+  invalidateDefaultPermissionModeCache()
 })
 
 describe('ensureSession', () => {
@@ -1455,6 +1457,75 @@ describe('switchSession Case B (from DB)', () => {
     expect(after._activeSessionId).toBe('missing-session')
     expect(after._sessions['missing-session'].messages).toHaveLength(0)
     expect(after._sessions['missing-session'].totalCostUsd).toBe(0)
+  })
+
+  it('uses defaultPermissionMode from user preferences', async () => {
+    setupProject('/test')
+    mockWindowApp.getUserPreferences.mockResolvedValue({
+      outputStyle: '',
+      defaultPermissionMode: 'acceptEdits',
+      defaultSandboxMode: '',
+    })
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      gitBranch: null,
+      provider: 'claude',
+    })
+
+    await useChatStore.getState().switchSession('pref-session')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['pref-session'].permissionMode).toBe('acceptEdits')
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'acceptEdits')
+  })
+
+  it('calls setPermissionMode before resumeSession', async () => {
+    setupProject('/test')
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      gitBranch: null,
+      provider: 'claude',
+    })
+    const callOrder: string[] = []
+    mockWindowAgent.setPermissionMode.mockImplementation(() => { callOrder.push('setPermissionMode'); return Promise.resolve() })
+    mockWindowApp.resumeSession.mockImplementation(() => { callOrder.push('resumeSession'); return Promise.resolve() })
+
+    await useChatStore.getState().switchSession('order-session')
+
+    expect(callOrder).toEqual(['setPermissionMode', 'resumeSession'])
+  })
+})
+
+describe('switchSession Case A permissionMode sync', () => {
+  it('syncs target session permissionMode to agent before resumeSession', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'ses-a',
+          _sessions: {
+            'ses-a': { ...createDefaultPerSessionState(), permissionMode: 'acceptEdits' as never },
+            'ses-b': { ...createDefaultPerSessionState(), permissionMode: 'default' as never, sessionProvider: 'claude' },
+          },
+        },
+      },
+    })
+
+    const callOrder: string[] = []
+    mockWindowAgent.setPermissionMode.mockImplementation(() => { callOrder.push('setPermissionMode'); return Promise.resolve() })
+    mockWindowApp.resumeSession.mockImplementation(() => { callOrder.push('resumeSession'); return Promise.resolve() })
+
+    await useChatStore.getState().switchSession('ses-b')
+
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'default')
+    expect(callOrder).toEqual(['setPermissionMode', 'resumeSession'])
   })
 })
 

@@ -14,6 +14,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   const messages = useActiveSession((s) => s.messages)
   const sessionId = useActiveSession((s) => s._activeSessionId)
   const status = useActiveSession((s) => s.status)
+  const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
   const statusRef = useRef(status)
   statusRef.current = status
 
@@ -38,6 +39,21 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       window.app.trace?.('scroll', 'session_switch', { sessionId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight, msgCount: messages.length })
     }
   }, [sessionId, scrollViewportRef])
+
+  const prevPlanApprovalRef = useRef(pendingPlanApproval)
+  useLayoutEffect(() => {
+    const wasPending = prevPlanApprovalRef.current
+    prevPlanApprovalRef.current = pendingPlanApproval
+    if (wasPending && !pendingPlanApproval) {
+      isNearBottomRef.current = true
+      sessionSwitchRef.current = true
+      setShowScrollButton(false)
+      clearTimeout(sessionSwitchTimerRef.current)
+      sessionSwitchTimerRef.current = setTimeout(() => { sessionSwitchRef.current = false }, SETTLE_TIMEOUT)
+    }
+  }, [pendingPlanApproval])
+
+  const viewportMounted = !pendingPlanApproval && messages.length > 0
 
   useEffect(() => {
     const el = scrollViewportRef.current
@@ -66,7 +82,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       el.removeEventListener('wheel', markUserScroll)
       el.removeEventListener('pointerdown', markUserScroll)
     }
-  }, [sessionId, messages.length > 0, scrollViewportRef])
+  }, [sessionId, viewportMounted, scrollViewportRef])
 
   const lastMsgIsUser = messages.length > 0 && messages[messages.length - 1].role === 'user'
 
@@ -88,6 +104,11 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     if (!viewport) return
     const content = viewport.firstElementChild as HTMLElement | null
     if (!content) return
+    if (sessionSwitchRef.current && isNearBottomRef.current) {
+      viewport.scrollTop = viewport.scrollHeight
+      lastScrollTopRef.current = viewport.scrollTop
+      setShowScrollButton(false)
+    }
     let rafId = 0
     const observer = new ResizeObserver(() => {
       if (isNearBottomRef.current && (statusRef.current === 'streaming' || sessionSwitchRef.current)) {
@@ -103,7 +124,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     observer.observe(content)
     observer.observe(viewport)
     return () => { observer.disconnect(); cancelAnimationFrame(rafId) }
-  }, [sessionId, messages.length > 0, scrollViewportRef])
+  }, [sessionId, viewportMounted, scrollViewportRef])
 
   const scrollToBottom = useCallback(() => {
     const el = scrollViewportRef.current

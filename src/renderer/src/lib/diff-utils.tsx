@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useMemo, useCallback, useLayoutEffect, memo, startTransition } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { createHighlighter, type Highlighter, type ThemedToken, type GrammarState, type BundledLanguage, type BundledTheme } from 'shiki'
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import { cn } from '@/lib/utils'
 import { measureMaxLineWidth, getMonoFont, getMonoCharWidth, MONO_FONT_FAMILY } from '@/lib/pretext-utils'
 import { codePlugin, codePluginLight } from '@/components/chat/chat-shared'
@@ -33,6 +35,26 @@ export function inferLanguage(filePath: string): string {
   if (NAME_LANG[name]) return NAME_LANG[name]
   const ext = name.split('.').pop() ?? ''
   return EXT_LANG[ext] ?? 'text'
+}
+
+const fileHLEngine = createJavaScriptRegexEngine({ forgiving: true })
+let fileHLPromise: Promise<Highlighter> | null = null
+const fileHLLangs = new Set<string>()
+const fileHLThemes = new Set<string>()
+
+async function getFileHighlighter(theme: string, lang: string): Promise<Highlighter> {
+  if (!fileHLPromise) {
+    fileHLPromise = createHighlighter({ themes: [theme as BundledTheme], langs: [lang as BundledLanguage], engine: fileHLEngine })
+    fileHLLangs.add(lang)
+    fileHLThemes.add(theme)
+    return fileHLPromise
+  }
+  const hl = await fileHLPromise
+  const loads: Promise<void>[] = []
+  if (!fileHLThemes.has(theme)) loads.push(hl.loadTheme(theme as BundledTheme).then(() => { fileHLThemes.add(theme) }))
+  if (!fileHLLangs.has(lang)) loads.push(hl.loadLanguage(lang as BundledLanguage).then(() => { fileHLLangs.add(lang) }))
+  if (loads.length) await Promise.all(loads)
+  return hl
 }
 
 export interface HLToken { content: string; style?: React.CSSProperties }
@@ -91,31 +113,32 @@ export function useHighlightedTokens(code: string, language: string): HLToken[][
       return () => { cancelled = true; cancelIdleCallback(idleId) }
     }
 
-    const codeLines = code.split('\n')
-    const accumulated: (HLToken[] | undefined)[] = new Array(codeLines.length)
-
-    const processChunk = (chunkIdx: number) => {
+    const theme = (isDark ? 'github-dark' : 'github-light') as BundledTheme
+    const idleId = requestIdleCallback(() => {
       if (cancelled) return
-      const start = chunkIdx * HIGHLIGHT_CHUNK_SIZE
-      if (start >= codeLines.length) return
-      const end = Math.min(start + HIGHLIGHT_CHUNK_SIZE, codeLines.length)
-      const chunkCode = codeLines.slice(start, end).join('\n')
+      getFileHighlighter(theme, lang).then((hl) => {
+        if (cancelled) return
+        const codeLines = code.split('\n')
+        const accumulated: (HLToken[] | undefined)[] = new Array(codeLines.length)
+        let gramState: GrammarState | undefined
 
-      let handled = false
-      const apply = (res: HighlightResult) => {
-        if (cancelled || handled) return
-        handled = true
-        const extracted = extractTokens(res)
-        for (let i = 0; i < extracted.length; i++) accumulated[start + i] = extracted[i]
-        startTransition(() => { if (!cancelled) setTokens([...accumulated] as HLToken[][]) })
-        requestIdleCallback(() => processChunk(chunkIdx + 1), { timeout: 16 })
-      }
+        const processChunk = (chunkIdx: number) => {
+          if (cancelled) return
+          const start = chunkIdx * HIGHLIGHT_CHUNK_SIZE
+          if (start >= codeLines.length) return
+          const end = Math.min(start + HIGHLIGHT_CHUNK_SIZE, codeLines.length)
+          const chunkCode = codeLines.slice(start, end).join('\n')
 
-      const result = plugin.highlight({ code: chunkCode, language: lang as never, themes }, apply)
-      if (result) apply(result)
-    }
-
-    const idleId = requestIdleCallback(() => processChunk(0), { timeout: 50 })
+          const tokens = hl.codeToTokensBase(chunkCode, { lang: lang as BundledLanguage, theme, grammarState: gramState })
+          gramState = hl.getLastGrammarState(tokens) as GrammarState | undefined
+          const extracted = tokens.map((line: ThemedToken[]) => line.map((t) => ({ content: t.content, style: internStyle(t as HighlightRawToken) })))
+          for (let i = 0; i < extracted.length; i++) accumulated[start + i] = extracted[i]
+          startTransition(() => { if (!cancelled) setTokens([...accumulated] as HLToken[][]) })
+          requestIdleCallback(() => processChunk(chunkIdx + 1), { timeout: 16 })
+        }
+        processChunk(0)
+      }).catch(() => {})
+    }, { timeout: 50 })
     return () => { cancelled = true; cancelIdleCallback(idleId) }
   }, [code, language, isDark, plugin])
 

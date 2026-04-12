@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.18.5-alpha] - 2026-04-13
+
+### Added
+
+- Cmd+/- content zoom shortcuts for chat and file preview
+
+### Fixed
+
+- Syntax highlighting losing context across chunk boundaries in file preview
+- Content clipping on resize by replacing CSS zoom with transform scale
+- Code block highlighting in markdown files with YAML front matter
+
 ## [0.18.4-alpha] - 2026-04-12
 
 ### Added

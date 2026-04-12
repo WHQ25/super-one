@@ -5,10 +5,39 @@ import { Text } from '@tiptap/extension-text'
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import { encodeHtmlEntities } from '@tiptap/core'
 import { common, createLowlight } from 'lowlight'
+import type { Root } from 'hast'
 import { useAppStore } from '@/stores/app'
 import './markdown-editor.css'
 
-const lowlight = createLowlight(common)
+export const FRONTMATTER_RE = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n([\s\S]*)$/
+
+const baseLowlight = createLowlight(common)
+
+export function highlightMarkdownWithFrontmatter(
+  base: typeof baseLowlight,
+  value: string,
+  options?: Record<string, unknown>,
+): Root {
+  const m = value.match(FRONTMATTER_RE)
+  if (!m) return base.highlight('markdown', value, options) as Root
+  const openFence = { type: 'element' as const, tagName: 'span', properties: { className: ['hljs-meta'] }, children: [{ type: 'text' as const, value: '---\n' }] }
+  const yamlTree = base.highlight('yaml', m[1], options) as Root
+  const closeFence = { type: 'element' as const, tagName: 'span', properties: { className: ['hljs-meta'] }, children: [{ type: 'text' as const, value: '\n---\n' }] }
+  const mdTree = base.highlight('markdown', m[2], options) as Root
+  return { type: 'root', children: [openFence, ...yamlTree.children, closeFence, ...mdTree.children], data: { language: 'markdown', relevance: 10 } } satisfies Root
+}
+
+const lowlight = new Proxy(baseLowlight, {
+  get(target, prop, receiver) {
+    if (prop === 'highlight') {
+      return (lang: string, value: string, options?: Record<string, unknown>) => {
+        if (lang === 'markdown') return highlightMarkdownWithFrontmatter(target, value, options)
+        return target.highlight(lang, value, options)
+      }
+    }
+    return Reflect.get(target, prop, receiver)
+  },
+})
 
 const CustomDocument = Document.extend({ content: 'codeBlock' })
 

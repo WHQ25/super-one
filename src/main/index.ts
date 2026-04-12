@@ -223,7 +223,7 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1024,
+    minWidth: 1080,
     minHeight: 700,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },

@@ -7,6 +7,7 @@ import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
+import { LAYOUT } from '@/App'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { setDockApi, openNewFileTab } from './activity-panel-api'
 import { activityPanelComponents } from './panels'
@@ -37,7 +38,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
   const onResizeStart = useResizeHandle({
     getWidth,
     setWidth: setPanelWidth,
-    minWidth: 320,
+    minWidth: LAYOUT.MIN_AP,
     getMaxWidth,
     direction: side === 'right' ? 'rtl' : 'ltr',
     outerRef,

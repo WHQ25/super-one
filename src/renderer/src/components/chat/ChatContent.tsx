@@ -143,7 +143,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
 
   return (
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
-    <div ref={containerRef} className="relative flex min-h-0 w-full flex-1 flex-col bg-card" style={zoom !== 1 ? { zoom } : undefined}>
+    <div ref={containerRef} className="relative flex min-h-0 flex-col bg-card" style={zoom !== 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : { width: '100%', height: '100%' }}>
       {fullscreenPlan ? (
         <CodexPlanFullscreenView
           text={fullscreenPlan.text}

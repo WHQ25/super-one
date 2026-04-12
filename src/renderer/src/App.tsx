@@ -27,6 +27,13 @@ import { useActiveSession } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 
+export const LAYOUT = {
+  MIN_MAIN: 400,
+  MIN_SIDEBAR: 320,
+  MAX_SIDEBAR: 500,
+  MIN_AP: 360,
+} as const
+
 function App(): React.JSX.Element {
   useAgentEvents()
   useRemoteControl()
@@ -72,10 +79,7 @@ function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const MIN_MAIN = 400
-  const MIN_SIDEBAR = 320
-  const MAX_SIDEBAR = 500
-  const MIN_AP = 320
+  const { MIN_MAIN, MIN_SIDEBAR, MAX_SIDEBAR, MIN_AP } = LAYOUT
   const sidebarRef = useRef<HTMLDivElement>(null)
   const sidebarInnerRef = useRef<HTMLDivElement>(null)
 

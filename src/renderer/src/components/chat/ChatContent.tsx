@@ -17,6 +17,7 @@ import { SessionHistory } from './SessionHistory'
 import { PlanFullscreenContext } from './codex-item-renderer'
 import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
 import type { CodexPlanApprovalState } from '../../../../shared/agent-types'
+import { cn } from '@/lib/utils'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -114,23 +115,34 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     return () => observer.disconnect()
   }, [hasMore, visibleMessages.length, scrollViewportRef])
 
-  const computeZoom = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
-  const [zoom, setZoom] = useState(1)
+  const computeAutoZoom = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
+  const [autoZoom, setAutoZoom] = useState(1)
+  const [manualZoom, setManualZoom] = useState(0)
+  const zoom = autoZoom + manualZoom
   useLayoutEffect(() => {
     const parent = containerRef.current?.parentElement
     if (!parent) return
-    setZoom(computeZoom(parent.getBoundingClientRect().width))
+    setAutoZoom(computeAutoZoom(parent.getBoundingClientRect().width))
     let rafId = 0
     const observer = new ResizeObserver((entries) => {
       cancelAnimationFrame(rafId)
       rafId = requestAnimationFrame(() => {
-        const next = computeZoom(entries[0]?.contentRect.width ?? 0)
-        setZoom((prev) => prev === next ? prev : next)
+        const next = computeAutoZoom(entries[0]?.contentRect.width ?? 0)
+        setAutoZoom((prev) => prev === next ? prev : next)
       })
     })
     observer.observe(parent)
     return () => { cancelAnimationFrame(rafId); observer.disconnect() }
-  }, [computeZoom])
+  }, [computeAutoZoom])
+
+  useEffect(() => {
+    return window.app.onContentZoom((action) => {
+      if (!containerRef.current?.matches(':hover')) return
+      if (action === 'reset') setManualZoom(0)
+      else if (action === 'in') setManualZoom((v) => Math.min(v + 0.05, 0.5))
+      else setManualZoom((v) => Math.max(v - 0.05, -0.5))
+    })
+  }, [])
 
   useLayoutEffect(() => {
     const viewport = scrollViewportRef.current
@@ -143,7 +155,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
 
   return (
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
-    <div ref={containerRef} className="relative flex min-h-0 flex-col bg-card" style={zoom !== 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : { width: '100%', height: '100%' }}>
+    <div ref={containerRef} className={cn('relative flex min-h-0 flex-col bg-card', zoom <= 1 && 'w-full flex-1')} style={zoom > 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : zoom < 1 ? { zoom } : undefined}>
       {fullscreenPlan ? (
         <CodexPlanFullscreenView
           text={fullscreenPlan.text}

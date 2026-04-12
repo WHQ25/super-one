@@ -116,6 +116,17 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const handleDirtyChange = useCallback((dirty: boolean) => setIsDirty(dirty), [])
   const handleContentChange = useCallback((text: string) => { liveContentRef.current = text }, [])
 
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [zoom, setZoom] = useState(1)
+  useEffect(() => {
+    return window.app.onContentZoom((action) => {
+      if (!rootRef.current?.matches(':hover')) return
+      if (action === 'reset') setZoom(1)
+      else if (action === 'in') setZoom((v) => Math.min(v + 0.05, 1.5))
+      else setZoom((v) => Math.max(v - 0.05, 0.5))
+    })
+  }, [])
+
   if (!selectedFile) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
@@ -128,7 +139,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const pathSegments = selectedFile.split('/')
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={rootRef} className="flex h-full flex-col">
       <div className="flex h-8 shrink-0 items-center gap-1 px-2">
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
           {pathSegments.map((segment, i) => (
@@ -159,7 +170,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto" style={zoom !== 1 ? { zoom } : undefined}>
         {isMd && (
           <div className={effectiveTab === 'file' ? 'size-full' : 'hidden'}>
             <MarkdownEditor content={fileContent?.content ?? ''} filePath={selectedFile} onDirtyChange={handleDirtyChange} onContentChange={handleContentChange} />

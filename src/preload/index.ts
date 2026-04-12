@@ -518,6 +518,16 @@ const appAPI = {
 
   platform: process.platform,
 
+  onContentZoom: (callback: (action: 'in' | 'out' | 'reset') => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, action: 'in' | 'out' | 'reset'): void => {
+      callback(action)
+    }
+    ipcRenderer.on('app:content-zoom', handler)
+    return () => {
+      ipcRenderer.removeListener('app:content-zoom', handler)
+    }
+  },
+
   // Window state
   getFullscreen: () =>
     ipcRenderer.invoke('get-fullscreen') as Promise<boolean>,

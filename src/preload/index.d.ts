@@ -157,6 +157,8 @@ interface AppAPI {
   // Logging
   getLogPath(): Promise<string>
 
+  onContentZoom(callback: (action: 'in' | 'out' | 'reset') => void): () => void
+
   // Window state
   getFullscreen(): Promise<boolean>
   onFullscreenChanged(callback: (isFullscreen: boolean) => void): () => void

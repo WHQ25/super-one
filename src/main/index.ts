@@ -242,8 +242,10 @@ function createWindow(): void {
 
   mainWindow.webContents.on('before-input-event', (_e, input) => {
     if (input.control || input.meta) {
-      if (input.key === '=' || input.key === '+' || input.key === '-') {
+      if (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0') {
         _e.preventDefault()
+        const action = input.key === '-' ? 'out' : input.key === '0' ? 'reset' : 'in'
+        mainWindow?.webContents.send('app:content-zoom', action)
       }
     }
   })

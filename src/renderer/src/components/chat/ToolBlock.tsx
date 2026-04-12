@@ -227,10 +227,12 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     : toolName
 
   if (mcpInfo?.mcpToolName === 'read_guidelines') {
+    const modules = Array.isArray(params.modules) ? (params.modules as string[]).join(', ') : ''
     return (
       <CompactToolRow icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}>
         <span className="font-medium text-foreground">
           {isStreaming ? <>Reading widget guidelines…</> : 'Read widget guidelines'}
+          {modules && <>: <span className="text-muted-foreground">{modules}</span></>}
         </span>
       </CompactToolRow>
     )

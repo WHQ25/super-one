@@ -415,7 +415,11 @@ export function renderCodexItem(
     case 'mcp_tool_call':
       {
         const chunks: string[] = []
-        if (item.result) chunks.push(safeStringify(item.result))
+        if (item.result) {
+          const contentArr = item.result.content as Array<{ type: string; text: string }> | undefined
+          const textParts = contentArr?.filter((c) => c.type === 'text').map((c) => c.text)
+          chunks.push(textParts?.length ? textParts.join('\n') : safeStringify(item.result))
+        }
         if (item.error) chunks.push(`Error: ${item.error.message}`)
         const result = chunks.join('\n\n').trim()
         return (

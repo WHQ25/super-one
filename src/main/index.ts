@@ -13,6 +13,7 @@ import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePa
 import { generateBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools } from './mcp/superone-mcp-server'
+import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
@@ -1404,6 +1405,7 @@ function registerIpcHandlers(): void {
   })
 
   initSuperoneMcpServer(() => mainWindow)
+  startMcpHttpServer(() => mainWindow).catch((err) => log.error('[mcp-http] failed to start:', err))
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async (_e, projectDir?: string) => {
     const apps = await discoverApps()
@@ -1770,6 +1772,7 @@ let quitting = false
 function performQuit(): void {
   quitting = true
   stopWatching()
+  stopMcpHttpServer()
   disposeUpdater()
   agentService
     .dispose()

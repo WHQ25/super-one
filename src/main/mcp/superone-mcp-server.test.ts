@@ -1,30 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const mockRemove = vi.fn()
-const mockRegisterTool = vi.fn((_name: string, _opts: unknown, handler: Function) => {
-  const entry = { remove: mockRemove, handler }
-  return entry
+const { mockRemove, mockRegisterTool, mockSendToolListChanged, mockIsConnected } = vi.hoisted(() => {
+  const mockRemove = vi.fn()
+  const mockRegisterTool = vi.fn((_name: string, _opts: unknown, handler: Function) => {
+    const entry = { remove: mockRemove, handler }
+    return entry
+  })
+  const mockSendToolListChanged = vi.fn()
+  const mockIsConnected = vi.fn(() => true)
+  return { mockRemove, mockRegisterTool, mockSendToolListChanged, mockIsConnected }
 })
-const mockSendToolListChanged = vi.fn()
-const mockIsConnected = vi.fn(() => true)
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  createSdkMcpServer: vi.fn((_opts: unknown) => ({
-    type: 'sdk',
-    name: 'superone',
-    instance: {
-      registerTool: mockRegisterTool,
-      sendToolListChanged: mockSendToolListChanged,
-      isConnected: mockIsConnected,
-    },
-  })),
-  tool: vi.fn((_name: string, _desc: string, _schema: unknown, handler: Function) => ({
-    name: _name,
-    handler,
-  })),
-}))
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({}))
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
-  McpServer: vi.fn(),
+  McpServer: vi.fn(function(this: Record<string, unknown>) {
+    this.tool = vi.fn()
+    this.registerTool = mockRegisterTool
+    this.sendToolListChanged = mockSendToolListChanged
+    this.isConnected = mockIsConnected
+  }),
 }))
 vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
@@ -32,11 +26,7 @@ vi.mock('electron', () => ({
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('../miniapp/miniapp-service', () => ({
   createMiniApp: vi.fn(),
-  readManifest: vi.fn(),
   cacheAppBasePath: vi.fn(),
-  discoverProjectApps: vi.fn(),
-  detectStandaloneApp: vi.fn(),
-  getProjectAppsDir: vi.fn(),
 }))
 vi.mock('../miniapp/miniapp-packager', () => ({
   packApp: vi.fn(),

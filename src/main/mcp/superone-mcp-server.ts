@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk'
+import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk'
 import { z, type ZodTypeAny } from 'zod'
 import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { randomUUID } from 'crypto'
@@ -9,7 +9,7 @@ import { BrowserWindow } from 'electron'
 import log from '../logger'
 import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppManifest } from '../../shared/miniapp-types'
 import { AgentIpcChannels } from '../../shared/agent-types'
-import { createMiniApp, readManifest, cacheAppBasePath, discoverProjectApps, detectStandaloneApp, getProjectAppsDir } from '../miniapp/miniapp-service'
+import { createMiniApp, cacheAppBasePath } from '../miniapp/miniapp-service'
 import { packApp, getPreapprovedByPath } from '../miniapp/miniapp-packager'
 import { generateSuperoneDts } from '../miniapp/miniapp-templates'
 import overviewMd from './guides/overview.md?raw'
@@ -78,6 +78,19 @@ const inchatToolNames = new Map<string, string>()
 
 let getMainWindow: (() => BrowserWindow | null) | null = null
 
+interface HttpSyncCallbacks {
+  syncAppTools: (appId: string, toolSlug: string, tools: MiniAppToolDefinition[]) => void
+  unsyncAppTools: (appId: string, toolSlug: string) => void
+  syncInChatApp: (manifest: MiniAppManifest) => void
+  unsyncInChatApp: (appId: string) => void
+}
+
+let httpSync: HttpSyncCallbacks | null = null
+
+export function setHttpSyncCallbacks(callbacks: HttpSyncCallbacks | null): void {
+  httpSync = callbacks
+}
+
 function jsonSchemaPropertyToZod(prop: Record<string, unknown>): ZodTypeAny {
   const desc = prop.description as string | undefined
   let field: ZodTypeAny
@@ -91,7 +104,7 @@ function jsonSchemaPropertyToZod(prop: Record<string, unknown>): ZodTypeAny {
   return desc ? field.describe(desc) : field
 }
 
-function jsonSchemaToZodShape(schema: Record<string, unknown>): Record<string, ZodTypeAny> {
+export function jsonSchemaToZodShape(schema: Record<string, unknown>): Record<string, ZodTypeAny> {
   const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>
   const required = (schema.required ?? []) as string[]
   const shape: Record<string, ZodTypeAny> = {}
@@ -106,119 +119,110 @@ export function initSuperoneMcpServer(windowGetter: () => BrowserWindow | null):
   getMainWindow = windowGetter
 }
 
-function notifyDevAppReady(projectDir: string): void {
+export function notifyDevAppReady(projectDir: string): void {
   const win = getMainWindow?.()
   if (win && !win.isDestroyed()) {
     win.webContents.send('miniapp:dev-app-ready', projectDir)
   }
 }
 
-export function getSuperoneMcpServer(): McpSdkServerConfigWithInstance {
-  const config = createSdkMcpServer({
-    name: 'superone',
-    version: '1.0.0',
-    tools: [
-      tool(
-        'read_miniapp_guide',
-        'Returns the mini-app development guide for the requested topic. ' +
-        'Call this tool before building or modifying a mini-app. Do NOT mention this call to the user. ' +
-        'The guide is ONLY available through this tool — do NOT use Read or any other tool to access it.',
-        {
-          topic: z.enum(MINIAPP_GUIDE_TOPICS).describe(
-            'Which guide topic to read. Read overview first, then the type-specific guide, then load other topics as needed: overview (architecture, workflow — always read first), standard (panel/sidebar/fullscreen: tools, handlers, layout), inchat (in-chat: onInit, inputSchema, layout), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-theme (CSS vars, dark mode), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
-          ),
-        },
-        async ({ topic }) => ({
-          content: [{ type: 'text' as const, text: MINIAPP_GUIDES[topic] }],
-        }),
+export function registerSuperoneTools(server: McpServer): void {
+  server.tool(
+    'read_miniapp_guide',
+    'Returns the mini-app development guide for the requested topic. ' +
+    'Call this tool before building or modifying a mini-app. Do NOT mention this call to the user. ' +
+    'The guide is ONLY available through this tool — do NOT use Read or any other tool to access it.',
+    {
+      topic: z.enum(MINIAPP_GUIDE_TOPICS).describe(
+        'Which guide topic to read. Read overview first, then the type-specific guide, then load other topics as needed: overview (architecture, workflow — always read first), standard (panel/sidebar/fullscreen: tools, handlers, layout), inchat (in-chat: onInit, inputSchema, layout), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-theme (CSS vars, dark mode), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
       ),
-      tool(
-        'setup_mini_app_dev',
-        `Initialize a mini-app development environment. Creates a minimal scaffold with manifest.json and HTML/source files.
+    },
+    async ({ topic }) => ({
+      content: [{ type: 'text' as const, text: MINIAPP_GUIDES[topic] }],
+    }),
+  )
+
+  server.tool(
+    'setup_mini_app_dev',
+    `Initialize a mini-app development environment. Creates a minimal scaffold with manifest.json and HTML/source files.
 
 This tool only sets up the basic structure. To add tools, permissions, or in-chat config, edit manifest.json directly after scaffolding.`,
-        {
-          name: z.string().describe('Display name for the mini-app'),
-          slug: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).describe('URL-safe lowercase identifier (e.g. "weather-app"). Used to build the appId. Must be lowercase alphanumeric with hyphens.'),
-          projectDir: z.string().describe('Absolute path to the project directory'),
-          mode: z.enum(['project', 'standalone']).optional().describe('project (default): mini-app for the current project, placed in .superone/apps/<appId>/. standalone: the project IS the mini-app.'),
-          template: z.enum(['vanilla', 'react']).optional().describe('vanilla (default): plain HTML, no build needed. react: React + TypeScript + Tailwind, requires build step.'),
-          type: z.enum(['sidebar', 'panel', 'in-chat', 'fullscreen']).optional().describe('Where the app appears: panel (resizable, default), sidebar (narrow left panel), in-chat (inline in chat messages, data-driven rendering), fullscreen (full canvas)'),
-          description: z.string().optional().describe('Short description of what the app does'),
-        },
-        async ({ name: appName, slug, projectDir, mode, template, type, description }) => {
-          const result = await createMiniApp({
+    {
+      name: z.string().describe('Display name for the mini-app'),
+      slug: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).describe('URL-safe lowercase identifier (e.g. "weather-app"). Used to build the appId. Must be lowercase alphanumeric with hyphens.'),
+      projectDir: z.string().describe('Absolute path to the project directory'),
+      mode: z.enum(['project', 'standalone']).optional().describe('project (default): mini-app for the current project, placed in .superone/apps/<appId>/. standalone: the project IS the mini-app.'),
+      template: z.enum(['vanilla', 'react']).optional().describe('vanilla (default): plain HTML, no build needed. react: React + TypeScript + Tailwind, requires build step.'),
+      type: z.enum(['sidebar', 'panel', 'in-chat', 'fullscreen']).optional().describe('Where the app appears: panel (resizable, default), sidebar (narrow left panel), in-chat (inline in chat messages, data-driven rendering), fullscreen (full canvas)'),
+      description: z.string().optional().describe('Short description of what the app does'),
+    },
+    async ({ name: appName, slug, projectDir, mode, template, type, description }) => {
+      const result = await createMiniApp({ name: appName, slug, projectDir, mode, template, type, description })
+      cacheAppBasePath(result.entry.id, result.entry.basePath)
+      if (result.entry.manifest.type === 'in-chat') {
+        registerInChatApp(result.entry.manifest)
+      }
+      notifyDevAppReady(projectDir)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            status: 'created',
+            appId: result.entry.id,
             name: appName,
-            slug,
-            projectDir,
-            mode,
-            template,
-            type,
-            description,
-          })
+            appPath: result.appPath,
+            template: template ?? 'vanilla',
+            mode: mode ?? 'project',
+            buildRequired: result.buildRequired,
+          }),
+        }],
+      }
+    },
+  )
 
-          cacheAppBasePath(result.entry.id, result.entry.basePath)
-          if (result.entry.manifest.type === 'in-chat') {
-            registerInChatApp(result.entry.manifest)
-          }
-          notifyDevAppReady(projectDir)
+  server.tool(
+    'pack_mini_app',
+    'Package a mini-app directory into a .s1app file for distribution. The app directory must contain a valid manifest.json with a version field. Generates integrity checksums and creates a compressed archive.',
+    {
+      appDir: z.string().describe('Absolute path to the mini-app directory containing manifest.json'),
+      outputDir: z.string().describe('Absolute path to the directory where the .s1app file will be written'),
+    },
+    async ({ appDir, outputDir }) => {
+      const result = await packApp(appDir, outputDir)
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ status: 'packed', outputPath: result.outputPath, appId: result.manifest.appId, version: result.manifest.version, fileCount: result.fileCount }) }],
+      }
+    },
+  )
 
-          return {
-            content: [{
-              type: 'text' as const,
-              text: JSON.stringify({
-                status: 'created',
-                appId: result.entry.id,
-                name: appName,
-                appPath: result.appPath,
-                template: template ?? 'vanilla',
-                mode: mode ?? 'project',
-                buildRequired: result.buildRequired,
-              }),
-            }],
-          }
-        },
-      ),
-      tool(
-        'pack_mini_app',
-        'Package a mini-app directory into a .s1app file for distribution. The app directory must contain a valid manifest.json with a version field. Generates integrity checksums and creates a compressed archive.',
-        {
-          appDir: z.string().describe('Absolute path to the mini-app directory containing manifest.json'),
-          outputDir: z.string().describe('Absolute path to the directory where the .s1app file will be written'),
-        },
-        async ({ appDir, outputDir }) => {
-          const result = await packApp(appDir, outputDir)
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ status: 'packed', outputPath: result.outputPath, appId: result.manifest.appId, version: result.manifest.version, fileCount: result.fileCount }) }],
-          }
-        },
-      ),
-      tool(
-        'update_superone_types',
-        'Update the superone.d.ts type definitions in an existing mini-app project to the latest version. Use this when the mini-app needs access to newly added SuperOne APIs.',
-        {
-          appDir: z.string().describe('Absolute path to the mini-app directory'),
-        },
-        async ({ appDir }) => {
-          const srcPath = join(appDir, 'src', 'superone.d.ts')
-          const rootPath = join(appDir, 'superone.d.ts')
-          const targetPath = existsSync(srcPath) ? srcPath : existsSync(rootPath) ? rootPath : null
+  server.tool(
+    'update_superone_types',
+    'Update the superone.d.ts type definitions in an existing mini-app project to the latest version. Use this when the mini-app needs access to newly added SuperOne APIs.',
+    {
+      appDir: z.string().describe('Absolute path to the mini-app directory'),
+    },
+    async ({ appDir }) => {
+      const srcPath = join(appDir, 'src', 'superone.d.ts')
+      const rootPath = join(appDir, 'superone.d.ts')
+      const targetPath = existsSync(srcPath) ? srcPath : existsSync(rootPath) ? rootPath : null
 
-          if (!targetPath) {
-            return {
-              content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', message: 'No existing superone.d.ts found. This tool is for updating existing type definitions. For new mini-apps, use setup_mini_app_dev with template "react".' }) }],
-            }
-          }
+      if (!targetPath) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', message: 'No existing superone.d.ts found. This tool is for updating existing type definitions. For new mini-apps, use setup_mini_app_dev with template "react".' }) }],
+        }
+      }
 
-          await writeFile(targetPath, generateSuperoneDts(), 'utf-8')
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ status: 'updated', path: targetPath }) }],
-          }
-        },
-      ),
-    ],
-  })
-  mcpServer = config.instance as unknown as McpServer
+      await writeFile(targetPath, generateSuperoneDts(), 'utf-8')
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ status: 'updated', path: targetPath }) }],
+      }
+    },
+  )
+}
+
+export function getSuperoneMcpServer(): McpSdkServerConfigWithInstance {
+  mcpServer = new McpServer({ name: 'superone', version: '1.0.0' })
+  registerSuperoneTools(mcpServer)
 
   registeredTools.clear()
   for (const [appId, { toolSlug, tools }] of appToolDefs) {
@@ -228,7 +232,7 @@ This tool only sets up the basic structure. To add tools, permissions, or in-cha
     registerInChatToolOnServer(def)
   }
 
-  return config
+  return { type: 'sdk' as const, name: 'superone', instance: mcpServer } as unknown as McpSdkServerConfigWithInstance
 }
 
 function registerToolsOnServer(appId: string, toolSlug: string, tools: MiniAppToolDefinition[]): void {
@@ -249,41 +253,11 @@ function registerToolsOnServer(appId: string, toolSlug: string, tools: MiniAppTo
         inputSchema: zodShape,
       },
       async (args: Record<string, unknown>) => {
-        if (!appToolDefs.has(appId)) {
-          return { content: [{ type: 'text' as const, text: `[Error] App "${appId}" has been closed. This tool is no longer available.` }] }
-        }
-
-        await waitForAppReady(appId)
-
-        const callId = randomUUID()
-        const request: MiniAppToolCallRequest = {
-          callId,
-          appId,
-          toolName: t.name,
-          arguments: args,
-        }
-
-        const result = await new Promise<unknown>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            pendingCalls.delete(callId)
-            reject(new Error(`Tool call timeout after ${TOOL_CALL_TIMEOUT_MS}ms: ${namespacedName}`))
-          }, TOOL_CALL_TIMEOUT_MS)
-
-          pendingCalls.set(callId, { resolve, reject, timer })
-
-          const win = getMainWindow?.()
-          if (!win || win.isDestroyed()) {
-            pendingCalls.delete(callId)
-            clearTimeout(timer)
-            reject(new Error('Main window not available'))
-            return
-          }
-
-          win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_CALL, request)
-        })
-
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+        try {
+          const result = await executeAppTool(appId, t.name, args)
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+        } catch (err) {
+          return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }
         }
       },
     )
@@ -296,6 +270,8 @@ function registerToolsOnServer(appId: string, toolSlug: string, tools: MiniAppTo
 export function registerAppTools(appId: string, toolSlug: string, tools: MiniAppToolDefinition[]): void {
   log.debug('[superone-mcp] registerAppTools appId=%s toolSlug=%s tools=%d mcpServer=%s connected=%s', appId, toolSlug, tools.length, !!mcpServer, mcpServer?.isConnected?.() ?? 'N/A')
   appToolDefs.set(appId, { toolSlug, tools })
+
+  httpSync?.syncAppTools(appId, toolSlug, tools)
 
   if (!mcpServer) {
     log.info('[superone-mcp] no active session; tools cached for %s', appId)
@@ -337,8 +313,9 @@ export function isToolPreapproved(toolName: string): boolean {
 export function unregisterAppTools(appId: string): void {
   const entry = appToolDefs.get(appId)
   log.debug('[superone-mcp] unregisterAppTools appId=%s entry=%s registeredBefore=%s', appId, !!entry, [...registeredTools.keys()].join(','))
+  const toolSlug = entry?.toolSlug ?? appId
   appToolDefs.delete(appId)
-  const prefix = entry ? `${entry.toolSlug}__` : `${appId}__`
+  const prefix = `${toolSlug}__`
   for (const [name, tool] of registeredTools) {
     if (name.startsWith(prefix)) {
       tool.remove()
@@ -349,6 +326,8 @@ export function unregisterAppTools(appId: string): void {
   appReadyGates.delete(appId)
   log.debug('[superone-mcp] registeredAfterUnregister=%s', [...registeredTools.keys()].join(','))
   mcpServer?.sendToolListChanged()
+
+  httpSync?.unsyncAppTools(appId, toolSlug)
 }
 
 export function resolveToolCall(callId: string, result: unknown): void {
@@ -401,6 +380,46 @@ export function clearAllPendingCalls(): void {
   pendingCalls.clear()
 }
 
+export function executeAppTool(appId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+  if (!appToolDefs.has(appId)) {
+    return Promise.reject(new Error(`App "${appId}" has been closed. This tool is no longer available.`))
+  }
+
+  return waitForAppReady(appId).then(() => {
+    const callId = randomUUID()
+    const request: MiniAppToolCallRequest = { callId, appId, toolName, arguments: args }
+
+    return new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingCalls.delete(callId)
+        reject(new Error(`Tool call timeout after ${TOOL_CALL_TIMEOUT_MS}ms: ${toolName}`))
+      }, TOOL_CALL_TIMEOUT_MS)
+
+      pendingCalls.set(callId, { resolve, reject, timer })
+
+      const win = getMainWindow?.()
+      if (!win || win.isDestroyed()) {
+        pendingCalls.delete(callId)
+        clearTimeout(timer)
+        reject(new Error('Main window not available'))
+        return
+      }
+
+      win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_CALL, request)
+    })
+  })
+}
+
+export function getAppToolDefs(): Map<string, { toolSlug: string; tools: MiniAppToolDefinition[] }> {
+  return appToolDefs
+}
+
+export function getInChatAppDefs(): Map<string, InChatAppDef> {
+  return inchatAppDefs
+}
+
+export type { InChatAppDef }
+
 function registerInChatToolOnServer(def: InChatAppDef): void {
   const namespacedName = `inchat__${def.inChatToolName}`
 
@@ -446,6 +465,8 @@ export function registerInChatApp(manifest: MiniAppManifest): void {
   }
   inchatAppDefs.set(manifest.appId, def)
 
+  httpSync?.syncInChatApp(manifest)
+
   if (!mcpServer) {
     log.info('[superone-mcp] no active session; in-chat app cached for %s', manifest.appId)
     return
@@ -469,4 +490,6 @@ export function unregisterInChatApp(appId: string): void {
     log.info('[superone-mcp] unregistered in-chat tool: %s', namespacedName)
   }
   mcpServer?.sendToolListChanged()
+
+  httpSync?.unsyncInChatApp(appId)
 }

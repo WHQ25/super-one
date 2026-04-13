@@ -852,6 +852,7 @@ function buildResultMetadata(result: any, startTime: number, pausedMs: number, l
     costUsd: result.total_cost_usd,
     numTurns: result.num_turns,
     stopReason: result.stop_reason ?? null,
+    terminalReason: result.terminal_reason,
     resultText: result.result,
     fastModeState: result.fast_mode_state,
     errorSubtype: result.subtype !== 'success' ? result.subtype : undefined,

@@ -655,6 +655,15 @@ function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 
   )
 }
 
+const TERMINAL_REASON_LABELS: Record<string, string> = {
+  max_turns: 'Max turns',
+  aborted_tools: 'Aborted',
+  blocking_limit: 'Blocked',
+}
+function formatTerminalReason(reason: string): string {
+  return TERMINAL_REASON_LABELS[reason] ?? reason.replace(/_/g, ' ')
+}
+
 const ZERO_TOKENS = { input: 0, output: 0 }
 const STATIC_FOOTER = { isCompacting: false, pendingApproval: false, streamingTokens: ZERO_TOKENS }
 
@@ -733,7 +742,9 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
   }
 
   const showCopy = !isStreaming && !!copyText
-  if (!showDuration && !hasTokens && !showCopy) return null
+  const terminalReason = message.metadata?.terminalReason
+  const showTerminalReason = !isStreaming && !!terminalReason && terminalReason !== 'completed'
+  if (!showDuration && !hasTokens && !showCopy && !showTerminalReason) return null
 
   const seconds = durationMs ? Math.round(durationMs / 1000) : 0
   const display = seconds < 60
@@ -769,6 +780,13 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
           {showDuration && <span>·</span>}
           <AnimatedToken value={tokenInput} direction="up" />
           <AnimatedToken value={tokenOutput} direction="down" />
+        </>
+      )}
+      {showTerminalReason && (
+        <>
+          {(showDuration || hasTokens) && <span>·</span>}
+          <AlertTriangle className="size-3 text-amber-400" />
+          <span className="text-amber-400">{formatTerminalReason(terminalReason!)}</span>
         </>
       )}
     </div>

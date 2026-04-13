@@ -279,6 +279,7 @@ export interface MessageMetadata {
   usage?: UsageInfo
   modelUsage?: Record<string, ModelUsageInfo>
   stopReason?: string | null
+  terminalReason?: string
   consumedTokens?: { input: number; output: number }
   codex?: CodexTurnInfo
   resultText?: string

@@ -15,7 +15,18 @@ A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe a
 
 ## Development Workflow
 
-1. Call `setup_mini_app_dev` with basic info (name, type, template, mode, description)
+**Before writing any code, confirm the following with the user:**
+
+1. **Clarify requirements** — Ask the user what the app should do. Confirm the core features and scope. Don't assume — ask.
+2. **Confirm app type** — Suggest a type (`panel`, `sidebar`, `fullscreen`, or `in-chat`) and explain why. Get user approval.
+3. **Suggest template** — Recommend `vanilla` or `react` with reasoning (see "Choosing a Template" below). Get user approval.
+4. **Design tools carefully** — Tools are called by the agent, not the user. Only declare tools when the app genuinely needs the agent to push data or trigger actions. Consider whether the app can achieve the functionality on its own using bridge APIs (`superone.git.*`, `superone.fs.*`, etc.) before adding agent-facing tools. Present any proposed tool design to the user and get approval before implementing. See the `tools` topic for details.
+
+Do NOT skip these steps. Do NOT start coding before the user confirms the plan.
+
+**After confirmation, build the app:**
+
+1. Call `setup_mini_app_dev` with the confirmed info (name, type, template, mode, description)
 2. The scaffold creates a minimal working app with `manifest.json` and HTML/source files
 3. Read the type-specific guide for next steps:
    - `panel`, `sidebar`, `fullscreen` → read **`standard`** topic
@@ -34,6 +45,26 @@ Use **in-chat app** when:
 - The app renders structured data inline in chat (no persistent window)
 - The agent provides all data upfront, the app just renders it
 - Examples: daily report, news cards, image gallery, data table, chart
+
+## Do You Need Tools?
+
+Tools let the **agent** call into your app. Before declaring tools, ask: can the app do this itself?
+
+**You likely DON'T need tools when:**
+- The app can fetch its own data using bridge APIs (`superone.git.*`, `superone.fs.*`, etc.)
+- The app has its own refresh/reload mechanism (buttons, timers, watchers)
+- The interaction is purely user-driven (clicking, scrolling, filtering)
+
+Example: a Git Graph app can call `superone.git.log()` and `superone.git.branches()` directly — it does not need a `refresh` tool for the agent to push git data.
+
+**You likely DO need tools when:**
+- The agent needs to push context-specific data that the app cannot obtain on its own (e.g., analysis results, generated content)
+- The agent needs to trigger a specific app action as part of a multi-step workflow
+- The app is a rendering surface for agent-generated content (in-chat apps always need this)
+
+Example: a Kanban board app needs a `create_task` tool so the agent can add tasks based on conversation context. A code coverage dashboard needs a `render_report` tool so the agent can push test results after running tests.
+
+When in doubt, start without tools. They can always be added later.
 
 ## Choosing a Template
 

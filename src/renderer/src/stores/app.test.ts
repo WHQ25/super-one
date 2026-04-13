@@ -50,7 +50,15 @@ const mockWindowApp = {
   connectClaude: vi.fn().mockResolvedValue({ models: [], account: {}, slashCommands: [], userSkills: [], userCommands: [], userAgents: [] }),
 }
 
-vi.stubGlobal('window', { app: mockWindowApp })
+const storage: Record<string, string> = {}
+vi.stubGlobal('window', {
+  app: mockWindowApp,
+  localStorage: {
+    getItem: (key: string) => storage[key] ?? null,
+    setItem: (key: string, value: string) => { storage[key] = value },
+    removeItem: (key: string) => { delete storage[key] },
+  },
+})
 
 const { useAppStore } = await import('./app')
 

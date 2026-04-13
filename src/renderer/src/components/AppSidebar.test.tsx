@@ -64,6 +64,10 @@ vi.mock('@/stores/chat', () => ({
   isDraftSession: (id: string | null) => id === '__draft__' || (!!id && id.startsWith('__draft_')),
 }))
 
+vi.mock('@/stores/miniapp', () => ({
+  useMiniAppStore: (selector: (s: Record<string, unknown>) => unknown) => selector({ fetchApps: vi.fn(), apps: [] }),
+}))
+
 vi.mock('@/hooks/useFullscreen', () => ({
   useFullscreen: () => false,
 }))

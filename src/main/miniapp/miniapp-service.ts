@@ -447,9 +447,10 @@ export async function handleGitRequest(
     }
     case 'log': {
       const limit = (args.limit as number) || 50
-      const raw = await gitRun(workingDir, [
-        'log', '--format=%H%x00%P%x00%s%x00%an%x00%ai', `-${limit}`,
-      ])
+      const gitArgs = ['log', '--format=%H%x00%P%x00%s%x00%an%x00%ai', `-${limit}`]
+      if (args.all) gitArgs.push('--all')
+      if (args.ref && typeof args.ref === 'string') gitArgs.push(args.ref)
+      const raw = await gitRun(workingDir, gitArgs)
       if (!raw) return []
       return raw.split('\n').filter(Boolean).map((line) => {
         const [sha, parents, message, author, date] = line.split('\0')
@@ -476,6 +477,124 @@ export async function handleGitRequest(
       if (filePath.includes('\0')) throw new Error('Invalid path')
       const content = await gitRun(workingDir, ['show', `${ref}:${filePath}`])
       return { ref, path: filePath, content }
+    }
+    case 'blame': {
+      const filePath = args.path as string
+      if (!filePath || filePath.includes('\0')) throw new Error('Invalid path')
+      const raw = await gitRun(workingDir, ['blame', '--porcelain', '--', filePath])
+      if (!raw) return []
+      const lines: { sha: string; author: string; date: string; lineNo: number; content: string }[] = []
+      let cur = { sha: '', author: '', date: '', lineNo: 0 }
+      for (const line of raw.split('\n')) {
+        if (/^[0-9a-f]{40}\s/.test(line)) {
+          const parts = line.split(' ')
+          cur = { sha: parts[0], author: '', date: '', lineNo: parseInt(parts[2]) }
+        } else if (line.startsWith('author ')) {
+          cur.author = line.slice(7)
+        } else if (line.startsWith('author-time ')) {
+          cur.date = new Date(parseInt(line.slice(12)) * 1000).toISOString()
+        } else if (line.startsWith('\t')) {
+          lines.push({ ...cur, content: line.slice(1) })
+        }
+      }
+      return lines
+    }
+    case 'diffSummary': {
+      const ref1 = sanitizeGitRef(args.ref1 as string || 'HEAD')
+      const ref2 = sanitizeGitRef(args.ref2 as string || '')
+      const gitArgs = ['diff', '--stat', '--numstat']
+      if (ref2) gitArgs.push(ref1, ref2)
+      else gitArgs.push(ref1)
+      const raw = await gitRun(workingDir, gitArgs)
+      if (!raw) return []
+      return raw.split('\n').filter(Boolean).map((line) => {
+        const [add, del, path] = line.split('\t')
+        if (!path) return null
+        return { path, insertions: add === '-' ? 0 : parseInt(add), deletions: del === '-' ? 0 : parseInt(del) }
+      }).filter(Boolean)
+    }
+    case 'getCommit': {
+      const ref = sanitizeGitRef(args.ref as string || 'HEAD')
+      const raw = await gitRun(workingDir, [
+        'show', '--format=%H%x00%P%x00%s%x00%b%x00%an%x00%ae%x00%ai', '--stat', '--stat-width=200', ref,
+      ])
+      if (!raw) throw new Error('Commit not found')
+      const parts = raw.split('\0')
+      const sha = parts[0]
+      const parents = parts[1] ? parts[1].split(' ') : []
+      const subject = parts[2]
+      const body = (parts[3] || '').trim()
+      const author = parts[4] || ''
+      const email = parts[5] || ''
+      const dateAndRest = parts[6] || ''
+      const dateEnd = dateAndRest.indexOf('\n')
+      const date = dateEnd !== -1 ? dateAndRest.substring(0, dateEnd) : dateAndRest
+      const statRaw = dateEnd !== -1 ? dateAndRest.substring(dateEnd) : ''
+      const files: { path: string; insertions: number; deletions: number }[] = []
+      for (const sl of statRaw.split('\n')) {
+        const m = sl.match(/^\s*(.+?)\s+\|\s+(\d+)\s+(\+*)(-*)/)
+        if (m) files.push({ path: m[1].trim(), insertions: m[3].length, deletions: m[4].length })
+      }
+      return { sha, parents, subject, body, author, email, date, files }
+    }
+    case 'tags': {
+      const raw = await gitRun(workingDir, ['tag', '--sort=-creatordate', '--format=%(refname:short)%00%(objectname:short)%00%(creatordate:iso)'])
+      if (!raw) return []
+      return raw.split('\n').filter(Boolean).map((line) => {
+        const [name, sha, date] = line.split('\0')
+        return { name, sha, date: date?.trim() }
+      })
+    }
+    case 'remotes': {
+      const raw = await gitRun(workingDir, ['remote', '-v'])
+      if (!raw) return []
+      const map = new Map<string, { name: string; fetchUrl: string; pushUrl: string }>()
+      for (const line of raw.split('\n').filter(Boolean)) {
+        const m = line.match(/^(\S+)\s+(\S+)\s+\((fetch|push)\)$/)
+        if (!m) continue
+        const entry = map.get(m[1]) || { name: m[1], fetchUrl: '', pushUrl: '' }
+        if (m[3] === 'fetch') entry.fetchUrl = m[2]
+        else entry.pushUrl = m[2]
+        map.set(m[1], entry)
+      }
+      return [...map.values()]
+    }
+    case 'branchDetail': {
+      const name = args.name as string
+      if (!name) throw new Error('Branch name required')
+      const fmt = '%(refname:short)%00%(upstream:short)%00%(upstream:track)'
+      const raw = await gitRun(workingDir, ['for-each-ref', `--format=${fmt}`, `refs/heads/${name}`])
+      if (!raw) throw new Error(`Branch not found: ${name}`)
+      const [refName, upstream, track] = raw.trim().split('\0')
+      let ahead = 0, behind = 0
+      if (track) {
+        const aM = track.match(/ahead (\d+)/)
+        const bM = track.match(/behind (\d+)/)
+        if (aM) ahead = parseInt(aM[1])
+        if (bM) behind = parseInt(bM[1])
+      }
+      return { name: refName, upstream: upstream || null, ahead, behind }
+    }
+    case 'stashList': {
+      const raw = await gitRun(workingDir, ['stash', 'list', '--format=%gd%x00%s%x00%ai'])
+      if (!raw) return []
+      return raw.split('\n').filter(Boolean).map((line) => {
+        const [ref, message, date] = line.split('\0')
+        return { ref, message, date }
+      })
+    }
+    case 'logFile': {
+      const filePath = args.path as string
+      if (!filePath || filePath.includes('\0')) throw new Error('Invalid path')
+      const limit = (args.limit as number) || 50
+      const raw = await gitRun(workingDir, [
+        'log', '--format=%H%x00%P%x00%s%x00%an%x00%ai', `-${limit}`, '--follow', '--', filePath,
+      ])
+      if (!raw) return []
+      return raw.split('\n').filter(Boolean).map((line) => {
+        const [sha, parents, message, author, date] = line.split('\0')
+        return { sha, parents: parents ? parents.split(' ') : [], message, author, date }
+      })
     }
     default:
       throw new Error(`Unknown git operation: ${op}`)

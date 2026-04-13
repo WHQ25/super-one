@@ -31,10 +31,18 @@ export interface SuperoneApi {
   git: {
     info(): Promise<unknown>
     branches(): Promise<unknown>
-    log(opts?: { limit?: number }): Promise<unknown>
+    log(opts?: { limit?: number; all?: boolean; ref?: string }): Promise<unknown>
     status(): Promise<unknown>
     diff(path: string, staged?: boolean): Promise<unknown>
     show(ref: string, path: string): Promise<unknown>
+    blame(path: string): Promise<unknown>
+    diffSummary(ref1: string, ref2?: string): Promise<unknown>
+    getCommit(ref?: string): Promise<unknown>
+    tags(): Promise<unknown>
+    remotes(): Promise<unknown>
+    branchDetail(name: string): Promise<unknown>
+    stashList(): Promise<unknown>
+    logFile(path: string, opts?: { limit?: number }): Promise<unknown>
     onHeadChange(cb: () => void): () => void
   }
   theme: {

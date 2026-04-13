@@ -288,6 +288,56 @@ interface SuperOneGitShow {
   content: string
 }
 
+interface SuperOneGitBlameLine {
+  sha: string
+  author: string
+  date: string
+  lineNo: number
+  content: string
+}
+
+interface SuperOneGitDiffFile {
+  path: string
+  insertions: number
+  deletions: number
+}
+
+interface SuperOneGitCommit {
+  sha: string
+  parents: string[]
+  subject: string
+  body: string
+  author: string
+  email: string
+  date: string
+  files: SuperOneGitDiffFile[]
+}
+
+interface SuperOneGitTag {
+  name: string
+  sha: string
+  date: string
+}
+
+interface SuperOneGitRemote {
+  name: string
+  fetchUrl: string
+  pushUrl: string
+}
+
+interface SuperOneGitBranchDetail {
+  name: string
+  upstream: string | null
+  ahead: number
+  behind: number
+}
+
+interface SuperOneGitStashEntry {
+  ref: string
+  message: string
+  date: string
+}
+
 interface SuperOneThemeVars {
   [key: string]: string
 }
@@ -334,10 +384,18 @@ interface SuperOne {
   git: {
     info(): Promise<SuperOneGitInfo>
     branches(): Promise<string[]>
-    log(opts?: { limit?: number }): Promise<SuperOneGitLogEntry[]>
+    log(opts?: { limit?: number; all?: boolean; ref?: string }): Promise<SuperOneGitLogEntry[]>
     status(): Promise<SuperOneGitStatusEntry[]>
     diff(path: string, staged?: boolean): Promise<SuperOneGitDiff>
     show(ref: string, path: string): Promise<SuperOneGitShow>
+    blame(path: string): Promise<SuperOneGitBlameLine[]>
+    diffSummary(ref1: string, ref2?: string): Promise<SuperOneGitDiffFile[]>
+    getCommit(ref?: string): Promise<SuperOneGitCommit>
+    tags(): Promise<SuperOneGitTag[]>
+    remotes(): Promise<SuperOneGitRemote[]>
+    branchDetail(name: string): Promise<SuperOneGitBranchDetail>
+    stashList(): Promise<SuperOneGitStashEntry[]>
+    logFile(path: string, opts?: { limit?: number }): Promise<SuperOneGitLogEntry[]>
     onHeadChange(callback: () => void): () => void
   }
   theme: {

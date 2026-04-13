@@ -89,7 +89,7 @@ export interface MiniAppToolCallResponse {
 
 export type MiniAppFsOp = 'readFile' | 'readFileBinary' | 'readDir' | 'writeFile' | 'exists' | 'glob' | 'deleteFile' | 'rename' | 'stat' | 'mkdir' | 'showInFolder'
 
-export type MiniAppGitOp = 'info' | 'branches' | 'log' | 'status' | 'diff' | 'show'
+export type MiniAppGitOp = 'info' | 'branches' | 'log' | 'status' | 'diff' | 'show' | 'blame' | 'diffSummary' | 'getCommit' | 'tags' | 'remotes' | 'branchDetail' | 'stashList' | 'logFile'
 
 export interface MiniAppFsRequest {
   appId: string

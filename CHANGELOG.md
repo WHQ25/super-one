@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.18.6-alpha] - 2026-04-13
+
+### Added
+
+- Terminal reason display (max turns, aborted, blocked) in chat message footer
+- 8 new mini-app git bridge APIs: blame, diffSummary, getCommit, tags, remotes, branchDetail, stashList, logFile
+- Built-in MCP tools exposed over HTTP for Codex integration
+
+### Fixed
+
+- Permission mode leaking across sessions on switch
+
+### Changed
+
+- Bump claude-agent-sdk to 0.2.101 and MCP SDK to 1.29.0
+- Enforce requirement confirmation workflow before mini-app development
+
 ## [0.18.5-alpha] - 2026-04-13
 
 ### Added

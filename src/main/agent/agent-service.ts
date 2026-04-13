@@ -1438,18 +1438,18 @@ export class AgentService {
     this.mainWindow = mainWindow
   }
 
-  private async replaceAgent(projectPath: string, cwd: string, sessionId?: string): Promise<void> {
+  private async replaceAgent(projectPath: string, cwd: string, sessionId?: string, permissionMode?: PermissionMode): Promise<void> {
     const existing = this.agents.get(projectPath)
     if (existing) {
       await existing.dispose()
       this.agents.delete(projectPath)
     }
     const agent = new ClaudeAgent()
-    await agent.initialize({ cwd }, this.createEventEmitter(projectPath), sessionId)
+    await agent.initialize({ cwd }, this.createEventEmitter(projectPath), sessionId, permissionMode ? { permissionMode } : undefined)
     this.agents.set(projectPath, agent)
   }
 
-  async resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string): Promise<void> {
+  async resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode): Promise<void> {
     const effectiveCwd = worktreeCwd ?? projectPath
 
     if (this.hasBgSession(projectPath, sessionId)) {
@@ -1463,16 +1463,16 @@ export class AgentService {
     }
     if (current && current.isStreaming()) {
       await this.parkSession(projectPath)
-      await this.replaceAgent(projectPath, effectiveCwd, sessionId)
+      await this.replaceAgent(projectPath, effectiveCwd, sessionId, permissionMode)
       return
     }
 
     if (!current || current.getCwd() !== effectiveCwd) {
-      await this.replaceAgent(projectPath, effectiveCwd, sessionId)
+      await this.replaceAgent(projectPath, effectiveCwd, sessionId, permissionMode)
       return
     }
 
-    await current.resumeSession(sessionId)
+    await current.resumeSession(sessionId, permissionMode)
   }
 
   setup(): void {
@@ -1915,8 +1915,8 @@ export class AgentService {
       return listSessionsForFolder(folderPath, limit, offset)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string) => {
-      await this.resumeSession(projectPath, sessionId, worktreeCwd)
+    ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode) => {
+      await this.resumeSession(projectPath, sessionId, worktreeCwd, permissionMode)
     })
 
     ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string, draftSessionId?: string, newDraftSessionId?: string) => {

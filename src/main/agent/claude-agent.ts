@@ -425,11 +425,14 @@ export class ClaudeAgent {
   }
 
   /** Resume a previous session by its ID. Resets current session first. */
-  async resumeSession(sessionId: string): Promise<void> {
+  async resumeSession(sessionId: string, permissionMode?: PermissionMode): Promise<void> {
     if (!this.config || !this.onEvent) throw new Error('ClaudeAgent not initialized')
-    log.debug(`[ClaudeAgent] resumeSession start (target=${sessionId}, current=${this.sessionId}, gen=${this.sessionGeneration})`)
+    log.debug(`[ClaudeAgent] resumeSession start (target=${sessionId}, current=${this.sessionId}, gen=${this.sessionGeneration}, mode=${permissionMode ?? 'keep'})`)
     await this.resetSession()
     this.sessionId = sessionId
+    if (permissionMode && permissionMode !== this.currentPermissionMode) {
+      this.currentPermissionMode = permissionMode
+    }
     this.createSession(sessionId)
     log.debug(`[ClaudeAgent] resumeSession done (gen=${this.sessionGeneration})`)
   }

@@ -1182,8 +1182,7 @@ export function invalidateDefaultPermissionModeCache(): void {
 
 async function _syncAndResumeSession(projectPath: string, sessionId: string, get: () => ChatStore, cwd: string): Promise<void> {
   const targetMode = getActivePerSession(get()).permissionMode
-  await window.agent.setPermissionMode(projectPath, targetMode)
-  await window.app.resumeSession(projectPath, sessionId, cwd)
+  await window.app.resumeSession(projectPath, sessionId, cwd, targetMode)
 }
 
 function _saveSessionState(get: () => ChatStore, projectPath: string): void {

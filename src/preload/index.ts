@@ -576,8 +576,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER, folderPath),
   listSessionsForFolderPage: (folderPath: string, limit: number, offset: number) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE, folderPath, limit, offset),
-  resumeSession: (projectPath: string, sessionId: string, worktreeCwd?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RESUME, projectPath, sessionId, worktreeCwd),
+  resumeSession: (projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RESUME, projectPath, sessionId, worktreeCwd, permissionMode),
   loadSessionMessages: (projectPath: string, sessionId: string, limit: number, cursor?: number) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, projectPath, sessionId, limit, cursor),
   renameSession: (sessionId: string, title: string) =>

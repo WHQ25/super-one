@@ -143,3 +143,52 @@ describe('ClaudeAgent.setPermissionMode', () => {
     expect(sdkSetMode).not.toHaveBeenCalled()
   })
 })
+
+describe('ClaudeAgent.resumeSession with permissionMode', () => {
+  it('applies permissionMode before creating session', async () => {
+    setupMocks()
+    const agent = new ClaudeAgent()
+    let resolveInit!: () => void
+    mockCreateSessionQuery.mockReturnValue({
+      query: { setPermissionMode: vi.fn(), close: vi.fn() },
+      iterationDone: new Promise<void>((r) => { resolveInit = r }),
+    })
+    await agent.initialize({ cwd: '/tmp/test' }, vi.fn())
+    resolveInit()
+    await new Promise((r) => setTimeout(r, 0))
+
+    mockCreateSessionQuery.mockReturnValue({
+      query: { setPermissionMode: vi.fn(), close: vi.fn() },
+      iterationDone: new Promise<void>(() => {}),
+    })
+    await agent.resumeSession('target-sid', 'acceptEdits')
+
+    expect(agent.getCurrentPermissionMode()).toBe('acceptEdits')
+    const lastCall = mockCreateSessionQuery.mock.calls[mockCreateSessionQuery.mock.calls.length - 1]
+    expect(lastCall[1].permissionMode).toBe('acceptEdits')
+  })
+
+  it('keeps current mode when permissionMode is omitted', async () => {
+    setupMocks()
+    const agent = new ClaudeAgent()
+    let resolveInit!: () => void
+    mockCreateSessionQuery.mockReturnValue({
+      query: { setPermissionMode: vi.fn(), close: vi.fn() },
+      iterationDone: new Promise<void>((r) => { resolveInit = r }),
+    })
+    await agent.initialize({ cwd: '/tmp/test' }, vi.fn())
+    await agent.setPermissionMode('bypassPermissions')
+    resolveInit()
+    await new Promise((r) => setTimeout(r, 0))
+
+    mockCreateSessionQuery.mockReturnValue({
+      query: { setPermissionMode: vi.fn(), close: vi.fn() },
+      iterationDone: new Promise<void>(() => {}),
+    })
+    await agent.resumeSession('target-sid')
+
+    expect(agent.getCurrentPermissionMode()).toBe('bypassPermissions')
+    const lastCall = mockCreateSessionQuery.mock.calls[mockCreateSessionQuery.mock.calls.length - 1]
+    expect(lastCall[1].permissionMode).toBe('bypassPermissions')
+  })
+})

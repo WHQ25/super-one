@@ -197,6 +197,7 @@ describe('AgentService.resumeSession', () => {
       { cwd: '/project' },
       expect.any(Function),
       'local-session',
+      undefined,
     )
   })
 })

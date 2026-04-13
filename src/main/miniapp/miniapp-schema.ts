@@ -60,6 +60,10 @@ export const manifestSchema = z.object({
   inChatToolDescription: z.string().optional(),
   runningText: z.string().optional(),
   inputSchema: toolInputSchemaSchema.optional(),
+  popovers: z.record(
+    z.string().min(1).regex(/^[a-z0-9_-]+$/, { message: 'Popover name must be lowercase alphanumeric with hyphens or underscores' }),
+    z.string().min(1),
+  ).optional(),
 }).refine(
   (m) => {
     if (m.type !== 'in-chat') return true

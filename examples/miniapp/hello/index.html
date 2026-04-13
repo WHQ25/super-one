@@ -40,6 +40,7 @@
       <button id="btn-toast-warning">Toast Warning</button>
       <span id="tooltip-target" class="tooltip-target">Hover me for tooltip</span>
       <span id="contextmenu-target" class="tooltip-target">Right-click me for menu</span>
+      <button id="btn-popover">Open Popover</button>
     </div>
     <div id="ui-result" style="margin-top:8px;font-size:13px;color:#78716c"></div>
   </div>
@@ -107,6 +108,28 @@
     };
     tooltipTarget.onmouseleave = function() {
       superone.ui.hideTooltip();
+    };
+
+    var popoverBtn = document.getElementById('btn-popover');
+    popoverBtn.onclick = function() {
+      var rect = popoverBtn.getBoundingClientRect();
+      var handle = superone.ui.showPopover({
+        template: 'detail',
+        data: { id: '42', title: 'Hello Popover', description: 'This popover template has full superone API access.' },
+        anchorRect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+        side: 'bottom',
+        align: 'start',
+        width: 320
+      });
+      handle.onMessage(function(msg) {
+        uiResult.textContent = 'Popover message: ' + JSON.stringify(msg);
+        if (msg.action === 'confirm') {
+          handle.postMessage({ reply: 'confirmed', ts: Date.now() });
+        }
+      });
+      handle.onClose(function() {
+        uiResult.textContent = 'Popover closed';
+      });
     };
 
     document.getElementById('contextmenu-target').oncontextmenu = function(e) {

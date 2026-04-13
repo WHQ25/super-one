@@ -10,7 +10,7 @@ import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, detectStandaloneApp, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti } from './miniapp/miniapp-service'
-import { generateBridgeScript } from './miniapp/miniapp-bridge'
+import { generateBridgeScript, generatePopoverBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools } from './mcp/superone-mcp-server'
 import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
@@ -1627,7 +1627,10 @@ app.whenReady().then(() => {
 
       if (ext === 'html' || ext === 'htm') {
         const html = data.toString('utf-8')
-        const bridgeScript = generateBridgeScript(appId, app.getVersion())
+        const popoverName = url.searchParams.get('_popover')
+        const bridgeScript = popoverName
+          ? generatePopoverBridgeScript(appId, app.getVersion(), JSON.parse(url.searchParams.get('_popoverData') || 'null'))
+          : generateBridgeScript(appId, app.getVersion())
         const injected = html.includes('<head>')
           ? html.replace('<head>', `<head>${bridgeScript}`)
           : html.includes('<html>')

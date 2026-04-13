@@ -352,6 +352,20 @@ interface SuperOneContextMenuItem {
   group?: string
 }
 
+interface SuperOnePopoverHandle {
+  postMessage(data: unknown): void
+  onMessage(callback: (data: unknown) => void): void
+  close(): void
+  onClose(callback: () => void): void
+}
+
+interface SuperOnePopoverApi {
+  readonly data: unknown
+  postMessage(data: unknown): void
+  onMessage(callback: (data: unknown) => void): void
+  close(): void
+}
+
 interface SuperOne {
   readonly version: string
   tools: {
@@ -407,7 +421,17 @@ interface SuperOne {
     showTooltip(anchorRect: { x: number; y: number; width: number; height: number }, text: string, side?: 'top' | 'bottom' | 'left' | 'right'): void
     hideTooltip(): void
     showContextMenu(position: { x: number; y: number }, items: SuperOneContextMenuItem[]): Promise<string | null>
+    showPopover(options: {
+      template: string
+      data?: unknown
+      anchorRect: { x: number; y: number; width: number; height: number }
+      side?: 'top' | 'bottom' | 'left' | 'right'
+      align?: 'start' | 'center' | 'end'
+      width?: number
+      maxHeight?: number
+    }): SuperOnePopoverHandle
   }
+  popover?: SuperOnePopoverApi
   isDarkMode(): boolean
   onDarkModeChange(callback: (isDark: boolean) => void): () => void
 }

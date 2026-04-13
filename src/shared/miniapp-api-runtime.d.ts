@@ -4,6 +4,20 @@ export interface MiniAppTransport {
   on(type: string, handler: (data: Record<string, unknown>) => void): void
 }
 
+export interface PopoverHandle {
+  postMessage(data: unknown): void
+  onMessage(cb: (data: unknown) => void): void
+  close(): void
+  onClose(cb: () => void): void
+}
+
+export interface PopoverApi {
+  data: unknown
+  postMessage(data: unknown): void
+  onMessage(cb: (data: unknown) => void): void
+  close(): void
+}
+
 export interface SuperoneApi {
   version: string
   tools: { handle(name: string, callback: (args: Record<string, unknown>) => unknown): void }
@@ -54,7 +68,17 @@ export interface SuperoneApi {
     showTooltip(anchorRect: { x: number; y: number; width: number; height: number }, text: string, side?: 'top' | 'bottom' | 'left' | 'right'): void
     hideTooltip(): void
     showContextMenu(position: { x: number; y: number }, items: Array<{ id: string; label: string; icon?: string; disabled?: boolean; variant?: string; separator?: boolean; group?: string }>): Promise<string | null>
+    showPopover(options: {
+      template: string
+      data?: unknown
+      anchorRect: { x: number; y: number; width: number; height: number }
+      side?: 'top' | 'bottom' | 'left' | 'right'
+      align?: 'start' | 'center' | 'end'
+      width?: number
+      maxHeight?: number
+    }): PopoverHandle
   }
+  popover?: PopoverApi
   isDarkMode(): boolean
   onDarkModeChange(cb: (isDark: boolean) => void): () => void
 }

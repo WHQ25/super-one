@@ -2,11 +2,14 @@ import { useChatStore } from '@/stores/chat'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { requestClipboardRead, requestClipboardWrite } from '@/lib/miniapp-clipboard'
 import { toast } from 'sonner'
-import type { MiniAppTooltipRequest, MiniAppContextMenuRequest } from '../../../shared/miniapp-types'
+import type { MiniAppTooltipRequest, MiniAppContextMenuRequest, MiniAppPopoverShowRequest } from '../../../shared/miniapp-types'
 
 export interface MiniAppOverlayCallbacks {
   onTooltip?: (req: MiniAppTooltipRequest | null) => void
   onContextMenu?: (req: MiniAppContextMenuRequest, respond: (itemId: string | null) => void) => void
+  onPopoverShow?: (req: MiniAppPopoverShowRequest, send: (msg: unknown) => void) => void
+  onPopoverMsg?: (data: unknown) => void
+  onPopoverClose?: () => void
 }
 
 export function handleMiniAppMessage(
@@ -92,6 +95,28 @@ export function handleMiniAppMessage(
       }
       return true
     }
+    case 'miniapp-popover-show':
+      if (overlay?.onPopoverShow) {
+        overlay.onPopoverShow(
+          {
+            template: data.template as string,
+            data: data.data,
+            anchorRect: data.anchorRect as MiniAppPopoverShowRequest['anchorRect'],
+            side: data.side as MiniAppPopoverShowRequest['side'],
+            align: data.align as MiniAppPopoverShowRequest['align'],
+            width: data.width as number | undefined,
+            maxHeight: data.maxHeight as number | undefined,
+          },
+          send,
+        )
+      }
+      return true
+    case 'miniapp-popover-msg':
+      overlay?.onPopoverMsg?.(data.data)
+      return true
+    case 'miniapp-popover-close':
+      overlay?.onPopoverClose?.()
+      return true
     default:
       return false
   }

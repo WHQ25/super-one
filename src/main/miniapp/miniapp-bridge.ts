@@ -1,10 +1,8 @@
 // @ts-expect-error — ?raw import returns string
 import runtimeSrc from '../../shared/miniapp-api-runtime.js?raw'
 
-export function generateBridgeScript(appId: string, version: string): string {
-  return `<script>
-(function() {
-  ${runtimeSrc}
+function generateTransportBlock(appId: string): string {
+  return `${runtimeSrc}
 
   var pending = new Map();
   var reqId = 0;
@@ -43,9 +41,11 @@ export function generateBridgeScript(appId: string, version: string): string {
 
     var handler = eventHandlers.get(data.type);
     if (handler) handler(data);
-  });
+  });`
+}
 
-  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)});
+function generateReadyBlock(appId: string): string {
+  return `
   startSuperoneResize(transport);
 
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
@@ -54,7 +54,40 @@ export function generateBridgeScript(appId: string, version: string): string {
     document.addEventListener('DOMContentLoaded', function() {
       parent.postMessage({ type: 'miniapp-ready', appId: '${appId}' }, '*');
     });
-  }
+  }`
+}
+
+export function generatePopoverBridgeScript(appId: string, version: string, initialData: unknown): string {
+  const dataJson = JSON.stringify(initialData ?? null)
+  return `<script>
+(function() {
+  ${generateTransportBlock(appId)}
+
+  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)});
+  delete window.superone.ui.showPopover;
+
+  var popoverMsgListeners = [];
+  window.superone.popover = {
+    data: ${dataJson},
+    postMessage: function(data) { transport.send('miniapp-popover-msg', { data: data }); },
+    onMessage: function(cb) { popoverMsgListeners.push(cb); },
+    close: function() { transport.send('miniapp-popover-close', {}); },
+  };
+  transport.on('miniapp-popover-msg', function(d) {
+    popoverMsgListeners.forEach(function(cb) { cb(d.data); });
+  });
+${generateReadyBlock(appId)}
+})();
+</script>`
+}
+
+export function generateBridgeScript(appId: string, version: string): string {
+  return `<script>
+(function() {
+  ${generateTransportBlock(appId)}
+
+  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)});
+${generateReadyBlock(appId)}
 })();
 </script>`
 }

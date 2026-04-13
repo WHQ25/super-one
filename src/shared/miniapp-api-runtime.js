@@ -172,6 +172,61 @@ function createSuperoneApi(transport, version) {
         return transport.request('miniapp-ui-contextmenu', 'miniapp-ui-contextmenu-result', { position, items }, 'itemId')
           .then((v) => v != null ? v : null)
       },
+      showPopover: (function() {
+        var active = null
+
+        transport.on('miniapp-popover-msg', function(d) {
+          if (active) active.msgListeners.forEach(function(cb) { cb(d.data) })
+        })
+        transport.on('miniapp-popover-closed', function() {
+          if (!active) return
+          var h = active
+          active = null
+          h.closed = true
+          h.closeListeners.forEach(function(cb) { cb() })
+        })
+
+        function dismiss() {
+          if (!active) return
+          var h = active
+          active = null
+          h.closed = true
+          h.closeListeners.forEach(function(cb) { cb() })
+        }
+
+        return function showPopover(options) {
+          dismiss()
+
+          var state = { msgListeners: [], closeListeners: [], closed: false }
+          var handle = {
+            postMessage: function(data) {
+              if (!state.closed) transport.send('miniapp-popover-msg', { data: data })
+            },
+            onMessage: function(cb) { state.msgListeners.push(cb) },
+            close: function() {
+              if (state.closed) return
+              state.closed = true
+              if (active === state) active = null
+              transport.send('miniapp-popover-close', {})
+              state.closeListeners.forEach(function(cb) { cb() })
+            },
+            onClose: function(cb) { state.closeListeners.push(cb) },
+          }
+          active = state
+
+          transport.send('miniapp-popover-show', {
+            template: options.template,
+            data: options.data,
+            anchorRect: options.anchorRect,
+            side: options.side,
+            align: options.align,
+            width: options.width,
+            maxHeight: options.maxHeight,
+          })
+
+          return handle
+        }
+      })(),
     },
     isDarkMode() { return document.documentElement.classList.contains('dark') },
     onDarkModeChange: makeSub(darkModeListeners),

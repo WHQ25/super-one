@@ -58,6 +58,31 @@ for (const ch of eventChannels) {
 }
 
 declare const __APP_VERSION__: string
-contextBridge.exposeInMainWorld('superone', createSuperoneApi(transport, __APP_VERSION__))
+declare const location: { search: string }
+const api = createSuperoneApi(transport, __APP_VERSION__)
+
+const popoverParam = new URLSearchParams(location.search).get('_popover')
+if (popoverParam) {
+  delete (api.ui as Record<string, unknown>).showPopover
+  const popoverDataRaw = new URLSearchParams(location.search).get('_popoverData')
+  const popoverData = popoverDataRaw ? JSON.parse(popoverDataRaw) : null
+  const popoverMsgListeners: Array<(data: unknown) => void> = []
+  ;(api as unknown as Record<string, unknown>).popover = {
+    data: popoverData,
+    postMessage(data: unknown) { transport.send('miniapp-popover-msg', { data }) },
+    onMessage(cb: (data: unknown) => void) { popoverMsgListeners.push(cb) },
+    close() { transport.send('miniapp-popover-close', {}) },
+  }
+  ipcRenderer.on('miniapp-popover-msg', (_e, d) => {
+    popoverMsgListeners.forEach((cb) => cb((d as Record<string, unknown>).data))
+  })
+} else {
+  ipcRenderer.on('miniapp-popover-closed', (_e, data) => {
+    const handler = eventHandlers.get('miniapp-popover-closed')
+    if (handler) handler(data as Record<string, unknown>)
+  })
+}
+
+contextBridge.exposeInMainWorld('superone', api)
 startSuperoneResize(transport)
 ipcRenderer.sendToHost('miniapp-ready', {})

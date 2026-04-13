@@ -36,6 +36,7 @@ export interface MiniAppManifest {
   inChatToolDescription?: string
   runningText?: string
   inputSchema?: Record<string, unknown>
+  popovers?: Record<string, string>
 }
 
 export interface MiniAppInstallMeta {
@@ -161,6 +162,16 @@ export interface MiniAppContextMenuRequest {
   items: MiniAppContextMenuItem[]
 }
 
+export interface MiniAppPopoverShowRequest {
+  template: string
+  data?: unknown
+  anchorRect: { x: number; y: number; width: number; height: number }
+  side?: 'top' | 'bottom' | 'left' | 'right'
+  align?: 'start' | 'center' | 'end'
+  width?: number
+  maxHeight?: number
+}
+
 export type MiniAppBridgeMessageType =
   | 'miniapp-tool-call'
   | 'miniapp-tool-result'
@@ -183,3 +194,8 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-ui-tooltip-hide'
   | 'miniapp-ui-contextmenu'
   | 'miniapp-ui-contextmenu-result'
+  | 'miniapp-popover-show'
+  | 'miniapp-popover-opened'
+  | 'miniapp-popover-msg'
+  | 'miniapp-popover-close'
+  | 'miniapp-popover-closed'

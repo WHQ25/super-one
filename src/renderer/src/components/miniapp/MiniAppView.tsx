@@ -19,11 +19,13 @@ interface MiniAppViewProps {
 
 export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
   function MiniAppView({ appId, className }, ref) {
-    const isDev = useMiniAppStore((s) => s.apps.find((a) => a.id === appId)?.manifest.isDev)
+    const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
+    const isDev = app?.manifest.isDev
+    const popovers = app?.manifest.popovers
     const devRef = useRef<MiniAppDevFrameHandle>(null)
     const iframeRef = useRef<HTMLIFrameElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
-    const { tooltip, contextMenu, dismissContextMenu, overlayCallbacks } = useMiniAppOverlay(containerRef)
+    const { tooltip, contextMenu, dismissContextMenu, popover, closePopover, overlayCallbacks } = useMiniAppOverlay(containerRef, appId, popovers)
 
     const reload = useCallback(() => {
       if (isDev) devRef.current?.reload()
@@ -63,7 +65,9 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
         <MiniAppOverlayPortal
           tooltip={tooltip}
           contextMenu={contextMenu}
+          popover={popover}
           onDismissContextMenu={dismissContextMenu}
+          onDismissPopover={closePopover}
         />
       </div>
     )

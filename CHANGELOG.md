@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.18.7-alpha] - 2026-04-14
+
+### Added
+
+- Template-based popover API for mini-app overlay rendering
+
+### Fixed
+
+- Chat horizontal overflow when activity panel is open
+- Duplicated interrupted indicator in chat message footer
+- Gap between user bubble and first agent reply block
+- Mini-app packaging now non-destructive with cleaner dev appId
+
 ## [0.18.6-alpha] - 2026-04-13
 
 ### Added

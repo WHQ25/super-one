@@ -267,7 +267,8 @@ function App(): React.JSX.Element {
       {/* Main area wrapper */}
       <div className={cn(
         'flex min-w-0 flex-1',
-        layoutMode === 'coding' && hasLeftPanel && 'rounded-l-2xl bg-background/70 overflow-hidden'
+        layoutMode === 'coding' && 'overflow-hidden',
+        layoutMode === 'coding' && hasLeftPanel && 'rounded-l-2xl bg-background/70'
       )}>
         {/* Activity Panel — always mounted, hidden in canvas mode */}
         <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={layoutMode !== 'coding'} />

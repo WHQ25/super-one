@@ -743,7 +743,7 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
 
   const showCopy = !isStreaming && !!copyText
   const terminalReason = message.metadata?.terminalReason
-  const showTerminalReason = !isStreaming && !!terminalReason && terminalReason !== 'completed'
+  const showTerminalReason = !isStreaming && !!terminalReason && terminalReason !== 'completed' && message.status !== 'interrupted'
   if (!showDuration && !hasTokens && !showCopy && !showTerminalReason) return null
 
   const seconds = durationMs ? Math.round(durationMs / 1000) : 0

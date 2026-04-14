@@ -294,7 +294,7 @@ interface ChatStore {
   dismissQuestion: (requestId: string) => void
 
   // Plan approval
-  respondToPlanApproval: (requestId: string, approved: boolean, feedback?: string) => void
+  respondToPlanApproval: (requestId: string, approved: boolean, feedback?: string, postApprovalMode?: PermissionMode) => void
 
   // Slash command actions
   dismissSlashCommandOutput: () => void
@@ -1176,8 +1176,10 @@ async function _getDefaultPermissionMode(): Promise<PermissionMode> {
   }
   return _cachedDefaultPermissionMode
 }
+_getDefaultPermissionMode()
 export function invalidateDefaultPermissionModeCache(): void {
   _cachedDefaultPermissionMode = null
+  _getDefaultPermissionMode()
 }
 
 async function _syncAndResumeSession(projectPath: string, sessionId: string, get: () => ChatStore, cwd: string): Promise<void> {
@@ -2261,6 +2263,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       project._activeSessionId = draftId
       const newSession = createDefaultPerSessionState()
       newSession.cwd = projectPath
+      if (_cachedDefaultPermissionMode) newSession.permissionMode = _cachedDefaultPermissionMode
       applyDefaultModel(newSession, s.availableModels)
       const rememberedCodexSelection = readLastCodexSelection()
       const codexSelection = resolveCodexModelSelection(
@@ -2688,6 +2691,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const proj = getProject(s, projectPath)
       const newSession = createDefaultPerSessionState()
       newSession.cwd = projectPath
+      if (_cachedDefaultPermissionMode) newSession.permissionMode = _cachedDefaultPermissionMode
       applyDefaultModel(newSession, s.availableModels)
       const rememberedCodexSelection = readLastCodexSelection()
       const codexSelection = resolveCodexModelSelection(
@@ -3182,7 +3186,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })
   },
 
-  respondToPlanApproval: (requestId, approved, feedback) => {
+  respondToPlanApproval: (requestId, approved, feedback, postApprovalMode) => {
     const { activeProject } = get()
     if (!activeProject) return
     window.agent.respondToPlanApproval(activeProject, requestId, approved, feedback)
@@ -3190,7 +3194,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const perSessionUpdate = updateActivePerSession(s, () => ({
         pendingPlanApproval: null,
         planApprovalOutcome: { approved, feedback },
-        ...(approved && { permissionMode: 'default' as PermissionMode }),
+        ...(approved && { permissionMode: (postApprovalMode ?? 'default') as PermissionMode }),
       }))
       const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
       if (proj) {

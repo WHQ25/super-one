@@ -123,6 +123,7 @@ function makeMessage(id: string, role: 'user' | 'assistant'): ChatMessage {
 beforeEach(() => {
   resetStore()
   vi.clearAllMocks()
+  mockWindowApp.getUserPreferences.mockResolvedValue({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' })
   mockLocalStorage.clear()
   globalThis.localStorage?.removeItem('super-one.codex.last-selection.v1')
   invalidateDefaultPermissionModeCache()
@@ -151,6 +152,20 @@ describe('ensureSession', () => {
 
     const after = useChatStore.getState().projectSessions['/project-a']
     expect(after._sessions[draftId].draftText).toBe('hello')
+  })
+
+  it('applies user preference permissionMode to new session', async () => {
+    mockWindowApp.getUserPreferences.mockResolvedValue({
+      outputStyle: '',
+      defaultPermissionMode: 'plan',
+      defaultSandboxMode: '',
+    })
+    invalidateDefaultPermissionModeCache()
+    await new Promise((r) => setTimeout(r, 0))
+
+    useChatStore.getState().ensureSession('/perm-test')
+    const session = getActiveDraftSession('/perm-test')!
+    expect(session.permissionMode).toBe('plan')
   })
 })
 
@@ -1466,6 +1481,8 @@ describe('switchSession Case B (from DB)', () => {
       defaultPermissionMode: 'acceptEdits',
       defaultSandboxMode: '',
     })
+    invalidateDefaultPermissionModeCache()
+    await new Promise((r) => setTimeout(r, 0))
     mockWindowApp.loadSessionState.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,

@@ -4,7 +4,7 @@ import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
-import { PenLine, Check, X } from 'lucide-react'
+import { PenLine, Check, X, FastForward, Circle, CheckCircle2 } from 'lucide-react'
 import { Kbd } from '@/components/ui/kbd'
 import { streamdownLinkSafety, streamdownRehypePlugins, mathPlugin } from './chat-shared'
 
@@ -19,15 +19,27 @@ export function PlanApprovalPrompt() {
   const [feedback, setFeedback] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
+  const [acceptEdits, setAcceptEdits] = useState(false)
   const requestId = pending?.requestId
   const planContent = pending?.planContent ?? ''
   const planFilePath = pending?.planFilePath ?? ''
   const allowedPrompts = pending?.allowedPrompts ?? []
   const fileName = planFilePath.split('/').pop() ?? ''
 
+  useEffect(() => {
+    setFeedback('')
+    setIsFeedbackFocused(false)
+    setAcceptEdits(false)
+  }, [requestId])
+
   const handleApprove = useCallback(() => {
     if (!requestId) return
-    respond(requestId, true)
+    respond(requestId, true, undefined, acceptEdits ? 'acceptEdits' : undefined)
+  }, [requestId, respond, acceptEdits])
+
+  const handleApproveAcceptEdits = useCallback(() => {
+    if (!requestId) return
+    respond(requestId, true, undefined, 'acceptEdits')
   }, [requestId, respond])
 
   const handleReject = useCallback(() => {
@@ -36,7 +48,6 @@ export function PlanApprovalPrompt() {
   }, [feedback, requestId, respond])
 
   const focusVisibleFeedbackInput = useCallback(() => {
-    // Focus the visible input (desktop and narrow layouts both render one).
     const inputs = containerRef.current?.querySelectorAll<HTMLInputElement>('input[data-feedback]')
     for (const input of inputs ?? []) {
       if (input.offsetParent !== null) {
@@ -58,7 +69,6 @@ export function PlanApprovalPrompt() {
         active.dataset.feedback !== undefined &&
         containerRef.current?.contains(active)
 
-      // Esc: blur feedback first, reject only when not in feedback
       if (e.key === 'Escape') {
         e.preventDefault()
         if (isFeedbackInputFocused) {
@@ -69,16 +79,19 @@ export function PlanApprovalPrompt() {
         return
       }
 
-      // Tab: jump to feedback input
-      if (e.key === 'Tab') {
+      if (e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        handleApproveAcceptEdits()
+        return
+      }
+
+      if (e.key === 'Tab' && !e.shiftKey) {
         e.preventDefault()
         focusVisibleFeedbackInput()
         return
       }
 
-      // Enter:
-      // - in feedback input -> reject + submit
-      // - otherwise -> approve
       if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault()
         if (isFeedbackInputFocused) {
@@ -86,19 +99,24 @@ export function PlanApprovalPrompt() {
           return
         }
         handleApprove()
+        return
+      }
+
+      if (e.key === '1') {
+        e.preventDefault()
+        setAcceptEdits((prev) => !prev)
+        return
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [focusVisibleFeedbackInput, handleApprove, handleReject, requestId])
+  }, [focusVisibleFeedbackInput, handleApprove, handleApproveAcceptEdits, handleReject, requestId])
 
   if (!pending) return null
 
   return (
     <>
-      {/* Takes over the main content area (flex-1) */}
       <div ref={containerRef} className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Header */}
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
           <PenLine className="size-4 text-blue-400" />
           <span className="text-sm font-medium text-foreground">Review</span>
@@ -107,7 +125,6 @@ export function PlanApprovalPrompt() {
           )}
         </div>
 
-        {/* Plan content — scrollable, fills available space */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
           <div className="p-4">
             <Streamdown
@@ -123,7 +140,6 @@ export function PlanApprovalPrompt() {
           </div>
         </div>
 
-        {/* Footer — permissions + feedback + actions */}
         <div className="shrink-0 border-t border-border px-4 py-3 space-y-2">
           {allowedPrompts.length > 0 && (
             <div>
@@ -144,19 +160,33 @@ export function PlanApprovalPrompt() {
             </div>
           )}
 
-          {/* @xl: [Approve] [Reject] [feedback] inline */}
+          {/* @xl: inline layout */}
           <div className="hidden items-center gap-2 @xl:flex">
-            <Button
-              size="sm"
-              className="h-7 cursor-pointer gap-1 bg-green-600 px-3 text-xs text-white hover:bg-green-500"
-              onClick={handleApprove}
-            >
-              <Check className="size-3" />
-              Approve
-              {!isFeedbackFocused && (
-                <Kbd variant="inline" className="ml-1 text-green-200/80">↵</Kbd>
-              )}
-            </Button>
+            {acceptEdits ? (
+              <Button
+                size="sm"
+                className="h-7 cursor-pointer gap-1 bg-purple-600 px-3 text-xs text-white hover:bg-purple-500"
+                onClick={handleApprove}
+              >
+                <FastForward className="size-3" />
+                Approve & Accept Edits
+                {!isFeedbackFocused && (
+                  <Kbd variant="inline" className="ml-1 text-purple-200/80">↵</Kbd>
+                )}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="h-7 cursor-pointer gap-1 bg-green-600 px-3 text-xs text-white hover:bg-green-500"
+                onClick={handleApprove}
+              >
+                <Check className="size-3" />
+                Approve
+                {!isFeedbackFocused && (
+                  <Kbd variant="inline" className="ml-1 text-green-200/80">↵</Kbd>
+                )}
+              </Button>
+            )}
             <Button
               size="sm"
               className="h-7 cursor-pointer gap-1 bg-red-700 px-3 text-xs text-white hover:bg-red-600"
@@ -181,7 +211,7 @@ export function PlanApprovalPrompt() {
             </div>
           </div>
 
-          {/* Narrow: feedback full-width, then both buttons */}
+          {/* Narrow layout */}
           <div className="space-y-2 @xl:hidden">
             <div className="relative flex items-center">
               <input
@@ -197,17 +227,31 @@ export function PlanApprovalPrompt() {
               <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                className="h-7 flex-1 cursor-pointer gap-1 bg-green-600 px-3 text-xs text-white hover:bg-green-500"
-                onClick={handleApprove}
-              >
-                <Check className="size-3" />
-                Approve
-                {!isFeedbackFocused && (
-                  <Kbd variant="inline" className="ml-1 text-green-200/80">↵</Kbd>
-                )}
-              </Button>
+              {acceptEdits ? (
+                <Button
+                  size="sm"
+                  className="h-7 flex-1 cursor-pointer gap-1 bg-purple-600 px-3 text-xs text-white hover:bg-purple-500"
+                  onClick={handleApprove}
+                >
+                  <FastForward className="size-3" />
+                  Approve & Accept Edits
+                  {!isFeedbackFocused && (
+                    <Kbd variant="inline" className="ml-1 text-purple-200/80">↵</Kbd>
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  className="h-7 flex-1 cursor-pointer gap-1 bg-green-600 px-3 text-xs text-white hover:bg-green-500"
+                  onClick={handleApprove}
+                >
+                  <Check className="size-3" />
+                  Approve
+                  {!isFeedbackFocused && (
+                    <Kbd variant="inline" className="ml-1 text-green-200/80">↵</Kbd>
+                  )}
+                </Button>
+              )}
               <Button
                 size="sm"
                 className="h-7 flex-1 cursor-pointer gap-1 bg-red-700 px-3 text-xs text-white hover:bg-red-600"
@@ -221,6 +265,25 @@ export function PlanApprovalPrompt() {
               </Button>
             </div>
           </div>
+
+          {/* Toggle: Accept Edits after approval */}
+          <button
+            type="button"
+            className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors ${
+              acceptEdits
+                ? 'border-purple-500/50 bg-purple-500/10 text-purple-500 hover:bg-purple-500/20'
+                : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            }`}
+            onClick={() => setAcceptEdits((prev) => !prev)}
+          >
+            {acceptEdits
+              ? <CheckCircle2 className="size-3.5 shrink-0 text-purple-400" />
+              : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
+            }
+            <FastForward className="size-3.5 shrink-0" />
+            <span>Switch to <span className="font-medium">Accept Edits</span> after approval</span>
+            <Kbd variant="square" className="ml-auto">1</Kbd>
+          </button>
         </div>
       </div>
     </>

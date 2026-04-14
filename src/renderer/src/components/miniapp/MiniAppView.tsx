@@ -40,15 +40,15 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
 
     return (
       <div ref={containerRef} className={cn('relative', className)}>
-        <div className="absolute bottom-2 left-2 z-10 flex items-center gap-0.5 rounded-md bg-black/60 p-0.5 backdrop-blur-sm">
-          <button
-            onClick={reload}
-            className="rounded p-1 text-white/70 hover:text-white"
-            title="Reload"
-          >
-            <RotateCw className="size-3.5" />
-          </button>
-          {isDev && (
+        {isDev && (
+          <div className="absolute bottom-2 left-2 z-10 flex items-center gap-0.5 rounded-md bg-black/60 p-0.5 backdrop-blur-sm">
+            <button
+              onClick={reload}
+              className="rounded p-1 text-white/70 hover:text-white"
+              title="Reload"
+            >
+              <RotateCw className="size-3.5" />
+            </button>
             <button
               onClick={openDevTools}
               className="rounded p-1 text-white/70 hover:text-white"
@@ -56,8 +56,8 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
             >
               <Bug className="size-3.5" />
             </button>
-          )}
-        </div>
+          </div>
+        )}
         {isDev
           ? <MiniAppDevFrame ref={devRef} appId={appId} className="h-full w-full" overlay={overlayCallbacks} />
           : <MiniAppFrame ref={iframeRef} appId={appId} className="h-full w-full" overlay={overlayCallbacks} />

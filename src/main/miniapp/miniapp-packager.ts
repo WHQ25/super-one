@@ -91,35 +91,41 @@ export async function packApp(appDir: string, outputDir: string): Promise<MiniAp
     throw new Error('manifest.version is required for packaging')
   }
 
-  if (manifest.isDev) {
-    const cleanManifest = { ...JSON.parse(raw) }
+  const tmpDir = join(app.getPath('temp'), `s1app-pack-${Date.now()}`)
+  await cp(appDir, tmpDir, { recursive: true })
+
+  try {
+    const tmpManifestRaw = await readFile(join(tmpDir, 'manifest.json'), 'utf-8')
+    const cleanManifest = JSON.parse(tmpManifestRaw)
     delete cleanManifest.isDev
-    await writeFile(join(appDir, 'manifest.json'), JSON.stringify(cleanManifest, null, 2))
-  }
+    await writeFile(join(tmpDir, 'manifest.json'), JSON.stringify(cleanManifest, null, 2))
 
-  const integrity = await generateIntegrity(appDir)
-  await writeFile(join(appDir, INTEGRITY_FILE), JSON.stringify(integrity, null, 2))
+    const integrity = await generateIntegrity(tmpDir)
+    await writeFile(join(tmpDir, INTEGRITY_FILE), JSON.stringify(integrity, null, 2))
 
-  const outputPath = join(outputDir, `${manifest.appId}-${manifest.version}${S1APP_EXT}`)
-  await mkdir(outputDir, { recursive: true })
+    const outputPath = join(outputDir, `${manifest.appId}-${manifest.version}${S1APP_EXT}`)
+    await mkdir(outputDir, { recursive: true })
 
-  return new Promise((resolve, reject) => {
-    const output = createWriteStream(outputPath)
-    const archive = archiver('zip', { zlib: { level: 9 } })
+    return await new Promise((resolve, reject) => {
+      const output = createWriteStream(outputPath)
+      const archive = archiver('zip', { zlib: { level: 9 } })
 
-    output.on('close', () => {
-      resolve({
-        outputPath,
-        manifest,
-        fileCount: Object.keys(integrity.files).length + 1,
+      output.on('close', () => {
+        resolve({
+          outputPath,
+          manifest,
+          fileCount: Object.keys(integrity.files).length + 1,
+        })
       })
-    })
 
-    archive.on('error', reject)
-    archive.pipe(output)
-    archive.glob('**/*', { cwd: appDir, ignore: [PREAPPROVED_FILE, INSTALL_META_FILE] })
-    archive.finalize()
-  })
+      archive.on('error', reject)
+      archive.pipe(output)
+      archive.glob('**/*', { cwd: tmpDir, ignore: [PREAPPROVED_FILE, INSTALL_META_FILE] })
+      archive.finalize()
+    })
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
 }
 
 export async function previewApp(s1appPath: string): Promise<MiniAppPreviewResult> {

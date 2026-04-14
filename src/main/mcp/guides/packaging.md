@@ -6,9 +6,14 @@ Once the app is ready, package it as a `.s1app` file for sharing.
 
 Ask the agent: "Pack my mini-app for distribution." The agent will call the `pack_mini_app` tool, which:
 
-1. Validates `manifest.json` (must have `version` field)
-2. Generates `integrity.json` with SHA-256 hashes for every file
-3. Creates a compressed `.s1app` file (e.g., `my-app-1.0.0.s1app`)
+1. Copies the app directory to a temporary location (source files are never modified)
+2. Validates `manifest.json` (must have `version` field)
+3. Strips the `isDev` flag from the manifest copy
+4. Generates `integrity.json` with SHA-256 hashes for every file
+5. Creates a compressed `.s1app` file (e.g., `my-app-1.0.0.s1app`)
+6. Cleans up the temporary copy
+
+The source directory remains untouched — you can continue developing immediately after packaging.
 
 ## Package Structure
 

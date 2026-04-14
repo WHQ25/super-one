@@ -250,7 +250,7 @@ async function writeGeneratedFiles(baseDir: string, files: GeneratedFile[]): Pro
 export async function createMiniApp(opts: CreateMiniAppOptions): Promise<CreateMiniAppResult> {
   const mode = opts.mode ?? 'project'
   const template = opts.template ?? 'vanilla'
-  const appId = `dev-${opts.slug}-${Date.now().toString(36)}`
+  const appId = `${opts.slug}-${Date.now().toString(36)}`
 
   const manifest: MiniAppManifest = {
     appId,

@@ -132,7 +132,7 @@ describe('detectStandaloneApp', () => {
 })
 
 describe('createMiniApp', () => {
-  const appId = `dev-test-app-${MOCK_TS_B36}`
+  const appId = `test-app-${MOCK_TS_B36}`
 
   it('defaults to project mode + vanilla template', async () => {
     const result = await createMiniApp({ name: 'Test App', slug: 'test-app', projectDir: '/projects/test' })
@@ -144,7 +144,7 @@ describe('createMiniApp', () => {
 
   it('generates appId from slug + timestamp', async () => {
     const result = await createMiniApp({ name: 'My Cool App!', slug: 'my-cool-app', projectDir: '/p' })
-    expect(result.entry.id).toBe(`dev-my-cool-app-${MOCK_TS_B36}`)
+    expect(result.entry.id).toBe(`my-cool-app-${MOCK_TS_B36}`)
   })
 
   it('creates minimal manifest without tools or permissions', async () => {
@@ -164,8 +164,8 @@ describe('createMiniApp', () => {
       await createMiniApp({ name: 'Dashboard', slug: 'dashboard', projectDir: '/projects/test', mode: 'project', template: 'vanilla' })
 
       const writtenPaths = mockWriteFile.mock.calls.map((c: string[]) => c[0])
-      expect(writtenPaths.some((p: string) => p.includes(`dev-dashboard-${MOCK_TS_B36}/manifest.json`))).toBe(true)
-      expect(writtenPaths.some((p: string) => p.includes(`dev-dashboard-${MOCK_TS_B36}/index.html`))).toBe(true)
+      expect(writtenPaths.some((p: string) => p.includes(`dashboard-${MOCK_TS_B36}/manifest.json`))).toBe(true)
+      expect(writtenPaths.some((p: string) => p.includes(`dashboard-${MOCK_TS_B36}/index.html`))).toBe(true)
     })
 
     it('returns buildRequired=false', async () => {
@@ -184,9 +184,9 @@ describe('createMiniApp', () => {
       await createMiniApp({ name: 'Dashboard', slug: 'dashboard', projectDir: '/projects/test', mode: 'project', template: 'react' })
 
       const writtenPaths = mockWriteFile.mock.calls.map((c: string[]) => c[0])
-      expect(writtenPaths.some((p: string) => p.includes(`dev-dashboard-${MOCK_TS_B36}/package.json`))).toBe(true)
-      expect(writtenPaths.some((p: string) => p.includes(`dev-dashboard-${MOCK_TS_B36}/src/App.tsx`))).toBe(true)
-      expect(writtenPaths.some((p: string) => p.includes(`dev-dashboard-${MOCK_TS_B36}/public/manifest.json`))).toBe(true)
+      expect(writtenPaths.some((p: string) => p.includes(`dashboard-${MOCK_TS_B36}/package.json`))).toBe(true)
+      expect(writtenPaths.some((p: string) => p.includes(`dashboard-${MOCK_TS_B36}/src/App.tsx`))).toBe(true)
+      expect(writtenPaths.some((p: string) => p.includes(`dashboard-${MOCK_TS_B36}/public/manifest.json`))).toBe(true)
     })
 
     it('returns buildRequired=true', async () => {

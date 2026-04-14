@@ -50,7 +50,7 @@ export function ReasoningBlock({
     : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')
 
   return (
-    <div className="thinking-node mt-3 mb-2">
+    <div className="thinking-node mt-2 mb-2">
       <div
         className={cn(
           'flex items-center gap-1.5 text-xs text-muted-foreground',

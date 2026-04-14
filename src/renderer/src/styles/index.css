@@ -338,7 +338,10 @@ body {
     margin-bottom: 0.5rem;
   }
 
-  .assistant-reply > :first-child > .chat-md,
+  .assistant-reply > :first-child .chat-md {
+    margin-top: 0.5rem;
+  }
+
   .after-thinking .chat-md {
     margin-top: 0;
   }
@@ -372,7 +375,10 @@ body {
     margin-bottom: 0.75rem;
   }
 
-  .assistant-reply > :first-child > .chat-md,
+  .assistant-reply > :first-child .chat-md {
+    margin-top: 0.5rem;
+  }
+
   .after-thinking .chat-md {
     margin-top: 0;
   }

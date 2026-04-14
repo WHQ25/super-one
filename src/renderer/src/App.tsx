@@ -174,6 +174,15 @@ function App(): React.JSX.Element {
     }
     window.addEventListener('resize', clampPanels)
     const unsubAP = useActivityPanelStore.subscribe((state, prev) => {
+      if (state.showPanel && !prev.showPanel) {
+        const { showSidebar: sb, sidebarWidth: sw } = useAppStore.getState()
+        const maxAp = window.innerWidth - (sb ? sw : 0) - MIN_MAIN
+        const clamped = Math.max(MIN_AP, Math.min(state.panelWidth, maxAp))
+        if (clamped !== state.panelWidth) {
+          useActivityPanelStore.getState().setPanelWidth(clamped)
+          return
+        }
+      }
       if (state.showPanel !== prev.showPanel || state.panelWidth !== prev.panelWidth || state.side !== prev.side) clampPanels()
     })
     const unsubApp = useAppStore.subscribe((state, prev) => {

@@ -284,9 +284,9 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
           <DialogHeader>
             <DialogTitle>Delete Session?</DialogTitle>
             <DialogDescription asChild>
-              <div>
+              <div className="min-w-0">
                 <span className="font-medium text-foreground">{deleteTarget?.title}</span> will be removed from SuperOne. You can still access it via {deleteTargetCli.cliName}:
-                <div className="mt-2 flex flex-col gap-1">
+                <div className="mt-2 flex min-w-0 flex-col gap-1">
                   {([
                     ['cd', `cd ${activeProject}`],
                     ['resume', deleteTargetCli.resumeCommand],

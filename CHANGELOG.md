@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.19.0-alpha] - 2026-04-15
+
+### Added
+
+- Scheduled task automation for agents (cron-based triggers)
+
+### Fixed
+
+- Delete-session dialog overflow with long session ids
+- Activity panel width not clamped synchronously when shown
+- New sessions ignoring user preference permissionMode
+
 ## [0.18.7-alpha] - 2026-04-14
 
 ### Added

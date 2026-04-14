@@ -2082,7 +2082,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ]
 
           if (updatedSession.sessionProvider === 'codex') {
-            _savePerSessionSnapshot(projectPath, realSid, updatedSession)
+            _prepareSessionSnapshot(projectPath, realSid, updatedSession)
           }
         }
       }
@@ -2129,7 +2129,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           )
         ) {
           const snapshot = updatedSession
-          setTimeout(() => _savePerSessionSnapshot(projectPath, effectiveSid, snapshot), 0)
+          setTimeout(() => _prepareSessionSnapshot(projectPath, effectiveSid, snapshot), 0)
         }
       }
 
@@ -2144,7 +2144,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               const evictSid = targetSid
               const evictProjectPath = projectPath
               setTimeout(() => {
-                _savePerSessionSnapshot(evictProjectPath, effectiveSid, snapshot).then(() => {
+                _prepareSessionSnapshot(evictProjectPath, effectiveSid, snapshot).then(() => {
                   set((s) => {
                     const proj = s.projectSessions[evictProjectPath]
                     if (!proj?._sessions[evictSid]) return {}

@@ -42,6 +42,7 @@ const mockWindowApp = {
   pinSession: vi.fn(async () => {}),
   deleteSession: vi.fn(async () => {}),
   renameSession: vi.fn(async () => {}),
+  listAutomations: vi.fn(async () => []),
 }
 
 vi.mock('motion/react', () => ({

@@ -639,6 +639,68 @@ export type ResourceScope = 'user' | 'project' | 'claudeai'
 
 export type SettingsProvider = 'claude' | 'codex'
 
+// ─── Agent Run Config (unified abstraction for running any agent type) ───
+
+export interface ClaudeRunConfig {
+  type: 'claude'
+  agentName?: string
+  model?: string
+  effort?: EffortLevel
+  permissionMode?: PermissionMode
+  sandboxMode?: SandboxMode
+}
+
+export interface CodexRunConfig {
+  type: 'codex'
+  model?: string
+  reasoningEffort?: CodexReasoningEffort
+  permissionPreset?: CodexPermissionPreset
+}
+
+export type AgentRunConfig = ClaudeRunConfig | CodexRunConfig
+
+// ─── Automation ───
+
+export type AutomationScheduleType = 'one-time' | 'recurring'
+export type AutomationRunStatus = 'idle' | 'running' | 'completed' | 'error'
+
+export interface AutomationSchedule {
+  type: AutomationScheduleType
+  cron?: string
+  runAt?: string
+  preset?: 'hourly' | 'daily' | 'weekly' | 'custom'
+  timeOfDay?: string
+  dayOfWeek?: number[]
+  minuteOfHour?: number
+}
+
+export interface Automation {
+  id: string
+  name: string
+  prompt: string
+  agentConfig: AgentRunConfig
+  schedule: AutomationSchedule
+  projectPath: string
+  enabled: boolean
+  lastRunAt?: string
+  lastRunStatus?: AutomationRunStatus
+  lastRunSessionId?: string
+  nextRunAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateAutomationRequest {
+  name: string
+  prompt: string
+  agentConfig: AgentRunConfig
+  schedule: AutomationSchedule
+}
+
+export interface UpdateAutomationRequest extends Partial<CreateAutomationRequest> {
+  enabled?: boolean
+}
+
 export type AgentType = 'claude' | 'codex'
 export type ApiFormat = 'anthropic' | 'openai_chat' | 'openai_responses'
 
@@ -774,6 +836,8 @@ export interface SessionHistoryEntry {
   worktreePath?: string // filesystem path to the worktree directory
   isPinned?: boolean   // true if session is pinned by user
   isHidden?: boolean   // true if session is hidden by user
+  isAutomation?: boolean
+  automationId?: string
 }
 
 export interface PinnedSessionEntry extends SessionHistoryEntry {
@@ -1193,6 +1257,14 @@ export const AgentIpcChannels = {
   MINIAPP_GET_INSTALL_META: 'miniapp:get-install-meta',
   MINIAPP_GET_PREAPPROVED: 'miniapp:get-preapproved',
   MINIAPP_SET_PREAPPROVED: 'miniapp:set-preapproved',
+
+  // Automations
+  AUTOMATIONS_LIST: 'automations:list',
+  AUTOMATIONS_CREATE: 'automations:create',
+  AUTOMATIONS_UPDATE: 'automations:update',
+  AUTOMATIONS_DELETE: 'automations:delete',
+  AUTOMATIONS_RUN_NOW: 'automations:run-now',
+  AUTOMATIONS_EVENT: 'automations:event',
 } as const
 
 export interface FileSearchResult {

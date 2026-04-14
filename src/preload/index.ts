@@ -680,6 +680,30 @@ const appAPI = {
 
   widgetIframeReady: (widgetId: string): Promise<void> =>
     ipcRenderer.invoke(AgentIpcChannels.WIDGET_IFRAME_READY, widgetId),
+
+  // Automations
+  listAutomations: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.AUTOMATIONS_LIST, projectPath) as Promise<import('../shared/agent-types').Automation[]>,
+
+  createAutomation: (projectPath: string, data: import('../shared/agent-types').CreateAutomationRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.AUTOMATIONS_CREATE, projectPath, data) as Promise<import('../shared/agent-types').Automation>,
+
+  updateAutomation: (id: string, data: import('../shared/agent-types').UpdateAutomationRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.AUTOMATIONS_UPDATE, id, data) as Promise<import('../shared/agent-types').Automation | undefined>,
+
+  deleteAutomation: (id: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.AUTOMATIONS_DELETE, id) as Promise<boolean>,
+
+  runAutomationNow: (id: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.AUTOMATIONS_RUN_NOW, id) as Promise<void>,
+
+  onAutomationEvent: (callback: (event: { automationId: string; status: string; sessionId?: string; error?: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { automationId: string; status: string; sessionId?: string; error?: string }) => callback(event)
+    ipcRenderer.on(AgentIpcChannels.AUTOMATIONS_EVENT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.AUTOMATIONS_EVENT, handler)
+    }
+  },
 }
 
 import type { MiniAppEntry, MiniAppToolCallRequest, MiniAppInstallMeta, MiniAppFsWatchEvent } from '../shared/miniapp-types'

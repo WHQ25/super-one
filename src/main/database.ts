@@ -191,6 +191,33 @@ function migrate(db: Database.Database): void {
     );
   `)
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS automations (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      agent_config_json TEXT NOT NULL,
+      schedule_json TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_run_at TEXT,
+      last_run_status TEXT,
+      last_run_session_id TEXT,
+      next_run_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automations_project ON automations(project_id);
+    CREATE INDEX IF NOT EXISTS idx_automations_next_run ON automations(enabled, next_run_at);
+  `)
+
+  if (!cols.some((c) => c.name === 'is_automation')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN is_automation INTEGER DEFAULT 0')
+  }
+  if (!cols.some((c) => c.name === 'automation_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN automation_id TEXT')
+  }
+
   if (is.dev) seedDevProviders(db)
 }
 

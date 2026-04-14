@@ -31,7 +31,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
+import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import { checkMcpServers } from '../mcp-probe-service'
@@ -638,6 +638,134 @@ export class AgentService {
     return () => {
       this.eventSubscribers = this.eventSubscribers.filter((s) => s !== cb)
     }
+  }
+
+  async runAutomationSession(projectPath: string, options: {
+    content: string
+    model?: string
+    effort?: string
+    permissionMode?: string
+    automationId?: string
+    automationName?: string
+  }): Promise<{ sessionId: string }> {
+    let sessionId: string | undefined
+    const buffer: AgentEvent[] = []
+    const emit = (event: AgentEvent): void => {
+      const eventWithPath = { ...event, projectPath }
+      if (!sessionId && event.type === 'session_init' && event.session?.sessionId) {
+        sessionId = event.session.sessionId
+        if (options.automationId) {
+          createAutomationSession(
+            projectPath,
+            sessionId,
+            `[Auto] ${options.automationName ?? 'Automation'}`,
+            options.automationId,
+            'claude',
+          )
+        }
+      }
+      this.recordClaudeEvent(eventWithPath)
+      this.eventSubscribers.forEach((cb) => cb(eventWithPath))
+      if (event.type === 'session_init' && sessionId) {
+        for (const e of buffer) {
+          this.broadcastEventToRenderer({ ...e, sessionId })
+        }
+        buffer.length = 0
+      }
+      if (sessionId) {
+        this.broadcastEventToRenderer(eventWithPath)
+      } else {
+        buffer.push(eventWithPath)
+      }
+    }
+
+    const agent = new ClaudeAgent()
+    await agent.initialize(
+      { cwd: projectPath, model: options.model },
+      emit,
+      undefined,
+      options.permissionMode ? { permissionMode: options.permissionMode as PermissionMode } : undefined,
+    )
+
+    if (options.effort) agent.setInitialEffort(options.effort as never)
+
+    const userMessage = this.appendClaudeUserMessage(projectPath, {
+      content: options.content,
+      clientMessageId: `auto_${Date.now()}`,
+    }, 'local', sessionId)
+    this.trackClaudeSessionRekey(projectPath, sessionId, userMessage.id)
+    buffer.push({ type: 'message_start', message: userMessage, projectPath } as AgentEvent)
+
+    await agent.sendMessage({
+      content: options.content,
+      model: options.model,
+      effort: options.effort as SendMessageRequest['effort'],
+    })
+
+    return { sessionId: sessionId ?? '' }
+  }
+
+  async runCodexAutomationSession(projectPath: string, options: {
+    content: string
+    model?: string
+    reasoningEffort?: string
+    permissionPreset?: string
+    automationId?: string
+    automationName?: string
+  }): Promise<{ sessionId: string }> {
+    if (!this.codexRun) throw new Error('Codex runtime not configured')
+
+    const sessionId = `codex-auto-${Date.now()}`
+    const userMessageId = `user_${Date.now()}`
+    const assistantMessageId = `auto-${Date.now()}`
+
+    if (options.automationId) {
+      try {
+        createAutomationSession(projectPath, sessionId, `[Auto] ${options.automationName ?? 'Automation'}`, options.automationId, 'codex')
+      } catch { /* ignore */ }
+    }
+
+    const { userMessage, assistantMessage } = this.beginCodexTurn(projectPath, sessionId, {
+      userMessageId,
+      userText: options.content,
+      assistantMessageId,
+      providerId: 'local',
+    })
+
+    this.broadcastEventToRenderer({ type: 'message_start', message: userMessage, projectPath, sessionId })
+    this.broadcastEventToRenderer({ type: 'message_start', message: assistantMessage, projectPath, sessionId })
+    this.broadcastEventToRenderer({ type: 'status_change', status: 'streaming', projectPath, sessionId })
+
+    const runStart = Date.now()
+    try {
+      const result = await this.codexRun(sessionId, projectPath, {
+        prompt: options.content,
+        model: options.model,
+        reasoningEffort: options.reasoningEffort,
+        permissionPreset: options.permissionPreset,
+      })
+      if (result) {
+        this.completeCodexTurn(sessionId, {
+          messageId: assistantMessageId,
+          result,
+          durationMs: Date.now() - runStart,
+          fallbackText: 'Codex completed without returning text.',
+        })
+      }
+      this.broadcastEventToRenderer({ type: 'message_complete', messageId: assistantMessageId, projectPath, sessionId })
+      this.broadcastEventToRenderer({ type: 'status_change', status: 'idle', projectPath, sessionId })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.failCodexTurn(sessionId, {
+        messageId: assistantMessageId,
+        status: /interrupt|abort/i.test(message) ? 'interrupted' : 'error',
+        text: /interrupt|abort/i.test(message) ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
+      })
+      this.broadcastEventToRenderer({ type: 'status_change', status: 'idle', projectPath, sessionId })
+      throw error
+    }
+
+    return { sessionId }
   }
 
   notifyEventSubscribers(event: AgentEvent): void {

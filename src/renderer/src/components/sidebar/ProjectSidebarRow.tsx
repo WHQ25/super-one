@@ -1,14 +1,15 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { Bot, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, MoreHorizontal, Pencil, Pin, Smartphone, SquarePen, Trash2 } from 'lucide-react'
+import { Bot, CalendarClock, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, MoreHorizontal, Pencil, Pin, Play, Smartphone, SquarePen, Trash2 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { isDraftSession, useChatStore } from '@/stores/chat'
 import { cn } from '@/lib/utils'
 import { homePath } from '@/lib/path-utils'
-import type { RecentFolder, SessionHistoryEntry } from '../../../../shared/agent-types'
+import type { Automation, RecentFolder, SessionHistoryEntry } from '../../../../shared/agent-types'
 import { getPendingReason, getSessionTitle, isLiveSession } from './session-state-utils'
+import { AutomationDialog } from '../AutomationDialog'
 
 interface ProjectSidebarRowProps {
   folder: RecentFolder
@@ -94,6 +95,43 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       activeSid: projectSession?._activeSessionId ?? null,
     }
   }, [allSessions, currentFolder, folder.path, hasRealProject, isExpanded, maxSessions, projectSession])
+
+  const [projectAutomations, setProjectAutomations] = useState<Automation[]>([])
+  const [automationsExpanded, setAutomationsExpanded] = useState(false)
+  const [automationDialogOpen, setAutomationDialogOpen] = useState(false)
+  const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null)
+
+  const refreshAutomations = useCallback(() => {
+    if (folder.missing) return
+    window.app.listAutomations(folder.path).then((next) => {
+      setProjectAutomations((prev) => {
+        if (prev.length !== next.length) return next
+        for (let i = 0; i < prev.length; i++) {
+          const a = prev[i]
+          const b = next[i]
+          if (a.id !== b.id || a.updatedAt !== b.updatedAt || a.lastRunStatus !== b.lastRunStatus || a.enabled !== b.enabled) {
+            return next
+          }
+        }
+        return prev
+      })
+    }).catch(() => {})
+  }, [folder.path, folder.missing])
+
+  useEffect(() => {
+    if (isExpanded) refreshAutomations()
+  }, [isExpanded, refreshAutomations])
+
+  const openCreateDialog = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingAutomation(null)
+    setAutomationDialogOpen(true)
+  }, [])
+
+  const openEditDialog = useCallback((automation: Automation) => {
+    setEditingAutomation(automation)
+    setAutomationDialogOpen(true)
+  }, [])
 
   return (
     <div>
@@ -184,6 +222,19 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
+                      onClick={openCreateDialog}
+                      className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+                    >
+                      <CalendarClock className="size-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={8}>New Automation</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
                       onClick={(e) => {
                         e.stopPropagation()
                         onNewSession(folder.path)
@@ -200,6 +251,66 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           )}
         </div>
       </div>
+
+      {isExpanded && projectAutomations.length > 0 && (
+        <div className="overflow-hidden pl-5">
+          <button
+            onClick={() => setAutomationsExpanded((v) => !v)}
+            className="group/auto flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
+          >
+            <ChevronRight className={cn(
+              'hidden size-3.5 shrink-0 transition-transform duration-200 group-hover/auto:block',
+              automationsExpanded && 'rotate-90',
+            )} />
+            <CalendarClock className="size-3.5 shrink-0 group-hover/auto:hidden" />
+            <span>Automations</span>
+            <span className="ml-auto text-[10px] text-sidebar-foreground/30">{projectAutomations.length}</span>
+          </button>
+          {automationsExpanded && (
+            <div className="flex flex-col py-0.5 pl-4">
+              {projectAutomations.map((automation) => (
+                <ContextMenu key={automation.id}>
+                  <ContextMenuTrigger asChild>
+                    <button
+                      onClick={() => openEditDialog(automation)}
+                      className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <CalendarClock className="size-3 shrink-0 text-sidebar-foreground/50" />
+                        <span className="truncate">{automation.name}</span>
+                      </span>
+                      <span className={cn(
+                        'size-1.5 shrink-0 rounded-full',
+                        automation.lastRunStatus === 'error' ? 'bg-red-500' :
+                        automation.lastRunStatus === 'running' ? 'bg-yellow-500' :
+                        automation.enabled ? 'bg-green-500' : 'bg-muted-foreground/30',
+                      )} />
+                    </button>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem onClick={() => { window.app.runAutomationNow(automation.id).catch(() => {}) }}>
+                      <Play className="size-3.5" />
+                      Run Now
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => openEditDialog(automation)}>
+                      <Pencil className="size-3.5" />
+                      Edit
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      variant="destructive"
+                      onClick={() => { window.app.deleteAutomation(automation.id).then(refreshAutomations).catch(() => {}) }}
+                    >
+                      <Trash2 className="size-3.5" />
+                      Delete
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {derived.showSessions && (
         <div className="overflow-hidden">
@@ -240,11 +351,13 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                                 ? <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
                                 : isUnseen
                                   ? <CircleCheck className="size-3 text-green-400" />
-                                  : session.isWorktree
-                                    ? <GitFork className="size-3 text-sidebar-foreground/70" />
-                                    : remoteSessionId === session.sessionId
-                                      ? <Smartphone className="size-3 text-sidebar-foreground/70" />
-                                      : <MessageSquare className="size-3 text-sidebar-foreground/70" />
+                                  : session.isAutomation
+                                    ? <CalendarClock className="size-3 text-sidebar-foreground/70" />
+                                    : session.isWorktree
+                                      ? <GitFork className="size-3 text-sidebar-foreground/70" />
+                                      : remoteSessionId === session.sessionId
+                                        ? <Smartphone className="size-3 text-sidebar-foreground/70" />
+                                        : <MessageSquare className="size-3 text-sidebar-foreground/70" />
                               }
                             </span>
                           </div>
@@ -336,22 +449,14 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           </div>
         </div>
       )}
+
+      <AutomationDialog
+        open={automationDialogOpen}
+        onOpenChange={setAutomationDialogOpen}
+        editAutomation={editingAutomation}
+        projectPath={folder.path}
+        onSaved={refreshAutomations}
+      />
     </div>
   )
-}, (prev, next) =>
-  prev.folder === next.folder &&
-  prev.currentFolder === next.currentFolder &&
-  prev.hasRealProject === next.hasRealProject &&
-  prev.isExpanded === next.isExpanded &&
-  prev.sessions === next.sessions &&
-  prev.maxSessions === next.maxSessions &&
-  prev.onToggleExpand === next.onToggleExpand &&
-  prev.onSwitchSession === next.onSwitchSession &&
-  prev.onPinSession === next.onPinSession &&
-  prev.onHideSession === next.onHideSession &&
-  prev.onRemoveProject === next.onRemoveProject &&
-  prev.onRenameSession === next.onRenameSession &&
-  prev.onDeleteSession === next.onDeleteSession &&
-  prev.onOpenHistory === next.onOpenHistory &&
-  prev.onNewSession === next.onNewSession
-)
+})

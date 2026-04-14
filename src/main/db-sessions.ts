@@ -35,6 +35,7 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
   const db = getDb()
   const baseSql = `
     SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
+           s.is_automation, s.automation_id,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
            CASE
              WHEN s.claude_session_id LIKE 'codex_local_%' THEN 'codex'
@@ -46,7 +47,7 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
   const rows = (limit != null
     ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(projectId, limit, offset ?? 0)
     : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; provider: 'claude' | 'codex' }>
+  ) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider: 'claude' | 'codex' }>
 
   return rows.map((r) => ({
     sessionId: r.claude_session_id ?? r.id,
@@ -59,6 +60,8 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
     ...(r.is_hidden ? { isHidden: true } : {}),
     ...(r.git_branch ? { gitBranch: r.git_branch } : {}),
     ...(r.worktree_path ? { worktreePath: r.worktree_path } : {}),
+    ...(r.is_automation ? { isAutomation: true } : {}),
+    ...(r.automation_id ? { automationId: r.automation_id } : {}),
   }))
 }
 
@@ -79,6 +82,22 @@ export function createSession(folderPath: string, claudeSessionId: string, title
       git_branch = COALESCE(excluded.git_branch, git_branch),
       worktree_path = COALESCE(excluded.worktree_path, worktree_path)
   `).run(id, projectId, claudeSessionId, title ?? null, now, now, isWorktree ? 1 : 0, gitBranch ?? null, worktreePath ?? null)
+
+  return id
+}
+
+export function createAutomationSession(folderPath: string, claudeSessionId: string, title: string, automationId: string, provider: 'claude' | 'codex' = 'claude'): string {
+  const projectId = getProjectId(folderPath)
+  if (!projectId) throw new Error(`Project not found for path: ${folderPath}`)
+
+  const db = getDb()
+  const id = randomUUID()
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at, last_user_message_at, is_automation, automation_id, provider, is_pinned)
+    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 1)
+  `).run(id, projectId, claudeSessionId, title, now, now, automationId, provider)
 
   return id
 }
@@ -289,7 +308,7 @@ export function hideSession(claudeSessionId: string, hidden: boolean): void {
 export function listPinnedSessions(): PinnedSessionEntry[] {
   const db = getDb()
   const rows = db.prepare(`
-    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree,
+    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree, s.is_automation, s.automation_id,
            p.path AS folder_path, p.name AS folder_name,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
            CASE
@@ -300,7 +319,7 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
     JOIN projects p ON p.id = s.project_id
     WHERE s.is_pinned = 1 AND COALESCE(s.is_hidden, 0) = 0
     ORDER BY last_user_msg_at DESC
-  `).all() as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; folder_path: string; folder_name: string; provider: 'claude' | 'codex' }>
+  `).all() as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_automation: number | null; automation_id: string | null; folder_path: string; folder_name: string; provider: 'claude' | 'codex' }>
 
   return rows.map((r) => ({
     sessionId: r.claude_session_id ?? r.id,
@@ -309,6 +328,8 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
     provider: r.provider,
     messageCount: 0,
     ...(r.is_worktree ? { isWorktree: true } : {}),
+    ...(r.is_automation ? { isAutomation: true } : {}),
+    ...(r.automation_id ? { automationId: r.automation_id } : {}),
     isPinned: true,
     folderPath: r.folder_path,
     folderName: r.folder_name,

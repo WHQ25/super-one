@@ -46,10 +46,12 @@ import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-
 import { getDb, closeDb, getCachedResources, setCachedResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
+import { AutomationService } from './automation-service'
+import { listAutomationsForProject, createAutomation as dbCreateAutomation, updateAutomation as dbUpdateAutomation, deleteAutomation as dbDeleteAutomation } from './db-automations'
 import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readUserPreferences, saveUserPreferences, readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
-import type { RemoteCommand, PairedDevice } from '../shared/agent-types'
+import type { RemoteCommand, PairedDevice, CreateAutomationRequest, UpdateAutomationRequest } from '../shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
 
@@ -69,6 +71,7 @@ if (is.dev) {
 
 const agentService = new AgentService()
 const codexService = new CodexExperimentService()
+const automationService = new AutomationService()
 const remoteCallbacks: RemoteControlCallbacks = {
   onCommand: async (command, respond) => {
     await agentService.handleRemoteCommand(command, respond)
@@ -253,6 +256,9 @@ function createWindow(): void {
 
   // Update agentService's window reference for event forwarding
   agentService.setMainWindow(mainWindow)
+  automationService.setMainWindow(mainWindow)
+  automationService.setAgentService(agentService)
+  automationService.start()
   setBashOutputWindow(mainWindow)
 
   mainWindow.on('closed', () => {
@@ -1527,6 +1533,27 @@ function registerIpcHandlers(): void {
     await setPreapprovedByPath(basePath, tools)
     updatePreapprovedTools(appId, tools)
   })
+
+  // Automations
+  ipcMain.handle(AgentIpcChannels.AUTOMATIONS_LIST, (_e, projectPath: string) => {
+    return listAutomationsForProject(projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.AUTOMATIONS_CREATE, (_e, projectPath: string, data: CreateAutomationRequest) => {
+    return dbCreateAutomation(projectPath, data)
+  })
+
+  ipcMain.handle(AgentIpcChannels.AUTOMATIONS_UPDATE, (_e, id: string, data: UpdateAutomationRequest) => {
+    return dbUpdateAutomation(id, data)
+  })
+
+  ipcMain.handle(AgentIpcChannels.AUTOMATIONS_DELETE, (_e, id: string) => {
+    return dbDeleteAutomation(id)
+  })
+
+  ipcMain.handle(AgentIpcChannels.AUTOMATIONS_RUN_NOW, async (_e, id: string) => {
+    return automationService.runNow(id)
+  })
 }
 
 app.whenReady().then(() => {
@@ -1774,6 +1801,7 @@ let quitting = false
 
 function performQuit(): void {
   quitting = true
+  automationService.stop()
   stopWatching()
   stopMcpHttpServer()
   disposeUpdater()

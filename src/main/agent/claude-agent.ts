@@ -686,6 +686,14 @@ export class ClaudeAgent {
     return this.turnResolves.size > 0
   }
 
+  getPendingInteractions(): AgentEvent[] {
+    const events: AgentEvent[] = []
+    for (const p of this.pendingPermissions.values()) events.push(p.event)
+    for (const q of this.pendingQuestions.values()) events.push(q.event)
+    for (const a of this.pendingPlanApprovals.values()) events.push(a.event)
+    return events
+  }
+
   /** Replace the event emitter (used when moving agent between project paths). */
   updateEventEmitter(onEvent: (event: AgentEvent) => void): void {
     this.onEvent = onEvent

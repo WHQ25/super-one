@@ -7,7 +7,7 @@ import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, typ
 import { fetchModels } from './claude-models'
 import { AgentIpcChannels, type AgentEvent, type ChatMessage, type CodexRunResult, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
-import { stripMessagesForRemote } from '../remote-control-service'
+import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
 import { getRecentFolders, addRecentFolder } from '../recent-folders'
 import { readdir, mkdir } from 'fs/promises'
@@ -1138,6 +1138,49 @@ export class AgentService {
           const agents = discoverAllAgents(command.projectPath).map((a) => ({ name: a.name, model: a.model ?? '' }))
           const items = searchMentions([cwd], command.query, agents, 20)
           await respond?.(command.requestId, { items })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'get_session_state': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
+          break
+        }
+        try {
+          const agent = this.findAgentBySessionId(command.projectPath, command.sessionId)
+          const claudeRuntime = this.claudeRuntimes.get(command.sessionId)
+          const codexRuntime = this.codexRuntimes.get(command.sessionId)
+          const runtime = claudeRuntime ?? codexRuntime
+          const inProgressMessages = runtime
+            ? stripMessagesForRemote(
+                runtime.messages.filter((m) => m.status === 'streaming'),
+                command.projectPath,
+              )
+            : []
+          const pendingInteractions = agent instanceof ClaudeAgent
+            ? agent.getPendingInteractions().map((e) => stripEventForRemote(e, command.projectPath))
+            : []
+          const status = agent
+            ? (agent instanceof ClaudeAgent && agent.isStreaming() ? 'streaming' : 'idle')
+            : 'idle'
+          const permissionMode = agent instanceof ClaudeAgent
+            ? agent.getCurrentPermissionMode()
+            : undefined
+          trace('remote.cmd', 'get_session_state', {
+            projectPath: command.projectPath,
+            sessionId: command.sessionId,
+            inProgressCount: inProgressMessages.length,
+            pendingCount: pendingInteractions.length,
+            status,
+          })
+          await respond?.(command.requestId, {
+            inProgressMessages,
+            pendingInteractions,
+            status,
+            permissionMode,
+          })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }

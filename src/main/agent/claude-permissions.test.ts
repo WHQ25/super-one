@@ -369,6 +369,53 @@ describe('createCanUseTool', () => {
     await promise
   })
 
+  it('should store event data on pending permission entry', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+
+    const promise = canUseTool('Read', { path: '/a' }, makeContext())
+
+    expect(perms.size).toBe(1)
+    const [entry] = [...perms.values()]
+    expect(entry.event).toBeDefined()
+    expect(entry.event.type).toBe('permission_request')
+
+    const [id] = [...perms.keys()]
+    respondToPermission(perms, id, true)
+    await promise
+  })
+
+  it('should store event data on pending question entry', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+    const questionList = [{ question: 'Pick one' }]
+
+    const promise = canUseTool('AskUserQuestion', { questions: questionList }, makeContext())
+
+    expect(questions.size).toBe(1)
+    const [entry] = [...questions.values()]
+    expect(entry.event).toBeDefined()
+    expect(entry.event.type).toBe('ask_user_question')
+
+    const [id] = [...questions.keys()]
+    respondToQuestion(questions, id, { 'Pick one': 'A' })
+    await promise
+  })
+
+  it('should store event data on pending plan approval entry', async () => {
+    mockReadFileSync.mockReturnValue('# Plan')
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+
+    const promise = canUseTool('ExitPlanMode', { planFilePath: '/mock-home/.claude/plans/test.md' }, makeContext())
+
+    expect(plans.size).toBe(1)
+    const [entry] = [...plans.values()]
+    expect(entry.event).toBeDefined()
+    expect(entry.event.type).toBe('plan_approval')
+
+    const [id] = [...plans.keys()]
+    respondToPlanApproval(plans, id, true)
+    await promise
+  })
+
   it('should auto-track plan files from Write tool input', async () => {
     mockReadFileSync.mockReturnValue('# Auto-tracked')
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)

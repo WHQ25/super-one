@@ -282,7 +282,7 @@ function enrichPermissionRequest(event: AgentEvent & { type: 'permission_request
   return event
 }
 
-function stripEventForRemote(event: AgentEvent, projectPath?: string): AgentEvent {
+export function stripEventForRemote(event: AgentEvent, projectPath?: string): AgentEvent {
   if (event.type === 'task_notification' && event.outputFile) {
     const { resultText, toolEntries } = readOutputFile(event.outputFile, projectPath)
     if (resultText || toolEntries.length > 0) return { ...event, ...(resultText ? { resultText } : {}), ...(toolEntries.length > 0 ? { toolEntries } : {}) }

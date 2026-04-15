@@ -10,6 +10,7 @@ export interface PendingPermission {
   resolve: (result: { allow: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[] }) => void
   suggestions?: PermissionUpdate[]
   toolUseID: string
+  event: AgentEvent
 }
 
 export interface QuestionResponse {
@@ -19,10 +20,12 @@ export interface QuestionResponse {
 
 export interface PendingQuestion {
   resolve: (response: QuestionResponse | null) => void
+  event: AgentEvent
 }
 
 export interface PendingPlanApproval {
   resolve: (result: { approved: boolean; feedback?: string }) => void
+  event: AgentEvent
 }
 
 export function createCanUseTool(
@@ -85,7 +88,7 @@ export function createCanUseTool(
       log.debug('[canUseTool] suggestions:', JSON.stringify(context.suggestions, null, 2))
     }
 
-    emit({
+    const permEvent: AgentEvent = {
       type: 'permission_request',
       request: {
         requestId,
@@ -97,10 +100,10 @@ export function createCanUseTool(
         allowAlwaysAllow: (context.suggestions?.length ?? 0) > 0,
         suggestions: context.suggestions as Array<Record<string, unknown>> | undefined,
       },
-    })
+    }
+    emit(permEvent)
 
     const result = await new Promise<{ allow: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[] }>((resolve) => {
-      // If already aborted before prompting, deny immediately
       if (context.signal.aborted) {
         resolve({ allow: false })
         return
@@ -110,6 +113,7 @@ export function createCanUseTool(
         resolve,
         suggestions: context.suggestions,
         toolUseID: context.toolUseID,
+        event: permEvent,
       })
       // Note: We intentionally do NOT listen for future abort events.
       // The SDK may fire abort while the user is still deciding on the
@@ -151,10 +155,11 @@ async function handleAskUserQuestion(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const questions = (input.questions as any[]) ?? []
 
-  emit({
+  const questionEvent: AgentEvent = {
     type: 'ask_user_question',
     request: { requestId, questions },
-  })
+  }
+  emit(questionEvent)
 
   const response = await new Promise<QuestionResponse | null>((resolve) => {
     if (context.signal.aborted) {
@@ -162,7 +167,7 @@ async function handleAskUserQuestion(
       return
     }
 
-    pendingQuestions.set(requestId, { resolve })
+    pendingQuestions.set(requestId, { resolve, event: questionEvent })
     // Note: We intentionally do NOT listen for future abort events.
     // Cleanup is handled by rejectAllPending() on session reset/interrupt.
   })
@@ -218,7 +223,7 @@ async function handlePlanApproval(
     ? (input.allowedPrompts as Array<{ tool: string; prompt: string }>)
     : []
 
-  emit({
+  const planEvent: AgentEvent = {
     type: 'plan_approval',
     request: {
       requestId,
@@ -226,14 +231,15 @@ async function handlePlanApproval(
       planFilePath: planFile?.path ?? '',
       allowedPrompts,
     },
-  })
+  }
+  emit(planEvent)
 
   const result = await new Promise<{ approved: boolean; feedback?: string }>((resolve) => {
     if (context.signal.aborted) {
       resolve({ approved: false, feedback: 'Aborted' })
       return
     }
-    pendingPlanApprovals.set(requestId, { resolve })
+    pendingPlanApprovals.set(requestId, { resolve, event: planEvent })
   })
 
   if (result.approved) {

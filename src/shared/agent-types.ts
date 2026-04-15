@@ -1307,6 +1307,7 @@ export type RemoteCommand =
   | { type: 'get_worktree_info'; requestId: string; projectPath: string }
   | { type: 'activate_worktree'; requestId: string; projectPath: string; baseBranch: string | null; carryLocalChanges?: boolean }
   | { type: 'search_mentions'; requestId: string; projectPath: string; query: string }
+  | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
 
 export interface PairedDevice {
   id: string

@@ -868,12 +868,11 @@ export class RemoteControlService {
     if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
 
     const filter = this.subscribedSession ?? this.remoteSessionFilter
-    if (filter) {
-      const { projectPath, sessionId } = filter
-      if (event.projectPath !== projectPath || (event.sessionId && event.sessionId !== sessionId)) {
-        trace('remote.debug', 'broadcastAgentEvent:filtered', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, filterProject: projectPath, filterSession: sessionId })
-        return
-      }
+    if (!filter) return
+    const { projectPath, sessionId } = filter
+    if (event.projectPath !== projectPath || (event.sessionId && event.sessionId !== sessionId)) {
+      trace('remote.debug', 'broadcastAgentEvent:filtered', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, filterProject: projectPath, filterSession: sessionId })
+      return
     }
     trace('remote.debug', 'broadcastAgentEvent:pass', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, hasFilter: !!filter, filterType: this.subscribedSession ? 'subscribed' : this.remoteSessionFilter ? 'remoteFilter' : 'none' })
 

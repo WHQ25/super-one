@@ -4,6 +4,20 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.19.1-alpha] - 2026-04-15
+
+### Added
+
+- Context injection API for mini-apps
+- Enabled toggle for automation edit dialog
+- `get_session_state` command for mobile session sync
+
+### Fixed
+
+- Foreground bash showing in background bash panel
+- Plan exit accept-edits toggle misaligned with suggestion style
+- Event leak to mobile when no session filter is set
+
 ## [0.19.0-alpha] - 2026-04-15
 
 ### Added

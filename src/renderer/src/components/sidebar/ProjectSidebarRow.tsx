@@ -1,7 +1,6 @@
 import { memo, useMemo, useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { Bot, CalendarClock, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, MoreHorizontal, Pencil, Pin, Play, Smartphone, SquarePen, Trash2 } from 'lucide-react'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Bot, CalendarClock, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, Pin, Play, Smartphone, SquarePen, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { isDraftSession, useChatStore } from '@/stores/chat'
@@ -135,122 +134,90 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
   return (
     <div>
-      <div
-        onClick={() => !folder.missing && onToggleExpand(folder.path)}
-        className={cn(
-          'group flex h-9 items-center justify-between overflow-hidden rounded-md px-2.5 transition-colors',
-          folder.missing ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-accent'
-        )}
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          <ChevronRight className={cn(
-            'hidden size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 group-hover:block',
-            isExpanded && 'rotate-90',
-            folder.missing && '!hidden'
-          )} />
-          {folder.missing
-            ? <FolderX className="size-4.5 shrink-0 text-destructive" />
-            : isExpanded
-              ? <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
-              : <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
-          }
-          <TooltipProvider delayDuration={500}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className={cn('min-w-0 truncate text-md', folder.missing && 'text-muted-foreground line-through')}>{folder.name}</span>
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={8}>
-                <span className="text-xs">{folder.missing ? `Folder not found: ${folder.path}` : derived.displayPath}</span>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
-          {folder.missing ? (
-            <TooltipProvider delayDuration={300}>
+      <ContextMenu>
+        <ContextMenuTrigger asChild disabled={folder.missing}>
+          <div
+            onClick={() => !folder.missing && onToggleExpand(folder.path)}
+            className={cn(
+              'group flex h-9 items-center overflow-hidden rounded-md px-2.5 transition-colors',
+              folder.missing ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-accent'
+            )}
+          >
+            <ChevronRight className={cn(
+              'hidden size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 group-hover:block',
+              isExpanded && 'rotate-90',
+              folder.missing && '!hidden'
+            )} />
+            {folder.missing
+              ? <FolderX className="size-4.5 shrink-0 text-destructive" />
+              : isExpanded
+                ? <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
+                : <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
+            }
+            <TooltipProvider delayDuration={500}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onRemoveProject(folder)
-                    }}
-                    className="rounded p-0.5 text-destructive/70 transition-colors hover:text-destructive"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
+                  <span className={cn('ml-2 min-w-0 truncate text-md', folder.missing && 'text-muted-foreground line-through')}>{folder.name}</span>
                 </TooltipTrigger>
-                <TooltipContent side="top" sideOffset={8}>Remove Project</TooltipContent>
+                <TooltipContent side="top" sideOffset={8}>
+                  <span className="text-xs">{folder.missing ? `Folder not found: ${folder.path}` : derived.displayPath}</span>
+                </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-          ) : (
-            <>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    onClick={(e) => e.stopPropagation()}
-                    className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
-                  >
-                    <MoreHorizontal className="size-4" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" side="right" className="w-44">
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onOpenHistory(folder.path)
-                    }}
-                    className="text-xs"
-                  >
-                    <History className="size-3.5" />
-                    Session History
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onRemoveProject(folder)
-                    }}
-                    className="text-xs"
-                  >
-                    <Trash2 className="size-3.5" />
-                    Remove Project
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={openCreateDialog}
-                      className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
-                    >
-                      <CalendarClock className="size-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={8}>New Automation</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onNewSession(folder.path)
-                      }}
-                      className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
-                    >
-                      <SquarePen className="size-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={8}>New Session</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </>
-          )}
-        </div>
-      </div>
+            {!folder.missing && (
+              <div className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={openCreateDialog}
+                        className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+                      >
+                        <CalendarClock className="size-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" sideOffset={8}>New Automation</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onNewSession(folder.path)
+                        }}
+                        className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+                      >
+                        <SquarePen className="size-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" sideOffset={8}>New Session</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            )}
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-48">
+          <ContextMenuItem
+            onClick={() => onOpenHistory(folder.path)}
+            className="text-xs"
+          >
+            <History className="size-3.5" />
+            Session History
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            variant="destructive"
+            onClick={() => onRemoveProject(folder)}
+            className="text-xs"
+          >
+            <Trash2 className="size-3.5" />
+            Remove Project
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
 
       {isExpanded && projectAutomations.length > 0 && (
         <div className="overflow-hidden pl-5">

@@ -1,4 +1,5 @@
 import { useChatStore } from '@/stores/chat'
+import { useMiniAppStore } from '@/stores/miniapp'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { requestClipboardRead, requestClipboardWrite } from '@/lib/miniapp-clipboard'
 import { toast } from 'sonner'
@@ -116,6 +117,20 @@ export function handleMiniAppMessage(
       return true
     case 'miniapp-popover-close':
       overlay?.onPopoverClose?.()
+      return true
+    case 'miniapp-context-set': {
+      const app = useMiniAppStore.getState().apps.find((a) => a.id === appId)
+      useChatStore.getState().setMiniAppContext(appId, {
+        appName: app?.manifest.name ?? appId,
+        summary: data.summary as string,
+        content: data.content as string,
+        mode: data.mode === 'suggest' ? 'suggest' : 'inject',
+        color: data.color as string | undefined,
+      })
+      return true
+    }
+    case 'miniapp-context-clear':
+      useChatStore.getState().clearMiniAppContext(appId)
       return true
     default:
       return false

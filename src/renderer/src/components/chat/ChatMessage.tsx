@@ -24,6 +24,10 @@ import { RewindButton } from './RewindButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { ReasoningBlock } from './ReasoningBlock'
+import { deriveColors, ContextPreviewContent } from './ContextChip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import type { ChatMessageContext } from '../../../../shared/agent-types'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -361,6 +365,50 @@ export function UserTextBlock({ text }: { text: string }) {
   )
 }
 
+function MessageContextChipItem({ ctx }: { ctx: ChatMessageContext }) {
+  const [open, setOpen] = useState(false)
+  const colors = deriveColors(ctx.color)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs whitespace-nowrap cursor-pointer"
+          style={{ background: `${colors.bg}cc`, border: `1px solid ${colors.bg}` }}
+          onClick={() => setOpen(!open)}
+        >
+          <MiniAppIcon appId={ctx.appId} className="size-3 shrink-0" />
+          <span style={{ color: colors.color }} className="font-medium">{ctx.appName}</span>
+          {ctx.summary && (
+            <>
+              <span style={{ color: colors.labelColor, fontSize: 10 }}>·</span>
+              <span style={{ color: colors.labelColor, fontSize: 11 }}>{ctx.summary}</span>
+            </>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="end"
+        className="w-80 p-3"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <ContextPreviewContent appName={ctx.appName} summary={ctx.summary} content={ctx.content} />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function MessageContextChips({ contexts }: { contexts: ChatMessageContext[] }) {
+  return (
+    <div className="mb-1.5 flex flex-wrap gap-1">
+      {contexts.map((ctx) => (
+        <MessageContextChipItem key={ctx.appId} ctx={ctx} />
+      ))}
+    </div>
+  )
+}
+
 export function parseCompactMarker(message: ChatMessageType): { trigger: string; preTokens: number } | null {
   if (message.providerId !== 'system') return null
   const firstBlock = message.content[0]
@@ -546,6 +594,9 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
         >
           {isUser
             ? <>
+                {message.contexts && message.contexts.length > 0 && (
+                  <MessageContextChips contexts={message.contexts} />
+                )}
                 {message.attachments && message.attachments.length > 0 && (
                   <AttachmentBar attachments={message.attachments} />
                 )}

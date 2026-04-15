@@ -18,6 +18,16 @@ export interface Mention {
   displayName: string
 }
 
+export interface MiniAppContextSlot {
+  appId: string
+  appName: string
+  summary: string
+  content: string
+  mode: 'inject' | 'suggest'
+  color?: string
+  checked: boolean
+}
+
 // --- Per-project session state (unified per-session architecture) ---
 
 const DRAFT_PREFIX = '__draft_'
@@ -81,6 +91,7 @@ export interface PerSessionState {
   queuedMessages: ChatMessage[]
   activeCodexMessageId: string | null
   lastAssistantMessageId: string | null
+  miniAppContexts: Record<string, MiniAppContextSlot>
   _historyHydrated: boolean
 }
 
@@ -160,6 +171,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     queuedMessages: [],
     activeCodexMessageId: null,
     lastAssistantMessageId: null,
+    miniAppContexts: {},
     _historyHydrated: true,
   }
 }
@@ -312,6 +324,11 @@ interface ChatStore {
   toggleHistory: () => void
   switchSession: (sessionId: string) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
+
+  // Mini-app context
+  setMiniAppContext: (appId: string, data: { appName: string; summary: string; content: string; mode: 'inject' | 'suggest'; color?: string }) => void
+  clearMiniAppContext: (appId: string) => void
+  toggleMiniAppContext: (appId: string) => void
 
   // Additional directories
   addDir: (path: string, scope: 'session' | 'project') => void
@@ -2346,8 +2363,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } = session
     const codexThreadId = getLatestCodexThreadId(session.messages)
 
-    const finalContent = content.trim()
-    const codexCommand = parseCodexCommand(finalContent)
+    const rawContent = content.trim()
+    const activeContexts = Object.values(session.miniAppContexts).filter(
+      (slot) => slot.mode === 'inject' || slot.checked,
+    )
+    const contextSuffix = activeContexts.length > 0
+      ? '\n\n' + activeContexts.map((ctx) => `<app-context app="${ctx.appName}" summary="${ctx.summary}">\n${ctx.content}\n</app-context>`).join('\n\n')
+      : ''
+    const finalContent = rawContent + contextSuffix
+    const codexCommand = parseCodexCommand(rawContent)
     const requestedProvider: ChatProvider = preferredProvider === 'codex' ? 'codex' : 'claude'
     const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
     const resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
@@ -2440,14 +2464,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       ),
       ...(segments && segments.length > 0
         ? segments.map((s) => ({ type: 'text' as const, text: s.text }))
-        : finalContent ? [{ type: 'text' as const, text: finalContent }] : []),
+        : rawContent ? [{ type: 'text' as const, text: rawContent }] : []),
     ]
 
     const userMessageId = `user_${Date.now()}`
+    const messageContexts = activeContexts.length > 0
+      ? activeContexts.map((ctx) => ({ appId: ctx.appId, appName: ctx.appName, summary: ctx.summary, content: ctx.content, color: ctx.color }))
+      : undefined
     const userMessage: ChatMessage = {
-      ...createLocalTextUserMessage(userMessageId, finalContent),
+      ...createLocalTextUserMessage(userMessageId, rawContent),
       content: userContent,
       attachments: attachments.length > 0 ? attachments : undefined,
+      contexts: messageContexts,
     }
     set((s) => ({
       ...updateActivePerSession(s, (sess) => ({
@@ -2455,11 +2483,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ...(isQueuedSend ? { queuedMessages: [...sess.queuedMessages, userMessage] } : {}),
         attachments: [],
         mentions: [],
+        miniAppContexts: {},
         codexPlanRejectHintActive: false,
         ...(effectiveProvider === 'claude' && !isQueuedSend ? { awaitingAssistantReply: true } : {}),
       })),
       isOpen: true,
     }))
+
+    if (activeContexts.length > 0) {
+      const consumedAppIds = activeContexts.map((c) => c.appId)
+      window.dispatchEvent(new CustomEvent('miniapp-context-consumed', { detail: { appIds: consumedAppIds } }))
+    }
 
     if (resolvedCodexCommand) {
       if (!isRunnableCodexCommand(resolvedCodexCommand) || !codexSessionId) return
@@ -3266,6 +3300,46 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateActivePerSession(s,(sess) => ({
       mentions: sess.mentions.filter((m) => m.value !== value),
     })))
+  },
+
+  setMiniAppContext: (appId, data) => {
+    if (!get().activeProject) return
+    set((s) => updateActivePerSession(s, (sess) => ({
+      miniAppContexts: {
+        ...sess.miniAppContexts,
+        [appId]: {
+          appId,
+          appName: data.appName,
+          summary: data.summary,
+          content: data.content,
+          mode: data.mode,
+          color: data.color,
+          checked: data.mode === 'inject',
+        },
+      },
+    })))
+  },
+
+  clearMiniAppContext: (appId) => {
+    if (!get().activeProject) return
+    set((s) => updateActivePerSession(s, (sess) => {
+      const { [appId]: _, ...rest } = sess.miniAppContexts
+      return { miniAppContexts: rest }
+    }))
+  },
+
+  toggleMiniAppContext: (appId) => {
+    if (!get().activeProject) return
+    set((s) => updateActivePerSession(s, (sess) => {
+      const slot = sess.miniAppContexts[appId]
+      if (!slot) return {}
+      return {
+        miniAppContexts: {
+          ...sess.miniAppContexts,
+          [appId]: { ...slot, checked: !slot.checked },
+        },
+      }
+    }))
   },
 
   fetchSessions: async () => {

@@ -172,6 +172,13 @@ export interface MiniAppPopoverShowRequest {
   maxHeight?: number
 }
 
+export interface MiniAppContextData {
+  summary: string
+  content: string
+  mode: 'inject' | 'suggest'
+  color?: string
+}
+
 export type MiniAppBridgeMessageType =
   | 'miniapp-tool-call'
   | 'miniapp-tool-result'
@@ -199,3 +206,6 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-popover-msg'
   | 'miniapp-popover-close'
   | 'miniapp-popover-closed'
+  | 'miniapp-context-set'
+  | 'miniapp-context-clear'
+  | 'miniapp-context-consumed'

@@ -65,7 +65,15 @@ const mockWindowApp = {
   getUserPreferences: vi.fn().mockResolvedValue({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' }),
 }
 
-vi.stubGlobal('window', { agent: mockWindowAgent, app: mockWindowApp, localStorage: mockLocalStorage })
+const eventTarget = new EventTarget()
+vi.stubGlobal('window', {
+  agent: mockWindowAgent,
+  app: mockWindowApp,
+  localStorage: mockLocalStorage,
+  dispatchEvent: (e: Event) => eventTarget.dispatchEvent(e),
+  addEventListener: (t: string, h: EventListenerOrEventListenerObject) => eventTarget.addEventListener(t, h),
+  removeEventListener: (t: string, h: EventListenerOrEventListenerObject) => eventTarget.removeEventListener(t, h),
+})
 vi.stubGlobal('localStorage', mockLocalStorage)
 
 const { useChatStore, isDraftSession, createDraftSessionId, createDefaultPerSessionState, createDefaultProjectState, invalidateDefaultPermissionModeCache } = await import('./chat')
@@ -3699,5 +3707,155 @@ describe('queued_message_consumed', () => {
     const session = useChatStore.getState().projectSessions['/test']._sessions[draftId]
     expect(session.queuedMessages).toHaveLength(1)
     expect(session.messages.find((m) => m.id === 'user-q1')).toBeUndefined()
+  })
+})
+
+describe('mini-app context injection', () => {
+  beforeEach(() => {
+    setupProject('/test')
+  })
+
+  it('setMiniAppContext adds a context slot to the session', () => {
+    useChatStore.getState().setMiniAppContext('my-app', {
+      appName: 'My App',
+      summary: 'selected items',
+      content: 'item1\nitem2',
+      mode: 'inject',
+      color: '#4a7fbf',
+    })
+    const sess = getActiveDraftSession('/test')!
+    expect(sess.miniAppContexts['my-app']).toEqual({
+      appId: 'my-app',
+      appName: 'My App',
+      summary: 'selected items',
+      content: 'item1\nitem2',
+      mode: 'inject',
+      color: '#4a7fbf',
+      checked: true,
+    })
+  })
+
+  it('setMiniAppContext with suggest mode defaults checked to false', () => {
+    useChatStore.getState().setMiniAppContext('my-app', {
+      appName: 'My App',
+      summary: 'notes',
+      content: 'some notes',
+      mode: 'suggest',
+    })
+    const sess = getActiveDraftSession('/test')!
+    expect(sess.miniAppContexts['my-app'].checked).toBe(false)
+  })
+
+  it('setMiniAppContext overwrites previous context for same app', () => {
+    const store = useChatStore.getState()
+    store.setMiniAppContext('my-app', { appName: 'My App', summary: 'v1', content: 'old', mode: 'inject' })
+    store.setMiniAppContext('my-app', { appName: 'My App', summary: 'v2', content: 'new', mode: 'inject' })
+    const sess = getActiveDraftSession('/test')!
+    expect(sess.miniAppContexts['my-app'].summary).toBe('v2')
+    expect(sess.miniAppContexts['my-app'].content).toBe('new')
+  })
+
+  it('clearMiniAppContext removes the context slot', () => {
+    useChatStore.getState().setMiniAppContext('my-app', {
+      appName: 'My App', summary: 'test', content: 'test', mode: 'inject',
+    })
+    useChatStore.getState().clearMiniAppContext('my-app')
+    const sess = getActiveDraftSession('/test')!
+    expect(sess.miniAppContexts['my-app']).toBeUndefined()
+  })
+
+  it('toggleMiniAppContext flips checked state', () => {
+    useChatStore.getState().setMiniAppContext('my-app', {
+      appName: 'My App', summary: 'notes', content: 'abc', mode: 'suggest',
+    })
+    expect(getActiveDraftSession('/test')!.miniAppContexts['my-app'].checked).toBe(false)
+    useChatStore.getState().toggleMiniAppContext('my-app')
+    expect(getActiveDraftSession('/test')!.miniAppContexts['my-app'].checked).toBe(true)
+    useChatStore.getState().toggleMiniAppContext('my-app')
+    expect(getActiveDraftSession('/test')!.miniAppContexts['my-app'].checked).toBe(false)
+  })
+
+  it('clearMiniAppContext can be used to dismiss inject-mode context', () => {
+    useChatStore.getState().setMiniAppContext('my-app', {
+      appName: 'My App', summary: 'test', content: 'test', mode: 'inject',
+    })
+    useChatStore.getState().clearMiniAppContext('my-app')
+    expect(getActiveDraftSession('/test')!.miniAppContexts['my-app']).toBeUndefined()
+  })
+
+  it('sendMessage attaches active contexts to user message and clears them', async () => {
+    useChatStore.getState().setMiniAppContext('app-a', {
+      appName: 'App A', summary: 'data', content: 'context-content', mode: 'inject', color: '#ff0000',
+    })
+    await useChatStore.getState().sendMessage('hello')
+    const sess = getActiveDraftSession('/test')!
+    const userMsg = sess.messages.find((m) => m.role === 'user')
+    expect(userMsg?.contexts).toEqual([
+      { appId: 'app-a', appName: 'App A', summary: 'data', content: 'context-content', color: '#ff0000' },
+    ])
+    expect(sess.miniAppContexts).toEqual({})
+  })
+
+  it('sendMessage appends context as suffix in agent payload', async () => {
+    useChatStore.getState().setMiniAppContext('app-a', {
+      appName: 'App A', summary: 'info', content: 'ctx-data', mode: 'inject',
+    })
+    await useChatStore.getState().sendMessage('my question')
+    expect(mockWindowAgent.sendMessage).toHaveBeenCalled()
+    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
+    expect(payload.content).toContain('my question')
+    expect(payload.content).toContain('<app-context app="App A" summary="info">')
+    expect(payload.content).toContain('ctx-data')
+    expect(payload.content.indexOf('my question')).toBeLessThan(payload.content.indexOf('<app-context'))
+  })
+
+  it('sendMessage excludes cleared inject contexts', async () => {
+    useChatStore.getState().setMiniAppContext('app-a', {
+      appName: 'App A', summary: 'data', content: 'ctx', mode: 'inject',
+    })
+    useChatStore.getState().clearMiniAppContext('app-a')
+    await useChatStore.getState().sendMessage('hello')
+    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
+    expect(payload.content).not.toContain('<app-context')
+  })
+
+  it('sendMessage excludes unchecked suggest contexts', async () => {
+    useChatStore.getState().setMiniAppContext('app-a', {
+      appName: 'App A', summary: 'notes', content: 'ctx', mode: 'suggest',
+    })
+    await useChatStore.getState().sendMessage('hello')
+    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
+    expect(payload.content).not.toContain('<app-context')
+  })
+
+  it('sendMessage includes checked suggest contexts', async () => {
+    useChatStore.getState().setMiniAppContext('app-a', {
+      appName: 'App A', summary: 'notes', content: 'suggest-ctx', mode: 'suggest',
+    })
+    useChatStore.getState().toggleMiniAppContext('app-a')
+    await useChatStore.getState().sendMessage('hello')
+    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
+    expect(payload.content).toContain('suggest-ctx')
+  })
+
+  it('sendMessage dispatches miniapp-context-consumed event', async () => {
+    const handler = vi.fn()
+    window.addEventListener('miniapp-context-consumed', handler)
+    useChatStore.getState().setMiniAppContext('app-a', {
+      appName: 'App A', summary: 'data', content: 'ctx', mode: 'inject',
+    })
+    await useChatStore.getState().sendMessage('hello')
+    expect(handler).toHaveBeenCalledTimes(1)
+    const detail = (handler.mock.calls[0][0] as CustomEvent).detail
+    expect(detail.appIds).toEqual(['app-a'])
+    window.removeEventListener('miniapp-context-consumed', handler)
+  })
+
+  it('sendMessage does not dispatch consumed event when no contexts', async () => {
+    const handler = vi.fn()
+    window.addEventListener('miniapp-context-consumed', handler)
+    await useChatStore.getState().sendMessage('hello')
+    expect(handler).not.toHaveBeenCalled()
+    window.removeEventListener('miniapp-context-consumed', handler)
   })
 })

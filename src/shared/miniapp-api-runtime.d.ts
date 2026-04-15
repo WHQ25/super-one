@@ -35,7 +35,12 @@ export interface SuperoneApi {
     watch(path: string, callback: (event: { type: 'change' | 'rename'; path: string }) => void): Promise<number>
     unwatch(watchId: number): void
   }
-  agent: { sendPrompt(text: string): void }
+  agent: {
+    sendPrompt(text: string): void
+    setContext(opts: { summary: string; content: string; mode?: 'inject' | 'suggest'; color?: string }): void
+    clearContext(): void
+    onContextConsumed(cb: () => void): () => void
+  }
   openFolder(path: string): void
   openExternalLink(url: string): void
   clipboard: {

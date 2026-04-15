@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, type RefObject } from 'react'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { readThemeVars } from '@/components/miniapp/miniapp-theme'
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
+import { useContextConsumedEvent } from '@/hooks/useContextConsumedEvent'
 import type { MiniAppToolCallRequest } from '../../../shared/miniapp-types'
 
 export interface MiniAppBridgeOptions {
@@ -75,6 +76,8 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
     })
     return cleanup
   }, [appId, sendToFrame, inChatMode])
+
+  useContextConsumedEvent(appId, sendToFrame, inChatMode)
 
   useEffect(() => {
     if (inChatMode) return

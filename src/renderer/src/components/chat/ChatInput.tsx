@@ -21,6 +21,7 @@ import { fuzzyMatch } from '@/lib/fuzzy-match'
 import { HighlightedText } from '@/components/ui/HighlightedText'
 import { toMentionPath } from './chat-input-utils'
 import { AttachmentBar } from './AttachmentBar'
+import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
 import { DirManagerPanel } from './DirManagerPanel'
 import { ReviewPanel } from './ReviewPanel'
@@ -48,6 +49,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       setText, sendMessage, editQueuedMessage,
       interrupt, toggleOpen, addAttachment, removeAttachment, clearAttachments,
       addMention, removeMention, dismissCommandPopup, setShowDirManager, setShowReviewPanel,
+      toggleMiniAppContext, clearMiniAppContext,
     } = useChatStore(useShallow((s) => ({
       setText: s.setDraftText,
       sendMessage: s.sendMessage,
@@ -62,8 +64,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       dismissCommandPopup: s.dismissSlashCommandOutput,
       setShowDirManager: s.setShowDirManager,
       setShowReviewPanel: s.setShowReviewPanel,
+      toggleMiniAppContext: s.toggleMiniAppContext,
+      clearMiniAppContext: s.clearMiniAppContext,
     })))
-    const { text, status, attachments, mentions, permissionMode, hasPendingInteraction, queuedMessages } =
+    const { text, status, attachments, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
         status: s.status,
@@ -72,6 +76,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         permissionMode: s.permissionMode,
         hasPendingInteraction: s.hasPendingInteraction,
         queuedMessages: s.queuedMessages,
+        miniAppContexts: s.miniAppContexts,
       })))
     const {
       slashCommands, preferredProvider, sessionProvider, agents,
@@ -884,6 +889,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         )}
 
         <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
+
+        <ContextBar
+          contexts={miniAppContexts}
+          onToggle={toggleMiniAppContext}
+          onDismiss={clearMiniAppContext}
+        />
 
         <EditorContent editor={editor} />
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardR
 import { useIsDark } from '@/hooks/use-is-dark'
 import { readThemeVars } from './miniapp-theme'
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
+import { useContextConsumedEvent } from '@/hooks/useContextConsumedEvent'
 
 export interface MiniAppDevFrameHandle {
   reload: () => void
@@ -36,6 +37,11 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
     }, [])
 
     useImperativeHandle(ref, () => ({ reload, openDevTools }), [reload, openDevTools])
+
+    const sendToWebview = useCallback((msg: unknown) => {
+      const m = msg as Record<string, unknown>
+      webviewRef.current?.send(m.type as string, m)
+    }, [])
 
     useEffect(() => {
       const wv = webviewRef.current
@@ -92,6 +98,8 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
       })
       return cleanup
     }, [appId])
+
+    useContextConsumedEvent(appId, sendToWebview)
 
     useEffect(() => {
       const cleanup = window.miniapp.onToolCall((call) => {

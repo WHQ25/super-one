@@ -44,6 +44,15 @@
     </div>
     <div id="ui-result" style="margin-top:8px;font-size:13px;color:#78716c"></div>
   </div>
+  <div id="context-api" style="margin-top:20px">
+    <h2 style="font-size:16px;margin-bottom:8px">Context APIs</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button id="btn-ctx-inject">Set Context (inject)</button>
+      <button id="btn-ctx-suggest">Set Context (suggest)</button>
+      <button id="btn-ctx-clear">Clear Context</button>
+    </div>
+    <div id="ctx-result" style="margin-top:8px;font-size:13px;color:#78716c"></div>
+  </div>
   <div id="files"></div>
   <script>
     superone.tools.handle('show_message', function(args) {
@@ -131,6 +140,35 @@
         uiResult.textContent = 'Popover closed';
       });
     };
+
+    var ctxResult = document.getElementById('ctx-result');
+    document.getElementById('btn-ctx-inject').onclick = function() {
+      superone.agent.setContext({
+        summary: '3 project files',
+        content: 'src/index.ts — main entry point\nsrc/utils.ts — utility helpers\nsrc/config.ts — configuration',
+        mode: 'inject',
+        color: '#4a7fbf'
+      });
+      ctxResult.textContent = 'Set inject-mode context (blue chip)';
+    };
+    document.getElementById('btn-ctx-suggest').onclick = function() {
+      superone.agent.setContext({
+        summary: 'meeting notes',
+        content: 'Action items:\n1. Review PR #42\n2. Update docs\n3. Deploy staging',
+        mode: 'suggest',
+        color: '#4a9a6a'
+      });
+      ctxResult.textContent = 'Set suggest-mode context (green chip, needs opt-in)';
+    };
+    document.getElementById('btn-ctx-clear').onclick = function() {
+      superone.agent.clearContext();
+      ctxResult.textContent = 'Context cleared';
+    };
+    var consumedCount = 0;
+    superone.agent.onContextConsumed(function() {
+      consumedCount++;
+      ctxResult.textContent = 'Context consumed by message (#' + consumedCount + ')';
+    });
 
     document.getElementById('contextmenu-target').oncontextmenu = function(e) {
       e.preventDefault();

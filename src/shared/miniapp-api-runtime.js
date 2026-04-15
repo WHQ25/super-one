@@ -17,6 +17,7 @@ function createSuperoneApi(transport, version) {
   const toolHandlers = new Map()
   const watchCallbacks = new Map()
   const gitHeadListeners = []
+  const contextConsumedListeners = []
   const darkModeListeners = []
   const themeListeners = []
   const initCallbacks = []
@@ -45,6 +46,10 @@ function createSuperoneApi(transport, version) {
 
   transport.on('miniapp-git-head-change', () => {
     gitHeadListeners.forEach((cb) => cb())
+  })
+
+  transport.on('miniapp-context-consumed', () => {
+    contextConsumedListeners.forEach((cb) => cb())
   })
 
   transport.on('miniapp-theme', (data) => {
@@ -128,6 +133,9 @@ function createSuperoneApi(transport, version) {
     },
     agent: {
       sendPrompt(text) { transport.send('miniapp-sendPrompt', { text }) },
+      setContext(opts) { transport.send('miniapp-context-set', { summary: opts.summary, content: opts.content, mode: opts.mode || 'inject', color: opts.color }) },
+      clearContext() { transport.send('miniapp-context-clear', {}) },
+      onContextConsumed: makeSub(contextConsumedListeners),
     },
     openFolder(path) { transport.send('miniapp-open-folder', { path }) },
     openExternalLink(url) { transport.send('miniapp-open-external-link', { url }) },

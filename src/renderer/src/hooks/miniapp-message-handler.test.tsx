@@ -19,9 +19,23 @@ const mockApp = {
 }
 
 const mockSetDraftText = vi.fn()
+const mockSetMiniAppContext = vi.fn()
+const mockClearMiniAppContext = vi.fn()
 vi.mock('@/stores/chat', () => ({
   useChatStore: {
-    getState: () => ({ setDraftText: mockSetDraftText }),
+    getState: () => ({
+      setDraftText: mockSetDraftText,
+      setMiniAppContext: mockSetMiniAppContext,
+      clearMiniAppContext: mockClearMiniAppContext,
+    }),
+  },
+}))
+
+vi.mock('@/stores/miniapp', () => ({
+  useMiniAppStore: {
+    getState: () => ({
+      apps: [{ id: 'test-app', manifest: { name: 'Test App' } }],
+    }),
   },
 }))
 
@@ -176,5 +190,53 @@ describe('handleMiniAppMessage', () => {
       op: 'exists', args: { path: 'b' }, id: 11,
     }, appId, send)
     expect(mockMiniapp.fsRequest).toHaveBeenCalledWith('test-app', 'exists', { path: 'b' })
+  })
+
+  it('handles miniapp-context-set with inject mode', () => {
+    const result = handleMiniAppMessage('miniapp-context-set', {
+      summary: '3 items', content: 'item1\nitem2\nitem3', mode: 'inject', color: '#4a7fbf',
+    }, appId, send)
+    expect(result).toBe(true)
+    expect(mockSetMiniAppContext).toHaveBeenCalledWith('test-app', {
+      appName: 'Test App',
+      summary: '3 items',
+      content: 'item1\nitem2\nitem3',
+      mode: 'inject',
+      color: '#4a7fbf',
+    })
+  })
+
+  it('handles miniapp-context-set defaults mode to inject', () => {
+    handleMiniAppMessage('miniapp-context-set', {
+      summary: 'data', content: 'abc',
+    }, appId, send)
+    expect(mockSetMiniAppContext).toHaveBeenCalledWith('test-app', expect.objectContaining({ mode: 'inject' }))
+  })
+
+  it('handles miniapp-context-set with suggest mode', () => {
+    handleMiniAppMessage('miniapp-context-set', {
+      summary: 'notes', content: 'some notes', mode: 'suggest',
+    }, appId, send)
+    expect(mockSetMiniAppContext).toHaveBeenCalledWith('test-app', expect.objectContaining({ mode: 'suggest' }))
+  })
+
+  it('looks up app name from miniapp store', () => {
+    handleMiniAppMessage('miniapp-context-set', {
+      summary: 'test', content: 'test',
+    }, appId, send)
+    expect(mockSetMiniAppContext).toHaveBeenCalledWith('test-app', expect.objectContaining({ appName: 'Test App' }))
+  })
+
+  it('falls back to appId when app not found in store', () => {
+    handleMiniAppMessage('miniapp-context-set', {
+      summary: 'test', content: 'test',
+    }, 'unknown-app', send)
+    expect(mockSetMiniAppContext).toHaveBeenCalledWith('unknown-app', expect.objectContaining({ appName: 'unknown-app' }))
+  })
+
+  it('handles miniapp-context-clear', () => {
+    const result = handleMiniAppMessage('miniapp-context-clear', {}, appId, send)
+    expect(result).toBe(true)
+    expect(mockClearMiniAppContext).toHaveBeenCalledWith('test-app')
   })
 })

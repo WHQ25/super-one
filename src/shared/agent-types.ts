@@ -302,12 +302,21 @@ export interface TodoItem {
 
 // --- Chat message ---
 
+export interface ChatMessageContext {
+  appId: string
+  appName: string
+  summary: string
+  content: string
+  color?: string
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   status: 'streaming' | 'complete' | 'interrupted' | 'error'
   content: ContentBlock[]
   attachments?: ImageAttachment[]
+  contexts?: ChatMessageContext[]
   createdAt: string
   providerId: string
   metadata?: MessageMetadata

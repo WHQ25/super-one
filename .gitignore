@@ -39,3 +39,6 @@ event-trace.db*
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Local mini-app data
+.superone/

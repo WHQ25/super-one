@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Check, ChevronDown, Trash2 } from 'lucide-react'
+import { CalendarClock, Check, ChevronDown, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import {
   Dialog,
   DialogContent,
@@ -45,6 +46,7 @@ interface FormState {
   claudeConfig: ClaudeRunConfig
   codexConfig: CodexRunConfig
   schedule: AutomationSchedule
+  enabled: boolean
 }
 
 function initForm(automation?: Automation | null): FormState {
@@ -56,6 +58,7 @@ function initForm(automation?: Automation | null): FormState {
       claudeConfig: { ...defaultClaudeConfig },
       codexConfig: { ...defaultCodexConfig },
       schedule: { ...defaultSchedule },
+      enabled: true,
     }
   }
   const agentType = automation.agentConfig.type
@@ -66,6 +69,7 @@ function initForm(automation?: Automation | null): FormState {
     claudeConfig: agentType === 'claude' ? { ...automation.agentConfig } as ClaudeRunConfig : { ...defaultClaudeConfig },
     codexConfig: agentType === 'codex' ? { ...automation.agentConfig } as CodexRunConfig : { ...defaultCodexConfig },
     schedule: { ...automation.schedule },
+    enabled: automation.enabled,
   }
 }
 
@@ -166,7 +170,7 @@ export function AutomationDialog({
     const agentConfig: AgentRunConfig = form.agentType === 'claude' ? form.claudeConfig : form.codexConfig
     const data = { name: form.name, prompt: form.prompt, agentConfig, schedule: form.schedule }
     if (editAutomation) {
-      await window.app.updateAutomation(editAutomation.id, data)
+      await window.app.updateAutomation(editAutomation.id, { ...data, enabled: form.enabled })
     } else {
       await window.app.createAutomation(projectPath, data)
     }
@@ -223,7 +227,10 @@ export function AutomationDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editAutomation ? 'Edit Automation' : 'Create Automation'}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarClock className="size-4 text-muted-foreground" />
+            {editAutomation ? 'Edit Automation' : 'Create Automation'}
+          </DialogTitle>
           <DialogDescription>
             {editAutomation ? 'Update scheduled task configuration' : 'Set up a scheduled task for this project'}
           </DialogDescription>
@@ -275,6 +282,21 @@ export function AutomationDialog({
             value={form.schedule}
             onChange={(schedule) => setForm((f) => ({ ...f, schedule }))}
           />
+
+          {editAutomation && (
+            <div className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2">
+              <div className="flex flex-col">
+                <span className="text-xs font-medium">Enabled</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {form.enabled ? 'Scheduler will run this automation' : 'Paused — will not run on schedule'}
+                </span>
+              </div>
+              <Switch
+                checked={form.enabled}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
+              />
+            </div>
+          )}
 
           <div className="border-t border-border pt-3">
             <button

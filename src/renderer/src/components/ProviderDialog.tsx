@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { PRESETS, getPresetsByCategory, resolveTemplateValues, CATEGORY_LABELS, type QuickPreset, type AgentType, type AgentPresetConfig } from '@/lib/provider-presets'
 import { MODEL_ENV_KEYS, splitEnv, mergeEnv } from '@/lib/provider-env'
-import { ProviderLabel } from './ProvidersPage'
+import { ProviderLabel } from './ProviderLabel'
 import type { ApiProvider, CreateProviderRequest, UpdateProviderRequest, AgentProviderConfig } from '../../../shared/agent-types'
 
 interface AgentFormState {

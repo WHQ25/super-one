@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useActiveSession, useChatStore, type ChatProvider } from '@/stores/chat'
+import { useSettingsStore } from '@/stores/settings'
+import { ProviderLabel } from '@/components/ProviderLabel'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import {
   DropdownMenu,
@@ -101,6 +103,7 @@ function ProviderSelector() {
           {preferredProvider === 'claude' ? <ClaudeAgentIcon /> : <CodexAgentIcon />}
         </motion.div>
       </AnimatePresence>
+      <ActiveProviderHint />
       <Tabs value={preferredProvider} onValueChange={(v) => setPreferredProvider(v as ChatProvider)}>
         <TabsList className="rounded-lg p-1">
           <TabsTrigger value="claude" className="rounded-md px-3 py-1.5">Claude Code</TabsTrigger>
@@ -108,6 +111,27 @@ function ProviderSelector() {
         </TabsList>
       </Tabs>
     </div>
+  )
+}
+
+function ActiveProviderHint() {
+  const preferredProvider = useActiveSession((s) => s.preferredProvider)
+  const providers = useSettingsStore((s) => s.providers)
+  const fetchProviders = useSettingsStore((s) => s.fetchProviders)
+
+  useEffect(() => { fetchProviders() }, [fetchProviders])
+
+  const activeProvider = providers.find((p) =>
+    preferredProvider === 'claude' ? p.is_active_claude === 1 : p.is_active_codex === 1
+  )
+
+  if (!activeProvider) return null
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="text-xs text-muted-foreground">Powered by</span>
+      <ProviderLabel provider={activeProvider} fallback={activeProvider.name} size={12} />
+    </span>
   )
 }
 

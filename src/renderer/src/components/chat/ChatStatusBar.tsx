@@ -38,7 +38,7 @@ interface FailedCheckout {
   error: string
 }
 
-type BackgroundActivityItem =
+export type BackgroundActivityItem =
   | {
       id: string
       kind: 'bash'
@@ -54,6 +54,82 @@ type BackgroundActivityItem =
       childBlocks: ContentBlock[]
       resultBlock?: ContentBlock & { type: 'tool_result' }
     }
+
+type TaskProgress = Record<string, { description: string; completed?: boolean; [k: string]: unknown }>
+
+export function collectBackgroundActivities(
+  messages: Array<{ content: ContentBlock[] }>,
+  taskProgress: TaskProgress,
+): { bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[]; agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[] } {
+  const results = new Map<string, ContentBlock & { type: 'tool_result' }>()
+  const children = new Map<string, ContentBlock[]>()
+  const bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[] = []
+  const agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[] = []
+
+  for (const message of messages) {
+    for (const block of message.content) {
+      if (block.type === 'tool_result') {
+        results.set(block.toolUseId, block)
+      }
+      const parentId = 'parentToolUseId' in block ? block.parentToolUseId : null
+      if (parentId) {
+        const next = children.get(parentId) ?? []
+        next.push(block)
+        children.set(parentId, next)
+      }
+    }
+  }
+
+  for (const message of messages) {
+    for (const block of message.content) {
+      if (block.type !== 'tool_use') continue
+
+      if (block.toolName === 'Bash') {
+        const params = parseToolInput(block.input, block.toolName)
+        const result = results.get(block.toolUseId)
+        const progress = taskProgress[block.toolUseId]
+        const runInBackground = params.run_in_background === true || params.background === true
+        const hasTaskState = !!progress
+        const isStreamingTool = block.status === 'streaming'
+        const hasBackgroundSignal = runInBackground || !!result?.outputPath
+        const isRunning = hasTaskState ? progress.completed !== true : (runInBackground && isStreamingTool)
+        if (!hasBackgroundSignal || !isRunning) continue
+
+        const command = typeof params.command === 'string' ? params.command.trim() : ''
+        bashActivities.push({
+          id: block.toolUseId,
+          kind: 'bash',
+          title: command || 'Bash',
+          toolUse: block,
+          result,
+        })
+        continue
+      }
+
+      if (block.toolName === 'Agent') {
+        const params = parseToolInput(block.input, block.toolName)
+        if (params.run_in_background !== true) continue
+        const progress = taskProgress[block.toolUseId]
+        const hasTaskState = !!progress
+        const isRunning = hasTaskState ? progress.completed !== true : block.status === 'streaming'
+        if (!isRunning) continue
+        const resultBlock = results.get(block.toolUseId)
+        const childBlocks = children.get(block.toolUseId) ?? []
+        const title = String(params.description ?? params.name ?? params.subagent_type ?? 'Async Agent').trim() || 'Async Agent'
+        agentActivities.push({
+          id: block.toolUseId,
+          kind: 'agent',
+          title,
+          taskBlock: block,
+          childBlocks,
+          resultBlock,
+        })
+      }
+    }
+  }
+
+  return { bashActivities, agentActivities }
+}
 
 export function ChatStatusBar() {
   const barRef = useRef<HTMLDivElement>(null)
@@ -194,76 +270,10 @@ export function ChatStatusBar() {
     && normalizedTrimmed !== currentBranchLower
     && !branches.some((b) => b.toLowerCase() === normalizedTrimmed)
 
-  const { bashActivities, agentActivities } = useMemo(() => {
-    const results = new Map<string, ContentBlock & { type: 'tool_result' }>()
-    const children = new Map<string, ContentBlock[]>()
-    const bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[] = []
-    const agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[] = []
-
-    for (const message of messages) {
-      for (const block of message.content) {
-        if (block.type === 'tool_result') {
-          results.set(block.toolUseId, block)
-        }
-        const parentId = 'parentToolUseId' in block ? block.parentToolUseId : null
-        if (parentId) {
-          const next = children.get(parentId) ?? []
-          next.push(block)
-          children.set(parentId, next)
-        }
-      }
-    }
-
-    for (const message of messages) {
-      for (const block of message.content) {
-        if (block.type !== 'tool_use') continue
-
-        if (block.toolName === 'Bash') {
-          const params = parseToolInput(block.input, block.toolName)
-          const result = results.get(block.toolUseId)
-          const progress = taskProgress[block.toolUseId]
-          const runInBackground = params.run_in_background === true || params.background === true
-          const hasTaskState = !!progress
-          const isStreamingTool = block.status === 'streaming'
-          const hasBackgroundSignal = runInBackground || !!result?.outputPath || hasTaskState
-          const isRunning = hasTaskState ? progress.completed !== true : (runInBackground && isStreamingTool)
-          if (!hasBackgroundSignal || !isRunning) continue
-
-          const command = typeof params.command === 'string' ? params.command.trim() : ''
-          bashActivities.push({
-            id: block.toolUseId,
-            kind: 'bash',
-            title: command || 'Bash',
-            toolUse: block,
-            result,
-          })
-          continue
-        }
-
-        if (block.toolName === 'Agent') {
-          const params = parseToolInput(block.input, block.toolName)
-          if (params.run_in_background !== true) continue
-          const progress = taskProgress[block.toolUseId]
-          const hasTaskState = !!progress
-          const isRunning = hasTaskState ? progress.completed !== true : block.status === 'streaming'
-          if (!isRunning) continue
-          const resultBlock = results.get(block.toolUseId)
-          const childBlocks = children.get(block.toolUseId) ?? []
-          const title = String(params.description ?? params.name ?? params.subagent_type ?? 'Async Agent').trim() || 'Async Agent'
-          agentActivities.push({
-            id: block.toolUseId,
-            kind: 'agent',
-            title,
-            taskBlock: block,
-            childBlocks,
-            resultBlock,
-          })
-        }
-      }
-    }
-
-    return { bashActivities, agentActivities }
-  }, [messages, taskProgress])
+  const { bashActivities, agentActivities } = useMemo(
+    () => collectBackgroundActivities(messages, taskProgress),
+    [messages, taskProgress],
+  )
   const bashLabel = bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'
   const agentLabel = agentActivities.length > 1 ? `${agentActivities.length} Agents` : 'Agent'
   const bashPanelTitle = `Background ${bashActivities.length > 1 ? 'Bashes' : 'Bash'}`

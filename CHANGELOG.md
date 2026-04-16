@@ -4,6 +4,28 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.20.0-alpha] - 2026-04-16
+
+### Added
+
+- Mini-app human-in-the-loop tool calls — declare `renderer.intercept` to gate a tool behind a user-confirmation iframe
+- Mini-app custom result rendering via `renderer.result` (manifest `popovers` renamed to `templates`, now shared across popovers / intercepts / result views)
+- Mini-app permission prompt shows app icon and name instead of the raw MCP tool string
+- Subagent icon pulses while its task is running
+- Remote relay status indicator in the sidebar
+- Opt-in PostHog usage analytics in settings
+- Error state in chat for failed tool results
+- Active provider hint in chat suggestions
+
+### Fixed
+
+- Paste chip ring clipped when the chip is selected
+
+### Refactored
+
+- Centralized IPC string-literal channels and shared device config
+- Replaced project row dropdown with a context menu
+
 ## [0.19.1-alpha] - 2026-04-15
 
 ### Added

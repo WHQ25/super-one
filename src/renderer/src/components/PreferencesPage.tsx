@@ -12,12 +12,16 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { modes as permissionModes } from '@/components/chat/PermissionModeSelector'
+import { PermissionModeList } from '@/components/chat/PermissionModeList'
 import { sandboxModes } from '@/components/chat/SandboxModeSelector'
+import { checkAutoModePlanEligibility } from '@/lib/auto-mode-eligibility'
 import type { PermissionMode, SandboxMode } from '../../../shared/agent-types'
 
 export function PreferencesPage() {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const availableOutputStyles = useChatStore((s) => s.availableOutputStyles)
+  const account = useChatStore((s) => s.account)
+  const autoPlanEligibility = checkAutoModePlanEligibility(account)
 
   const [outputStyle, setOutputStyle] = useState('')
   const [defaultPermissionMode, setDefaultPermissionMode] = useState<PermissionMode | ''>('')
@@ -158,24 +162,11 @@ export function PreferencesPage() {
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" side="bottom" className="w-52 border-border bg-card p-1">
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">Permission Mode</div>
-                {permissionModes.map((mode) => (
-                  <button
-                    key={mode.id}
-                    onClick={() => handlePermissionModeSelect(mode.id)}
-                    className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                      mode.id === activePermMode
-                        ? 'bg-muted text-foreground'
-                        : 'text-foreground hover:bg-muted/50'
-                    }`}
-                  >
-                    <div className={`flex items-center gap-1.5 font-medium ${mode.color}`}>
-                      {mode.icon}
-                      {mode.label}
-                    </div>
-                    <div className="mt-0.5 text-[10px] text-muted-foreground">{mode.description}</div>
-                  </button>
-                ))}
+                <PermissionModeList
+                  activeMode={activePermMode}
+                  autoEligibility={autoPlanEligibility}
+                  onSelect={handlePermissionModeSelect}
+                />
               </PopoverContent>
             </Popover>
           </div>

@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode } from './chat-helpers'
+import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
+import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
@@ -3007,11 +3009,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setSelectedModel: (model) => {
-    const { activeProject, availableModels } = get()
+    const { activeProject, availableModels, account } = get()
     if (!activeProject) return
     const modelInfo = availableModels.find((m) => m.id === model)
     const defaultEffort = getDefaultEffortForModel(modelInfo)
-    set((s) => updateActivePerSession(s,() => ({ selectedModel: model, selectedEffort: defaultEffort, contextWindow: null })))
+    const session = getActivePerSession(get(), activeProject)
+    const shouldDowngrade =
+      session.permissionMode === 'auto' &&
+      !checkAutoModeEligibility({
+        subscriptionType: account?.subscriptionType,
+        apiProvider: account?.apiProvider,
+        modelSupportsAutoMode: modelInfo?.supportsAutoMode,
+      }).ok
+    const patch: Partial<PerSessionState> = {
+      selectedModel: model,
+      selectedEffort: defaultEffort,
+      contextWindow: null,
+    }
+    if (shouldDowngrade) patch.permissionMode = 'default'
+    set((s) => updateActivePerSession(s, () => patch))
+    if (shouldDowngrade) void window.agent.setPermissionMode(activeProject, 'default')
     if (getActivePerSession(get(), activeProject).draftText.length > 0) {
       triggerPrewarm(get(), activeProject)
     }
@@ -3346,10 +3363,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   cyclePermissionMode: () => {
-    const modes: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions']
     const session = getActivePerSession(get())
-    const next = modes[(modes.indexOf(session.permissionMode) + 1) % modes.length]
-    get().setPermissionMode(next)
+    const { account, availableModels } = get()
+    const modelInfo = availableModels.find((m) => m.id === session.selectedModel)
+    const startIdx = PERMISSION_MODES.indexOf(session.permissionMode)
+    const anchor = startIdx === -1 ? 0 : startIdx
+    for (let step = 1; step <= PERMISSION_MODES.length; step++) {
+      const candidate = PERMISSION_MODES[(anchor + step) % PERMISSION_MODES.length]
+      if (candidate === 'auto') {
+        const elig = checkAutoModeEligibility({
+          subscriptionType: account?.subscriptionType,
+          apiProvider: account?.apiProvider,
+          modelSupportsAutoMode: modelInfo?.supportsAutoMode,
+        })
+        if (!elig.ok) continue
+      }
+      get().setPermissionMode(candidate)
+      return
+    }
   },
 
   togglePlanModeShortcut: () => {

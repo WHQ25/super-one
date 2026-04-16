@@ -48,12 +48,30 @@ vi.mock('../mcp/superone-mcp-server', () => ({
   getSuperoneMcpServer: vi.fn(() => ({ type: 'sdk', name: 'superone', instance: {} })),
 }))
 
-import { buildUserMessage, createSessionQuery } from './claude-query'
+import { buildUserMessage, buildClaudeOptions, createSessionQuery } from './claude-query'
 
 beforeEach(() => {
   state.messages = []
   state.error = null
   state.queryMock.mockClear()
+})
+
+describe('buildClaudeOptions permissionMode', () => {
+  it("passes permissionMode: 'auto' through to SDK options without enabling dangerous skip", () => {
+    const options = buildClaudeOptions({
+      cwd: '/repo',
+      permissionMode: 'auto',
+    })
+    expect(options.permissionMode).toBe('auto')
+    expect(options.allowDangerouslySkipPermissions).toBe(false)
+  })
+
+  it("enables allowDangerouslySkipPermissions only for 'bypassPermissions'", () => {
+    expect(buildClaudeOptions({ cwd: '/repo', permissionMode: 'bypassPermissions' }).allowDangerouslySkipPermissions).toBe(true)
+    expect(buildClaudeOptions({ cwd: '/repo', permissionMode: 'default' }).allowDangerouslySkipPermissions).toBe(false)
+    expect(buildClaudeOptions({ cwd: '/repo', permissionMode: 'dontAsk' }).allowDangerouslySkipPermissions).toBe(false)
+    expect(buildClaudeOptions({ cwd: '/repo', permissionMode: 'plan' }).allowDangerouslySkipPermissions).toBe(false)
+  })
 })
 
 describe('buildUserMessage', () => {

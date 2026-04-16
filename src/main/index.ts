@@ -1387,6 +1387,7 @@ function registerIpcHandlers(): void {
         organization: accountInfo.organization,
         subscriptionType: accountInfo.subscriptionType,
         apiKeySource: accountInfo.apiKeySource,
+        apiProvider: accountInfo.apiProvider,
       }
       const slashCommands = commands.map((c) => ({
         name: c.name,

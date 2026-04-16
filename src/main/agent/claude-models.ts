@@ -46,7 +46,7 @@ function extractModelName(descPrefix: string): string | null {
   return match[2] ? `${match[1]} ${match[2]}` : match[1]
 }
 
-export function mapModelInfo(m: { value: string; displayName: string; description?: string; supportsEffort?: boolean; supportedEffortLevels?: string[]; supportsAdaptiveThinking?: boolean; supportsFastMode?: boolean }): ModelOption {
+export function mapModelInfo(m: { value: string; displayName: string; description?: string; supportsEffort?: boolean; supportedEffortLevels?: string[]; supportsAdaptiveThinking?: boolean; supportsFastMode?: boolean; supportsAutoMode?: boolean }): ModelOption {
   const raw = m.description ?? ''
   const sepIdx = raw.indexOf('·')
   const descPrefix = sepIdx !== -1 ? raw.slice(0, sepIdx).trim() : ''
@@ -56,5 +56,6 @@ export function mapModelInfo(m: { value: string; displayName: string; descriptio
   if (m.supportedEffortLevels?.length) base.supportedEffortLevels = m.supportedEffortLevels as ModelOption['supportedEffortLevels']
   if (m.supportsAdaptiveThinking) base.supportsAdaptiveThinking = true
   if (m.supportsFastMode) base.supportsFastMode = true
+  if (m.supportsAutoMode) base.supportsAutoMode = true
   return base
 }

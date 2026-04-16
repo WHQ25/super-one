@@ -110,4 +110,28 @@ describe('mapModelInfo', () => {
       description: 'some unexpected format · details here',
     })
   })
+
+  it('passes supportsAutoMode through when the SDK reports it', () => {
+    const mapped = mapModelInfo({
+      value: 'default',
+      displayName: 'Default (recommended)',
+      description: 'Opus 4.7 with 1M context · Most capable for complex work',
+      supportsEffort: true,
+      supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+      supportsAdaptiveThinking: true,
+      supportsAutoMode: true,
+    })
+
+    expect(mapped.supportsAutoMode).toBe(true)
+  })
+
+  it('omits supportsAutoMode when the SDK does not report it (plan-filtered absence)', () => {
+    const mapped = mapModelInfo({
+      value: 'sonnet',
+      displayName: 'Sonnet',
+      description: 'Sonnet 4.6 · Best for everyday tasks',
+    })
+
+    expect(mapped.supportsAutoMode).toBeUndefined()
+  })
 })

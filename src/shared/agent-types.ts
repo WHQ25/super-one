@@ -340,7 +340,9 @@ export interface PermissionRequest {
   toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
 }
 
-export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
+export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'
+
+export type AccountApiProvider = 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | 'anthropicAws' | 'mantle'
 
 // --- AskUserQuestion ---
 
@@ -415,6 +417,7 @@ export interface AccountInfo {
   organization?: string
   subscriptionType?: string
   apiKeySource?: string
+  apiProvider?: AccountApiProvider
 }
 
 // --- Slash commands ---
@@ -605,6 +608,7 @@ export interface ModelOption {
   supportedEffortLevels?: ('low' | 'medium' | 'high' | 'xhigh' | 'max')[]
   supportsAdaptiveThinking?: boolean
   supportsFastMode?: boolean
+  supportsAutoMode?: boolean
   supportedReasoningEfforts?: ReasoningEffortOption[]
   defaultReasoningEffort?: CodexReasoningEffort
 }

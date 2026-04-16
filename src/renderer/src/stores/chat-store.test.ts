@@ -113,6 +113,24 @@ function setupProject(path: string) {
   useChatStore.setState({ activeProject: path })
 }
 
+function patchDraftSession(path: string, patch: Record<string, unknown>) {
+  const state = useChatStore.getState()
+  const proj = state.projectSessions[path]
+  const sid = proj._activeSessionId!
+  useChatStore.setState({
+    projectSessions: {
+      ...state.projectSessions,
+      [path]: {
+        ...proj,
+        _sessions: {
+          ...proj._sessions,
+          [sid]: { ...proj._sessions[sid], ...patch },
+        },
+      },
+    },
+  })
+}
+
 function makeEvent(overrides: Partial<AgentEvent> & { type: AgentEvent['type'] }): AgentEvent {
   return { projectPath: '/test', sessionId: undefined, ...overrides } as AgentEvent
 }
@@ -3283,7 +3301,7 @@ describe('handleAgentEvent supplemental', () => {
 })
 
 describe('cyclePermissionMode', () => {
-  it('cycles through default → acceptEdits → plan → bypassPermissions → default', async () => {
+  it('skips auto when ineligible: default → acceptEdits → plan → default', async () => {
     setupProject('/test')
 
     const session = getActiveDraftSession('/test')!
@@ -3296,10 +3314,67 @@ describe('cyclePermissionMode', () => {
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
 
     await useChatStore.getState().cyclePermissionMode()
-    expect(getActiveDraftSession('/test')!.permissionMode).toBe('bypassPermissions')
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('default')
+  })
+
+  it('includes auto when account + model qualify: default → acceptEdits → auto → plan → default', async () => {
+    setupProject('/test')
+    useChatStore.setState({
+      account: { subscriptionType: 'max', apiProvider: 'firstParty' },
+      availableModels: [
+        { id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportsAutoMode: true },
+      ],
+    })
+    patchDraftSession('/test', { selectedModel: 'claude-opus-4-7' })
+
+    await useChatStore.getState().cyclePermissionMode()
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('acceptEdits')
+
+    await useChatStore.getState().cyclePermissionMode()
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('auto')
+
+    await useChatStore.getState().cyclePermissionMode()
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
 
     await useChatStore.getState().cyclePermissionMode()
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('default')
+  })
+})
+
+describe('setSelectedModel auto-mode downgrade', () => {
+  it('downgrades permissionMode from auto to default when new model does not support auto mode', () => {
+    setupProject('/test')
+    useChatStore.setState({
+      account: { subscriptionType: 'max', apiProvider: 'firstParty' },
+      availableModels: [
+        { id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportsAutoMode: true },
+        { id: 'claude-haiku-4-5', name: 'Haiku 4.5', description: '' },
+      ],
+    })
+    patchDraftSession('/test', { selectedModel: 'claude-opus-4-7', permissionMode: 'auto' })
+
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('auto')
+
+    useChatStore.getState().setSelectedModel('claude-haiku-4-5')
+
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('default')
+    expect(getActiveDraftSession('/test')!.selectedModel).toBe('claude-haiku-4-5')
+  })
+
+  it('keeps permissionMode when new model still qualifies for auto', () => {
+    setupProject('/test')
+    useChatStore.setState({
+      account: { subscriptionType: 'team', apiProvider: 'firstParty' },
+      availableModels: [
+        { id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportsAutoMode: true },
+        { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', description: '', supportsAutoMode: true },
+      ],
+    })
+    patchDraftSession('/test', { selectedModel: 'claude-opus-4-7', permissionMode: 'auto' })
+
+    useChatStore.getState().setSelectedModel('claude-sonnet-4-6')
+
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('auto')
   })
 })
 

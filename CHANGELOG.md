@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.20.3-alpha] - 2026-04-17
+
+### Added
+
+- Auto Mode in the permission-mode cycle — gated by plan (Max/Team/Enterprise/API), first-party provider, and model support (`supportsAutoMode`); auto-downgrades to `default` when switching to an ineligible model. Don't Ask / Bypass are grouped below a divider and now require an explicit click.
+- Pre-warm Claude CLI subprocess on typing / draft changes so the ~3.4s SDK init runs off the critical path. First-response latency on session rebuild drops from ~5.3s to ~1.9s (65% reduction).
+- Default effort now uses the model's top tier — Opus 4.7 (and any future model exposing `xhigh`) defaults to `xhigh` instead of `medium`.
+
+### Fixed
+
+- "Thinking..." indicator no longer disappeared with the latest SDK default of `adaptive` + `omitted`. We now request `adaptive` + `summarized` and emit an empty thinking anchor so the Brain animation is always visible, matching the Codex reasoning UX.
+- Stale streaming-token footer after interrupting a reply and sending again — the new assistant message briefly showed the previous turn's token count. Session-level `streamingTokens` now resets on `message_start`, freezes into the interrupted message on `message_interrupted`, and clears on `message_error`.
+
 ## [0.20.2-alpha] - 2026-04-17
 
 ### Fixed

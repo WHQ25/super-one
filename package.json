@@ -59,7 +59,8 @@
     "smol-toml": "^1.6.0",
     "sonner": "^2.0.7",
     "unzipper": "^0.12.3",
-    "utf-8-validate": "^6.0.6"
+    "utf-8-validate": "^6.0.6",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",
@@ -79,6 +80,7 @@
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@types/unzipper": "^0.10.11",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.1.3",
     "@vitest/coverage-v8": "^4.0.18",
     "class-variance-authority": "^0.7.1",

@@ -4,6 +4,12 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.20.1-alpha] - 2026-04-16
+
+### Fixed
+
+- Missing `ws` dependency caused v0.20.0-alpha CI to fail on all platforms; relay WebSocket import now resolves under frozen lockfile
+
 ## [0.20.0-alpha] - 2026-04-16
 
 ### Added

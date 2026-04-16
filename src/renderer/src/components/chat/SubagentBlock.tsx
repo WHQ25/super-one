@@ -219,7 +219,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"
       >
-        <Bot className="size-3.5 shrink-0 text-purple-400" />
+        <Bot className={cn('size-3.5 shrink-0 text-purple-400', isRunning && !expanded && 'animate-pulse')} />
         {taskInput.subagentType && (
           <span className="shrink-0 rounded bg-purple-500/15 px-1 py-px text-[10px] text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
             {taskInput.subagentType}

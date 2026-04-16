@@ -76,7 +76,7 @@ vi.stubGlobal('window', {
 })
 vi.stubGlobal('localStorage', mockLocalStorage)
 
-const { useChatStore, isDraftSession, createDraftSessionId, createDefaultPerSessionState, createDefaultProjectState, invalidateDefaultPermissionModeCache } = await import('./chat')
+const { useChatStore, isDraftSession, createDraftSessionId, createDefaultPerSessionState, createDefaultProjectState, invalidateDefaultPermissionModeCache, getDefaultEffortForModel } = await import('./chat')
 
 function getActiveDraftSession(path: string) {
   const proj = useChatStore.getState().projectSessions[path]
@@ -1254,12 +1254,44 @@ describe('applyDefaultModel via ensureSession', () => {
     expect(session.selectedEffort).toBeUndefined()
   })
 
+  it('defaults to xhigh when model supports xhigh (e.g. Opus 4.7)', () => {
+    useChatStore.setState({
+      availableModels: [
+        { id: 'claude-opus-4-7', name: 'Opus 4.7', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'] },
+      ] as never[],
+    })
+
+    useChatStore.getState().ensureSession('/opus-47')
+    const session = getActiveDraftSession('/opus-47')!
+    expect(session.selectedModel).toBe('claude-opus-4-7')
+    expect(session.selectedEffort).toBe('xhigh')
+  })
+
   it('leaves default model when no models available', () => {
     useChatStore.setState({ availableModels: [] })
 
     useChatStore.getState().ensureSession('/empty-models')
     const session = getActiveDraftSession('/empty-models')!
     expect(session.selectedModel).toBe('')
+  })
+})
+
+describe('getDefaultEffortForModel', () => {
+  it('returns xhigh when model supports xhigh', () => {
+    expect(getDefaultEffortForModel({ id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'] })).toBe('xhigh')
+  })
+
+  it('returns medium when model supports medium but not xhigh', () => {
+    expect(getDefaultEffortForModel({ id: 'claude-sonnet-4-6', name: 'Sonnet', description: '', supportedEffortLevels: ['low', 'medium', 'high'] })).toBe('medium')
+  })
+
+  it('returns undefined when model has no effort levels', () => {
+    expect(getDefaultEffortForModel({ id: 'claude-haiku-4-5', name: 'Haiku', description: '' })).toBeUndefined()
+    expect(getDefaultEffortForModel(undefined)).toBeUndefined()
+  })
+
+  it('falls back to first level when neither xhigh nor medium is present', () => {
+    expect(getDefaultEffortForModel({ id: 'weird-model', name: 'Weird', description: '', supportedEffortLevels: ['low', 'high'] })).toBe('low')
   })
 })
 

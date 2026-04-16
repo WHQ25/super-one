@@ -176,13 +176,20 @@ export function createDefaultPerSessionState(): PerSessionState {
   }
 }
 
+export function getDefaultEffortForModel(model?: ModelOption): EffortLevel | undefined {
+  const levels = model?.supportedEffortLevels
+  if (!levels?.length) return undefined
+  if (levels.includes('xhigh')) return 'xhigh'
+  if (levels.includes('medium')) return 'medium'
+  return levels[0]
+}
+
 function applyDefaultModel(session: PerSessionState, models: ModelOption[]): void {
   const defaultModel = models[0]
   if (defaultModel) {
     session.selectedModel = defaultModel.id
-    if (defaultModel.supportedEffortLevels?.length) {
-      session.selectedEffort = 'medium'
-    }
+    const effort = getDefaultEffortForModel(defaultModel)
+    if (effort) session.selectedEffort = effort
   }
 }
 
@@ -2167,10 +2174,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const globalModels = s.availableModels
         if (!updatedSession.selectedModel && globalModels[0]) {
           updatedSession.selectedModel = globalModels[0].id
-          if (globalModels[0].supportedEffortLevels?.length) {
-            updatedSession.selectedEffort = 'medium'
-          }
-          // Write updated session back
+          const effort = getDefaultEffortForModel(globalModels[0])
+          if (effort) updatedSession.selectedEffort = effort
           updatedProject._sessions = { ...updatedProject._sessions, [targetSid]: updatedSession }
         }
 
@@ -2968,7 +2973,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject, availableModels } = get()
     if (!activeProject) return
     const modelInfo = availableModels.find((m) => m.id === model)
-    const defaultEffort = modelInfo?.supportedEffortLevels?.length ? 'medium' as EffortLevel : undefined
+    const defaultEffort = getDefaultEffortForModel(modelInfo)
     set((s) => updateActivePerSession(s,() => ({ selectedModel: model, selectedEffort: defaultEffort, contextWindow: null })))
   },
 
@@ -3525,9 +3530,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!targetSession.selectedModel) {
         const defaultModel = get().availableModels[0]
         if (defaultModel) {
+          const effort = getDefaultEffortForModel(defaultModel)
           set((s) => updatePerSession(s, activeProject, sessionId, () => ({
             selectedModel: defaultModel.id,
-            ...(defaultModel.supportedEffortLevels?.length ? { selectedEffort: 'medium' as EffortLevel } : {}),
+            ...(effort ? { selectedEffort: effort } : {}),
           })))
         }
       }

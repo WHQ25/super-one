@@ -560,7 +560,9 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         promptSuggestion: null,
         awaitingAssistantReply: false,
         lastEventAt: Date.now(),
-        ...(event.message.role === 'assistant' ? { lastAssistantMessageId: event.message.id } : {}),
+        ...(event.message.role === 'assistant'
+          ? { lastAssistantMessageId: event.message.id, streamingTokens: { input: 0, output: 0 } }
+          : {}),
       }
     }
 
@@ -740,14 +742,23 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       }
     }
 
-    case 'message_interrupted':
+    case 'message_interrupted': {
+      const ft = session.streamingTokens
+      const consumedTokens = ft.input > 0 || ft.output > 0
+        ? { input: ft.input, output: ft.output }
+        : undefined
       return {
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
+          const nextMeta = {
+            ...msg.metadata,
+            ...(event.metadata ?? {}),
+            ...(consumedTokens ? { consumedTokens } : {}),
+          }
           return {
             ...msg,
             status: 'interrupted' as const,
-            metadata: event.metadata ? { ...msg.metadata, ...event.metadata } : msg.metadata,
+            metadata: nextMeta,
           }
         }),
         pendingPermissions: [],
@@ -755,12 +766,15 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         pendingPlanApproval: null,
         awaitingAssistantReply: false,
         lastEventAt: 0,
+        streamingTokens: { input: 0, output: 0 },
       }
+    }
 
     case 'message_error':
       return {
         awaitingAssistantReply: false,
         lastEventAt: 0,
+        streamingTokens: { input: 0, output: 0 },
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           return {

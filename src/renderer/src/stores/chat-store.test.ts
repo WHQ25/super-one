@@ -3891,3 +3891,106 @@ describe('mini-app context injection', () => {
     window.removeEventListener('miniapp-context-consumed', handler)
   })
 })
+
+describe('streamingTokens lifecycle around turn boundaries', () => {
+  it('clears streamingTokens and freezes consumedTokens on message_interrupted', () => {
+    setupProject('/test')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'int-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_usage',
+      messageId: 'int-1',
+      inputTokens: 1234,
+      outputTokens: 567,
+    }))
+
+    const before = getActiveDraftSession('/test')!
+    expect(before.streamingTokens).toEqual({ input: 1234, output: 567 })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_interrupted',
+      messageId: 'int-1',
+    }))
+
+    const after = getActiveDraftSession('/test')!
+    expect(after.streamingTokens).toEqual({ input: 0, output: 0 })
+    const msg = after.messages.find((m) => m.id === 'int-1')!
+    expect(msg.status).toBe('interrupted')
+    expect(msg.metadata?.consumedTokens).toEqual({ input: 1234, output: 567 })
+  })
+
+  it('clears streamingTokens on message_error', () => {
+    setupProject('/test')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'err-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_usage',
+      messageId: 'err-1',
+      inputTokens: 88,
+      outputTokens: 42,
+    }))
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_error',
+      messageId: 'err-1',
+      error: 'boom',
+    }))
+
+    const after = getActiveDraftSession('/test')!
+    expect(after.streamingTokens).toEqual({ input: 0, output: 0 })
+  })
+
+  it('new assistant message_start resets any leaked streamingTokens', () => {
+    setupProject('/test')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'prev-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_usage',
+      messageId: 'prev-1',
+      inputTokens: 999,
+      outputTokens: 111,
+    }))
+
+    expect(getActiveDraftSession('/test')!.streamingTokens).toEqual({ input: 999, output: 111 })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'next-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+
+    const after = getActiveDraftSession('/test')!
+    expect(after.streamingTokens).toEqual({ input: 0, output: 0 })
+  })
+
+  it('does not reset streamingTokens when a user message_start arrives mid-turn', () => {
+    setupProject('/test')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'assist-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_usage',
+      messageId: 'assist-1',
+      inputTokens: 50,
+      outputTokens: 20,
+    }))
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'user-1', role: 'user', content: [], status: 'complete', createdAt: '', providerId: 'claude' } as never,
+    }))
+
+    const after = getActiveDraftSession('/test')!
+    expect(after.streamingTokens).toEqual({ input: 50, output: 20 })
+  })
+})

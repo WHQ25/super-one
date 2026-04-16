@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
-import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, GitFork, Pin, Copy, Check } from 'lucide-react'
+import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, GitFork, Pin, Copy, Check, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -34,6 +34,10 @@ import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppView } from '@/components/miniapp/MiniAppView'
 import { AppDrawer } from '@/components/sidebar/AppDrawer'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { CommandShortcut } from '@/components/ui/command'
+
+const isMac = window.app.platform === 'darwin'
 
 type SortMode = 'recent' | 'added'
 
@@ -498,14 +502,21 @@ export const AppSidebar = memo(function AppSidebar() {
       </div>
       </div>
 
-      {/* Footer — settings */}
       <div className="flex items-center gap-1 px-3 py-2">
-        <button
-          onClick={() => navigateTo('settings')}
-          className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        >
-          <Settings className="size-3.5" />
-        </button>
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => navigateTo('settings')}
+                className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                <Settings className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top"><span>Settings</span> <CommandShortcut>{isMac ? '⌘,' : 'Ctrl+,'}</CommandShortcut></TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <RemoteStatusIcon />
       </div>
 
       {/* Delete session confirmation dialog */}
@@ -601,3 +612,47 @@ export const AppSidebar = memo(function AppSidebar() {
     </div>
   )
 })
+
+function RemoteStatusIcon() {
+  const remoteEnabled = useAppStore((s) => s.remoteConfig?.enabled ?? false)
+  const { navigateTo, setSettingsTab } = useAppStore(useShallow((s) => ({ navigateTo: s.navigateTo, setSettingsTab: s.setSettingsTab })))
+  const [relayConnected, setRelayConnected] = useState(false)
+
+  useEffect(() => {
+    if (!remoteEnabled) {
+      setRelayConnected(false)
+      return
+    }
+    let cancelled = false
+    window.app.getRelayStatus().then((connected) => {
+      if (!cancelled) setRelayConnected(connected)
+    })
+    const unsub = window.app.onRelayStatusChanged(setRelayConnected)
+    return () => {
+      cancelled = true
+      unsub()
+    }
+  }, [remoteEnabled])
+
+  if (!remoteEnabled) return null
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => { setSettingsTab('remote'); navigateTo('settings') }}
+            className="relative rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <Smartphone className="size-3.5" />
+            <span className={cn('absolute top-1 right-1 size-1.5 rounded-full', relayConnected ? 'bg-green-500' : 'bg-red-500')} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <span>Remote Control</span>
+          <span className={cn('ml-1.5', relayConnected ? 'text-green-500' : 'text-red-500')}>{relayConnected ? 'Connected' : 'Disconnected'}</span>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}

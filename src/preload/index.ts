@@ -608,6 +608,8 @@ const appAPI = {
   },
 
   // Remote control
+  getRelayStatus: () =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_GET_RELAY_STATUS) as Promise<boolean>,
   getRemoteConfig: () =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_GET_CONFIG),
   saveRemoteConfig: (config: RemoteDeviceConfig) =>
@@ -679,6 +681,13 @@ const appAPI = {
     ipcRenderer.on(AgentIpcChannels.REMOTE_PAIRING_ALREADY_PAIRED, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.REMOTE_PAIRING_ALREADY_PAIRED, handler)
+    }
+  },
+  onRelayStatusChanged: (callback: (connected: boolean) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, connected: boolean): void => { callback(connected) }
+    ipcRenderer.on(AgentIpcChannels.REMOTE_RELAY_STATUS, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.REMOTE_RELAY_STATUS, handler)
     }
   },
 

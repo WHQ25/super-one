@@ -108,6 +108,9 @@ const remoteCallbacks: RemoteControlCallbacks = {
   onPairingAlreadyPaired: ({ deviceName }) => {
     safeSend(AgentIpcChannels.REMOTE_PAIRING_ALREADY_PAIRED, { deviceName })
   },
+  onRelayStatusChanged: (connected) => {
+    safeSend(AgentIpcChannels.REMOTE_RELAY_STATUS, connected)
+  },
   isPairedDevice: (deviceId) => isPairedDevice(deviceId),
 }
 declare const __CF_RELAY_URL__: string
@@ -1287,6 +1290,7 @@ function registerIpcHandlers(): void {
       return null
     }
   }
+  ipcMain.handle(AgentIpcChannels.REMOTE_GET_RELAY_STATUS, () => remoteControlService.isRelayConnected())
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_CONFIG, readRemoteConfig)
   ipcMain.handle(AgentIpcChannels.REMOTE_SAVE_CONFIG, (_, config: RemoteDeviceConfig) => {
     writeFileSync(remoteConfigPath, JSON.stringify(config))

@@ -199,6 +199,7 @@ interface AppAPI {
   trace(source: string, type: string, data: unknown, tag?: string): void
 
   // Remote control
+  getRelayStatus(): Promise<boolean>
   getRemoteConfig(): Promise<RemoteDeviceConfig | null>
   saveRemoteConfig(config: RemoteDeviceConfig): Promise<void>
   onRecentFoldersChanged(callback: (folders: unknown[]) => void): () => void
@@ -213,6 +214,7 @@ interface AppAPI {
   onPairingCodeReceived(callback: (info: { code: string; deviceName: string }) => void): () => void
   onPairingExpired(callback: () => void): () => void
   onPairingAlreadyPaired(callback: (info: { deviceName: string }) => void): () => void
+  onRelayStatusChanged(callback: (connected: boolean) => void): () => void
 
   widgetIframeReady(widgetId: string): Promise<void>
 

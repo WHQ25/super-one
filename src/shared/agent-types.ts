@@ -1248,8 +1248,10 @@ export const AgentIpcChannels = {
   REMOTE_PAIRING_CODE_RECEIVED: 'remote:pairing-code-received',
   REMOTE_PAIRING_EXPIRED: 'remote:pairing-expired',
   REMOTE_PAIRING_ALREADY_PAIRED: 'remote:pairing-already-paired',
+  REMOTE_GET_RELAY_STATUS: 'remote:get-relay-status',
   REMOTE_GET_CONFIG: 'remote:get-config',
   REMOTE_SAVE_CONFIG: 'remote:save-config',
+  REMOTE_RELAY_STATUS: 'remote:relay-status',
 
   WIDGET_IFRAME_READY: 'widget:iframe-ready',
 

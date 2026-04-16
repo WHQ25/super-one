@@ -528,6 +528,7 @@ export interface RemoteControlCallbacks {
   onPairingExpired?: () => void
   onPairingConfirmed?: (info: { mobileDeviceId: string; deviceName: string }) => void
   onPairingAlreadyPaired?: (info: { deviceName: string }) => void
+  onRelayStatusChanged?: (connected: boolean) => void
   isPairedDevice?: (deviceId: string) => boolean
 }
 
@@ -621,6 +622,10 @@ export class RemoteControlService {
     log.info('[RemoteControl] Started for device:', config.deviceId)
   }
 
+  isRelayConnected(): boolean {
+    return this.relayWs !== null && this.relayWs.readyState === WebSocket.OPEN
+  }
+
   async stop(): Promise<void> {
     await this.cancelPairing()
     this.intentionallyClosed = true
@@ -632,6 +637,7 @@ export class RemoteControlService {
     if (this.relayWs) {
       this.relayWs.close(1000, 'stopping')
       this.relayWs = null
+      this.callbacks.onRelayStatusChanged?.(false)
     }
     this.keys = null
     this.releasePowerLock()
@@ -653,6 +659,7 @@ export class RemoteControlService {
     ws.on('open', () => {
       log.info('[RemoteControl] Relay connected')
       this.reconnectDelay = 1_000
+      this.callbacks.onRelayStatusChanged?.(true)
       ws.send(JSON.stringify({ type: 'handshake', hostName: hostname() }))
     })
 
@@ -668,6 +675,7 @@ export class RemoteControlService {
       log.info('[RemoteControl] Relay WS closed:', code, reason.toString())
       if (this.relayWs !== ws) return
       this.relayWs = null
+      this.callbacks.onRelayStatusChanged?.(false)
       if (!this.intentionallyClosed) this.scheduleReconnect()
     })
 

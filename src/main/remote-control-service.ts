@@ -5,7 +5,9 @@ import { powerSaveBlocker } from 'electron'
 import WebSocket from 'ws'
 import { diffLines } from 'diff'
 import log from './logger'
-import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem } from '../shared/agent-types'
+import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, RemoteDeviceConfig } from '../shared/agent-types'
+
+export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
 import { readOutputFile } from './agent/claude-session-runtime'
 import { initHighlighter, highlightCodeSync, highlightCodeByLang, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
@@ -502,14 +504,6 @@ async function computeHmacToken(channelKeyHex: string, role: string, timestamp: 
 async function computeRoomId(channelKeyHex: string): Promise<string> {
   const hash = await subtle.digest('SHA-256', hexToBytes(channelKeyHex))
   return bytesToHex(hash).substring(0, 32)
-}
-
-export interface RemoteDeviceConfig {
-  enabled: boolean
-  masterSecret: string
-  deviceId: string
-  preventSleep: boolean
-  relayUrl: string
 }
 
 interface PairingSession {

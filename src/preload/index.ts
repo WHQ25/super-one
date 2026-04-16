@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type SandboxMode, type SendMessageRequest } from '../shared/agent-types'
+import { AgentIpcChannels, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest } from '../shared/agent-types'
 
 const agentAPI = {
   sendMessage: (projectPath: string, request: SendMessageRequest) =>
@@ -112,7 +112,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GET_RECENT_FOLDERS),
 
   getMediaServerPort: () =>
-    ipcRenderer.invoke('app:media-server-port') as Promise<number>,
+    ipcRenderer.invoke(AgentIpcChannels.MEDIA_SERVER_PORT) as Promise<number>,
 
   addRecentFolder: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ADD_RECENT_FOLDER, folderPath),
@@ -522,22 +522,22 @@ const appAPI = {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, action: 'in' | 'out' | 'reset'): void => {
       callback(action)
     }
-    ipcRenderer.on('app:content-zoom', handler)
+    ipcRenderer.on(AgentIpcChannels.CONTENT_ZOOM, handler)
     return () => {
-      ipcRenderer.removeListener('app:content-zoom', handler)
+      ipcRenderer.removeListener(AgentIpcChannels.CONTENT_ZOOM, handler)
     }
   },
 
   // Window state
   getFullscreen: () =>
-    ipcRenderer.invoke('get-fullscreen') as Promise<boolean>,
+    ipcRenderer.invoke(AgentIpcChannels.GET_FULLSCREEN) as Promise<boolean>,
   onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, isFullscreen: boolean): void => {
       callback(isFullscreen)
     }
-    ipcRenderer.on('fullscreen-changed', handler)
+    ipcRenderer.on(AgentIpcChannels.FULLSCREEN_CHANGED, handler)
     return () => {
-      ipcRenderer.removeListener('fullscreen-changed', handler)
+      ipcRenderer.removeListener(AgentIpcChannels.FULLSCREEN_CHANGED, handler)
     }
   },
 
@@ -600,21 +600,21 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_PINNED),
 
   trace: (source: string, type: string, data: unknown, tag?: string) => {
-    ipcRenderer.send('app:trace', source, type, data, tag)
+    ipcRenderer.send(AgentIpcChannels.TRACE, source, type, data, tag)
   },
 
   // Remote control
   getRemoteConfig: () =>
-    ipcRenderer.invoke('remote:get-config'),
-  saveRemoteConfig: (config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean; relayUrl: string }) =>
-    ipcRenderer.invoke('remote:save-config', config),
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_GET_CONFIG),
+  saveRemoteConfig: (config: RemoteDeviceConfig) =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_SAVE_CONFIG, config),
   onRecentFoldersChanged: (callback: (folders: unknown[]) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, folders: unknown[]): void => {
       callback(folders)
     }
-    ipcRenderer.on('app:recent-folders-changed', handler)
+    ipcRenderer.on(AgentIpcChannels.RECENT_FOLDERS_CHANGED, handler)
     return () => {
-      ipcRenderer.removeListener('app:recent-folders-changed', handler)
+      ipcRenderer.removeListener(AgentIpcChannels.RECENT_FOLDERS_CHANGED, handler)
     }
   },
   onRemoteCommand: (callback: (command: unknown) => void) => {

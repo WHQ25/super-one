@@ -122,7 +122,7 @@ export function initSuperoneMcpServer(windowGetter: () => BrowserWindow | null):
 export function notifyDevAppReady(projectDir: string): void {
   const win = getMainWindow?.()
   if (win && !win.isDestroyed()) {
-    win.webContents.send('miniapp:dev-app-ready', projectDir)
+    win.webContents.send(AgentIpcChannels.MINIAPP_DEV_APP_READY, projectDir)
   }
 }
 

@@ -51,7 +51,7 @@ import { listAutomationsForProject, createAutomation as dbCreateAutomation, upda
 import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readUserPreferences, saveUserPreferences, readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
-import type { RemoteCommand, PairedDevice, CreateAutomationRequest, UpdateAutomationRequest } from '../shared/agent-types'
+import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest } from '../shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
 
@@ -78,7 +78,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
     safeSend(AgentIpcChannels.REMOTE_COMMAND, command)
     if (command.type === 'add_project') {
       const folders = getRecentFolders()
-      safeSend('app:recent-folders-changed', folders)
+      safeSend(AgentIpcChannels.RECENT_FOLDERS_CHANGED, folders)
     }
   },
   onClientRegistered: ({ deviceName, deviceId }) => {
@@ -249,7 +249,7 @@ function createWindow(): void {
       if (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0') {
         _e.preventDefault()
         const action = input.key === '-' ? 'out' : input.key === '0' ? 'reset' : 'in'
-        mainWindow?.webContents.send('app:content-zoom', action)
+        mainWindow?.webContents.send(AgentIpcChannels.CONTENT_ZOOM, action)
       }
     }
   })
@@ -267,10 +267,10 @@ function createWindow(): void {
 
   // Fullscreen state (window-specific, re-binds per window)
   mainWindow.on('enter-full-screen', () => {
-    safeSend('fullscreen-changed', true)
+    safeSend(AgentIpcChannels.FULLSCREEN_CHANGED, true)
   })
   mainWindow.on('leave-full-screen', () => {
-    safeSend('fullscreen-changed', false)
+    safeSend(AgentIpcChannels.FULLSCREEN_CHANGED, false)
   })
 
   if (is.dev) {
@@ -314,7 +314,7 @@ function registerIpcHandlers(): void {
   })
   agentService.setup()
 
-  ipcMain.on('app:trace', (_e, source: string, type: string, data: unknown, tag?: string) => {
+  ipcMain.on(AgentIpcChannels.TRACE, (_e, source: string, type: string, data: unknown, tag?: string) => {
     trace(source, type, data, tag)
   })
 
@@ -1275,7 +1275,7 @@ function registerIpcHandlers(): void {
   })
 
   const remoteConfigPath = join(app.getPath('userData'), 'remote-config.json')
-  function readRemoteConfig(): { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean; relayUrl: string } | null {
+  function readRemoteConfig(): RemoteDeviceConfig | null {
     try {
       const raw = JSON.parse(readFileSync(remoteConfigPath, 'utf-8'))
       return { preventSleep: false, relayUrl: '', ...raw }
@@ -1283,8 +1283,8 @@ function registerIpcHandlers(): void {
       return null
     }
   }
-  ipcMain.handle('remote:get-config', readRemoteConfig)
-  ipcMain.handle('remote:save-config', (_, config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean; relayUrl: string }) => {
+  ipcMain.handle(AgentIpcChannels.REMOTE_GET_CONFIG, readRemoteConfig)
+  ipcMain.handle(AgentIpcChannels.REMOTE_SAVE_CONFIG, (_, config: RemoteDeviceConfig) => {
     writeFileSync(remoteConfigPath, JSON.stringify(config))
     remoteControlService.start(config)
   })
@@ -1328,7 +1328,7 @@ function registerIpcHandlers(): void {
     remoteControlService.resume()
   })
 
-  ipcMain.handle('get-fullscreen', () => getMainWindow().isFullScreen())
+  ipcMain.handle(AgentIpcChannels.GET_FULLSCREEN, () => getMainWindow().isFullScreen())
 
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
     const cached = getCachedResources() as StartupData['cached']
@@ -1732,7 +1732,7 @@ app.whenReady().then(() => {
 
   fixPath()
   startMediaServer().catch((err) => log.error('[media-server] failed to start:', err))
-  ipcMain.handle('app:media-server-port', () => getMediaServerPort())
+  ipcMain.handle(AgentIpcChannels.MEDIA_SERVER_PORT, () => getMediaServerPort())
   getDb() // Initialize database
   registerIpcHandlers()
   createWindow()

@@ -1,5 +1,7 @@
 import { create } from 'zustand'
-import type { RecentFolder, SetupEvent, SettingsProvider, UpdateEvent } from '../../../shared/agent-types'
+import type { RecentFolder, RemoteDeviceConfig, SetupEvent, SettingsProvider, UpdateEvent } from '../../../shared/agent-types'
+
+export type { RemoteDeviceConfig }
 
 type AppView = 'loading' | 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
@@ -12,14 +14,6 @@ interface WorktreeState {
   pendingBaseBranch: string | null
   activePath: string | null
   carryLocalChanges: boolean
-}
-
-export interface RemoteDeviceConfig {
-  enabled: boolean
-  masterSecret: string
-  deviceId: string
-  preventSleep: boolean
-  relayUrl: string
 }
 
 function createRemoteDeviceConfig(): RemoteDeviceConfig {

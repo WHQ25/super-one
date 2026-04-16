@@ -1162,6 +1162,11 @@ export const AgentIpcChannels = {
   FILE_DELETE: 'app:file-delete',
   FILE_RENAME: 'app:file-rename',
   FILE_SHOW_IN_FOLDER: 'app:file-show-in-folder',
+  MEDIA_SERVER_PORT: 'app:media-server-port',
+  CONTENT_ZOOM: 'app:content-zoom',
+  GET_FULLSCREEN: 'app:get-fullscreen',
+  FULLSCREEN_CHANGED: 'app:fullscreen-changed',
+  RECENT_FOLDERS_CHANGED: 'app:recent-folders-changed',
   OPEN_EXTERNAL_LINK: 'app:open-external-link',
   CLIPBOARD_READ: 'app:clipboard-read',
   CLIPBOARD_WRITE: 'app:clipboard-write',
@@ -1199,6 +1204,7 @@ export const AgentIpcChannels = {
 
   // Logging
   GET_LOG_PATH: 'app:get-log-path',
+  TRACE: 'app:trace',
 
   // Updater
   UPDATER_EVENT: 'updater:event',
@@ -1240,6 +1246,8 @@ export const AgentIpcChannels = {
   REMOTE_PAIRING_CODE_RECEIVED: 'remote:pairing-code-received',
   REMOTE_PAIRING_EXPIRED: 'remote:pairing-expired',
   REMOTE_PAIRING_ALREADY_PAIRED: 'remote:pairing-already-paired',
+  REMOTE_GET_CONFIG: 'remote:get-config',
+  REMOTE_SAVE_CONFIG: 'remote:save-config',
 
   WIDGET_IFRAME_READY: 'widget:iframe-ready',
 
@@ -1266,6 +1274,7 @@ export const AgentIpcChannels = {
   MINIAPP_GET_INSTALL_META: 'miniapp:get-install-meta',
   MINIAPP_GET_PREAPPROVED: 'miniapp:get-preapproved',
   MINIAPP_SET_PREAPPROVED: 'miniapp:set-preapproved',
+  MINIAPP_DEV_APP_READY: 'miniapp:dev-app-ready',
 
   // Automations
   AUTOMATIONS_LIST: 'automations:list',
@@ -1324,4 +1333,12 @@ export interface PairedDevice {
   pairedAt: string
   lastSeenAt: string | null
   online: boolean
+}
+
+export interface RemoteDeviceConfig {
+  enabled: boolean
+  masterSecret: string
+  deviceId: string
+  preventSleep: boolean
+  relayUrl: string
 }

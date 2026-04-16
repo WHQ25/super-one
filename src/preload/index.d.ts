@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ApiProvider, Automation, AutomationRunStatus, BashOutputEvent, ChatMessage, ClaudePreferences, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ApiProvider, Automation, AutomationRunStatus, BashOutputEvent, ChatMessage, ClaudePreferences, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
 import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent } from '../shared/miniapp-types'
 
 
@@ -197,8 +197,8 @@ interface AppAPI {
   trace(source: string, type: string, data: unknown, tag?: string): void
 
   // Remote control
-  getRemoteConfig(): Promise<{ masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean; relayUrl: string } | null>
-  saveRemoteConfig(config: { masterSecret: string; deviceId: string; enabled: boolean; preventSleep: boolean; relayUrl: string }): Promise<void>
+  getRemoteConfig(): Promise<RemoteDeviceConfig | null>
+  saveRemoteConfig(config: RemoteDeviceConfig): Promise<void>
   onRecentFoldersChanged(callback: (folders: unknown[]) => void): () => void
   onRemoteCommand(callback: (command: unknown) => void): () => void
   onClientRegistered(callback: (info: { deviceName: string }) => void): () => void

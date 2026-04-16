@@ -40,6 +40,19 @@ vi.mock('./ToolIcon', () => ({
 
 vi.mock('./tool-display', () => ({
   getToolDisplay: () => ({ icon: 'terminal', summary: 'ls' }),
+  parseMcpToolName: (name: string) => {
+    const m = name.match(/^mcp__(.+?)__(.+)$/)
+    return m ? { serverName: m[1], mcpToolName: m[2] } : null
+  },
+}))
+
+vi.mock('@/stores/miniapp', () => ({
+  useMiniAppStore: (selector: (state: { apps: Array<{ id: string; manifest: Record<string, unknown> }> }) => unknown) =>
+    selector({ apps: [] }),
+}))
+
+vi.mock('@/components/miniapp/MiniAppIcon', () => ({
+  MiniAppIcon: () => <span>app-icon</span>,
 }))
 
 vi.mock('./PermissionModeSelector', () => ({

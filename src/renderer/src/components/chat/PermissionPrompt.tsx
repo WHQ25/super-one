@@ -1,13 +1,31 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useMiniAppStore } from '@/stores/miniapp'
+import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
-import { getToolDisplay } from './tool-display'
+import { getToolDisplay, parseMcpToolName } from './tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
+
+interface MiniAppToolInfo {
+  appId: string
+  appName: string
+  toolText: string
+}
+
+function MiniAppToolLabel({ info, textSize = 'text-xs' }: { info: MiniAppToolInfo; textSize?: string }) {
+  return (
+    <>
+      <span className={`${textSize} font-medium text-foreground`}>{info.appName}</span>
+      <span className={`${textSize} text-muted-foreground`}>·</span>
+      <span className={`${textSize} text-foreground`}>{info.toolText}</span>
+    </>
+  )
+}
 
 /** Dev-only: comma-separated tool names to show debug data in permission prompt. */
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
@@ -100,6 +118,24 @@ export function PermissionPrompt() {
   const isCodexDecisionPrompt = sessionProvider === 'codex' && allowAlwaysAllow
   const isEditTool = toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit'
   const suggestionsCount = pendingPermission?.suggestions?.length ?? 0
+
+  const apps = useMiniAppStore((s) => s.apps)
+  const miniAppInfo: MiniAppToolInfo | null = useMemo(() => {
+    if (!toolName) return null
+    const mcpInfo = parseMcpToolName(toolName)
+    if (!mcpInfo) return null
+    const inner = mcpInfo.mcpToolName.match(/^(.+?)__(.+)$/)
+    if (!inner) return null
+    const [, slug, mcpToolNamePart] = inner
+    const app = apps.find((a) => (a.manifest.toolSlug ?? a.id) === slug)
+    if (!app) return null
+    const toolDef = app.manifest.tools?.find((t) => t.name === mcpToolNamePart)
+    return {
+      appId: app.id,
+      appName: app.manifest.name,
+      toolText: toolDef?.displayName ?? mcpToolNamePart.replace(/_/g, ' '),
+    }
+  }, [toolName, apps])
 
   useEffect(() => {
     setFeedback('')
@@ -273,13 +309,20 @@ export function PermissionPrompt() {
           onClick={() => setIsCollapsed(false)}
           className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/60 px-3 py-2 text-left transition-colors hover:bg-muted"
         >
-          {isSandboxNetwork
-            ? <ShieldAlert className="size-3.5 shrink-0 animate-pulse text-amber-500" />
-            : <ToolIcon icon={display.icon} className="size-3.5 shrink-0 animate-pulse text-muted-foreground" />
-          }
-          <span className="text-xs font-medium text-foreground">
-            {isSandboxNetwork ? 'Sandbox Network' : toolName}
-          </span>
+          {isSandboxNetwork ? (
+            <ShieldAlert className="size-3.5 shrink-0 animate-pulse text-amber-500" />
+          ) : miniAppInfo ? (
+            <MiniAppIcon appId={miniAppInfo.appId} className="size-3.5 shrink-0 animate-pulse" />
+          ) : (
+            <ToolIcon icon={display.icon} className="size-3.5 shrink-0 animate-pulse text-muted-foreground" />
+          )}
+          {isSandboxNetwork ? (
+            <span className="text-xs font-medium text-foreground">Sandbox Network</span>
+          ) : miniAppInfo ? (
+            <MiniAppToolLabel info={miniAppInfo} />
+          ) : (
+            <span className="text-xs font-medium text-foreground">{toolName}</span>
+          )}
           <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {collapsedSummary}
           </span>
@@ -321,8 +364,16 @@ export function PermissionPrompt() {
                 <>
                   <div className="mb-2 flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
-                      <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="font-medium text-foreground">{toolName}</span>
+                      {miniAppInfo ? (
+                        <MiniAppIcon appId={miniAppInfo.appId} className="size-3.5 shrink-0" />
+                      ) : (
+                        <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                      {miniAppInfo ? (
+                        <MiniAppToolLabel info={miniAppInfo} textSize="text-xs" />
+                      ) : (
+                        <span className="font-medium text-foreground">{toolName}</span>
+                      )}
                       {isBash && typeof input.description === 'string' && input.description && (
                         <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>
                       )}

@@ -311,6 +311,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
                   summary: text || '',
                   ...(outputPath ? { outputPath } : {}),
                   ...(isTimedOut ? { isTimedOut } : {}),
+                  ...(block.is_error ? { isError: true } : {}),
                   parentToolUseId,
                 },
                 isSynthetic,
@@ -752,7 +753,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
             emit({
               type: 'content_delta',
               messageId,
-              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), parentToolUseId: raw.parent_tool_use_id ?? null },
+              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(raw.is_error ? { isError: true } : {}), parentToolUseId: raw.parent_tool_use_id ?? null },
             })
           }
           break

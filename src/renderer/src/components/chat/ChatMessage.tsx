@@ -50,6 +50,7 @@ interface GroupResult {
   toolNameMap: Map<string, string>
   toolResultMap: Map<string, string>
   timedOutToolIds: Set<string>
+  errorToolIds: Set<string>
   outputPathMap: Map<string, string>
 }
 
@@ -58,6 +59,7 @@ function groupContent(content: ContentBlock[]): GroupResult {
   const toolNameMap = new Map<string, string>()
   const toolResultMap = new Map<string, string>()
   const timedOutToolIds = new Set<string>()
+  const errorToolIds = new Set<string>()
   const outputPathMap = new Map<string, string>()
   const taskToolUseIds = new Set<string>()
   for (const block of content) {
@@ -67,6 +69,7 @@ function groupContent(content: ContentBlock[]): GroupResult {
     } else if (block.type === 'tool_result') {
       if (block.summary) toolResultMap.set(block.toolUseId, block.summary)
       if (block.isTimedOut) timedOutToolIds.add(block.toolUseId)
+      if (block.isError) errorToolIds.add(block.toolUseId)
       if (block.outputPath) outputPathMap.set(block.toolUseId, block.outputPath)
     }
   }
@@ -177,7 +180,7 @@ function groupContent(content: ContentBlock[]): GroupResult {
   }
   flush()
   flushAppGroup()
-  return { segments, toolNameMap, toolResultMap, timedOutToolIds, outputPathMap }
+  return { segments, toolNameMap, toolResultMap, timedOutToolIds, errorToolIds, outputPathMap }
 }
 
 function CopyButton({ copied, onClick, className }: { copied: boolean; onClick: () => void; className?: string }) {
@@ -211,6 +214,7 @@ function renderBlock(
   isStreaming: boolean,
   toolResultMap?: Map<string, string>,
   timedOutToolIds?: Set<string>,
+  errorToolIds?: Set<string>,
   outputPathMap?: Map<string, string>,
   nextBlockType?: string,
   prevBlockType?: string,
@@ -257,6 +261,7 @@ function renderBlock(
           elapsedSeconds={block.elapsedSeconds}
           result={toolResultMap?.get(block.toolUseId)}
           isTimedOut={timedOutToolIds?.has(block.toolUseId)}
+          isError={errorToolIds?.has(block.toolUseId)}
           resultOutputPath={outputPathMap?.get(block.toolUseId)}
           autoExpand={isBg ? false : undefined}
         />
@@ -623,7 +628,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                 const appToolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
                 if (appToolUseCount <= 1) {
                   return seg.blocks.map((block, i) =>
-                    renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type, projectPath)
+                    renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.errorToolIds, grouped!.outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type, projectPath)
                   )
                 }
                 return (
@@ -639,12 +644,12 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                 const prevSeg = segs[segIdx - 1]
                 const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : nextSeg?.kind === 'subagent' ? 'tool_use' : undefined
                 const prevType = prevSeg?.kind === 'block' ? prevSeg.block.type : undefined
-                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.outputPathMap, nextType, prevType, projectPath)
+                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.errorToolIds, grouped!.outputPathMap, nextType, prevType, projectPath)
               }
               const toolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
               if (toolUseCount <= 1) {
                 return seg.blocks.map((block, i) =>
-                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type, projectPath)
+                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.errorToolIds, grouped!.outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type, projectPath)
                 )
               }
               return (

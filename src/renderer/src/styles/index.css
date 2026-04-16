@@ -357,6 +357,10 @@ body {
     border-left-color: var(--color-red-400);
   }
 
+  .tool-node.errored {
+    border-left-color: var(--color-amber-400);
+  }
+
   .thinking-content {
     margin-left: 0.5rem;
     border-left: 2px solid var(--border);

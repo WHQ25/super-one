@@ -60,6 +60,11 @@ export function computeLineDelta(toolName: string, params: Record<string, unknow
   return null
 }
 
+export function extractToolError(text: string): string {
+  const match = text.match(/<tool_use_error>([\s\S]*?)<\/tool_use_error>/)
+  return match ? match[1].trim() : text
+}
+
 export function tryPrettifyJson(text: string): string | null {
   try {
     const parsed = JSON.parse(text)

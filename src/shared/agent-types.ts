@@ -46,7 +46,7 @@ export type ContentBlock =
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null }
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData
-  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
+  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
   | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[] }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
   | { type: 'codex_plan'; text: string; itemId: string }

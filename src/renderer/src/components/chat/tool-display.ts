@@ -121,6 +121,11 @@ export function parseToolInput(input: string, toolName?: string): Record<string,
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
   } catch {
     if (toolName === 'Bash' && input.trim()) return { command: input }
-    return {}
+    const partial: Record<string, unknown> = {}
+    const pathMatch = input.match(/"file_path"\s*:\s*"([^"]*)"/)
+    if (pathMatch) partial.file_path = pathMatch[1]
+    const nbMatch = input.match(/"notebook_path"\s*:\s*"([^"]*)"/)
+    if (nbMatch) partial.notebook_path = nbMatch[1]
+    return partial
   }
 }

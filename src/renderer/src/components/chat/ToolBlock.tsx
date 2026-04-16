@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo } from 'react'
-import { ChevronRight, PenLine, Check, X, Ban } from 'lucide-react'
+import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
 import { inferLanguage, useHighlightedTokens, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
@@ -14,7 +14,7 @@ import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, formatRe
 import { codePlugin } from './chat-shared'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
-import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, tryPrettifyJson, parseQAPairs } from './tool-block-utils'
+import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, tryPrettifyJson, parseQAPairs, extractToolError } from './tool-block-utils'
 import { WidgetBlock } from './WidgetBlock'
 import { parseWidgetResult, parsePartialWidgetInput } from '../../../../shared/generative-ui/types'
 import { parseInChatResult } from '../../../../shared/miniapp-types'
@@ -104,6 +104,7 @@ interface ToolBlockProps {
   elapsedSeconds?: number
   result?: string
   isTimedOut?: boolean
+  isError?: boolean
   resultOutputPath?: string
   autoExpand?: boolean
   backgroundActivity?: boolean
@@ -115,7 +116,7 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 
-export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, resultOutputPath, autoExpand = true, backgroundActivity = false, grouped = false }: ToolBlockProps) {
+export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand = true, backgroundActivity = false, grouped = false }: ToolBlockProps) {
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const params = useMemo(() => parseToolInput(input, toolName), [input, toolName])
@@ -194,8 +195,8 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     setFeedbackIsBlock(el.scrollWidth > el.clientWidth)
   }, [deniedFeedback])
 
-  const lineDelta = useMemo(() => (!isStreaming && !isDenied) ? computeLineDelta(toolName, params) : null, [toolName, params, isStreaming, isDenied])
-  const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && !isDenied && (
+  const lineDelta = useMemo(() => (!isStreaming && !isDenied && !isError) ? computeLineDelta(toolName, params) : null, [toolName, params, isStreaming, isDenied, isError])
+  const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && !isDenied && !isError && (
     toolName === 'FileChange'
       ? String(params.diff ?? '').length > 0
       : Object.keys(params).length > 0
@@ -342,7 +343,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     <div
       className={cn(
         'tool-node my-0.5 rounded transition-colors',
-        isDenied ? 'denied bg-red-500/10' : 'bg-muted/50',
+        isDenied ? 'denied bg-red-500/10' : isError ? 'errored bg-amber-500/10' : 'bg-muted/50',
         expandable && 'cursor-pointer hover:bg-muted/70'
       )}
     >
@@ -352,12 +353,14 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
       >
         {isDenied ? (
           <Ban className="size-3 shrink-0 text-red-400" />
+        ) : isError ? (
+          <TriangleAlert className="size-3 shrink-0 text-amber-400" />
         ) : isMcp && mcpIconSrc ? (
           <img src={mcpIconSrc} alt={mcpInfo.serverName} className="size-3.5 shrink-0 rounded-sm object-cover" />
         ) : (
           <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className={cn('font-medium', isDenied && toolName !== 'AskUserQuestion' ? 'text-red-400' : 'text-foreground')}>
+        <span className={cn('font-medium', isDenied && toolName !== 'AskUserQuestion' ? 'text-red-400' : isError ? 'text-amber-400' : 'text-foreground')}>
           {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName === 'AskUserQuestion' ? `Asked${display.summary ? ` ${display.summary}` : ''}` : displayName}
         </span>
         {isQuestionDismissed ? (
@@ -373,6 +376,15 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
             {deniedFeedback && !feedbackIsBlock && (
               <span ref={feedbackRef} className="min-w-0 truncate text-red-400/70">{deniedFeedback}</span>
             )}
+          </>
+        ) : isError ? (
+          <>
+            {fileToolName ? (
+              <FileChip name={fileToolName} title={display.summary} filePath={fileToolPath} />
+            ) : summary ? (
+              <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
+            ) : null}
+            <span className="shrink-0 rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-400">Error</span>
           </>
         ) : fileToolName ? (
           <>
@@ -419,7 +431,10 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
               {toolName === 'Edit' && <EditDiff params={params} />}
               {toolName === 'Write' && <WriteDiff params={params} />}
               {toolName === 'FileChange' && <FileChangeDiff params={params} />}
-              {hasResult && (!hasDiff || toolName === 'FileChange') && (
+              {isError && cleanResult && (
+                <div className="text-xs text-amber-400/90">{extractToolError(cleanResult)}</div>
+              )}
+              {hasResult && !isError && (!hasDiff || toolName === 'FileChange') && (
                 <div>
                   {isMcp ? <PrettyJSONCodeBlock text={cleanResult!} /> : <ToolResult text={cleanResult!} />}
                 </div>

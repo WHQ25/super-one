@@ -1201,6 +1201,8 @@ export const AgentIpcChannels = {
 
   // Settings
   SET_FAST_MODE: 'app:set-fast-mode',
+  APP_SETTINGS_GET: 'app:settings-get',
+  APP_SETTINGS_SAVE: 'app:settings-save',
 
   // Logging
   GET_LOG_PATH: 'app:get-log-path',
@@ -1341,4 +1343,8 @@ export interface RemoteDeviceConfig {
   deviceId: string
   preventSleep: boolean
   relayUrl: string
+}
+
+export interface AppSettings {
+  analyticsEnabled: boolean
 }

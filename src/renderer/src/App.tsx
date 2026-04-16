@@ -26,6 +26,7 @@ import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useActiveSession } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
+import { initAnalytics } from '@/lib/analytics'
 
 export const LAYOUT = {
   MIN_MAIN: 400,
@@ -47,6 +48,9 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     useAppStore.getState().loadRemoteConfig()
+    window.app.getAppSettings()
+      .then((s) => { if (s.analyticsEnabled) initAnalytics() })
+      .catch((err) => console.error('[analytics] failed to load app settings', err))
   }, [])
 
   useEffect(() => {

@@ -51,6 +51,7 @@ import { listAutomationsForProject, createAutomation as dbCreateAutomation, upda
 import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readUserPreferences, saveUserPreferences, readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
+import { readAppSettings, saveAppSettings } from './app-settings-service'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest } from '../shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
@@ -1257,6 +1258,9 @@ function registerIpcHandlers(): void {
     agentService.markAllNeedsRebuild()
     return result
   })
+
+  ipcMain.handle(AgentIpcChannels.APP_SETTINGS_GET, () => readAppSettings())
+  ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => saveAppSettings(patch))
 
   ipcMain.handle(AgentIpcChannels.SET_FAST_MODE, (_e, enabled: boolean) => {
     const settingsPath = join(homedir(), '.claude', 'settings.json')

@@ -48,8 +48,8 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
-          SO_SUPABASE_URL: ${{ secrets.SO_SUPABASE_URL }}
-          SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}
+
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
 
   release-win:
     if: >-
@@ -68,8 +68,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
-          SO_SUPABASE_URL: ${{ secrets.SO_SUPABASE_URL }}
-          SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}
+
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
 
   release-linux:
     if: >-
@@ -88,5 +88,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
-          SO_SUPABASE_URL: ${{ secrets.SO_SUPABASE_URL }}
-          SO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SO_SUPABASE_PUBLISHABLE_KEY }}
+
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}

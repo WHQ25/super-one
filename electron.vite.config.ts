@@ -38,7 +38,11 @@ export default defineConfig(({ mode }) => {
     }
   },
   renderer: {
-    define: {},
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+      __POSTHOG_PROJECT_TOKEN__: JSON.stringify(env.POSTHOG_PROJECT_TOKEN ?? ''),
+      __POSTHOG_HOST__: JSON.stringify(env.POSTHOG_HOST ?? ''),
+    },
     server: {
       port: parseInt(process.env.VITE_PORT || '5173'),
       strictPort: true

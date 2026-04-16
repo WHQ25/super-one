@@ -1,4 +1,4 @@
-import { ArrowLeft, Blocks, Bot, Globe, LayoutGrid, Palette, Puzzle, Server, Smartphone } from 'lucide-react'
+import { ArrowLeft, Blocks, Bot, Globe, LayoutGrid, Palette, Puzzle, Server, Settings, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
 import { AgentsPage } from './AgentsPage'
@@ -9,12 +9,15 @@ import { PreferencesPage } from './PreferencesPage'
 import { ProvidersPage } from './ProvidersPage'
 import { RemotePage } from './RemotePage'
 import { AppsSettingsPage } from './AppsSettingsPage'
+import { AppSettingsPage } from './AppSettingsPage'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { SettingsProvider } from '../../../shared/agent-types'
 
 const globalTabs = [
+  { id: 'app-settings' as const, label: 'General', icon: Settings },
   { id: 'apps' as const, label: 'Mini Apps', icon: LayoutGrid },
+  { id: 'remote' as const, label: 'Remote Control', icon: Smartphone },
 ]
 
 const providerTabs = [
@@ -58,19 +61,6 @@ export function SettingsLayout() {
           Back
         </Button>
 
-        <button
-          onClick={() => setSettingsTab('remote')}
-          className={cn(
-            'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors mb-2',
-            settingsTab === 'remote'
-              ? 'bg-accent text-accent-foreground'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-          )}
-        >
-          <Smartphone className="size-4" />
-          Remote Control
-        </button>
-
         <nav className="flex flex-col gap-1 mb-3">
           {globalTabs.map((tab) => (
             <button
@@ -90,7 +80,7 @@ export function SettingsLayout() {
         </nav>
 
         <div className="border-t border-border pt-3 mb-3">
-          <Tabs value={settingsProvider} onValueChange={(v) => setSettingsProvider(v as SettingsProvider)} className={cn(settingsTab === 'remote' && 'pointer-events-none opacity-40')}>
+          <Tabs value={settingsProvider} onValueChange={(v) => setSettingsProvider(v as SettingsProvider)}>
             <TabsList className="border-0 bg-muted">
               {providers.map((p) => (
                 <TabsTrigger key={p.id} value={p.id} className="py-1">
@@ -127,6 +117,7 @@ export function SettingsLayout() {
         {settingsTab === 'skills' && <SkillsPage />}
         {settingsTab === 'mcp' && <McpPage />}
         {settingsTab === 'plugins' && <PluginsPage />}
+        {settingsTab === 'app-settings' && <AppSettingsPage />}
         {settingsTab === 'apps' && <AppsSettingsPage />}
         {settingsTab === 'preferences' && <PreferencesPage />}
         {settingsTab === 'remote' && <RemotePage />}

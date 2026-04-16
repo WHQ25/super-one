@@ -511,6 +511,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CLAUDE_PROJECT_PREFERENCES_SAVE, projectPath, preferences),
   setFastMode: (enabled: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_FAST_MODE, enabled),
+  getAppSettings: () =>
+    ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_GET),
+  saveAppSettings: (patch: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
 
   // Logging
   getLogPath: () =>

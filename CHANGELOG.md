@@ -4,13 +4,9 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.20.1-alpha] - 2026-04-16
+## [0.20.1-alpha] - 2026-04-17
 
-### Fixed
-
-- Missing `ws` dependency caused v0.20.0-alpha CI to fail on all platforms; relay WebSocket import now resolves under frozen lockfile
-
-## [0.20.0-alpha] - 2026-04-16
+> Note: v0.20.0-alpha was tagged but its CI build failed due to a missing `ws` dependency. v0.20.1-alpha is the first shipped binary in the 0.20 line and includes everything originally planned for 0.20.0 plus the dependency fix.
 
 ### Added
 
@@ -26,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 
 - Paste chip ring clipped when the chip is selected
+- Missing `ws` dependency caused v0.20.0-alpha CI to fail on all platforms; relay WebSocket import now resolves under frozen lockfile
 
 ### Refactored
 

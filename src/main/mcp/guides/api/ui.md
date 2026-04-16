@@ -116,7 +116,7 @@ Popover templates are HTML files declared in `manifest.json`:
 {
   "appId": "my-app",
   "name": "My App",
-  "popovers": {
+  "templates": {
     "detail": "popovers/detail.html",
     "color-picker": "popovers/color-picker.html"
   }
@@ -147,7 +147,7 @@ handle.onClose(function() {
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `template` | `string` | **Required.** Popover name from manifest `popovers` |
+| `template` | `string` | **Required.** Template name from manifest `templates` |
 | `data` | `unknown` | Initial data passed to the popover template |
 | `anchorRect` | `{ x, y, width, height }` | Anchor element rect (from `getBoundingClientRect()`) |
 | `side` | `'top' \| 'bottom' \| 'left' \| 'right'` | Optional. Defaults to `'bottom'` |

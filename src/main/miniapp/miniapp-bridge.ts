@@ -91,3 +91,67 @@ ${generateReadyBlock(appId)}
 })();
 </script>`
 }
+
+function wrapToolBridgeScript(appId: string, version: string, toolObjectBody: string): string {
+  return `<script>
+(function() {
+  ${generateTransportBlock(appId)}
+
+  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)});
+  delete window.superone.ui.showPopover;
+
+  window.superone.tool = ${toolObjectBody};
+${generateReadyBlock(appId)}
+})();
+</script>`
+}
+
+export function generateToolInterceptBridgeScript(
+  appId: string,
+  version: string,
+  ctx: { callId: string; toolName: string; initialData: unknown },
+): string {
+  const callIdJson = JSON.stringify(ctx.callId)
+  const toolNameJson = JSON.stringify(ctx.toolName)
+  const dataJson = JSON.stringify(ctx.initialData ?? null)
+  const body = `(function() {
+    var settled = false;
+    return {
+      phase: 'intercept',
+      callId: ${callIdJson},
+      toolName: ${toolNameJson},
+      data: ${dataJson},
+      submit: function(userInput) {
+        if (settled) return;
+        settled = true;
+        transport.send('miniapp-tool-submit', { callId: ${callIdJson}, userInput: userInput || {} });
+      },
+      cancel: function(reason) {
+        if (settled) return;
+        settled = true;
+        transport.send('miniapp-tool-cancel', { callId: ${callIdJson}, reason: reason || null });
+      },
+    };
+  })()`
+  return wrapToolBridgeScript(appId, version, body)
+}
+
+export function generateToolResultBridgeScript(
+  appId: string,
+  version: string,
+  ctx: { callId: string; toolName: string; result: unknown },
+): string {
+  const callIdJson = JSON.stringify(ctx.callId)
+  const toolNameJson = JSON.stringify(ctx.toolName)
+  const dataJson = JSON.stringify(ctx.result ?? null)
+  const body = `{
+    phase: 'result',
+    callId: ${callIdJson},
+    toolName: ${toolNameJson},
+    data: ${dataJson},
+    close: function() {
+      transport.send('miniapp-tool-result-close', { callId: ${callIdJson} });
+    },
+  }`
+  return wrapToolBridgeScript(appId, version, body)
+}

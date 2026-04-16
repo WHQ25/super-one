@@ -30,6 +30,23 @@ const toolInputSchemaSchema = z.looseObject({
   required: z.array(z.string()).optional(),
 })
 
+const interceptRendererSchema = z.object({
+  template: z.string().min(1),
+  inputMerge: z.enum(['shallow-merge', 'replace']).default('shallow-merge'),
+  onCancel: z.enum(['reject', 'resolve-empty']).default('reject'),
+  timeoutMs: z.number().int().nonnegative().optional(),
+})
+
+const resultRendererSchema = z.object({
+  template: z.string().min(1),
+  autoExpand: z.boolean().default(false),
+})
+
+const toolRendererSchema = z.object({
+  intercept: interceptRendererSchema.optional(),
+  result: resultRendererSchema.optional(),
+})
+
 const toolDefinitionSchema = z.object({
   name: z.string().min(1).regex(/^[a-z0-9_]+$/, { message: 'Tool name must be lowercase alphanumeric with underscores' }),
   description: z.string().min(1),
@@ -40,6 +57,7 @@ const toolDefinitionSchema = z.object({
   showResult: z.boolean().optional(),
   groupable: z.boolean().optional(),
   inputSchema: toolInputSchemaSchema,
+  renderer: toolRendererSchema.optional(),
 })
 
 const TOOL_NAME_RE = /^[a-z0-9_]+$/
@@ -60,8 +78,8 @@ export const manifestSchema = z.object({
   inChatToolDescription: z.string().optional(),
   runningText: z.string().optional(),
   inputSchema: toolInputSchemaSchema.optional(),
-  popovers: z.record(
-    z.string().min(1).regex(/^[a-z0-9_-]+$/, { message: 'Popover name must be lowercase alphanumeric with hyphens or underscores' }),
+  templates: z.record(
+    z.string().min(1).regex(/^[a-z0-9_-]+$/, { message: 'Template name must be lowercase alphanumeric with hyphens or underscores' }),
     z.string().min(1),
   ).optional(),
 }).refine(
@@ -82,6 +100,26 @@ export const manifestSchema = z.object({
     return !!m.toolSlug
   },
   { message: 'apps with tools require toolSlug' },
+).refine(
+  (m) => {
+    if (!m.tools) return true
+    for (const t of m.tools) {
+      const tpl = t.renderer?.intercept?.template
+      if (tpl && !(m.templates && tpl in m.templates)) return false
+    }
+    return true
+  },
+  { message: 'renderer.intercept.template must reference a key in manifest.templates' },
+).refine(
+  (m) => {
+    if (!m.tools) return true
+    for (const t of m.tools) {
+      const tpl = t.renderer?.result?.template
+      if (tpl && !(m.templates && tpl in m.templates)) return false
+    }
+    return true
+  },
+  { message: 'renderer.result.template must reference a key in manifest.templates' },
 )
 
 export type ManifestParseResult =

@@ -177,3 +177,134 @@ Behavior: groups of >1 call are collapsed by default; the currently streaming ca
 | `showResult` | boolean | Allow expanding to view full result. |
 | `groupable` | boolean | Allow consecutive calls to auto-group. |
 | `inputSchema` | object (required) | JSON Schema for tool parameters. |
+| `renderer.intercept` | object | Human-in-the-loop: render a template in the chat tool block before the call reaches the mini-app. See below. |
+
+## Human-in-the-Loop Tool Calls (`renderer.intercept`)
+
+When a tool call must be confirmed or completed by the user, declare a `renderer.intercept` on the tool. The chat tool block will expand an inline iframe using one of your `templates`, and the mini-app's `tools.handle` receives a **merged** input (agent input + user input) only after the user submits.
+
+Lifecycle:
+
+1. Agent streams input.
+2. SuperOne detects `renderer.intercept` and pauses dispatch.
+3. The chat tool block expands the template iframe. `superone.tool.data` holds the agent input.
+4. User interacts and calls `superone.tool.submit(userInput)` or `superone.tool.cancel(reason)`.
+5. SuperOne merges `agentInput` and `userInput` (per `inputMerge`) and finally dispatches to the mini-app's `tools.handle`.
+6. The handler's return value becomes the tool result; the tool block collapses back to the running state until result arrives.
+
+```json
+{
+  "name": "confirm_purchase",
+  "description": "Propose a purchase; user must confirm qty and payment.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "item_id": { "type": "string" },
+      "suggested_qty": { "type": "number" }
+    },
+    "required": ["item_id", "suggested_qty"]
+  },
+  "renderer": {
+    "intercept": {
+      "template": "confirm",
+      "inputMerge": "shallow-merge",
+      "onCancel": "resolve-empty",
+      "height": 200
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `template` | string (required) | Key in `manifest.templates` pointing to the intercept HTML. |
+| `inputMerge` | `'shallow-merge' \| 'replace'` | How to combine agent input with user input. Default `shallow-merge`. |
+| `onCancel` | `'reject' \| 'resolve-empty'` | What the agent sees if the user cancels. `reject` surfaces an error; `resolve-empty` returns `{ cancelled: true, reason }`. Default `reject`. |
+| `timeoutMs` | number | Maximum time to wait for user input before failing. Defaults to the global tool-call timeout (60s). Use `0` to disable (wait forever). |
+
+Template height is controlled entirely by the template itself — the iframe auto-resizes to the body. Handle loading placeholders and skeleton UIs inside the template's HTML/CSS, not via manifest config.
+
+### Intercept Template API
+
+Inside an intercept template only `window.superone.tool` is exposed (plus the usual read-only APIs like `fs`, `theme`, `clipboard`). The template **must** call either `submit` or `cancel` exactly once:
+
+```js
+// popovers/confirm.html
+var agentInput = superone.tool.data
+
+document.getElementById('ok').onclick = function() {
+  superone.tool.submit({ final_qty: 2, payment: 'alipay' })
+}
+document.getElementById('cancel').onclick = function() {
+  superone.tool.cancel('user_rejected')
+}
+```
+
+`superone.tool` fields:
+
+| Field | Description |
+|-------|-------------|
+| `phase` | Always `'intercept'` in this mode. |
+| `callId` | Internal identifier. |
+| `toolName` | The tool name being intercepted. |
+| `data` | The agent's input (the un-merged `agentInput`). |
+| `submit(userInput)` | Finalise the call. The mini-app's `tools.handle` runs next. |
+| `cancel(reason?)` | Abort. See `onCancel`. |
+
+Notes:
+
+- Templates are sandboxed iframes and cannot call `ui.showPopover` recursively.
+- The same `templates` map is shared with `ui.showPopover`; a template may serve both use cases by inspecting URL parameters (`_toolIntercept`, `_toolResult`, `_popover`).
+- Default timeout follows the global tool-call timeout (60s). Tune per-tool via `timeoutMs`, or set to `0` to wait indefinitely.
+- When the agent is interrupted, all pending intercept prompts are rejected and collapsed automatically.
+
+## Result Renderer (`renderer.result`)
+
+Show a custom HTML view for the tool's result instead of (or in addition to) the raw JSON expand panel. The template is loaded inline in the chat tool block and receives the tool result as `superone.tool.data`.
+
+Unlike `renderer.intercept`, this is purely presentational — the agent-visible tool result is already finalised by the time the template loads. The template cannot change it.
+
+```json
+{
+  "name": "confirm_purchase",
+  "description": "…",
+  "inputSchema": { "type": "object", "properties": { /* … */ } },
+  "renderer": {
+    "result": {
+      "template": "receipt",
+      "autoExpand": true,
+      "height": 180
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `template` | string (required) | Key in `manifest.templates` pointing to the result HTML. |
+| `autoExpand` | boolean | If `true`, the renderer is expanded as soon as the result arrives. Defaults `false` — the user clicks the tool block to expand. Recommend `false` in production to keep the chat compact. |
+
+### Result Template API
+
+Inside a result template, `window.superone.tool` exposes:
+
+| Field | Description |
+|-------|-------------|
+| `phase` | Always `'result'` in this mode. |
+| `callId` | Internal identifier (equals the tool block's `toolUseId`). |
+| `toolName` | The tool name that produced the result. |
+| `data` | The tool's return value (already parsed from JSON). |
+| `close()` | Collapse the renderer view. The result itself is unaffected. |
+
+```js
+// popovers/receipt.html
+var r = superone.tool.data
+document.getElementById('order').textContent = r.order_id
+document.getElementById('close').onclick = () => superone.tool.close()
+```
+
+Tips:
+
+- Keep result renderers **read-only** — buttons that would mutate state should trigger a new agent prompt via `superone.agent.sendPrompt()` rather than reusing the same tool call.
+- `resultSummaryField` still works: pick a short string from the result and it will show in the collapsed header, making the tool block informative even before the user expands it.
+- Combining `renderer.intercept` and `renderer.result` on the same tool gives you full control of both phase 2 (user input) and phase 5 (result display).

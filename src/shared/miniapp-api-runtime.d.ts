@@ -18,6 +18,25 @@ export interface PopoverApi {
   close(): void
 }
 
+export interface ToolInterceptApi {
+  phase: 'intercept'
+  callId: string
+  toolName: string
+  data: unknown
+  submit(userInput: Record<string, unknown>): void
+  cancel(reason?: string | null): void
+}
+
+export interface ToolResultApi {
+  phase: 'result'
+  callId: string
+  toolName: string
+  data: unknown
+  close(): void
+}
+
+export type ToolRendererApi = ToolInterceptApi | ToolResultApi
+
 export interface SuperoneApi {
   version: string
   tools: { handle(name: string, callback: (args: Record<string, unknown>) => unknown): void }
@@ -84,6 +103,7 @@ export interface SuperoneApi {
     }): PopoverHandle
   }
   popover?: PopoverApi
+  tool?: ToolRendererApi
   isDarkMode(): boolean
   onDarkModeChange(cb: (isDark: boolean) => void): () => void
 }

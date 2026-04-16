@@ -17,6 +17,7 @@ import { getDb, getCachedResources } from '../database'
 import { sanitizeGitRef } from '../path-security'
 import { searchFiles, searchMentions, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
+import { clearAllPendingCalls as clearAllPendingMiniAppCalls } from '../mcp/superone-mcp-server'
 import { resolveSdkCli, getNodeRuntime } from './resolve-cli'
 import { applyClaudeEventToRuntime, buildClaudeUserMessage, createClaudeRuntime, extractClaudeTitle, hydrateClaudeRuntime, mergeClaudeRuntimes, patchAgentBlock, readOutputFileResultText, syncClaudeRuntimeLocation, type ClaudeSessionRuntime, type PersistedClaudeSessionState } from './claude-session-runtime'
 import { applyCodexEventToRuntime, buildCodexAssistantMessage, buildCodexUserMessage, createCodexRuntime, extractCodexTitle, finalizeCodexAssistantMessage, hydrateCodexRuntime, mergeCodexRuntimes, removeCodexAssistantMessage, syncCodexRuntimeLocation, withCodexTurnMessages, type CodexSessionRuntime, type PersistedCodexSessionState } from './codex-session-runtime'
@@ -999,7 +1000,7 @@ export class AgentService {
           break
         }
         const agent = this.findAgentBySessionId(projectPath, command.sessionId)
-        if (agent) { clearAllGates(); await agent.interrupt() }
+        if (agent) { clearAllGates(); clearAllPendingMiniAppCalls(); await agent.interrupt() }
         break
       }
       case 'respond_permission': {
@@ -1678,6 +1679,7 @@ export class AgentService {
       const agent = this.agents.get(projectPath)
       if (!agent) return false
       clearAllGates()
+      clearAllPendingMiniAppCalls()
       await agent.interrupt()
       if (this.isRemoteLockedSession(projectPath)) {
         this.remoteControlService?.unsubscribeSession((e) => this.broadcastEventToRenderer(e))

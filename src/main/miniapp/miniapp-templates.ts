@@ -366,6 +366,25 @@ interface SuperOnePopoverApi {
   close(): void
 }
 
+interface SuperOneToolInterceptApi {
+  readonly phase: 'intercept'
+  readonly callId: string
+  readonly toolName: string
+  readonly data: unknown
+  submit(userInput: Record<string, unknown>): void
+  cancel(reason?: string | null): void
+}
+
+interface SuperOneToolResultApi {
+  readonly phase: 'result'
+  readonly callId: string
+  readonly toolName: string
+  readonly data: unknown
+  close(): void
+}
+
+type SuperOneToolRendererApi = SuperOneToolInterceptApi | SuperOneToolResultApi
+
 interface SuperOne {
   readonly version: string
   tools: {
@@ -435,6 +454,7 @@ interface SuperOne {
     }): SuperOnePopoverHandle
   }
   popover?: SuperOnePopoverApi
+  tool?: SuperOneToolRendererApi
   isDarkMode(): boolean
   onDarkModeChange(callback: (isDark: boolean) => void): () => void
 }

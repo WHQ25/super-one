@@ -7,7 +7,7 @@ import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { BrowserWindow } from 'electron'
 import log from '../logger'
-import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppManifest } from '../../shared/miniapp-types'
+import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest, MiniAppManifest } from '../../shared/miniapp-types'
 import { AgentIpcChannels } from '../../shared/agent-types'
 import { createMiniApp, cacheAppBasePath } from '../miniapp/miniapp-service'
 import { packApp, getPreapprovedByPath } from '../miniapp/miniapp-packager'
@@ -64,6 +64,14 @@ let mcpServer: McpServer | null = null
 const registeredTools = new Map<string, RegisteredTool>()
 const pendingCalls = new Map<string, PendingCall>()
 const appToolDefs = new Map<string, { toolSlug: string; tools: MiniAppToolDefinition[] }>()
+const appTemplates = new Map<string, Record<string, string>>()
+
+interface PendingIntercept {
+  resolve: (userInput: Record<string, unknown>) => void
+  reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout> | null
+}
+const pendingIntercepts = new Map<string, PendingIntercept>()
 const appReadyGates = new Map<string, GateEntry>()
 const preapprovedTools = new Set<string>()
 
@@ -379,36 +387,147 @@ export function clearAllPendingCalls(): void {
     pending.reject(new Error('All pending calls cleared'))
   }
   pendingCalls.clear()
+  const hadIntercepts = pendingIntercepts.size > 0
+  for (const [, p] of pendingIntercepts) {
+    if (p.timer) clearTimeout(p.timer)
+    p.reject(new Error('All pending calls cleared'))
+  }
+  pendingIntercepts.clear()
+  if (hadIntercepts) {
+    const win = getMainWindow?.()
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CLEAR_ALL)
+    }
+  }
 }
 
-export function executeAppTool(appId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
-  if (!appToolDefs.has(appId)) {
-    return Promise.reject(new Error(`App "${appId}" has been closed. This tool is no longer available.`))
+export function registerAppTemplates(appId: string, templates: Record<string, string> | undefined): void {
+  if (templates && Object.keys(templates).length > 0) {
+    appTemplates.set(appId, templates)
+  } else {
+    appTemplates.delete(appId)
+  }
+}
+
+export function unregisterAppTemplates(appId: string): void {
+  appTemplates.delete(appId)
+}
+
+function mergeInterceptInput(
+  agentInput: Record<string, unknown>,
+  userInput: Record<string, unknown>,
+  strategy: 'shallow-merge' | 'replace',
+): Record<string, unknown> {
+  if (strategy === 'replace') return userInput
+  return { ...agentInput, ...userInput }
+}
+
+function openInterceptRenderer(req: MiniAppToolInterceptOpenRequest, timeoutMs: number): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        pendingIntercepts.delete(req.callId)
+        reject(new Error(`Intercept timeout after ${timeoutMs}ms: ${req.toolName}`))
+      }, timeoutMs)
+    }
+    pendingIntercepts.set(req.callId, { resolve, reject, timer })
+    const win = getMainWindow?.()
+    if (!win || win.isDestroyed()) {
+      if (timer) clearTimeout(timer)
+      pendingIntercepts.delete(req.callId)
+      reject(new Error('Main window not available'))
+      return
+    }
+    try {
+      win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN, req)
+    } catch (err) {
+      if (timer) clearTimeout(timer)
+      pendingIntercepts.delete(req.callId)
+      reject(err instanceof Error ? err : new Error(String(err)))
+    }
+  })
+}
+
+function settleIntercept(callId: string, outcome: { userInput: Record<string, unknown> } | { error: Error }): void {
+  const p = pendingIntercepts.get(callId)
+  if (!p) return
+  if (p.timer) clearTimeout(p.timer)
+  pendingIntercepts.delete(callId)
+  if ('userInput' in outcome) p.resolve(outcome.userInput)
+  else p.reject(outcome.error)
+}
+
+export function submitToolIntercept(callId: string, userInput: Record<string, unknown>): void {
+  settleIntercept(callId, { userInput })
+}
+
+export function cancelToolIntercept(callId: string, reason?: string): void {
+  settleIntercept(callId, { error: new Error(reason ?? 'user_cancelled') })
+}
+
+function sendToolCall(callId: string, appId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+  const request: MiniAppToolCallRequest = { callId, appId, toolName, arguments: args }
+  return new Promise<unknown>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingCalls.delete(callId)
+      reject(new Error(`Tool call timeout after ${TOOL_CALL_TIMEOUT_MS}ms: ${toolName}`))
+    }, TOOL_CALL_TIMEOUT_MS)
+
+    pendingCalls.set(callId, { resolve, reject, timer })
+
+    const win = getMainWindow?.()
+    if (!win || win.isDestroyed()) {
+      pendingCalls.delete(callId)
+      clearTimeout(timer)
+      reject(new Error('Main window not available'))
+      return
+    }
+
+    win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_CALL, request)
+  })
+}
+
+export async function executeAppTool(appId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+  const defsEntry = appToolDefs.get(appId)
+  if (!defsEntry) {
+    throw new Error(`App "${appId}" has been closed. This tool is no longer available.`)
   }
 
-  return waitForAppReady(appId).then(() => {
-    const callId = randomUUID()
-    const request: MiniAppToolCallRequest = { callId, appId, toolName, arguments: args }
+  await waitForAppReady(appId)
 
-    return new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pendingCalls.delete(callId)
-        reject(new Error(`Tool call timeout after ${TOOL_CALL_TIMEOUT_MS}ms: ${toolName}`))
-      }, TOOL_CALL_TIMEOUT_MS)
+  const toolDef = defsEntry.tools.find((t) => t.name === toolName)
+  const intercept = toolDef?.renderer?.intercept
+  const callId = randomUUID()
 
-      pendingCalls.set(callId, { resolve, reject, timer })
-
-      const win = getMainWindow?.()
-      if (!win || win.isDestroyed()) {
-        pendingCalls.delete(callId)
-        clearTimeout(timer)
-        reject(new Error('Main window not available'))
-        return
+  let finalInput = args
+  if (intercept) {
+    const templates = appTemplates.get(appId)
+    const templatePath = templates?.[intercept.template]
+    if (!templatePath) {
+      throw new Error(`Template "${intercept.template}" not found in manifest.templates`)
+    }
+    try {
+      const timeoutMs = intercept.timeoutMs ?? TOOL_CALL_TIMEOUT_MS
+      const userInput = await openInterceptRenderer({
+        callId,
+        appId,
+        toolSlug: defsEntry.toolSlug,
+        toolName,
+        agentInput: args,
+        template: intercept.template,
+        templatePath,
+      }, timeoutMs)
+      finalInput = mergeInterceptInput(args, userInput, intercept.inputMerge ?? 'shallow-merge')
+    } catch (err) {
+      if (intercept.onCancel === 'resolve-empty') {
+        return { cancelled: true, reason: err instanceof Error ? err.message : String(err) }
       }
+      throw err
+    }
+  }
 
-      win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_CALL, request)
-    })
-  })
+  return sendToolCall(callId, appId, toolName, finalInput)
 }
 
 export function getAppToolDefs(): Map<string, { toolSlug: string; tools: MiniAppToolDefinition[] }> {

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Receipt</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; padding: 14px; background: #fafaf9; color: #1c1917; font-size: 13px; }
+    @media (prefers-color-scheme: dark) { body { background: #1c1917; color: #fafaf9; } }
+    .receipt { background: #fff; border: 1px dashed #d6d3d1; border-radius: 6px; padding: 14px; }
+    @media (prefers-color-scheme: dark) { .receipt { background: #292524; border-color: #57534e; } }
+    .title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-weight: 600; font-size: 14px; }
+    .check { width: 18px; height: 18px; border-radius: 50%; background: #22c55e; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
+    .row { display: flex; justify-content: space-between; padding: 3px 0; color: #57534e; }
+    @media (prefers-color-scheme: dark) { .row { color: #a8a29e; } }
+    .row .v { color: #1c1917; font-family: ui-monospace, monospace; }
+    @media (prefers-color-scheme: dark) { .row .v { color: #fafaf9; } }
+    .cancelled { color: #dc2626; }
+    .footer { display: flex; justify-content: flex-end; margin-top: 10px; }
+    button { padding: 4px 10px; border: 1px solid #d6d3d1; background: transparent; color: inherit; border-radius: 4px; font: inherit; cursor: pointer; }
+    button:hover { background: rgba(0,0,0,0.04); }
+  </style>
+</head>
+<body>
+  <div class="receipt" id="receipt"></div>
+  <div class="footer"><button id="close">Collapse</button></div>
+  <script>
+    var r = superone.tool.data || {};
+    var el = document.getElementById('receipt');
+    if (r.cancelled) {
+      el.innerHTML =
+        '<div class="title cancelled">Order cancelled</div>' +
+        '<div class="row"><span>Reason</span><span class="v">' + (r.reason || 'unknown') + '</span></div>';
+    } else {
+      el.innerHTML =
+        '<div class="title"><span class="check">&#10003;</span> Order confirmed</div>' +
+        '<div class="row"><span>Order ID</span><span class="v">' + (r.order_id || '-') + '</span></div>' +
+        '<div class="row"><span>Item</span><span class="v">' + (r.item_id || '-') + '</span></div>' +
+        '<div class="row"><span>Quantity</span><span class="v">' + (r.qty != null ? r.qty : '-') + '</span></div>' +
+        '<div class="row"><span>Payment</span><span class="v">' + (r.payment || '-') + '</span></div>';
+    }
+    document.getElementById('close').onclick = function() {
+      superone.tool.close();
+    };
+  </script>
+</body>
+</html>

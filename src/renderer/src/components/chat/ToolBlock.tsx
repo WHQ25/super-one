@@ -19,6 +19,7 @@ import { WidgetBlock } from './WidgetBlock'
 import { parseWidgetResult, parsePartialWidgetInput } from '../../../../shared/generative-ui/types'
 import { parseInChatResult } from '../../../../shared/miniapp-types'
 import { InChatMiniAppBlock } from './InChatMiniAppBlock'
+import { ToolRendererFrame } from './ToolRendererFrame'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
 
@@ -91,6 +92,53 @@ function AppToolBlock({ icon, appName, toolText, summary, isStreaming, expandabl
   )
 }
 
+function AppResultRendererBlock({ appId, toolUseId, toolName, appName, toolReadableName, summary, icon, templatePath, result, autoExpand }: {
+  appId: string
+  toolUseId: string
+  toolName: string
+  appName?: string
+  toolReadableName: string
+  summary: string
+  icon: React.ReactNode
+  templatePath: string
+  result: unknown
+  autoExpand: boolean
+}) {
+  const [expanded, setExpanded] = useState(autoExpand)
+  return (
+    <div className={cn('tool-node my-0.5 rounded bg-muted/50', 'cursor-pointer hover:bg-muted/70')}>
+      <div
+        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        {icon}
+        <AppToolHeader appName={appName} toolText={toolReadableName} isStreaming={false} summary={summary} />
+        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
+      </div>
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-out"
+        style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
+      >
+        <div className="overflow-hidden">
+          <div className="px-2 pb-1.5">
+            {expanded && (
+              <ToolRendererFrame
+                phase="result"
+                appId={appId}
+                callId={toolUseId}
+                toolName={toolName}
+                templatePath={templatePath}
+                result={result}
+                onClose={() => setExpanded(false)}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Dev-only: comma-separated tool names to show raw debug UI. e.g. RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate */
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
   ? (import.meta.env.RENDERER_VITE_DEBUG_TOOL_NAMES ?? '').split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
@@ -119,6 +167,9 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand = true, backgroundActivity = false, grouped = false }: ToolBlockProps) {
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
+  const toolInterceptState = useChatStore((s) =>
+    toolUseId ? Object.values(s.toolRenderers).find((r) => r.toolUseId === toolUseId && r.status === 'awaiting') : undefined,
+  )
   const params = useMemo(() => parseToolInput(input, toolName), [input, toolName])
   const display = useMemo(() => getToolDisplay(toolName, params, cwd, homedir), [toolName, params, cwd, homedir])
   const mcpInfo = parseMcpToolName(toolName)
@@ -292,6 +343,45 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
       if (!isStreaming && result && toolDef?.resultSummaryField) {
         try { resultSummary = String(JSON.parse(result)[toolDef.resultSummaryField] ?? '') } catch {}
       }
+
+      if (toolInterceptState) {
+        return (
+          <div className="tool-node my-0.5 rounded bg-muted/50 p-2">
+            <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs text-muted-foreground">
+              {canvasApp ? <MiniAppIcon appId={canvasApp.id} className="size-3.5 shrink-0" /> : <ToolIcon icon="plug" className="size-3 shrink-0" />}
+              <span>{appName}</span>
+              <span className="text-muted-foreground/70">·</span>
+              <span>{toolReadableName}</span>
+              <span className="text-muted-foreground/70">· needs your input</span>
+            </div>
+            <ToolRendererFrame phase="intercept" state={toolInterceptState} />
+          </div>
+        )
+      }
+
+      const resultRendererCfg = toolDef?.renderer?.result
+      const resultTemplatePath = resultRendererCfg && canvasApp?.manifest.templates
+        ? canvasApp.manifest.templates[resultRendererCfg.template]
+        : undefined
+      if (!isStreaming && result && resultRendererCfg && resultTemplatePath && canvasApp) {
+        let parsedResult: unknown = null
+        try { parsedResult = JSON.parse(result) } catch { parsedResult = result }
+        return (
+          <AppResultRendererBlock
+            appId={canvasApp.id}
+            toolUseId={toolUseId ?? ''}
+            toolName={mcpToolNamePart}
+            appName={grouped ? undefined : appName}
+            toolReadableName={toolReadableName}
+            summary={resultSummary || inputSummary}
+            icon={<MiniAppIcon appId={canvasApp.id} className="size-3.5 shrink-0" />}
+            templatePath={resultTemplatePath}
+            result={parsedResult}
+            autoExpand={!!resultRendererCfg.autoExpand}
+          />
+        )
+      }
+
       return (
         <AppToolBlock
           icon={canvasApp ? <MiniAppIcon appId={canvasApp.id} className="size-3.5 shrink-0" /> : <ToolIcon icon="plug" className="size-3 shrink-0 text-muted-foreground" />}

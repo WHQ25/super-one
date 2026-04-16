@@ -51,7 +51,13 @@ import {
   notifyAppReady,
   resolveToolCall,
   rejectToolCall,
+  initSuperoneMcpServer,
+  registerAppTemplates,
+  unregisterAppTemplates,
+  submitToolIntercept,
+  cancelToolIntercept,
 } from './superone-mcp-server'
+import { AgentIpcChannels } from '../../shared/agent-types'
 import type { MiniAppToolDefinition } from '../../shared/miniapp-types'
 
 function makeTools(...names: string[]): MiniAppToolDefinition[] {
@@ -171,5 +177,121 @@ describe('resolveToolCall / rejectToolCall', () => {
 
   it('rejectToolCall is no-op for unknown callId', () => {
     expect(() => rejectToolCall('unknown-id', 'error')).not.toThrow()
+  })
+})
+
+describe('executeAppTool with renderer.intercept', () => {
+  const sentMessages: Array<{ channel: string; args: unknown[] }> = []
+  const mockWebContents = { send: (channel: string, ...args: unknown[]) => sentMessages.push({ channel, args }) }
+  const mockWin = { webContents: mockWebContents, isDestroyed: () => false } as unknown as import('electron').BrowserWindow
+
+  function makeInterceptTool(name: string, opts: Partial<{ template: string; onCancel: 'reject' | 'resolve-empty'; timeoutMs: number; inputMerge: 'shallow-merge' | 'replace' }> = {}): MiniAppToolDefinition {
+    return {
+      name,
+      description: `Tool ${name}`,
+      inputSchema: { type: 'object', properties: { agent_field: { type: 'string' } } },
+      renderer: {
+        intercept: {
+          template: opts.template ?? 'confirm',
+          onCancel: opts.onCancel ?? 'reject',
+          inputMerge: opts.inputMerge ?? 'shallow-merge',
+          timeoutMs: opts.timeoutMs,
+        },
+      },
+    }
+  }
+
+  beforeEach(() => {
+    sentMessages.length = 0
+    initSuperoneMcpServer(() => mockWin)
+    registerAppTools('test-app', 'myapp', [makeInterceptTool('confirm_action')])
+    registerAppTemplates('test-app', { confirm: 'popovers/confirm.html' })
+    notifyAppReady('test-app')
+  })
+
+  it('submit path: merges agent + user input and dispatches MINIAPP_TOOL_CALL', async () => {
+    const handler = getLastHandler('myapp__confirm_action')
+    const pending = handler({ agent_field: 'from_agent' })
+
+    await new Promise((r) => setTimeout(r, 10))
+
+    const openMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)
+    expect(openMsg).toBeTruthy()
+    const openReq = openMsg!.args[0] as { callId: string; agentInput: Record<string, unknown>; templatePath: string }
+    expect(openReq.agentInput).toEqual({ agent_field: 'from_agent' })
+    expect(openReq.templatePath).toBe('popovers/confirm.html')
+
+    submitToolIntercept(openReq.callId, { user_field: 'from_user' })
+
+    await new Promise((r) => setTimeout(r, 10))
+
+    const callMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
+    expect(callMsg).toBeTruthy()
+    const callReq = callMsg!.args[0] as { arguments: Record<string, unknown> }
+    expect(callReq.arguments).toEqual({ agent_field: 'from_agent', user_field: 'from_user' })
+
+    const resolveId = (callMsg!.args[0] as { callId: string }).callId
+    resolveToolCall(resolveId, { ok: true })
+    const result = await pending
+    expect(result.content[0].text).toContain('"ok":true')
+  })
+
+  it('cancel with default onCancel=reject: tool handler reports error', async () => {
+    const handler = getLastHandler('myapp__confirm_action')
+    const pending = handler({ agent_field: 'x' })
+    await new Promise((r) => setTimeout(r, 10))
+    const openReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as { callId: string }
+    cancelToolIntercept(openReq.callId, 'user_cancelled')
+
+    const result = await pending
+    expect(result.content[0].text).toContain('[Error]')
+    expect(result.content[0].text).toContain('user_cancelled')
+  })
+
+  it('cancel with onCancel=resolve-empty: tool returns cancelled payload', async () => {
+    unregisterAppTools('test-app')
+    registerAppTools('test-app', 'myapp', [makeInterceptTool('confirm_action', { onCancel: 'resolve-empty' })])
+    registerAppTemplates('test-app', { confirm: 'popovers/confirm.html' })
+    notifyAppReady('test-app')
+
+    const handler = getLastHandler('myapp__confirm_action')
+    const pending = handler({ agent_field: 'x' })
+    await new Promise((r) => setTimeout(r, 10))
+    const openReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as { callId: string }
+    cancelToolIntercept(openReq.callId, 'user_cancelled')
+
+    const result = await pending
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed).toMatchObject({ cancelled: true })
+    expect(parsed.reason).toContain('user_cancelled')
+  })
+
+  it('inputMerge=replace: user input overrides agent input entirely', async () => {
+    unregisterAppTools('test-app')
+    registerAppTools('test-app', 'myapp', [makeInterceptTool('confirm_action', { inputMerge: 'replace' })])
+    registerAppTemplates('test-app', { confirm: 'popovers/confirm.html' })
+    notifyAppReady('test-app')
+
+    const handler = getLastHandler('myapp__confirm_action')
+    const pending = handler({ agent_field: 'from_agent' })
+    await new Promise((r) => setTimeout(r, 10))
+    const openReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as { callId: string }
+    submitToolIntercept(openReq.callId, { only_user: 'yes' })
+
+    await new Promise((r) => setTimeout(r, 10))
+    const callMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!
+    const callReq = callMsg.args[0] as { arguments: Record<string, unknown>; callId: string }
+    expect(callReq.arguments).toEqual({ only_user: 'yes' })
+
+    resolveToolCall(callReq.callId, { ok: true })
+    await pending
+  })
+
+  it('missing template: handler errors out immediately', async () => {
+    unregisterAppTemplates('test-app')
+    const handler = getLastHandler('myapp__confirm_action')
+    const result = await handler({ agent_field: 'x' })
+    expect(result.content[0].text).toContain('[Error]')
+    expect(result.content[0].text).toContain('Template "confirm" not found')
   })
 })

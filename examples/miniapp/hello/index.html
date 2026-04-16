@@ -21,7 +21,10 @@
 <body>
   <h1>Hello Mini-App</h1>
   <div id="messages"><p style="color:#a8a29e">Waiting for agent messages...</p></div>
-  <button id="ask-btn">Ask Agent to Greet</button>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button id="ask-btn">Ask Agent to Greet</button>
+    <button id="ask-buy-btn">Ask Agent to Buy (HITL)</button>
+  </div>
   <div id="system-api" style="margin-top:20px">
     <h2 style="font-size:16px;margin-bottom:8px">System APIs</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -65,12 +68,32 @@
       return { success: true, displayed: args.text };
     });
 
+    superone.tools.handle('confirm_purchase', function(args) {
+      var container = document.getElementById('messages');
+      if (container.querySelector('p')) container.innerHTML = '';
+      var div = document.createElement('div');
+      div.className = 'msg';
+      div.textContent = 'Purchase placed: item=' + args.item_id + ' qty=' + args.final_qty + ' payment=' + args.payment;
+      container.appendChild(div);
+      var orderId = 'ord_' + Math.random().toString(36).slice(2, 8);
+      return {
+        order_id: orderId,
+        item_id: args.item_id,
+        qty: args.final_qty,
+        payment: args.payment,
+        summary: orderId + ' · ' + args.final_qty + ' × ' + args.item_id + ' (' + args.payment + ')',
+      };
+    });
+
     superone.fs.readDir('.').then(function(entries) {
       document.getElementById('files').textContent = 'Files: ' + entries.map(function(e) { return e.name; }).join(', ');
     }).catch(function() {});
 
     document.getElementById('ask-btn').onclick = function() {
       superone.agent.sendPrompt('Say hello using the hello__show_message tool');
+    };
+    document.getElementById('ask-buy-btn').onclick = function() {
+      superone.agent.sendPrompt('Use the hello__confirm_purchase tool with item_id="sku-001" and suggested_qty=2 to place an order. The user will confirm the quantity and payment method in the popup.');
     };
 
     var apiResult = document.getElementById('api-result');

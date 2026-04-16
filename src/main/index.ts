@@ -10,9 +10,9 @@ import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, detectStandaloneApp, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti } from './miniapp/miniapp-service'
-import { generateBridgeScript, generatePopoverBridgeScript } from './miniapp/miniapp-bridge'
+import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept } from './mcp/superone-mcp-server'
 import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
@@ -1449,12 +1449,14 @@ function registerIpcHandlers(): void {
     setAppFsPermissions(appId, manifest, projectDir, basePath)
     const toolSlug = manifest.toolSlug ?? appId
     registerAppTools(appId, toolSlug, manifest.tools ?? [])
+    registerAppTemplates(appId, manifest.templates)
     loadPreapprovedTools(appId, toolSlug, basePath)
     if (manifest.tools?.length) agentService.markAllNeedsRebuild()
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string) => {
     unregisterAppTools(appId)
+    unregisterAppTemplates(appId)
     clearAllowedDirectories(appId)
     agentService.markAllNeedsRebuild()
   })
@@ -1465,6 +1467,14 @@ function registerIpcHandlers(): void {
     } else {
       resolveToolCall(callId, result)
     }
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_SUBMIT, (_e, callId: string, userInput: Record<string, unknown>) => {
+    submitToolIntercept(callId, userInput ?? {})
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CANCEL, (_e, callId: string, reason?: string) => {
+    cancelToolIntercept(callId, reason)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_FS_REQUEST, async (_e, appId: string, op: string, args: Record<string, unknown>) => {
@@ -1663,9 +1673,23 @@ app.whenReady().then(() => {
       if (ext === 'html' || ext === 'htm') {
         const html = data.toString('utf-8')
         const popoverName = url.searchParams.get('_popover')
-        const bridgeScript = popoverName
-          ? generatePopoverBridgeScript(appId, app.getVersion(), JSON.parse(url.searchParams.get('_popoverData') || 'null'))
-          : generateBridgeScript(appId, app.getVersion())
+        const toolIntercept = url.searchParams.get('_toolIntercept')
+        const toolResult = url.searchParams.get('_toolResult')
+        const bridgeScript = toolIntercept
+          ? generateToolInterceptBridgeScript(appId, app.getVersion(), {
+              callId: url.searchParams.get('_toolCallId') || '',
+              toolName: url.searchParams.get('_toolName') || '',
+              initialData: JSON.parse(url.searchParams.get('_toolData') || 'null'),
+            })
+          : toolResult
+            ? generateToolResultBridgeScript(appId, app.getVersion(), {
+                callId: url.searchParams.get('_toolCallId') || '',
+                toolName: url.searchParams.get('_toolName') || '',
+                result: JSON.parse(url.searchParams.get('_toolData') || 'null'),
+              })
+            : popoverName
+              ? generatePopoverBridgeScript(appId, app.getVersion(), JSON.parse(url.searchParams.get('_popoverData') || 'null'))
+              : generateBridgeScript(appId, app.getVersion())
         const injected = html.includes('<head>')
           ? html.replace('<head>', `<head>${bridgeScript}`)
           : html.includes('<html>')

@@ -36,7 +36,24 @@ export interface MiniAppManifest {
   inChatToolDescription?: string
   runningText?: string
   inputSchema?: Record<string, unknown>
-  popovers?: Record<string, string>
+  templates?: Record<string, string>
+}
+
+export interface MiniAppToolInterceptRenderer {
+  template: string
+  inputMerge?: 'shallow-merge' | 'replace'
+  onCancel?: 'reject' | 'resolve-empty'
+  timeoutMs?: number
+}
+
+export interface MiniAppToolResultRenderer {
+  template: string
+  autoExpand?: boolean
+}
+
+export interface MiniAppToolRenderer {
+  intercept?: MiniAppToolInterceptRenderer
+  result?: MiniAppToolResultRenderer
 }
 
 export interface MiniAppInstallMeta {
@@ -67,6 +84,7 @@ export interface MiniAppToolDefinition {
   showResult?: boolean
   groupable?: boolean
   inputSchema: Record<string, unknown>
+  renderer?: MiniAppToolRenderer
 }
 
 export interface MiniAppEntry {
@@ -80,6 +98,26 @@ export interface MiniAppToolCallRequest {
   appId: string
   toolName: string
   arguments: Record<string, unknown>
+}
+
+export interface MiniAppToolInterceptOpenRequest {
+  callId: string
+  appId: string
+  toolSlug: string
+  toolName: string
+  agentInput: Record<string, unknown>
+  template: string
+  templatePath: string
+}
+
+export interface MiniAppToolInterceptSubmitPayload {
+  callId: string
+  userInput: Record<string, unknown>
+}
+
+export interface MiniAppToolInterceptCancelPayload {
+  callId: string
+  reason?: string
 }
 
 export interface MiniAppToolCallResponse {
@@ -206,6 +244,29 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-popover-msg'
   | 'miniapp-popover-close'
   | 'miniapp-popover-closed'
+  | 'miniapp-tool-init'
+  | 'miniapp-tool-submit'
+  | 'miniapp-tool-cancel'
+  | 'miniapp-tool-result-close'
   | 'miniapp-context-set'
   | 'miniapp-context-clear'
   | 'miniapp-context-consumed'
+
+export const MiniAppToolBridgeMsg = {
+  SUBMIT: 'miniapp-tool-submit',
+  CANCEL: 'miniapp-tool-cancel',
+  RESULT_CLOSE: 'miniapp-tool-result-close',
+} as const
+
+export function buildToolRendererUrl(
+  phase: 'intercept' | 'result',
+  appId: string,
+  templatePath: string,
+  callId: string,
+  toolName: string,
+  data: unknown,
+): string {
+  const flag = phase === 'intercept' ? '_toolIntercept' : '_toolResult'
+  const encodedData = encodeURIComponent(JSON.stringify(data ?? null))
+  return `superone-app://${appId}/${templatePath}?${flag}=1&_toolCallId=${encodeURIComponent(callId)}&_toolName=${encodeURIComponent(toolName)}&_toolData=${encodedData}`
+}

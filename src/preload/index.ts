@@ -607,6 +607,21 @@ const appAPI = {
     ipcRenderer.send(AgentIpcChannels.TRACE, source, type, data, tag)
   },
 
+  submitToolIntercept: (callId: string, userInput: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_SUBMIT, callId, userInput),
+  cancelToolIntercept: (callId: string, reason?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CANCEL, callId, reason),
+  onToolInterceptOpen: (callback: (req: MiniAppToolInterceptOpenRequest) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, req: MiniAppToolInterceptOpenRequest) => callback(req)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN, handler)
+  },
+  onToolInterceptClearAll: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CLEAR_ALL, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CLEAR_ALL, handler)
+  },
+
   // Remote control
   getRelayStatus: () =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_GET_RELAY_STATUS) as Promise<boolean>,
@@ -719,7 +734,7 @@ const appAPI = {
   },
 }
 
-import type { MiniAppEntry, MiniAppToolCallRequest, MiniAppInstallMeta, MiniAppFsWatchEvent } from '../shared/miniapp-types'
+import type { MiniAppEntry, MiniAppToolCallRequest, MiniAppInstallMeta, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest } from '../shared/miniapp-types'
 
 const miniappAPI = {
   list: (projectDir?: string) =>

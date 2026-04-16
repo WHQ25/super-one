@@ -213,6 +213,17 @@ export function createDefaultProjectState(): ProjectState {
 
 // --- Store interface ---
 
+export interface ToolRendererState {
+  callId: string
+  appId: string
+  toolSlug: string
+  toolName: string
+  toolUseId: string | null
+  templateUrl: string
+  agentInput: Record<string, unknown>
+  status: 'awaiting' | 'submitted' | 'cancelled'
+}
+
 interface ChatStore {
   projectSessions: Record<string, ProjectState>
   activeProject: string | null
@@ -220,6 +231,13 @@ interface ChatStore {
 
   // Bash output live content (not persisted)
   _bashOutputs: Record<string, { content: string; finished: boolean; outputPath?: string }>
+
+  // Tool-intercept renderers keyed by MCP callId (global, not per-session)
+  toolRenderers: Record<string, ToolRendererState>
+  openToolIntercept: (state: ToolRendererState) => void
+  submitToolIntercept: (callId: string, userInput: Record<string, unknown>) => void
+  cancelToolIntercept: (callId: string, reason?: string) => void
+  clearAllToolIntercepts: () => void
 
   // Global UI state (not per-session)
   isOpen: boolean
@@ -1807,6 +1825,35 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   activeProject: null,
   remoteSession: null,
   _bashOutputs: {},
+  toolRenderers: {},
+
+  openToolIntercept: (state) =>
+    set((s) => ({ toolRenderers: { ...s.toolRenderers, [state.callId]: state } })),
+
+  submitToolIntercept: (callId, userInput) => {
+    const current = get().toolRenderers[callId]
+    if (!current || current.status !== 'awaiting') return
+    set((s) => {
+      const next = { ...s.toolRenderers }
+      delete next[callId]
+      return { toolRenderers: next }
+    })
+    window.app.submitToolIntercept?.(callId, userInput)
+  },
+
+  cancelToolIntercept: (callId, reason) => {
+    const current = get().toolRenderers[callId]
+    if (!current || current.status !== 'awaiting') return
+    set((s) => {
+      const next = { ...s.toolRenderers }
+      delete next[callId]
+      return { toolRenderers: next }
+    })
+    window.app.cancelToolIntercept?.(callId, reason)
+  },
+
+  clearAllToolIntercepts: () => set({ toolRenderers: {} }),
+
   isOpen: false,
   corner: 'br',
   availableModels: [],

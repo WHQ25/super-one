@@ -10,7 +10,7 @@ import { getSuperoneMcpServer } from '../mcp/superone-mcp-server'
 export interface SessionQueryOptions {
   cwd: string
   model?: string
-  effort?: 'low' | 'medium' | 'high' | 'max'
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   permissionMode: PermissionMode
   sandboxInfo?: SandboxInfo
   canUseTool: CanUseTool

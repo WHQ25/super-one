@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.20.2-alpha] - 2026-04-17
+
+### Fixed
+
+- App crash on startup in packaged v0.20.1-alpha builds with `SyntaxError: Identifier 'require' has already been declared`. Root cause: `resolve-cli.ts` declared a local `require` via `createRequire`, which collided with rolldown's auto-injected CJS shim in the bundled main process output. Renamed to `moduleRequire` to avoid the conflict.
+- `CONNECT_CLAUDE` handler no longer wipes `PATH` / `HOME` from the CLI subprocess environment in packaged mode (latent bug, auto-fixed by the SDK upgrade below changing `options.env` semantics from replace to overlay).
+
+### Added
+
+- Claude Opus 4.7 support via `@anthropic-ai/claude-agent-sdk` upgrade (`0.2.101` → `0.2.111`).
+- New `xhigh` effort level (surfaced as "Extra High" in model and automation selectors).
+
 ## [0.20.1-alpha] - 2026-04-17
 
 > Note: v0.20.0-alpha was tagged but its CI build failed due to a missing `ws` dependency. v0.20.1-alpha is the first shipped binary in the 0.20 line and includes everything originally planned for 0.20.0 plus the dependency fix.

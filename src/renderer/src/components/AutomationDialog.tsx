@@ -18,8 +18,8 @@ import { sandboxModes } from '@/components/chat/SandboxModeSelector'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
 import type { AgentType, Automation, AgentRunConfig, AutomationSchedule, ClaudeRunConfig, CodexRunConfig, EffortLevel } from '../../../shared/agent-types'
 
-const EFFORT_LABELS: Record<EffortLevel, string> = { low: 'Low', medium: 'Medium', high: 'High', max: 'Max' }
-const EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'max']
+const EFFORT_LABELS: Record<EffortLevel, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra High', max: 'Max' }
+const EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
 
 const defaultClaudeConfig: ClaudeRunConfig = {
   type: 'claude',

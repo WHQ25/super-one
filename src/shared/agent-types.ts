@@ -579,7 +579,7 @@ export type AgentStatus = 'idle' | 'streaming' | 'error'
 
 // --- Renderer → Main requests ---
 
-export type EffortLevel = 'low' | 'medium' | 'high' | 'max'
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface SendMessageRequest {
   content: string
@@ -602,7 +602,7 @@ export interface ModelOption {
   description: string
   isDefault?: boolean
   supportsEffort?: boolean
-  supportedEffortLevels?: ('low' | 'medium' | 'high' | 'max')[]
+  supportedEffortLevels?: ('low' | 'medium' | 'high' | 'xhigh' | 'max')[]
   supportsAdaptiveThinking?: boolean
   supportsFastMode?: boolean
   supportedReasoningEfforts?: ReasoningEffortOption[]

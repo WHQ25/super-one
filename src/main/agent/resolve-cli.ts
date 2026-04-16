@@ -5,7 +5,7 @@ import { basename, dirname, join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import log from '../logger'
 
-const require = createRequire(import.meta.url)
+const moduleRequire = createRequire(import.meta.url)
 
 let cachedPath: string | undefined
 
@@ -59,7 +59,7 @@ export function findSystemClaude(): string | undefined {
 
 export function resolveSdkCli(): string | undefined {
   try {
-    const sdkDir = require.resolve('@anthropic-ai/claude-agent-sdk').replace(/[/\\][^/\\]+$/, '')
+    const sdkDir = moduleRequire.resolve('@anthropic-ai/claude-agent-sdk').replace(/[/\\][^/\\]+$/, '')
     const sep = sdkDir.includes('\\') ? '\\' : '/'
     return `${sdkDir}${sep}cli.js`.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
   } catch {

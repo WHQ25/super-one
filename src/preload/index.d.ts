@@ -6,6 +6,7 @@ import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPac
 interface AgentAPI {
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
   dequeueMessage(projectPath: string, clientMessageId: string): Promise<boolean>
+  prewarm(projectPath: string, hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[] }): Promise<void>
   interrupt(projectPath: string): Promise<boolean>
   respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): Promise<void>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>

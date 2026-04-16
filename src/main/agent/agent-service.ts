@@ -4,6 +4,7 @@ import log from '../logger'
 import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { ClaudeAgent, readProjectAdditionalDirs, writeProjectAdditionalDirs, type ClaudeAgentConfig } from './claude-agent'
+import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
 import { AgentIpcChannels, type AgentEvent, type ChatMessage, type CodexRunResult, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
@@ -90,6 +91,13 @@ export class AgentService {
   }) => Promise<CodexRunResult>
   private remoteControlService?: RemoteControlService
   private remoteSession: { projectPath: string; agent: RemoteAgentRef; bufferForRenderer?: (event: AgentEvent) => void } | null = null
+  private warmupManager = new WarmupManager()
+
+  private createClaudeAgent(): ClaudeAgent {
+    const agent = new ClaudeAgent()
+    agent.setWarmupManager(this.warmupManager)
+    return agent
+  }
 
   setCodexListModels(fn: (projectPath: string) => Promise<ModelOption[]>): void {
     this.codexListModels = fn
@@ -680,7 +688,7 @@ export class AgentService {
       }
     }
 
-    const agent = new ClaudeAgent()
+    const agent = this.createClaudeAgent()
     await agent.initialize(
       { cwd: projectPath, model: options.model },
       emit,
@@ -912,7 +920,7 @@ export class AgentService {
                   break
                 }
                 const cwd = saved?.worktreePath ?? projectPath
-                const remoteAgent = new ClaudeAgent()
+                const remoteAgent = this.createClaudeAgent()
                 const { emit, bufferForRenderer } = this.createRemoteEventEmitter(projectPath)
                 await remoteAgent.initialize({ cwd }, emit, targetSid)
                 this.remoteSession = { projectPath, agent: remoteAgent, bufferForRenderer }
@@ -955,7 +963,7 @@ export class AgentService {
               } catch { /* branch may already be correct */ }
             }
 
-            const remoteAgent = new ClaudeAgent()
+            const remoteAgent = this.createClaudeAgent()
             const { emit, bufferForRenderer } = this.createRemoteEventEmitter(projectPath)
             await remoteAgent.initialize(
               { cwd }, emit, undefined,
@@ -1616,7 +1624,7 @@ export class AgentService {
       await existing.dispose()
       this.agents.delete(projectPath)
     }
-    const agent = new ClaudeAgent()
+    const agent = this.createClaudeAgent()
     await agent.initialize({ cwd }, this.createEventEmitter(projectPath), sessionId, permissionMode ? { permissionMode } : undefined)
     this.agents.set(projectPath, agent)
   }
@@ -1673,6 +1681,12 @@ export class AgentService {
       const agent = this.agents.get(projectPath)
       if (!agent) return false
       return agent.dequeueMessage(clientMessageId)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PREWARM, (_event, projectPath: string, hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[] }) => {
+      const agent = this.agents.get(projectPath)
+      if (!agent) return
+      try { agent.prewarm(hint) } catch (err) { log.debug('[agent-service] prewarm failed: %s', err instanceof Error ? err.message : String(err)) }
     })
 
     ipcMain.handle(AgentIpcChannels.INTERRUPT, async (_event, projectPath: string) => {
@@ -2115,7 +2129,7 @@ export class AgentService {
         this.pendingClaudeRuntimes.delete(pendingRuntimeKey!)
       }
       await this.parkSession(projectPath)
-      const agent = new ClaudeAgent()
+      const agent = this.createClaudeAgent()
       await agent.initialize({ cwd: projectPath }, this.createEventEmitter(projectPath, newDraftSessionId))
       this.agents.set(projectPath, agent)
       return { permissionMode: agent.getCurrentPermissionMode(), sandboxInfo: agent.getCurrentSandboxInfo() }
@@ -2186,7 +2200,7 @@ export class AgentService {
 
   async openFolder(cwd: string): Promise<void> {
     if (this.agents.has(cwd)) return // Already exists, just switch in renderer
-    const agent = new ClaudeAgent()
+    const agent = this.createClaudeAgent()
     await agent.initialize({ cwd }, this.createEventEmitter(cwd))
     this.agents.set(cwd, agent)
   }
@@ -2245,6 +2259,7 @@ export class AgentService {
   }
 
   async dispose(): Promise<void> {
+    this.warmupManager.dispose()
     // Dispose all active agents
     for (const [, agent] of this.agents) {
       await agent.dispose()
@@ -2267,6 +2282,7 @@ export class AgentService {
 
     ipcMain.removeHandler(AgentIpcChannels.SEND_MESSAGE)
     ipcMain.removeHandler(AgentIpcChannels.DEQUEUE_MESSAGE)
+    ipcMain.removeHandler(AgentIpcChannels.PREWARM)
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
     ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)

@@ -6,12 +6,13 @@ import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, AgentInfo, ChatMessage, ContextUsageInfo, ListDirEntry, McpServerInfo, PermissionMode, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SlashCommandInfo } from '../../shared/agent-types'
 import { createCanUseTool, dismissQuestion, rejectAllPending, respondToPermission, respondToQuestion, respondToPlanApproval, type PendingPermission, type PendingQuestion, type PendingPlanApproval } from './claude-permissions'
 import { MessageBridge } from './message-bridge'
-import { createSessionQuery, buildUserMessage } from './claude-query'
+import { createSessionQuery, buildUserMessage, buildClaudeOptions } from './claude-query'
 import { trace } from './event-trace'
 import { discoverSkills, discoverProjectCommands, discoverProjectAgents } from './discover-resources'
 import { getActiveProviderRaw } from '../database'
 import { readUserPreferences } from '../claude-preferences-service'
 import type { ApiProvider } from '../../shared/agent-types'
+import type { WarmupManager } from './warmup-manager'
 
 export function buildProviderEnv(provider: ApiProvider, agentType: string = 'claude'): Record<string, string> {
   const configs = JSON.parse(provider.agent_configs || '{}')
@@ -99,6 +100,11 @@ export class ClaudeAgent {
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
   private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
+  private warmupManager: WarmupManager | null = null
+
+  setWarmupManager(manager: WarmupManager | null): void {
+    this.warmupManager = manager
+  }
 
   async initialize(
     config: ClaudeAgentConfig,
@@ -141,12 +147,7 @@ export class ClaudeAgent {
       this.iterationDone = null
     }
 
-    if (this.additionalDirs.length === 0) {
-      const projectDirs = readProjectAdditionalDirs(this.config!.cwd)
-      if (projectDirs.length > 0) {
-        this.additionalDirs = projectDirs
-      }
-    }
+    this.resolveAdditionalDirs()
 
     if (forkedSessionId) {
       this.sessionId = forkedSessionId
@@ -158,18 +159,6 @@ export class ClaudeAgent {
     }
     this.sessionAbort = new AbortController()
     const { canUseTool, trackPlanFile } = createCanUseTool(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, (e) => this.emit(e))
-
-    let providerEnv: Record<string, string> | undefined
-    try {
-      const provider = getActiveProviderRaw()
-      log.info('[ClaudeAgent] createSession provider lookup: %s', provider ? `name=${provider.name} type=${provider.provider_type} hasKey=${!!provider.api_key}` : 'none (using default)')
-      if (provider) {
-        providerEnv = buildProviderEnv(provider, 'claude')
-        log.info('[ClaudeAgent] createSession providerEnv keys: %s', Object.keys(providerEnv).join(', '))
-      }
-    } catch (err) {
-      log.warn('[claude-agent] failed to load active provider:', err)
-    }
 
     const handle = createSessionQuery(
       this.bridge,
@@ -187,7 +176,8 @@ export class ClaudeAgent {
         sessionId: forkedSessionId,
         abortController: this.sessionAbort,
         additionalDirectories: this.additionalDirs.length > 0 ? this.additionalDirs : undefined,
-        env: providerEnv,
+        env: this.loadProviderEnv(),
+        warmupManager: this.warmupManager ?? undefined,
       },
       (e) => this.emit(e),
       () => this.currentMessageId,
@@ -224,9 +214,6 @@ export class ClaudeAgent {
       }
     })
 
-    // Emit project-level init_ready immediately (all data comes from filesystem reads).
-    // Models, account, and base slash commands are already global (from connecting page).
-    // Only project-level data is needed: skills, projectCommands, cwd, sandboxInfo.
     const skills = discoverSkills(this.config!.cwd)
     const projectCommands = discoverProjectCommands(this.config!.cwd)
     const projectAgents = discoverProjectAgents(this.config!.cwd)
@@ -360,6 +347,40 @@ export class ClaudeAgent {
   markNeedsRebuild(): void {
     log.info('[ClaudeAgent] markNeedsRebuild (cwd=%s, sessionId=%s)', this.config?.cwd, this.sessionId)
     this.needsSessionRebuild = true
+  }
+
+  prewarm(hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[] }): void {
+    if (!this.warmupManager || !this.config) return
+    const dirs = hint?.additionalDirs ?? this.resolveAdditionalDirs()
+    this.warmupManager.prewarm(buildClaudeOptions({
+      cwd: this.config.cwd,
+      model: hint?.model ?? this.config.model,
+      effort: hint?.effort ?? this.currentEffort,
+      permissionMode: this.currentPermissionMode,
+      sandboxInfo: this.currentSandboxInfo,
+      additionalDirectories: dirs.length > 0 ? dirs : undefined,
+      env: this.loadProviderEnv(),
+    }))
+  }
+
+  private loadProviderEnv(): Record<string, string> | undefined {
+    try {
+      const provider = getActiveProviderRaw()
+      if (!provider) return undefined
+      return buildProviderEnv(provider, 'claude')
+    } catch (err) {
+      log.warn('[claude-agent] failed to load active provider:', err)
+      return undefined
+    }
+  }
+
+  private resolveAdditionalDirs(): string[] {
+    if (!this.config) return []
+    if (this.additionalDirs.length === 0) {
+      const projectDirs = readProjectAdditionalDirs(this.config.cwd)
+      if (projectDirs.length > 0) this.additionalDirs = projectDirs
+    }
+    return this.additionalDirs
   }
 
   applyPreferences(): void {

@@ -1073,6 +1073,7 @@ export const AgentIpcChannels = {
   // Agent channels
   SEND_MESSAGE: 'agent:send-message',
   DEQUEUE_MESSAGE: 'agent:dequeue-message',
+  PREWARM: 'agent:prewarm',
   INTERRUPT: 'agent:interrupt',
   EVENT: 'agent:event',
   PERMISSION_RESPONSE: 'agent:permission-response',

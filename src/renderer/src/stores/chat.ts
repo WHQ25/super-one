@@ -377,6 +377,25 @@ function getActivePerSession(state: ChatStore, projectPath?: string | null): Per
   return proj._sessions[proj._activeSessionId] ?? createDefaultPerSessionState()
 }
 
+function mergeProjectAndSessionDirs(project: ProjectState, session: PerSessionState): string[] {
+  return [...new Set([...project.projectAdditionalDirs, ...session.additionalDirs])]
+}
+
+function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
+  const key = projectPath ?? state.activeProject
+  if (!key) return
+  const session = getActivePerSession(state, key)
+  const provider = session.sessionProvider ?? session.preferredProvider
+  if (provider !== 'claude') return
+  if (typeof window.agent?.prewarm !== 'function') return
+  const dirs = mergeProjectAndSessionDirs(getProject(state, key), session)
+  void window.agent.prewarm(key, {
+    model: session.selectedModel || undefined,
+    effort: session.selectedEffort,
+    additionalDirs: dirs.length > 0 ? dirs : undefined,
+  }).catch(() => {})
+}
+
 function updateProjectState(
   state: ChatStore,
   projectPath: string,
@@ -2569,7 +2588,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (_resetSessionLock) await _resetSessionLock
     await _ensureClaudeSessionReadyForSend(get, activeProject)
 
-    const mergedDirs = [...new Set([...project.projectAdditionalDirs, ...session.additionalDirs])]
+    const mergedDirs = mergeProjectAndSessionDirs(project, session)
 
     try {
       await window.agent.sendMessage(activeProject, {
@@ -2963,10 +2982,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setDraftText: (text) => {
     const { activeProject } = get()
     if (!activeProject) return
+    const prevText = getActivePerSession(get(), activeProject).draftText
     set((s) => updateActivePerSession(s,() => ({
       draftText: text,
       ...(text.length > 0 ? { codexPlanRejectHintActive: false } : {}),
     })))
+    if (prevText.length === 0 && text.length > 0) {
+      triggerPrewarm(get(), activeProject)
+    }
   },
 
   setSelectedModel: (model) => {
@@ -2975,12 +2998,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const modelInfo = availableModels.find((m) => m.id === model)
     const defaultEffort = getDefaultEffortForModel(modelInfo)
     set((s) => updateActivePerSession(s,() => ({ selectedModel: model, selectedEffort: defaultEffort, contextWindow: null })))
+    if (getActivePerSession(get(), activeProject).draftText.length > 0) {
+      triggerPrewarm(get(), activeProject)
+    }
   },
 
   setSelectedEffort: (effort) => {
     const { activeProject } = get()
     if (!activeProject) return
     set((s) => updateActivePerSession(s,() => ({ selectedEffort: effort })))
+    if (getActivePerSession(get(), activeProject).draftText.length > 0) {
+      triggerPrewarm(get(), activeProject)
+    }
   },
 
   setFastMode: (enabled) => {

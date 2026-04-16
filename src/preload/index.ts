@@ -9,6 +9,9 @@ const agentAPI = {
   dequeueMessage: (projectPath: string, clientMessageId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DEQUEUE_MESSAGE, projectPath, clientMessageId) as Promise<boolean>,
 
+  prewarm: (projectPath: string, hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[] }) =>
+    ipcRenderer.invoke(AgentIpcChannels.PREWARM, projectPath, hint),
+
   interrupt: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, projectPath),
 

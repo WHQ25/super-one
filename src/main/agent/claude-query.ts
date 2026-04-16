@@ -1,4 +1,4 @@
-import { query, type CanUseTool, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query, type CanUseTool, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMessageRequest } from '../../shared/agent-types'
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
@@ -6,6 +6,7 @@ import { trace } from './event-trace'
 import { getNodeRuntime, resolveSdkCli } from './resolve-cli'
 import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
 import { getSuperoneMcpServer } from '../mcp/superone-mcp-server'
+import type { WarmupManager } from './warmup-manager'
 
 export interface SessionQueryOptions {
   cwd: string
@@ -13,7 +14,7 @@ export interface SessionQueryOptions {
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   permissionMode: PermissionMode
   sandboxInfo?: SandboxInfo
-  canUseTool: CanUseTool
+  canUseTool?: CanUseTool
   trackPlanFile?: (filePath: string) => void
   resume?: string
   resumeSessionAt?: string
@@ -23,6 +24,49 @@ export interface SessionQueryOptions {
   additionalDirectories?: string[]
   env?: Record<string, string | undefined>
   taskBudget?: number
+  warmupManager?: WarmupManager
+}
+
+const SYSTEM_PROMPT_APPEND = 'You have a powerful `show_widget` tool (via the `widget` MCP server) for rendering visual content inline — diagrams, charts, dashboards, data tables, interactive widgets, illustrations, and any visual explanation. Prefer show_widget over plain text/markdown when the user asks for something visual, data-heavy, or interactive. For mermaid diagrams (ERD, sequence, flowchart, etc.), use fenced ```mermaid code blocks instead — the host app renders them natively.\n\nWhen building or modifying a mini-app, call `read_miniapp_guide` (via the `superone` MCP server) first to load the relevant development guide.'
+
+export function buildClaudeOptions(opts: SessionQueryOptions): Options {
+  const cliPath = resolveSdkCli()
+  const runtime = getNodeRuntime()
+  return {
+    pathToClaudeCodeExecutable: cliPath,
+    executable: runtime.executable as Options['executable'],
+    cwd: opts.cwd,
+    model: opts.model,
+    effort: opts.effort,
+    promptSuggestions: true,
+    includePartialMessages: true,
+    permissionMode: opts.permissionMode,
+    allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
+    canUseTool: opts.canUseTool,
+    sandbox: opts.sandboxInfo?.enabled
+      ? { enabled: true, autoAllowBashIfSandboxed: opts.sandboxInfo.autoAllowBash }
+      : undefined,
+    enableFileCheckpointing: true,
+    agentProgressSummaries: true,
+    taskBudget: opts.taskBudget ? { total: opts.taskBudget } : undefined,
+    extraArgs: { 'replay-user-messages': null },
+    settingSources: ['user', 'project', 'local'],
+    resume: opts.resume,
+    resumeSessionAt: opts.resumeSessionAt,
+    forkSession: opts.forkSession,
+    sessionId: opts.sessionId,
+    abortController: opts.abortController,
+    additionalDirectories: opts.additionalDirectories,
+    env: runtime.env || opts.env ? { ...runtime.env, ...opts.env } : undefined,
+    stderr: (data: string) => {
+      log.warn('[claude-cli]', data.trimEnd())
+      if (data.includes('FileHistory') || data.includes('checkpoint') || data.includes('file_history')) {
+        log.info('[claude-cli][checkpoint-stderr] %s', data.trimEnd())
+      }
+    },
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_PROMPT_APPEND },
+    mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': getSuperoneMcpServer() },
+  }
 }
 
 export interface SessionQueryHandle {
@@ -30,7 +74,6 @@ export interface SessionQueryHandle {
   iterationDone: Promise<void>
 }
 
-/** Create a long-lived session query consuming messages from a bridge. */
 export function createSessionQuery(
   bridge: MessageBridge,
   options: SessionQueryOptions,
@@ -43,63 +86,31 @@ export function createSessionQuery(
   onStepBoundary?: () => void,
 ): SessionQueryHandle {
   const timing = { pausedMs: 0 }
-  const timedCanUseTool: CanUseTool = async (...args) => {
-    const start = Date.now()
-    const result = await options.canUseTool(...args)
-    timing.pausedMs += Date.now() - start
-    return result
-  }
+  const originalCanUseTool = options.canUseTool
+  const timedCanUseTool: CanUseTool | undefined = originalCanUseTool
+    ? async (...args) => {
+        const start = Date.now()
+        const result = await originalCanUseTool(...args)
+        timing.pausedMs += Date.now() - start
+        return result
+      }
+    : undefined
 
   log.info('[claude-query] createSessionQuery env=%s model=%s cwd=%s resume=%s enableFileCheckpointing=true', options.env ? Object.keys(options.env).join(',') : 'none', options.model ?? 'default', options.cwd, options.resume ?? 'none')
   log.info('[claude-query] env CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=%s CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=%s', process.env.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING ?? 'unset', process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING ?? 'unset')
   trace('provider.query', 'create_session', { envKeys: options.env ? Object.keys(options.env) : null, model: options.model, resume: options.resume })
 
-  const cliPath = resolveSdkCli()
-  log.info('[claude-query] resolved SDK CLI path=%s', cliPath ?? 'none')
+  const sdkOptions = buildClaudeOptions({ ...options, canUseTool: timedCanUseTool })
+  log.info('[claude-query] resolved SDK CLI path=%s', sdkOptions.pathToClaudeCodeExecutable ?? 'none')
 
-  const runtime = getNodeRuntime()
-  const q = query({
-    prompt: bridge,
-    options: {
-      pathToClaudeCodeExecutable: cliPath,
-      executable: runtime.executable as any,
-      cwd: options.cwd,
-      model: options.model,
-      effort: options.effort,
-      promptSuggestions: true,
-      includePartialMessages: true,
-      permissionMode: options.permissionMode,
-      allowDangerouslySkipPermissions: options.permissionMode === 'bypassPermissions',
-      canUseTool: timedCanUseTool,
-      sandbox: options.sandboxInfo?.enabled
-        ? { enabled: true, autoAllowBashIfSandboxed: options.sandboxInfo.autoAllowBash }
-        : undefined,
-      enableFileCheckpointing: true,
-      agentProgressSummaries: true,
-      taskBudget: options.taskBudget ? { total: options.taskBudget } : undefined,
-      extraArgs: { 'replay-user-messages': null },
-      settingSources: ['user', 'project', 'local'],
-      resume: options.resume,
-      resumeSessionAt: options.resumeSessionAt,
-      forkSession: options.forkSession,
-      sessionId: options.sessionId,
-      abortController: options.abortController,
-      additionalDirectories: options.additionalDirectories,
-      env: runtime.env || options.env ? { ...process.env, ...runtime.env, ...options.env } : undefined,
-      stderr: (data: string) => {
-        log.warn('[claude-cli]', data.trimEnd())
-        if (data.includes('FileHistory') || data.includes('checkpoint') || data.includes('file_history')) {
-          log.info('[claude-cli][checkpoint-stderr] %s', data.trimEnd())
-        }
-      },
-      systemPrompt: {
-        type: 'preset',
-        preset: 'claude_code',
-        append: 'You have a powerful `show_widget` tool (via the `widget` MCP server) for rendering visual content inline — diagrams, charts, dashboards, data tables, interactive widgets, illustrations, and any visual explanation. Prefer show_widget over plain text/markdown when the user asks for something visual, data-heavy, or interactive. For mermaid diagrams (ERD, sequence, flowchart, etc.), use fenced ```mermaid code blocks instead — the host app renders them natively.\n\nWhen building or modifying a mini-app, call `read_miniapp_guide` (via the `superone` MCP server) first to load the relevant development guide.',
-      },
-      mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': getSuperoneMcpServer() },
-    },
-  })
+  let q: Query
+  const warm = options.warmupManager?.consume(sdkOptions)
+  if (warm) {
+    log.info('[claude-query] using prewarmed subprocess')
+    q = warm.query(bridge)
+  } else {
+    q = query({ prompt: bridge, options: sdkOptions })
+  }
 
   const iterationDone = iterateMessages(q, {
     emit,
@@ -117,7 +128,6 @@ export function createSessionQuery(
   return { query: q, iterationDone }
 }
 
-/** Build an SDKUserMessage from a SendMessageRequest. */
 export function buildUserMessage(request: SendMessageRequest, sessionId: string): SDKUserMessage {
   let content: unknown
 

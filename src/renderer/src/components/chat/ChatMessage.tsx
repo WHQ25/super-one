@@ -268,7 +268,14 @@ function renderBlock(
       )
     }
     case 'thinking':
-      return <ReasoningBlock key={index} text={block.thinking} blockDone={!isStreaming || !!nextBlockType} />
+      return (
+        <ReasoningBlock
+          key={index}
+          text={block.thinking}
+          blockDone={!isStreaming || !!nextBlockType}
+          showContent={block.thinking.trim().length > 0}
+        />
+      )
     case 'tool_result':
       // Normally rendered inside the parent ToolBlock via toolResultMap.
       // If orphaned (no matching tool_use), show a compact fallback.

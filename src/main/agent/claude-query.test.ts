@@ -818,4 +818,45 @@ describe('createSessionQuery', () => {
 
     expect(onStepBoundary).toHaveBeenCalledTimes(1)
   })
+
+  it('emits empty thinking delta on content_block_start with thinking type (no thinking_delta follows)', async () => {
+    state.messages = [
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_start',
+          index: 0,
+          content_block: { type: 'thinking', thinking: '', signature: '' },
+        },
+      },
+      {
+        type: 'stream_event',
+        event: { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'sig-chunk' } },
+      },
+      {
+        type: 'stream_event',
+        event: { type: 'content_block_stop', index: 0 },
+      },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: '', signature: 'full-sig' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-thinking-anchor',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const thinkingDeltas = events.filter(
+      (e) => e.type === 'content_delta' && (e.delta as Record<string, unknown>)?.type === 'thinking',
+    )
+    expect(thinkingDeltas).toHaveLength(1)
+    expect((thinkingDeltas[0].delta as Record<string, unknown>).thinking).toBe('')
+    expect(thinkingDeltas[0].messageId).toBe('msg-thinking-anchor')
+  })
 })

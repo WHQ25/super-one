@@ -38,6 +38,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     cwd: opts.cwd,
     model: opts.model,
     effort: opts.effort,
+    thinking: { type: 'adaptive', display: 'summarized' },
     promptSuggestions: true,
     includePartialMessages: true,
     permissionMode: opts.permissionMode,
@@ -661,6 +662,12 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
                 parentToolUseId: streamParent,
               },
             })
+          } else if (event.type === 'content_block_start' && event.content_block?.type === 'thinking') {
+            emit({
+              type: 'content_delta',
+              messageId,
+              delta: { type: 'thinking', thinking: '', parentToolUseId: streamParent },
+            })
           } else if (event.type === 'content_block_delta') {
             if (event.delta?.type === 'text_delta' && event.delta.text) {
               emit({
@@ -668,7 +675,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
                 messageId,
                 delta: { type: 'text', text: event.delta.text, parentToolUseId: streamParent },
               })
-            } else if (event.delta?.type === 'thinking_delta' && event.delta.thinking) {
+            } else if (event.delta?.type === 'thinking_delta' && typeof event.delta.thinking === 'string') {
               emit({
                 type: 'content_delta',
                 messageId,

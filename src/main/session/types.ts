@@ -107,8 +107,8 @@ export interface SessionBackend {
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
   reloadPlugins(): Promise<boolean>
-  events: AsyncIterable<BackendEvent>
-  onProviderSessionId(cb: (id: string) => void): () => void
+  onEvent(handler: (event: BackendEvent) => void): () => void
+  onProviderSessionId(handler: (id: string) => void): () => void
 }
 
 export interface Session {

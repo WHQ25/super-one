@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, SendMessageRequest } from '../../shared/agent-types'
-import type { BackendStartOptions, SessionBackend } from './types'
+import type { AgentEvent, ChatMessage, SendMessageRequest } from '../../shared/agent-types'
+import type { BackendStartOptions, SessionBackend, SessionStateChange } from './types'
 
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -239,5 +239,176 @@ describe('Session - passes provider config into backend.start', () => {
     })
     backend.resolveSend?.()
     await promise
+  })
+})
+
+describe('Session message accumulation', () => {
+  it('appends a user message to snapshot on send()', async () => {
+    const { session, backend } = makeSession()
+    const promise = session.send({ content: 'hello world', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(session.snapshot.messages).toHaveLength(1)
+    expect(session.snapshot.messages[0]).toMatchObject({
+      id: 'u1',
+      role: 'user',
+      content: [{ type: 'text', text: 'hello world' }],
+    })
+
+    backend.resolveSend?.()
+    await promise
+  })
+
+  it('accepts initialMessages on construction (for resume)', () => {
+    const initial: ChatMessage[] = [
+      { id: 'u0', role: 'user', status: 'complete', content: [{ type: 'text', text: 'older' }], createdAt: '2025-01-01', providerId: 'local' },
+      { id: 'a0', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'older reply' }], createdAt: '2025-01-02', providerId: 'claude' },
+    ]
+    const { session } = makeSession({
+      initialMessages: initial,
+      initialTotalCostUsd: 0.42,
+      initialContextTokens: 1234,
+    })
+    expect(session.snapshot.messages).toEqual(initial)
+    expect(session.snapshot.totalCostUsd).toBe(0.42)
+    expect(session.snapshot.contextTokens).toBe(1234)
+  })
+
+  it('accumulates content_delta into the streaming assistant message (claude)', () => {
+    const { session, backend } = makeSession()
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    backend.emit({ type: 'content_delta', messageId: 'a1', delta: { type: 'text', text: 'Hello' } })
+    backend.emit({ type: 'content_delta', messageId: 'a1', delta: { type: 'text', text: ' world' } })
+
+    const msg = session.snapshot.messages.find((m) => m.id === 'a1')
+    expect(msg?.content).toEqual([{ type: 'text', text: 'Hello world' }])
+  })
+
+  it('updates totalCostUsd and contextTokens from message_complete metadata', () => {
+    const { session, backend } = makeSession()
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    backend.emit({
+      type: 'message_complete',
+      messageId: 'a1',
+      metadata: {
+        costUsd: 0.017,
+        usage: {
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadInputTokens: 200,
+          cacheCreationInputTokens: 30,
+        },
+      },
+    })
+    expect(session.snapshot.totalCostUsd).toBe(0.017)
+    expect(session.snapshot.contextTokens).toBe(330)
+    expect(session.snapshot.messages.find((m) => m.id === 'a1')?.status).toBe('complete')
+  })
+
+  it('dispatches codex events through codex reducer when harnessId=codex', () => {
+    const { session, backend } = makeSession({
+      harnessId: 'codex',
+      initialMessages: [
+        { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' },
+      ],
+    })
+    backend.emit({
+      type: 'codex_thread_started',
+      messageId: 'a1',
+      threadId: 'thread-abc',
+      projectPath: '/tmp/proj',
+      sessionId: 'sess-1',
+    })
+    const msg = session.snapshot.messages.find((m) => m.id === 'a1')
+    expect(msg?.metadata?.codex?.threadId).toBe('thread-abc')
+  })
+})
+
+describe('Session persist hook', () => {
+  it('fires onStateChange on user message append', async () => {
+    const calls: SessionStateChange[] = []
+    const { session, backend } = makeSession({
+      onStateChange: (s) => calls.push(s),
+    })
+    const promise = session.send({ content: 'first', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(calls.length).toBeGreaterThanOrEqual(1)
+    const first = calls[0]
+    expect(first.sid).toBe('sess-1')
+    expect(first.messages.some((m) => m.id === 'u1')).toBe(true)
+    expect(first.title).toBe('first')
+
+    backend.resolveSend?.()
+    await promise
+  })
+
+  it('fires onStateChange on message_complete with accumulated cost', async () => {
+    const calls: SessionStateChange[] = []
+    const { session, backend } = makeSession({ onStateChange: (s) => calls.push(s) })
+    const promise = session.send({ content: 'hi', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+    calls.length = 0
+
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    backend.emit({
+      type: 'message_complete',
+      messageId: 'a1',
+      metadata: { costUsd: 0.05, usage: { inputTokens: 10, outputTokens: 20, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 } },
+    })
+
+    const last = calls[calls.length - 1]
+    expect(last).toBeDefined()
+    expect(last.totalCostUsd).toBe(0.05)
+    expect(last.contextTokens).toBe(10)
+    expect(last.messages.find((m) => m.id === 'a1')?.status).toBe('complete')
+
+    backend.resolveSend?.()
+    await promise
+  })
+
+  it('fires onStateChange on message_interrupted and message_error', () => {
+    const calls: SessionStateChange[] = []
+    const { session, backend } = makeSession({
+      onStateChange: (s) => calls.push(s),
+      initialMessages: [
+        { id: 'u0', role: 'user', status: 'complete', content: [{ type: 'text', text: 'seed' }], createdAt: '', providerId: 'local' },
+      ],
+    })
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    const preCount = calls.length
+    backend.emit({ type: 'message_interrupted', messageId: 'a1' })
+    expect(calls.length).toBe(preCount + 1)
+    expect(session.snapshot.messages.find((m) => m.id === 'a1')?.status).toBe('interrupted')
+
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a2', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    const preCount2 = calls.length
+    backend.emit({ type: 'message_error', messageId: 'a2', error: 'boom' })
+    expect(calls.length).toBe(preCount2 + 1)
+    expect(session.snapshot.messages.find((m) => m.id === 'a2')?.status).toBe('error')
+  })
+
+  it('does not fire onStateChange when accumulated message list is empty', () => {
+    const calls: SessionStateChange[] = []
+    const { backend } = makeSession({ onStateChange: (s) => calls.push(s) })
+    // message_complete referring to a message that was never started: reducer
+    // leaves messages empty, so nothing to persist.
+    backend.emit({ type: 'message_complete', messageId: 'ghost', metadata: {} })
+    expect(calls).toHaveLength(0)
   })
 })

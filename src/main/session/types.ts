@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   AgentInfo,
+  ChatMessage,
   ContextUsageInfo,
   McpServerInfo,
   PermissionMode,
@@ -63,6 +64,18 @@ export interface SessionSnapshot {
   readonly currentMessageId: string | null
   readonly createdAt: number
   readonly lastUserMessageAt: number | null
+  readonly messages: ReadonlyArray<ChatMessage>
+  readonly totalCostUsd: number
+  readonly contextTokens: number
+  readonly title: string | null
+}
+
+export interface SessionStateChange {
+  sid: string
+  messages: ChatMessage[]
+  totalCostUsd: number
+  contextTokens: number
+  title: string | null
 }
 
 export interface BackendStartOptions {

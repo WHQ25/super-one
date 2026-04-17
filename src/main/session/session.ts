@@ -1,5 +1,7 @@
 import type {
   AgentEvent,
+  ChatMessage,
+  CodexUsageInfo,
   ContextUsageInfo,
   McpServerInfo,
   PermissionMode,
@@ -10,12 +12,25 @@ import type {
   SendMessageRequest,
 } from '../../shared/agent-types'
 import log from '../logger'
+import {
+  applyClaudeEventToRuntime,
+  buildClaudeUserMessage,
+  extractClaudeTitle,
+  type ClaudeSessionRuntime,
+  type TaskProgressEntry,
+} from '../agent/claude-session-runtime'
+import {
+  applyCodexEventToRuntime,
+  extractCodexTitle,
+  type CodexSessionRuntime,
+} from '../agent/codex-session-runtime'
 import type {
   BackendStartOptions,
   HarnessId,
   Session as SessionContract,
   SessionBackend,
   SessionSnapshot,
+  SessionStateChange,
   SessionStatus,
 } from './types'
 
@@ -35,6 +50,10 @@ export interface SessionConstructorOptions {
   title?: string | null
   createdAt?: number
   resumedProviderSessionId?: string
+  initialMessages?: ChatMessage[]
+  initialTotalCostUsd?: number
+  initialContextTokens?: number
+  onStateChange?: (snapshot: SessionStateChange) => void
 }
 
 const DEFAULT_SANDBOX: SandboxInfo = { enabled: true, autoAllowBash: false }
@@ -55,11 +74,20 @@ export class Session implements SessionContract {
   private _providerSessionId: string | null = null
   private _lastUserMessageAt: number | null = null
 
+  private _messages: ChatMessage[] = []
+  private _totalCostUsd = 0
+  private _contextTokens = 0
+  private _taskProgress: Record<string, TaskProgressEntry> = {}
+  private _streamingTokensByMessageId: Record<string, { input: number; output: number }> = {}
+  private _lastUsageByMessageId: Record<string, CodexUsageInfo | null> = {}
+
   private permissionMode: PermissionMode
   private sandboxInfo: SandboxInfo
   private effort: SendMessageRequest['effort']
   private model: string | undefined
   private additionalDirectories: string[]
+
+  private onStateChange?: (snapshot: SessionStateChange) => void
 
   private abortController: AbortController | null = null
   private backendStarted = false
@@ -81,6 +109,10 @@ export class Session implements SessionContract {
     this.additionalDirectories = opts.additionalDirectories ?? []
     this.createdAt = opts.createdAt ?? Date.now()
     this._providerSessionId = opts.resumedProviderSessionId ?? null
+    if (opts.initialMessages?.length) this._messages = [...opts.initialMessages]
+    this._totalCostUsd = opts.initialTotalCostUsd ?? 0
+    this._contextTokens = opts.initialContextTokens ?? 0
+    this.onStateChange = opts.onStateChange
 
     this.unsubs.push(this.backend.onEvent((e) => this.forwardEvent(e)))
     this.unsubs.push(this.backend.onProviderSessionId((id) => {
@@ -100,17 +132,21 @@ export class Session implements SessionContract {
       currentMessageId: this._currentMessageId,
       createdAt: this.createdAt,
       lastUserMessageAt: this._lastUserMessageAt,
+      messages: this._messages,
+      totalCostUsd: this._totalCostUsd,
+      contextTokens: this._contextTokens,
+      title: this.computeTitle(),
     }
   }
 
   async send(request: SendMessageRequest): Promise<void> {
     this.assertNotDisposed()
+    this.appendUserMessage(request)
     await this.ensureStarted()
     if (this._status !== 'ended' && this._status !== 'starting') {
       throw new Error(`Session.send called in invalid status: ${this._status}`)
     }
     this._status = 'streaming'
-    this._lastUserMessageAt = Date.now()
     try {
       await this.backend.send(request)
     } finally {
@@ -273,10 +309,91 @@ export class Session implements SessionContract {
     ) {
       this._currentMessageId = null
     }
+    this.applyReducer(event)
     const tagged = { ...event, sessionId: this.id }
     for (const cb of this.eventListeners) {
       try { cb(tagged) } catch (err) { log.warn('[Session] event listener error:', err) }
     }
+    if (
+      event.type === 'message_complete' ||
+      event.type === 'message_interrupted' ||
+      event.type === 'message_error' ||
+      event.type === 'checkpoint_captured'
+    ) {
+      this.notifyStateChange()
+    }
+  }
+
+  private applyReducer(event: AgentEvent): void {
+    if (this.harnessId === 'claude') {
+      const runtime: ClaudeSessionRuntime = {
+        projectPath: this.projectPath,
+        sessionId: this.id,
+        messages: this._messages,
+        totalCostUsd: this._totalCostUsd,
+        contextTokens: this._contextTokens,
+        session: null,
+        gitBranch: null,
+        worktreePath: null,
+        taskProgress: this._taskProgress,
+      }
+      const next = applyClaudeEventToRuntime(runtime, event)
+      this._messages = next.messages
+      this._totalCostUsd = next.totalCostUsd
+      this._contextTokens = next.contextTokens
+      this._taskProgress = next.taskProgress
+    } else {
+      const runtime: CodexSessionRuntime = {
+        projectPath: this.projectPath,
+        sessionId: this.id,
+        messages: this._messages,
+        totalCostUsd: this._totalCostUsd,
+        contextTokens: this._contextTokens,
+        gitBranch: null,
+        worktreePath: null,
+        streamingTokensByMessageId: this._streamingTokensByMessageId,
+        lastUsageByMessageId: this._lastUsageByMessageId,
+      }
+      const next = applyCodexEventToRuntime(runtime, event)
+      this._messages = next.messages
+      this._totalCostUsd = next.totalCostUsd
+      this._contextTokens = next.contextTokens
+      this._streamingTokensByMessageId = next.streamingTokensByMessageId
+      this._lastUsageByMessageId = next.lastUsageByMessageId
+    }
+  }
+
+  private appendUserMessage(request: SendMessageRequest): void {
+    const userMsg = buildClaudeUserMessage(request, 'local')
+    if (!this._messages.some((m) => m.id === userMsg.id)) {
+      this._messages = [...this._messages, userMsg]
+    }
+    this._lastUserMessageAt = Date.now()
+    this.notifyStateChange()
+  }
+
+  private notifyStateChange(): void {
+    if (!this.onStateChange) return
+    if (this._messages.length === 0) return
+    try {
+      this.onStateChange({
+        sid: this.id,
+        messages: this._messages,
+        totalCostUsd: this._totalCostUsd,
+        contextTokens: this._contextTokens,
+        title: this.computeTitle(),
+      })
+    } catch (err) {
+      log.warn('[Session] onStateChange hook error:', err)
+    }
+  }
+
+  private computeTitle(): string | null {
+    if (this._messages.length === 0) return null
+    const title = this.harnessId === 'claude'
+      ? extractClaudeTitle(this._messages)
+      : extractCodexTitle(this._messages)
+    return title ?? null
   }
 
   private assertStarted(): void {

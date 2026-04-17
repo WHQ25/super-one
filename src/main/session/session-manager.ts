@@ -12,11 +12,13 @@ import type {
   SessionCreateOptions,
   SessionManager as SessionManagerContract,
   SessionSnapshot,
+  SessionStateChange,
 } from './types'
 
 export interface SessionManagerPersistence {
   onSessionCreated?: (session: { id: string; projectPath: string; providerId: string }) => void
   onSessionDisposed?: (sessionId: string) => void
+  onSessionStateChange?: (snapshot: SessionStateChange) => void
 }
 
 export class SessionManagerImpl implements SessionManagerContract {
@@ -92,6 +94,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       effort: opts.effort,
       model: opts.model ?? undefined,
       additionalDirectories: opts.additionalDirectories,
+      onStateChange: this.persistence.onSessionStateChange
+        ? (snapshot) => this.persistence.onSessionStateChange!(snapshot)
+        : undefined,
     })
 
     this.registerSession(session, opts.projectPath)

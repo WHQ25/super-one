@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import type { AgentEvent } from '../../shared/agent-types'
+import type { AgentEvent, ChatMessage } from '../../shared/agent-types'
 import log from '../logger'
 import { discoverProjectAgents, discoverProjectCommands, discoverSkills } from '../agent/discover-resources'
 import { harnessRegistry } from './harness-registry'
@@ -15,10 +15,20 @@ import type {
   SessionStateChange,
 } from './types'
 
+export interface LoadedSessionData {
+  projectPath: string
+  providerId: string
+  providerSessionId: string | null
+  messages: ChatMessage[]
+  totalCostUsd: number
+  contextTokens: number
+}
+
 export interface SessionManagerPersistence {
   onSessionCreated?: (session: { id: string; projectPath: string; providerId: string }) => void
   onSessionDisposed?: (sessionId: string) => void
   onSessionStateChange?: (snapshot: SessionStateChange) => void
+  loadSession?: (sessionId: string) => LoadedSessionData | null
 }
 
 export class SessionManagerImpl implements SessionManagerContract {
@@ -135,7 +145,37 @@ export class SessionManagerImpl implements SessionManagerContract {
   resumeSession(sessionId: string): SessionContract {
     const existing = this.sessions.get(sessionId)
     if (existing) return existing
-    throw new Error(`resumeSession from DB not yet implemented: ${sessionId}`)
+    if (!this.persistence.loadSession) {
+      throw new Error('resumeSession requires loadSession hook on SessionManagerPersistence')
+    }
+    const data = this.persistence.loadSession(sessionId)
+    if (!data) throw new Error(`Session not found: ${sessionId}`)
+    const provider = getSessionProvider(data.providerId)
+    if (!provider) throw new Error(`SessionProvider not found: ${data.providerId}`)
+    const harness = harnessRegistry.get(provider.harnessId)
+    if (!harness) throw new Error(`Harness not registered: ${provider.harnessId}`)
+
+    const backend = harness.createBackend()
+    const session = new Session({
+      id: sessionId,
+      projectPath: data.projectPath,
+      cwd: data.projectPath,
+      providerId: provider.id,
+      harnessId: provider.harnessId,
+      providerConfig: provider.config,
+      backend,
+      resumedProviderSessionId: data.providerSessionId ?? undefined,
+      initialMessages: data.messages,
+      initialTotalCostUsd: data.totalCostUsd,
+      initialContextTokens: data.contextTokens,
+      onStateChange: this.persistence.onSessionStateChange
+        ? (snapshot) => this.persistence.onSessionStateChange!(snapshot)
+        : undefined,
+    })
+
+    this.registerSession(session, data.projectPath)
+    this.activeByProject.set(data.projectPath, sessionId)
+    return session
   }
 
   getSession(sessionId: string): SessionContract | null {

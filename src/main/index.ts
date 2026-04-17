@@ -18,7 +18,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
-import { insertSessionRecord, saveSessionStateBySid } from './session/session-repo'
+import { insertSessionRecord, loadSessionStateBySid, saveSessionStateBySid } from './session/session-repo'
 import {
   AgentIpcChannels,
   type CodexCollaborationMode,
@@ -94,6 +94,18 @@ const sessionManager = new SessionManagerImpl({
       })
     } catch (err) {
       console.warn('[sessionManager] saveSessionStateBySid failed:', err)
+    }
+  },
+  loadSession: (sessionId) => {
+    const loaded = loadSessionStateBySid(sessionId)
+    if (!loaded) return null
+    return {
+      projectPath: loaded.record.projectPath,
+      providerId: loaded.record.providerId,
+      providerSessionId: loaded.record.providerSessionId,
+      messages: loaded.messages,
+      totalCostUsd: loaded.record.totalCostUsd,
+      contextTokens: loaded.record.contextTokens,
     }
   },
 })

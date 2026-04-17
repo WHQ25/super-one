@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, SendMessageRequest } from '../../shared/agent-types'
+import type { AgentEvent, ChatMessage, SendMessageRequest } from '../../shared/agent-types'
 import type { BackendStartOptions, HarnessId, SessionBackend, SessionProvider } from './types'
 
 const hoisted = vi.hoisted(() => ({
@@ -279,6 +279,91 @@ describe('SessionManager', () => {
         onSessionCreated: () => { throw new Error('boom') },
       })
       expect(() => mgr2.createSession({ projectPath: '/pp', providerId: 'claude-official' })).not.toThrow()
+    })
+  })
+
+  describe('resumeSession', () => {
+    const sampleMessages: ChatMessage[] = [
+      { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'past request' }], createdAt: '2025-01-01', providerId: 'local' },
+      { id: 'a1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'past reply' }], createdAt: '2025-01-02', providerId: 'claude' },
+    ]
+
+    it('looks up session data via loadSession callback and hydrates initial state', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-resume',
+        providerId: 'claude-official',
+        providerSessionId: 'sdk-prior',
+        messages: sampleMessages,
+        totalCostUsd: 0.12,
+        contextTokens: 777,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const session = mgr2.resumeSession('sid-123')
+
+      expect(loadSession).toHaveBeenCalledWith('sid-123')
+      expect(session.snapshot.id).toBe('sid-123')
+      expect(session.snapshot.projectPath).toBe('/proj-resume')
+      expect(session.snapshot.providerId).toBe('claude-official')
+      expect(session.snapshot.providerSessionId).toBe('sdk-prior')
+      expect(session.snapshot.messages).toEqual(sampleMessages)
+      expect(session.snapshot.totalCostUsd).toBe(0.12)
+      expect(session.snapshot.contextTokens).toBe(777)
+    })
+
+    it('sets the resumed session as active for its project', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-resume',
+        providerId: 'claude-official',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const session = mgr2.resumeSession('sid-777')
+      expect(mgr2.getActiveSession('/proj-resume')?.snapshot.id).toBe(session.snapshot.id)
+    })
+
+    it('returns the in-memory instance without re-loading when sid already known', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-resume',
+        providerId: 'claude-official',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const first = mgr2.resumeSession('sid-a')
+      const second = mgr2.resumeSession('sid-a')
+      expect(second).toBe(first)
+      expect(loadSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('throws when loadSession returns null (unknown sid)', () => {
+      const loadSession = vi.fn(() => null)
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      expect(() => mgr2.resumeSession('ghost')).toThrow(/not found|unknown/i)
+    })
+
+    it('throws when no loadSession hook is configured', () => {
+      const mgr2 = new SessionManagerImpl()
+      expect(() => mgr2.resumeSession('sid-x')).toThrow(/loadSession/i)
+    })
+
+    it('resumes a codex session into the codex harness', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-codex',
+        providerId: 'codex-official',
+        providerSessionId: 'thread-abc',
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const session = mgr2.resumeSession('sid-codex')
+      expect(session.snapshot.harnessId).toBe('codex')
+      expect(session.snapshot.providerSessionId).toBe('thread-abc')
     })
   })
 

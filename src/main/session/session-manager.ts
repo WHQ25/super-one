@@ -11,6 +11,7 @@ import type {
   Session as SessionContract,
   SessionCreateOptions,
   SessionManager as SessionManagerContract,
+  SessionProvider,
   SessionSnapshot,
   SessionStateChange,
 } from './types'
@@ -29,6 +30,7 @@ export interface SessionManagerPersistence {
   onSessionDisposed?: (sessionId: string) => void
   onSessionStateChange?: (snapshot: SessionStateChange) => void
   loadSession?: (sessionId: string) => LoadedSessionData | null
+  resolveProviderConfig?: (provider: SessionProvider) => unknown
 }
 
 export class SessionManagerImpl implements SessionManagerContract {
@@ -92,13 +94,16 @@ export class SessionManagerImpl implements SessionManagerContract {
     const sessionId = randomUUID()
     const cwd = opts.cwd ?? opts.projectPath
     const backend = harness.createBackend()
+    const providerConfig = this.persistence.resolveProviderConfig
+      ? this.persistence.resolveProviderConfig(provider)
+      : provider.config
     const session = new Session({
       id: sessionId,
       projectPath: opts.projectPath,
       cwd,
       providerId: provider.id,
       harnessId: provider.harnessId,
-      providerConfig: provider.config,
+      providerConfig,
       backend,
       permissionMode: opts.permissionMode,
       effort: opts.effort,
@@ -156,13 +161,16 @@ export class SessionManagerImpl implements SessionManagerContract {
     if (!harness) throw new Error(`Harness not registered: ${provider.harnessId}`)
 
     const backend = harness.createBackend()
+    const providerConfig = this.persistence.resolveProviderConfig
+      ? this.persistence.resolveProviderConfig(provider)
+      : provider.config
     const session = new Session({
       id: sessionId,
       projectPath: data.projectPath,
       cwd: data.projectPath,
       providerId: provider.id,
       harnessId: provider.harnessId,
-      providerConfig: provider.config,
+      providerConfig,
       backend,
       resumedProviderSessionId: data.providerSessionId ?? undefined,
       initialMessages: data.messages,

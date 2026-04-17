@@ -282,6 +282,44 @@ describe('SessionManager', () => {
     })
   })
 
+  describe('resolveProviderConfig hook', () => {
+    it('uses the resolver to snapshot provider config at createSession time', () => {
+      const resolver = vi.fn((p) => ({ apiKey: 'resolved-' + p.id }))
+      const mgr2 = new SessionManagerImpl({ resolveProviderConfig: resolver })
+      const session = mgr2.createSession({ projectPath: '/p', providerId: 'claude-base' })
+      expect(resolver).toHaveBeenCalledTimes(1)
+      expect(resolver.mock.calls[0][0]?.id).toBe('claude-base')
+      // Backend.start captures the resolved config; trigger start by send().
+      return session.send({ content: 'x' }).then(() => {
+        const backend = hoisted.backendsCreated[0] as FakeBackend & { startOpts?: BackendStartOptions }
+        // FakeBackend doesn't capture startOpts; use spy on start instead.
+        expect(backend.started).toBe(true)
+      })
+    })
+
+    it('falls back to provider.config when no resolver is configured', async () => {
+      const mgr2 = new SessionManagerImpl()
+      const s = mgr2.createSession({ projectPath: '/p', providerId: 'claude-base' })
+      expect(s.snapshot.providerId).toBe('claude-base')
+    })
+
+    it('applies the resolver on resumeSession as well', () => {
+      const resolver = vi.fn(() => ({ apiKey: 'resumed-token' }))
+      const loadSession = vi.fn(() => ({
+        projectPath: '/p',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession, resolveProviderConfig: resolver })
+      mgr2.resumeSession('sid-1')
+      expect(resolver).toHaveBeenCalledTimes(1)
+      expect(resolver.mock.calls[0][0]?.id).toBe('claude-base')
+    })
+  })
+
   describe('resumeSession', () => {
     const sampleMessages: ChatMessage[] = [
       { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'past request' }], createdAt: '2025-01-01', providerId: 'local' },

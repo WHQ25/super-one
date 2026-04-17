@@ -19,6 +19,8 @@ import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
 import { insertSessionRecord, loadSessionStateBySid, saveSessionStateBySid } from './session/session-repo'
+import { buildProviderEnv } from './agent/claude-agent'
+import type { SessionProvider } from './session/types'
 import {
   AgentIpcChannels,
   type CodexCollaborationMode,
@@ -45,7 +47,7 @@ import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as 
 import { parseGitStatusOutput, parseGitStatusFiles } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
-import { getDb, closeDb, getCachedResources, setCachedResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
+import { getDb, closeDb, getCachedResources, setCachedResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw } from './database'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
 import { AutomationService } from './automation-service'
@@ -75,7 +77,21 @@ if (is.dev) {
 const agentService = new AgentService()
 const codexService = new CodexExperimentService()
 const automationService = new AutomationService()
+function resolveBaseProviderConfig(provider: SessionProvider): unknown {
+  if (!provider.isBase) return provider.config
+  const activeApiProvider = getActiveProviderRaw(provider.harnessId)
+  if (!activeApiProvider) return provider.config
+  const env = buildProviderEnv(activeApiProvider, provider.harnessId)
+  const { ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, ...extraEnv } = env
+  return {
+    apiKey: ANTHROPIC_API_KEY,
+    baseUrl: ANTHROPIC_BASE_URL,
+    extraEnv: Object.keys(extraEnv).length > 0 ? extraEnv : undefined,
+  }
+}
+
 const sessionManager = new SessionManagerImpl({
+  resolveProviderConfig: resolveBaseProviderConfig,
   onSessionCreated: ({ id, projectPath, providerId }) => {
     try {
       insertSessionRecord({ id, projectPath, providerId })

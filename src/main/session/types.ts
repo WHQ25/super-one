@@ -1,0 +1,167 @@
+import type {
+  AgentEvent,
+  AgentInfo,
+  ContextUsageInfo,
+  McpServerInfo,
+  PermissionMode,
+  QuestionAnnotations,
+  RewindFilesResult,
+  SandboxInfo,
+  SandboxMode,
+  SendMessageRequest,
+  SlashCommandInfo,
+} from '../../shared/agent-types'
+
+export type HarnessId = 'claude' | 'codex'
+
+export interface Harness {
+  readonly id: HarnessId
+  readonly name: string
+  readonly configSchema: unknown
+  createBackend(config: unknown): SessionBackend
+}
+
+export interface SessionProvider {
+  id: string
+  harnessId: HarnessId
+  name: string
+  isOfficial: boolean
+  config: unknown
+  createdAt: number
+  updatedAt: number
+}
+
+export type SessionStatus =
+  | 'idle'
+  | 'starting'
+  | 'streaming'
+  | 'interrupting'
+  | 'ended'
+  | 'disposed'
+
+export interface SessionCreateOptions {
+  projectPath: string
+  cwd?: string
+  providerId: string
+  permissionMode?: PermissionMode
+  sandboxMode?: SandboxMode
+  effort?: SendMessageRequest['effort']
+  model?: string
+  additionalDirectories?: string[]
+  resumeFrom?: string
+  title?: string
+}
+
+export interface SessionSnapshot {
+  readonly id: string
+  readonly projectPath: string
+  readonly cwd: string
+  readonly providerId: string
+  readonly harnessId: HarnessId
+  readonly status: SessionStatus
+  readonly providerSessionId: string | null
+  readonly currentMessageId: string | null
+  readonly createdAt: number
+  readonly lastUserMessageAt: number | null
+}
+
+export interface BackendStartOptions {
+  cwd: string
+  config: unknown
+  permissionMode: PermissionMode
+  sandboxInfo?: SandboxInfo
+  effort?: SendMessageRequest['effort']
+  model?: string
+  additionalDirectories?: string[]
+  abortController: AbortController
+  providerSessionId?: string
+}
+
+export type BackendEvent = AgentEvent
+
+export interface SessionBackend {
+  readonly kind: HarnessId
+  start(opts: BackendStartOptions): Promise<void>
+  send(request: SendMessageRequest): Promise<void>
+  interrupt(): Promise<void>
+  close(): Promise<void>
+  setModel(model: string): Promise<void>
+  setPermissionMode(mode: PermissionMode): Promise<void>
+  respondToPermission(
+    requestId: string,
+    allow: boolean,
+    alwaysAllow?: boolean,
+    reason?: string,
+    selectedSuggestions?: number[],
+  ): void
+  respondToQuestion(
+    requestId: string,
+    answers: Record<string, string>,
+    annotations?: QuestionAnnotations,
+  ): void
+  dismissQuestion(requestId: string): void
+  respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
+  getContextUsage(): Promise<ContextUsageInfo | null>
+  getMcpServerStatus(): Promise<McpServerInfo[]>
+  rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
+  reconnectMcp(serverName: string): Promise<void>
+  toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
+  reloadPlugins(): Promise<boolean>
+  events: AsyncIterable<BackendEvent>
+  onProviderSessionId(cb: (id: string) => void): () => void
+}
+
+export interface Session {
+  readonly snapshot: SessionSnapshot
+  send(request: SendMessageRequest): Promise<void>
+  interrupt(): Promise<void>
+  setPermissionMode(mode: PermissionMode): Promise<void>
+  setSandboxMode(mode: SandboxMode): SandboxInfo
+  setModel(model: string): Promise<void>
+  respondToPermission(
+    requestId: string,
+    allow: boolean,
+    alwaysAllow?: boolean,
+    reason?: string,
+    selectedSuggestions?: number[],
+  ): void
+  respondToQuestion(
+    requestId: string,
+    answers: Record<string, string>,
+    annotations?: QuestionAnnotations,
+  ): void
+  dismissQuestion(requestId: string): void
+  respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
+  getContextUsage(): Promise<ContextUsageInfo | null>
+  getMcpServerStatus(): Promise<McpServerInfo[]>
+  rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
+  reconnectMcp(serverName: string): Promise<void>
+  toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
+  reloadPlugins(): Promise<boolean>
+  prewarm(): void
+  dispose(): Promise<void>
+  on(handler: (event: AgentEvent) => void): () => void
+}
+
+export interface ProjectResources {
+  readonly projectPath: string
+  readonly skills: AgentInfo[]
+  readonly projectCommands: SlashCommandInfo[]
+  readonly projectAgents: AgentInfo[]
+}
+
+export interface SessionManager {
+  openProject(projectPath: string): void
+  closeProject(projectPath: string): Promise<void>
+  listProjectSessions(projectPath: string): SessionSnapshot[]
+  getProjectResources(projectPath: string): ProjectResources
+  invalidateProjectResources(projectPath: string): void
+
+  createSession(opts: SessionCreateOptions): Session
+  resumeSession(sessionId: string): Session
+  getSession(sessionId: string): Session | null
+  disposeSession(sessionId: string): Promise<void>
+
+  on(sessionId: string, handler: (event: AgentEvent) => void): () => void
+  onAny(handler: (sessionId: string, event: AgentEvent) => void): () => void
+}

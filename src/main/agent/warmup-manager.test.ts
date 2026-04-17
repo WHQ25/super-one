@@ -64,6 +64,33 @@ describe('WarmupManager.keyOf', () => {
   it('treats missing additionalDirectories the same as empty array', () => {
     expect(WarmupManager.keyOf(baseOpts())).toBe(WarmupManager.keyOf(baseOpts({ additionalDirectories: [] })))
   })
+
+  it('differs when resume / resumeSessionAt / forkSession / sessionId changes', () => {
+    const fresh = WarmupManager.keyOf(baseOpts())
+    expect(fresh).not.toBe(WarmupManager.keyOf(baseOpts({ resume: 'sess-abc' } as Partial<Options>)))
+    expect(fresh).not.toBe(WarmupManager.keyOf(baseOpts({ resumeSessionAt: 'uuid-1' } as Partial<Options>)))
+    expect(fresh).not.toBe(WarmupManager.keyOf(baseOpts({ forkSession: true } as Partial<Options>)))
+    expect(fresh).not.toBe(WarmupManager.keyOf(baseOpts({ sessionId: 'sess-xyz' } as Partial<Options>)))
+    const a = WarmupManager.keyOf(baseOpts({ resume: 'sess-a' } as Partial<Options>))
+    const b = WarmupManager.keyOf(baseOpts({ resume: 'sess-b' } as Partial<Options>))
+    expect(a).not.toBe(b)
+  })
+})
+
+describe('WarmupManager prewarm/consume — session isolation', () => {
+  beforeEach(() => {
+    startupMock.mockReset()
+  })
+
+  it('does NOT consume a fresh-session slot when the send carries resume', async () => {
+    const warm = fakeWarm()
+    startupMock.mockResolvedValue(warm)
+    const m = new WarmupManager()
+    m.prewarm(baseOpts())
+    await new Promise((r) => setTimeout(r, 0))
+    const result = m.consume(baseOpts({ resume: 'old-session-id' } as Partial<Options>))
+    expect(result).toBeNull()
+  })
 })
 
 describe('WarmupManager prewarm/consume', () => {

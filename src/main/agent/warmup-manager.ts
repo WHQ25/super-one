@@ -28,6 +28,10 @@ export class WarmupManager {
       additionalDirectories: [...(opts.additionalDirectories ?? [])].sort(),
       env: envEntries,
       cli: opts.pathToClaudeCodeExecutable ?? '',
+      resume: opts.resume ?? '',
+      resumeSessionAt: opts.resumeSessionAt ?? '',
+      forkSession: opts.forkSession ?? false,
+      sessionId: opts.sessionId ?? '',
     })
   }
 

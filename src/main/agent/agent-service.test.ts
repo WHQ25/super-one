@@ -36,6 +36,7 @@ vi.mock('./claude-agent', () => ({
     getSessionId = vi.fn(() => this.sessionId)
     sendMessage = vi.fn().mockResolvedValue(undefined)
     updateEventEmitter = vi.fn()
+    setWarmupManager = vi.fn()
 
     constructor() {
       createdAgents.push(this as never)
@@ -156,6 +157,10 @@ vi.mock('fs/promises', () => ({
 }))
 
 vi.mock('../remote-control-service', () => ({}))
+
+vi.mock('../mcp/superone-mcp-server', () => ({
+  clearAllPendingCalls: vi.fn(),
+}))
 
 vi.mock('./resolve-cli', () => ({
   fixPath: vi.fn(),

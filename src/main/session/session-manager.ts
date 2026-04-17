@@ -91,7 +91,10 @@ export class SessionManagerImpl implements SessionManagerContract {
     const harness = harnessRegistry.get(provider.harnessId)
     if (!harness) throw new Error(`Harness not registered: ${provider.harnessId}`)
 
-    const sessionId = randomUUID()
+    if (opts.id && this.sessions.has(opts.id)) {
+      throw new Error(`Session id already active: ${opts.id}`)
+    }
+    const sessionId = opts.id ?? randomUUID()
     const cwd = opts.cwd ?? opts.projectPath
     const backend = harness.createBackend()
     const providerConfig = this.persistence.resolveProviderConfig

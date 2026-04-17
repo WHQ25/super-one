@@ -591,6 +591,7 @@ export interface SendMessageRequest {
   images?: ImageAttachment[]
   additionalDirs?: string[]
   clientMessageId?: string
+  sessionId?: string
   gitBranch?: string
   worktreePath?: string
   priority?: 'now' | 'next' | 'later'

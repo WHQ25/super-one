@@ -44,6 +44,7 @@ export interface SessionCreateOptions {
   projectPath: string
   cwd?: string
   providerId: string
+  id?: string
   permissionMode?: PermissionMode
   sandboxMode?: SandboxMode
   effort?: SendMessageRequest['effort']

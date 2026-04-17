@@ -2614,6 +2614,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         images: attachments.length > 0 ? attachments : undefined,
         additionalDirs: mergedDirs.length > 0 ? mergedDirs : undefined,
         clientMessageId: userMessageId,
+        sessionId: project._activeSessionId ?? undefined,
         gitBranch: session._worktreeBaseBranch ?? undefined,
         worktreePath: session._worktreePath ?? undefined,
         ...(isQueuedSend ? { priority: 'next' as const } : {}),

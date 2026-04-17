@@ -1628,10 +1628,22 @@ export class AgentService {
     return this.sessionManager
   }
 
-  private getOrCreateActiveSession(projectPath: string): import('../session/types').Session {
+  private getOrCreateActiveSession(projectPath: string, requestedSid?: string): import('../session/types').Session {
     const mgr = this.requireSessionManager()
-    const existing = mgr.getActiveSession(projectPath)
-    if (existing) return existing
+    if (requestedSid) {
+      const existing = mgr.getSession(requestedSid)
+      if (existing) {
+        mgr.setActiveSession(projectPath, requestedSid)
+        return existing
+      }
+      try {
+        return mgr.resumeSession(requestedSid)
+      } catch {
+        return mgr.createSession({ projectPath, providerId: 'claude-base', id: requestedSid })
+      }
+    }
+    const active = mgr.getActiveSession(projectPath)
+    if (active) return active
     return mgr.createSession({ projectPath, providerId: 'claude-base' })
   }
 
@@ -1678,7 +1690,7 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SEND_MESSAGE, async (_event, projectPath: string, request: SendMessageRequest) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      const session = this.getOrCreateActiveSession(projectPath)
+      const session = this.getOrCreateActiveSession(projectPath, request.sessionId)
       trace('session.lifecycle', 'ipc_sendMessage', {
         projectPath,
         sessionId: session.snapshot.id,

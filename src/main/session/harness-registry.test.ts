@@ -1,4 +1,23 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+vi.mock('../logger', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
+}))
+
+vi.mock('../agent/claude-permissions', () => ({
+  createCanUseTool: vi.fn(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() })),
+  respondToPermission: vi.fn(),
+  respondToQuestion: vi.fn(),
+  dismissQuestion: vi.fn(),
+  respondToPlanApproval: vi.fn(),
+  rejectAllPending: vi.fn(),
+}))
+
+vi.mock('../agent/claude-query', () => ({
+  createSessionQuery: vi.fn(),
+  buildUserMessage: vi.fn(),
+}))
+
 import { harnessRegistry } from './harness-registry'
 
 describe('harnessRegistry', () => {
@@ -25,9 +44,15 @@ describe('harnessRegistry', () => {
     expect(harnessRegistry.get('unknown')).toBeUndefined()
   })
 
-  it('createBackend throws TODO until implemented', () => {
+  it('createBackend returns a live backend instance', () => {
     const h = harnessRegistry.get('claude')!
-    expect(() => h.createBackend({})).toThrow(/not implemented/i)
+    const backend = h.createBackend()
+    expect(backend.kind).toBe('claude')
+  })
+
+  it('codex createBackend returns a codex backend', () => {
+    const h = harnessRegistry.get('codex')!
+    expect(h.createBackend().kind).toBe('codex')
   })
 
   it('configSchema is defined (Zod schema)', () => {

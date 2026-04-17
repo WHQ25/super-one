@@ -1,5 +1,7 @@
 import { z } from 'zod'
-import type { Harness, HarnessId, SessionBackend } from './types'
+import { ClaudeBackend } from './backends/claude-backend'
+import { CodexBackend } from './backends/codex-backend'
+import type { Harness, HarnessId } from './types'
 
 const claudeConfigSchema = z.object({
   apiKey: z.string().optional(),
@@ -15,24 +17,22 @@ const codexConfigSchema = z.object({
   model: z.string().optional(),
   extraEnv: z.record(z.string(), z.string()).optional(),
   initializeTimeoutMs: z.number().positive().optional(),
+  permissionPreset: z.enum(['default', 'full-access']).optional(),
+  reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high']).optional(),
 }).passthrough()
-
-function notImplemented(harnessId: HarnessId): () => SessionBackend {
-  return () => { throw new Error(`[harness:${harnessId}] createBackend not implemented yet`) }
-}
 
 const claudeHarness: Harness = {
   id: 'claude',
   name: 'Claude (Anthropic)',
   configSchema: claudeConfigSchema,
-  createBackend: notImplemented('claude'),
+  createBackend: () => new ClaudeBackend(),
 }
 
 const codexHarness: Harness = {
   id: 'codex',
   name: 'Codex (OpenAI)',
   configSchema: codexConfigSchema,
-  createBackend: notImplemented('codex'),
+  createBackend: () => new CodexBackend(),
 }
 
 const registry = new Map<HarnessId, Harness>([

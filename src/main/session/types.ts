@@ -18,7 +18,7 @@ export interface Harness {
   readonly id: HarnessId
   readonly name: string
   readonly configSchema: unknown
-  createBackend(config: unknown): SessionBackend
+  createBackend(): SessionBackend
 }
 
 export interface SessionProvider {
@@ -145,7 +145,7 @@ export interface Session {
 
 export interface ProjectResources {
   readonly projectPath: string
-  readonly skills: AgentInfo[]
+  readonly skills: SlashCommandInfo[]
   readonly projectCommands: SlashCommandInfo[]
   readonly projectAgents: AgentInfo[]
 }

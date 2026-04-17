@@ -6,6 +6,24 @@ const { getDbMock } = vi.hoisted(() => ({
 
 vi.mock('../database', () => ({ getDb: getDbMock }))
 
+vi.mock('../logger', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
+}))
+
+vi.mock('../agent/claude-permissions', () => ({
+  createCanUseTool: vi.fn(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() })),
+  respondToPermission: vi.fn(),
+  respondToQuestion: vi.fn(),
+  dismissQuestion: vi.fn(),
+  respondToPlanApproval: vi.fn(),
+  rejectAllPending: vi.fn(),
+}))
+
+vi.mock('../agent/claude-query', () => ({
+  createSessionQuery: vi.fn(),
+  buildUserMessage: vi.fn(),
+}))
+
 import {
   listSessionProviders,
   getSessionProvider,

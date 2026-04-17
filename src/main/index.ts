@@ -84,6 +84,9 @@ const sessionManager = new SessionManagerImpl({
     }
   },
 })
+sessionManager.onAny((_sid, event) => {
+  safeSend(AgentIpcChannels.EVENT, event)
+})
 const remoteCallbacks: RemoteControlCallbacks = {
   onCommand: async (command, respond) => {
     await agentService.handleRemoteCommand(command, respond)

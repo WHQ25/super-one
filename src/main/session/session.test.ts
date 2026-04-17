@@ -82,7 +82,7 @@ function makeSession(overrides: Partial<SessionConstructorOptions> = {}): { sess
     id: 'sess-1',
     projectPath: '/tmp/proj',
     cwd: '/tmp/proj',
-    providerId: 'claude-official',
+    providerId: 'claude-base',
     harnessId: 'claude',
     providerConfig: { apiKey: 'sk-x' },
     backend,

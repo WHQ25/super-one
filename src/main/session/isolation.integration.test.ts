@@ -73,7 +73,7 @@ function seedProvider(id: string): SessionProvider {
     id,
     harnessId: 'claude',
     name: id,
-    isOfficial: true,
+    isBase: true,
     config: { apiKey: 'sk-test' },
     createdAt: 0,
     updatedAt: 0,
@@ -95,7 +95,7 @@ describe('SessionManager concurrent isolation', () => {
     hoisted.providers.clear()
     hoisted.queries.length = 0
     hoisted.createSessionQueryMock.mockClear()
-    seedProvider('claude-official')
+    seedProvider('claude-base')
     mgr = new SessionManagerImpl()
   })
 
@@ -107,8 +107,8 @@ describe('SessionManager concurrent isolation', () => {
     aSend: Promise<void>
     bSend: Promise<void>
   }> {
-    const a = mgr.createSession({ projectPath: '/proj', providerId: 'claude-official' })
-    const b = mgr.createSession({ projectPath: '/proj', providerId: 'claude-official' })
+    const a = mgr.createSession({ projectPath: '/proj', providerId: 'claude-base' })
+    const b = mgr.createSession({ projectPath: '/proj', providerId: 'claude-base' })
     const aEvents: AgentEvent[] = []
     const bEvents: AgentEvent[] = []
     mgr.on(a.snapshot.id, (e) => aEvents.push(e))

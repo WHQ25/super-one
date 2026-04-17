@@ -173,9 +173,9 @@ describe('session-repo', () => {
 
   describe('insertSessionRecord', () => {
     it('inserts a session with provider_id and legacy provider column', () => {
-      insertSessionRecord({ id: 'sess-1', projectPath: '/tmp/proj', providerId: 'claude-official' })
+      insertSessionRecord({ id: 'sess-1', projectPath: '/tmp/proj', providerId: 'claude-base' })
       const row = fake.sessionsRows.get('sess-1')
-      expect(row?.provider_id).toBe('claude-official')
+      expect(row?.provider_id).toBe('claude-base')
       expect(row?.provider).toBe('claude')
     })
 
@@ -186,7 +186,7 @@ describe('session-repo', () => {
 
     it('throws when project is not in recent-folders', () => {
       getProjectIdMock.mockReturnValue(null)
-      expect(() => insertSessionRecord({ id: 'x', projectPath: '/missing', providerId: 'claude-official' })).toThrow(/Project not found/)
+      expect(() => insertSessionRecord({ id: 'x', projectPath: '/missing', providerId: 'claude-base' })).toThrow(/Project not found/)
     })
   })
 
@@ -196,15 +196,15 @@ describe('session-repo', () => {
     })
 
     it('returns a parsed record with derived harnessId', () => {
-      insertSessionRecord({ id: 'c1', projectPath: '/tmp/proj', providerId: 'claude-official' })
+      insertSessionRecord({ id: 'c1', projectPath: '/tmp/proj', providerId: 'claude-base' })
       const rec = getSessionRecord('c1')
       expect(rec?.harnessId).toBe('claude')
-      expect(rec?.providerId).toBe('claude-official')
+      expect(rec?.providerId).toBe('claude-base')
       expect(rec?.projectPath).toBe('/tmp/proj')
     })
 
     it('derives harnessId=codex from codex providerId', () => {
-      insertSessionRecord({ id: 'x1', projectPath: '/tmp/proj', providerId: 'codex-official' })
+      insertSessionRecord({ id: 'x1', projectPath: '/tmp/proj', providerId: 'codex-base' })
       expect(getSessionRecord('x1')?.harnessId).toBe('codex')
     })
   })
@@ -217,8 +217,8 @@ describe('session-repo', () => {
 
     it('filters by project', () => {
       fake.seedProject('/tmp/other')
-      insertSessionRecord({ id: 'a', projectPath: '/tmp/proj', providerId: 'claude-official' })
-      insertSessionRecord({ id: 'b', projectPath: '/tmp/other', providerId: 'claude-official' })
+      insertSessionRecord({ id: 'a', projectPath: '/tmp/proj', providerId: 'claude-base' })
+      insertSessionRecord({ id: 'b', projectPath: '/tmp/other', providerId: 'claude-base' })
       const ids = listSessionRecordsByProject('/tmp/proj').map((r) => r.id)
       expect(ids).toEqual(['a'])
     })
@@ -226,19 +226,19 @@ describe('session-repo', () => {
 
   describe('updateProviderSessionId / updateSessionTitle / deleteSessionRecord', () => {
     it('updates provider_session_id', () => {
-      insertSessionRecord({ id: 'u1', projectPath: '/tmp/proj', providerId: 'claude-official' })
+      insertSessionRecord({ id: 'u1', projectPath: '/tmp/proj', providerId: 'claude-base' })
       updateProviderSessionId('u1', 'sdk-xyz')
       expect(getSessionRecord('u1')?.providerSessionId).toBe('sdk-xyz')
     })
 
     it('updates title', () => {
-      insertSessionRecord({ id: 'u2', projectPath: '/tmp/proj', providerId: 'claude-official' })
+      insertSessionRecord({ id: 'u2', projectPath: '/tmp/proj', providerId: 'claude-base' })
       updateSessionTitle('u2', 'Renamed')
       expect(getSessionRecord('u2')?.title).toBe('Renamed')
     })
 
     it('deletes', () => {
-      insertSessionRecord({ id: 'd1', projectPath: '/tmp/proj', providerId: 'claude-official' })
+      insertSessionRecord({ id: 'd1', projectPath: '/tmp/proj', providerId: 'claude-base' })
       deleteSessionRecord('d1')
       expect(getSessionRecord('d1')).toBeNull()
     })
@@ -246,7 +246,7 @@ describe('session-repo', () => {
 
   describe('saveSessionStateBySid / loadSessionStateBySid', () => {
     it('persists messages keyed by stable session id, reloadable by same id', () => {
-      insertSessionRecord({ id: 's-round-trip', projectPath: '/tmp/proj', providerId: 'claude-official' })
+      insertSessionRecord({ id: 's-round-trip', projectPath: '/tmp/proj', providerId: 'claude-base' })
       const messages: ChatMessage[] = [
         { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'claude' },
         { id: 'a1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'hello' }], createdAt: '2026-04-18T00:00:01Z', providerId: 'claude' },

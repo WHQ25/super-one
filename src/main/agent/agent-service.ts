@@ -2095,9 +2095,9 @@ export class AgentService {
       return getSessionProvider(id)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_GET_OFFICIAL, async (_event, harnessId: 'claude' | 'codex') => {
-      const { getOfficialProvider } = await import('../session/session-provider-repo')
-      return getOfficialProvider(harnessId)
+    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_GET_BASE, async (_event, harnessId: 'claude' | 'codex') => {
+      const { getBaseProvider } = await import('../session/session-provider-repo')
+      return getBaseProvider(harnessId)
     })
 
     ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_CREATE, async (_event, input: { harnessId: 'claude' | 'codex'; name: string; config: unknown; id?: string }) => {
@@ -2374,7 +2374,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_GET)
-    ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_GET_OFFICIAL)
+    ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_GET_BASE)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_CREATE)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_UPDATE)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_DELETE)

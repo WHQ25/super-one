@@ -79,9 +79,9 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
 }
 
 function inferLegacyProviderId(row: SessionRow): string {
-  if (row.provider === 'codex') return 'codex-official'
-  if (row.claude_session_id?.startsWith('codex_local_')) return 'codex-official'
-  return 'claude-official'
+  if (row.provider === 'codex') return 'codex-base'
+  if (row.claude_session_id?.startsWith('codex_local_')) return 'codex-base'
+  return 'claude-base'
 }
 
 export interface InsertSessionInput {

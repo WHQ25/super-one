@@ -438,8 +438,8 @@ const appAPI = {
       ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS, harnessId),
     get: (id: string) =>
       ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_GET, id),
-    getOfficial: (harnessId: 'claude' | 'codex') =>
-      ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_GET_OFFICIAL, harnessId),
+    getBase: (harnessId: 'claude' | 'codex') =>
+      ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_GET_BASE, harnessId),
     create: (input: { harnessId: 'claude' | 'codex'; name: string; config: unknown; id?: string }) =>
       ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_CREATE, input),
     update: (id: string, patch: { name?: string; config?: unknown }) =>

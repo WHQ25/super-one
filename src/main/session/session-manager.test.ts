@@ -74,7 +74,7 @@ function seedProvider(id: string, harnessId: HarnessId = 'claude'): SessionProvi
     id,
     harnessId,
     name: `Provider ${id}`,
-    isOfficial: id.endsWith('-official'),
+    isBase: id.endsWith('-base'),
     config: { apiKey: 'sk-x' },
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -89,21 +89,21 @@ describe('SessionManager', () => {
   beforeEach(() => {
     hoisted.providers.clear()
     hoisted.backendsCreated.length = 0
-    seedProvider('claude-official', 'claude')
-    seedProvider('codex-official', 'codex')
+    seedProvider('claude-base', 'claude')
+    seedProvider('codex-base', 'codex')
     mgr = new SessionManagerImpl()
   })
 
   describe('createSession', () => {
     it('creates a session with a UUID that differs from the SessionProvider id', () => {
-      const session = mgr.createSession({ projectPath: '/proj', providerId: 'claude-official' })
+      const session = mgr.createSession({ projectPath: '/proj', providerId: 'claude-base' })
       expect(session.snapshot.id).toMatch(/^[0-9a-f-]{36}$/)
-      expect(session.snapshot.id).not.toBe('claude-official')
+      expect(session.snapshot.id).not.toBe('claude-base')
     })
 
     it('assigns the correct harnessId based on the provider', () => {
-      const claude = mgr.createSession({ projectPath: '/p', providerId: 'claude-official' })
-      const codex = mgr.createSession({ projectPath: '/p', providerId: 'codex-official' })
+      const claude = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
+      const codex = mgr.createSession({ projectPath: '/p', providerId: 'codex-base' })
       expect(claude.snapshot.harnessId).toBe('claude')
       expect(codex.snapshot.harnessId).toBe('codex')
     })
@@ -113,8 +113,8 @@ describe('SessionManager', () => {
     })
 
     it('each call creates an independent Session and Backend', () => {
-      const a = mgr.createSession({ projectPath: '/p', providerId: 'claude-official' })
-      const b = mgr.createSession({ projectPath: '/p', providerId: 'claude-official' })
+      const a = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
+      const b = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
       expect(a.snapshot.id).not.toBe(b.snapshot.id)
       expect(hoisted.backendsCreated).toHaveLength(2)
       expect(hoisted.backendsCreated[0]).not.toBe(hoisted.backendsCreated[1])
@@ -127,15 +127,15 @@ describe('SessionManager', () => {
     })
 
     it('listProjectSessions returns only sessions for the given project', () => {
-      const s1 = mgr.createSession({ projectPath: '/a', providerId: 'claude-official' })
-      const s2 = mgr.createSession({ projectPath: '/a', providerId: 'codex-official' })
-      mgr.createSession({ projectPath: '/b', providerId: 'claude-official' })
+      const s1 = mgr.createSession({ projectPath: '/a', providerId: 'claude-base' })
+      const s2 = mgr.createSession({ projectPath: '/a', providerId: 'codex-base' })
+      mgr.createSession({ projectPath: '/b', providerId: 'claude-base' })
       const ids = mgr.listProjectSessions('/a').map((s) => s.id).sort()
       expect(ids).toEqual([s1.snapshot.id, s2.snapshot.id].sort())
     })
 
     it('disposeSession removes the session (closes backend only if started)', async () => {
-      const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-official' })
+      const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
       const backend = hoisted.backendsCreated[0] as FakeBackend
       await s.send({ content: 'x' })
       await mgr.disposeSession(s.snapshot.id)
@@ -144,7 +144,7 @@ describe('SessionManager', () => {
     })
 
     it('disposeSession on unstarted session is safe and does not call backend.close', async () => {
-      const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-official' })
+      const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
       const backend = hoisted.backendsCreated[0] as FakeBackend
       await mgr.disposeSession(s.snapshot.id)
       expect(backend.disposed).toBe(false)
@@ -157,8 +157,8 @@ describe('SessionManager', () => {
 
   describe('closeProject', () => {
     it('disposes all sessions belonging to the project', async () => {
-      mgr.createSession({ projectPath: '/x', providerId: 'claude-official' })
-      mgr.createSession({ projectPath: '/x', providerId: 'codex-official' })
+      mgr.createSession({ projectPath: '/x', providerId: 'claude-base' })
+      mgr.createSession({ projectPath: '/x', providerId: 'codex-base' })
       await mgr.closeProject('/x')
       expect(mgr.listProjectSessions('/x')).toEqual([])
     })
@@ -166,8 +166,8 @@ describe('SessionManager', () => {
 
   describe('event dispatch', () => {
     it('scoped on(sessionId) only receives events for that session', () => {
-      const s1 = mgr.createSession({ projectPath: '/p', providerId: 'claude-official' })
-      const s2 = mgr.createSession({ projectPath: '/p', providerId: 'claude-official' })
+      const s1 = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
+      const s2 = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
       const received1: AgentEvent[] = []
       const received2: AgentEvent[] = []
       mgr.on(s1.snapshot.id, (e) => received1.push(e))
@@ -184,7 +184,7 @@ describe('SessionManager', () => {
     })
 
     it('onAny receives all events tagged with sessionId', () => {
-      const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-official' })
+      const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
       const log: Array<{ sid: string; type: string }> = []
       mgr.onAny((sid, e) => log.push({ sid, type: e.type }))
 
@@ -196,13 +196,13 @@ describe('SessionManager', () => {
 
   describe('active session per project', () => {
     it('createSession marks the new session active for its project', () => {
-      const s = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const s = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
       expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(s.snapshot.id)
     })
 
     it('createSession on same project advances active pointer to the newest', () => {
-      const a = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
-      const b = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const a = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
+      const b = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
       expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(b.snapshot.id)
       expect(a.snapshot.id).not.toBe(b.snapshot.id)
     })
@@ -212,8 +212,8 @@ describe('SessionManager', () => {
     })
 
     it('setActiveSession switches the active pointer', () => {
-      const a = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
-      const b = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const a = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
+      const b = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
       mgr.setActiveSession('/pp', a.snapshot.id)
       expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(a.snapshot.id)
       mgr.setActiveSession('/pp', b.snapshot.id)
@@ -221,7 +221,7 @@ describe('SessionManager', () => {
     })
 
     it('setActiveSession rejects cross-project sessions', () => {
-      const a = mgr.createSession({ projectPath: '/pp-1', providerId: 'claude-official' })
+      const a = mgr.createSession({ projectPath: '/pp-1', providerId: 'claude-base' })
       expect(() => mgr.setActiveSession('/pp-2', a.snapshot.id)).toThrow(/does not belong/)
     })
 
@@ -230,21 +230,21 @@ describe('SessionManager', () => {
     })
 
     it('disposing the active session clears the pointer', async () => {
-      const s = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const s = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
       await mgr.disposeSession(s.snapshot.id)
       expect(mgr.getActiveSession('/pp')).toBeNull()
     })
 
     it('disposing a non-active session does not change the pointer', async () => {
-      const a = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
-      const b = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const a = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
+      const b = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
       mgr.setActiveSession('/pp', a.snapshot.id)
       await mgr.disposeSession(b.snapshot.id)
       expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(a.snapshot.id)
     })
 
     it('clearActiveSession removes the pointer without disposing the session', () => {
-      const s = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const s = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
       mgr.clearActiveSession('/pp')
       expect(mgr.getActiveSession('/pp')).toBeNull()
       expect(mgr.getSession(s.snapshot.id)).not.toBeNull()
@@ -257,11 +257,11 @@ describe('SessionManager', () => {
       const mgr2 = new SessionManagerImpl({
         onSessionCreated: (info) => { created.push(info) },
       })
-      const s = mgr2.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const s = mgr2.createSession({ projectPath: '/pp', providerId: 'claude-base' })
       expect(created).toHaveLength(1)
       expect(created[0]?.id).toBe(s.snapshot.id)
       expect(created[0]?.projectPath).toBe('/pp')
-      expect(created[0]?.providerId).toBe('claude-official')
+      expect(created[0]?.providerId).toBe('claude-base')
     })
 
     it('fires onSessionDisposed on disposeSession', async () => {
@@ -269,7 +269,7 @@ describe('SessionManager', () => {
       const mgr2 = new SessionManagerImpl({
         onSessionDisposed: (sid) => { disposed.push(sid) },
       })
-      const s = mgr2.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const s = mgr2.createSession({ projectPath: '/pp', providerId: 'claude-base' })
       await mgr2.disposeSession(s.snapshot.id)
       expect(disposed).toEqual([s.snapshot.id])
     })
@@ -278,7 +278,7 @@ describe('SessionManager', () => {
       const mgr2 = new SessionManagerImpl({
         onSessionCreated: () => { throw new Error('boom') },
       })
-      expect(() => mgr2.createSession({ projectPath: '/pp', providerId: 'claude-official' })).not.toThrow()
+      expect(() => mgr2.createSession({ projectPath: '/pp', providerId: 'claude-base' })).not.toThrow()
     })
   })
 
@@ -291,7 +291,7 @@ describe('SessionManager', () => {
     it('looks up session data via loadSession callback and hydrates initial state', () => {
       const loadSession = vi.fn(() => ({
         projectPath: '/proj-resume',
-        providerId: 'claude-official',
+        providerId: 'claude-base',
         providerSessionId: 'sdk-prior',
         messages: sampleMessages,
         totalCostUsd: 0.12,
@@ -303,7 +303,7 @@ describe('SessionManager', () => {
       expect(loadSession).toHaveBeenCalledWith('sid-123')
       expect(session.snapshot.id).toBe('sid-123')
       expect(session.snapshot.projectPath).toBe('/proj-resume')
-      expect(session.snapshot.providerId).toBe('claude-official')
+      expect(session.snapshot.providerId).toBe('claude-base')
       expect(session.snapshot.providerSessionId).toBe('sdk-prior')
       expect(session.snapshot.messages).toEqual(sampleMessages)
       expect(session.snapshot.totalCostUsd).toBe(0.12)
@@ -313,7 +313,7 @@ describe('SessionManager', () => {
     it('sets the resumed session as active for its project', () => {
       const loadSession = vi.fn(() => ({
         projectPath: '/proj-resume',
-        providerId: 'claude-official',
+        providerId: 'claude-base',
         providerSessionId: null,
         messages: [],
         totalCostUsd: 0,
@@ -327,7 +327,7 @@ describe('SessionManager', () => {
     it('returns the in-memory instance without re-loading when sid already known', () => {
       const loadSession = vi.fn(() => ({
         projectPath: '/proj-resume',
-        providerId: 'claude-official',
+        providerId: 'claude-base',
         providerSessionId: null,
         messages: [],
         totalCostUsd: 0,
@@ -354,7 +354,7 @@ describe('SessionManager', () => {
     it('resumes a codex session into the codex harness', () => {
       const loadSession = vi.fn(() => ({
         projectPath: '/proj-codex',
-        providerId: 'codex-official',
+        providerId: 'codex-base',
         providerSessionId: 'thread-abc',
         messages: [],
         totalCostUsd: 0,

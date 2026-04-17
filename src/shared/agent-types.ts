@@ -1238,7 +1238,7 @@ export const AgentIpcChannels = {
   SESSION_PROVIDERS_LIST: 'sessionProviders:list',
   SESSION_PROVIDERS_LIST_BY_HARNESS: 'sessionProviders:list-by-harness',
   SESSION_PROVIDERS_GET: 'sessionProviders:get',
-  SESSION_PROVIDERS_GET_OFFICIAL: 'sessionProviders:get-official',
+  SESSION_PROVIDERS_GET_BASE: 'sessionProviders:get-base',
   SESSION_PROVIDERS_CREATE: 'sessionProviders:create',
   SESSION_PROVIDERS_UPDATE: 'sessionProviders:update',
   SESSION_PROVIDERS_DELETE: 'sessionProviders:delete',

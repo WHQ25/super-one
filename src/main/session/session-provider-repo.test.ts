@@ -27,7 +27,7 @@ vi.mock('../agent/claude-query', () => ({
 import {
   listSessionProviders,
   getSessionProvider,
-  getOfficialProvider,
+  getBaseProvider,
   createSessionProvider,
   updateSessionProvider,
   deleteSessionProvider,
@@ -38,7 +38,7 @@ interface Row {
   id: string
   harness_id: string
   name: string
-  is_official: number
+  is_base: number
   config_json: string
   created_at: string
   updated_at: string
@@ -48,7 +48,7 @@ function makeFakeDb() {
   const rows = new Map<string, Row>()
 
   const sortForList = (a: Row, b: Row) => {
-    if (a.is_official !== b.is_official) return b.is_official - a.is_official
+    if (a.is_base !== b.is_base) return b.is_base - a.is_base
     return a.created_at.localeCompare(b.created_at)
   }
 
@@ -66,7 +66,7 @@ function makeFakeDb() {
       if (/^\s*INSERT INTO session_providers/.test(sql)) {
         return {
           run: (id: string, harness_id: string, name: string, config_json: string, created_at: string, updated_at: string) => {
-            rows.set(id, { id, harness_id, name, is_official: 0, config_json, created_at, updated_at })
+            rows.set(id, { id, harness_id, name, is_base: 0, config_json, created_at, updated_at })
           },
         }
       }
@@ -87,8 +87,8 @@ function makeFakeDb() {
 
   const seed = () => {
     const now = new Date().toISOString()
-    rows.set('claude-official', { id: 'claude-official', harness_id: 'claude', name: 'Claude (Official)', is_official: 1, config_json: '{}', created_at: now, updated_at: now })
-    rows.set('codex-official', { id: 'codex-official', harness_id: 'codex', name: 'Codex (Official)', is_official: 1, config_json: '{}', created_at: now, updated_at: now })
+    rows.set('claude-base', { id: 'claude-base', harness_id: 'claude', name: 'Claude (Base)', is_base: 1, config_json: '{}', created_at: now, updated_at: now })
+    rows.set('codex-base', { id: 'codex-base', harness_id: 'codex', name: 'Codex (Base)', is_base: 1, config_json: '{}', created_at: now, updated_at: now })
   }
 
   return { db, seed }
@@ -102,34 +102,34 @@ describe('session-provider-repo', () => {
   })
 
   describe('list / get', () => {
-    it('lists both official providers', () => {
+    it('lists both base providers', () => {
       const ids = listSessionProviders().map((p) => p.id).sort()
-      expect(ids).toEqual(['claude-official', 'codex-official'])
+      expect(ids).toEqual(['claude-base', 'codex-base'])
     })
 
     it('listByHarness filters by harness', () => {
-      expect(listByHarness('claude').map((p) => p.id)).toEqual(['claude-official'])
-      expect(listByHarness('codex').map((p) => p.id)).toEqual(['codex-official'])
+      expect(listByHarness('claude').map((p) => p.id)).toEqual(['claude-base'])
+      expect(listByHarness('codex').map((p) => p.id)).toEqual(['codex-base'])
     })
 
     it('get returns null for unknown id', () => {
       expect(getSessionProvider('nope')).toBeNull()
     })
 
-    it('getOfficialProvider returns the seeded official', () => {
-      expect(getOfficialProvider('claude').isOfficial).toBe(true)
-      expect(getOfficialProvider('codex').isOfficial).toBe(true)
+    it('getBaseProvider returns the seeded base', () => {
+      expect(getBaseProvider('claude').isBase).toBe(true)
+      expect(getBaseProvider('codex').isBase).toBe(true)
     })
   })
 
   describe('create', () => {
-    it('creates a non-official provider with validated config', () => {
+    it('creates a non-base provider with validated config', () => {
       const p = createSessionProvider({
         harnessId: 'claude',
         name: 'my claude',
         config: { apiKey: 'sk-xxx', model: 'claude-opus-4-7' },
       })
-      expect(p.isOfficial).toBe(false)
+      expect(p.isBase).toBe(false)
       expect(p.harnessId).toBe('claude')
       expect(p.name).toBe('my claude')
       expect(p.config).toMatchObject({ apiKey: 'sk-xxx', model: 'claude-opus-4-7' })
@@ -152,7 +152,7 @@ describe('session-provider-repo', () => {
   })
 
   describe('update', () => {
-    it('updates name of non-official provider', () => {
+    it('updates name of non-base provider', () => {
       const p = createSessionProvider({ harnessId: 'claude', name: 'orig', config: {} })
       const updated = updateSessionProvider(p.id, { name: 'renamed' })
       expect(updated.name).toBe('renamed')
@@ -164,8 +164,8 @@ describe('session-provider-repo', () => {
       expect(updated.config).toMatchObject({ model: 'claude-sonnet-4-6' })
     })
 
-    it('throws when updating an official provider', () => {
-      expect(() => updateSessionProvider('claude-official', { name: 'new' })).toThrow(/official/)
+    it('throws when updating a base provider', () => {
+      expect(() => updateSessionProvider('claude-base', { name: 'new' })).toThrow(/base/)
     })
 
     it('throws for unknown id', () => {
@@ -174,7 +174,7 @@ describe('session-provider-repo', () => {
   })
 
   describe('delete', () => {
-    it('deletes non-official provider', () => {
+    it('deletes non-base provider', () => {
       const p = createSessionProvider({ harnessId: 'claude', name: 'tmp', config: {} })
       expect(deleteSessionProvider(p.id)).toBe(true)
       expect(getSessionProvider(p.id)).toBeNull()
@@ -184,8 +184,8 @@ describe('session-provider-repo', () => {
       expect(deleteSessionProvider('nope')).toBe(false)
     })
 
-    it('throws when deleting an official provider', () => {
-      expect(() => deleteSessionProvider('claude-official')).toThrow(/official/)
+    it('throws when deleting a base provider', () => {
+      expect(() => deleteSessionProvider('claude-base')).toThrow(/base/)
     })
   })
 })

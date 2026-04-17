@@ -88,13 +88,13 @@ describe('database migration', () => {
     expect(normalized).toContain('id TEXT PRIMARY KEY')
     expect(normalized).toContain('harness_id TEXT NOT NULL')
     expect(normalized).toContain('name TEXT NOT NULL')
-    expect(normalized).toContain('is_official INTEGER NOT NULL')
+    expect(normalized).toContain('is_base INTEGER NOT NULL')
     expect(normalized).toContain('config_json TEXT NOT NULL')
     expect(normalized).toContain('created_at TEXT NOT NULL')
     expect(normalized).toContain('updated_at TEXT NOT NULL')
   })
 
-  it('seeds two official providers (claude-official and codex-official)', async () => {
+  it('seeds two base providers (claude-base and codex-base)', async () => {
     const { getDb } = await import('./database')
     getDb()
 
@@ -131,9 +131,10 @@ describe('database migration', () => {
     getDb()
 
     const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
-    const backfill = execSql.find((sql) => sql.includes('UPDATE sessions') && sql.includes('provider_id') && sql.includes('codex-official'))
+    const backfill = execSql.find((sql) => sql.includes('UPDATE sessions') && sql.includes('provider_id') && sql.includes('WHERE provider_id IS NULL'))
     expect(backfill).toBeDefined()
-    expect(backfill).toMatch(/WHERE provider_id IS NULL/)
+    expect(backfill).toMatch(/codex-base/)
+    expect(backfill).toMatch(/claude-base/)
   })
 
   it('backfills provider_session_id, mapping codex_local_ prefix to NULL', async () => {

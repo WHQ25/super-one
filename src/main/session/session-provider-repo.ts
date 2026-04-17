@@ -8,7 +8,7 @@ interface SessionProviderRow {
   id: string
   harness_id: HarnessId
   name: string
-  is_official: number
+  is_base: number
   config_json: string
   created_at: string
   updated_at: string
@@ -19,7 +19,7 @@ function rowToProvider(row: SessionProviderRow): SessionProvider {
     id: row.id,
     harnessId: row.harness_id,
     name: row.name,
-    isOfficial: row.is_official === 1,
+    isBase: row.is_base === 1,
     config: JSON.parse(row.config_json),
     createdAt: new Date(row.created_at).getTime(),
     updatedAt: new Date(row.updated_at).getTime(),
@@ -35,14 +35,14 @@ function validateConfig(harnessId: HarnessId, config: unknown): unknown {
 
 export function listSessionProviders(): SessionProvider[] {
   const rows = getDb()
-    .prepare('SELECT * FROM session_providers ORDER BY is_official DESC, created_at')
+    .prepare('SELECT * FROM session_providers ORDER BY is_base DESC, created_at')
     .all() as SessionProviderRow[]
   return rows.map(rowToProvider)
 }
 
 export function listByHarness(harnessId: HarnessId): SessionProvider[] {
   const rows = getDb()
-    .prepare('SELECT * FROM session_providers WHERE harness_id = ? ORDER BY is_official DESC, created_at')
+    .prepare('SELECT * FROM session_providers WHERE harness_id = ? ORDER BY is_base DESC, created_at')
     .all(harnessId) as SessionProviderRow[]
   return rows.map(rowToProvider)
 }
@@ -54,9 +54,9 @@ export function getSessionProvider(id: string): SessionProvider | null {
   return row ? rowToProvider(row) : null
 }
 
-export function getOfficialProvider(harnessId: HarnessId): SessionProvider {
-  const p = getSessionProvider(`${harnessId}-official`)
-  if (!p) throw new Error(`Official provider missing: ${harnessId}-official`)
+export function getBaseProvider(harnessId: HarnessId): SessionProvider {
+  const p = getSessionProvider(`${harnessId}-base`)
+  if (!p) throw new Error(`Base provider missing: ${harnessId}-base`)
   return p
 }
 
@@ -72,7 +72,7 @@ export function createSessionProvider(input: CreateSessionProviderInput): Sessio
   const id = input.id ?? `${input.harnessId}-${randomUUID()}`
   const now = new Date().toISOString()
   getDb().prepare(`
-    INSERT INTO session_providers (id, harness_id, name, is_official, config_json, created_at, updated_at)
+    INSERT INTO session_providers (id, harness_id, name, is_base, config_json, created_at, updated_at)
     VALUES (?, ?, ?, 0, ?, ?, ?)
   `).run(id, input.harnessId, input.name, JSON.stringify(validated), now, now)
   const created = getSessionProvider(id)
@@ -88,7 +88,7 @@ export interface UpdateSessionProviderInput {
 export function updateSessionProvider(id: string, patch: UpdateSessionProviderInput): SessionProvider {
   const existing = getSessionProvider(id)
   if (!existing) throw new Error(`Provider not found: ${id}`)
-  if (existing.isOfficial) throw new Error(`Cannot update official provider: ${id}`)
+  if (existing.isBase) throw new Error(`Cannot update base provider: ${id}`)
   const name = patch.name ?? existing.name
   const config = patch.config !== undefined
     ? validateConfig(existing.harnessId, patch.config)
@@ -103,7 +103,7 @@ export function updateSessionProvider(id: string, patch: UpdateSessionProviderIn
 export function deleteSessionProvider(id: string): boolean {
   const existing = getSessionProvider(id)
   if (!existing) return false
-  if (existing.isOfficial) throw new Error(`Cannot delete official provider: ${id}`)
+  if (existing.isBase) throw new Error(`Cannot delete base provider: ${id}`)
   getDb().prepare('DELETE FROM session_providers WHERE id = ?').run(id)
   return true
 }

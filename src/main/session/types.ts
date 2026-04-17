@@ -26,7 +26,7 @@ export interface SessionProvider {
   id: string
   harnessId: HarnessId
   name: string
-  isOfficial: boolean
+  isBase: boolean
   config: unknown
   createdAt: number
   updatedAt: number

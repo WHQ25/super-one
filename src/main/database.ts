@@ -223,7 +223,7 @@ function migrate(db: Database.Database): void {
       id          TEXT PRIMARY KEY,
       harness_id  TEXT NOT NULL,
       name        TEXT NOT NULL,
-      is_official INTEGER NOT NULL DEFAULT 0,
+      is_base     INTEGER NOT NULL DEFAULT 0,
       config_json TEXT NOT NULL DEFAULT '{}',
       created_at  TEXT NOT NULL,
       updated_at  TEXT NOT NULL
@@ -231,7 +231,14 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_session_providers_harness ON session_providers(harness_id);
   `)
 
-  seedOfficialSessionProviders(db)
+  const spCols = db.prepare("PRAGMA table_info(session_providers)").all() as Array<{ name: string }>
+  if (spCols.some((c) => c.name === 'is_official') && !spCols.some((c) => c.name === 'is_base')) {
+    db.exec('ALTER TABLE session_providers RENAME COLUMN is_official TO is_base')
+  }
+  db.exec("UPDATE session_providers SET id = 'claude-base' WHERE id = 'claude-official'")
+  db.exec("UPDATE session_providers SET id = 'codex-base' WHERE id = 'codex-official'")
+
+  seedBaseSessionProviders(db)
 
   const sessionColsAfterSeed = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
   if (!sessionColsAfterSeed.some((c) => c.name === 'provider_id')) {
@@ -243,9 +250,12 @@ function migrate(db: Database.Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider ON sessions(provider_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider_session_id ON sessions(provider_session_id)')
 
+  db.exec("UPDATE sessions SET provider_id = 'claude-base' WHERE provider_id = 'claude-official'")
+  db.exec("UPDATE sessions SET provider_id = 'codex-base' WHERE provider_id = 'codex-official'")
+
   db.exec(`
     UPDATE sessions
-    SET provider_id = CASE WHEN provider = 'codex' THEN 'codex-official' ELSE 'claude-official' END
+    SET provider_id = CASE WHEN provider = 'codex' THEN 'codex-base' ELSE 'claude-base' END
     WHERE provider_id IS NULL
   `)
 
@@ -276,15 +286,15 @@ function migrate(db: Database.Database): void {
   if (is.dev) seedDevProviders(db)
 }
 
-function seedOfficialSessionProviders(db: Database.Database): void {
+function seedBaseSessionProviders(db: Database.Database): void {
   const now = new Date().toISOString()
   const stmt = db.prepare(`
     INSERT OR IGNORE INTO session_providers
-      (id, harness_id, name, is_official, config_json, created_at, updated_at)
+      (id, harness_id, name, is_base, config_json, created_at, updated_at)
     VALUES (?, ?, ?, 1, '{}', ?, ?)
   `)
-  stmt.run('claude-official', 'claude', 'Claude (Official)', now, now)
-  stmt.run('codex-official', 'codex', 'Codex (Official)', now, now)
+  stmt.run('claude-base', 'claude', 'Claude (Base)', now, now)
+  stmt.run('codex-base', 'codex', 'Codex (Base)', now, now)
 }
 
 function migrateProvidersToUnified(db: Database.Database): void {

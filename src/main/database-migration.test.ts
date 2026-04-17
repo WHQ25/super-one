@@ -104,4 +104,55 @@ describe('database migration', () => {
     )
     expect(seedStmt).toBeDefined()
   })
+
+  it('adds provider_id and provider_session_id to sessions, plus new indexes', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    expect(execSql.some((sql) => sql.includes('ALTER TABLE sessions ADD COLUMN provider_id'))).toBe(true)
+    expect(execSql.some((sql) => sql.includes('ALTER TABLE sessions ADD COLUMN provider_session_id'))).toBe(true)
+    expect(execSql.some((sql) => sql.includes('idx_sessions_provider'))).toBe(true)
+    expect(execSql.some((sql) => sql.includes('idx_sessions_provider_session_id'))).toBe(true)
+  })
+
+  it('adds session_id to chat_messages with new indexes', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    expect(execSql.some((sql) => sql.includes('ALTER TABLE chat_messages ADD COLUMN session_id'))).toBe(true)
+    expect(execSql.some((sql) => sql.includes('idx_chat_messages_session_v2'))).toBe(true)
+    expect(execSql.some((sql) => sql.includes('idx_chat_messages_last_user_v2'))).toBe(true)
+  })
+
+  it('backfills provider_id based on legacy provider column', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    const backfill = execSql.find((sql) => sql.includes('UPDATE sessions') && sql.includes('provider_id') && sql.includes('codex-official'))
+    expect(backfill).toBeDefined()
+    expect(backfill).toMatch(/WHERE provider_id IS NULL/)
+  })
+
+  it('backfills provider_session_id, mapping codex_local_ prefix to NULL', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    const backfill = execSql.find((sql) => sql.includes('UPDATE sessions') && sql.includes('provider_session_id'))
+    expect(backfill).toBeDefined()
+    expect(backfill).toMatch(/codex_local_%/)
+  })
+
+  it('backfills chat_messages.session_id by joining sessions on claude_session_id', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    const backfill = execSql.find((sql) => sql.includes('UPDATE chat_messages') && sql.includes('session_id'))
+    expect(backfill).toBeDefined()
+    expect(backfill).toMatch(/SELECT s\.id FROM sessions/)
+  })
 })

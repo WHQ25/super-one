@@ -233,6 +233,46 @@ function migrate(db: Database.Database): void {
 
   seedOfficialSessionProviders(db)
 
+  const sessionColsAfterSeed = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
+  if (!sessionColsAfterSeed.some((c) => c.name === 'provider_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN provider_id TEXT')
+  }
+  if (!sessionColsAfterSeed.some((c) => c.name === 'provider_session_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN provider_session_id TEXT')
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider ON sessions(provider_id)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider_session_id ON sessions(provider_session_id)')
+
+  db.exec(`
+    UPDATE sessions
+    SET provider_id = CASE WHEN provider = 'codex' THEN 'codex-official' ELSE 'claude-official' END
+    WHERE provider_id IS NULL
+  `)
+
+  db.exec(`
+    UPDATE sessions
+    SET provider_session_id = CASE
+      WHEN claude_session_id LIKE 'codex_local_%' THEN NULL
+      ELSE claude_session_id
+    END
+    WHERE provider_session_id IS NULL
+  `)
+
+  const chatMsgColsAfterSeed = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
+  if (!chatMsgColsAfterSeed.some((c) => c.name === 'session_id')) {
+    db.exec('ALTER TABLE chat_messages ADD COLUMN session_id TEXT')
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_session_v2 ON chat_messages(session_id, sort_order)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_last_user_v2 ON chat_messages(session_id, role, created_at)')
+
+  db.exec(`
+    UPDATE chat_messages
+    SET session_id = (
+      SELECT s.id FROM sessions s WHERE s.claude_session_id = chat_messages.claude_session_id
+    )
+    WHERE session_id IS NULL
+  `)
+
   if (is.dev) seedDevProviders(db)
 }
 

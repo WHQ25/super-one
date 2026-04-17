@@ -33,14 +33,14 @@ const agentAPI = {
   respondToPlanApproval: (projectPath: string, requestId: string, approved: boolean, feedback?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.RESPOND_PLAN_APPROVAL, projectPath, requestId, approved, feedback),
 
-  resetSession: (projectPath: string, newDraftSessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, projectPath, newDraftSessionId),
+  createSession: (projectPath: string): Promise<string> =>
+    ipcRenderer.invoke(AgentIpcChannels.CREATE_SESSION, projectPath),
+
+  resetSession: (projectPath: string, newSessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, projectPath, newSessionId),
 
   parkSession: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PARK_SESSION, projectPath),
-
-  parkDraftSession: (projectPath: string, draftSessionId: string, newDraftSessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.PARK_SESSION, projectPath, draftSessionId, newDraftSessionId),
 
   activateSession: (projectPath: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ACTIVATE_SESSION, projectPath, sessionId),

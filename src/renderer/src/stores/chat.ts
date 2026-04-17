@@ -32,15 +32,13 @@ export interface MiniAppContextSlot {
 
 // --- Per-project session state (unified per-session architecture) ---
 
-const DRAFT_PREFIX = '__draft_'
-export const DRAFT_SESSION_ID = '__draft__' // kept for test backward compat
-
-export function createDraftSessionId(): string {
-  return `${DRAFT_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-}
-
-export function isDraftSession(id: string | null): boolean {
-  return id === DRAFT_SESSION_ID || (!!id && id.startsWith(DRAFT_PREFIX))
+/**
+ * Generate a fresh session id. Shared with the main process 1:1 as
+ * `Session.id`; no draft/promotion dance — the id assigned here is the
+ * stable identity used in DB, IPC, and the main-process SessionManager.
+ */
+export function createSessionId(): string {
+  return crypto.randomUUID()
 }
 
 export interface PerSessionState {
@@ -449,9 +447,7 @@ function updateActivePerSession(
 }
 
 function resolveActiveSessionId(project: ProjectState): string | null {
-  if (!project._activeSessionId) return null
-  if (isDraftSession(project._activeSessionId)) return null
-  return project._activeSessionId
+  return project._activeSessionId ?? null
 }
 
 export function upsertCodexItem(items: CodexThreadItem[], next: CodexThreadItem): CodexThreadItem[] {
@@ -1324,27 +1320,13 @@ function _isLiveSession(session: PerSessionState | undefined): boolean {
   )
 }
 
-function _shouldPromoteDraftSessionInit(project: ProjectState, sessionId: string, eventDraftSid?: string): boolean {
-  const activeSid = project._activeSessionId
-  if (!activeSid || !isDraftSession(activeSid)) return false
-  if (eventDraftSid && eventDraftSid !== activeSid) return false
-  const draft = project._sessions[activeSid]
-  if (!draft || !_isLiveSession(draft)) return false
-  if (project._sessions[sessionId]) return false
-  if (project.sessions.some((entry) => entry.sessionId === sessionId)) return false
-  return true
-}
-
 function _needsForegroundActivation(session: PerSessionState): boolean {
   return session.status === 'streaming' || session.pendingPermissions.length > 0 || !!session.pendingQuestion || !!session.pendingPlanApproval
 }
 
 let _resetSessionLock: Promise<void> | null = null
 
-function _parkActiveSession(projectPath: string, activeSessionId: string | null, newDraftSessionId?: string) {
-  if (activeSessionId && isDraftSession(activeSessionId)) {
-    return window.agent.parkDraftSession(projectPath, activeSessionId, newDraftSessionId ?? createDraftSessionId())
-  }
+function _parkActiveSession(projectPath: string, _activeSessionId: string | null, _newSessionId?: string) {
   return window.agent.parkSession(projectPath)
 }
 
@@ -1352,7 +1334,7 @@ async function _ensureClaudeSessionReadyForSend(get: () => ChatStore, projectPat
   const project = get().projectSessions[projectPath]
   if (!project) return
   const sessionId = resolveActiveSessionId(project)
-  if (!sessionId || isDraftSession(sessionId)) return
+  if (!sessionId) return
   const session = project._sessions[sessionId]
   if (!session || session.sessionProvider === 'codex') return
   await window.app.resumeSession(projectPath, sessionId, _getSessionCwd(projectPath, session))
@@ -2003,54 +1985,33 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => {
       let project = s.projectSessions[projectPath] ?? createDefaultProjectState()
 
-      let matchType: 'exact' | 'draft_session_init' | 'draft_routed' | 'lazy_session' | 'fallback_active'
+      let matchType: 'exact' | 'lazy_session' | 'fallback_active'
       let targetSid: string | null
-      const eventDraftSid = event.draftSessionId
 
       if (eventSessionId && project._sessions[eventSessionId]) {
         targetSid = eventSessionId
         matchType = 'exact'
-      } else if (
-        event.type === 'session_init'
-        && event.session?.sessionId
-        && eventDraftSid && project._sessions[eventDraftSid]
-      ) {
-        targetSid = eventDraftSid
-        matchType = 'draft_session_init'
-      } else if (
-        event.type === 'session_init'
-        && event.session?.sessionId
-        && _shouldPromoteDraftSessionInit(project, event.session.sessionId, eventDraftSid)
-      ) {
-        targetSid = project._activeSessionId
-        matchType = 'draft_session_init'
       } else if (eventSessionId) {
-        if (!project._sessions[eventSessionId]) {
-          project = {
-            ...project,
-            _sessions: {
-              ...project._sessions,
-              [eventSessionId]: {
-                ...createDefaultPerSessionState(),
-                _historyHydrated: false,
-              },
+        project = {
+          ...project,
+          _sessions: {
+            ...project._sessions,
+            [eventSessionId]: {
+              ...createDefaultPerSessionState(),
+              _historyHydrated: false,
             },
-          }
-          hydrateSessionId = eventSessionId
+          },
         }
+        hydrateSessionId = eventSessionId
         targetSid = eventSessionId
         matchType = 'lazy_session'
-      } else if (eventDraftSid && project._sessions[eventDraftSid]) {
-        targetSid = eventDraftSid
-        matchType = 'draft_routed'
-      } else if (!eventSessionId && !eventDraftSid) {
+      } else if (project._activeSessionId) {
         targetSid = project._activeSessionId
         matchType = 'fallback_active'
       } else {
         window.app.trace?.('session.route.dropped', event.type, {
           reason: 'no_route',
           eventSessionId,
-          eventDraftSid,
           activeSid: project._activeSessionId,
           knownSids: Object.keys(project._sessions),
         })
@@ -2061,31 +2022,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         matchType,
         targetSid,
         eventSessionId,
-        eventDraftSid,
         activeSid: project._activeSessionId,
         knownSids: Object.keys(project._sessions),
-        ...(event.type === 'session_init' ? {
-          realSid: event.session?.sessionId,
-          promoteDraft: _shouldPromoteDraftSessionInit(project, event.session?.sessionId ?? '', eventDraftSid),
-          existsInSessions: !!project._sessions[event.session?.sessionId ?? ''],
-          existsInHistory: project.sessions.some((e) => e.sessionId === event.session?.sessionId),
-        } : {}),
       })
 
-      if (!targetSid || !project._sessions[targetSid]) {
-        if (event.type === 'init_ready' || event.type === 'session_init' || event.type === 'status_change') {
-          const draftSid = createDraftSessionId()
-          if (!project._activeSessionId || !project._sessions[project._activeSessionId]) {
-            project = {
-              ...project,
-              _activeSessionId: draftSid,
-              _sessions: { ...project._sessions, [draftSid]: createDefaultPerSessionState() },
-            }
-          }
-          targetSid = project._activeSessionId ?? draftSid
-        } else {
-          return {}
-        }
+      if (!project._sessions[targetSid]) {
+        return {}
       }
 
       const targetSession = project._sessions[targetSid]
@@ -2151,47 +2093,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       const updatedSession = { ...targetSession, ...delta }
 
-      let updatedSessions = { ...project._sessions, [targetSid]: updatedSession }
-      let updatedProject = { ...project, _sessions: updatedSessions }
-
-      // Handle session_init: re-key from draft to real session ID
-      if (event.type === 'session_init' && event.session?.sessionId) {
-        const realSid = event.session.sessionId
-        window.app.trace?.('session.rekey', 'session_init', {
-          realSid,
-          targetSid,
-          targetIsDraft: isDraftSession(targetSid),
-          realIsDraft: isDraftSession(realSid),
-          willRekey: !!(targetSid && isDraftSession(targetSid) && !isDraftSession(realSid)),
-          existingSessionAtRealSid: !!updatedSessions[realSid],
-        })
-        if (targetSid && isDraftSession(targetSid) && !isDraftSession(realSid)) {
-          const { [targetSid]: _, ...rest } = updatedSessions
-          updatedSessions = { ...rest, [realSid]: updatedSession }
-          if (updatedProject._activeSessionId === targetSid) {
-            updatedProject._activeSessionId = realSid
-          }
-          updatedProject._sessions = updatedSessions
-
-          const title = _extractTitle(updatedSession.messages) || ''
-          updatedProject.sessions = [
-            {
-              sessionId: realSid,
-              title,
-              lastActiveAt: new Date().toISOString(),
-              provider: updatedSession.sessionProvider ?? undefined,
-              messageCount: updatedSession.messages.length,
-              isWorktree: !!updatedSession._worktreeBaseBranch,
-              gitBranch: updatedSession._worktreeBaseBranch ?? undefined,
-            },
-            ...updatedProject.sessions.filter((e) => e.sessionId !== realSid),
-          ]
-
-          if (updatedSession.sessionProvider === 'codex') {
-            _prepareSessionSnapshot(projectPath, realSid, updatedSession)
-          }
-        }
-      }
+      const updatedSessions = { ...project._sessions, [targetSid]: updatedSession }
+      const updatedProject = { ...project, _sessions: updatedSessions }
 
       // Handle init_ready: update project-level fields
       if (event.type === 'init_ready') {
@@ -2222,7 +2125,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
 
       // Incremental save on tool_result / final save on complete/interrupted/error
-      const effectiveSid = isDraftSession(targetSid) ? null : targetSid
+      const effectiveSid = targetSid
       if (effectiveSid) {
         if (
           updatedSession.sessionProvider === 'codex'
@@ -2347,7 +2250,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       return updates
     })
-    if (targetSid && !isDraftSession(targetSid)) {
+    if (targetSid) {
       const targetSession = targetProject?._sessions[targetSid]
       if (targetSession?.sessionProvider !== 'codex') {
         try {
@@ -2363,7 +2266,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const project = createDefaultProjectState()
       project.agents = s.userAgents
       project.codexModels = s.cachedCodexModels
-      const draftId = createDraftSessionId()
+      const draftId = createSessionId()
       project._activeSessionId = draftId
       const newSession = createDefaultPerSessionState()
       newSession.cwd = projectPath
@@ -2400,7 +2303,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const session = getActivePerSession(get())
       window.app.trace?.('session.lifecycle', 'sendMessage', {
         activeSid: project._activeSessionId,
-        isDraft: isDraftSession(project._activeSessionId),
         status: session.status,
         provider: session.sessionProvider,
         msgCount: session.messages.length,
@@ -2827,7 +2729,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         projectSessions: {
           ...s.projectSessions,
           [projectPath]: (() => {
-            const draftId = createDraftSessionId()
+            const draftId = createSessionId()
             return {
               ...proj,
               _activeSessionId: draftId,
@@ -2846,11 +2748,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const activeSession = getActivePerSession(get())
     const currentSid = resolveActiveSessionId(project)
 
-    const newDraftId = createDraftSessionId()
+    const newSessionId = createSessionId()
     window.app.trace?.('session.lifecycle', 'resetSession', {
       activeProject,
       oldSid: currentSid,
-      newDraftId,
+      newSessionId,
       oldStatus: activeSession.status,
       oldAwaitingReply: activeSession.awaitingAssistantReply,
       oldProvider: activeSession.sessionProvider,
@@ -2875,10 +2777,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ...s.projectSessions,
           [activeProject]: {
             ...proj,
-            _activeSessionId: newDraftId,
+            _activeSessionId: newSessionId,
             _sessions: {
               ...proj._sessions,
-              [newDraftId]: newSession,
+              [newSessionId]: newSession,
             },
           },
         },
@@ -2895,9 +2797,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           await window.app.codexReset(currentSid).catch(() => {})
         }
       } else if (activeSession.status === 'streaming' || activeSession.awaitingAssistantReply) {
-        agentConfig = await _parkActiveSession(activeProject, project._activeSessionId, newDraftId)
+        agentConfig = await _parkActiveSession(activeProject, project._activeSessionId, newSessionId)
       } else {
-        agentConfig = await window.agent.resetSession(activeProject, newDraftId)
+        agentConfig = await window.agent.resetSession(activeProject, newSessionId)
       }
 
       await useAppStore.getState().clearWorktree(activeProject)
@@ -2910,7 +2812,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set((s) => {
         const proj = s.projectSessions[activeProject]
         if (!proj) return {}
-        const sess = proj._sessions[newDraftId]
+        const sess = proj._sessions[newSessionId]
         if (!sess) return {}
         return {
           projectSessions: {
@@ -2920,7 +2822,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               sandboxInfo: agentConfig!.sandboxInfo,
               _sessions: {
                 ...proj._sessions,
-                [newDraftId]: { ...sess, permissionMode: agentConfig!.permissionMode },
+                [newSessionId]: { ...sess, permissionMode: agentConfig!.permissionMode },
               },
             },
           },
@@ -3578,7 +3480,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       })
 
       const targetSession = project._sessions[sessionId]
-      if (isDraftSession(sessionId)) return
       let runtimeSession = targetSession
 
       window.app.trace?.('agent.store', 'switchSession:A', {

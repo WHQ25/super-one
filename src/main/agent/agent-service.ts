@@ -1758,19 +1758,30 @@ export class AgentService {
       this.sessionManager?.getActiveSession(projectPath)?.respondToPlanApproval(requestId, approved, feedback)
     })
 
-    ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string, _newDraftSessionId?: string) => {
+    ipcMain.handle(AgentIpcChannels.CREATE_SESSION, async (_event, projectPath: string) => {
+      const mgr = this.requireSessionManager()
+      const { readUserPreferences } = await import('../claude-preferences-service')
+      const prefs = readUserPreferences()
+      const permissionMode = (prefs.defaultPermissionMode as PermissionMode) || 'default'
+      const sandboxMode = prefs.defaultSandboxMode as SandboxMode | undefined
+      const session = mgr.createSession({ projectPath, providerId: 'claude-base', permissionMode, sandboxMode })
+      return session.snapshot.id
+    })
+
+    ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string, newSessionId?: string) => {
       const mgr = this.requireSessionManager()
       const existing = mgr.getActiveSession(projectPath)
       trace('session.lifecycle', 'ipc_resetSession', {
         projectPath,
         oldSessionId: existing?.snapshot.id || '(none)',
+        newSessionId: newSessionId ?? '(auto)',
       })
       if (existing) await mgr.disposeSession(existing.snapshot.id)
       const { readUserPreferences } = await import('../claude-preferences-service')
       const prefs = readUserPreferences()
       const permissionMode = (prefs.defaultPermissionMode as PermissionMode) || 'default'
       const sandboxMode = prefs.defaultSandboxMode as SandboxMode | undefined
-      const fresh = mgr.createSession({ projectPath, providerId: 'claude-base', permissionMode, sandboxMode })
+      const fresh = mgr.createSession({ projectPath, providerId: 'claude-base', permissionMode, sandboxMode, id: newSessionId })
       return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
     })
 
@@ -2349,6 +2360,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.DISMISS_QUESTION)
     ipcMain.removeHandler(AgentIpcChannels.RESPOND_PLAN_APPROVAL)
     ipcMain.removeHandler(AgentIpcChannels.RESET_SESSION)
+    ipcMain.removeHandler(AgentIpcChannels.CREATE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.REWIND_FILES)
     ipcMain.removeHandler(AgentIpcChannels.REWIND_FILES_PREVIEW)
     ipcMain.removeHandler(AgentIpcChannels.REWIND_CODE_AND_CHAT)

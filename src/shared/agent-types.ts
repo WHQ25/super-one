@@ -1088,6 +1088,7 @@ export const AgentIpcChannels = {
   DISMISS_QUESTION: 'agent:dismiss-question',
   RESPOND_PLAN_APPROVAL: 'agent:respond-plan-approval',
   RESET_SESSION: 'agent:reset-session',
+  CREATE_SESSION: 'agent:create-session',
   REWIND_FILES: 'agent:rewind-files',
   REWIND_FILES_PREVIEW: 'agent:rewind-files-preview',
   REWIND_CODE_AND_CHAT: 'agent:rewind-code-and-chat',

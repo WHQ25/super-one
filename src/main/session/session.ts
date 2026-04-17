@@ -1,0 +1,290 @@
+import type {
+  AgentEvent,
+  ContextUsageInfo,
+  McpServerInfo,
+  PermissionMode,
+  QuestionAnnotations,
+  RewindFilesResult,
+  SandboxInfo,
+  SandboxMode,
+  SendMessageRequest,
+} from '../../shared/agent-types'
+import log from '../logger'
+import type {
+  BackendStartOptions,
+  HarnessId,
+  Session as SessionContract,
+  SessionBackend,
+  SessionSnapshot,
+  SessionStatus,
+} from './types'
+
+export interface SessionConstructorOptions {
+  id: string
+  projectPath: string
+  cwd: string
+  providerId: string
+  harnessId: HarnessId
+  providerConfig: unknown
+  backend: SessionBackend
+  permissionMode?: PermissionMode
+  sandboxInfo?: SandboxInfo
+  effort?: SendMessageRequest['effort']
+  model?: string
+  additionalDirectories?: string[]
+  title?: string | null
+  createdAt?: number
+  resumedProviderSessionId?: string
+}
+
+const DEFAULT_SANDBOX: SandboxInfo = { enabled: true, autoAllowBash: false }
+
+export class Session implements SessionContract {
+  readonly id: string
+  readonly projectPath: string
+  readonly cwd: string
+  readonly providerId: string
+  readonly harnessId: HarnessId
+  readonly createdAt: number
+
+  private backend: SessionBackend
+  private providerConfig: unknown
+
+  private _status: SessionStatus = 'idle'
+  private _currentMessageId: string | null = null
+  private _providerSessionId: string | null = null
+  private _lastUserMessageAt: number | null = null
+
+  private permissionMode: PermissionMode
+  private sandboxInfo: SandboxInfo
+  private effort: SendMessageRequest['effort']
+  private model: string | undefined
+  private additionalDirectories: string[]
+
+  private abortController: AbortController | null = null
+  private backendStarted = false
+  private eventListeners = new Set<(e: AgentEvent) => void>()
+  private unsubs: Array<() => void> = []
+
+  constructor(opts: SessionConstructorOptions) {
+    this.id = opts.id
+    this.projectPath = opts.projectPath
+    this.cwd = opts.cwd
+    this.providerId = opts.providerId
+    this.harnessId = opts.harnessId
+    this.providerConfig = opts.providerConfig
+    this.backend = opts.backend
+    this.permissionMode = opts.permissionMode ?? 'default'
+    this.sandboxInfo = opts.sandboxInfo ?? DEFAULT_SANDBOX
+    this.effort = opts.effort
+    this.model = opts.model
+    this.additionalDirectories = opts.additionalDirectories ?? []
+    this.createdAt = opts.createdAt ?? Date.now()
+    this._providerSessionId = opts.resumedProviderSessionId ?? null
+
+    this.unsubs.push(this.backend.onEvent((e) => this.forwardEvent(e)))
+    this.unsubs.push(this.backend.onProviderSessionId((id) => {
+      this._providerSessionId = id
+    }))
+  }
+
+  get snapshot(): SessionSnapshot {
+    return {
+      id: this.id,
+      projectPath: this.projectPath,
+      cwd: this.cwd,
+      providerId: this.providerId,
+      harnessId: this.harnessId,
+      status: this._status,
+      providerSessionId: this._providerSessionId,
+      currentMessageId: this._currentMessageId,
+      createdAt: this.createdAt,
+      lastUserMessageAt: this._lastUserMessageAt,
+    }
+  }
+
+  async send(request: SendMessageRequest): Promise<void> {
+    this.assertNotDisposed()
+    await this.ensureStarted()
+    if (this._status !== 'ended' && this._status !== 'starting') {
+      throw new Error(`Session.send called in invalid status: ${this._status}`)
+    }
+    this._status = 'streaming'
+    this._lastUserMessageAt = Date.now()
+    try {
+      await this.backend.send(request)
+    } finally {
+      if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
+    }
+  }
+
+  async interrupt(): Promise<void> {
+    if (this._status === 'disposed') return
+    if (this._status !== 'streaming' && this._status !== 'starting') return
+    const prev = this._status
+    this._status = 'interrupting'
+    try {
+      await this.backend.interrupt()
+    } catch (err) {
+      log.debug('[Session] interrupt error:', err)
+    } finally {
+      if ((this._status as SessionStatus) !== 'disposed') {
+        this._status = prev === 'starting' ? 'idle' : 'ended'
+      }
+    }
+  }
+
+  async setPermissionMode(mode: PermissionMode): Promise<void> {
+    this.assertNotDisposed()
+    this.permissionMode = mode
+    if (this.backendStarted) await this.backend.setPermissionMode(mode)
+  }
+
+  setSandboxMode(mode: SandboxMode): SandboxInfo {
+    this.sandboxInfo = {
+      enabled: mode !== 'off',
+      autoAllowBash: mode === 'auto',
+    }
+    return this.sandboxInfo
+  }
+
+  async setModel(model: string): Promise<void> {
+    this.assertNotDisposed()
+    this.model = model
+    if (this.backendStarted) await this.backend.setModel(model)
+  }
+
+  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): void {
+    this.assertNotDisposed()
+    this.backend.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
+  }
+
+  respondToQuestion(requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): void {
+    this.assertNotDisposed()
+    this.backend.respondToQuestion(requestId, answers, annotations)
+  }
+
+  dismissQuestion(requestId: string): void {
+    this.assertNotDisposed()
+    this.backend.dismissQuestion(requestId)
+  }
+
+  respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void {
+    this.assertNotDisposed()
+    this.backend.respondToPlanApproval(requestId, approved, feedback)
+  }
+
+  async getContextUsage(): Promise<ContextUsageInfo | null> {
+    if (!this.backendStarted) return null
+    return this.backend.getContextUsage()
+  }
+
+  async getMcpServerStatus(): Promise<McpServerInfo[]> {
+    if (!this.backendStarted) return []
+    return this.backend.getMcpServerStatus()
+  }
+
+  async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
+    if (!this.backendStarted) return { canRewind: false, error: 'No active session' }
+    return this.backend.rewindFiles(userMessageId, opts)
+  }
+
+  async reconnectMcp(serverName: string): Promise<void> {
+    this.assertStarted()
+    return this.backend.reconnectMcp(serverName)
+  }
+
+  async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
+    this.assertStarted()
+    return this.backend.toggleMcpServer(serverName, enabled)
+  }
+
+  async reloadPlugins(): Promise<boolean> {
+    if (!this.backendStarted) return false
+    return this.backend.reloadPlugins()
+  }
+
+  prewarm(): void {
+    log.debug('[Session] prewarm not yet wired (phase 2)')
+  }
+
+  async dispose(): Promise<void> {
+    if (this._status === 'disposed') return
+    this._status = 'disposed'
+    for (const unsub of this.unsubs) {
+      try { unsub() } catch { /* ignore */ }
+    }
+    this.unsubs = []
+    this.eventListeners.clear()
+    if (this.backendStarted) {
+      try { await this.backend.close() } catch (err) { log.debug('[Session] backend.close error:', err) }
+    }
+    this.abortController?.abort()
+    this.abortController = null
+  }
+
+  on(handler: (event: AgentEvent) => void): () => void {
+    this.eventListeners.add(handler)
+    return () => { this.eventListeners.delete(handler) }
+  }
+
+  getStatus(): SessionStatus {
+    return this._status
+  }
+
+  getProviderSessionId(): string | null {
+    return this._providerSessionId
+  }
+
+  private async ensureStarted(): Promise<void> {
+    if (this.backendStarted) return
+    if (this._status === 'starting') return
+    this._status = 'starting'
+    this.abortController = new AbortController()
+    const startOpts: BackendStartOptions = {
+      cwd: this.cwd,
+      config: this.providerConfig,
+      permissionMode: this.permissionMode,
+      sandboxInfo: this.sandboxInfo,
+      effort: this.effort,
+      model: this.model,
+      additionalDirectories: this.additionalDirectories.length > 0 ? this.additionalDirectories : undefined,
+      abortController: this.abortController,
+      providerSessionId: this._providerSessionId ?? undefined,
+    }
+    try {
+      await this.backend.start(startOpts)
+      this.backendStarted = true
+      this._status = 'ended'
+    } catch (err) {
+      this._status = 'idle'
+      this.backendStarted = false
+      throw err
+    }
+  }
+
+  private forwardEvent(event: AgentEvent): void {
+    if (event.type === 'message_start') {
+      this._currentMessageId = event.message.id
+    } else if (
+      event.type === 'message_complete' ||
+      event.type === 'message_interrupted' ||
+      event.type === 'message_error'
+    ) {
+      this._currentMessageId = null
+    }
+    const tagged = { ...event, sessionId: this.id }
+    for (const cb of this.eventListeners) {
+      try { cb(tagged) } catch (err) { log.warn('[Session] event listener error:', err) }
+    }
+  }
+
+  private assertStarted(): void {
+    if (!this.backendStarted) throw new Error(`Session ${this.id} is not started`)
+    if (this._status === 'disposed') throw new Error(`Session ${this.id} is disposed`)
+  }
+
+  private assertNotDisposed(): void {
+    if (this._status === 'disposed') throw new Error(`Session ${this.id} is disposed`)
+  }
+}

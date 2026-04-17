@@ -16,6 +16,7 @@ export function ReasoningBlock({
   const [elapsed, setElapsed] = useState(0)
   const startRef = useRef(!blockDone ? Date.now() : 0)
   const [expanded, setExpanded] = useState(showContent && (!blockDone || !collapseOnDone))
+  const autoExpandedRef = useRef(showContent && !blockDone)
   const scrollRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef(0)
 
@@ -26,6 +27,13 @@ export function ReasoningBlock({
     }, 1000)
     return () => clearInterval(id)
   }, [blockDone])
+
+  useEffect(() => {
+    if (showContent && !blockDone && !autoExpandedRef.current) {
+      autoExpandedRef.current = true
+      setExpanded(true)
+    }
+  }, [showContent, blockDone])
 
   useEffect(() => {
     if (!showContent) return

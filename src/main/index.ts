@@ -315,6 +315,7 @@ function createWindow(): void {
 
   // Update agentService's window reference for event forwarding
   agentService.setMainWindow(mainWindow)
+  agentService.setSessionManager(sessionManager)
   automationService.setMainWindow(mainWindow)
   automationService.setAgentService(agentService)
   automationService.start()

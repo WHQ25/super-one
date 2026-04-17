@@ -192,6 +192,16 @@ describe('SessionManager', () => {
       b.emit({ type: 'status_change', status: 'streaming' })
       expect(log).toEqual([{ sid: s.snapshot.id, type: 'status_change' }])
     })
+
+    it('injects projectPath into events for onAny/on listeners when missing', () => {
+      mgr.createSession({ projectPath: '/route-test', providerId: 'claude-base' })
+      const captured: AgentEvent[] = []
+      mgr.onAny((_sid, e) => captured.push(e))
+
+      const b = hoisted.backendsCreated[0] as FakeBackend
+      b.emit({ type: 'status_change', status: 'streaming' })
+      expect((captured[0] as AgentEvent & { projectPath?: string }).projectPath).toBe('/route-test')
+    })
   })
 
   describe('active session per project', () => {

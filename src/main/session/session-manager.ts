@@ -97,6 +97,9 @@ export class SessionManagerImpl implements SessionManagerContract {
     const providerConfig = this.persistence.resolveProviderConfig
       ? this.persistence.resolveProviderConfig(provider)
       : provider.config
+    const sandboxInfo = opts.sandboxMode !== undefined
+      ? { enabled: opts.sandboxMode !== 'off', autoAllowBash: opts.sandboxMode === 'auto' }
+      : undefined
     const session = new Session({
       id: sessionId,
       projectPath: opts.projectPath,
@@ -106,6 +109,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       providerConfig,
       backend,
       permissionMode: opts.permissionMode,
+      sandboxInfo,
       effort: opts.effort,
       model: opts.model ?? undefined,
       additionalDirectories: opts.additionalDirectories,
@@ -238,14 +242,18 @@ export class SessionManagerImpl implements SessionManagerContract {
   }
 
   private dispatch(sessionId: string, event: AgentEvent): void {
+    const projectPath = this.sessionProjects.get(sessionId)
+    const enriched = projectPath && !(event as { projectPath?: string }).projectPath
+      ? { ...event, projectPath }
+      : event
     const scoped = this.scopedListeners.get(sessionId)
     if (scoped) {
       for (const cb of scoped) {
-        try { cb(event) } catch (err) { log.warn('[SessionManager] scoped listener error:', err) }
+        try { cb(enriched) } catch (err) { log.warn('[SessionManager] scoped listener error:', err) }
       }
     }
     for (const cb of this.anyListeners) {
-      try { cb(sessionId, event) } catch (err) { log.warn('[SessionManager] anyListener error:', err) }
+      try { cb(sessionId, enriched) } catch (err) { log.warn('[SessionManager] anyListener error:', err) }
     }
   }
 }

@@ -130,6 +130,8 @@ export interface Session {
   interrupt(): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
   setSandboxMode(mode: SandboxMode): SandboxInfo
+  getCurrentPermissionMode(): PermissionMode
+  getCurrentSandboxInfo(): SandboxInfo
   setModel(model: string): Promise<void>
   respondToPermission(
     requestId: string,

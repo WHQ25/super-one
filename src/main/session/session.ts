@@ -272,6 +272,14 @@ export class Session implements SessionContract {
     return this._providerSessionId
   }
 
+  getCurrentPermissionMode(): PermissionMode {
+    return this.permissionMode
+  }
+
+  getCurrentSandboxInfo(): SandboxInfo {
+    return this.sandboxInfo
+  }
+
   private async ensureStarted(): Promise<void> {
     if (this.backendStarted) return
     if (this._status === 'starting') return

@@ -74,6 +74,7 @@ export class AgentService {
   private codexRuntimes = new Map<string, CodexSessionRuntime>()
   private notifiedCodexSessions = new Set<string>()
   private mainWindow: BrowserWindow | null = null
+  private sessionManager: import('../session/session-manager').SessionManagerImpl | null = null
   private pendingParkCounter = 0
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
   private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
@@ -1618,6 +1619,22 @@ export class AgentService {
     this.mainWindow = mainWindow
   }
 
+  setSessionManager(sessionManager: import('../session/session-manager').SessionManagerImpl): void {
+    this.sessionManager = sessionManager
+  }
+
+  private requireSessionManager(): import('../session/session-manager').SessionManagerImpl {
+    if (!this.sessionManager) throw new Error('SessionManager not injected into AgentService')
+    return this.sessionManager
+  }
+
+  private getOrCreateActiveSession(projectPath: string): import('../session/types').Session {
+    const mgr = this.requireSessionManager()
+    const existing = mgr.getActiveSession(projectPath)
+    if (existing) return existing
+    return mgr.createSession({ projectPath, providerId: 'claude-base' })
+  }
+
   private async replaceAgent(projectPath: string, cwd: string, sessionId?: string, permissionMode?: PermissionMode): Promise<void> {
     const existing = this.agents.get(projectPath)
     if (existing) {
@@ -1661,20 +1678,14 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SEND_MESSAGE, async (_event, projectPath: string, request: SendMessageRequest) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      const agent = this.getAgent(projectPath)
-      if (!agent.isReady()) throw new Error('Agent not initialized')
-      const sessionId = agent.getSessionId() || undefined
+      const session = this.getOrCreateActiveSession(projectPath)
       trace('session.lifecycle', 'ipc_sendMessage', {
         projectPath,
-        agentSessionId: sessionId ?? '(none)',
-        hasBridge: !!(agent as any).bridge,
-        isStreaming: agent.isStreaming(),
-        pendingRuntimeKeys: [...this.pendingClaudeRuntimes.keys()],
-        runtimeKeys: [...this.claudeRuntimes.keys()].slice(0, 10),
+        sessionId: session.snapshot.id,
+        providerSessionId: session.snapshot.providerSessionId ?? '(none)',
+        status: session.snapshot.status,
       })
-      const userMessage = this.appendClaudeUserMessage(projectPath, request, 'local', sessionId)
-      this.trackClaudeSessionRekey(projectPath, sessionId, userMessage.id)
-      await agent.sendMessage(request)
+      await session.send(request)
     })
 
     ipcMain.handle(AgentIpcChannels.DEQUEUE_MESSAGE, (_event, projectPath: string, clientMessageId: string) => {
@@ -1690,11 +1701,11 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.INTERRUPT, async (_event, projectPath: string) => {
-      const agent = this.agents.get(projectPath)
-      if (!agent) return false
+      const session = this.sessionManager?.getActiveSession(projectPath)
+      if (!session) return false
       clearAllGates()
       clearAllPendingMiniAppCalls()
-      await agent.interrupt()
+      await session.interrupt()
       if (this.isRemoteLockedSession(projectPath)) {
         this.remoteControlService?.unsubscribeSession((e) => this.broadcastEventToRenderer(e))
       }
@@ -1704,53 +1715,51 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       trace('agent.emit', 'permission_responded', { requestId, allow, reason })
-      this.getAgent(projectPath).respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
+      this.sessionManager?.getActiveSession(projectPath)?.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      await this.getAgent(projectPath).setPermissionMode(mode)
+      await this.getOrCreateActiveSession(projectPath).setPermissionMode(mode)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, (_event, projectPath: string, mode: SandboxMode) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      return this.getAgent(projectPath).setSandboxMode(mode)
+      return this.getOrCreateActiveSession(projectPath).setSandboxMode(mode)
     })
 
     ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       trace('agent.emit', 'question_answered', { requestId, answers })
-      this.getAgent(projectPath).respondToQuestion(requestId, answers, annotations)
+      this.sessionManager?.getActiveSession(projectPath)?.respondToQuestion(requestId, answers, annotations)
     })
 
     ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       trace('agent.emit', 'question_dismissed', { requestId })
-      this.getAgent(projectPath).dismissQuestion(requestId)
+      this.sessionManager?.getActiveSession(projectPath)?.dismissQuestion(requestId)
     })
 
     ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback })
-      this.getAgent(projectPath).respondToPlanApproval(requestId, approved, feedback)
+      this.sessionManager?.getActiveSession(projectPath)?.respondToPlanApproval(requestId, approved, feedback)
     })
 
-    ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string, newDraftSessionId?: string) => {
-      const agent = this.getAgent(projectPath)
-      const oldSessionId = agent.getSessionId()
+    ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string, _newDraftSessionId?: string) => {
+      const mgr = this.requireSessionManager()
+      const existing = mgr.getActiveSession(projectPath)
       trace('session.lifecycle', 'ipc_resetSession', {
         projectPath,
-        oldSessionId: oldSessionId || '(none)',
-        newDraftSessionId: newDraftSessionId || '(none)',
-        runtimeKeys: [...this.claudeRuntimes.keys()].slice(0, 10),
-        pendingRuntimeKeys: [...this.pendingClaudeRuntimes.keys()],
+        oldSessionId: existing?.snapshot.id || '(none)',
       })
-      await agent.resetSession()
-      if (newDraftSessionId) {
-        agent.updateEventEmitter(this.createEventEmitter(projectPath, newDraftSessionId))
-      }
-      agent.applyPreferences()
-      return { permissionMode: agent.getCurrentPermissionMode(), sandboxInfo: agent.getCurrentSandboxInfo() }
+      if (existing) await mgr.disposeSession(existing.snapshot.id)
+      const { readUserPreferences } = await import('../claude-preferences-service')
+      const prefs = readUserPreferences()
+      const permissionMode = (prefs.defaultPermissionMode as PermissionMode) || 'default'
+      const sandboxMode = prefs.defaultSandboxMode as SandboxMode | undefined
+      const fresh = mgr.createSession({ projectPath, providerId: 'claude-base', permissionMode, sandboxMode })
+      return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
     })
 
     ipcMain.handle(AgentIpcChannels.REWIND_FILES, async (_event, projectPath: string, userMessageId: string) => {

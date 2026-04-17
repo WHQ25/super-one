@@ -17,6 +17,8 @@ import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
+import { SessionManagerImpl } from './session/session-manager'
+import { insertSessionRecord } from './session/session-repo'
 import {
   AgentIpcChannels,
   type CodexCollaborationMode,
@@ -73,6 +75,15 @@ if (is.dev) {
 const agentService = new AgentService()
 const codexService = new CodexExperimentService()
 const automationService = new AutomationService()
+const sessionManager = new SessionManagerImpl({
+  onSessionCreated: ({ id, projectPath, providerId }) => {
+    try {
+      insertSessionRecord({ id, projectPath, providerId })
+    } catch (err) {
+      console.warn('[sessionManager] insertSessionRecord failed:', err)
+    }
+  },
+})
 const remoteCallbacks: RemoteControlCallbacks = {
   onCommand: async (command, respond) => {
     await agentService.handleRemoteCommand(command, respond)

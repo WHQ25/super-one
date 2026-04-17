@@ -14,6 +14,11 @@ import type {
   SessionSnapshot,
 } from './types'
 
+export interface SessionManagerPersistence {
+  onSessionCreated?: (session: { id: string; projectPath: string; providerId: string }) => void
+  onSessionDisposed?: (sessionId: string) => void
+}
+
 export class SessionManagerImpl implements SessionManagerContract {
   private sessions = new Map<string, Session>()
   private sessionProjects = new Map<string, string>()
@@ -21,8 +26,10 @@ export class SessionManagerImpl implements SessionManagerContract {
   private scopedListeners = new Map<string, Set<(e: AgentEvent) => void>>()
   private anyListeners = new Set<(sessionId: string, e: AgentEvent) => void>()
   private perSessionUnsub = new Map<string, () => void>()
+  private persistence: SessionManagerPersistence
 
-  constructor() {
+  constructor(persistence: SessionManagerPersistence = {}) {
+    this.persistence = persistence
     this.projectResources = new ProjectResourceCache({
       discoverSkills,
       discoverProjectCommands,
@@ -87,6 +94,15 @@ export class SessionManagerImpl implements SessionManagerContract {
     })
 
     this.registerSession(session, opts.projectPath)
+    try {
+      this.persistence.onSessionCreated?.({
+        id: sessionId,
+        projectPath: opts.projectPath,
+        providerId: provider.id,
+      })
+    } catch (err) {
+      log.warn('[SessionManager] onSessionCreated hook failed:', err)
+    }
     return session
   }
 
@@ -114,6 +130,11 @@ export class SessionManagerImpl implements SessionManagerContract {
     this.sessions.delete(sessionId)
     this.sessionProjects.delete(sessionId)
     this.scopedListeners.delete(sessionId)
+    try {
+      this.persistence.onSessionDisposed?.(sessionId)
+    } catch (err) {
+      log.warn('[SessionManager] onSessionDisposed hook failed:', err)
+    }
   }
 
   on(sessionId: string, handler: (e: AgentEvent) => void): () => void {

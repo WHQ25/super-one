@@ -194,6 +194,37 @@ describe('SessionManager', () => {
     })
   })
 
+  describe('persistence hooks', () => {
+    it('fires onSessionCreated on createSession', () => {
+      const created: Array<{ id: string; projectPath: string; providerId: string }> = []
+      const mgr2 = new SessionManagerImpl({
+        onSessionCreated: (info) => { created.push(info) },
+      })
+      const s = mgr2.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      expect(created).toHaveLength(1)
+      expect(created[0]?.id).toBe(s.snapshot.id)
+      expect(created[0]?.projectPath).toBe('/pp')
+      expect(created[0]?.providerId).toBe('claude-official')
+    })
+
+    it('fires onSessionDisposed on disposeSession', async () => {
+      const disposed: string[] = []
+      const mgr2 = new SessionManagerImpl({
+        onSessionDisposed: (sid) => { disposed.push(sid) },
+      })
+      const s = mgr2.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      await mgr2.disposeSession(s.snapshot.id)
+      expect(disposed).toEqual([s.snapshot.id])
+    })
+
+    it('swallows hook errors without crashing createSession', () => {
+      const mgr2 = new SessionManagerImpl({
+        onSessionCreated: () => { throw new Error('boom') },
+      })
+      expect(() => mgr2.createSession({ projectPath: '/pp', providerId: 'claude-official' })).not.toThrow()
+    })
+  })
+
   describe('project resources cache', () => {
     it('getProjectResources returns discovered skills', () => {
       const resources = mgr.getProjectResources('/proj')

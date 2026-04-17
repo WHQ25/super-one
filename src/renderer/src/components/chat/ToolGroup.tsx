@@ -21,7 +21,7 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
     : null
 
   return (
-    <div className="tool-group my-1">
+    <div className="tool-group my-0.5">
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70"

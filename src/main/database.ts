@@ -218,7 +218,33 @@ function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE sessions ADD COLUMN automation_id TEXT')
   }
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_providers (
+      id          TEXT PRIMARY KEY,
+      harness_id  TEXT NOT NULL,
+      name        TEXT NOT NULL,
+      is_official INTEGER NOT NULL DEFAULT 0,
+      config_json TEXT NOT NULL DEFAULT '{}',
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_providers_harness ON session_providers(harness_id);
+  `)
+
+  seedOfficialSessionProviders(db)
+
   if (is.dev) seedDevProviders(db)
+}
+
+function seedOfficialSessionProviders(db: Database.Database): void {
+  const now = new Date().toISOString()
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO session_providers
+      (id, harness_id, name, is_official, config_json, created_at, updated_at)
+    VALUES (?, ?, ?, 1, '{}', ?, ?)
+  `)
+  stmt.run('claude-official', 'claude', 'Claude (Official)', now, now)
+  stmt.run('codex-official', 'codex', 'Codex (Official)', now, now)
 }
 
 function migrateProvidersToUnified(db: Database.Database): void {

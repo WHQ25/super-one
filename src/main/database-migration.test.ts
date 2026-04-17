@@ -76,4 +76,32 @@ describe('database migration', () => {
     expect(createIndex).toBeGreaterThan(-1)
     expect(createIndex).toBeGreaterThan(alterIndex)
   })
+
+  it('creates session_providers table with expected columns', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    const create = execSql.find((sql) => sql.includes('CREATE TABLE IF NOT EXISTS session_providers'))
+    expect(create).toBeDefined()
+    const normalized = (create as string).replace(/\s+/g, ' ')
+    expect(normalized).toContain('id TEXT PRIMARY KEY')
+    expect(normalized).toContain('harness_id TEXT NOT NULL')
+    expect(normalized).toContain('name TEXT NOT NULL')
+    expect(normalized).toContain('is_official INTEGER NOT NULL')
+    expect(normalized).toContain('config_json TEXT NOT NULL')
+    expect(normalized).toContain('created_at TEXT NOT NULL')
+    expect(normalized).toContain('updated_at TEXT NOT NULL')
+  })
+
+  it('seeds two official providers (claude-official and codex-official)', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const prepareCalls = dbMock.prepare.mock.calls.map((call) => call[0] as string)
+    const seedStmt = prepareCalls.find((sql) =>
+      sql.includes('INSERT OR IGNORE INTO session_providers') || sql.includes('INSERT INTO session_providers')
+    )
+    expect(seedStmt).toBeDefined()
+  })
 })

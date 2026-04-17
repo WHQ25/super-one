@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { CopyableMarkdown, splitByCodeFences, normalizeCodeFences } from './CopyableMarkdown'
+import { CopyableMarkdown, splitByCodeFences, normalizeCodeFences, splitByInsightBlocks } from './CopyableMarkdown'
 
 vi.mock('streamdown', () => ({
   Streamdown: ({ children, className }: { children: string; className?: string }) => (
@@ -128,6 +128,36 @@ describe('normalizeCodeFences', () => {
     const input = '```markdown\n```json\n{}\n```'
     const result = normalizeCodeFences(input)
     expect(result).toBe('````markdown\n```json\n{}\n````')
+  })
+})
+
+describe('splitByInsightBlocks', () => {
+  it('extracts insight block with wrapping backticks', () => {
+    const text = 'Before\n`★ Insight ─────────────────`\nBody line\n`─────────────────────────────`\nAfter'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'text', content: 'Before' },
+      { type: 'insight', title: 'Insight', content: 'Body line' },
+      { type: 'text', content: 'After' },
+    ])
+  })
+
+  it('extracts insight block without wrapping backticks', () => {
+    const text = 'Before\n★ Insight ─────────────────\nBody line\n─────────────────────────────\nAfter'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'text', content: 'Before' },
+      { type: 'insight', title: 'Insight', content: 'Body line' },
+      { type: 'text', content: 'After' },
+    ])
+  })
+
+  it('tolerates trailing whitespace on header and footer', () => {
+    const text = '★ Title ─────────────   \nBody\n─────────────────────   '
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'insight', title: 'Title', content: 'Body' },
+    ])
   })
 })
 

@@ -66,6 +66,15 @@ describe('splitTextIntoBlocks', () => {
       expect(segments[2]).toEqual({ type: 'text', text: 'After' })
     })
 
+    it('should extract insight blocks without wrapping backticks', () => {
+      const text = 'Before\n★ My Title ─────────────────────────────\nLine 1\nLine 2\n─────────────────────────────────────────────────\nAfter'
+      const { segments } = splitTextIntoBlocks(text, false)
+      expect(segments).toHaveLength(3)
+      expect(segments[0]).toEqual({ type: 'text', text: 'Before' })
+      expect(segments[1]).toEqual({ type: 'insight', text: '', title: 'My Title', content: 'Line 1\nLine 2' })
+      expect(segments[2]).toEqual({ type: 'text', text: 'After' })
+    })
+
     it('should handle multiple code blocks', () => {
       const text = '```js\na()\n```\n\nMiddle\n\n```py\nb()\n```'
       const { segments } = splitTextIntoBlocks(text, false)

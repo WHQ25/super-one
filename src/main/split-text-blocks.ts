@@ -1,5 +1,5 @@
-const INSIGHT_HEADER_RE = /^`★\s+(.+?)\s+─{3,}`$/m
-const INSIGHT_FOOTER_RE = /^`─{3,}`$/
+const INSIGHT_HEADER_RE = /^`?★\s+(.+?)\s+─{3,}`?\s*$/m
+const INSIGHT_FOOTER_RE = /^`?─{3,}`?\s*$/
 
 export interface TextSegment { type: 'text' | 'insight'; text: string; title?: string; content?: string }
 export interface SplitResult { segments: TextSegment[]; remainder: string }

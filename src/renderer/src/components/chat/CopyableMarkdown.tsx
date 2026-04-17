@@ -94,8 +94,8 @@ export function normalizeCodeFences(text: string): string {
   }).join('\n')
 }
 
-const INSIGHT_HEADER_LINE = /^`★\s+(.+?)\s+─{3,}`$/
-const INSIGHT_FOOTER_LINE = /^`─{3,}`$/
+const INSIGHT_HEADER_LINE = /^`?★\s+(.+?)\s+─{3,}`?\s*$/
+const INSIGHT_FOOTER_LINE = /^`?─{3,}`?\s*$/
 
 type TextSegment = { type: 'text'; content: string } | { type: 'insight'; title: string; content: string }
 

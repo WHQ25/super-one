@@ -22,6 +22,7 @@ export interface SessionManagerPersistence {
 export class SessionManagerImpl implements SessionManagerContract {
   private sessions = new Map<string, Session>()
   private sessionProjects = new Map<string, string>()
+  private activeByProject = new Map<string, string>()
   private projectResources: ProjectResourceCache
   private scopedListeners = new Map<string, Set<(e: AgentEvent) => void>>()
   private anyListeners = new Set<(sessionId: string, e: AgentEvent) => void>()
@@ -94,6 +95,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     })
 
     this.registerSession(session, opts.projectPath)
+    this.activeByProject.set(opts.projectPath, sessionId)
     try {
       this.persistence.onSessionCreated?.({
         id: sessionId,
@@ -104,6 +106,25 @@ export class SessionManagerImpl implements SessionManagerContract {
       log.warn('[SessionManager] onSessionCreated hook failed:', err)
     }
     return session
+  }
+
+  getActiveSession(projectPath: string): SessionContract | null {
+    const sid = this.activeByProject.get(projectPath)
+    if (!sid) return null
+    return this.sessions.get(sid) ?? null
+  }
+
+  setActiveSession(projectPath: string, sessionId: string): void {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error(`Session not found: ${sessionId}`)
+    if (this.sessionProjects.get(sessionId) !== projectPath) {
+      throw new Error(`Session ${sessionId} does not belong to project ${projectPath}`)
+    }
+    this.activeByProject.set(projectPath, sessionId)
+  }
+
+  clearActiveSession(projectPath: string): void {
+    this.activeByProject.delete(projectPath)
   }
 
   resumeSession(sessionId: string): SessionContract {
@@ -127,9 +148,13 @@ export class SessionManagerImpl implements SessionManagerContract {
     try { await session.dispose() } catch (err) {
       log.debug('[SessionManager] dispose error:', err)
     }
+    const projectPath = this.sessionProjects.get(sessionId)
     this.sessions.delete(sessionId)
     this.sessionProjects.delete(sessionId)
     this.scopedListeners.delete(sessionId)
+    if (projectPath && this.activeByProject.get(projectPath) === sessionId) {
+      this.activeByProject.delete(projectPath)
+    }
     try {
       this.persistence.onSessionDisposed?.(sessionId)
     } catch (err) {

@@ -194,6 +194,63 @@ describe('SessionManager', () => {
     })
   })
 
+  describe('active session per project', () => {
+    it('createSession marks the new session active for its project', () => {
+      const s = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(s.snapshot.id)
+    })
+
+    it('createSession on same project advances active pointer to the newest', () => {
+      const a = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const b = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(b.snapshot.id)
+      expect(a.snapshot.id).not.toBe(b.snapshot.id)
+    })
+
+    it('getActiveSession returns null for unknown project', () => {
+      expect(mgr.getActiveSession('/unknown')).toBeNull()
+    })
+
+    it('setActiveSession switches the active pointer', () => {
+      const a = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const b = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      mgr.setActiveSession('/pp', a.snapshot.id)
+      expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(a.snapshot.id)
+      mgr.setActiveSession('/pp', b.snapshot.id)
+      expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(b.snapshot.id)
+    })
+
+    it('setActiveSession rejects cross-project sessions', () => {
+      const a = mgr.createSession({ projectPath: '/pp-1', providerId: 'claude-official' })
+      expect(() => mgr.setActiveSession('/pp-2', a.snapshot.id)).toThrow(/does not belong/)
+    })
+
+    it('setActiveSession rejects unknown session id', () => {
+      expect(() => mgr.setActiveSession('/pp', 'missing')).toThrow(/not found/)
+    })
+
+    it('disposing the active session clears the pointer', async () => {
+      const s = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      await mgr.disposeSession(s.snapshot.id)
+      expect(mgr.getActiveSession('/pp')).toBeNull()
+    })
+
+    it('disposing a non-active session does not change the pointer', async () => {
+      const a = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      const b = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      mgr.setActiveSession('/pp', a.snapshot.id)
+      await mgr.disposeSession(b.snapshot.id)
+      expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(a.snapshot.id)
+    })
+
+    it('clearActiveSession removes the pointer without disposing the session', () => {
+      const s = mgr.createSession({ projectPath: '/pp', providerId: 'claude-official' })
+      mgr.clearActiveSession('/pp')
+      expect(mgr.getActiveSession('/pp')).toBeNull()
+      expect(mgr.getSession(s.snapshot.id)).not.toBeNull()
+    })
+  })
+
   describe('persistence hooks', () => {
     it('fires onSessionCreated on createSession', () => {
       const created: Array<{ id: string; projectPath: string; providerId: string }> = []

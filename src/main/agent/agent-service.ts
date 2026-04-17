@@ -2078,6 +2078,43 @@ export class AgentService {
       }
     })
 
+    // --- Session Providers (new session_providers table) ---
+
+    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_LIST, async () => {
+      const { listSessionProviders } = await import('../session/session-provider-repo')
+      return listSessionProviders()
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS, async (_event, harnessId: 'claude' | 'codex') => {
+      const { listByHarness } = await import('../session/session-provider-repo')
+      return listByHarness(harnessId)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_GET, async (_event, id: string) => {
+      const { getSessionProvider } = await import('../session/session-provider-repo')
+      return getSessionProvider(id)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_GET_OFFICIAL, async (_event, harnessId: 'claude' | 'codex') => {
+      const { getOfficialProvider } = await import('../session/session-provider-repo')
+      return getOfficialProvider(harnessId)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_CREATE, async (_event, input: { harnessId: 'claude' | 'codex'; name: string; config: unknown; id?: string }) => {
+      const { createSessionProvider } = await import('../session/session-provider-repo')
+      return createSessionProvider(input)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_UPDATE, async (_event, id: string, patch: { name?: string; config?: unknown }) => {
+      const { updateSessionProvider } = await import('../session/session-provider-repo')
+      return updateSessionProvider(id, patch)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_DELETE, async (_event, id: string) => {
+      const { deleteSessionProvider } = await import('../session/session-provider-repo')
+      return deleteSessionProvider(id)
+    })
+
     // --- MCP library (global) ---
 
     ipcMain.handle(AgentIpcChannels.MCP_LIST_LIBRARY, () => {
@@ -2334,6 +2371,13 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.MCP_OAUTH_AUTHORIZE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_LIBRARY)
     ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY)
+    ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS)
+    ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_GET)
+    ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_GET_OFFICIAL)
+    ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_CREATE)
+    ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_UPDATE)
+    ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.PARK_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.ACTIVATE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST)

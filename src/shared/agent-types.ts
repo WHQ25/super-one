@@ -1225,7 +1225,7 @@ export const AgentIpcChannels = {
   FILE_CHANGE_EVENT: 'app:file-change-event',
   GIT_HEAD_CHANGE: 'app:git-head-change',
 
-  // Providers
+  // Providers (legacy api_providers table)
   PROVIDERS_LIST: 'providers:list',
   PROVIDERS_CREATE: 'providers:create',
   PROVIDERS_UPDATE: 'providers:update',
@@ -1233,6 +1233,15 @@ export const AgentIpcChannels = {
   PROVIDERS_ACTIVATE: 'providers:activate',
   PROVIDERS_DEACTIVATE_ALL: 'providers:deactivate-all',
   PROVIDERS_TEST: 'providers:test',
+
+  // Session Providers (new session_providers table)
+  SESSION_PROVIDERS_LIST: 'sessionProviders:list',
+  SESSION_PROVIDERS_LIST_BY_HARNESS: 'sessionProviders:list-by-harness',
+  SESSION_PROVIDERS_GET: 'sessionProviders:get',
+  SESSION_PROVIDERS_GET_OFFICIAL: 'sessionProviders:get-official',
+  SESSION_PROVIDERS_CREATE: 'sessionProviders:create',
+  SESSION_PROVIDERS_UPDATE: 'sessionProviders:update',
+  SESSION_PROVIDERS_DELETE: 'sessionProviders:delete',
 
   // Bash output watcher
   BASH_OUTPUT_WATCH: 'app:bash-output-watch',

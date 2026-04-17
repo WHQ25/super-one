@@ -430,6 +430,24 @@ const appAPI = {
   testProvider: (data: { api_key: string; base_url: string; extra_env: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST, data) as Promise<{ success: boolean; models: number; error?: string }>,
 
+  // Session Providers (new session layer)
+  sessionProviders: {
+    list: () =>
+      ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_LIST),
+    listByHarness: (harnessId: 'claude' | 'codex') =>
+      ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS, harnessId),
+    get: (id: string) =>
+      ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_GET, id),
+    getOfficial: (harnessId: 'claude' | 'codex') =>
+      ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_GET_OFFICIAL, harnessId),
+    create: (input: { harnessId: 'claude' | 'codex'; name: string; config: unknown; id?: string }) =>
+      ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_CREATE, input),
+    update: (id: string, patch: { name?: string; config?: unknown }) =>
+      ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_UPDATE, id, patch),
+    delete: (id: string) =>
+      ipcRenderer.invoke(AgentIpcChannels.SESSION_PROVIDERS_DELETE, id),
+  },
+
   // File operations
   moveFile: (folderPath: string, srcRelPath: string, destDirRelPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FILE_MOVE, folderPath, srcRelPath, destDirRelPath),

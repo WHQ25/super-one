@@ -2377,22 +2377,32 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       })))
     }
 
-    if (effectiveProvider === 'codex' && !_getEffectiveSessionId(project)) {
+    if (effectiveProvider === 'codex' && session.sessionProvider !== 'codex') {
       const localSid = _createLocalCodexSessionId()
       set((s) => {
         const proj = getProject(s, activeProject)
         const currentSid = proj._activeSessionId
-        if (!currentSid) return {}
-        const sess = proj._sessions[currentSid]
-        if (!sess) return {}
-        const { [currentSid]: _, ...rest } = proj._sessions
+        const currentSess = currentSid ? proj._sessions[currentSid] : null
+        const shouldCarryState = currentSess != null && currentSess.messages.length === 0
+        const nextSessions = { ...proj._sessions }
+        if (shouldCarryState && currentSid) {
+          delete nextSessions[currentSid]
+          nextSessions[localSid] = { ...currentSess, sessionProvider: 'codex', preferredProvider: 'codex' }
+        } else {
+          nextSessions[localSid] = {
+            ...createDefaultPerSessionState(),
+            cwd: currentSess?.cwd ?? '',
+            sessionProvider: 'codex',
+            preferredProvider: 'codex',
+          }
+        }
         return {
           projectSessions: {
             ...s.projectSessions,
             [activeProject]: {
               ...proj,
               _activeSessionId: localSid,
-              _sessions: { ...rest, [localSid]: sess },
+              _sessions: nextSessions,
             },
           },
         }

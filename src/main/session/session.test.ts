@@ -49,6 +49,11 @@ class FakeBackend implements SessionBackend {
   dequeueMessage(_clientMessageId: string): boolean { return false }
   getPendingInteractions(): AgentEvent[] { return [] }
 
+  steerCalls: Array<[string, import('./types').CodexSteerOptions | undefined]> = []
+  async steer(input: string, opts?: import('./types').CodexSteerOptions): Promise<void> {
+    this.steerCalls.push([input, opts])
+  }
+
   async send(request: SendMessageRequest): Promise<void> {
     this.sendCalls.push(request)
     await new Promise<void>((resolve) => { this.resolveSend = resolve })
@@ -608,6 +613,29 @@ describe('Session message accumulation', () => {
     session.on((e) => captured.push(e))
     session.notifyCodexCollaborationMode('parallel')
     expect(captured.find((e) => e.type === 'codex_collaboration_mode_change')).toBeUndefined()
+  })
+
+  it('steer(input, opts) appends user message to _messages for codex sessions', async () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+    await session.steer('keep going', {
+      newUserMessageId: 'user-steer-1',
+      newUserText: 'keep going',
+      newAssistantMessageId: 'asst-steer-1',
+    })
+    const userMsg = session.snapshot.messages.find((m) => m.id === 'user-steer-1')
+    expect(userMsg?.role).toBe('user')
+    expect(userMsg?.content).toEqual([{ type: 'text', text: 'keep going' }])
+    expect(backend.steerCalls?.[0]).toEqual(['keep going', {
+      newUserMessageId: 'user-steer-1',
+      newUserText: 'keep going',
+      newAssistantMessageId: 'asst-steer-1',
+    }])
+  })
+
+  it('steer() does not append user message when opts are omitted', async () => {
+    const { session } = makeSession({ harnessId: 'codex' })
+    await session.steer('raw')
+    expect(session.snapshot.messages).toHaveLength(0)
   })
 })
 

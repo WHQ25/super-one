@@ -28,6 +28,7 @@ import {
 } from '../agent/codex-session-runtime'
 import type {
   BackendStartOptions,
+  CodexSteerOptions,
   HarnessId,
   PrewarmHint,
   Session as SessionContract,
@@ -296,9 +297,24 @@ export class Session implements SessionContract {
     return this.backend.getPendingInteractions()
   }
 
-  async steer(input: string): Promise<void> {
+  async steer(input: string, opts?: CodexSteerOptions): Promise<void> {
     if (!this.backend.steer) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support steer`)
-    await this.backend.steer(input)
+    if (this.harnessId === 'codex' && opts?.newUserMessageId && opts.newUserText) {
+      const userMsg: ChatMessage = {
+        id: opts.newUserMessageId,
+        role: 'user',
+        status: 'complete',
+        content: [{ type: 'text', text: opts.newUserText }],
+        createdAt: new Date().toISOString(),
+        providerId: 'codex',
+      }
+      if (!this._messages.some((m) => m.id === opts.newUserMessageId)) {
+        this._messages = [...this._messages, userMsg]
+        this._lastUserMessageAt = Date.now()
+        this.notifyStateChange()
+      }
+    }
+    await this.backend.steer(input, opts)
   }
 
   setCodexPlanApproval(

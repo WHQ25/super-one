@@ -101,6 +101,12 @@ export interface PrewarmHint {
   additionalDirs?: string[]
 }
 
+export interface CodexSteerOptions {
+  newAssistantMessageId?: string
+  newUserMessageId?: string
+  newUserText?: string
+}
+
 export type BackendEvent = AgentEvent
 
 export interface SessionBackend {
@@ -135,7 +141,7 @@ export interface SessionBackend {
   reloadPlugins(): Promise<boolean>
   dequeueMessage(clientMessageId: string): boolean
   getPendingInteractions(): AgentEvent[]
-  steer?(input: string): Promise<void>
+  steer?(input: string, opts?: CodexSteerOptions): Promise<void>
   onEvent(handler: (event: BackendEvent) => void): () => void
   onProviderSessionId(handler: (id: string) => void): () => void
 }
@@ -175,7 +181,7 @@ export interface Session {
   prewarm(hint?: PrewarmHint): void
   dequeueMessage(clientMessageId: string): boolean
   getPendingInteractions(): AgentEvent[]
-  steer(input: string): Promise<void>
+  steer(input: string, opts?: CodexSteerOptions): Promise<void>
   setCodexPlanApproval(
     messageId: string,
     approval: { status: 'approved' | 'rejected'; feedback?: string },

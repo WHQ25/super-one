@@ -378,6 +378,41 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     expect(service.steerMock).toHaveBeenCalledWith('sess-test', 'stop')
   })
 
+  it('steer(input, {newAssistantMessageId}) emits message_start + swaps current messageId for subsequent events', async () => {
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+
+    const pending = backend.send({
+      content: 'first',
+      assistantMessageId: 'asst-1',
+    })
+    await Promise.resolve()
+    events.length = 0
+
+    await backend.steer('redirect', {
+      newAssistantMessageId: 'asst-2',
+      newUserMessageId: 'user-2',
+      newUserText: 'redirect',
+    })
+
+    const startEvt = events.find((e) => e.type === 'message_start') as Extract<AgentEvent, { type: 'message_start' }> | undefined
+    expect(startEvt?.message.id).toBe('asst-2')
+
+    service.capturedCallbacks?.onItemDelta?.('updated', {
+      id: 'item-x', type: 'agent_message', text: 'after steer',
+    } as unknown as CodexThreadItem)
+
+    const deltaEvt = events.find((e) => e.type === 'codex_item_delta') as Extract<AgentEvent, { type: 'codex_item_delta' }> | undefined
+    expect(deltaEvt?.messageId).toBe('asst-2')
+
+    service.resolveRun(makeResult({ finalResponse: 'done' }))
+    await pending
+
+    const completeEvt = events.find((e) => e.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }> | undefined
+    expect(completeEvt?.messageId).toBe('asst-2')
+    expect(service.steerMock).toHaveBeenCalledWith('sess-test', 'redirect')
+  })
+
   it('respondToPlanApproval is a no-op (not applicable to Codex)', () => {
     expect(() => backend.respondToPlanApproval('req', true, 'nope')).not.toThrow()
   })

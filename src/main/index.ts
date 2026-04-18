@@ -615,12 +615,22 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     AgentIpcChannels.CODEX_STEER,
     (_event, sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string) => {
-      const route = activeCodexEventTargets.get(sessionId)
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
+      const resolvedUserMessageId = userMessageId ?? `user_${Date.now()}`
+      const resolvedUserText = userMessageText ?? input
+      const existing = sessionManager.getSession(sessionId)
+      if (existing && existing.snapshot.harnessId === 'codex') {
+        return existing.steer(input, {
+          newAssistantMessageId: assistantMessageId,
+          newUserMessageId: resolvedUserMessageId,
+          newUserText: resolvedUserText,
+        })
+      }
+      const route = activeCodexEventTargets.get(sessionId)
       if (route) {
         agentService.beginCodexTurn(route.projectPath, sessionId, {
-          userMessageId: userMessageId ?? `user_${Date.now()}`,
-          userText: userMessageText ?? input,
+          userMessageId: resolvedUserMessageId,
+          userText: resolvedUserText,
           assistantMessageId,
           providerId: 'local',
           gitBranch: gitBranch ?? null,

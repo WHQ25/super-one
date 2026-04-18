@@ -19,7 +19,7 @@ import type {
   SendMessageRequest,
 } from '../../../shared/agent-types'
 import log from '../../logger'
-import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import type { BackendStartOptions, CodexSteerOptions, HarnessId, SessionBackend } from '../types'
 
 export interface CodexRunStreamCallbacksDeps {
   onThreadStarted?: (threadId: string) => void
@@ -108,6 +108,7 @@ export class CodexBackend implements SessionBackend {
   private startOpts: BackendStartOptions | null = null
   private currentMessageId: string | null = null
   private activeRun: Promise<void> | null = null
+  private swapRunAssistantId: ((nextId: string) => void) | null = null
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
@@ -161,6 +162,11 @@ export class CodexBackend implements SessionBackend {
     const resolvedCwd = request.codex?.cwd ?? startOpts.cwd
 
     this.currentMessageId = assistantMessageId
+    let runningAssistantId = assistantMessageId
+    this.swapRunAssistantId = (nextId: string) => {
+      runningAssistantId = nextId
+      this.currentMessageId = nextId
+    }
 
     this.emit({
       type: 'message_start',
@@ -174,7 +180,7 @@ export class CodexBackend implements SessionBackend {
       },
     })
     this.emit({ type: 'status_change', status: 'streaming' })
-    const callbacks = this.buildCallbacks(assistantMessageId)
+    const callbacks = this.buildCallbacks()
     const runStart = Date.now()
 
     const task = (async () => {
@@ -219,7 +225,7 @@ export class CodexBackend implements SessionBackend {
           || (mode === 'compact' ? 'Conversation compacted.' : 'Codex completed without returning text.')
         this.emit({
           type: 'message_complete',
-          messageId: assistantMessageId,
+          messageId: runningAssistantId,
           metadata: {
             codex: {
               finalResponse: finalText,
@@ -234,14 +240,15 @@ export class CodexBackend implements SessionBackend {
         const message = error instanceof Error ? error.message : String(error)
         const isInterrupt = /interrupt|abort/i.test(message)
         if (isInterrupt) {
-          this.emit({ type: 'message_interrupted', messageId: assistantMessageId })
+          this.emit({ type: 'message_interrupted', messageId: runningAssistantId })
         } else {
-          this.emit({ type: 'message_error', messageId: assistantMessageId, error: message })
+          this.emit({ type: 'message_error', messageId: runningAssistantId, error: message })
         }
         throw error
       } finally {
         this.emit({ type: 'status_change', status: 'idle' })
-        if (this.currentMessageId === assistantMessageId) this.currentMessageId = null
+        if (this.currentMessageId === runningAssistantId) this.currentMessageId = null
+        this.swapRunAssistantId = null
       }
     })()
 
@@ -308,9 +315,23 @@ export class CodexBackend implements SessionBackend {
     log.debug('[CodexBackend] respondToPlanApproval not applicable to Codex')
   }
 
-  async steer(input: string): Promise<void> {
+  async steer(input: string, opts?: CodexSteerOptions): Promise<void> {
     const startOpts = this.startOpts
     if (!startOpts) throw new Error('CodexBackend not started')
+    if (opts?.newAssistantMessageId) {
+      this.emit({
+        type: 'message_start',
+        message: {
+          id: opts.newAssistantMessageId,
+          role: 'assistant',
+          status: 'streaming',
+          content: [],
+          createdAt: new Date().toISOString(),
+          providerId: 'codex',
+        },
+      })
+      this.swapRunAssistantId?.(opts.newAssistantMessageId)
+    }
     await this.service.steer(startOpts.sessionId, input)
   }
 
@@ -382,16 +403,22 @@ export class CodexBackend implements SessionBackend {
     }
   }
 
-  private buildCallbacks(messageId: string): CodexRunStreamCallbacksDeps {
+  private buildCallbacks(): CodexRunStreamCallbacksDeps {
     return {
       onThreadStarted: (threadId: string) => {
         this.fireProviderSessionId(threadId)
+        const messageId = this.currentMessageId
+        if (!messageId) return
         this.emit({ type: 'codex_thread_started', messageId, threadId })
       },
       onItemDelta: (phase, item) => {
+        const messageId = this.currentMessageId
+        if (!messageId) return
         this.emit({ type: 'codex_item_delta', messageId, phase, item })
       },
       onUsageDelta: (usage) => {
+        const messageId = this.currentMessageId
+        if (!messageId) return
         this.emit({
           type: 'message_usage',
           messageId,

@@ -39,9 +39,10 @@ export interface SessionManagerPersistence {
   resolveProviderConfig?: (provider: SessionProvider) => unknown
 }
 
-function resolveResumedCwd(data: LoadedSessionData): string {
-  if (!data.worktreePath) return data.projectPath
-  return existsSync(data.worktreePath) ? data.worktreePath : data.projectPath
+function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorktreePath: string | null } {
+  if (!data.worktreePath) return { cwd: data.projectPath, missingWorktreePath: null }
+  if (existsSync(data.worktreePath)) return { cwd: data.worktreePath, missingWorktreePath: null }
+  return { cwd: data.projectPath, missingWorktreePath: data.worktreePath }
 }
 
 export class SessionManagerImpl implements SessionManagerContract {
@@ -192,7 +193,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     const providerConfig = this.persistence.resolveProviderConfig
       ? this.persistence.resolveProviderConfig(provider)
       : provider.config
-    const resumedCwd = resolveResumedCwd(data)
+    const { cwd: resumedCwd, missingWorktreePath } = resolveResumedCwd(data)
     const session = new Session({
       id: sessionId,
       projectPath: data.projectPath,
@@ -206,6 +207,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       initialTotalCostUsd: data.totalCostUsd,
       initialContextTokens: data.contextTokens,
       gitBranch: data.gitBranch ?? null,
+      missingWorktreePath,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),

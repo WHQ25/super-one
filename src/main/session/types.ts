@@ -73,6 +73,7 @@ export interface SessionSnapshot {
   readonly isWorktree: boolean
   readonly worktreePath: string | null
   readonly gitBranch: string | null
+  readonly worktreeMissing: boolean
 }
 
 export interface SessionStateChange {
@@ -86,6 +87,7 @@ export interface SessionStateChange {
   isWorktree: boolean
   worktreePath: string | null
   gitBranch: string | null
+  worktreeMissing: boolean
 }
 
 export interface BackendStartOptions {

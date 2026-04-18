@@ -811,6 +811,59 @@ describe('Session persist hook', () => {
     })
   })
 
+  describe('worktreeMissing', () => {
+    it('snapshot.worktreeMissing defaults to false', () => {
+      const { session } = makeSession()
+      expect(session.snapshot.worktreeMissing).toBe(false)
+    })
+
+    it('snapshot.worktreeMissing is true when constructed with missingWorktreePath', () => {
+      const { session } = makeSession({ missingWorktreePath: '/tmp/proj/.worktrees/gone' })
+      expect(session.snapshot.worktreeMissing).toBe(true)
+    })
+
+    it('emits a worktree_missing event on construction when missingWorktreePath is set', () => {
+      const captured: AgentEvent[] = []
+      const { session } = makeSession({ missingWorktreePath: '/tmp/proj/.worktrees/gone' })
+      session.on((e) => captured.push(e))
+      const wmEvents = captured.filter((e) => e.type === 'worktree_missing')
+      expect(wmEvents).toHaveLength(1)
+      const ev = wmEvents[0] as Extract<AgentEvent, { type: 'worktree_missing' }>
+      expect(ev.worktreePath).toBe('/tmp/proj/.worktrees/gone')
+      expect(ev.fallbackCwd).toBe('/tmp/proj')
+      expect((ev as AgentEvent & { sessionId?: string }).sessionId).toBe(session.snapshot.id)
+    })
+
+    it('does NOT emit worktree_missing when missingWorktreePath is not set', () => {
+      const captured: AgentEvent[] = []
+      const { session } = makeSession({ cwd: '/tmp/proj/.worktrees/feat' })
+      session.on((e) => captured.push(e))
+      expect(captured.some((e) => e.type === 'worktree_missing')).toBe(false)
+    })
+
+    it('replays worktree_missing to late subscribers via on()', () => {
+      const { session } = makeSession({ missingWorktreePath: '/tmp/proj/.worktrees/gone' })
+      const late: AgentEvent[] = []
+      session.on((e) => late.push(e))
+      expect(late.filter((e) => e.type === 'worktree_missing')).toHaveLength(1)
+    })
+
+    it('notifyStateChange forwards worktreeMissing=true', async () => {
+      const captured: SessionStateChange[] = []
+      const { session, backend } = makeSession({
+        missingWorktreePath: '/tmp/proj/.worktrees/gone',
+        onStateChange: (s) => captured.push(s),
+      })
+      const p = session.send({ content: 'hi', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+      backend.emit({ type: 'message_complete', messageId: 'a1' } as AgentEvent)
+      backend.resolveSend?.()
+      await p
+      expect(captured.length).toBeGreaterThan(0)
+      expect(captured[captured.length - 1].worktreeMissing).toBe(true)
+    })
+  })
+
   describe('init_ready event lifecycle', () => {
     function makeResources(cwd: string) {
       return {

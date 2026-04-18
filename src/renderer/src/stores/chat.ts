@@ -925,6 +925,9 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     case 'init_ready':
       return { permissionMode: event.permissionMode }
 
+    case 'worktree_missing':
+      return { _worktreeRemoved: true, cwd: event.fallbackCwd }
+
     case 'compact_boundary': {
       const msgs = [...session.messages]
       let insertIdx = msgs.length
@@ -2255,6 +2258,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (hydrateSessionId) {
       _hydrateSessionState(set, projectPath, hydrateSessionId)
     }
+    if (event.type === 'worktree_missing' && projectPath === get().activeProject) {
+      useAppStore.getState().setActiveWorktree(projectPath, null)
+    }
   },
 
   switchProject: async (projectPath: string) => {
@@ -3548,7 +3554,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       })
 
       const targetSession = project._sessions[sessionId]
-      let runtimeSession = targetSession
+      const runtimeSession = targetSession
 
       window.app.trace?.('agent.store', 'switchSession:A', {
         sessionId,
@@ -3556,18 +3562,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         _worktreeBaseBranch: targetSession._worktreeBaseBranch,
         _worktreeRemoved: targetSession._worktreeRemoved,
       })
-      if (targetSession._worktreePath) {
-        const exists = await window.app.pathExists(targetSession._worktreePath)
-        window.app.trace?.('agent.store', 'switchSession:A:pathExists', { path: targetSession._worktreePath, exists })
-        if (exists) {
-          useAppStore.getState().setActiveWorktree(activeProject, targetSession._worktreePath)
-        } else {
-          window.app.trace?.('agent.store', 'switchSession:A:worktreeRemoved', { sessionId })
-          set((s) => updatePerSession(s, activeProject, sessionId, () => ({ _worktreeRemoved: true, cwd: activeProject })))
-          useAppStore.getState().setActiveWorktree(activeProject, null)
-          runtimeSession = { ...targetSession, _worktreeRemoved: true }
-        }
-      } else if (!targetSession._worktreeBaseBranch) {
+      if (targetSession._worktreePath && !targetSession._worktreeRemoved) {
+        useAppStore.getState().setActiveWorktree(activeProject, targetSession._worktreePath)
+      } else if (!targetSession._worktreeBaseBranch || targetSession._worktreeRemoved) {
         useAppStore.getState().setActiveWorktree(activeProject, null)
       }
 
@@ -3673,15 +3670,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       savedWorktreeBranch,
     })
     if (savedWorktreePath) {
-      const exists = await window.app.pathExists(savedWorktreePath)
-      window.app.trace?.('agent.store', 'switchSession:B:pathExists', { path: savedWorktreePath, exists })
-      if (exists) {
-        useAppStore.getState().setActiveWorktree(activeProject, savedWorktreePath)
-      } else {
-        window.app.trace?.('agent.store', 'switchSession:B:worktreeRemoved', { sessionId })
-        set((s) => updatePerSession(s, activeProject, sessionId, () => ({ _worktreeRemoved: true, cwd: activeProject })))
-        useAppStore.getState().setActiveWorktree(activeProject, null)
-      }
+      useAppStore.getState().setActiveWorktree(activeProject, savedWorktreePath)
     } else {
       useAppStore.getState().setActiveWorktree(activeProject, null)
     }

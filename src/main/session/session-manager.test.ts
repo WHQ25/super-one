@@ -507,6 +507,84 @@ describe('SessionManager', () => {
       expect(session.snapshot.isWorktree).toBe(false)
       expect(session.snapshot.worktreePath).toBeNull()
     })
+
+    it('marks snapshot.worktreeMissing=true when saved worktree path no longer exists', () => {
+      hoisted.existsSyncMock.mockImplementation((path: string) => path === '/proj-wt')
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-wt',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        worktreePath: '/proj-wt/.worktrees/missing',
+        gitBranch: 'feature/x',
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const session = mgr2.resumeSession('sid-wt-missing')
+      expect(session.snapshot.worktreeMissing).toBe(true)
+    })
+
+    it('snapshot.worktreeMissing=false when saved worktree exists', () => {
+      hoisted.existsSyncMock.mockReturnValue(true)
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-wt',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        worktreePath: '/proj-wt/.worktrees/here',
+        gitBranch: 'feature/x',
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const session = mgr2.resumeSession('sid-wt-here')
+      expect(session.snapshot.worktreeMissing).toBe(false)
+    })
+
+    it('forwards a worktree_missing AgentEvent via onAny when the saved worktree path is gone', () => {
+      hoisted.existsSyncMock.mockImplementation((path: string) => path === '/proj-wt')
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-wt',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        worktreePath: '/proj-wt/.worktrees/missing',
+        gitBranch: 'feature/x',
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const captured: Array<{ sid: string; event: AgentEvent }> = []
+      mgr2.onAny((sid, event) => captured.push({ sid, event }))
+      const session = mgr2.resumeSession('sid-wt-missing')
+      const wm = captured.find((c) => c.event.type === 'worktree_missing')
+      expect(wm).toBeDefined()
+      expect(wm!.sid).toBe(session.snapshot.id)
+      const ev = wm!.event as Extract<AgentEvent, { type: 'worktree_missing' }>
+      expect(ev.worktreePath).toBe('/proj-wt/.worktrees/missing')
+      expect(ev.fallbackCwd).toBe('/proj-wt')
+      expect((ev as AgentEvent & { projectPath?: string }).projectPath).toBe('/proj-wt')
+    })
+
+    it('does NOT forward worktree_missing when worktree still exists', () => {
+      hoisted.existsSyncMock.mockReturnValue(true)
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-wt',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        worktreePath: '/proj-wt/.worktrees/here',
+        gitBranch: 'feature/x',
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const captured: AgentEvent[] = []
+      mgr2.onAny((_sid, event) => captured.push(event))
+      mgr2.resumeSession('sid-wt-here')
+      expect(captured.some((e) => e.type === 'worktree_missing')).toBe(false)
+    })
   })
 
   describe('project resources cache', () => {

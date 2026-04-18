@@ -55,6 +55,7 @@ export interface SessionConstructorOptions {
   title?: string | null
   createdAt?: number
   gitBranch?: string | null
+  missingWorktreePath?: string | null
   resumedProviderSessionId?: string
   initialMessages?: ChatMessage[]
   initialTotalCostUsd?: number
@@ -88,6 +89,9 @@ export class Session implements SessionContract {
 
   private _gitBranch: string | null = null
   get gitBranch(): string | null { return this._gitBranch }
+
+  private _missingWorktreePath: string | null = null
+  get worktreeMissing(): boolean { return this._missingWorktreePath !== null }
 
   private backend: SessionBackend
   private providerConfig: unknown
@@ -123,6 +127,7 @@ export class Session implements SessionContract {
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private unsubs: Array<() => void> = []
   private _cachedInitReady: AgentEvent | null = null
+  private _cachedWorktreeMissing: AgentEvent | null = null
 
   constructor(opts: SessionConstructorOptions) {
     this.id = opts.id
@@ -143,6 +148,7 @@ export class Session implements SessionContract {
     this._totalCostUsd = opts.initialTotalCostUsd ?? 0
     this._contextTokens = opts.initialContextTokens ?? 0
     this._gitBranch = opts.gitBranch ?? null
+    this._missingWorktreePath = opts.missingWorktreePath ?? null
     this.homedir = opts.homedir ?? ''
     this.getProjectResources = opts.getProjectResources
     this.invalidateProjectResources = opts.invalidateProjectResources
@@ -158,6 +164,13 @@ export class Session implements SessionContract {
       }
     }))
     this.emitInitReady()
+    if (this._missingWorktreePath) {
+      this._cachedWorktreeMissing = this.forwardEvent({
+        type: 'worktree_missing',
+        worktreePath: this._missingWorktreePath,
+        fallbackCwd: this._cwd,
+      } as AgentEvent)
+    }
   }
 
   get snapshot(): SessionSnapshot {
@@ -180,6 +193,7 @@ export class Session implements SessionContract {
       isWorktree,
       worktreePath: isWorktree ? this._cwd : null,
       gitBranch: this._gitBranch,
+      worktreeMissing: this._missingWorktreePath !== null,
     }
   }
 
@@ -438,7 +452,10 @@ export class Session implements SessionContract {
   }
 
   getReplayEvents(): AgentEvent[] {
-    return this._cachedInitReady ? [this._cachedInitReady] : []
+    const out: AgentEvent[] = []
+    if (this._cachedInitReady) out.push(this._cachedInitReady)
+    if (this._cachedWorktreeMissing) out.push(this._cachedWorktreeMissing)
+    return out
   }
 
   private emitInitReady(): void {
@@ -670,6 +687,7 @@ export class Session implements SessionContract {
         isWorktree,
         worktreePath: isWorktree ? this._cwd : null,
         gitBranch: this._gitBranch,
+        worktreeMissing: this._missingWorktreePath !== null,
       })
     } catch (err) {
       log.warn('[Session] onStateChange hook error:', err)

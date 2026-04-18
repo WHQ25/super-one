@@ -575,6 +575,7 @@ export type AgentEventBase =
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
   | { type: 'api_retry'; attempt: number; maxRetries: number; delayMs: number }
   | { type: 'queued_message_consumed'; clientMessageId: string }
+  | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string }
 

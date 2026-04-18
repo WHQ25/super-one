@@ -1420,8 +1420,13 @@ export class AgentService {
     })
   }
 
-  /** No-op in new architecture; cwd is now per-session, handled at session creation time. */
-  async switchCwd(_projectPath: string, _newCwd: string): Promise<void> {}
+  async switchCwd(projectPath: string, newCwd: string): Promise<void> {
+    const mgr = this.sessionManager
+    if (!mgr) return
+    const session = mgr.getActiveSession(projectPath)
+    if (!session) return
+    await session.switchCwd(newCwd)
+  }
 
   async openFolder(cwd: string): Promise<void> {
     this.sessionManager?.openProject(cwd)

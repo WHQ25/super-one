@@ -188,6 +188,7 @@ export interface Session {
   ): void
   notifyCodexCollaborationMode(mode: string): void
   updateProviderConfig(nextConfig: unknown): void
+  switchCwd(nextCwd: string): Promise<void>
   isStreaming(): boolean
   truncateMessagesAt(checkpointId: string): void
   dispose(): Promise<void>

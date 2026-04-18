@@ -74,10 +74,12 @@ function sameStringArray(a: readonly string[], b: readonly string[]): boolean {
 export class Session implements SessionContract {
   readonly id: string
   readonly projectPath: string
-  readonly cwd: string
   readonly providerId: string
   readonly harnessId: HarnessId
   readonly createdAt: number
+
+  private _cwd: string
+  get cwd(): string { return this._cwd }
 
   private backend: SessionBackend
   private providerConfig: unknown
@@ -87,7 +89,7 @@ export class Session implements SessionContract {
   private _currentMessageId: string | null = null
   private _providerSessionId: string | null = null
   private _lastUserMessageAt: number | null = null
-  private _providerConfigStale = false
+  private _needsRebuild = false
 
   private _messages: ChatMessage[] = []
   private _totalCostUsd = 0
@@ -113,7 +115,7 @@ export class Session implements SessionContract {
   constructor(opts: SessionConstructorOptions) {
     this.id = opts.id
     this.projectPath = opts.projectPath
-    this.cwd = opts.cwd
+    this._cwd = opts.cwd
     this.providerId = opts.providerId
     this.harnessId = opts.harnessId
     this.providerConfig = opts.providerConfig
@@ -174,11 +176,11 @@ export class Session implements SessionContract {
       if (request.model !== undefined) this.model = request.model
       if (request.additionalDirs !== undefined) this.additionalDirectories = request.additionalDirs
       this.appendUserMessage(request, opts?.providerOrigin ?? 'local')
-      const providerConfigStale = this._providerConfigStale
-      if (this.backendStarted && (effortChanged || dirsChanged || providerConfigStale)) {
-        log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s providerConfigStale=%s', this.id, effortChanged, dirsChanged, providerConfigStale)
+      const needsRebuild = this._needsRebuild
+      if (this.backendStarted && (effortChanged || dirsChanged || needsRebuild)) {
+        log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s needsRebuild=%s', this.id, effortChanged, dirsChanged, needsRebuild)
         await this.backend.rebuild(this.buildBackendStartOpts())
-        this._providerConfigStale = false
+        this._needsRebuild = false
       } else {
         await this.ensureStarted()
       }
@@ -425,7 +427,19 @@ export class Session implements SessionContract {
   updateProviderConfig(nextConfig: unknown): void {
     this.assertNotDisposed()
     this.providerConfig = nextConfig
-    this._providerConfigStale = true
+    this._needsRebuild = true
+  }
+
+  async switchCwd(nextCwd: string): Promise<void> {
+    this.assertNotDisposed()
+    if (this._cwd === nextCwd) return
+    this._cwd = nextCwd
+    if (!this.backendStarted) return
+    if (this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting') {
+      this._needsRebuild = true
+      return
+    }
+    await this.backend.rebuild(this.buildBackendStartOpts())
   }
 
   private buildBackendStartOpts(): BackendStartOptions {

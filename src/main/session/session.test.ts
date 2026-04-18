@@ -712,6 +712,52 @@ describe('Session persist hook', () => {
     expect(session.snapshot.messages.find((m) => m.id === 'a2')?.status).toBe('error')
   })
 
+  it('switchCwd rebuilds backend with new cwd when session is idle', async () => {
+    const { session, backend } = makeSession()
+    const p0 = session.send({ content: 'hi', clientMessageId: 'u0' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p0
+    expect(session.cwd).toBe('/tmp/proj')
+
+    await session.switchCwd('/tmp/proj/.worktrees/abc')
+
+    expect(session.cwd).toBe('/tmp/proj/.worktrees/abc')
+    expect(backend.rebuildCalls).toHaveLength(1)
+    expect(backend.rebuildCalls[0].cwd).toBe('/tmp/proj/.worktrees/abc')
+  })
+
+  it('switchCwd defers rebuild to next send when session is streaming', async () => {
+    const { session, backend } = makeSession()
+    const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.emit({ type: 'status_change', status: 'streaming' })
+
+    await session.switchCwd('/tmp/proj/.worktrees/abc')
+    expect(backend.rebuildCalls).toHaveLength(0)
+    expect(session.cwd).toBe('/tmp/proj/.worktrees/abc')
+
+    backend.resolveSend?.()
+    await pending
+
+    const p2 = session.send({ content: 'after', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    expect(backend.rebuildCalls[0].cwd).toBe('/tmp/proj/.worktrees/abc')
+    backend.resolveSend?.()
+    await p2
+  })
+
+  it('switchCwd is a no-op when target matches current cwd', async () => {
+    const { session, backend } = makeSession()
+    const p0 = session.send({ content: 'boot', clientMessageId: 'u0' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p0
+    await session.switchCwd('/tmp/proj')
+    expect(backend.rebuildCalls).toHaveLength(0)
+  })
+
   it('rebuilds backend with new config after updateProviderConfig on next send', async () => {
     const { session, backend } = makeSession()
     const p0 = session.send({ content: 'boot', clientMessageId: 'u0' })

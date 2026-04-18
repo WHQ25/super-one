@@ -337,8 +337,6 @@ export class AgentService {
     automationId?: string
     automationName?: string
   }): Promise<{ sessionId: string }> {
-    if (!this.codexRun) throw new Error('Codex runtime not configured')
-
     const sessionId = `codex-auto-${Date.now()}`
     const userMessageId = `user_${Date.now()}`
     const assistantMessageId = `auto-${Date.now()}`
@@ -349,45 +347,24 @@ export class AgentService {
       } catch { /* ignore */ }
     }
 
-    const { userMessage, assistantMessage } = this.beginCodexTurn(projectPath, sessionId, {
-      userMessageId,
-      userText: options.content,
-      assistantMessageId,
-      providerId: 'local',
+    const mgr = this.requireSessionManager()
+    const session = mgr.createSession({
+      projectPath,
+      providerId: 'codex-base',
+      id: sessionId,
     })
 
-    this.broadcastEventToRenderer({ type: 'message_start', message: userMessage, projectPath, sessionId })
-    this.broadcastEventToRenderer({ type: 'message_start', message: assistantMessage, projectPath, sessionId })
-    this.broadcastEventToRenderer({ type: 'status_change', status: 'streaming', projectPath, sessionId })
-
-    const runStart = Date.now()
-    try {
-      const result = await this.codexRun(sessionId, projectPath, {
-        prompt: options.content,
-        model: options.model,
-        reasoningEffort: options.reasoningEffort,
-        permissionPreset: options.permissionPreset,
-      })
-      if (result) {
-        this.completeCodexTurn(sessionId, {
-          messageId: assistantMessageId,
-          result,
-          durationMs: Date.now() - runStart,
-          fallbackText: 'Codex completed without returning text.',
-        })
-      }
-      this.broadcastEventToRenderer({ type: 'message_complete', messageId: assistantMessageId, projectPath, sessionId })
-      this.broadcastEventToRenderer({ type: 'status_change', status: 'idle', projectPath, sessionId })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.failCodexTurn(sessionId, {
-        messageId: assistantMessageId,
-        status: /interrupt|abort/i.test(message) ? 'interrupted' : 'error',
-        text: /interrupt|abort/i.test(message) ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
-      })
-      this.broadcastEventToRenderer({ type: 'status_change', status: 'idle', projectPath, sessionId })
-      throw error
-    }
+    await session.send({
+      content: options.content,
+      clientMessageId: userMessageId,
+      assistantMessageId,
+      model: options.model,
+      effort: options.reasoningEffort as SendMessageRequest['effort'] | undefined,
+      codex: {
+        permissionPreset: options.permissionPreset as CodexPermissionPreset | undefined,
+        reasoningEffort: options.reasoningEffort as CodexReasoningEffort | undefined,
+      },
+    })
 
     return { sessionId }
   }

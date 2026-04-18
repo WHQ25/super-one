@@ -2420,6 +2420,111 @@ describe('codex usage semantics', () => {
     expect(session.contextTokens).toBe(70)
     expect(session.streamingTokens).toEqual({ input: 1, output: 15 })
   })
+
+  it('refreshes lastEventAt for codex progress events', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'codex-progress-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'codex' } as never,
+      }))
+
+      vi.setSystemTime(new Date('2026-01-01T00:00:10.000Z'))
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_usage',
+        messageId: 'codex-progress-1',
+        inputTokens: 70,
+        outputTokens: 15,
+        codexUsage: {
+          totalInputTokens: 1100,
+          totalCachedInputTokens: 560,
+          totalOutputTokens: 215,
+          lastInputTokens: 70,
+          lastCachedInputTokens: 69,
+          lastOutputTokens: 15,
+          reasoningOutputTokens: 55,
+          contextWindow: 258400,
+        },
+      }))
+
+      expect(getActiveDraftSession('/test')!.lastEventAt).toBe(new Date('2026-01-01T00:00:10.000Z').getTime())
+
+      vi.setSystemTime(new Date('2026-01-01T00:00:20.000Z'))
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'codex_item_delta',
+        messageId: 'codex-progress-1',
+        phase: 'updated',
+        item: { id: 'agent-msg-1', type: 'agent_message', text: 'working' } as never,
+      }))
+
+      expect(getActiveDraftSession('/test')!.lastEventAt).toBe(new Date('2026-01-01T00:00:20.000Z').getTime())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('normalizes codex message_complete metadata from session-manager events', () => {
+    setupProject('/test')
+    patchDraftSession('/test', { sessionProvider: 'codex', preferredProvider: 'codex' })
+
+    const usage = {
+      totalInputTokens: 1100,
+      totalCachedInputTokens: 560,
+      totalOutputTokens: 215,
+      lastInputTokens: 70,
+      lastCachedInputTokens: 69,
+      lastOutputTokens: 15,
+      reasoningOutputTokens: 55,
+      contextWindow: 258400,
+    }
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'codex-complete-1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'codex' } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_usage',
+      messageId: 'codex-complete-1',
+      inputTokens: usage.lastInputTokens,
+      outputTokens: usage.lastOutputTokens,
+      codexUsage: usage,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_complete',
+      messageId: 'codex-complete-1',
+      metadata: {
+        codex: {
+          finalResponse: 'all done',
+          durationMs: 23000,
+          threadId: 'thread-1',
+          usage,
+          items: [
+            { id: 'reason-1', type: 'reasoning', text: 'thinking' },
+            { id: 'agent-1', type: 'agent_message', text: 'all done' },
+          ],
+        },
+      } as never,
+    }))
+
+    const session = getActiveDraftSession('/test')!
+    const message = session.messages.find((entry) => entry.id === 'codex-complete-1')!
+
+    expect(message.status).toBe('complete')
+    expect(message.content).toEqual([{ type: 'text', text: 'all done' }])
+    expect(message.metadata?.durationMs).toBe(23000)
+    expect(message.metadata?.consumedTokens).toEqual({ input: 1, output: 15 })
+    expect(message.metadata?.codex).toEqual({
+      threadId: 'thread-1',
+      usage,
+      items: [
+        { id: 'reason-1', type: 'reasoning', text: 'thinking' },
+        { id: 'agent-1', type: 'agent_message', text: 'all done' },
+      ],
+    })
+  })
 })
 
 describe('codex question routing', () => {

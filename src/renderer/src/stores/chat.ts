@@ -527,6 +527,25 @@ export function findLatestCodexUsage(messages: ChatMessage[]): CodexUsageInfo | 
   return null
 }
 
+function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | undefined): {
+  finalResponse?: string
+  durationMs?: number
+  threadId: string | null
+  usage: CodexUsageInfo | null
+  items: CodexThreadItem[]
+} | null {
+  const rawCodex = metadata?.codex
+  if (!rawCodex || typeof rawCodex !== 'object') return null
+  const codex = rawCodex as unknown as Record<string, unknown>
+  return {
+    finalResponse: typeof codex.finalResponse === 'string' ? codex.finalResponse : undefined,
+    durationMs: typeof codex.durationMs === 'number' && Number.isFinite(codex.durationMs) ? codex.durationMs : undefined,
+    threadId: typeof codex.threadId === 'string' || codex.threadId === null ? codex.threadId : null,
+    usage: hasValidCodexUsageSnapshot(codex.usage as CodexUsageInfo | null) ? codex.usage as CodexUsageInfo : null,
+    items: Array.isArray(codex.items) ? codex.items as CodexThreadItem[] : [],
+  }
+}
+
 // --- Apply agent event to a session (pure function) ---
 
 function _patchAgentBlock(messages: ChatMessage[], tid: string, patch: Record<string, unknown>): ChatMessage[] {
@@ -681,6 +700,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       const consumedTokens = isCurrentTurn && (ft.input > 0 || ft.output > 0)
         ? { input: ft.input, output: ft.output }
         : undefined
+      const codexCompletionMeta = getCodexCompletionEventMeta(event.metadata)
       const completingMsg = session.messages.find((m) => m.id === event.messageId)
       const agentToolIds = new Set<string>()
       if (completingMsg) {
@@ -688,15 +708,31 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           if (b.type === 'tool_use' && b.toolName === 'Agent') agentToolIds.add(b.toolUseId)
         }
       }
-      const codexUsage = event.metadata?.codex?.usage ?? null
+      const codexUsage = codexCompletionMeta?.usage ?? event.metadata?.codex?.usage ?? null
       const hasUncompletedAgents = agentToolIds.size > 0 && [...agentToolIds].some((id) => !session.taskProgress[id]?.completed)
       return {
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
+          const prevCodex = msg.metadata?.codex
+          const nextMetadata = codexCompletionMeta
+            ? {
+                ...msg.metadata,
+                ...event.metadata,
+                ...(codexCompletionMeta.durationMs !== undefined ? { durationMs: codexCompletionMeta.durationMs } : {}),
+                codex: {
+                  threadId: codexCompletionMeta.threadId ?? prevCodex?.threadId ?? null,
+                  usage: codexCompletionMeta.usage ?? prevCodex?.usage ?? null,
+                  items: codexCompletionMeta.items.length > 0 ? codexCompletionMeta.items : (prevCodex?.items ?? []),
+                  ...(prevCodex?.planApproval ? { planApproval: prevCodex.planApproval } : {}),
+                },
+                ...(consumedTokens ? { consumedTokens } : {}),
+              }
+            : { ...msg.metadata, ...event.metadata, ...(consumedTokens ? { consumedTokens } : {}) }
           return {
             ...msg,
             status: 'complete' as const,
-            metadata: { ...msg.metadata, ...event.metadata, ...(consumedTokens ? { consumedTokens } : {}) },
+            ...(codexCompletionMeta?.finalResponse ? { content: [{ type: 'text', text: codexCompletionMeta.finalResponse }] } : {}),
+            metadata: nextMetadata,
           }
         }),
         totalCostUsd: newCost,
@@ -921,6 +957,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       if (event.codexUsage) {
         const nextStreamingTokens = accumulateCodexFooterTokens(session.streamingTokens, event.codexUsage, session.codexTurnLastUsage)
         return {
+          lastEventAt: Date.now(),
           streamingTokens: nextStreamingTokens,
           contextTokens: (() => {
             const total = getCodexContextTokens(event.codexUsage)
@@ -931,10 +968,11 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           codexTurnLastUsage: event.codexUsage,
         }
       }
-      return { streamingTokens: { input: event.inputTokens, output: event.outputTokens } }
+      return { lastEventAt: Date.now(), streamingTokens: { input: event.inputTokens, output: event.outputTokens } }
 
     case 'codex_thread_started':
       return {
+        lastEventAt: Date.now(),
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           const prevCodex = msg.metadata?.codex ?? { threadId: null, usage: null, items: [] }
@@ -953,6 +991,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
 
     case 'codex_item_delta':
       return {
+        lastEventAt: Date.now(),
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           const prevCodex = msg.metadata?.codex ?? { threadId: null, usage: null, items: [] }

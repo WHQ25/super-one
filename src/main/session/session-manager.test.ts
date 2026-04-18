@@ -5,11 +5,17 @@ import type { BackendStartOptions, HarnessId, SessionBackend, SessionProvider } 
 const hoisted = vi.hoisted(() => ({
   providers: new Map<string, SessionProvider>(),
   backendsCreated: [] as SessionBackend[],
+  existsSyncMock: vi.fn<(path: string) => boolean>(() => true),
 }))
 
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
+
+vi.mock('fs', async (importActual) => {
+  const actual = (await importActual()) as Record<string, unknown>
+  return { ...actual, existsSync: hoisted.existsSyncMock }
+})
 
 vi.mock('./session-provider-repo', () => ({
   getSessionProvider: (id: string) => hoisted.providers.get(id) ?? null,
@@ -99,6 +105,8 @@ describe('SessionManager', () => {
   beforeEach(() => {
     hoisted.providers.clear()
     hoisted.backendsCreated.length = 0
+    hoisted.existsSyncMock.mockReset()
+    hoisted.existsSyncMock.mockReturnValue(true)
     seedProvider('claude-base', 'claude')
     seedProvider('codex-base', 'codex')
     mgr = new SessionManagerImpl()
@@ -479,6 +487,25 @@ describe('SessionManager', () => {
       expect(session.snapshot.isWorktree).toBe(true)
       expect(session.snapshot.worktreePath).toBe('/proj-wt/.worktrees/abc')
       expect(session.snapshot.gitBranch).toBe('feature/x')
+    })
+
+    it('falls back to projectPath when saved worktree path no longer exists', () => {
+      hoisted.existsSyncMock.mockImplementation((path: string) => path === '/proj-wt')
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-wt',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        worktreePath: '/proj-wt/.worktrees/missing',
+        gitBranch: 'feature/x',
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const session = mgr2.resumeSession('sid-wt-missing')
+      expect(session.snapshot.cwd).toBe('/proj-wt')
+      expect(session.snapshot.isWorktree).toBe(false)
+      expect(session.snapshot.worktreePath).toBeNull()
     })
   })
 

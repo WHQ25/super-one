@@ -492,6 +492,7 @@ export class Session implements SessionContract {
     this._cwd = nextCwd
     if (gitBranch !== undefined) this._gitBranch = gitBranch
     this.emitInitReady()
+    this.notifyStateChange()
     if (!this.backendStarted) return
     if (this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting') {
       this._needsRebuild = true

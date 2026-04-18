@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { existsSync } from 'fs'
 import { homedir } from 'os'
 import type { AgentEvent, ChatMessage } from '../../shared/agent-types'
 import log from '../logger'
@@ -36,6 +37,11 @@ export interface SessionManagerPersistence {
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
   loadSession?: (sessionId: string) => LoadedSessionData | null
   resolveProviderConfig?: (provider: SessionProvider) => unknown
+}
+
+function resolveResumedCwd(data: LoadedSessionData): string {
+  if (!data.worktreePath) return data.projectPath
+  return existsSync(data.worktreePath) ? data.worktreePath : data.projectPath
 }
 
 export class SessionManagerImpl implements SessionManagerContract {
@@ -186,7 +192,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     const providerConfig = this.persistence.resolveProviderConfig
       ? this.persistence.resolveProviderConfig(provider)
       : provider.config
-    const resumedCwd = data.worktreePath ?? data.projectPath
+    const resumedCwd = resolveResumedCwd(data)
     const session = new Session({
       id: sessionId,
       projectPath: data.projectPath,

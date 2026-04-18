@@ -739,6 +739,27 @@ describe('Session persist hook', () => {
     expect(backend.rebuildCalls).toHaveLength(0)
   })
 
+  it('switchCwd notifies state change immediately when session has messages', async () => {
+    const onStateChange = vi.fn<(snapshot: SessionStateChange) => void>()
+    const { session } = makeSession({
+      initialMessages: [
+        { id: 'u0', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '', providerId: 'claude-base' },
+      ],
+      onStateChange,
+    })
+
+    await session.switchCwd('/tmp/proj/.worktrees/abc', 'feature/x')
+
+    expect(onStateChange).toHaveBeenCalledTimes(1)
+    expect(onStateChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      sid: 'sess-1',
+      projectPath: '/tmp/proj',
+      isWorktree: true,
+      worktreePath: '/tmp/proj/.worktrees/abc',
+      gitBranch: 'feature/x',
+    }))
+  })
+
   describe('worktree snapshot fields', () => {
     it('snapshot.isWorktree is false when cwd === projectPath', () => {
       const { session } = makeSession()

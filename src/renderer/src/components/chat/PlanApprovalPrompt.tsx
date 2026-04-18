@@ -280,12 +280,13 @@ export function PlanApprovalPrompt() {
               ? <CheckCircle2 className="size-3.5 shrink-0 text-purple-400" />
               : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
             }
-            <span>Switch to{' '}
+            <span className="flex min-w-0 items-center gap-1">
+              <span>Switch to</span>
               <span className="inline-flex items-center gap-0.5 font-medium text-purple-400">
                 <FastForward className="size-3" />
                 Accept Edits
               </span>
-              {' '}after approval
+              <span>after approval</span>
             </span>
             <Kbd variant="square" className="ml-auto">1</Kbd>
           </button>

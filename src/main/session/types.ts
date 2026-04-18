@@ -52,6 +52,7 @@ export interface SessionCreateOptions {
   additionalDirectories?: string[]
   resumeFrom?: string
   title?: string
+  gitBranch?: string | null
 }
 
 export interface SessionSnapshot {
@@ -69,6 +70,9 @@ export interface SessionSnapshot {
   readonly totalCostUsd: number
   readonly contextTokens: number
   readonly title: string | null
+  readonly isWorktree: boolean
+  readonly worktreePath: string | null
+  readonly gitBranch: string | null
 }
 
 export interface SessionStateChange {
@@ -79,6 +83,9 @@ export interface SessionStateChange {
   totalCostUsd: number
   contextTokens: number
   title: string | null
+  isWorktree: boolean
+  worktreePath: string | null
+  gitBranch: string | null
 }
 
 export interface BackendStartOptions {
@@ -196,7 +203,7 @@ export interface Session {
   getPendingInteractions(): AgentEvent[]
   dispatchBackendCommand(cmd: BackendCommand): Promise<void>
   updateProviderConfig(nextConfig: unknown): void
-  switchCwd(nextCwd: string): Promise<void>
+  switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void>
   isStreaming(): boolean
   truncateMessagesAt(checkpointId: string): void
   dispose(): Promise<void>

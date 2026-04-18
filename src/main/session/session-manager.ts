@@ -25,6 +25,8 @@ export interface LoadedSessionData {
   messages: ChatMessage[]
   totalCostUsd: number
   contextTokens: number
+  worktreePath?: string | null
+  gitBranch?: string | null
 }
 
 export interface SessionManagerPersistence {
@@ -122,6 +124,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       effort: opts.effort,
       model: opts.model ?? undefined,
       additionalDirectories: opts.additionalDirectories,
+      gitBranch: opts.gitBranch ?? null,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),
@@ -183,10 +186,11 @@ export class SessionManagerImpl implements SessionManagerContract {
     const providerConfig = this.persistence.resolveProviderConfig
       ? this.persistence.resolveProviderConfig(provider)
       : provider.config
+    const resumedCwd = data.worktreePath ?? data.projectPath
     const session = new Session({
       id: sessionId,
       projectPath: data.projectPath,
-      cwd: data.projectPath,
+      cwd: resumedCwd,
       providerId: provider.id,
       harnessId: provider.harnessId,
       providerConfig,
@@ -195,6 +199,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       initialMessages: data.messages,
       initialTotalCostUsd: data.totalCostUsd,
       initialContextTokens: data.contextTokens,
+      gitBranch: data.gitBranch ?? null,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),

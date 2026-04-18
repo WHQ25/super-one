@@ -103,6 +103,9 @@ const sessionManager = new SessionManagerImpl({
         totalCostUsd: snapshot.totalCostUsd,
         contextTokens: snapshot.contextTokens,
         title: snapshot.title ?? undefined,
+        isWorktree: snapshot.isWorktree,
+        worktreePath: snapshot.worktreePath,
+        gitBranch: snapshot.gitBranch,
       })
     } catch (err) {
       log.warn('[sessionManager] saveSessionStateBySid failed:', err)
@@ -125,6 +128,8 @@ const sessionManager = new SessionManagerImpl({
       messages: loaded.messages,
       totalCostUsd: loaded.record.totalCostUsd,
       contextTokens: loaded.record.contextTokens,
+      worktreePath: loaded.record.worktreePath,
+      gitBranch: loaded.record.gitBranch,
     }
   },
 })
@@ -262,7 +267,7 @@ function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Arr
   setAllowedDirectories(appId, dirs)
 }
 
-function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string) {
+function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string, gitBranch?: string | null) {
   const existing = sessionManager.getSession(sessionId)
   if (existing) {
     if (existing.snapshot.harnessId !== 'codex') {
@@ -276,6 +281,7 @@ function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: s
     id: sessionId,
     providerId: 'codex-base',
     cwd,
+    gitBranch: gitBranch ?? null,
   })
   return fresh
 }
@@ -397,7 +403,7 @@ function registerIpcHandlers(): void {
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const persistedUserMessageId = userMessageId ?? `user_${Date.now()}`
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd)
+      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? prompt,
         model,
@@ -519,7 +525,7 @@ function registerIpcHandlers(): void {
       worktreePath?: string,
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd)
+      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? '/review',
         model,
@@ -556,7 +562,7 @@ function registerIpcHandlers(): void {
       worktreePath?: string,
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd)
+      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? '/compact',
         model,
@@ -715,7 +721,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, async (_event, folderPath: string, baseBranch: string | null, carryLocalChanges?: boolean) => {
     try {
       if (baseBranch === null) {
-        await agentService.switchCwd(folderPath, folderPath)
+        await agentService.switchCwd(folderPath, folderPath, null)
         return { ok: true as const, path: folderPath }
       }
       const repoRoot = resolve(folderPath, await gitRun(folderPath, ['rev-parse', '--git-common-dir']))
@@ -741,7 +747,7 @@ function registerIpcHandlers(): void {
         await gitRun(wtPath, ['stash', 'apply', stashSha])
       }
 
-      await agentService.switchCwd(folderPath, wtPath)
+      await agentService.switchCwd(folderPath, wtPath, baseBranch)
       return { ok: true as const, path: wtPath }
     } catch (err) {
       return { ok: false as const, error: gitErrorMessage(err) }

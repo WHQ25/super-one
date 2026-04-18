@@ -739,6 +739,57 @@ describe('Session persist hook', () => {
     expect(backend.rebuildCalls).toHaveLength(0)
   })
 
+  describe('worktree snapshot fields', () => {
+    it('snapshot.isWorktree is false when cwd === projectPath', () => {
+      const { session } = makeSession()
+      expect(session.snapshot.isWorktree).toBe(false)
+      expect(session.snapshot.worktreePath).toBeNull()
+      expect(session.snapshot.gitBranch).toBeNull()
+    })
+
+    it('snapshot.isWorktree is true when cwd differs from projectPath', () => {
+      const { session } = makeSession({ cwd: '/tmp/proj/.worktrees/abc', gitBranch: 'feature/x' })
+      expect(session.snapshot.isWorktree).toBe(true)
+      expect(session.snapshot.worktreePath).toBe('/tmp/proj/.worktrees/abc')
+      expect(session.snapshot.gitBranch).toBe('feature/x')
+    })
+
+    it('switchCwd with gitBranch updates both cwd and gitBranch in snapshot', async () => {
+      const { session } = makeSession()
+      await session.switchCwd('/tmp/proj/.worktrees/abc', 'feature/x')
+      expect(session.snapshot.cwd).toBe('/tmp/proj/.worktrees/abc')
+      expect(session.snapshot.isWorktree).toBe(true)
+      expect(session.snapshot.worktreePath).toBe('/tmp/proj/.worktrees/abc')
+      expect(session.snapshot.gitBranch).toBe('feature/x')
+    })
+
+    it('switchCwd back to projectPath with null gitBranch clears worktree state', async () => {
+      const { session } = makeSession({ cwd: '/tmp/proj/.worktrees/abc', gitBranch: 'feature/x' })
+      await session.switchCwd('/tmp/proj', null)
+      expect(session.snapshot.isWorktree).toBe(false)
+      expect(session.snapshot.worktreePath).toBeNull()
+      expect(session.snapshot.gitBranch).toBeNull()
+    })
+
+    it('notifyStateChange forwards isWorktree/worktreePath/gitBranch', async () => {
+      const captured: Array<{ isWorktree: boolean; worktreePath: string | null; gitBranch: string | null }> = []
+      const { session, backend } = makeSession({
+        cwd: '/tmp/proj/.worktrees/abc',
+        gitBranch: 'feature/x',
+        onStateChange: (s) => { captured.push({ isWorktree: s.isWorktree, worktreePath: s.worktreePath, gitBranch: s.gitBranch }) },
+      })
+      const p = session.send({ content: 'hi', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+      backend.emit({ type: 'message_complete', messageId: 'a1' } as AgentEvent)
+      backend.resolveSend?.()
+      await p
+      const last = captured[captured.length - 1]
+      expect(last.isWorktree).toBe(true)
+      expect(last.worktreePath).toBe('/tmp/proj/.worktrees/abc')
+      expect(last.gitBranch).toBe('feature/x')
+    })
+  })
+
   describe('init_ready event lifecycle', () => {
     function makeResources(cwd: string) {
       return {

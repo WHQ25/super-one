@@ -54,6 +54,7 @@ export interface SessionConstructorOptions {
   additionalDirectories?: string[]
   title?: string | null
   createdAt?: number
+  gitBranch?: string | null
   resumedProviderSessionId?: string
   initialMessages?: ChatMessage[]
   initialTotalCostUsd?: number
@@ -84,6 +85,9 @@ export class Session implements SessionContract {
 
   private _cwd: string
   get cwd(): string { return this._cwd }
+
+  private _gitBranch: string | null = null
+  get gitBranch(): string | null { return this._gitBranch }
 
   private backend: SessionBackend
   private providerConfig: unknown
@@ -138,6 +142,7 @@ export class Session implements SessionContract {
     if (opts.initialMessages?.length) this._messages = [...opts.initialMessages]
     this._totalCostUsd = opts.initialTotalCostUsd ?? 0
     this._contextTokens = opts.initialContextTokens ?? 0
+    this._gitBranch = opts.gitBranch ?? null
     this.homedir = opts.homedir ?? ''
     this.getProjectResources = opts.getProjectResources
     this.invalidateProjectResources = opts.invalidateProjectResources
@@ -156,6 +161,7 @@ export class Session implements SessionContract {
   }
 
   get snapshot(): SessionSnapshot {
+    const isWorktree = this._cwd !== this.projectPath
     return {
       id: this.id,
       projectPath: this.projectPath,
@@ -171,6 +177,9 @@ export class Session implements SessionContract {
       totalCostUsd: this._totalCostUsd,
       contextTokens: this._contextTokens,
       title: this.computeTitle(),
+      isWorktree,
+      worktreePath: isWorktree ? this._cwd : null,
+      gitBranch: this._gitBranch,
     }
   }
 
@@ -476,10 +485,12 @@ export class Session implements SessionContract {
     this._needsRebuild = true
   }
 
-  async switchCwd(nextCwd: string): Promise<void> {
+  async switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void> {
     this.assertNotDisposed()
-    if (this._cwd === nextCwd) return
+    const branchChanged = gitBranch !== undefined && gitBranch !== this._gitBranch
+    if (this._cwd === nextCwd && !branchChanged) return
     this._cwd = nextCwd
+    if (gitBranch !== undefined) this._gitBranch = gitBranch
     this.emitInitReady()
     if (!this.backendStarted) return
     if (this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting') {
@@ -646,6 +657,7 @@ export class Session implements SessionContract {
     if (!this.onStateChange) return
     if (this._messages.length === 0) return
     try {
+      const isWorktree = this._cwd !== this.projectPath
       this.onStateChange({
         sid: this.id,
         projectPath: this.projectPath,
@@ -654,6 +666,9 @@ export class Session implements SessionContract {
         totalCostUsd: this._totalCostUsd,
         contextTokens: this._contextTokens,
         title: this.computeTitle(),
+        isWorktree,
+        worktreePath: isWorktree ? this._cwd : null,
+        gitBranch: this._gitBranch,
       })
     } catch (err) {
       log.warn('[Session] onStateChange hook error:', err)

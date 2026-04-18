@@ -161,6 +161,9 @@ export interface SaveSessionStateInput {
   totalCostUsd: number
   contextTokens: number
   title?: string
+  isWorktree?: boolean
+  worktreePath?: string | null
+  gitBranch?: string | null
 }
 
 export function saveSessionStateBySid(input: SaveSessionStateInput): void {
@@ -172,9 +175,15 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   const now = new Date().toISOString()
 
   const upsertSession = db.prepare(`
-    INSERT INTO sessions (id, project_id, provider_id, provider, title, created_at, last_user_message_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO NOTHING
+    INSERT INTO sessions (
+      id, project_id, provider_id, provider, title, created_at, last_user_message_at,
+      is_worktree, git_branch, worktree_path
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      is_worktree = excluded.is_worktree,
+      git_branch = excluded.git_branch,
+      worktree_path = excluded.worktree_path
   `)
 
   const upsertMsg = db.prepare(`
@@ -215,6 +224,9 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       input.title ?? null,
       now,
       lastUserMessageAt ?? now,
+      input.isWorktree ? 1 : 0,
+      input.gitBranch ?? null,
+      input.worktreePath ?? null,
     )
     deleteStale.run(input.sid)
     for (let i = 0; i < input.messages.length; i++) {

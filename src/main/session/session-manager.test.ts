@@ -461,6 +461,25 @@ describe('SessionManager', () => {
       expect(session.snapshot.harnessId).toBe('codex')
       expect(session.snapshot.providerSessionId).toBe('thread-abc')
     })
+
+    it('restores worktree cwd and gitBranch from saved record', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-wt',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        worktreePath: '/proj-wt/.worktrees/abc',
+        gitBranch: 'feature/x',
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const session = mgr2.resumeSession('sid-wt')
+      expect(session.snapshot.cwd).toBe('/proj-wt/.worktrees/abc')
+      expect(session.snapshot.isWorktree).toBe(true)
+      expect(session.snapshot.worktreePath).toBe('/proj-wt/.worktrees/abc')
+      expect(session.snapshot.gitBranch).toBe('feature/x')
+    })
   })
 
   describe('project resources cache', () => {

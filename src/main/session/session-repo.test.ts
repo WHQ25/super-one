@@ -297,5 +297,46 @@ describe('session-repo', () => {
       expect(loaded!.record.title).toBe('hello world')
       expect(loaded!.messages).toHaveLength(1)
     })
+
+    it('persists worktree fields on lazy upsert', () => {
+      const messages: ChatMessage[] = [
+        { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'claude' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-wt',
+        projectPath: '/tmp/proj',
+        providerId: 'claude-base',
+        messages,
+        totalCostUsd: 0,
+        contextTokens: 0,
+        isWorktree: true,
+        worktreePath: '/tmp/proj/.worktrees/abc',
+        gitBranch: 'feature/x',
+      })
+      const loaded = loadSessionStateBySid('s-wt')
+      expect(loaded).not.toBeNull()
+      expect(loaded!.record.isWorktree).toBe(true)
+      expect(loaded!.record.worktreePath).toBe('/tmp/proj/.worktrees/abc')
+      expect(loaded!.record.gitBranch).toBe('feature/x')
+    })
+
+    it('updates worktree fields on subsequent save when cwd changes', () => {
+      const base = {
+        sid: 's-wt-update',
+        projectPath: '/tmp/proj',
+        providerId: 'claude-base' as const,
+        messages: [
+          { id: 'u1', role: 'user' as const, status: 'complete' as const, content: [{ type: 'text' as const, text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'claude' },
+        ],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }
+      saveSessionStateBySid({ ...base, isWorktree: true, worktreePath: '/tmp/proj/.worktrees/abc', gitBranch: 'feature/x' })
+      saveSessionStateBySid({ ...base, isWorktree: false, worktreePath: null, gitBranch: null })
+      const loaded = loadSessionStateBySid('s-wt-update')
+      expect(loaded!.record.isWorktree).toBe(false)
+      expect(loaded!.record.worktreePath).toBeNull()
+      expect(loaded!.record.gitBranch).toBeNull()
+    })
   })
 })

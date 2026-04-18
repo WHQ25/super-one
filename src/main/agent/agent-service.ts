@@ -745,7 +745,7 @@ export class AgentService {
       case 'activate_worktree': {
         try {
           if (command.baseBranch === null) {
-            await this.switchCwd(command.projectPath, command.projectPath)
+            await this.switchCwd(command.projectPath, command.projectPath, null)
             await respond?.(command.requestId, { ok: true, path: command.projectPath })
             break
           }
@@ -772,7 +772,7 @@ export class AgentService {
             await this.gitRun(wtPath, ['stash', 'apply', stashSha])
           }
 
-          await this.switchCwd(command.projectPath, wtPath)
+          await this.switchCwd(command.projectPath, wtPath, command.baseBranch)
           await respond?.(command.requestId, { ok: true, path: wtPath })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, error: (err as Error).message })
@@ -832,9 +832,15 @@ export class AgentService {
     return this.sessionManager
   }
 
-  private getOrCreateActiveSession(projectPath: string, requestedSid?: string): import('../session/types').Session {
+  private getOrCreateActiveSession(
+    projectPath: string,
+    requestedSid?: string,
+    hint?: { worktreePath?: string | null; gitBranch?: string | null },
+  ): import('../session/types').Session {
     const mgr = this.requireSessionManager()
     const activeCwd = mgr.getActiveSession(projectPath)?.cwd
+    const cwd = hint?.worktreePath ?? activeCwd
+    const gitBranch = hint?.gitBranch ?? null
     if (requestedSid) {
       const existing = mgr.getSession(requestedSid)
       if (existing) {
@@ -844,12 +850,12 @@ export class AgentService {
       try {
         return mgr.resumeSession(requestedSid)
       } catch {
-        return mgr.createSession({ projectPath, cwd: activeCwd, providerId: 'claude-base', id: requestedSid })
+        return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', id: requestedSid, gitBranch })
       }
     }
     const active = mgr.getActiveSession(projectPath)
     if (active) return active
-    return mgr.createSession({ projectPath, cwd: activeCwd, providerId: 'claude-base' })
+    return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', gitBranch })
   }
 
   setup(): void {
@@ -858,7 +864,10 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SEND_MESSAGE, async (_event, projectPath: string, request: SendMessageRequest) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      const session = this.getOrCreateActiveSession(projectPath, request.sessionId)
+      const session = this.getOrCreateActiveSession(projectPath, request.sessionId, {
+        worktreePath: request.worktreePath,
+        gitBranch: request.gitBranch,
+      })
       trace('session.lifecycle', 'ipc_sendMessage', {
         projectPath,
         sessionId: session.snapshot.id,
@@ -1440,12 +1449,12 @@ export class AgentService {
     })
   }
 
-  async switchCwd(projectPath: string, newCwd: string): Promise<void> {
+  async switchCwd(projectPath: string, newCwd: string, gitBranch?: string | null): Promise<void> {
     const mgr = this.sessionManager
     if (!mgr) return
     const session = mgr.getActiveSession(projectPath)
     if (!session) return
-    await session.switchCwd(newCwd)
+    await session.switchCwd(newCwd, gitBranch)
   }
 
   async openFolder(cwd: string): Promise<void> {

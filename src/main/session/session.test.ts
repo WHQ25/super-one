@@ -739,6 +739,142 @@ describe('Session persist hook', () => {
     expect(backend.rebuildCalls).toHaveLength(0)
   })
 
+  describe('init_ready event lifecycle', () => {
+    function makeResources(cwd: string) {
+      return {
+        cwd,
+        skills: [{ name: `skill@${cwd}`, description: 'd', argumentHint: '', isSkill: true }],
+        projectCommands: [{ name: `cmd@${cwd}`, description: '', argumentHint: '', isSkill: false }],
+        projectAgents: [{ name: `agent@${cwd}`, description: '', source: 'project' as const }],
+        additionalDirectories: [`${cwd}/extra`],
+      }
+    }
+
+    it('emits init_ready synchronously during construction with discovered resources', () => {
+      const captured: AgentEvent[] = []
+      const backend = new FakeBackend()
+      const session = new Session({
+        id: 'sess-init',
+        projectPath: '/proj',
+        cwd: '/proj',
+        providerId: 'claude-base',
+        harnessId: 'claude',
+        providerConfig: { apiKey: 'sk-x' },
+        backend,
+        homedir: '/home/u',
+        getProjectResources: makeResources,
+      })
+      session.on((e) => captured.push(e))
+      const initEvent = captured.find((e) => e.type === 'init_ready')
+      expect(initEvent).toBeDefined()
+      const ev = initEvent as Extract<AgentEvent, { type: 'init_ready' }>
+      expect(ev.cwd).toBe('/proj')
+      expect(ev.homedir).toBe('/home/u')
+      expect(ev.skills[0].name).toBe('skill@/proj')
+      expect(ev.additionalDirectories).toEqual(['/proj/extra'])
+    })
+
+    it('does NOT emit init_ready for codex harness', () => {
+      const backend = new FakeBackend()
+      const session = new Session({
+        id: 'sess-codex',
+        projectPath: '/p',
+        cwd: '/p',
+        providerId: 'codex-base',
+        harnessId: 'codex',
+        providerConfig: {},
+        backend,
+        homedir: '/home/u',
+        getProjectResources: makeResources,
+      })
+      const captured: AgentEvent[] = []
+      session.on((e) => captured.push(e))
+      expect(captured.find((e) => e.type === 'init_ready')).toBeUndefined()
+    })
+
+    it('switchCwd re-emits init_ready with new cwd resources', async () => {
+      const backend = new FakeBackend()
+      const session = new Session({
+        id: 'sess-sw',
+        projectPath: '/proj',
+        cwd: '/proj',
+        providerId: 'claude-base',
+        harnessId: 'claude',
+        providerConfig: {},
+        backend,
+        homedir: '/h',
+        getProjectResources: makeResources,
+      })
+      const captured: AgentEvent[] = []
+      session.on((e) => { if (e.type === 'init_ready') captured.push(e) })
+      expect(captured).toHaveLength(1)
+      expect((captured[0] as Extract<AgentEvent, { type: 'init_ready' }>).cwd).toBe('/proj')
+
+      await session.switchCwd('/proj/wt-1')
+      expect(captured).toHaveLength(2)
+      expect((captured[1] as Extract<AgentEvent, { type: 'init_ready' }>).cwd).toBe('/proj/wt-1')
+      expect((captured[1] as Extract<AgentEvent, { type: 'init_ready' }>).skills[0].name).toBe('skill@/proj/wt-1')
+    })
+
+    it('on() subscribed AFTER construction still receives init_ready (replay)', () => {
+      const backend = new FakeBackend()
+      const session = new Session({
+        id: 'sess-replay',
+        projectPath: '/proj',
+        cwd: '/proj',
+        providerId: 'claude-base',
+        harnessId: 'claude',
+        providerConfig: {},
+        backend,
+        homedir: '/h',
+        getProjectResources: makeResources,
+      })
+      const captured: AgentEvent[] = []
+      session.on((e) => captured.push(e))
+      expect(captured.find((e) => e.type === 'init_ready')).toBeDefined()
+    })
+
+    it('getReplayEvents returns latest cached init_ready after switchCwd', async () => {
+      const backend = new FakeBackend()
+      const session = new Session({
+        id: 'sess-rep',
+        projectPath: '/proj',
+        cwd: '/proj',
+        providerId: 'claude-base',
+        harnessId: 'claude',
+        providerConfig: {},
+        backend,
+        homedir: '/h',
+        getProjectResources: makeResources,
+      })
+      await session.switchCwd('/proj/wt-after')
+      const replays = session.getReplayEvents()
+      expect(replays).toHaveLength(1)
+      const ev = replays[0] as Extract<AgentEvent, { type: 'init_ready' }>
+      expect(ev.cwd).toBe('/proj/wt-after')
+    })
+
+    it('init_ready event is tagged with sessionId and projectPath', () => {
+      const backend = new FakeBackend()
+      const session = new Session({
+        id: 'sess-tagged',
+        projectPath: '/proj-tag',
+        cwd: '/proj-tag',
+        providerId: 'claude-base',
+        harnessId: 'claude',
+        providerConfig: {},
+        backend,
+        homedir: '/h',
+        getProjectResources: makeResources,
+      })
+      const captured: AgentEvent[] = []
+      session.on((e) => captured.push(e))
+      const ev = captured.find((e) => e.type === 'init_ready') as AgentEvent & { sessionId?: string; projectPath?: string }
+      expect(ev.sessionId).toBe('sess-tagged')
+      expect(ev.projectPath).toBe('/proj-tag')
+    })
+  })
+
   it('rebuilds backend with new config after updateProviderConfig on next send', async () => {
     const { session, backend } = makeSession()
     const p0 = session.send({ content: 'boot', clientMessageId: 'u0' })

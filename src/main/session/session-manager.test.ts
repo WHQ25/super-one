@@ -16,10 +16,20 @@ vi.mock('./session-provider-repo', () => ({
 }))
 
 vi.mock('../agent/discover-resources', () => ({
-  discoverSkills: vi.fn(() => [{ name: 'skill-1', description: 'd', argumentHint: '', isSkill: true }]),
-  discoverProjectCommands: vi.fn(() => []),
-  discoverProjectAgents: vi.fn(() => []),
+  discoverSkills: vi.fn((cwd: string) => [{ name: `skill-${cwd}`, description: 'd', argumentHint: '', isSkill: true }]),
+  discoverProjectCommands: vi.fn((cwd: string) => [{ name: `cmd-${cwd}`, description: '', argumentHint: '', isSkill: false }]),
+  discoverProjectAgents: vi.fn((cwd: string) => [{ name: `agent-${cwd}`, description: '', source: 'project' }]),
 }))
+
+vi.mock('../agent/project-additional-dirs', () => ({
+  readProjectAdditionalDirs: vi.fn((cwd: string) => [`${cwd}/extra-dir`]),
+  writeProjectAdditionalDirs: vi.fn(),
+}))
+
+vi.mock('os', async (importActual) => {
+  const actual = (await importActual()) as Record<string, unknown>
+  return { ...actual, homedir: () => '/fake/home' }
+})
 
 class FakeBackend implements SessionBackend {
   readonly kind: HarnessId
@@ -178,9 +188,10 @@ describe('SessionManager', () => {
       b1.emit({ type: 'status_change', status: 'streaming' })
       b2.emit({ type: 'status_change', status: 'idle' })
 
-      expect(received1).toHaveLength(1)
-      expect(received1[0]?.type).toBe('status_change')
-      expect(received2).toHaveLength(1)
+      const types1 = received1.map((e) => e.type)
+      const types2 = received2.map((e) => e.type)
+      expect(types1).toEqual(['init_ready', 'status_change'])
+      expect(types2).toEqual(['init_ready', 'status_change'])
     })
 
     it('onAny receives all events tagged with sessionId', () => {
@@ -190,7 +201,10 @@ describe('SessionManager', () => {
 
       const b = hoisted.backendsCreated[0] as FakeBackend
       b.emit({ type: 'status_change', status: 'streaming' })
-      expect(log).toEqual([{ sid: s.snapshot.id, type: 'status_change' }])
+      expect(log).toEqual([
+        { sid: s.snapshot.id, type: 'init_ready' },
+        { sid: s.snapshot.id, type: 'status_change' },
+      ])
     })
 
     it('injects projectPath into events for onAny/on listeners when missing', () => {
@@ -200,7 +214,8 @@ describe('SessionManager', () => {
 
       const b = hoisted.backendsCreated[0] as FakeBackend
       b.emit({ type: 'status_change', status: 'streaming' })
-      expect((captured[0] as AgentEvent & { projectPath?: string }).projectPath).toBe('/route-test')
+      const statusChange = captured.find((e) => e.type === 'status_change')!
+      expect((statusChange as AgentEvent & { projectPath?: string }).projectPath).toBe('/route-test')
     })
   })
 
@@ -452,6 +467,8 @@ describe('SessionManager', () => {
     it('getProjectResources returns discovered skills', () => {
       const resources = mgr.getProjectResources('/proj')
       expect(resources.skills).toHaveLength(1)
+      expect(resources.skills[0].name).toBe('skill-/proj')
+      expect(resources.additionalDirectories).toEqual(['/proj/extra-dir'])
     })
 
     it('subsequent calls return cached result', () => {
@@ -465,6 +482,94 @@ describe('SessionManager', () => {
       mgr.invalidateProjectResources('/proj')
       const b = mgr.getProjectResources('/proj')
       expect(a).not.toBe(b)
+    })
+
+    it('different cwds get independent cached resources', () => {
+      const a = mgr.getProjectResources('/proj-a')
+      const b = mgr.getProjectResources('/proj-b')
+      expect(a).not.toBe(b)
+      expect(a.skills[0].name).toBe('skill-/proj-a')
+      expect(b.skills[0].name).toBe('skill-/proj-b')
+    })
+
+    it('closeProject invalidates cache for the project and all session cwds', async () => {
+      mgr.createSession({ projectPath: '/wt', cwd: '/wt/wt-1', providerId: 'claude-base' })
+      mgr.getProjectResources('/wt')
+      mgr.getProjectResources('/wt/wt-1')
+      const beforeWt = mgr.getProjectResources('/wt')
+      const beforeWorktree = mgr.getProjectResources('/wt/wt-1')
+      await mgr.closeProject('/wt')
+      const afterWt = mgr.getProjectResources('/wt')
+      const afterWorktree = mgr.getProjectResources('/wt/wt-1')
+      expect(afterWt).not.toBe(beforeWt)
+      expect(afterWorktree).not.toBe(beforeWorktree)
+    })
+  })
+
+  describe('init_ready event', () => {
+    it('createSession immediately emits init_ready for claude harness', () => {
+      const captured: AgentEvent[] = []
+      mgr.onAny((_sid, e) => { if (e.type === 'init_ready') captured.push(e) })
+      const s = mgr.createSession({ projectPath: '/init-test', providerId: 'claude-base' })
+      expect(captured).toHaveLength(1)
+      const ev = captured[0] as Extract<AgentEvent, { type: 'init_ready' }> & { sessionId: string; projectPath: string }
+      expect(ev.cwd).toBe('/init-test')
+      expect(ev.homedir).toBe('/fake/home')
+      expect(ev.skills[0].name).toBe('skill-/init-test')
+      expect(ev.projectCommands[0].name).toBe('cmd-/init-test')
+      expect(ev.projectAgents[0].name).toBe('agent-/init-test')
+      expect(ev.additionalDirectories).toEqual(['/init-test/extra-dir'])
+      expect(ev.sessionId).toBe(s.snapshot.id)
+      expect(ev.projectPath).toBe('/init-test')
+    })
+
+    it('does NOT emit init_ready for codex harness', () => {
+      const captured: AgentEvent[] = []
+      mgr.onAny((_sid, e) => { if (e.type === 'init_ready') captured.push(e) })
+      mgr.createSession({ projectPath: '/codex-test', providerId: 'codex-base' })
+      expect(captured).toHaveLength(0)
+    })
+
+    it('init_ready uses cwd not projectPath when they differ', () => {
+      const captured: AgentEvent[] = []
+      mgr.onAny((_sid, e) => { if (e.type === 'init_ready') captured.push(e) })
+      mgr.createSession({ projectPath: '/proj', cwd: '/proj/worktree-x', providerId: 'claude-base' })
+      const ev = captured[0] as Extract<AgentEvent, { type: 'init_ready' }>
+      expect(ev.cwd).toBe('/proj/worktree-x')
+      expect(ev.skills[0].name).toBe('skill-/proj/worktree-x')
+    })
+
+    it('mgr.on subscribed AFTER createSession still receives init_ready (replay)', () => {
+      const s = mgr.createSession({ projectPath: '/replay', providerId: 'claude-base' })
+      const captured: AgentEvent[] = []
+      mgr.on(s.snapshot.id, (e) => captured.push(e))
+      const types = captured.map((e) => e.type)
+      expect(types).toContain('init_ready')
+    })
+
+    it('mgr.onAny subscribed AFTER createSession still receives init_ready (replay)', () => {
+      mgr.createSession({ projectPath: '/replay-any', providerId: 'claude-base' })
+      const captured: Array<{ sid: string; type: string }> = []
+      mgr.onAny((sid, e) => captured.push({ sid, type: e.type }))
+      expect(captured.some((c) => c.type === 'init_ready')).toBe(true)
+    })
+
+    it('resumeSession also emits init_ready immediately', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/resumed',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [] as ChatMessage[],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const captured: AgentEvent[] = []
+      mgr2.onAny((_sid, e) => { if (e.type === 'init_ready') captured.push(e) })
+      mgr2.resumeSession('sid-resumed')
+      expect(captured).toHaveLength(1)
+      const ev = captured[0] as Extract<AgentEvent, { type: 'init_ready' }>
+      expect(ev.cwd).toBe('/resumed')
     })
   })
 })

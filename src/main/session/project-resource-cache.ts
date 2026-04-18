@@ -5,6 +5,7 @@ export interface DiscoverFns {
   discoverSkills(cwd: string): SlashCommandInfo[]
   discoverProjectCommands(cwd: string): SlashCommandInfo[]
   discoverProjectAgents(cwd: string): AgentInfo[]
+  discoverAdditionalDirectories(cwd: string): string[]
 }
 
 export class ProjectResourceCache {
@@ -12,21 +13,22 @@ export class ProjectResourceCache {
 
   constructor(private discover: DiscoverFns) {}
 
-  get(projectPath: string): ProjectResources {
-    const existing = this.cache.get(projectPath)
+  get(cwd: string): ProjectResources {
+    const existing = this.cache.get(cwd)
     if (existing) return existing
     const resources: ProjectResources = {
-      projectPath,
-      skills: this.discover.discoverSkills(projectPath),
-      projectCommands: this.discover.discoverProjectCommands(projectPath),
-      projectAgents: this.discover.discoverProjectAgents(projectPath),
+      cwd,
+      skills: this.discover.discoverSkills(cwd),
+      projectCommands: this.discover.discoverProjectCommands(cwd),
+      projectAgents: this.discover.discoverProjectAgents(cwd),
+      additionalDirectories: this.discover.discoverAdditionalDirectories(cwd),
     }
-    this.cache.set(projectPath, resources)
+    this.cache.set(cwd, resources)
     return resources
   }
 
-  invalidate(projectPath: string): void {
-    this.cache.delete(projectPath)
+  invalidate(cwd: string): void {
+    this.cache.delete(cwd)
   }
 
   clear(): void {

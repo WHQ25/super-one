@@ -559,7 +559,7 @@ export type AgentEventBase =
   | { type: 'codex_thread_started'; messageId: string; threadId: string }
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
-  | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode }
+  | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode }
   | { type: 'prompt_suggestion'; suggestion: string }
   | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; overageStatus?: string; overageResetsAt?: number; overageDisabledReason?: string; isUsingOverage?: boolean; surpassedThreshold?: number }
   | { type: 'assistant_error'; messageId: string; error: string }

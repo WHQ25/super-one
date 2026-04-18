@@ -1,7 +1,9 @@
 import { randomUUID } from 'crypto'
+import { homedir } from 'os'
 import type { AgentEvent, ChatMessage } from '../../shared/agent-types'
 import log from '../logger'
 import { discoverProjectAgents, discoverProjectCommands, discoverSkills } from '../agent/discover-resources'
+import { readProjectAdditionalDirs } from '../agent/project-additional-dirs'
 import { harnessRegistry } from './harness-registry'
 import { getSessionProvider } from './session-provider-repo'
 import { ProjectResourceCache } from './project-resource-cache'
@@ -50,6 +52,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       discoverSkills,
       discoverProjectCommands,
       discoverProjectAgents,
+      discoverAdditionalDirectories: readProjectAdditionalDirs,
     })
   }
 
@@ -58,12 +61,16 @@ export class SessionManagerImpl implements SessionManagerContract {
   }
 
   async closeProject(projectPath: string): Promise<void> {
-    const targets: string[] = []
+    const targets: Array<{ sid: string; cwd: string }> = []
     for (const [sid, pp] of this.sessionProjects) {
-      if (pp === projectPath) targets.push(sid)
+      if (pp !== projectPath) continue
+      const session = this.sessions.get(sid)
+      if (session) targets.push({ sid, cwd: session.cwd })
     }
-    await Promise.all(targets.map((sid) => this.disposeSession(sid)))
-    this.projectResources.invalidate(projectPath)
+    await Promise.all(targets.map(({ sid }) => this.disposeSession(sid)))
+    const cwds = new Set(targets.map((t) => t.cwd))
+    cwds.add(projectPath)
+    for (const cwd of cwds) this.projectResources.invalidate(cwd)
   }
 
   listProjectSessions(projectPath: string): SessionSnapshot[] {
@@ -76,12 +83,12 @@ export class SessionManagerImpl implements SessionManagerContract {
     return out
   }
 
-  getProjectResources(projectPath: string): ProjectResources {
-    return this.projectResources.get(projectPath)
+  getProjectResources(cwd: string): ProjectResources {
+    return this.projectResources.get(cwd)
   }
 
-  invalidateProjectResources(projectPath: string): void {
-    this.projectResources.invalidate(projectPath)
+  invalidateProjectResources(cwd: string): void {
+    this.projectResources.invalidate(cwd)
   }
 
   createSession(opts: SessionCreateOptions): SessionContract {
@@ -115,6 +122,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       effort: opts.effort,
       model: opts.model ?? undefined,
       additionalDirectories: opts.additionalDirectories,
+      homedir: homedir(),
+      getProjectResources: (c) => this.projectResources.get(c),
+      invalidateProjectResources: (c) => this.projectResources.invalidate(c),
       onStateChange: this.persistence.onSessionStateChange
         ? (snapshot) => this.persistence.onSessionStateChange!(snapshot)
         : undefined,
@@ -185,6 +195,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       initialMessages: data.messages,
       initialTotalCostUsd: data.totalCostUsd,
       initialContextTokens: data.contextTokens,
+      homedir: homedir(),
+      getProjectResources: (c) => this.projectResources.get(c),
+      invalidateProjectResources: (c) => this.projectResources.invalidate(c),
       onStateChange: this.persistence.onSessionStateChange
         ? (snapshot) => this.persistence.onSessionStateChange!(snapshot)
         : undefined,
@@ -254,11 +267,22 @@ export class SessionManagerImpl implements SessionManagerContract {
       this.scopedListeners.set(sessionId, set)
     }
     set.add(handler)
+    const session = this.sessions.get(sessionId)
+    if (session) {
+      for (const e of session.getReplayEvents()) {
+        try { handler(e) } catch (err) { log.warn('[SessionManager] replay error:', err) }
+      }
+    }
     return () => { set!.delete(handler) }
   }
 
   onAny(handler: (sessionId: string, e: AgentEvent) => void): () => void {
     this.anyListeners.add(handler)
+    for (const [sid, session] of this.sessions) {
+      for (const e of session.getReplayEvents()) {
+        try { handler(sid, e) } catch (err) { log.warn('[SessionManager] any-replay error:', err) }
+      }
+    }
     return () => { this.anyListeners.delete(handler) }
   }
 

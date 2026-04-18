@@ -818,6 +818,7 @@ export class AgentService {
 
   private getOrCreateActiveSession(projectPath: string, requestedSid?: string): import('../session/types').Session {
     const mgr = this.requireSessionManager()
+    const activeCwd = mgr.getActiveSession(projectPath)?.cwd
     if (requestedSid) {
       const existing = mgr.getSession(requestedSid)
       if (existing) {
@@ -827,12 +828,12 @@ export class AgentService {
       try {
         return mgr.resumeSession(requestedSid)
       } catch {
-        return mgr.createSession({ projectPath, providerId: 'claude-base', id: requestedSid })
+        return mgr.createSession({ projectPath, cwd: activeCwd, providerId: 'claude-base', id: requestedSid })
       }
     }
     const active = mgr.getActiveSession(projectPath)
     if (active) return active
-    return mgr.createSession({ projectPath, providerId: 'claude-base' })
+    return mgr.createSession({ projectPath, cwd: activeCwd, providerId: 'claude-base' })
   }
 
   setup(): void {

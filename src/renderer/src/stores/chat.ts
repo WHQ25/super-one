@@ -2097,6 +2097,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         updatedProject.sandboxInfo = event.sandboxInfo
         updatedProject._projectSkills = event.skills
         updatedProject._projectCommands = event.projectCommands
+        updatedProject.projectAdditionalDirs = event.additionalDirectories
         updatedProject.slashCommands = buildSlashCommands(
           s.globalSlashCommands, s.userSkills, s.userCommands,
           event.skills, event.projectCommands,
@@ -2110,12 +2111,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (effort) updatedSession.selectedEffort = effort
           updatedProject._sessions = { ...updatedProject._sessions, [targetSid]: updatedSession }
         }
-
-        window.agent.readProjectAdditionalDirs(projectPath)
-          .then((dirs) => {
-            set((st) => updateProjectState(st, projectPath, () => ({ projectAdditionalDirs: dirs })))
-          })
-          .catch(() => {})
       }
 
       // Incremental save on tool_result / final save on complete/interrupted/error

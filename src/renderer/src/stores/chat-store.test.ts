@@ -1114,12 +1114,33 @@ describe('init_ready updates session fields', () => {
       skills: [],
       projectCommands: [],
       projectAgents: [],
+      additionalDirectories: [],
     } as never)
 
     const proj = useChatStore.getState().projectSessions['/test']
     expect(getActiveDraftSession('/test')!.cwd).toBe('/home/user/project')
     expect(proj.homedir).toBe('/home/user')
     expect(proj.sandboxInfo).toEqual({ enabled: false, autoAllowBash: true })
+  })
+
+  it('populates projectAdditionalDirs from event payload', () => {
+    setupProject('/proj-add-dir')
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'init_ready',
+      projectPath: '/proj-add-dir',
+      sessionId: undefined,
+      cwd: '/proj-add-dir',
+      homedir: '/home/user',
+      sandboxInfo: { enabled: false, autoAllowBash: true },
+      skills: [],
+      projectCommands: [],
+      projectAgents: [],
+      additionalDirectories: ['/proj-add-dir/lib', '/proj-add-dir/shared'],
+    } as never)
+
+    const proj = useChatStore.getState().projectSessions['/proj-add-dir']
+    expect(proj.projectAdditionalDirs).toEqual(['/proj-add-dir/lib', '/proj-add-dir/shared'])
   })
 })
 

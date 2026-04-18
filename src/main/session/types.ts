@@ -201,21 +201,23 @@ export interface Session {
   truncateMessagesAt(checkpointId: string): void
   dispose(): Promise<void>
   on(handler: (event: AgentEvent) => void): () => void
+  getReplayEvents(): AgentEvent[]
 }
 
 export interface ProjectResources {
-  readonly projectPath: string
+  readonly cwd: string
   readonly skills: SlashCommandInfo[]
   readonly projectCommands: SlashCommandInfo[]
   readonly projectAgents: AgentInfo[]
+  readonly additionalDirectories: string[]
 }
 
 export interface SessionManager {
   openProject(projectPath: string): void
   closeProject(projectPath: string): Promise<void>
   listProjectSessions(projectPath: string): SessionSnapshot[]
-  getProjectResources(projectPath: string): ProjectResources
-  invalidateProjectResources(projectPath: string): void
+  getProjectResources(cwd: string): ProjectResources
+  invalidateProjectResources(cwd: string): void
 
   createSession(opts: SessionCreateOptions): Session
   resumeSession(sessionId: string): Session

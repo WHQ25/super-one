@@ -31,6 +31,7 @@ import type {
   BackendStartOptions,
   HarnessId,
   PrewarmHint,
+  ProjectResources,
   Session as SessionContract,
   SessionBackend,
   SessionSnapshot,
@@ -57,6 +58,9 @@ export interface SessionConstructorOptions {
   initialMessages?: ChatMessage[]
   initialTotalCostUsd?: number
   initialContextTokens?: number
+  homedir?: string
+  getProjectResources?: (cwd: string) => ProjectResources
+  invalidateProjectResources?: (cwd: string) => void
   onStateChange?: (snapshot: SessionStateChange) => void
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
 }
@@ -104,6 +108,9 @@ export class Session implements SessionContract {
   private model: string | undefined
   private additionalDirectories: string[]
 
+  private homedir: string
+  private getProjectResources?: (cwd: string) => ProjectResources
+  private invalidateProjectResources?: (cwd: string) => void
   private onStateChange?: (snapshot: SessionStateChange) => void
   private onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
 
@@ -111,6 +118,7 @@ export class Session implements SessionContract {
   private backendStarted = false
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private unsubs: Array<() => void> = []
+  private _cachedInitReady: AgentEvent | null = null
 
   constructor(opts: SessionConstructorOptions) {
     this.id = opts.id
@@ -130,6 +138,9 @@ export class Session implements SessionContract {
     if (opts.initialMessages?.length) this._messages = [...opts.initialMessages]
     this._totalCostUsd = opts.initialTotalCostUsd ?? 0
     this._contextTokens = opts.initialContextTokens ?? 0
+    this.homedir = opts.homedir ?? ''
+    this.getProjectResources = opts.getProjectResources
+    this.invalidateProjectResources = opts.invalidateProjectResources
     this.onStateChange = opts.onStateChange
     this.onProviderSessionIdChange = opts.onProviderSessionIdChange
 
@@ -141,6 +152,7 @@ export class Session implements SessionContract {
         log.warn('[Session] onProviderSessionIdChange hook error:', err)
       }
     }))
+    this.emitInitReady()
   }
 
   get snapshot(): SessionSnapshot {
@@ -410,7 +422,32 @@ export class Session implements SessionContract {
 
   on(handler: (event: AgentEvent) => void): () => void {
     this.eventListeners.add(handler)
+    for (const e of this.getReplayEvents()) {
+      try { handler(e) } catch (err) { log.warn('[Session] replay error:', err) }
+    }
     return () => { this.eventListeners.delete(handler) }
+  }
+
+  getReplayEvents(): AgentEvent[] {
+    return this._cachedInitReady ? [this._cachedInitReady] : []
+  }
+
+  private emitInitReady(): void {
+    if (this.harnessId !== 'claude') return
+    if (!this.getProjectResources) return
+    const resources = this.getProjectResources(this._cwd)
+    const event: AgentEvent = {
+      type: 'init_ready',
+      skills: resources.skills,
+      projectCommands: resources.projectCommands,
+      projectAgents: resources.projectAgents,
+      additionalDirectories: resources.additionalDirectories,
+      cwd: this._cwd,
+      homedir: this.homedir,
+      sandboxInfo: this.sandboxInfo,
+      permissionMode: this.permissionMode,
+    }
+    this._cachedInitReady = this.forwardEvent(event)
   }
 
   getStatus(): SessionStatus {
@@ -443,6 +480,7 @@ export class Session implements SessionContract {
     this.assertNotDisposed()
     if (this._cwd === nextCwd) return
     this._cwd = nextCwd
+    this.emitInitReady()
     if (!this.backendStarted) return
     if (this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting') {
       this._needsRebuild = true
@@ -484,7 +522,7 @@ export class Session implements SessionContract {
     }
   }
 
-  private forwardEvent(event: AgentEvent): void {
+  private forwardEvent(event: AgentEvent): AgentEvent {
     if (event.type === 'message_start') {
       this._currentMessageId = event.message.id
     } else if (
@@ -496,7 +534,7 @@ export class Session implements SessionContract {
     }
     this.applyReducer(event)
     const existingProjectPath = (event as { projectPath?: string }).projectPath
-    const tagged = { ...event, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath }
+    const tagged = { ...event, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent
     const traceMessageId = (event as Record<string, unknown>).messageId as string | undefined
       ?? this._currentMessageId
       ?? ''
@@ -512,6 +550,7 @@ export class Session implements SessionContract {
     ) {
       this.notifyStateChange()
     }
+    return tagged
   }
 
   private applyReducer(event: AgentEvent): void {

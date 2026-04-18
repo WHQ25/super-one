@@ -49,9 +49,9 @@ class FakeBackend implements SessionBackend {
   dequeueMessage(_clientMessageId: string): boolean { return false }
   getPendingInteractions(): AgentEvent[] { return [] }
 
-  steerCalls: Array<[string, import('./types').CodexSteerOptions | undefined]> = []
-  async steer(input: string, opts?: import('./types').CodexSteerOptions): Promise<void> {
-    this.steerCalls.push([input, opts])
+  commandCalls: import('./types').BackendCommand[] = []
+  async handleCommand(cmd: import('./types').BackendCommand): Promise<void> {
+    this.commandCalls.push(cmd)
   }
 
   async send(request: SendMessageRequest): Promise<void> {
@@ -549,7 +549,7 @@ describe('Session message accumulation', () => {
     expect(finished?.content[0]).toMatchObject({ type: 'text', text: 'Codex run interrupted.' })
   })
 
-  it('setCodexPlanApproval writes metadata.codex.planApproval and emits codex_plan_approval', () => {
+  it('dispatchBackendCommand(codex.plan_approval) writes metadata.codex.planApproval and emits codex_plan_approval', async () => {
     const { session, backend } = makeSession({ harnessId: 'codex' })
     backend.emit({
       type: 'message_start',
@@ -571,13 +571,12 @@ describe('Session message accumulation', () => {
     const captured: AgentEvent[] = []
     session.on((e) => captured.push(e))
 
-    session.setCodexPlanApproval('codex_plan_1', { status: 'approved', feedback: 'LGTM' })
+    await session.dispatchBackendCommand({ kind: 'codex.plan_approval', messageId: 'codex_plan_1', status: 'approved', feedback: 'LGTM' })
 
     const msg = session.snapshot.messages.find((m) => m.id === 'codex_plan_1')
     expect(msg?.metadata?.codex?.planApproval).toEqual({ status: 'approved', feedback: 'LGTM' })
 
     const approvalEvt = captured.find((e) => e.type === 'codex_plan_approval') as Extract<AgentEvent, { type: 'codex_plan_approval' }> | undefined
-    expect(approvalEvt).toBeDefined()
     expect(approvalEvt?.messageId).toBe('codex_plan_1')
     expect(approvalEvt?.status).toBe('approved')
     expect(approvalEvt?.feedback).toBe('LGTM')
@@ -585,39 +584,24 @@ describe('Session message accumulation', () => {
     expect(approvalEvt?.projectPath).toBe('/tmp/proj')
   })
 
-  it('setCodexPlanApproval is a no-op for non-codex sessions', () => {
-    const { session } = makeSession({ harnessId: 'claude' })
-    const captured: AgentEvent[] = []
-    session.on((e) => captured.push(e))
-    session.setCodexPlanApproval('anything', { status: 'approved' })
-    expect(captured.find((e) => e.type === 'codex_plan_approval')).toBeUndefined()
-  })
-
-  it('notifyCodexCollaborationMode emits codex_collaboration_mode_change', () => {
+  it('dispatchBackendCommand(codex.collaboration_mode_change) emits codex_collaboration_mode_change', async () => {
     const { session } = makeSession({ harnessId: 'codex' })
     const captured: AgentEvent[] = []
     session.on((e) => captured.push(e))
 
-    session.notifyCodexCollaborationMode('parallel')
+    await session.dispatchBackendCommand({ kind: 'codex.collaboration_mode_change', mode: 'parallel' })
 
     const modeEvt = captured.find((e) => e.type === 'codex_collaboration_mode_change') as Extract<AgentEvent, { type: 'codex_collaboration_mode_change' }> | undefined
-    expect(modeEvt).toBeDefined()
     expect(modeEvt?.mode).toBe('parallel')
     expect(modeEvt?.sessionId).toBe('sess-1')
     expect(modeEvt?.projectPath).toBe('/tmp/proj')
   })
 
-  it('notifyCodexCollaborationMode is a no-op for non-codex sessions', () => {
-    const { session } = makeSession({ harnessId: 'claude' })
-    const captured: AgentEvent[] = []
-    session.on((e) => captured.push(e))
-    session.notifyCodexCollaborationMode('parallel')
-    expect(captured.find((e) => e.type === 'codex_collaboration_mode_change')).toBeUndefined()
-  })
-
-  it('steer(input, opts) appends user message to _messages for codex sessions', async () => {
+  it('dispatchBackendCommand(codex.steer) appends user message and forwards to backend.handleCommand', async () => {
     const { session, backend } = makeSession({ harnessId: 'codex' })
-    await session.steer('keep going', {
+    await session.dispatchBackendCommand({
+      kind: 'codex.steer',
+      input: 'keep going',
       newUserMessageId: 'user-steer-1',
       newUserText: 'keep going',
       newAssistantMessageId: 'asst-steer-1',
@@ -625,17 +609,14 @@ describe('Session message accumulation', () => {
     const userMsg = session.snapshot.messages.find((m) => m.id === 'user-steer-1')
     expect(userMsg?.role).toBe('user')
     expect(userMsg?.content).toEqual([{ type: 'text', text: 'keep going' }])
-    expect(backend.steerCalls?.[0]).toEqual(['keep going', {
-      newUserMessageId: 'user-steer-1',
-      newUserText: 'keep going',
-      newAssistantMessageId: 'asst-steer-1',
-    }])
+    expect(backend.commandCalls[0]).toMatchObject({ kind: 'codex.steer', input: 'keep going', newUserMessageId: 'user-steer-1' })
   })
 
-  it('steer() does not append user message when opts are omitted', async () => {
-    const { session } = makeSession({ harnessId: 'codex' })
-    await session.steer('raw')
+  it('dispatchBackendCommand(codex.steer) without user info skips append but still forwards', async () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+    await session.dispatchBackendCommand({ kind: 'codex.steer', input: 'raw' })
     expect(session.snapshot.messages).toHaveLength(0)
+    expect(backend.commandCalls[0]).toEqual({ kind: 'codex.steer', input: 'raw' })
   })
 })
 

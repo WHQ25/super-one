@@ -101,11 +101,24 @@ export interface PrewarmHint {
   additionalDirs?: string[]
 }
 
-export interface CodexSteerOptions {
-  newAssistantMessageId?: string
-  newUserMessageId?: string
-  newUserText?: string
-}
+export type BackendCommand =
+  | {
+      kind: 'codex.steer'
+      input: string
+      newAssistantMessageId?: string
+      newUserMessageId?: string
+      newUserText?: string
+    }
+  | {
+      kind: 'codex.plan_approval'
+      messageId: string
+      status: 'approved' | 'rejected'
+      feedback?: string
+    }
+  | {
+      kind: 'codex.collaboration_mode_change'
+      mode: string
+    }
 
 export type BackendEvent = AgentEvent
 
@@ -141,7 +154,7 @@ export interface SessionBackend {
   reloadPlugins(): Promise<boolean>
   dequeueMessage(clientMessageId: string): boolean
   getPendingInteractions(): AgentEvent[]
-  steer?(input: string, opts?: CodexSteerOptions): Promise<void>
+  handleCommand?(cmd: BackendCommand): Promise<void>
   onEvent(handler: (event: BackendEvent) => void): () => void
   onProviderSessionId(handler: (id: string) => void): () => void
 }
@@ -181,12 +194,7 @@ export interface Session {
   prewarm(hint?: PrewarmHint): void
   dequeueMessage(clientMessageId: string): boolean
   getPendingInteractions(): AgentEvent[]
-  steer(input: string, opts?: CodexSteerOptions): Promise<void>
-  setCodexPlanApproval(
-    messageId: string,
-    approval: { status: 'approved' | 'rejected'; feedback?: string },
-  ): void
-  notifyCodexCollaborationMode(mode: string): void
+  dispatchBackendCommand(cmd: BackendCommand): Promise<void>
   updateProviderConfig(nextConfig: unknown): void
   switchCwd(nextCwd: string): Promise<void>
   isStreaming(): boolean

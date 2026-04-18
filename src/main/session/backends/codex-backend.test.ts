@@ -373,12 +373,12 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     expect(service.dismissQuestionMock).toHaveBeenCalledWith('sess-test', 'q-1')
   })
 
-  it('steer() forwards input to service', async () => {
-    await backend.steer('stop')
+  it('handleCommand(codex.steer) forwards input to service', async () => {
+    await backend.handleCommand({ kind: 'codex.steer', input: 'stop' })
     expect(service.steerMock).toHaveBeenCalledWith('sess-test', 'stop')
   })
 
-  it('steer(input, {newAssistantMessageId}) emits message_start + swaps current messageId for subsequent events', async () => {
+  it('handleCommand(codex.steer) with newAssistantMessageId emits message_start + swaps current messageId for subsequent events', async () => {
     const events: AgentEvent[] = []
     backend.onEvent((e) => events.push(e))
 
@@ -389,7 +389,9 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     await Promise.resolve()
     events.length = 0
 
-    await backend.steer('redirect', {
+    await backend.handleCommand({
+      kind: 'codex.steer',
+      input: 'redirect',
       newAssistantMessageId: 'asst-2',
       newUserMessageId: 'user-2',
       newUserText: 'redirect',
@@ -411,6 +413,12 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     const completeEvt = events.find((e) => e.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }> | undefined
     expect(completeEvt?.messageId).toBe('asst-2')
     expect(service.steerMock).toHaveBeenCalledWith('sess-test', 'redirect')
+  })
+
+  it('handleCommand(codex.plan_approval / codex.collaboration_mode_change) is a backend no-op', async () => {
+    await expect(backend.handleCommand({ kind: 'codex.plan_approval', messageId: 'm-1', status: 'approved' })).resolves.toBeUndefined()
+    await expect(backend.handleCommand({ kind: 'codex.collaboration_mode_change', mode: 'parallel' })).resolves.toBeUndefined()
+    expect(service.steerMock).not.toHaveBeenCalled()
   })
 
   it('respondToPlanApproval is a no-op (not applicable to Codex)', () => {

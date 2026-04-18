@@ -473,11 +473,16 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLAN_APPROVAL, (_event, _projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) => {
-    getCodexSession(sessionId)?.setCodexPlanApproval(messageId, { status, ...(feedback ? { feedback } : {}) })
+    return getCodexSession(sessionId)?.dispatchBackendCommand({
+      kind: 'codex.plan_approval',
+      messageId,
+      status,
+      ...(feedback ? { feedback } : {}),
+    })
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_COLLABORATION_MODE_CHANGE, (_event, _projectPath: string, sessionId: string, mode: string) => {
-    getCodexSession(sessionId)?.notifyCodexCollaborationMode(mode)
+    return getCodexSession(sessionId)?.dispatchBackendCommand({ kind: 'codex.collaboration_mode_change', mode })
   })
 
   ipcMain.handle(
@@ -485,7 +490,9 @@ function registerIpcHandlers(): void {
     (_event, sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string) => {
       const existing = getCodexSession(sessionId)
       if (!existing) throw new Error(`CODEX_STEER: no codex session found for sid=${sessionId}`)
-      return existing.steer(input, {
+      return existing.dispatchBackendCommand({
+        kind: 'codex.steer',
+        input,
         newAssistantMessageId: messageId ?? `codex_${Date.now()}`,
         newUserMessageId: userMessageId ?? `user_${Date.now()}`,
         newUserText: userMessageText ?? input,

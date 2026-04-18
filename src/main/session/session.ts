@@ -27,8 +27,8 @@ import {
   type CodexSessionRuntime,
 } from '../agent/codex-session-runtime'
 import type {
+  BackendCommand,
   BackendStartOptions,
-  CodexSteerOptions,
   HarnessId,
   PrewarmHint,
   Session as SessionContract,
@@ -309,67 +309,72 @@ export class Session implements SessionContract {
     return this.backend.getPendingInteractions()
   }
 
-  async steer(input: string, opts?: CodexSteerOptions): Promise<void> {
-    if (!this.backend.steer) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support steer`)
-    if (this.harnessId === 'codex' && opts?.newUserMessageId && opts.newUserText) {
-      const userMsg: ChatMessage = {
-        id: opts.newUserMessageId,
-        role: 'user',
-        status: 'complete',
-        content: [{ type: 'text', text: opts.newUserText }],
-        createdAt: new Date().toISOString(),
-        providerId: 'codex',
+  async dispatchBackendCommand(cmd: BackendCommand): Promise<void> {
+    this.assertNotDisposed()
+    switch (cmd.kind) {
+      case 'codex.steer': {
+        if (cmd.newUserMessageId && cmd.newUserText) this.appendSideChannelUserMessage(cmd.newUserMessageId, cmd.newUserText)
+        if (!this.backend.handleCommand) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support backend commands`)
+        await this.backend.handleCommand(cmd)
+        return
       }
-      if (!this._messages.some((m) => m.id === opts.newUserMessageId)) {
-        this._messages = [...this._messages, userMsg]
-        this._lastUserMessageAt = Date.now()
-        this.notifyStateChange()
+      case 'codex.plan_approval': {
+        this.applyCodexPlanApprovalToMessage(cmd.messageId, { status: cmd.status, ...(cmd.feedback ? { feedback: cmd.feedback } : {}) })
+        this.forwardEvent({
+          type: 'codex_plan_approval',
+          messageId: cmd.messageId,
+          status: cmd.status,
+          ...(cmd.feedback ? { feedback: cmd.feedback } : {}),
+          projectPath: this.projectPath,
+          sessionId: this.id,
+        } as AgentEvent)
+        return
+      }
+      case 'codex.collaboration_mode_change': {
+        this.forwardEvent({
+          type: 'codex_collaboration_mode_change',
+          mode: cmd.mode,
+          projectPath: this.projectPath,
+          sessionId: this.id,
+        } as AgentEvent)
+        return
       }
     }
-    await this.backend.steer(input, opts)
   }
 
-  setCodexPlanApproval(
+  private appendSideChannelUserMessage(messageId: string, text: string): void {
+    if (this._messages.some((m) => m.id === messageId)) return
+    const userMsg: ChatMessage = {
+      id: messageId,
+      role: 'user',
+      status: 'complete',
+      content: [{ type: 'text', text }],
+      createdAt: new Date().toISOString(),
+      providerId: this.harnessId,
+    }
+    this._messages = [...this._messages, userMsg]
+    this._lastUserMessageAt = Date.now()
+    this.notifyStateChange()
+  }
+
+  private applyCodexPlanApprovalToMessage(
     messageId: string,
     approval: { status: 'approved' | 'rejected'; feedback?: string },
   ): void {
-    this.assertNotDisposed()
-    if (this.harnessId !== 'codex') return
     const msgIdx = this._messages.findIndex((m) => m.id === messageId)
-    if (msgIdx >= 0) {
-      const msg = this._messages[msgIdx]
-      const existingCodexMeta = msg.metadata?.codex
-      if (existingCodexMeta) {
-        const updated: ChatMessage = {
-          ...msg,
-          metadata: {
-            ...(msg.metadata ?? {}),
-            codex: { ...existingCodexMeta, planApproval: approval },
-          },
-        }
-        this._messages = this._messages.map((m, i) => (i === msgIdx ? updated : m))
-        this.notifyStateChange()
-      }
+    if (msgIdx < 0) return
+    const msg = this._messages[msgIdx]
+    const existingCodexMeta = msg.metadata?.codex
+    if (!existingCodexMeta) return
+    const updated: ChatMessage = {
+      ...msg,
+      metadata: {
+        ...(msg.metadata ?? {}),
+        codex: { ...existingCodexMeta, planApproval: approval },
+      },
     }
-    this.forwardEvent({
-      type: 'codex_plan_approval',
-      messageId,
-      status: approval.status,
-      ...(approval.feedback ? { feedback: approval.feedback } : {}),
-      projectPath: this.projectPath,
-      sessionId: this.id,
-    } as AgentEvent)
-  }
-
-  notifyCodexCollaborationMode(mode: string): void {
-    this.assertNotDisposed()
-    if (this.harnessId !== 'codex') return
-    this.forwardEvent({
-      type: 'codex_collaboration_mode_change',
-      mode,
-      projectPath: this.projectPath,
-      sessionId: this.id,
-    } as AgentEvent)
+    this._messages = this._messages.map((m, i) => (i === msgIdx ? updated : m))
+    this.notifyStateChange()
   }
 
   isStreaming(): boolean {

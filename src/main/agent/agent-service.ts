@@ -402,7 +402,9 @@ export class AgentService {
         if (!command.sessionId) break
         const session = this.sessionManager?.getSession(command.sessionId)
         if (session && session.snapshot.harnessId === 'codex') {
-          session.setCodexPlanApproval(command.messageId, {
+          await session.dispatchBackendCommand({
+            kind: 'codex.plan_approval',
+            messageId: command.messageId,
             status: command.status,
             ...(command.feedback ? { feedback: command.feedback } : {}),
           })

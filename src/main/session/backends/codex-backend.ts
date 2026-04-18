@@ -19,7 +19,7 @@ import type {
   SendMessageRequest,
 } from '../../../shared/agent-types'
 import log from '../../logger'
-import type { BackendStartOptions, CodexSteerOptions, HarnessId, SessionBackend } from '../types'
+import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 export interface CodexRunStreamCallbacksDeps {
   onThreadStarted?: (threadId: string) => void
@@ -315,24 +315,32 @@ export class CodexBackend implements SessionBackend {
     log.debug('[CodexBackend] respondToPlanApproval not applicable to Codex')
   }
 
-  async steer(input: string, opts?: CodexSteerOptions): Promise<void> {
+  async handleCommand(cmd: BackendCommand): Promise<void> {
     const startOpts = this.startOpts
     if (!startOpts) throw new Error('CodexBackend not started')
-    if (opts?.newAssistantMessageId) {
-      this.emit({
-        type: 'message_start',
-        message: {
-          id: opts.newAssistantMessageId,
-          role: 'assistant',
-          status: 'streaming',
-          content: [],
-          createdAt: new Date().toISOString(),
-          providerId: 'codex',
-        },
-      })
-      this.swapRunAssistantId?.(opts.newAssistantMessageId)
+    switch (cmd.kind) {
+      case 'codex.steer': {
+        if (cmd.newAssistantMessageId) {
+          this.emit({
+            type: 'message_start',
+            message: {
+              id: cmd.newAssistantMessageId,
+              role: 'assistant',
+              status: 'streaming',
+              content: [],
+              createdAt: new Date().toISOString(),
+              providerId: 'codex',
+            },
+          })
+          this.swapRunAssistantId?.(cmd.newAssistantMessageId)
+        }
+        await this.service.steer(startOpts.sessionId, cmd.input)
+        return
+      }
+      case 'codex.plan_approval':
+      case 'codex.collaboration_mode_change':
+        return
     }
-    await this.service.steer(startOpts.sessionId, input)
   }
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {

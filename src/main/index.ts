@@ -32,8 +32,6 @@ import {
   type CodexThreadItem,
   type CodexUsageInfo,
   type CodexSetAuthRequest,
-  type PermissionRequest,
-  type AskUserQuestionRequest,
   type ImageAttachment,
   type ConnectResult,
   type StartupData,
@@ -180,107 +178,6 @@ function safeSend(channel: string, ...args: unknown[]): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args)
 }
 
-function emitAgentEvent(event: AgentEvent): void {
-  agentService.recordCodexEvent(event)
-  agentService.notifyEventSubscribers(event)
-  safeSend(AgentIpcChannels.EVENT, event)
-}
-
-const activeCodexEventTargets = new Map<string, {
-  setMessageId: (messageId?: string) => void
-  getMessageId: () => string | undefined
-  projectPath: string
-  dispose: () => void
-}>()
-
-function createCodexCallbacks(messageId: string | undefined, sessionId: string, projectPath: string) {
-  let currentMessageId = messageId
-  const route = {
-    setMessageId: (nextMessageId?: string) => {
-      currentMessageId = nextMessageId
-    },
-    getMessageId: () => currentMessageId,
-    projectPath,
-    dispose: () => {
-      if (activeCodexEventTargets.get(sessionId) === route) {
-        activeCodexEventTargets.delete(sessionId)
-      }
-    },
-  }
-  activeCodexEventTargets.set(sessionId, route)
-
-  if (!messageId) return { callbacks: undefined, route }
-  return {
-    callbacks: {
-      onThreadStarted: (resolvedThreadId: string) => {
-        if (!currentMessageId) return
-        emitAgentEvent({ type: 'codex_thread_started', messageId: currentMessageId, threadId: resolvedThreadId, projectPath, sessionId })
-      },
-      onItemDelta: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
-        if (!currentMessageId) return
-        if (is.dev) {
-          const collabTrace = item.type === 'collab_tool_call'
-            ? {
-                collabTool: item.tool,
-                collabStatus: item.status,
-                agentIds: Object.keys(item.agentsStates),
-                agentStatuses: Object.fromEntries(Object.entries(item.agentsStates).map(([k, v]) => [k, v.status])),
-                receiverThreadIds: item.receiverThreadIds,
-                childThreadCount: item.childItems ? Object.keys(item.childItems).length : 0,
-                childItemCounts: item.childItems
-                  ? Object.fromEntries(Object.entries(item.childItems).map(([k, v]) => [k, v.length]))
-                  : undefined,
-                prompt: item.prompt?.slice(0, 200),
-              }
-            : {}
-          trace('codex.emit', 'codex_item_delta', {
-            messageId: currentMessageId,
-            phase,
-            itemId: item.id,
-            itemType: item.type,
-            textLength: 'text' in item && typeof item.text === 'string' ? item.text.length : undefined,
-            textPreview: 'text' in item && typeof item.text === 'string' ? item.text.slice(0, 160) : undefined,
-            ...collabTrace,
-          }, currentMessageId)
-        }
-        emitAgentEvent({ type: 'codex_item_delta', messageId: currentMessageId, phase, item, projectPath, sessionId })
-      },
-      onUsageDelta: (usage: CodexUsageInfo) => {
-        if (!currentMessageId) return
-        if (is.dev) {
-          trace('codex.emit', 'message_usage', {
-            messageId: currentMessageId,
-            totalInputTokens: usage.totalInputTokens,
-            totalCachedInputTokens: usage.totalCachedInputTokens,
-            totalOutputTokens: usage.totalOutputTokens,
-            lastInputTokens: usage.lastInputTokens,
-            lastCachedInputTokens: usage.lastCachedInputTokens,
-            lastOutputTokens: usage.lastOutputTokens,
-            reasoningOutputTokens: usage.reasoningOutputTokens,
-            contextWindow: usage.contextWindow,
-          }, currentMessageId)
-        }
-        emitAgentEvent({
-          type: 'message_usage',
-          messageId: currentMessageId,
-          inputTokens: usage.lastInputTokens,
-          outputTokens: usage.lastOutputTokens,
-          codexUsage: usage,
-          projectPath,
-          sessionId,
-        })
-      },
-      onPermissionRequest: (request: PermissionRequest) => {
-        emitAgentEvent({ type: 'permission_request', request, projectPath, sessionId })
-      },
-      onAskUserQuestion: (request: AskUserQuestionRequest) => {
-        emitAgentEvent({ type: 'ask_user_question', request, projectPath, sessionId })
-      },
-    },
-    route,
-  }
-}
-
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -412,15 +309,6 @@ function registerIpcHandlers(): void {
   // Setup agent IPC handlers (does NOT auto-initialize)
   agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))
   agentService.setCodexGetAuthStatus((projectPath) => codexService.getAuthStatus(projectPath))
-  agentService.setCodexRun(async (sessionId, projectPath, opts) => {
-    const messageId = opts.messageId ?? `remote-${Date.now()}`
-    const { callbacks, route } = createCodexCallbacks(messageId, sessionId, projectPath)
-    try {
-      return await codexService.run(sessionId, projectPath, { ...opts, messageId } as Parameters<typeof codexService.run>[2], callbacks)
-    } finally {
-      route.dispose()
-    }
-  })
   agentService.setup()
 
   ipcMain.on(AgentIpcChannels.TRACE, (_e, source: string, type: string, data: unknown, tag?: string) => {
@@ -535,29 +423,22 @@ function registerIpcHandlers(): void {
     const existing = sessionManager.getSession(sessionId)
     if (existing && existing.snapshot.harnessId === 'codex') {
       await sessionManager.disposeSession(sessionId)
-      return
     }
-    codexService.reset(sessionId)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_INTERRUPT, async (_event, sessionId: string) => {
     const existing = sessionManager.getSession(sessionId)
-    if (existing && existing.snapshot.harnessId === 'codex') {
-      await existing.interrupt()
-      return true
-    }
-    return codexService.interrupt(sessionId)
+    if (!existing || existing.snapshot.harnessId !== 'codex') return false
+    await existing.interrupt()
+    return true
   })
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
-    (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel') => {
+    (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) => {
       const existing = sessionManager.getSession(sessionId)
-      if (existing && existing.snapshot.harnessId === 'codex') {
-        existing.respondToPermission(requestId, allow, alwaysAllow, reason)
-        return
-      }
-      return codexService.respondToPermission(sessionId, requestId, allow, alwaysAllow, reason, decision)
+      if (!existing || existing.snapshot.harnessId !== 'codex') return
+      existing.respondToPermission(requestId, allow, alwaysAllow, reason)
     },
   )
 
@@ -565,11 +446,8 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.CODEX_ANSWER_QUESTION,
     (_event, sessionId: string, requestId: string, answers: Record<string, string>) => {
       const existing = sessionManager.getSession(sessionId)
-      if (existing && existing.snapshot.harnessId === 'codex') {
-        existing.respondToQuestion(requestId, answers)
-        return
-      }
-      return codexService.respondToQuestion(sessionId, requestId, answers)
+      if (!existing || existing.snapshot.harnessId !== 'codex') return
+      existing.respondToQuestion(requestId, answers)
     },
   )
 
@@ -577,11 +455,8 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.CODEX_DISMISS_QUESTION,
     (_event, sessionId: string, requestId: string) => {
       const existing = sessionManager.getSession(sessionId)
-      if (existing && existing.snapshot.harnessId === 'codex') {
-        existing.dismissQuestion(requestId)
-        return
-      }
-      return codexService.dismissQuestion(sessionId, requestId)
+      if (!existing || existing.snapshot.harnessId !== 'codex') return
+      existing.dismissQuestion(requestId)
     },
   )
 
@@ -593,54 +468,32 @@ function registerIpcHandlers(): void {
     return codexService.setAuth(projectPath, request)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_PLAN_APPROVAL, (_event, projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_PLAN_APPROVAL, (_event, _projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) => {
     const existing = sessionManager.getSession(sessionId)
-    if (existing && existing.snapshot.harnessId === 'codex') {
-      existing.setCodexPlanApproval(messageId, { status, ...(feedback ? { feedback } : {}) })
-      return
-    }
-    agentService.updateCodexPlanApproval(sessionId, messageId, { status, ...(feedback ? { feedback } : {}) })
-    emitAgentEvent({ type: 'codex_plan_approval', messageId, status, ...(feedback ? { feedback } : {}), projectPath, sessionId } as AgentEvent)
+    if (!existing || existing.snapshot.harnessId !== 'codex') return
+    existing.setCodexPlanApproval(messageId, { status, ...(feedback ? { feedback } : {}) })
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_COLLABORATION_MODE_CHANGE, (_event, projectPath: string, sessionId: string, mode: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_COLLABORATION_MODE_CHANGE, (_event, _projectPath: string, sessionId: string, mode: string) => {
     const existing = sessionManager.getSession(sessionId)
-    if (existing && existing.snapshot.harnessId === 'codex') {
-      existing.notifyCodexCollaborationMode(mode)
-      return
-    }
-    emitAgentEvent({ type: 'codex_collaboration_mode_change', mode, projectPath, sessionId } as AgentEvent)
+    if (!existing || existing.snapshot.harnessId !== 'codex') return
+    existing.notifyCodexCollaborationMode(mode)
   })
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_STEER,
-    (_event, sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string) => {
+    (_event, sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string) => {
+      const existing = sessionManager.getSession(sessionId)
+      if (!existing || existing.snapshot.harnessId !== 'codex') {
+        throw new Error(`CODEX_STEER: no codex session found for sid=${sessionId}`)
+      }
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const resolvedUserMessageId = userMessageId ?? `user_${Date.now()}`
       const resolvedUserText = userMessageText ?? input
-      const existing = sessionManager.getSession(sessionId)
-      if (existing && existing.snapshot.harnessId === 'codex') {
-        return existing.steer(input, {
-          newAssistantMessageId: assistantMessageId,
-          newUserMessageId: resolvedUserMessageId,
-          newUserText: resolvedUserText,
-        })
-      }
-      const route = activeCodexEventTargets.get(sessionId)
-      if (route) {
-        agentService.beginCodexTurn(route.projectPath, sessionId, {
-          userMessageId: resolvedUserMessageId,
-          userText: resolvedUserText,
-          assistantMessageId,
-          providerId: 'local',
-          gitBranch: gitBranch ?? null,
-          worktreePath: worktreePath ?? null,
-        })
-        route.setMessageId(assistantMessageId)
-      }
-      return codexService.steer(sessionId, input).catch((error) => {
-        agentService.rollbackCodexAssistantMessage(sessionId, assistantMessageId)
-        throw error
+      return existing.steer(input, {
+        newAssistantMessageId: assistantMessageId,
+        newUserMessageId: resolvedUserMessageId,
+        newUserText: resolvedUserText,
       })
     },
   )

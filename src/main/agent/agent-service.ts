@@ -7,7 +7,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import { readProjectAdditionalDirs, writeProjectAdditionalDirs } from './project-additional-dirs'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
-import { AgentIpcChannels, type AgentEvent, type ChatMessage, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexRunResult, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
@@ -21,7 +21,6 @@ import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './f
 import { clearAllGates } from '../generative-ui/widget-gate'
 import { clearAllPendingCalls as clearAllPendingMiniAppCalls } from '../mcp/superone-mcp-server'
 import { resolveSdkCli, getNodeRuntime } from './resolve-cli'
-import { applyCodexEventToRuntime, buildCodexAssistantMessage, buildCodexUserMessage, createCodexRuntime, extractCodexTitle, finalizeCodexAssistantMessage, hydrateCodexRuntime, mergeCodexRuntimes, removeCodexAssistantMessage, syncCodexRuntimeLocation, withCodexTurnMessages, type CodexSessionRuntime, type PersistedCodexSessionState } from './codex-session-runtime'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -47,24 +46,11 @@ import { getAllProviders, createProvider, updateProvider, deleteProvider, activa
 import type { CreateProviderRequest, UpdateProviderRequest } from '../../shared/agent-types'
 
 export class AgentService {
-  private codexRuntimes = new Map<string, CodexSessionRuntime>()
-  private notifiedCodexSessions = new Set<string>()
   private mainWindow: BrowserWindow | null = null
   private sessionManager: import('../session/session-manager').SessionManagerImpl | null = null
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
   private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
   private codexGetAuthStatus?: (projectPath: string) => unknown
-  private codexRun?: (sessionId: string, projectPath: string, opts: {
-    prompt: string
-    model?: string
-    reasoningEffort?: string
-    permissionPreset?: string
-    collaborationMode?: string
-    threadId?: string
-    messageId?: string
-    images?: unknown[]
-    cwd?: string
-  }) => Promise<CodexRunResult>
   private remoteControlService?: RemoteControlService
   private remoteSession: { projectPath: string; sessionId: string } | null = null
   private remoteOwnedSids = new Set<string>()
@@ -76,10 +62,6 @@ export class AgentService {
 
   setCodexGetAuthStatus(fn: (projectPath: string) => unknown): void {
     this.codexGetAuthStatus = fn
-  }
-
-  setCodexRun(fn: typeof this.codexRun): void {
-    this.codexRun = fn
   }
 
   setRemoteControlService(svc: RemoteControlService): void {
@@ -105,185 +87,6 @@ export class AgentService {
 
   private buildSessionAccessError(projectPath: string, sessionId: string): string {
     return `Session ${sessionId} does not belong to project ${projectPath}`
-  }
-
-  private getCodexRuntimeSnapshot(sessionId: string): PersistedCodexSessionState | null {
-    const runtime = this.codexRuntimes.get(sessionId)
-    if (!runtime) return null
-    return {
-      messages: runtime.messages,
-      totalCostUsd: runtime.totalCostUsd,
-      contextTokens: runtime.contextTokens,
-      isWorktree: !!runtime.worktreePath,
-      gitBranch: runtime.gitBranch,
-      worktreePath: runtime.worktreePath,
-      provider: 'codex',
-    }
-  }
-
-  private loadOrCreateCodexRuntime(
-    projectPath: string,
-    sessionId: string,
-    options: {
-      cwd?: string
-      gitBranch?: string | null
-      worktreePath?: string | null
-    } = {},
-  ): CodexSessionRuntime {
-    const existing = this.codexRuntimes.get(sessionId)
-    if (existing) {
-      const updated = syncCodexRuntimeLocation(existing, projectPath, options.gitBranch, options.worktreePath, options.cwd)
-      this.codexRuntimes.set(sessionId, updated)
-      return updated
-    }
-
-    const saved = loadSessionState(sessionId) as PersistedCodexSessionState | null
-    const runtime = syncCodexRuntimeLocation(
-      hydrateCodexRuntime(projectPath, sessionId, saved, options.cwd),
-      projectPath,
-      options.gitBranch ?? saved?.gitBranch ?? null,
-      options.worktreePath ?? saved?.worktreePath ?? null,
-      options.cwd,
-    )
-    this.codexRuntimes.set(sessionId, runtime)
-    return runtime
-  }
-
-  updateCodexPlanApproval(
-    sessionId: string,
-    messageId: string,
-    planApproval: { status: 'approved' | 'rejected'; feedback?: string },
-  ): void {
-    const runtime = this.codexRuntimes.get(sessionId)
-    if (!runtime) return
-    const msg = runtime.messages.find((m) => m.id === messageId)
-    if (!msg?.metadata?.codex) return
-    msg.metadata.codex.planApproval = planApproval
-    this.persistCodexRuntime(sessionId)
-  }
-
-  private persistCodexRuntime(sessionId: string): void {
-    const runtime = this.codexRuntimes.get(sessionId)
-    if (!runtime || runtime.messages.length === 0) return
-    const title = extractCodexTitle(runtime.messages)
-    createSession(
-      runtime.projectPath,
-      sessionId,
-      title,
-      !!runtime.worktreePath,
-      runtime.gitBranch ?? undefined,
-      runtime.worktreePath ?? undefined,
-    )
-    if (!this.notifiedCodexSessions.has(sessionId)) {
-      this.notifiedCodexSessions.add(sessionId)
-      this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
-    }
-    saveSessionState(sessionId, {
-      messages: runtime.messages,
-      totalCostUsd: runtime.totalCostUsd,
-      contextTokens: runtime.contextTokens,
-      title,
-      provider: 'codex',
-    })
-  }
-
-  beginCodexTurn(
-    projectPath: string,
-    sessionId: string,
-    options: {
-      userMessageId: string
-      userText: string
-      assistantMessageId: string
-      providerId: 'local' | 'remote'
-      images?: SendMessageRequest['images']
-      gitBranch?: string | null
-      worktreePath?: string | null
-      cwd?: string
-    },
-  ): { userMessage: ChatMessage; assistantMessage: ChatMessage } {
-    const runtime = this.loadOrCreateCodexRuntime(projectPath, sessionId, {
-      cwd: options.cwd ?? options.worktreePath ?? undefined,
-      gitBranch: options.gitBranch ?? null,
-      worktreePath: options.worktreePath ?? null,
-    })
-    const userMessage = buildCodexUserMessage({
-      content: options.userText,
-      images: options.images,
-      clientMessageId: options.userMessageId,
-    }, options.providerId)
-    const assistantMessage = buildCodexAssistantMessage(options.assistantMessageId)
-    const updated = withCodexTurnMessages(runtime, userMessage, assistantMessage)
-    this.codexRuntimes.set(sessionId, updated)
-    this.persistCodexRuntime(sessionId)
-    return { userMessage, assistantMessage }
-  }
-
-  rollbackCodexAssistantMessage(sessionId: string, messageId: string): void {
-    const runtime = this.codexRuntimes.get(sessionId)
-    if (!runtime) return
-    const updated = removeCodexAssistantMessage(runtime, messageId)
-    this.codexRuntimes.set(sessionId, updated)
-    this.persistCodexRuntime(sessionId)
-  }
-
-  recordCodexEvent(event: AgentEvent): void {
-    const projectPath = event.projectPath
-    if (!projectPath || !event.sessionId) return
-    if (
-      event.type !== 'message_usage'
-      && event.type !== 'codex_thread_started'
-      && event.type !== 'codex_item_delta'
-      && event.type !== 'checkpoint_captured'
-    ) {
-      return
-    }
-    const runtime = applyCodexEventToRuntime(
-      this.loadOrCreateCodexRuntime(projectPath, event.sessionId),
-      event,
-    )
-    this.codexRuntimes.set(event.sessionId, runtime)
-  }
-
-  completeCodexTurn(
-    sessionId: string,
-    options: {
-      messageId: string
-      result: CodexRunResult
-      durationMs: number
-      fallbackText: string
-    },
-  ): void {
-    const runtime = this.codexRuntimes.get(sessionId)
-    if (!runtime) return
-    const text = options.result.finalResponse?.trim() || options.fallbackText
-    const updated = finalizeCodexAssistantMessage(runtime, {
-      messageId: options.messageId,
-      status: 'complete',
-      text,
-      result: options.result,
-      durationMs: options.durationMs,
-    })
-    this.codexRuntimes.set(sessionId, updated)
-    this.persistCodexRuntime(sessionId)
-  }
-
-  failCodexTurn(
-    sessionId: string,
-    options: {
-      messageId: string
-      status: 'interrupted' | 'error'
-      text: string
-    },
-  ): void {
-    const runtime = this.codexRuntimes.get(sessionId)
-    if (!runtime) return
-    const updated = finalizeCodexAssistantMessage(runtime, {
-      messageId: options.messageId,
-      status: options.status,
-      text: options.text,
-    })
-    this.codexRuntimes.set(sessionId, updated)
-    this.persistCodexRuntime(sessionId)
   }
 
   addEventSubscriber(cb: (event: AgentEvent) => void): () => void {
@@ -597,15 +400,12 @@ export class AgentService {
       }
       case 'codex_plan_approval': {
         if (!command.sessionId) break
-        const approval = {
-          status: command.status,
-          ...(command.feedback ? { feedback: command.feedback } : {}),
-        }
         const session = this.sessionManager?.getSession(command.sessionId)
         if (session && session.snapshot.harnessId === 'codex') {
-          session.setCodexPlanApproval(command.messageId, approval)
-        } else {
-          this.updateCodexPlanApproval(command.sessionId, command.messageId, approval)
+          session.setCodexPlanApproval(command.messageId, {
+            status: command.status,
+            ...(command.feedback ? { feedback: command.feedback } : {}),
+          })
         }
         break
       }
@@ -1591,12 +1391,10 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_STATE, (_event, sessionId: string) => {
-      return this.getCodexRuntimeSnapshot(sessionId) ?? loadSessionState(sessionId)
+      return loadSessionState(sessionId)
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, (_event, sessionId: string) => {
-      this.codexRuntimes.delete(sessionId)
-      this.notifiedCodexSessions.delete(sessionId)
       dbDeleteSession(sessionId)
       this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
     })

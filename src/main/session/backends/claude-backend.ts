@@ -1,4 +1,4 @@
-import type { Query } from '@anthropic-ai/claude-agent-sdk'
+import type { CanUseTool, Query } from '@anthropic-ai/claude-agent-sdk'
 import { MessageBridge } from '../../agent/message-bridge'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions } from '../../agent/claude-query'
 import { getSharedWarmupManager } from '../../agent/warmup-manager'
@@ -52,19 +52,39 @@ export class ClaudeBackend implements SessionBackend {
   private pendingQuestions = new Map<string, PendingQuestion>()
   private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
 
+  private canUseToolHandle: CanUseTool | null = null
+  private trackPlanFileHandle: ((filePath: string) => void) | null = null
+
   private warmupManager = getSharedWarmupManager()
+
+  private ensurePermissionHandles(): { canUseTool: CanUseTool; trackPlanFile: (filePath: string) => void } {
+    if (!this.canUseToolHandle || !this.trackPlanFileHandle) {
+      const handles = createCanUseTool(
+        this.pendingPermissions,
+        this.pendingQuestions,
+        this.pendingPlanApprovals,
+        (e) => this.emit(e),
+      )
+      this.canUseToolHandle = handles.canUseTool
+      this.trackPlanFileHandle = handles.trackPlanFile
+    }
+    return { canUseTool: this.canUseToolHandle, trackPlanFile: this.trackPlanFileHandle }
+  }
 
   private buildQueryOptions(opts: BackendStartOptions): SessionQueryOptions {
     const config = (opts.config ?? {}) as ClaudeConfig
     const env: Record<string, string | undefined> = { ...(config.extraEnv ?? {}) }
     if (config.apiKey) env.ANTHROPIC_API_KEY = config.apiKey
     if (config.baseUrl) env.ANTHROPIC_BASE_URL = config.baseUrl
+    const { canUseTool, trackPlanFile } = this.ensurePermissionHandles()
     return {
       cwd: opts.cwd,
       model: opts.model ?? config.model,
       effort: opts.effort,
       permissionMode: opts.permissionMode,
       sandboxInfo: opts.sandboxInfo,
+      canUseTool,
+      trackPlanFile,
       resume: opts.providerSessionId,
       abortController: opts.abortController,
       additionalDirectories: opts.additionalDirectories,
@@ -77,17 +97,8 @@ export class ClaudeBackend implements SessionBackend {
     this.bridge = new MessageBridge()
     this.providerSessionId = opts.providerSessionId ?? null
 
-    const { canUseTool, trackPlanFile } = createCanUseTool(
-      this.pendingPermissions,
-      this.pendingQuestions,
-      this.pendingPlanApprovals,
-      (e) => this.emit(e),
-    )
-
     const queryOptions: SessionQueryOptions = {
       ...this.buildQueryOptions(opts),
-      canUseTool,
-      trackPlanFile,
       warmupManager: this.warmupManager,
     }
 
@@ -161,7 +172,7 @@ export class ClaudeBackend implements SessionBackend {
 
   async interrupt(): Promise<void> {
     this.interrupted = true
-    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
+    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, 'backend.interrupt')
     if (this.query) {
       try { await this.query.interrupt() } catch (err) {
         log.debug('[ClaudeBackend] interrupt error:', err)
@@ -172,7 +183,7 @@ export class ClaudeBackend implements SessionBackend {
   async close(): Promise<void> {
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()
-    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
+    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, 'backend.close')
     if (this.query) {
       try { this.query.close() } catch { /* ignore */ }
     }
@@ -201,7 +212,7 @@ export class ClaudeBackend implements SessionBackend {
     const resumeId = this.providerSessionId ?? undefined
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()
-    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
+    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, 'backend.rebuild')
     if (this.query) {
       try { this.query.close() } catch { /* ignore */ }
     }

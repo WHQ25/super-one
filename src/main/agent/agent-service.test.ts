@@ -186,6 +186,56 @@ describe('AgentService.resumeSession', () => {
   })
 })
 
+describe('AgentService.resolveInteractionSession', () => {
+  it('returns the session matching sessionId when it belongs to the project', () => {
+    const service = new AgentService()
+    const session = { id: 'sid-a', projectPath: '/p' }
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn((id: string) => (id === 'sid-a' ? session : null)),
+      getActiveSession: vi.fn(() => null),
+    }
+    const got = (service as unknown as { resolveInteractionSession: (p: string, s: string | undefined) => unknown })
+      .resolveInteractionSession('/p', 'sid-a')
+    expect(got).toBe(session)
+  })
+
+  it('returns null (does NOT fall back to active) when sessionId given but not found — avoids routing response to wrong session', () => {
+    const service = new AgentService()
+    const activeSession = { id: 'sid-active', projectPath: '/p' }
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => null),
+      getActiveSession: vi.fn(() => activeSession),
+    }
+    const got = (service as unknown as { resolveInteractionSession: (p: string, s: string | undefined) => unknown })
+      .resolveInteractionSession('/p', 'sid-missing')
+    expect(got).toBeNull()
+  })
+
+  it('returns null when sessionId belongs to a different project', () => {
+    const service = new AgentService()
+    const session = { id: 'sid-a', projectPath: '/other' }
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => session),
+      getActiveSession: vi.fn(() => null),
+    }
+    const got = (service as unknown as { resolveInteractionSession: (p: string, s: string | undefined) => unknown })
+      .resolveInteractionSession('/p', 'sid-a')
+    expect(got).toBeNull()
+  })
+
+  it('falls back to active session only when sessionId is undefined (legacy callers)', () => {
+    const service = new AgentService()
+    const activeSession = { id: 'sid-active', projectPath: '/p' }
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => null),
+      getActiveSession: vi.fn((p: string) => (p === '/p' ? activeSession : null)),
+    }
+    const got = (service as unknown as { resolveInteractionSession: (p: string, s: string | undefined) => unknown })
+      .resolveInteractionSession('/p', undefined)
+    expect(got).toBe(activeSession)
+  })
+})
+
 describe('AgentService.handleRemoteCommand', () => {
   it('list_directory returns sorted items with directories first', async () => {
     mockReaddir.mockResolvedValue([

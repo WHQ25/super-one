@@ -3556,7 +3556,7 @@ describe('interaction response routing', () => {
     vi.clearAllMocks()
   })
 
-  it('respondToPermission calls IPC without sessionId', () => {
+  it('respondToPermission calls IPC with active sessionId', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     useChatStore.setState({
@@ -3578,11 +3578,11 @@ describe('interaction response routing', () => {
     useChatStore.getState().respondToPermission('r1', true)
 
     expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
-      '/test', 'r1', true, undefined, undefined, undefined,
+      '/test', 'r1', true, undefined, undefined, undefined, 'a',
     )
   })
 
-  it('answerQuestion calls IPC without sessionId', () => {
+  it('answerQuestion calls IPC with active sessionId', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     useChatStore.setState({
@@ -3604,11 +3604,11 @@ describe('interaction response routing', () => {
     useChatStore.getState().answerQuestion('q1', { q: 'a' })
 
     expect(mockWindowAgent.answerQuestion).toHaveBeenCalledWith(
-      '/test', 'q1', { q: 'a' }, undefined,
+      '/test', 'q1', { q: 'a' }, undefined, 'a',
     )
   })
 
-  it('dismissQuestion calls IPC without sessionId', () => {
+  it('dismissQuestion calls IPC with active sessionId', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     useChatStore.setState({
@@ -3630,11 +3630,11 @@ describe('interaction response routing', () => {
     useChatStore.getState().dismissQuestion('q1')
 
     expect(mockWindowAgent.dismissQuestion).toHaveBeenCalledWith(
-      '/test', 'q1',
+      '/test', 'q1', 'a',
     )
   })
 
-  it('respondToPlanApproval calls IPC without sessionId', () => {
+  it('respondToPlanApproval calls IPC with active sessionId', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     useChatStore.setState({
@@ -3656,7 +3656,7 @@ describe('interaction response routing', () => {
     useChatStore.getState().respondToPlanApproval('p1', true, 'ok')
 
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      '/test', 'p1', true, 'ok',
+      '/test', 'p1', true, 'ok', 'a',
     )
   })
 })

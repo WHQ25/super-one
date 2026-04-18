@@ -5,6 +5,7 @@ import log from '../logger'
 import { isToolPreapproved } from '../mcp/superone-mcp-server'
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, QuestionAnnotations } from '../../shared/agent-types'
+import { trace } from './event-trace'
 
 export interface PendingPermission {
   resolve: (result: { allow: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[] }) => void
@@ -101,10 +102,12 @@ export function createCanUseTool(
         suggestions: context.suggestions as Array<Record<string, unknown>> | undefined,
       },
     }
+    trace('permission.flow', 'emit_request', { toolName, toolUseId: context.toolUseID, signalAborted: context.signal.aborted }, requestId)
     emit(permEvent)
 
     const result = await new Promise<{ allow: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[] }>((resolve) => {
       if (context.signal.aborted) {
+        trace('permission.flow', 'resolve', { source: 'signal_already_aborted', allow: false }, requestId)
         resolve({ allow: false })
         return
       }
@@ -280,7 +283,10 @@ export function respondToPermission(
   const pending = pendingPermissions.get(requestId)
   if (pending) {
     pendingPermissions.delete(requestId)
+    trace('permission.flow', 'resolve', { source: 'response', allow, alwaysAllow, reason }, requestId)
     pending.resolve({ allow, alwaysAllow, reason, selectedSuggestions })
+  } else {
+    trace('permission.flow', 'resolve_miss', { reason: 'not_in_pending_map', allow }, requestId)
   }
 }
 
@@ -311,9 +317,21 @@ export function dismissQuestion(
 export function rejectAllPending(
   pendingPermissions: Map<string, PendingPermission>,
   pendingQuestions?: Map<string, PendingQuestion>,
-  pendingPlanApprovals?: Map<string, PendingPlanApproval>
+  pendingPlanApprovals?: Map<string, PendingPlanApproval>,
+  reason: string = 'unspecified'
 ): void {
-  for (const pending of pendingPermissions.values()) {
+  if (pendingPermissions.size > 0 || pendingQuestions?.size || pendingPlanApprovals?.size) {
+    trace('permission.flow', 'reject_all', {
+      reason,
+      permCount: pendingPermissions.size,
+      questionCount: pendingQuestions?.size ?? 0,
+      planCount: pendingPlanApprovals?.size ?? 0,
+      permIds: [...pendingPermissions.keys()],
+      stack: new Error().stack?.split('\n').slice(1, 6).join(' | '),
+    })
+  }
+  for (const [requestId, pending] of pendingPermissions.entries()) {
+    trace('permission.flow', 'resolve', { source: 'reject_all', reason, allow: false }, requestId)
     pending.resolve({ allow: false })
   }
   pendingPermissions.clear()

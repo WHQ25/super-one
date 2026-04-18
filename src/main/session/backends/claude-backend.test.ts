@@ -80,13 +80,18 @@ vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
+const permissionHoisted = vi.hoisted(() => ({
+  createCanUseToolMock: vi.fn(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() })),
+  rejectAllPendingMock: vi.fn(),
+}))
+
 vi.mock('../../agent/claude-permissions', () => ({
-  createCanUseTool: vi.fn(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() })),
+  createCanUseTool: permissionHoisted.createCanUseToolMock,
   respondToPermission: vi.fn(),
   respondToQuestion: vi.fn(),
   dismissQuestion: vi.fn(),
   respondToPlanApproval: vi.fn(),
-  rejectAllPending: vi.fn(),
+  rejectAllPending: permissionHoisted.rejectAllPendingMock,
 }))
 
 import { ClaudeBackend } from './claude-backend'
@@ -116,6 +121,9 @@ describe('ClaudeBackend', () => {
     hoisted.captured.mockQueryInterrupt.mockClear()
     hoisted.captured.mockQueryClose.mockClear()
     hoisted.captured.mockQuerySetModel.mockClear()
+    permissionHoisted.createCanUseToolMock.mockClear()
+    permissionHoisted.createCanUseToolMock.mockImplementation(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() }))
+    permissionHoisted.rejectAllPendingMock.mockClear()
   })
 
   describe('lifecycle', () => {
@@ -309,6 +317,28 @@ describe('ClaudeBackend', () => {
       await backend.close()
       expect(hoisted.captured.warmupDispose).not.toHaveBeenCalled()
     })
+
+    it('prewarm() passes a real canUseTool into buildClaudeOptions (not undefined)', () => {
+      const backend = new ClaudeBackend()
+      backend.prewarm(makeStartOpts())
+      const builtOpts = hoisted.captured.buildClaudeOptionsMock.mock.calls[0]![0] as { canUseTool?: unknown; trackPlanFile?: unknown }
+      expect(builtOpts.canUseTool).toBeTypeOf('function')
+      expect(builtOpts.trackPlanFile).toBeTypeOf('function')
+    })
+
+    it('prewarm() then start() reuse the same canUseTool instance (SDK warm process binds to prewarm callback)', async () => {
+      const sentinelCanUseTool = vi.fn()
+      const sentinelTrackPlanFile = vi.fn()
+      permissionHoisted.createCanUseToolMock.mockImplementation(() => ({ canUseTool: sentinelCanUseTool, trackPlanFile: sentinelTrackPlanFile }))
+      const backend = new ClaudeBackend()
+      backend.prewarm(makeStartOpts())
+      const prewarmOpts = hoisted.captured.buildClaudeOptionsMock.mock.calls[0]![0] as { canUseTool?: unknown }
+      await backend.start(makeStartOpts())
+      const startOpts = hoisted.captured.createSessionQueryMock.mock.calls[0]![1] as { canUseTool?: unknown }
+      expect(permissionHoisted.createCanUseToolMock).toHaveBeenCalledTimes(1)
+      expect(prewarmOpts.canUseTool).toBe(sentinelCanUseTool)
+      expect(startOpts.canUseTool).toBe(sentinelCanUseTool)
+    })
   })
 
   describe('rebuild()', () => {
@@ -342,6 +372,34 @@ describe('ClaudeBackend', () => {
       hoisted.captured.iterationDone?.resolve()
       await backend.rebuild(makeStartOpts())
       expect(hoisted.captured.warmupDispose).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('rejectAllPending reason tagging', () => {
+    it('interrupt() tags rejectAllPending with backend.interrupt', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      permissionHoisted.rejectAllPendingMock.mockClear()
+      await backend.interrupt()
+      expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(expect.any(Map), expect.any(Map), expect.any(Map), 'backend.interrupt')
+    })
+
+    it('close() tags rejectAllPending with backend.close', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.iterationDone?.resolve()
+      permissionHoisted.rejectAllPendingMock.mockClear()
+      await backend.close()
+      expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(expect.any(Map), expect.any(Map), expect.any(Map), 'backend.close')
+    })
+
+    it('rebuild() tags rejectAllPending with backend.rebuild', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.iterationDone?.resolve()
+      permissionHoisted.rejectAllPendingMock.mockClear()
+      await backend.rebuild(makeStartOpts())
+      expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(expect.any(Map), expect.any(Map), expect.any(Map), 'backend.rebuild')
     })
   })
 })

@@ -539,6 +539,9 @@ export class Session implements SessionContract {
       ?? this._currentMessageId
       ?? ''
     trace('agent.emit', event.type, tagged, traceMessageId)
+    if (event.type === 'permission_request') {
+      trace('permission.flow', 'forward', { sessionId: this.id, projectPath: this.projectPath, toolName: event.request.toolName }, event.request.requestId)
+    }
     for (const cb of this.eventListeners) {
       try { cb(tagged) } catch (err) { log.warn('[Session] event listener error:', err) }
     }

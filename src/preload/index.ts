@@ -15,8 +15,8 @@ const agentAPI = {
   interrupt: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, projectPath),
 
-  respondToPermission: (projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]) =>
-    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, projectPath, requestId, allow, alwaysAllow, reason, selectedSuggestions),
+  respondToPermission: (projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, projectPath, requestId, allow, alwaysAllow, reason, selectedSuggestions, sessionId),
 
   setPermissionMode: (projectPath: string, mode: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_PERMISSION_MODE, projectPath, mode),
@@ -24,14 +24,14 @@ const agentAPI = {
   setSandboxMode: (projectPath: string, mode: SandboxMode) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SANDBOX_MODE, projectPath, mode),
 
-  answerQuestion: (projectPath: string, requestId: string, answers: Record<string, string>, annotations?: Record<string, { preview?: string; notes?: string }>) =>
-    ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, projectPath, requestId, answers, annotations),
+  answerQuestion: (projectPath: string, requestId: string, answers: Record<string, string>, annotations?: Record<string, { preview?: string; notes?: string }>, sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, projectPath, requestId, answers, annotations, sessionId),
 
-  dismissQuestion: (projectPath: string, requestId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.DISMISS_QUESTION, projectPath, requestId),
+  dismissQuestion: (projectPath: string, requestId: string, sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DISMISS_QUESTION, projectPath, requestId, sessionId),
 
-  respondToPlanApproval: (projectPath: string, requestId: string, approved: boolean, feedback?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.RESPOND_PLAN_APPROVAL, projectPath, requestId, approved, feedback),
+  respondToPlanApproval: (projectPath: string, requestId: string, approved: boolean, feedback?: string, sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESPOND_PLAN_APPROVAL, projectPath, requestId, approved, feedback, sessionId),
 
   createSession: (projectPath: string): Promise<string> =>
     ipcRenderer.invoke(AgentIpcChannels.CREATE_SESSION, projectPath),

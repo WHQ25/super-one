@@ -37,22 +37,42 @@ export function inferLanguage(filePath: string): string {
   return EXT_LANG[ext] ?? 'text'
 }
 
+const COMPANION_LANGS: Record<string, string[]> = {
+  html: ['javascript', 'css'],
+  vue: ['javascript', 'typescript', 'css', 'html'],
+  svelte: ['javascript', 'typescript', 'css'],
+  astro: ['javascript', 'typescript', 'css'],
+  mdx: ['javascript', 'typescript'],
+}
+
+function hasCompanions(lang: string): boolean {
+  return (COMPANION_LANGS[lang]?.length ?? 0) > 0
+}
+
+function langsToLoad(lang: string): string[] {
+  const companions = COMPANION_LANGS[lang] ?? []
+  return [lang, ...companions]
+}
+
 const fileHLEngine = createJavaScriptRegexEngine({ forgiving: true })
 let fileHLPromise: Promise<Highlighter> | null = null
 const fileHLLangs = new Set<string>()
 const fileHLThemes = new Set<string>()
 
 async function getFileHighlighter(theme: string, lang: string): Promise<Highlighter> {
+  const required = langsToLoad(lang)
   if (!fileHLPromise) {
-    fileHLPromise = createHighlighter({ themes: [theme as BundledTheme], langs: [lang as BundledLanguage], engine: fileHLEngine })
-    fileHLLangs.add(lang)
+    fileHLPromise = createHighlighter({ themes: [theme as BundledTheme], langs: required as BundledLanguage[], engine: fileHLEngine })
+    required.forEach((l) => fileHLLangs.add(l))
     fileHLThemes.add(theme)
     return fileHLPromise
   }
   const hl = await fileHLPromise
   const loads: Promise<void>[] = []
   if (!fileHLThemes.has(theme)) loads.push(hl.loadTheme(theme as BundledTheme).then(() => { fileHLThemes.add(theme) }))
-  if (!fileHLLangs.has(lang)) loads.push(hl.loadLanguage(lang as BundledLanguage).then(() => { fileHLLangs.add(lang) }))
+  for (const l of required) {
+    if (!fileHLLangs.has(l)) loads.push(hl.loadLanguage(l as BundledLanguage).then(() => { fileHLLangs.add(l) }))
+  }
   if (loads.length) await Promise.all(loads)
   return hl
 }
@@ -96,8 +116,9 @@ export function useHighlightedTokens(code: string, language: string): HLToken[][
     let cancelled = false
     const lang = plugin.supportsLanguage(language as never) ? language : 'md'
     const themes = plugin.getThemes()
+    const needsCompanions = hasCompanions(lang)
 
-    if (lineCount <= HIGHLIGHT_CHUNK_SIZE) {
+    if (lineCount <= HIGHLIGHT_CHUNK_SIZE && !needsCompanions) {
       let handled = false
       const apply = (res: HighlightResult) => {
         if (cancelled || handled) return

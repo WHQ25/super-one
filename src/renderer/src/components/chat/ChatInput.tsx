@@ -238,7 +238,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         setText(`/${name} `)
         setSlashIndex(-1)
       },
-      [clearAttachments, mentions, removeMention, setShowDirManager, setShowReviewPanel]
+      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowDirManager, setShowReviewPanel, setText]
     )
 
     const handleMentionSelect = useCallback(

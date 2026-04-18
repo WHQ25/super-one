@@ -4,15 +4,6 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.21.1-alpha] - 2026-04-18
-
-### Fixed
-
-- Claude sessions now restore project-level resource discovery on prewarm.
-- Prewarmed sessions bind the real `canUseTool` callback so file edits are no longer auto-denied.
-- `@mention` chips render correctly when inserted mid-text in user bubbles.
-- "Accept edits" suggestion is properly aligned inside the plan approval panel.
-
 ## [0.21.0-alpha] - 2026-04-18
 
 ### Refactored

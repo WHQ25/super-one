@@ -531,17 +531,32 @@ function registerIpcHandlers(): void {
     return models
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_RESET, (_event, sessionId: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_RESET, async (_event, sessionId: string) => {
+    const existing = sessionManager.getSession(sessionId)
+    if (existing && existing.snapshot.harnessId === 'codex') {
+      await sessionManager.disposeSession(sessionId)
+      return
+    }
     codexService.reset(sessionId)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_INTERRUPT, (_event, sessionId: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_INTERRUPT, async (_event, sessionId: string) => {
+    const existing = sessionManager.getSession(sessionId)
+    if (existing && existing.snapshot.harnessId === 'codex') {
+      await existing.interrupt()
+      return true
+    }
     return codexService.interrupt(sessionId)
   })
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
     (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel') => {
+      const existing = sessionManager.getSession(sessionId)
+      if (existing && existing.snapshot.harnessId === 'codex') {
+        existing.respondToPermission(requestId, allow, alwaysAllow, reason)
+        return
+      }
       return codexService.respondToPermission(sessionId, requestId, allow, alwaysAllow, reason, decision)
     },
   )
@@ -549,6 +564,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     AgentIpcChannels.CODEX_ANSWER_QUESTION,
     (_event, sessionId: string, requestId: string, answers: Record<string, string>) => {
+      const existing = sessionManager.getSession(sessionId)
+      if (existing && existing.snapshot.harnessId === 'codex') {
+        existing.respondToQuestion(requestId, answers)
+        return
+      }
       return codexService.respondToQuestion(sessionId, requestId, answers)
     },
   )
@@ -556,6 +576,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     AgentIpcChannels.CODEX_DISMISS_QUESTION,
     (_event, sessionId: string, requestId: string) => {
+      const existing = sessionManager.getSession(sessionId)
+      if (existing && existing.snapshot.harnessId === 'codex') {
+        existing.dismissQuestion(requestId)
+        return
+      }
       return codexService.dismissQuestion(sessionId, requestId)
     },
   )

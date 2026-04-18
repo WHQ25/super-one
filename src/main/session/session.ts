@@ -296,6 +296,11 @@ export class Session implements SessionContract {
     return this.backend.getPendingInteractions()
   }
 
+  async steer(input: string): Promise<void> {
+    if (!this.backend.steer) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support steer`)
+    await this.backend.steer(input)
+  }
+
   isStreaming(): boolean {
     return this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting'
   }

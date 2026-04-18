@@ -205,6 +205,7 @@ export interface Session {
   getPendingInteractions(): AgentEvent[]
   dispatchBackendCommand(cmd: BackendCommand): Promise<void>
   updateProviderConfig(nextConfig: unknown): void
+  markNeedsRebuild(): void
   switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void>
   isStreaming(): boolean
   truncateMessagesAt(checkpointId: string): void

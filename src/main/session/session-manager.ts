@@ -245,6 +245,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       try { session.updateProviderConfig(nextConfig) } catch (err) {
         log.debug('[SessionManager] updateProviderConfig failed for sid=%s:', session.id, err)
       }
+      try { session.markNeedsRebuild() } catch (err) {
+        log.debug('[SessionManager] markNeedsRebuild failed for sid=%s:', session.id, err)
+      }
     }
   }
 

@@ -344,7 +344,10 @@ export function resolveToolCall(callId: string, result: unknown): void {
   if (pending) {
     clearTimeout(pending.timer)
     pendingCalls.delete(callId)
+    log.debug('[superone-mcp] tool call resolved callId=%s', callId)
     pending.resolve(result)
+  } else {
+    log.warn('[superone-mcp] resolveToolCall miss (no pending) callId=%s', callId)
   }
 }
 
@@ -353,7 +356,10 @@ export function rejectToolCall(callId: string, error: string): void {
   if (pending) {
     clearTimeout(pending.timer)
     pendingCalls.delete(callId)
+    log.debug('[superone-mcp] tool call rejected callId=%s error=%s', callId, error)
     pending.reject(new Error(error))
+  } else {
+    log.warn('[superone-mcp] rejectToolCall miss (no pending) callId=%s', callId)
   }
 }
 
@@ -471,6 +477,7 @@ function sendToolCall(callId: string, appId: string, toolName: string, args: Rec
   return new Promise<unknown>((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingCalls.delete(callId)
+      log.warn('[superone-mcp] tool call timeout callId=%s appId=%s toolName=%s', callId, appId, toolName)
       reject(new Error(`Tool call timeout after ${TOOL_CALL_TIMEOUT_MS}ms: ${toolName}`))
     }, TOOL_CALL_TIMEOUT_MS)
 
@@ -484,6 +491,7 @@ function sendToolCall(callId: string, appId: string, toolName: string, args: Rec
       return
     }
 
+    log.debug('[superone-mcp] tool call dispatched callId=%s appId=%s toolName=%s', callId, appId, toolName)
     win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_CALL, request)
   })
 }
@@ -494,7 +502,9 @@ export async function executeAppTool(appId: string, toolName: string, args: Reco
     throw new Error(`App "${appId}" has been closed. This tool is no longer available.`)
   }
 
+  log.debug('[superone-mcp] executeAppTool begin appId=%s toolName=%s readyEntry=%s', appId, toolName, appReadyGates.has(appId) ? JSON.stringify({ ready: appReadyGates.get(appId)?.ready }) : 'none')
   await waitForAppReady(appId)
+  log.debug('[superone-mcp] executeAppTool ready appId=%s toolName=%s', appId, toolName)
 
   const toolDef = defsEntry.tools.find((t) => t.name === toolName)
   const intercept = toolDef?.renderer?.intercept

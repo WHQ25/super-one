@@ -83,6 +83,7 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
     if (inChatMode) return
     const cleanup = window.miniapp.onToolCall((call: MiniAppToolCallRequest) => {
       if (call.appId !== appId) return
+      window.app.trace?.('miniapp.tool', 'forward_to_iframe', { appId, toolName: call.toolName }, call.callId)
       sendToFrame({
         type: 'miniapp-tool-call',
         callId: call.callId,

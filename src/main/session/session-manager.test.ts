@@ -367,6 +367,17 @@ describe('SessionManager', () => {
       expect((sessionB as unknown as { providerConfig: unknown }).providerConfig).toEqual({ apiKey: 'resolved-4' })
     })
 
+    it('markAllNeedsRebuild forces rebuild even when resolver returns equivalent provider config', () => {
+      const stableConfig = { apiKey: 'stable-token' }
+      const resolver = vi.fn(() => stableConfig)
+      const mgr2 = new SessionManagerImpl({ resolveProviderConfig: resolver })
+      const session = mgr2.createSession({ projectPath: '/p-a', providerId: 'claude-base' })
+
+      mgr2.markAllNeedsRebuild()
+
+      expect((session as unknown as { _needsRebuild: boolean })._needsRebuild).toBe(true)
+    })
+
     it('markAllNeedsRebuild(harnessId) scopes the refresh to matching sessions only', () => {
       let revision = 0
       const resolver = vi.fn(() => ({ apiKey: `resolved-${++revision}` }))

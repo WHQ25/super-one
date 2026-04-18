@@ -1024,6 +1024,29 @@ describe('Session persist hook', () => {
     await p2
   })
 
+  it('markNeedsRebuild forces backend rebuild on next send even when provider config is unchanged', async () => {
+    const { session, backend } = makeSession()
+    const p0 = session.send({ content: 'boot', clientMessageId: 'u0' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p0
+    expect(backend.rebuildCalls).toHaveLength(0)
+
+    session.markNeedsRebuild()
+
+    const p1 = session.send({ content: 'after mini-app toggle', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    backend.resolveSend?.()
+    await p1
+
+    const p2 = session.send({ content: 'again', clientMessageId: 'u2' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    backend.resolveSend?.()
+    await p2
+  })
+
   it('fires onProviderSessionIdChange when backend emits new provider session id', () => {
     const calls: Array<[string, string]> = []
     const { backend } = makeSession({

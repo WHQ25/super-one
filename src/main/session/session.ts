@@ -502,6 +502,11 @@ export class Session implements SessionContract {
     this._needsRebuild = true
   }
 
+  markNeedsRebuild(): void {
+    this.assertNotDisposed()
+    this._needsRebuild = true
+  }
+
   async switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void> {
     this.assertNotDisposed()
     const branchChanged = gitBranch !== undefined && gitBranch !== this._gitBranch

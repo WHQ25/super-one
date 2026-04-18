@@ -22,6 +22,7 @@ export function handleMiniAppMessage(
 ): boolean {
   switch (type) {
     case 'miniapp-tool-result':
+      window.app.trace?.('miniapp.tool', 'iframe_reply', { appId, hasError: !!data.error }, data.callId as string)
       window.miniapp.toolResult(data.callId as string, data.result, data.error as string | undefined)
       return true
     case 'miniapp-sendPrompt':

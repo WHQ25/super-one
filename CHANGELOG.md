@@ -4,6 +4,20 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.21.1-alpha] - 2026-04-18
+
+### Fixed
+
+- **Session worktree persistence** — worktree path/base branch now round-trip through save/resume, and resume gracefully recovers when the worktree directory is missing on disk.
+- **Prewarm respects permission handler** — the prewarmed Claude subprocess now binds the real `canUseTool`, so edits on the first tool call after warmup are no longer auto-denied.
+- **Project-level resource discovery restored for Claude sessions** — per-project agents / skills / MCP configs load again.
+- **Slash command palette refreshes on provider switch** — no more stale Claude entries after switching to Codex (and vice-versa).
+- **File link targets normalized** before opening, so paths with `./` prefixes, URL-encoded characters, or fragment suffixes resolve correctly.
+- **Codex completion metadata** (token counts, finish reason) normalized so post-turn UI doesn't render partial data.
+- **Codex bash blocks** now collapse by default with a shimmer "running" state, matching the Claude bash UX.
+- **@mention chips render for mid-text mentions** in the user bubble (previously only leading mentions became chips).
+- "Accept edits" suggestion in the plan-approval UI is correctly aligned.
+
 ## [0.21.0-alpha] - 2026-04-18
 
 ### Refactored

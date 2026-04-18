@@ -24,6 +24,7 @@ import { RewindButton } from './RewindButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { ReasoningBlock } from './ReasoningBlock'
+import { parseUserMentions, type UserMentionKind } from './user-mention-parser'
 import { deriveColors, ContextPreviewContent } from './ContextChip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -289,26 +290,6 @@ function renderBlock(
   }
 }
 
-/** Extract leading @mention tokens from user text. */
-function parseUserMentions(text: string) {
-  const mentions: { value: string; kind: 'file' | 'directory' | 'agent' }[] = []
-  let rest = text
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const match = rest.match(/^@(\S+)\s*/)
-    if (!match) break
-    const value = match[1]
-    const kind = value.endsWith('/')
-      ? 'directory' as const
-      : value.includes('/') || value.includes('.')
-        ? 'file' as const
-        : 'agent' as const
-    mentions.push({ value, kind })
-    rest = rest.slice(match[0].length)
-  }
-  return { mentions, rest }
-}
-
 function LongTextChip({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
   const lineCount = text.split('\n').length
@@ -336,43 +317,44 @@ function RestContent({ rest }: { rest: string }) {
   return <span className="whitespace-pre-wrap">{rest}</span>
 }
 
+function MentionInlineChip({ kind, value }: { kind: UserMentionKind; value: string }) {
+  const display = value.replace(/\/$/, '').split('/').pop() || value
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs align-middle whitespace-nowrap',
+        kind === 'agent'
+          ? 'border-purple-400/40 bg-purple-400/15 text-purple-300'
+          : 'border-white/15 bg-white/10 text-white/90'
+      )}
+    >
+      {kind === 'agent' ? (
+        <span className="font-medium">@{display}</span>
+      ) : kind === 'directory' ? (
+        <>
+          <Folder className="size-3.5 shrink-0 text-blue-400" />
+          <span>{display}</span>
+        </>
+      ) : (
+        <>
+          <FileIcon name={display} size={14} />
+          <span>{display}</span>
+        </>
+      )}
+    </span>
+  )
+}
+
 export function UserTextBlock({ text }: { text: string }) {
-  const { mentions, rest } = parseUserMentions(text)
-
-  if (mentions.length === 0) return <RestContent rest={text} />
-
-  const displayName = (v: string) => v.replace(/\/$/, '').split('/').pop() || v
-
+  const segments = parseUserMentions(text)
+  if (segments.length === 0) return null
   return (
     <span>
-      <span className="mb-1 flex flex-wrap gap-1">
-        {mentions.map((m) => (
-          <span
-            key={m.value}
-            className={cn(
-              'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',
-              m.kind === 'agent'
-                ? 'border-purple-400/40 bg-purple-400/15 text-purple-300'
-                : 'border-white/15 bg-white/10 text-white/90'
-            )}
-          >
-            {m.kind === 'agent' ? (
-              <span className="font-medium">@{displayName(m.value)}</span>
-            ) : m.kind === 'directory' ? (
-              <>
-                <Folder className="size-3.5 shrink-0 text-blue-400" />
-                <span>{displayName(m.value)}</span>
-              </>
-            ) : (
-              <>
-                <FileIcon name={displayName(m.value)} size={14} />
-                <span>{displayName(m.value)}</span>
-              </>
-            )}
-          </span>
-        ))}
-      </span>
-      {rest && <RestContent rest={rest} />}
+      {segments.map((seg, i) =>
+        seg.type === 'mention'
+          ? <MentionInlineChip key={i} kind={seg.kind} value={seg.value} />
+          : <RestContent key={i} rest={seg.text} />
+      )}
     </span>
   )
 }

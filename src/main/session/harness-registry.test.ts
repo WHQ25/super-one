@@ -23,6 +23,8 @@ import { setCodexServiceFactory } from './backends/codex-backend'
 
 setCodexServiceFactory(() => ({
   run: vi.fn(),
+  review: vi.fn(),
+  compact: vi.fn(),
   interrupt: vi.fn(),
   reset: vi.fn(),
   respondToPermission: vi.fn(),

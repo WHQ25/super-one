@@ -45,6 +45,8 @@ function makeResult(overrides: Partial<CodexRunResult> = {}): CodexRunResult {
 function makeFakeService(): CodexServiceDeps & {
   capturedCallbacks: CodexRunStreamCallbacksDeps | undefined
   runMock: ReturnType<typeof vi.fn>
+  reviewMock: ReturnType<typeof vi.fn>
+  compactMock: ReturnType<typeof vi.fn>
   interruptMock: ReturnType<typeof vi.fn>
   resetMock: ReturnType<typeof vi.fn>
   respondPermissionMock: ReturnType<typeof vi.fn>
@@ -59,7 +61,7 @@ function makeFakeService(): CodexServiceDeps & {
     resolveRun: (_r: CodexRunResult) => {},
     rejectRun: (_e: Error) => {},
   }
-  const runMock = vi.fn((
+  const captureImpl = (
     _sessionId: string,
     _projectPath: string,
     _request: CodexRunRequest,
@@ -70,7 +72,10 @@ function makeFakeService(): CodexServiceDeps & {
       state.resolveRun = resolve
       state.rejectRun = reject
     })
-  })
+  }
+  const runMock = vi.fn(captureImpl)
+  const reviewMock = vi.fn(captureImpl)
+  const compactMock = vi.fn(captureImpl)
   const interruptMock = vi.fn(() => true)
   const resetMock = vi.fn()
   const respondPermissionMock = vi.fn()
@@ -80,6 +85,8 @@ function makeFakeService(): CodexServiceDeps & {
 
   return {
     run: runMock as unknown as CodexServiceDeps['run'],
+    review: reviewMock as unknown as CodexServiceDeps['review'],
+    compact: compactMock as unknown as CodexServiceDeps['compact'],
     interrupt: interruptMock as unknown as CodexServiceDeps['interrupt'],
     reset: resetMock as unknown as CodexServiceDeps['reset'],
     respondToPermission: respondPermissionMock as unknown as CodexServiceDeps['respondToPermission'],
@@ -88,6 +95,8 @@ function makeFakeService(): CodexServiceDeps & {
     steer: steerMock as unknown as CodexServiceDeps['steer'],
     get capturedCallbacks() { return state.capturedCallbacks },
     runMock,
+    reviewMock,
+    compactMock,
     interruptMock,
     resetMock,
     respondPermissionMock,
@@ -210,6 +219,42 @@ describe('CodexBackend send()', () => {
     expect(req.threadId).toBe('th-override')
     expect(req.permissionPreset).toBe('full-access')
     expect(req.reasoningEffort).toBe('high')
+  })
+
+  it('codex.mode=review routes to service.review with the target', async () => {
+    const pending = backend.send({
+      content: '/review',
+      assistantMessageId: 'rev_1',
+      codex: { mode: 'review', reviewTarget: { type: 'uncommittedChanges' }, permissionPreset: 'default' },
+    })
+    service.resolveRun(makeResult({ finalResponse: 'review done' }))
+    await pending
+    expect(service.reviewMock).toHaveBeenCalledOnce()
+    expect(service.runMock).not.toHaveBeenCalled()
+    const [, , req] = service.reviewMock.mock.calls[0]!
+    expect(req.target).toEqual({ type: 'uncommittedChanges' })
+    expect(req.messageId).toBe('rev_1')
+  })
+
+  it('codex.mode=review without target throws', async () => {
+    await expect(backend.send({
+      content: '/review',
+      codex: { mode: 'review' },
+    })).rejects.toThrow(/reviewTarget/)
+  })
+
+  it('codex.mode=compact routes to service.compact', async () => {
+    const pending = backend.send({
+      content: '/compact',
+      assistantMessageId: 'comp_1',
+      codex: { mode: 'compact' },
+    })
+    service.resolveRun(makeResult({ finalResponse: '' }))
+    await pending
+    expect(service.compactMock).toHaveBeenCalledOnce()
+    expect(service.runMock).not.toHaveBeenCalled()
+    const complete = events.find((e) => e.type === 'message_complete') as { metadata: { codex: { finalResponse: string } } }
+    expect(complete.metadata.codex.finalResponse).toBe('Conversation compacted.')
   })
 
   it('maps bypassPermissions → full-access preset', async () => {

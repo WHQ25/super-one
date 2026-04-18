@@ -1,8 +1,10 @@
 import type {
   AgentEvent,
   AskUserQuestionRequest,
+  CodexCompactRequest,
   CodexPermissionPreset,
   CodexReasoningEffort,
+  CodexReviewRequest,
   CodexRunRequest,
   CodexRunResult,
   CodexThreadItem,
@@ -32,6 +34,18 @@ export interface CodexServiceDeps {
     sessionId: string,
     projectPath: string,
     request: CodexRunRequest,
+    callbacks?: CodexRunStreamCallbacksDeps,
+  ): Promise<CodexRunResult>
+  review(
+    sessionId: string,
+    projectPath: string,
+    request: CodexReviewRequest,
+    callbacks?: CodexRunStreamCallbacksDeps,
+  ): Promise<CodexRunResult>
+  compact(
+    sessionId: string,
+    projectPath: string,
+    request: CodexCompactRequest,
     callbacks?: CodexRunStreamCallbacksDeps,
   ): Promise<CodexRunResult>
   interrupt(sessionId: string): boolean
@@ -133,22 +147,20 @@ export class CodexBackend implements SessionBackend {
     const config = readConfig(startOpts.config)
     const assistantMessageId = request.assistantMessageId
       ?? `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    this.currentMessageId = assistantMessageId
-
-    const codexRequest: CodexRunRequest = {
-      prompt: request.codex?.prompt ?? request.content,
-      images: request.images,
-      model: request.model ?? config.model,
-      reasoningEffort: request.codex?.reasoningEffort ?? mapEffort(request.effort) ?? config.reasoningEffort,
-      permissionPreset: request.codex?.permissionPreset ?? config.permissionPreset ?? mapPermissionMode(startOpts.permissionMode),
-      collaborationMode: request.codex?.collaborationMode,
-      threadId: request.codex?.threadId ?? this.providerSessionId ?? undefined,
-      messageId: assistantMessageId,
-      cwd: request.codex?.cwd ?? startOpts.cwd,
-    }
-
+    const mode = request.codex?.mode ?? 'run'
     const sessionKey = startOpts.sessionId
     const projectPath = startOpts.projectPath
+    const resolvedPermissionPreset = request.codex?.permissionPreset
+      ?? config.permissionPreset
+      ?? mapPermissionMode(startOpts.permissionMode)
+    const resolvedReasoningEffort = request.codex?.reasoningEffort
+      ?? mapEffort(request.effort)
+      ?? config.reasoningEffort
+    const resolvedModel = request.model ?? config.model
+    const resolvedThreadId = request.codex?.threadId ?? this.providerSessionId ?? undefined
+    const resolvedCwd = request.codex?.cwd ?? startOpts.cwd
+
+    this.currentMessageId = assistantMessageId
 
     this.emit({
       type: 'message_start',
@@ -167,8 +179,44 @@ export class CodexBackend implements SessionBackend {
 
     const task = (async () => {
       try {
-        const result = await this.service.run(sessionKey, projectPath, codexRequest, callbacks)
-        const finalText = result.finalResponse?.trim() || 'Codex completed without returning text.'
+        let result: CodexRunResult
+        if (mode === 'review') {
+          if (!request.codex?.reviewTarget) throw new Error('CodexBackend review mode requires codex.reviewTarget')
+          const reviewRequest: CodexReviewRequest = {
+            target: request.codex.reviewTarget,
+            model: resolvedModel,
+            reasoningEffort: resolvedReasoningEffort,
+            permissionPreset: resolvedPermissionPreset,
+            threadId: resolvedThreadId,
+            messageId: assistantMessageId,
+            cwd: resolvedCwd,
+          }
+          result = await this.service.review(sessionKey, projectPath, reviewRequest, callbacks)
+        } else if (mode === 'compact') {
+          const compactRequest: CodexCompactRequest = {
+            model: resolvedModel,
+            permissionPreset: resolvedPermissionPreset,
+            threadId: resolvedThreadId,
+            messageId: assistantMessageId,
+            cwd: resolvedCwd,
+          }
+          result = await this.service.compact(sessionKey, projectPath, compactRequest, callbacks)
+        } else {
+          const codexRequest: CodexRunRequest = {
+            prompt: request.codex?.prompt ?? request.content,
+            images: request.images,
+            model: resolvedModel,
+            reasoningEffort: resolvedReasoningEffort,
+            permissionPreset: resolvedPermissionPreset,
+            collaborationMode: request.codex?.collaborationMode,
+            threadId: resolvedThreadId,
+            messageId: assistantMessageId,
+            cwd: resolvedCwd,
+          }
+          result = await this.service.run(sessionKey, projectPath, codexRequest, callbacks)
+        }
+        const finalText = result.finalResponse?.trim()
+          || (mode === 'compact' ? 'Conversation compacted.' : 'Codex completed without returning text.')
         this.emit({
           type: 'message_complete',
           messageId: assistantMessageId,

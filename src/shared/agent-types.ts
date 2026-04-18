@@ -601,6 +601,8 @@ export interface SendMessageRequest {
 }
 
 export interface CodexSendExtras {
+  mode?: 'run' | 'review' | 'compact'
+  reviewTarget?: CodexReviewTarget
   permissionPreset?: CodexPermissionPreset
   reasoningEffort?: CodexReasoningEffort
   collaborationMode?: CodexCollaborationMode

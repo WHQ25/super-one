@@ -4,6 +4,31 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.21.0-alpha] - 2026-04-18
+
+### Refactored
+
+- **Session management overhaul** — replaced the monolithic `agent-service.ts` (1600+ LOC) with a hexagonal architecture: `Session` (lifecycle aggregate root), `SessionBackend` (`ClaudeBackend` / `CodexBackend`), `SessionManager` (per-project tracking + event fan-out), `BackendCommand` (generic discriminated-union command bus). Removes ~450 LOC of legacy Codex runtime infrastructure. Stable `sessions.id` is now the primary key; `provider_session_id` is persisted when the harness resolves it.
+- **Codex paths unified through SessionManager** — all Codex IPC handlers (`run`, `steer` with hot assistantId swap, `review`, `compact`, plan approval, collaboration mode, side-channel), plus automation service and remote control, now route through the same Session pipeline as Claude.
+- **Pure-SQL migration module** — extracted `database-migrations.ts` with no Electron dependency so migrations can run from bare Node for CI / snapshot testing.
+
+### Fixed
+
+- `CODEX_RUN` receiving a Claude session id when the user switched provider to Codex after an empty Claude session — renderer now creates a fresh Codex session id.
+- `switchCwd` now actually migrates the active session to the new cwd (previously a silent no-op).
+- Live sessions rebuild when provider config changes (previously `markAllNeedsRebuild` fan-out was a no-op).
+- Warmup subprocess isolation by resume / fork / session id so parallel projects don't share warm CLI state.
+- Streaming reasoning block auto-expands when text arrives after an empty anchor (Brain animation no longer swallowed).
+- Chat-md tolerates insight blocks emitted without wrapping backticks.
+
+### Added
+
+- `scripts/test-migration.ts` — copies the production DB, runs migrations against the copy, and asserts schema invariants (provider_session_id backfilled, claude_session_id dropped, session_providers seeded, no orphaned messages). Runs via `bun run test:migration`.
+
+### Styling
+
+- Tightened tool-group vertical margin in chat.
+
 ## [0.20.3-alpha] - 2026-04-17
 
 ### Added

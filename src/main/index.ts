@@ -121,6 +121,7 @@ const sessionManager = new SessionManagerImpl({
   },
 })
 sessionManager.onAny((_sid, event) => {
+  agentService.notifyEventSubscribers(event)
   safeSend(AgentIpcChannels.EVENT, event)
 })
 const remoteCallbacks: RemoteControlCallbacks = {

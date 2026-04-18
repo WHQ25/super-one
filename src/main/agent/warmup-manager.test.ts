@@ -15,7 +15,7 @@ vi.mock('./event-trace', () => ({
   trace: vi.fn(),
 }))
 
-import { WarmupManager } from './warmup-manager'
+import { WarmupManager, getSharedWarmupManager } from './warmup-manager'
 
 function fakeWarm(): WarmQuery & { _closed: boolean } {
   const obj = {
@@ -162,5 +162,24 @@ describe('WarmupManager prewarm/consume', () => {
     m.dispose()
     expect(warm._closed).toBe(true)
     expect(m.consume(baseOpts())).toBeNull()
+  })
+})
+
+describe('getSharedWarmupManager', () => {
+  it('returns the same instance across calls (process-level singleton)', () => {
+    const a = getSharedWarmupManager()
+    const b = getSharedWarmupManager()
+    expect(a).toBe(b)
+  })
+
+  it('slot prewarmed via one reference is consumed via the other', async () => {
+    const warm = fakeWarm()
+    startupMock.mockResolvedValue(warm)
+    const a = getSharedWarmupManager()
+    a.prewarm(baseOpts({ cwd: '/singleton-test' }))
+    await new Promise((r) => setTimeout(r, 0))
+    const b = getSharedWarmupManager()
+    const consumed = b.consume(baseOpts({ cwd: '/singleton-test' }))
+    expect(consumed).toBe(warm)
   })
 })

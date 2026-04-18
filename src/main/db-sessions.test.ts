@@ -37,7 +37,6 @@ describe('db-sessions session query + mapping', () => {
     const rows = [
       {
         id: 's1',
-        claude_session_id: 'codex_local_abcd',
         title: 'local codex',
         created_at: '2026-01-01T00:00:00.000Z',
         last_user_msg_at: '2026-01-01T00:00:00.000Z',
@@ -47,7 +46,6 @@ describe('db-sessions session query + mapping', () => {
       },
       {
         id: 's2',
-        claude_session_id: 'session-claude',
         title: 'claude session',
         created_at: '2026-01-01T00:00:00.000Z',
         last_user_msg_at: '2026-01-01T00:00:00.000Z',
@@ -68,15 +66,14 @@ describe('db-sessions session query + mapping', () => {
     const providerBySessionId = Object.fromEntries(sessions.map((entry) => [entry.sessionId, entry.provider]))
 
     expect(allMock).toHaveBeenCalledWith('proj-1')
-    expect(providerBySessionId['codex_local_abcd']).toBe('codex')
-    expect(providerBySessionId['session-claude']).toBe('claude')
+    expect(providerBySessionId['s1']).toBe('codex')
+    expect(providerBySessionId['s2']).toBe('claude')
   })
 
   it('listPinnedSessions keeps inferred provider from SQL rows', () => {
     const rows = [
       {
         id: 'p1',
-        claude_session_id: 'thread-1',
         title: 'codex pinned',
         created_at: '2026-01-01T00:00:00.000Z',
         last_user_msg_at: '2026-01-01T00:00:00.000Z',
@@ -87,7 +84,6 @@ describe('db-sessions session query + mapping', () => {
       },
       {
         id: 'p2',
-        claude_session_id: 'thread-2',
         title: 'claude pinned',
         created_at: '2026-01-01T00:00:00.000Z',
         last_user_msg_at: '2026-01-01T00:00:00.000Z',
@@ -108,8 +104,8 @@ describe('db-sessions session query + mapping', () => {
     const sessions = listPinnedSessions()
     const providerBySessionId = Object.fromEntries(sessions.map((entry) => [entry.sessionId, entry.provider]))
 
-    expect(providerBySessionId['thread-1']).toBe('codex')
-    expect(providerBySessionId['thread-2']).toBe('claude')
+    expect(providerBySessionId['p1']).toBe('codex')
+    expect(providerBySessionId['p2']).toBe('claude')
   })
 })
 
@@ -139,8 +135,8 @@ describe('deleteSessionsOlderThan', () => {
   it('deletes matching sessions and returns their IDs', () => {
     getProjectIdMock.mockReturnValue('proj-1')
     const matchingRows = [
-      { claude_session_id: 'old-session-1' },
-      { claude_session_id: 'old-session-2' },
+      { id: 'old-session-1' },
+      { id: 'old-session-2' },
     ]
     const allMock = vi.fn().mockReturnValue(matchingRows)
     const runMock = vi.fn()

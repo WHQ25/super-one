@@ -18,15 +18,15 @@ function createMockDb() {
     prepare: vi.fn((sql: string) => ({
       run: vi.fn((...args: unknown[]) => {
         if (sql.includes('INSERT INTO sessions')) {
-          const [id, projectId, claudeSessionId, title, createdAt, _lastUserMessageAt, isWorktree, gitBranch, worktreePath] = args as string[]
-          const existing = [...sessions.values()].find((s) => s.claude_session_id === claudeSessionId)
+          const [id, projectId, title, createdAt, _lastUserMessageAt, isWorktree, gitBranch, worktreePath] = args as string[]
+          const existing = sessions.get(id)
           if (existing) {
             if (!existing.title || existing.title === '') existing.title = title ?? existing.title
             if (gitBranch != null) existing.git_branch = gitBranch
             if (worktreePath != null) existing.worktree_path = worktreePath
           } else {
             sessions.set(id, {
-              id, project_id: projectId, claude_session_id: claudeSessionId,
+              id, project_id: projectId,
               title, created_at: createdAt,
               is_worktree: isWorktree === '1' || isWorktree === (1 as unknown) ? 1 : 0,
               git_branch: gitBranch ?? null,
@@ -35,20 +35,20 @@ function createMockDb() {
             })
           }
         } else if (sql.includes('INSERT INTO chat_messages')) {
-          const [msgId, claudeSessionId, sortOrder, role, status, contentJson, createdAt, providerId, metadataJson, checkpointId, resumePointId] = args as string[]
-          if (!messages.has(claudeSessionId)) messages.set(claudeSessionId, [])
-          const list = messages.get(claudeSessionId)!
+          const [msgId, sessionId, sortOrder, role, status, contentJson, createdAt, providerId, metadataJson, checkpointId, resumePointId] = args as string[]
+          if (!messages.has(sessionId)) messages.set(sessionId, [])
+          const list = messages.get(sessionId)!
           const existing = list.findIndex((m) => m.id === msgId)
-          const msg = { id: msgId, claude_session_id: claudeSessionId, sort_order: sortOrder, role, status, content_json: contentJson, created_at: createdAt, provider_id: providerId, metadata_json: metadataJson, checkpoint_id: checkpointId, resume_point_id: resumePointId }
+          const msg = { id: msgId, session_id: sessionId, sort_order: sortOrder, role, status, content_json: contentJson, created_at: createdAt, provider_id: providerId, metadata_json: metadataJson, checkpoint_id: checkpointId, resume_point_id: resumePointId }
           if (existing >= 0) list[existing] = msg
           else list.push(msg)
         } else if (sql.includes('UPDATE sessions') && sql.includes('SET title = ?') && !sql.includes('total_cost_usd')) {
           const [newTitle, sessionId] = args as string[]
-          const session = [...sessions.values()].find((s) => s.claude_session_id === sessionId)
+          const session = sessions.get(sessionId)
           if (session) session.title = newTitle
         } else if (sql.includes('UPDATE sessions')) {
           const sessionId = args[args.length - 1] as string
-          const session = [...sessions.values()].find((s) => s.claude_session_id === sessionId)
+          const session = sessions.get(sessionId)
           if (session) {
             session.total_cost_usd = args[0]
             session.context_tokens = args[1]
@@ -62,7 +62,7 @@ function createMockDb() {
       }),
       get: vi.fn((...args: unknown[]) => {
         if (sql.includes('FROM sessions')) {
-          return [...sessions.values()].find((s) => s.claude_session_id === args[0]) ?? undefined
+          return sessions.get(args[0] as string) ?? undefined
         }
         return undefined
       }),

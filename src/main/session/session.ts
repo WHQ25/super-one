@@ -27,6 +27,7 @@ import {
 import type {
   BackendStartOptions,
   HarnessId,
+  PrewarmHint,
   Session as SessionContract,
   SessionBackend,
   SessionSnapshot,
@@ -58,6 +59,14 @@ export interface SessionConstructorOptions {
 
 const DEFAULT_SANDBOX: SandboxInfo = { enabled: true, autoAllowBash: false }
 
+function sameStringArray(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  const as = [...a].sort()
+  const bs = [...b].sort()
+  for (let i = 0; i < as.length; i++) if (as[i] !== bs[i]) return false
+  return true
+}
+
 export class Session implements SessionContract {
   readonly id: string
   readonly projectPath: string
@@ -70,6 +79,7 @@ export class Session implements SessionContract {
   private providerConfig: unknown
 
   private _status: SessionStatus = 'idle'
+  private _sendChain: Promise<void> = Promise.resolve()
   private _currentMessageId: string | null = null
   private _providerSessionId: string | null = null
   private _lastUserMessageAt: number | null = null
@@ -140,17 +150,33 @@ export class Session implements SessionContract {
   }
 
   async send(request: SendMessageRequest): Promise<void> {
-    this.assertNotDisposed()
-    this.appendUserMessage(request)
-    await this.ensureStarted()
-    if (this._status !== 'ended' && this._status !== 'starting') {
-      throw new Error(`Session.send called in invalid status: ${this._status}`)
-    }
-    this._status = 'streaming'
+    const prev = this._sendChain
+    let release!: () => void
+    this._sendChain = new Promise<void>((r) => { release = r })
     try {
-      await this.backend.send(request)
+      await prev.catch(() => {})
+      this.assertNotDisposed()
+      const effortChanged = request.effort !== undefined && request.effort !== this.effort
+      const dirsChanged = request.additionalDirs !== undefined
+        && !sameStringArray(request.additionalDirs, this.additionalDirectories)
+      if (request.effort !== undefined) this.effort = request.effort
+      if (request.model !== undefined) this.model = request.model
+      if (request.additionalDirs !== undefined) this.additionalDirectories = request.additionalDirs
+      this.appendUserMessage(request)
+      if (this.backendStarted && (effortChanged || dirsChanged)) {
+        log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s', this.id, effortChanged, dirsChanged)
+        await this.backend.rebuild(this.buildBackendStartOpts())
+      } else {
+        await this.ensureStarted()
+      }
+      this._status = 'streaming'
+      try {
+        await this.backend.send(request)
+      } finally {
+        if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
+      }
     } finally {
-      if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
+      release()
     }
   }
 
@@ -240,8 +266,46 @@ export class Session implements SessionContract {
     return this.backend.reloadPlugins()
   }
 
-  prewarm(): void {
-    log.debug('[Session] prewarm not yet wired (phase 2)')
+  prewarm(hint?: PrewarmHint): void {
+    const dirs = hint?.additionalDirs ?? this.additionalDirectories
+    const opts: BackendStartOptions = {
+      cwd: this.cwd,
+      config: this.providerConfig,
+      permissionMode: this.permissionMode,
+      sandboxInfo: this.sandboxInfo,
+      effort: hint?.effort ?? this.effort,
+      model: hint?.model ?? this.model,
+      additionalDirectories: dirs.length > 0 ? dirs : undefined,
+      abortController: new AbortController(),
+      providerSessionId: this._providerSessionId ?? undefined,
+    }
+    this.backend.prewarm(opts)
+  }
+
+  dequeueMessage(clientMessageId: string): boolean {
+    if (!this.backendStarted) return false
+    return this.backend.dequeueMessage(clientMessageId)
+  }
+
+  getPendingInteractions(): AgentEvent[] {
+    if (!this.backendStarted) return []
+    return this.backend.getPendingInteractions()
+  }
+
+  isStreaming(): boolean {
+    return this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting'
+  }
+
+  truncateMessagesAt(checkpointId: string): void {
+    const idx = this._messages.findIndex((m) => m.checkpointId === checkpointId)
+    if (idx < 0) return
+    this._messages = this._messages.slice(0, idx)
+    this._totalCostUsd = 0
+    this._contextTokens = 0
+    this._taskProgress = {}
+    this._streamingTokensByMessageId = {}
+    this._lastUsageByMessageId = {}
+    this.notifyStateChange()
   }
 
   async dispose(): Promise<void> {
@@ -280,12 +344,9 @@ export class Session implements SessionContract {
     return this.sandboxInfo
   }
 
-  private async ensureStarted(): Promise<void> {
-    if (this.backendStarted) return
-    if (this._status === 'starting') return
-    this._status = 'starting'
+  private buildBackendStartOpts(): BackendStartOptions {
     this.abortController = new AbortController()
-    const startOpts: BackendStartOptions = {
+    return {
       cwd: this.cwd,
       config: this.providerConfig,
       permissionMode: this.permissionMode,
@@ -296,6 +357,13 @@ export class Session implements SessionContract {
       abortController: this.abortController,
       providerSessionId: this._providerSessionId ?? undefined,
     }
+  }
+
+  private async ensureStarted(): Promise<void> {
+    if (this.backendStarted) return
+    if (this._status === 'starting') return
+    this._status = 'starting'
+    const startOpts = this.buildBackendStartOpts()
     try {
       await this.backend.start(startOpts)
       this.backendStarted = true
@@ -386,6 +454,8 @@ export class Session implements SessionContract {
     try {
       this.onStateChange({
         sid: this.id,
+        projectPath: this.projectPath,
+        providerId: this.providerId,
         messages: this._messages,
         totalCostUsd: this._totalCostUsd,
         contextTokens: this._contextTokens,

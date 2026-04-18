@@ -18,8 +18,8 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
-import { insertSessionRecord, loadSessionStateBySid, saveSessionStateBySid } from './session/session-repo'
-import { buildProviderEnv } from './agent/claude-agent'
+import { loadSessionStateBySid, saveSessionStateBySid } from './session/session-repo'
+import { buildProviderEnv } from './agent/provider-env'
 import type { SessionProvider } from './session/types'
 import {
   AgentIpcChannels,
@@ -92,17 +92,12 @@ function resolveBaseProviderConfig(provider: SessionProvider): unknown {
 
 const sessionManager = new SessionManagerImpl({
   resolveProviderConfig: resolveBaseProviderConfig,
-  onSessionCreated: ({ id, projectPath, providerId }) => {
-    try {
-      insertSessionRecord({ id, projectPath, providerId })
-    } catch (err) {
-      console.warn('[sessionManager] insertSessionRecord failed:', err)
-    }
-  },
   onSessionStateChange: (snapshot) => {
     try {
       saveSessionStateBySid({
         sid: snapshot.sid,
+        projectPath: snapshot.projectPath,
+        providerId: snapshot.providerId,
         messages: snapshot.messages,
         totalCostUsd: snapshot.totalCostUsd,
         contextTokens: snapshot.contextTokens,

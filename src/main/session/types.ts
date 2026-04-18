@@ -73,6 +73,8 @@ export interface SessionSnapshot {
 
 export interface SessionStateChange {
   sid: string
+  projectPath: string
+  providerId: string
   messages: ChatMessage[]
   totalCostUsd: number
   contextTokens: number
@@ -91,11 +93,19 @@ export interface BackendStartOptions {
   providerSessionId?: string
 }
 
+export interface PrewarmHint {
+  effort?: SendMessageRequest['effort']
+  model?: string
+  additionalDirs?: string[]
+}
+
 export type BackendEvent = AgentEvent
 
 export interface SessionBackend {
   readonly kind: HarnessId
   start(opts: BackendStartOptions): Promise<void>
+  rebuild(opts: BackendStartOptions): Promise<void>
+  prewarm(opts: BackendStartOptions): void
   send(request: SendMessageRequest): Promise<void>
   interrupt(): Promise<void>
   close(): Promise<void>
@@ -121,11 +131,16 @@ export interface SessionBackend {
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
   reloadPlugins(): Promise<boolean>
+  dequeueMessage(clientMessageId: string): boolean
+  getPendingInteractions(): AgentEvent[]
   onEvent(handler: (event: BackendEvent) => void): () => void
   onProviderSessionId(handler: (id: string) => void): () => void
 }
 
 export interface Session {
+  readonly id: string
+  readonly projectPath: string
+  readonly cwd: string
   readonly snapshot: SessionSnapshot
   send(request: SendMessageRequest): Promise<void>
   interrupt(): Promise<void>
@@ -154,7 +169,11 @@ export interface Session {
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
   reloadPlugins(): Promise<boolean>
-  prewarm(): void
+  prewarm(hint?: PrewarmHint): void
+  dequeueMessage(clientMessageId: string): boolean
+  getPendingInteractions(): AgentEvent[]
+  isStreaming(): boolean
+  truncateMessagesAt(checkpointId: string): void
   dispose(): Promise<void>
   on(handler: (event: AgentEvent) => void): () => void
 }

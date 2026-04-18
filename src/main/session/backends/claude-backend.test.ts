@@ -9,6 +9,9 @@ const hoisted = vi.hoisted(() => {
     bridge: unknown
     iterationDone: { resolve: () => void; promise: Promise<void> } | null
     createSessionQueryMock: ReturnType<typeof vi.fn>
+    buildClaudeOptionsMock: ReturnType<typeof vi.fn>
+    warmupPrewarm: ReturnType<typeof vi.fn>
+    warmupDispose: ReturnType<typeof vi.fn>
     mockQueryInterrupt: ReturnType<typeof vi.fn>
     mockQueryClose: ReturnType<typeof vi.fn>
     mockQuerySetModel: ReturnType<typeof vi.fn>
@@ -20,6 +23,9 @@ const hoisted = vi.hoisted(() => {
     bridge: null,
     iterationDone: null,
     createSessionQueryMock: vi.fn(),
+    buildClaudeOptionsMock: vi.fn((opts: unknown) => ({ __built: opts })),
+    warmupPrewarm: vi.fn(),
+    warmupDispose: vi.fn(),
     mockQueryInterrupt: vi.fn(async () => {}),
     mockQueryClose: vi.fn(),
     mockQuerySetModel: vi.fn(async () => {}),
@@ -48,12 +54,26 @@ const hoisted = vi.hoisted(() => {
 
 vi.mock('../../agent/claude-query', () => ({
   createSessionQuery: hoisted.captured.createSessionQueryMock,
+  buildClaudeOptions: hoisted.captured.buildClaudeOptionsMock,
   buildUserMessage: vi.fn((request: SendMessageRequest, sessionId: string) => ({
     type: 'user',
     message: { role: 'user', content: request.content },
     parent_tool_use_id: null,
     session_id: sessionId,
   })),
+}))
+
+vi.mock('../../agent/warmup-manager', () => ({
+  WarmupManager: class {
+    prewarm = hoisted.captured.warmupPrewarm
+    consume = () => null
+    dispose = hoisted.captured.warmupDispose
+  },
+  getSharedWarmupManager: () => ({
+    prewarm: hoisted.captured.warmupPrewarm,
+    consume: () => null,
+    dispose: hoisted.captured.warmupDispose,
+  }),
 }))
 
 vi.mock('../../logger', () => ({
@@ -88,6 +108,9 @@ describe('ClaudeBackend', () => {
     hoisted.captured.bridge = null
     hoisted.captured.iterationDone = null
     hoisted.captured.createSessionQueryMock.mockClear()
+    hoisted.captured.buildClaudeOptionsMock.mockClear()
+    hoisted.captured.warmupPrewarm.mockClear()
+    hoisted.captured.warmupDispose.mockClear()
     hoisted.captured.mockQueryInterrupt.mockClear()
     hoisted.captured.mockQueryClose.mockClear()
     hoisted.captured.mockQuerySetModel.mockClear()
@@ -184,6 +207,46 @@ describe('ClaudeBackend', () => {
       const backend = new ClaudeBackend()
       await expect(backend.send({ content: 'x' })).rejects.toThrow(/not started/)
     })
+
+    it('onQueuedTurnStart transfers the pending resolver so message_complete(queuedMessageId) unblocks send()', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+
+      const sendPromise = backend.send({ content: 'turn 2' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      const originalStart = events.find(
+        (e) => e.type === 'message_start',
+      ) as Extract<AgentEvent, { type: 'message_start' }> | undefined
+      const originalId = originalStart!.message.id
+
+      const queuedMessageId = 'msg_queued_xyz'
+      hoisted.captured.onQueuedTurnStart?.(queuedMessageId)
+
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: queuedMessageId, metadata: {} })
+
+      await expect(sendPromise).resolves.toBeUndefined()
+      expect(queuedMessageId).not.toBe(originalId)
+    })
+
+    it('message_complete with the original messageId still resolves when no queued turn happened', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+
+      const sendPromise = backend.send({ content: 'turn 1' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      const startEvt = events.find(
+        (e) => e.type === 'message_start',
+      ) as Extract<AgentEvent, { type: 'message_start' }> | undefined
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: startEvt!.message.id, metadata: {} })
+
+      await expect(sendPromise).resolves.toBeUndefined()
+    })
   })
 
   describe('interrupt()', () => {
@@ -192,6 +255,89 @@ describe('ClaudeBackend', () => {
       await backend.start(makeStartOpts())
       await backend.interrupt()
       expect(hoisted.captured.mockQueryInterrupt).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('prewarm()', () => {
+    it('forwards buildClaudeOptions(opts) to warmupManager.prewarm', () => {
+      const backend = new ClaudeBackend()
+      backend.prewarm({
+        cwd: '/tmp/proj',
+        config: { apiKey: 'sk-test' },
+        permissionMode: 'default',
+        effort: 'high',
+        model: 'claude-opus',
+        abortController: new AbortController(),
+      })
+      expect(hoisted.captured.buildClaudeOptionsMock).toHaveBeenCalledOnce()
+      expect(hoisted.captured.warmupPrewarm).toHaveBeenCalledOnce()
+      const builtOpts = hoisted.captured.buildClaudeOptionsMock.mock.calls[0]![0] as {
+        cwd: string
+        model: string
+        effort: string
+        env?: Record<string, string>
+      }
+      expect(builtOpts.cwd).toBe('/tmp/proj')
+      expect(builtOpts.model).toBe('claude-opus')
+      expect(builtOpts.effort).toBe('high')
+      expect(builtOpts.env?.ANTHROPIC_API_KEY).toBe('sk-test')
+    })
+
+    it('still forwards prewarm after backend has started (for rebuild-ahead scenarios)', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.warmupPrewarm.mockClear()
+      backend.prewarm(makeStartOpts())
+      expect(hoisted.captured.warmupPrewarm).toHaveBeenCalledOnce()
+    })
+
+    it('start() passes the warmupManager into createSessionQuery', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      expect((opts as { warmupManager?: unknown }).warmupManager).toBeDefined()
+    })
+
+    it('close() does NOT dispose the shared warmupManager', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.iterationDone?.resolve()
+      await backend.close()
+      expect(hoisted.captured.warmupDispose).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('rebuild()', () => {
+    it('starts the backend when called before start()', async () => {
+      const backend = new ClaudeBackend()
+      await backend.rebuild(makeStartOpts())
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledOnce()
+    })
+
+    it('closes old query/bridge and re-spawns createSessionQuery with preserved providerSessionId', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.onSessionId?.('sdk-sid-original')
+
+      const firstIterationDone = hoisted.captured.iterationDone!
+      firstIterationDone.resolve()
+
+      hoisted.captured.createSessionQueryMock.mockClear()
+      await backend.rebuild({ ...makeStartOpts(), effort: 'xhigh' })
+
+      expect(hoisted.captured.mockQueryClose).toHaveBeenCalledOnce()
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledOnce()
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      expect((opts as { resume?: string; effort?: string }).resume).toBe('sdk-sid-original')
+      expect((opts as { resume?: string; effort?: string }).effort).toBe('xhigh')
+    })
+
+    it('does NOT dispose the warmupManager (slot survives rebuild)', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.iterationDone?.resolve()
+      await backend.rebuild(makeStartOpts())
+      expect(hoisted.captured.warmupDispose).not.toHaveBeenCalled()
     })
   })
 })

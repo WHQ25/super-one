@@ -1089,6 +1089,7 @@ export const AgentIpcChannels = {
   RESPOND_PLAN_APPROVAL: 'agent:respond-plan-approval',
   RESET_SESSION: 'agent:reset-session',
   CREATE_SESSION: 'agent:create-session',
+  TRUNCATE_AT_CHECKPOINT: 'agent:truncate-at-checkpoint',
   REWIND_FILES: 'agent:rewind-files',
   REWIND_FILES_PREVIEW: 'agent:rewind-files-preview',
   REWIND_CODE_AND_CHAT: 'agent:rewind-code-and-chat',

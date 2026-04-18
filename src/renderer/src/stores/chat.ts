@@ -389,10 +389,12 @@ function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
   if (provider !== 'claude') return
   if (typeof window.agent?.prewarm !== 'function') return
   const dirs = mergeProjectAndSessionDirs(getProject(state, key), session)
+  const project = getProject(state, key)
   void window.agent.prewarm(key, {
     model: session.selectedModel || undefined,
     effort: session.selectedEffort,
     additionalDirs: dirs.length > 0 ? dirs : undefined,
+    sessionId: project._activeSessionId ?? undefined,
   }).catch(() => {})
 }
 
@@ -1260,23 +1262,9 @@ async function _syncAndResumeSession(projectPath: string, sessionId: string, get
   await window.app.resumeSession(projectPath, sessionId, cwd, targetMode)
 }
 
-function _saveSessionState(get: () => ChatStore, projectPath: string): void {
-  const project = get().projectSessions[projectPath]
-  if (!project) return
-  const sessionId = _getEffectiveSessionId(project)
-  if (!sessionId) return
-  const session = project._sessions[sessionId]
-  if (!session) return
-  window.app.saveSessionState(sessionId, {
-    messages: session.messages,
-    totalCostUsd: session.totalCostUsd,
-    contextTokens: session.contextTokens,
-  })
-}
-
 function _truncateAtCheckpoint(
   set: (fn: (s: ChatStore) => Partial<ChatStore>) => void,
-  get: () => ChatStore,
+  _get: () => ChatStore,
   projectPath: string,
   checkpointId: string,
 ): void {
@@ -1285,7 +1273,9 @@ function _truncateAtCheckpoint(
     const truncated = idx >= 0 ? sess.messages.slice(0, idx) : sess.messages
     return { messages: truncated, session: null, totalCostUsd: 0, contextTokens: 0 }
   }))
-  _saveSessionState(get, projectPath)
+  window.agent.truncateAtCheckpoint(projectPath, checkpointId).catch((err) => {
+    console.warn('[chat] truncateAtCheckpoint failed:', err)
+  })
 }
 
 function _buildQuestionAnswerItem(
@@ -2219,8 +2209,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const isRemote = rs && rs.projectPath === currentProject && project._activeSessionId === rs.sessionId
         if ((activeSession?.status === 'streaming' || activeSession?.awaitingAssistantReply) && !isRemote) {
           await _parkActiveSession(currentProject, project._activeSessionId)
-        } else {
-          _saveSessionState(get, currentProject)
         }
       }
     }
@@ -2261,6 +2249,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   ensureSession: (projectPath: string) => {
+    let created = false
     set((s) => {
       if (s.projectSessions[projectPath]) return {}
       const project = createDefaultProjectState()
@@ -2281,6 +2270,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       newSession.selectedCodexModel = codexSelection.modelId
       newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
       project._sessions = { [draftId]: newSession }
+      created = true
       return {
         projectSessions: {
           ...s.projectSessions,
@@ -2288,6 +2278,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }
     })
+    if (created) triggerPrewarm(get(), projectPath)
   },
 
   sendMessage: async (content: string, segments?: Array<{ text: string; isPaste: boolean }>) => {
@@ -2502,7 +2493,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return
     }
 
-    _saveSessionState(get, activeProject)
     if (_resetSessionLock) await _resetSessionLock
     await _ensureClaudeSessionReadyForSend(get, activeProject)
 
@@ -2739,6 +2729,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }
     })
+    triggerPrewarm(get(), projectPath)
   },
 
   resetSession: async () => {
@@ -2829,6 +2820,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       })
     }
+
+    triggerPrewarm(get(), activeProject)
   },
 
   rewindFiles: async (userMessageId: string) => {
@@ -3454,9 +3447,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Case A: Session already in _sessions (background streaming or parked)
     if (project._sessions[sessionId]) {
       const activeSession = getActivePerSession(get())
-      if (activeSession.status !== 'streaming' && !activeSession.awaitingAssistantReply) {
-        _saveSessionState(get, activeProject)
-      } else {
+      if (activeSession.status === 'streaming' || activeSession.awaitingAssistantReply) {
         await _parkActiveSession(activeProject, project._activeSessionId)
       }
 
@@ -3550,8 +3541,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const freshActiveSession = getActivePerSession(get())
     if (freshActiveSession.status === 'streaming') {
       await _parkActiveSession(activeProject, freshProject._activeSessionId)
-    } else {
-      _saveSessionState(get, activeProject)
     }
 
     const defaultPermissionMode = await _getDefaultPermissionMode()

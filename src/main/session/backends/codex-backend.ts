@@ -38,6 +38,18 @@ export class CodexBackend implements SessionBackend {
     this.started = true
   }
 
+  prewarm(_opts: BackendStartOptions): void {
+    // Codex backend has no equivalent to Claude CLI subprocess warmup.
+  }
+
+  async rebuild(opts: BackendStartOptions): Promise<void> {
+    if (!this.started) {
+      await this.start(opts)
+      return
+    }
+    this.startOpts = opts
+  }
+
   async send(_request: SendMessageRequest): Promise<void> {
     this.assertStarted()
     throw new Error('CodexBackend.send not yet wired to Codex SDK (Phase 3 work)')
@@ -102,6 +114,14 @@ export class CodexBackend implements SessionBackend {
 
   async reloadPlugins(): Promise<boolean> {
     return false
+  }
+
+  dequeueMessage(_clientMessageId: string): boolean {
+    return false
+  }
+
+  getPendingInteractions(): AgentEvent[] {
+    return []
   }
 
   onEvent(handler: (event: AgentEvent) => void): () => void {

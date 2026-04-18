@@ -25,7 +25,6 @@ export interface SessionRecord {
 interface SessionRow {
   id: string
   project_id: string
-  claude_session_id: string | null
   provider_id: string | null
   provider_session_id: string | null
   provider: string | null
@@ -80,7 +79,6 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
 
 function inferLegacyProviderId(row: SessionRow): string {
   if (row.provider === 'codex') return 'codex-base'
-  if (row.claude_session_id?.startsWith('codex_local_')) return 'codex-base'
   return 'claude-base'
 }
 
@@ -117,6 +115,8 @@ export function insertSessionRecord(input: InsertSessionInput): void {
     input.worktreePath ?? null,
   )
 }
+
+
 
 export function getSessionRecord(sid: string): SessionRecord | null {
   const row = getDb().prepare(`
@@ -155,6 +155,8 @@ export function deleteSessionRecord(sid: string): void {
 
 export interface SaveSessionStateInput {
   sid: string
+  projectPath: string
+  providerId: string
   messages: ChatMessage[]
   totalCostUsd: number
   contextTokens: number
@@ -163,11 +165,21 @@ export interface SaveSessionStateInput {
 
 export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   const db = getDb()
+  const projectId = getProjectId(input.projectPath)
+  if (!projectId) throw new Error(`Project not found for path: ${input.projectPath}`)
   const lastUserMessageAt = [...input.messages].reverse().find((m) => m.role === 'user')?.createdAt ?? null
+  const legacyProvider = input.providerId.startsWith('codex') ? 'codex' : 'claude'
+  const now = new Date().toISOString()
+
+  const upsertSession = db.prepare(`
+    INSERT INTO sessions (id, project_id, provider_id, provider, title, created_at, last_user_message_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO NOTHING
+  `)
 
   const upsertMsg = db.prepare(`
-    INSERT INTO chat_messages (id, session_id, claude_session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id)
-    VALUES (?, ?, (SELECT claude_session_id FROM sessions WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       status = excluded.status,
       content_json = excluded.content_json,
@@ -195,12 +207,20 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   const deleteStale = db.prepare('DELETE FROM chat_messages WHERE session_id = ?')
 
   const tx = db.transaction(() => {
+    upsertSession.run(
+      input.sid,
+      projectId,
+      input.providerId,
+      legacyProvider,
+      input.title ?? null,
+      now,
+      lastUserMessageAt ?? now,
+    )
     deleteStale.run(input.sid)
     for (let i = 0; i < input.messages.length; i++) {
       const msg = input.messages[i]
       upsertMsg.run(
         msg.id,
-        input.sid,
         input.sid,
         i,
         msg.role,

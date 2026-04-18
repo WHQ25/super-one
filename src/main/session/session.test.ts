@@ -30,6 +30,20 @@ class FakeBackend implements SessionBackend {
     this.startOpts = opts
   }
 
+  prewarmCalls: BackendStartOptions[] = []
+  prewarm(opts: BackendStartOptions): void {
+    this.prewarmCalls.push(opts)
+  }
+
+  rebuildCalls: BackendStartOptions[] = []
+  async rebuild(opts: BackendStartOptions): Promise<void> {
+    this.rebuildCalls.push(opts)
+    this.startOpts = opts
+  }
+
+  dequeueMessage(_clientMessageId: string): boolean { return false }
+  getPendingInteractions(): AgentEvent[] { return [] }
+
   async send(request: SendMessageRequest): Promise<void> {
     this.sendCalls.push(request)
     await new Promise<void>((resolve) => { this.resolveSend = resolve })
@@ -179,6 +193,134 @@ describe('Session state machine', () => {
     backend.startShouldFail = new Error('spawn failed')
     await expect(session.send({ content: 'x' })).rejects.toThrow('spawn failed')
     expect(session.snapshot.status).toBe('idle')
+  })
+
+  it('second send() serializes behind the first and does not throw when status=streaming', async () => {
+    const p1 = session.send({ content: 'first' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(session.snapshot.status).toBe('streaming')
+    expect(backend.sendCalls).toHaveLength(1)
+
+    const p2 = session.send({ content: 'second' })
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.sendCalls).toHaveLength(1)
+
+    backend.resolveSend?.()
+    await p1
+
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.sendCalls).toHaveLength(2)
+    expect(backend.sendCalls[1]?.content).toBe('second')
+
+    backend.resolveSend?.()
+    await p2
+    expect(session.snapshot.status).toBe('ended')
+  })
+
+  it('send() chain recovers when a prior send rejects', async () => {
+    backend.startShouldFail = new Error('spawn failed')
+    await expect(session.send({ content: 'will fail' })).rejects.toThrow('spawn failed')
+
+    backend.startShouldFail = null
+    const p = session.send({ content: 'after failure' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.sendCalls).toHaveLength(1)
+    backend.resolveSend?.()
+    await p
+  })
+
+  it('prewarm forwards to backend with session cwd, permissionMode, and model', () => {
+    ;({ session, backend } = makeSession({ model: 'claude-opus-4-7', permissionMode: 'acceptEdits' }))
+    session.prewarm()
+    expect(backend.prewarmCalls).toHaveLength(1)
+    expect(backend.prewarmCalls[0]).toMatchObject({
+      cwd: '/tmp/proj',
+      permissionMode: 'acceptEdits',
+      model: 'claude-opus-4-7',
+    })
+  })
+
+  it('prewarm overrides effort/model/additionalDirs when hint is provided', () => {
+    ;({ session, backend } = makeSession({ model: 'baseline', effort: 'low' }))
+    session.prewarm({ effort: 'high', model: 'override', additionalDirs: ['/extra'] })
+    expect(backend.prewarmCalls[0]).toMatchObject({
+      effort: 'high',
+      model: 'override',
+      additionalDirectories: ['/extra'],
+    })
+  })
+
+  it('send() syncs request.effort/model/additionalDirs into session state (so warmup key matches)', async () => {
+    const p = session.send({
+      content: 'hi',
+      effort: 'xhigh',
+      model: 'claude-opus-4-7',
+      additionalDirs: ['/extra/dir'],
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.startOpts).toMatchObject({
+      effort: 'xhigh',
+      model: 'claude-opus-4-7',
+      additionalDirectories: ['/extra/dir'],
+    })
+    backend.resolveSend?.()
+    await p
+  })
+
+  it('prewarm is NOT skipped after backend has started (so later rebuilds can consume the new warmup slot)', async () => {
+    const p = session.send({ content: 'start the backend' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p
+
+    backend.prewarmCalls = []
+    session.prewarm({ effort: 'xhigh' })
+    expect(backend.prewarmCalls).toHaveLength(1)
+    expect(backend.prewarmCalls[0]).toMatchObject({ effort: 'xhigh' })
+  })
+
+  it('send() with changed effort triggers backend.rebuild (not re-start)', async () => {
+    const p1 = session.send({ content: 'first', effort: 'low' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p1
+
+    expect(backend.rebuildCalls).toHaveLength(0)
+
+    const p2 = session.send({ content: 'second', effort: 'xhigh' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    expect(backend.rebuildCalls[0]).toMatchObject({ effort: 'xhigh' })
+    backend.resolveSend?.()
+    await p2
+  })
+
+  it('send() with changed additionalDirs triggers backend.rebuild', async () => {
+    const p1 = session.send({ content: 'first', additionalDirs: ['/a'] })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p1
+
+    const p2 = session.send({ content: 'second', additionalDirs: ['/a', '/b'] })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    expect(backend.rebuildCalls[0]).toMatchObject({ additionalDirectories: ['/a', '/b'] })
+    backend.resolveSend?.()
+    await p2
+  })
+
+  it('send() with unchanged effort/dirs does NOT trigger rebuild', async () => {
+    const p1 = session.send({ content: 'first', effort: 'medium' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p1
+
+    const p2 = session.send({ content: 'second', effort: 'medium' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(0)
+    backend.resolveSend?.()
+    await p2
   })
 })
 

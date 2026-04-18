@@ -58,9 +58,11 @@ function migrate(db: Database.Database): void {
       FOREIGN KEY (claude_session_id) REFERENCES sessions(claude_session_id) ON DELETE CASCADE
     );
 
-    CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(claude_session_id, sort_order);
-    CREATE INDEX IF NOT EXISTS idx_chat_messages_last_user ON chat_messages(claude_session_id, role, created_at);
   `)
+
+  // Legacy indexes on claude_session_id (dropped if present; replaced by v2 indexes on session_id below)
+  db.exec('DROP INDEX IF EXISTS idx_chat_messages_session')
+  db.exec('DROP INDEX IF EXISTS idx_chat_messages_last_user')
 
   // Drop legacy init_cache table if it exists (data now fetched at app startup via connect-claude)
   db.exec('DROP TABLE IF EXISTS init_cache')
@@ -99,31 +101,36 @@ function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE chat_messages ADD COLUMN resume_point_id TEXT')
   }
 
-  db.exec(`
-    UPDATE sessions
-    SET last_user_message_at = COALESCE(
-      (
-        SELECT MAX(m.created_at)
-        FROM chat_messages m
-        WHERE m.claude_session_id = sessions.claude_session_id
-          AND m.role = 'user'
-      ),
-      created_at
-    )
-    WHERE last_user_message_at IS NULL
-  `)
+  const hasLegacyClaudeSessionCol = cols.some((c) => c.name === 'claude_session_id')
+  const hasLegacyMsgClaudeSessionCol = msgCols.some((c) => c.name === 'claude_session_id')
 
-  db.exec(`
-    UPDATE sessions
-    SET provider = 'codex'
-    WHERE claude_session_id LIKE 'codex_local_%'
-       OR EXISTS (
-         SELECT 1
-         FROM chat_messages m
-         WHERE m.claude_session_id = sessions.claude_session_id
-           AND m.provider_id = 'codex'
-       )
-  `)
+  if (hasLegacyClaudeSessionCol && hasLegacyMsgClaudeSessionCol) {
+    db.exec(`
+      UPDATE sessions
+      SET last_user_message_at = COALESCE(
+        (
+          SELECT MAX(m.created_at)
+          FROM chat_messages m
+          WHERE m.claude_session_id = sessions.claude_session_id
+            AND m.role = 'user'
+        ),
+        created_at
+      )
+      WHERE last_user_message_at IS NULL
+    `)
+
+    db.exec(`
+      UPDATE sessions
+      SET provider = 'codex'
+      WHERE claude_session_id LIKE 'codex_local_%'
+         OR EXISTS (
+           SELECT 1
+           FROM chat_messages m
+           WHERE m.claude_session_id = sessions.claude_session_id
+             AND m.provider_id = 'codex'
+         )
+    `)
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS api_providers (
@@ -259,14 +266,16 @@ function migrate(db: Database.Database): void {
     WHERE provider_id IS NULL
   `)
 
-  db.exec(`
-    UPDATE sessions
-    SET provider_session_id = CASE
-      WHEN claude_session_id LIKE 'codex_local_%' THEN NULL
-      ELSE claude_session_id
-    END
-    WHERE provider_session_id IS NULL
-  `)
+  if (hasLegacyClaudeSessionCol) {
+    db.exec(`
+      UPDATE sessions
+      SET provider_session_id = CASE
+        WHEN claude_session_id LIKE 'codex_local_%' THEN NULL
+        ELSE claude_session_id
+      END
+      WHERE provider_session_id IS NULL
+    `)
+  }
 
   const chatMsgColsAfterSeed = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
   if (!chatMsgColsAfterSeed.some((c) => c.name === 'session_id')) {
@@ -275,13 +284,85 @@ function migrate(db: Database.Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_session_v2 ON chat_messages(session_id, sort_order)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_last_user_v2 ON chat_messages(session_id, role, created_at)')
 
-  db.exec(`
-    UPDATE chat_messages
-    SET session_id = (
-      SELECT s.id FROM sessions s WHERE s.claude_session_id = chat_messages.claude_session_id
-    )
-    WHERE session_id IS NULL
-  `)
+  if (hasLegacyClaudeSessionCol && hasLegacyMsgClaudeSessionCol) {
+    db.exec(`
+      UPDATE chat_messages
+      SET session_id = (
+        SELECT s.id FROM sessions s WHERE s.claude_session_id = chat_messages.claude_session_id
+      )
+      WHERE session_id IS NULL
+    `)
+  }
+
+  const chatMsgColsFinal = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
+  const sessionColsPreDrop = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
+  const needsRebuild = chatMsgColsFinal.some((c) => c.name === 'claude_session_id')
+    || sessionColsPreDrop.some((c) => c.name === 'claude_session_id')
+  if (needsRebuild) db.pragma('foreign_keys = OFF')
+  if (chatMsgColsFinal.some((c) => c.name === 'claude_session_id')) {
+    db.exec(`
+      CREATE TABLE chat_messages_new (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        content_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        metadata_json TEXT,
+        checkpoint_id TEXT,
+        resume_point_id TEXT,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+    `)
+    db.exec(`
+      INSERT INTO chat_messages_new (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id)
+      SELECT id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id
+      FROM chat_messages
+      WHERE session_id IS NOT NULL
+    `)
+    db.exec('DROP TABLE chat_messages')
+    db.exec('ALTER TABLE chat_messages_new RENAME TO chat_messages')
+    db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_session_v2 ON chat_messages(session_id, sort_order)')
+    db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_last_user_v2 ON chat_messages(session_id, role, created_at)')
+  }
+  const sessionColsFinal = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
+  if (sessionColsFinal.some((c) => c.name === 'claude_session_id')) {
+    db.exec(`
+      CREATE TABLE sessions_new (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        title TEXT,
+        created_at TEXT NOT NULL,
+        last_user_message_at TEXT,
+        total_cost_usd REAL DEFAULT 0,
+        context_tokens INTEGER DEFAULT 0,
+        is_worktree INTEGER DEFAULT 0,
+        git_branch TEXT,
+        is_pinned INTEGER DEFAULT 0,
+        provider TEXT DEFAULT 'claude',
+        worktree_path TEXT,
+        is_hidden INTEGER DEFAULT 0,
+        is_automation INTEGER DEFAULT 0,
+        automation_id TEXT,
+        provider_id TEXT,
+        provider_session_id TEXT
+      );
+    `)
+    db.exec(`
+      INSERT INTO sessions_new (id, project_id, title, created_at, last_user_message_at, total_cost_usd, context_tokens, is_worktree, git_branch, is_pinned, provider, worktree_path, is_hidden, is_automation, automation_id, provider_id, provider_session_id)
+      SELECT id, project_id, title, created_at, last_user_message_at, total_cost_usd, context_tokens, is_worktree, git_branch, is_pinned, provider, worktree_path, is_hidden, is_automation, automation_id, provider_id, provider_session_id
+      FROM sessions
+    `)
+    db.exec('DROP TABLE sessions')
+    db.exec('ALTER TABLE sessions_new RENAME TO sessions')
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)')
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_project_last_user ON sessions(project_id, last_user_message_at DESC)')
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider ON sessions(provider_id)')
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider_session_id ON sessions(provider_session_id)')
+  }
+  if (needsRebuild) db.pragma('foreign_keys = ON')
 
   if (is.dev) seedDevProviders(db)
 }

@@ -111,3 +111,9 @@ export class WarmupManager {
 function shortKey(key: string): string {
   return key.length > 80 ? `${key.slice(0, 80)}…` : key
 }
+
+let sharedInstance: WarmupManager | null = null
+export function getSharedWarmupManager(): WarmupManager {
+  if (!sharedInstance) sharedInstance = new WarmupManager()
+  return sharedInstance
+}

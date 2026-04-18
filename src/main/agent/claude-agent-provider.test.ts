@@ -1,14 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ApiProvider } from '../../shared/agent-types'
 
-vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
-vi.mock('../database', () => ({ getActiveProviderRaw: vi.fn() }))
-vi.mock('./claude-permissions', () => ({}))
-vi.mock('./message-bridge', () => ({}))
-vi.mock('./claude-query', () => ({}))
-vi.mock('./discover-resources', () => ({}))
-
-import { buildProviderEnv } from './claude-agent'
+import { buildProviderEnv } from './provider-env'
 
 function makeProvider(overrides: Partial<ApiProvider> = {}): ApiProvider {
   return {

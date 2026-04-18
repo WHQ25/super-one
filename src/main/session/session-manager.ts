@@ -197,6 +197,13 @@ export class SessionManagerImpl implements SessionManagerContract {
     return this.sessions.get(sessionId) ?? null
   }
 
+  hasAnyStreaming(): boolean {
+    for (const s of this.sessions.values()) {
+      if (s.isStreaming()) return true
+    }
+    return false
+  }
+
   async disposeSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId)
     if (!session) return

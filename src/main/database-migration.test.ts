@@ -156,4 +156,77 @@ describe('database migration', () => {
     expect(backfill).toBeDefined()
     expect(backfill).toMatch(/SELECT s\.id FROM sessions/)
   })
+
+  it('rebuilds chat_messages and sessions tables without claude_session_id', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    expect(execSql.some((sql) => sql.includes('CREATE TABLE chat_messages_new'))).toBe(true)
+    expect(execSql.some((sql) => sql.includes('ALTER TABLE chat_messages_new RENAME TO chat_messages'))).toBe(true)
+    expect(execSql.some((sql) => sql.includes('CREATE TABLE sessions_new'))).toBe(true)
+    expect(execSql.some((sql) => sql.includes('ALTER TABLE sessions_new RENAME TO sessions'))).toBe(true)
+
+    const backfillIdx = execSql.findIndex((sql) => sql.includes('UPDATE chat_messages') && sql.includes('session_id'))
+    const rebuildIdx = execSql.findIndex((sql) => sql.includes('CREATE TABLE chat_messages_new'))
+    expect(rebuildIdx).toBeGreaterThan(backfillIdx)
+
+    const newSchema = execSql.find((sql) => sql.includes('CREATE TABLE chat_messages_new')) as string
+    expect(newSchema).not.toMatch(/claude_session_id/)
+    const newSessionSchema = execSql.find((sql) => sql.includes('CREATE TABLE sessions_new')) as string
+    expect(newSessionSchema).not.toMatch(/claude_session_id/)
+  })
+
+  it('is idempotent when re-run against an already-migrated database (no claude_session_id column)', async () => {
+    dbMock.prepare.mockImplementation((sql: string) => {
+      if (sql === 'PRAGMA table_info(sessions)') {
+        return {
+          all: () => [
+            { name: 'id' },
+            { name: 'project_id' },
+            { name: 'title' },
+            { name: 'created_at' },
+            { name: 'total_cost_usd' },
+            { name: 'context_tokens' },
+            { name: 'provider' },
+            { name: 'is_pinned' },
+            { name: 'is_hidden' },
+            { name: 'last_user_message_at' },
+            { name: 'provider_id' },
+            { name: 'provider_session_id' },
+          ],
+        }
+      }
+      if (sql === 'PRAGMA table_info(chat_messages)') {
+        return {
+          all: () => [
+            { name: 'id' },
+            { name: 'session_id' },
+            { name: 'sort_order' },
+            { name: 'role' },
+            { name: 'status' },
+            { name: 'content_json' },
+            { name: 'created_at' },
+            { name: 'provider_id' },
+            { name: 'metadata_json' },
+            { name: 'checkpoint_id' },
+            { name: 'resume_point_id' },
+          ],
+        }
+      }
+      if (sql === 'PRAGMA table_info(api_providers)') return { all: () => [] }
+      if (sql === 'PRAGMA table_info(global_resource_cache)') return { all: () => [] }
+      if (sql === 'SELECT * FROM api_providers WHERE agent_configs = \'{}\'') return { all: () => [] }
+      return { all: () => [], get: () => undefined, run: vi.fn() }
+    })
+
+    const { getDb } = await import('./database')
+    expect(() => getDb()).not.toThrow()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    expect(execSql.some((sql) => /^\s*UPDATE\s+sessions\b[\s\S]*claude_session_id/i.test(sql))).toBe(false)
+    expect(execSql.some((sql) => /^\s*UPDATE\s+chat_messages\b[\s\S]*claude_session_id/i.test(sql))).toBe(false)
+    expect(execSql.some((sql) => sql.includes('CREATE TABLE chat_messages_new'))).toBe(false)
+    expect(execSql.some((sql) => sql.includes('CREATE TABLE sessions_new'))).toBe(false)
+  })
 })

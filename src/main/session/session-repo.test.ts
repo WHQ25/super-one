@@ -23,7 +23,6 @@ import {
 interface SessionRow {
   id: string
   project_id: string
-  claude_session_id: string | null
   provider_id: string | null
   provider_session_id: string | null
   provider: string | null
@@ -42,7 +41,6 @@ interface SessionRow {
 interface MessageRow {
   id: string
   session_id: string | null
-  claude_session_id: string | null
   sort_order: number
   role: string
   status: string
@@ -62,13 +60,29 @@ function makeFakeDb() {
   const db = {
     prepare: (rawSql: string) => {
       const sql = rawSql.replace(/\s+/g, ' ').trim()
+      if (/^INSERT INTO sessions.*ON CONFLICT\(id\) DO NOTHING/.test(sql)) {
+        return {
+          run: (id: string, projectId: string, providerId: string, provider: string, title: string | null, createdAt: string, lastUserMsg: string) => {
+            if (sessionsRows.has(id)) return
+            sessionsRows.set(id, {
+              id, project_id: projectId,
+              provider_id: providerId, provider, title,
+              created_at: createdAt, last_user_message_at: lastUserMsg,
+              provider_session_id: null,
+              total_cost_usd: 0, context_tokens: 0,
+              is_worktree: 0, git_branch: null, worktree_path: null,
+              is_pinned: 0, is_hidden: 0,
+            })
+          },
+        }
+      }
       if (/^INSERT INTO sessions/.test(sql)) {
         return {
           run: (id: string, projectId: string, providerId: string, provider: string, title: string | null, createdAt: string, lastUserMsg: string, isWorktree: number, gitBranch: string | null, worktreePath: string | null) => {
             sessionsRows.set(id, {
               id, project_id: projectId, provider_id: providerId, provider, title,
               created_at: createdAt, last_user_message_at: lastUserMsg,
-              claude_session_id: null, provider_session_id: null,
+              provider_session_id: null,
               total_cost_usd: 0, context_tokens: 0,
               is_worktree: isWorktree, git_branch: gitBranch, worktree_path: worktreePath,
               is_pinned: 0, is_hidden: 0,
@@ -112,9 +126,9 @@ function makeFakeDb() {
       }
       if (/INSERT INTO chat_messages/.test(sql)) {
         return {
-          run: (msgId: string, sessionId: string, _lookupSid: string, sortOrder: number, role: string, status: string, contentJson: string, createdAt: string, providerId: string, metadataJson: string | null, checkpointId: string | null, resumePointId: string | null) => {
+          run: (msgId: string, sessionId: string, sortOrder: number, role: string, status: string, contentJson: string, createdAt: string, providerId: string, metadataJson: string | null, checkpointId: string | null, resumePointId: string | null) => {
             messagesRows.set(msgId, {
-              id: msgId, session_id: sessionId, claude_session_id: null,
+              id: msgId, session_id: sessionId,
               sort_order: sortOrder, role, status, content_json: contentJson,
               created_at: createdAt, provider_id: providerId,
               metadata_json: metadataJson, checkpoint_id: checkpointId, resume_point_id: resumePointId,
@@ -251,7 +265,7 @@ describe('session-repo', () => {
         { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'claude' },
         { id: 'a1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'hello' }], createdAt: '2026-04-18T00:00:01Z', providerId: 'claude' },
       ]
-      saveSessionStateBySid({ sid: 's-round-trip', messages, totalCostUsd: 0.5, contextTokens: 100 })
+      saveSessionStateBySid({ sid: 's-round-trip', projectPath: '/tmp/proj', providerId: 'claude-base', messages, totalCostUsd: 0.5, contextTokens: 100 })
 
       const loaded = loadSessionStateBySid('s-round-trip')
       expect(loaded).not.toBeNull()
@@ -262,6 +276,26 @@ describe('session-repo', () => {
 
     it('loadSessionStateBySid returns null for unknown sid', () => {
       expect(loadSessionStateBySid('nope')).toBeNull()
+    })
+
+    it('upserts session row lazily on first save (no prior insertSessionRecord)', () => {
+      const messages: ChatMessage[] = [
+        { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hello world' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'claude' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-lazy',
+        projectPath: '/tmp/proj',
+        providerId: 'claude-base',
+        messages,
+        totalCostUsd: 0,
+        contextTokens: 0,
+        title: 'hello world',
+      })
+      const loaded = loadSessionStateBySid('s-lazy')
+      expect(loaded).not.toBeNull()
+      expect(loaded!.record.providerId).toBe('claude-base')
+      expect(loaded!.record.title).toBe('hello world')
+      expect(loaded!.messages).toHaveLength(1)
     })
   })
 })

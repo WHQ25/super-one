@@ -1,6 +1,7 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import { MessageBridge } from '../../agent/message-bridge'
-import { createSessionQuery, buildUserMessage, type SessionQueryOptions } from '../../agent/claude-query'
+import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions } from '../../agent/claude-query'
+import { getSharedWarmupManager } from '../../agent/warmup-manager'
 import {
   createCanUseTool,
   rejectAllPending,
@@ -51,9 +52,28 @@ export class ClaudeBackend implements SessionBackend {
   private pendingQuestions = new Map<string, PendingQuestion>()
   private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
 
+  private warmupManager = getSharedWarmupManager()
+
+  private buildQueryOptions(opts: BackendStartOptions): SessionQueryOptions {
+    const config = (opts.config ?? {}) as ClaudeConfig
+    const env: Record<string, string | undefined> = { ...(config.extraEnv ?? {}) }
+    if (config.apiKey) env.ANTHROPIC_API_KEY = config.apiKey
+    if (config.baseUrl) env.ANTHROPIC_BASE_URL = config.baseUrl
+    return {
+      cwd: opts.cwd,
+      model: opts.model ?? config.model,
+      effort: opts.effort,
+      permissionMode: opts.permissionMode,
+      sandboxInfo: opts.sandboxInfo,
+      resume: opts.providerSessionId,
+      abortController: opts.abortController,
+      additionalDirectories: opts.additionalDirectories,
+      env: Object.keys(env).length > 0 ? env : undefined,
+    }
+  }
+
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.bridge) throw new Error('ClaudeBackend already started')
-    const config = (opts.config ?? {}) as ClaudeConfig
     this.bridge = new MessageBridge()
     this.providerSessionId = opts.providerSessionId ?? null
 
@@ -64,22 +84,11 @@ export class ClaudeBackend implements SessionBackend {
       (e) => this.emit(e),
     )
 
-    const env: Record<string, string | undefined> = { ...(config.extraEnv ?? {}) }
-    if (config.apiKey) env.ANTHROPIC_API_KEY = config.apiKey
-    if (config.baseUrl) env.ANTHROPIC_BASE_URL = config.baseUrl
-
     const queryOptions: SessionQueryOptions = {
-      cwd: opts.cwd,
-      model: opts.model ?? config.model,
-      effort: opts.effort,
-      permissionMode: opts.permissionMode,
-      sandboxInfo: opts.sandboxInfo,
+      ...this.buildQueryOptions(opts),
       canUseTool,
       trackPlanFile,
-      resume: opts.providerSessionId,
-      abortController: opts.abortController,
-      additionalDirectories: opts.additionalDirectories,
-      env: Object.keys(env).length > 0 ? env : undefined,
+      warmupManager: this.warmupManager,
     }
 
     const handle = createSessionQuery(
@@ -96,6 +105,12 @@ export class ClaudeBackend implements SessionBackend {
         }
       },
       (messageId) => {
+        const oldId = this.currentMessageId
+        const pending = oldId ? this.turnResolves.get(oldId) : undefined
+        if (pending && oldId && oldId !== messageId) {
+          this.turnResolves.delete(oldId)
+          this.turnResolves.set(messageId, pending)
+        }
         this.currentMessageId = messageId
         this.currentStartTime = Date.now()
         this.interrupted = false
@@ -166,6 +181,34 @@ export class ClaudeBackend implements SessionBackend {
     this.bridge = null
     this.query = null
     this.iterationDone = null
+  }
+
+  prewarm(opts: BackendStartOptions): void {
+    try {
+      this.warmupManager.prewarm(buildClaudeOptions(this.buildQueryOptions(opts)))
+    } catch (err) {
+      log.debug('[ClaudeBackend] prewarm failed:', err)
+    }
+  }
+
+  async rebuild(opts: BackendStartOptions): Promise<void> {
+    if (!this.bridge) {
+      await this.start(opts)
+      return
+    }
+    const resumeId = this.providerSessionId ?? undefined
+    for (const resolve of this.turnResolves.values()) resolve()
+    this.turnResolves.clear()
+    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals)
+    if (this.query) {
+      try { this.query.close() } catch { /* ignore */ }
+    }
+    this.bridge.close()
+    if (this.iterationDone) await this.iterationDone.catch(() => {})
+    this.bridge = null
+    this.query = null
+    this.iterationDone = null
+    await this.start({ ...opts, providerSessionId: resumeId })
   }
 
   async setModel(model: string): Promise<void> {
@@ -264,6 +307,18 @@ export class ClaudeBackend implements SessionBackend {
     } catch {
       return false
     }
+  }
+
+  dequeueMessage(clientMessageId: string): boolean {
+    return this.bridge?.dequeue(clientMessageId) ?? false
+  }
+
+  getPendingInteractions(): AgentEvent[] {
+    const events: AgentEvent[] = []
+    for (const p of this.pendingPermissions.values()) events.push(p.event)
+    for (const q of this.pendingQuestions.values()) events.push(q.event)
+    for (const a of this.pendingPlanApprovals.values()) events.push(a.event)
+    return events
   }
 
   onEvent(handler: (event: AgentEvent) => void): () => void {

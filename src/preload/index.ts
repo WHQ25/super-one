@@ -9,7 +9,7 @@ const agentAPI = {
   dequeueMessage: (projectPath: string, clientMessageId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DEQUEUE_MESSAGE, projectPath, clientMessageId) as Promise<boolean>,
 
-  prewarm: (projectPath: string, hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[] }) =>
+  prewarm: (projectPath: string, hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[]; sessionId?: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.PREWARM, projectPath, hint),
 
   interrupt: (projectPath: string) =>
@@ -38,6 +38,9 @@ const agentAPI = {
 
   resetSession: (projectPath: string, newSessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, projectPath, newSessionId),
+
+  truncateAtCheckpoint: (projectPath: string, checkpointId: string): Promise<boolean> =>
+    ipcRenderer.invoke(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT, projectPath, checkpointId),
 
   parkSession: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PARK_SESSION, projectPath),
@@ -607,12 +610,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, projectPath, sessionId, limit, cursor),
   renameSession: (sessionId: string, title: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RENAME, sessionId, title),
-  createSession: (projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string, title?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_CREATE, projectPath, claudeSessionId, isWorktree, gitBranch, worktreePath, title),
-  saveSessionState: (claudeSessionId: string, data: { messages: unknown[]; totalCostUsd: number; contextTokens: number; title?: string }) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SAVE_STATE, claudeSessionId, data),
-  loadSessionState: (claudeSessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_STATE, claudeSessionId),
+  loadSessionState: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_STATE, sessionId),
   deleteSession: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE, sessionId),
   deleteSessionsOlderThan: (folderPath: string, cutoffDate: string): Promise<string[]> =>

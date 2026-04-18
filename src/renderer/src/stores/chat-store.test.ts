@@ -42,6 +42,7 @@ const mockWindowAgent = {
   dismissQuestion: vi.fn().mockResolvedValue(undefined),
   respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
   setPermissionMode: vi.fn().mockResolvedValue(undefined),
+  prewarm: vi.fn().mockResolvedValue(undefined),
 }
 
 const mockWindowApp = {
@@ -194,6 +195,23 @@ describe('ensureSession', () => {
     useChatStore.getState().ensureSession('/perm-test')
     const session = getActiveDraftSession('/perm-test')!
     expect(session.permissionMode).toBe('plan')
+  })
+
+  it('triggers prewarm when a new project session is created', () => {
+    mockWindowAgent.prewarm.mockClear()
+    useChatStore.getState().ensureSession('/prewarm-new')
+    expect(mockWindowAgent.prewarm).toHaveBeenCalledTimes(1)
+    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
+      '/prewarm-new',
+      expect.objectContaining({ sessionId: expect.any(String) }),
+    )
+  })
+
+  it('does NOT trigger prewarm when project already exists', () => {
+    useChatStore.getState().ensureSession('/prewarm-existing')
+    mockWindowAgent.prewarm.mockClear()
+    useChatStore.getState().ensureSession('/prewarm-existing')
+    expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
 })
 
@@ -942,6 +960,24 @@ describe('resetSession', () => {
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('acceptEdits')
     const after = useChatStore.getState().projectSessions['/test']
     expect(after.sandboxInfo).toEqual({ enabled: false, autoAllowBash: true })
+  })
+
+  it('triggers prewarm after reset so the new draft session warms up in the background', async () => {
+    mockWindowAgent.resetSession.mockReset()
+    mockWindowAgent.resetSession.mockResolvedValue({
+      permissionMode: 'default' as const,
+      sandboxInfo: { enabled: true, autoAllowBash: false },
+    })
+    setupProject('/prewarm-reset')
+    useChatStore.setState({ activeProject: '/prewarm-reset' })
+    mockWindowAgent.prewarm.mockClear()
+
+    await useChatStore.getState().resetSession()
+
+    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
+      '/prewarm-reset',
+      expect.objectContaining({ sessionId: expect.any(String) }),
+    )
   })
 
   it('passes newDraftSessionId to resetSession for idle non-streaming sessions', async () => {

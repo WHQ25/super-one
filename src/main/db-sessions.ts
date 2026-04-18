@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto'
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
 import type { ChatMessage, SessionHistoryEntry, PinnedSessionEntry } from '../shared/agent-types'
@@ -6,7 +5,6 @@ import type { ChatMessage, SessionHistoryEntry, PinnedSessionEntry } from '../sh
 interface DbSession {
   id: string
   project_id: string
-  claude_session_id: string | null
   title: string | null
   created_at: string
   total_cost_usd: number | null
@@ -15,7 +13,7 @@ interface DbSession {
 
 interface DbChatMessage {
   id: string
-  claude_session_id: string
+  session_id: string
   sort_order: number
   role: string
   status: string
@@ -34,23 +32,20 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
 
   const db = getDb()
   const baseSql = `
-    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
+    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
            s.is_automation, s.automation_id,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
-           CASE
-             WHEN s.claude_session_id LIKE 'codex_local_%' THEN 'codex'
-             ELSE COALESCE(NULLIF(s.provider, ''), 'claude')
-           END AS provider
+           COALESCE(NULLIF(s.provider, ''), 'claude') AS provider
     FROM sessions s
     WHERE s.project_id = ?
     ORDER BY last_user_msg_at DESC`
   const rows = (limit != null
     ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(projectId, limit, offset ?? 0)
     : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider: 'claude' | 'codex' }>
+  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider: 'claude' | 'codex' }>
 
   return rows.map((r) => ({
-    sessionId: r.claude_session_id ?? r.id,
+    sessionId: r.id,
     title: r.title ?? 'Untitled',
     lastActiveAt: r.last_user_msg_at,
     provider: r.provider,
@@ -65,59 +60,57 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
   }))
 }
 
-/** Create a new session record in DB */
-export function createSession(folderPath: string, claudeSessionId: string, title?: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string): string {
+/** Create a new session record in DB. `sessionId` is the stable Session.id used across the app. */
+export function createSession(folderPath: string, sessionId: string, title?: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string): string {
   const projectId = getProjectId(folderPath)
   if (!projectId) throw new Error(`Project not found for path: ${folderPath}`)
 
   const db = getDb()
-  const id = randomUUID()
   const now = new Date().toISOString()
 
   db.prepare(`
-    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at, last_user_message_at, is_worktree, git_branch, worktree_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(claude_session_id) DO UPDATE SET
+    INSERT INTO sessions (id, project_id, title, created_at, last_user_message_at, is_worktree, git_branch, worktree_path)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
       title = CASE WHEN title IS NULL OR title = '' THEN COALESCE(excluded.title, title) ELSE title END,
       git_branch = COALESCE(excluded.git_branch, git_branch),
       worktree_path = COALESCE(excluded.worktree_path, worktree_path)
-  `).run(id, projectId, claudeSessionId, title ?? null, now, now, isWorktree ? 1 : 0, gitBranch ?? null, worktreePath ?? null)
+  `).run(sessionId, projectId, title ?? null, now, now, isWorktree ? 1 : 0, gitBranch ?? null, worktreePath ?? null)
 
-  return id
+  return sessionId
 }
 
-export function createAutomationSession(folderPath: string, claudeSessionId: string, title: string, automationId: string, provider: 'claude' | 'codex' = 'claude'): string {
+export function createAutomationSession(folderPath: string, sessionId: string, title: string, automationId: string, provider: 'claude' | 'codex' = 'claude'): string {
   const projectId = getProjectId(folderPath)
   if (!projectId) throw new Error(`Project not found for path: ${folderPath}`)
 
   const db = getDb()
-  const id = randomUUID()
   const now = new Date().toISOString()
 
   db.prepare(`
-    INSERT INTO sessions (id, project_id, claude_session_id, title, created_at, last_user_message_at, is_automation, automation_id, provider, is_pinned)
-    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 1)
-  `).run(id, projectId, claudeSessionId, title, now, now, automationId, provider)
+    INSERT INTO sessions (id, project_id, title, created_at, last_user_message_at, is_automation, automation_id, provider, is_pinned)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1)
+  `).run(sessionId, projectId, title, now, now, automationId, provider)
 
-  return id
+  return sessionId
 }
 
 /** Update session title */
-export function renameSession(claudeSessionId: string, title: string): void {
+export function renameSession(sessionId: string, title: string): void {
   const db = getDb()
-  db.prepare('UPDATE sessions SET title = ? WHERE claude_session_id = ?').run(title, claudeSessionId)
+  db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, sessionId)
 }
 
 /** Save full session state to DB: upsert messages into chat_messages, update session metadata */
 export function saveSessionState(
-  claudeSessionId: string,
+  sessionId: string,
   data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string; provider?: string },
 ): void {
   const db = getDb()
   const lastUserMessageAt = [...data.messages].reverse().find((msg) => msg.role === 'user')?.createdAt ?? null
 
   const upsertMsg = db.prepare(`
-    INSERT INTO chat_messages (id, claude_session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id)
+    INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       status = excluded.status,
@@ -132,23 +125,23 @@ export function saveSessionState(
         UPDATE sessions
         SET total_cost_usd = ?, context_tokens = ?, provider = ?, last_user_message_at = COALESCE(?, last_user_message_at, created_at),
             title = CASE WHEN title IS NULL OR title = '' THEN ? ELSE title END
-        WHERE claude_session_id = ?
+        WHERE id = ?
       `)
     : db.prepare(`
         UPDATE sessions
         SET total_cost_usd = ?, context_tokens = ?, provider = ?, last_user_message_at = COALESCE(?, last_user_message_at, created_at)
-        WHERE claude_session_id = ?
+        WHERE id = ?
       `)
 
-  const deleteStale = db.prepare('DELETE FROM chat_messages WHERE claude_session_id = ?')
+  const deleteStale = db.prepare('DELETE FROM chat_messages WHERE session_id = ?')
 
   const tx = db.transaction(() => {
-    deleteStale.run(claudeSessionId)
+    deleteStale.run(sessionId)
     for (let i = 0; i < data.messages.length; i++) {
       const msg = data.messages[i]
       upsertMsg.run(
         msg.id,
-        claudeSessionId,
+        sessionId,
         i,
         msg.role,
         msg.status === 'streaming' ? 'interrupted' : msg.status,
@@ -163,9 +156,9 @@ export function saveSessionState(
 
     const provider = data.provider ?? 'claude'
     if (data.title) {
-      updateSession.run(data.totalCostUsd, data.contextTokens, provider, lastUserMessageAt, data.title, claudeSessionId)
+      updateSession.run(data.totalCostUsd, data.contextTokens, provider, lastUserMessageAt, data.title, sessionId)
     } else {
-      updateSession.run(data.totalCostUsd, data.contextTokens, provider, lastUserMessageAt, claudeSessionId)
+      updateSession.run(data.totalCostUsd, data.contextTokens, provider, lastUserMessageAt, sessionId)
     }
   })
 
@@ -174,22 +167,22 @@ export function saveSessionState(
 
 /** Load session state from DB */
 export function loadSessionState(
-  claudeSessionId: string,
+  sessionId: string,
 ): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string } | null {
   const db = getDb()
 
   const session = db.prepare(`
-    SELECT total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider FROM sessions WHERE claude_session_id = ?
-  `).get(claudeSessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null }) | undefined
+    SELECT total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider FROM sessions WHERE id = ?
+  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null }) | undefined
 
   if (!session) return null
 
   const rows = db.prepare(`
     SELECT id, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id
     FROM chat_messages
-    WHERE claude_session_id = ?
+    WHERE session_id = ?
     ORDER BY sort_order ASC
-  `).all(claudeSessionId) as DbChatMessage[]
+  `).all(sessionId) as DbChatMessage[]
 
   if (rows.length === 0) return null
 
@@ -216,21 +209,21 @@ export function loadSessionState(
   }
 }
 
-export function sessionBelongsToProject(folderPath: string, claudeSessionId: string): boolean {
+export function sessionBelongsToProject(folderPath: string, sessionId: string): boolean {
   const projectId = getProjectId(folderPath)
   if (!projectId) return false
   const db = getDb()
   const row = db.prepare(`
     SELECT 1 AS found
     FROM sessions
-    WHERE project_id = ? AND claude_session_id = ?
+    WHERE project_id = ? AND id = ?
     LIMIT 1
-  `).get(projectId, claudeSessionId) as { found: number } | undefined
+  `).get(projectId, sessionId) as { found: number } | undefined
   return !!row
 }
 
 export function loadSessionMessagesPaginated(
-  claudeSessionId: string,
+  sessionId: string,
   limit: number,
   cursor?: number,
 ): { messages: ChatMessage[]; cursor: number | null; hasMore: boolean } {
@@ -238,9 +231,9 @@ export function loadSessionMessagesPaginated(
   const rows = db.prepare(`
     SELECT id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id
     FROM chat_messages
-    WHERE claude_session_id = ?
+    WHERE session_id = ?
     ORDER BY sort_order ASC
-  `).all(claudeSessionId) as (DbChatMessage & { sort_order: number })[]
+  `).all(sessionId) as (DbChatMessage & { sort_order: number })[]
 
   const endIndex = cursor ?? rows.length
   const startIndex = Math.max(0, endIndex - limit)
@@ -263,9 +256,9 @@ export function loadSessionMessagesPaginated(
 }
 
 /** Delete a session and its messages (cascade). */
-export function deleteSession(claudeSessionId: string): void {
+export function deleteSession(sessionId: string): void {
   const db = getDb()
-  db.prepare('DELETE FROM sessions WHERE claude_session_id = ?').run(claudeSessionId)
+  db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
 }
 
 /** Delete non-pinned sessions older than cutoffDate for a project. Returns deleted session IDs. */
@@ -276,53 +269,50 @@ export function deleteSessionsOlderThan(folderPath: string, cutoffDate: string):
   const db = getDb()
 
   const rows = db.prepare(`
-    SELECT s.claude_session_id
+    SELECT s.id
     FROM sessions s
     WHERE s.project_id = ?
       AND COALESCE(s.is_pinned, 0) = 0
       AND COALESCE(s.last_user_message_at, s.created_at) < ?
-  `).all(projectId, cutoffDate) as Array<{ claude_session_id: string }>
+  `).all(projectId, cutoffDate) as Array<{ id: string }>
 
-  const ids = rows.map((r) => r.claude_session_id)
+  const ids = rows.map((r) => r.id)
   if (ids.length === 0) return []
 
   const placeholders = ids.map(() => '?').join(',')
-  db.prepare(`DELETE FROM sessions WHERE claude_session_id IN (${placeholders})`).run(...ids)
+  db.prepare(`DELETE FROM sessions WHERE id IN (${placeholders})`).run(...ids)
 
   return ids
 }
 
 /** Pin or unpin a session. */
-export function pinSession(claudeSessionId: string, pinned: boolean): void {
+export function pinSession(sessionId: string, pinned: boolean): void {
   const db = getDb()
-  db.prepare('UPDATE sessions SET is_pinned = ? WHERE claude_session_id = ?').run(pinned ? 1 : 0, claudeSessionId)
+  db.prepare('UPDATE sessions SET is_pinned = ? WHERE id = ?').run(pinned ? 1 : 0, sessionId)
 }
 
 /** Hide or unhide a session. */
-export function hideSession(claudeSessionId: string, hidden: boolean): void {
+export function hideSession(sessionId: string, hidden: boolean): void {
   const db = getDb()
-  db.prepare('UPDATE sessions SET is_hidden = ? WHERE claude_session_id = ?').run(hidden ? 1 : 0, claudeSessionId)
+  db.prepare('UPDATE sessions SET is_hidden = ? WHERE id = ?').run(hidden ? 1 : 0, sessionId)
 }
 
 /** List all pinned sessions across all projects. */
 export function listPinnedSessions(): PinnedSessionEntry[] {
   const db = getDb()
   const rows = db.prepare(`
-    SELECT s.id, s.claude_session_id, s.title, s.created_at, s.is_worktree, s.is_automation, s.automation_id,
+    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_automation, s.automation_id,
            p.path AS folder_path, p.name AS folder_name,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
-           CASE
-             WHEN s.claude_session_id LIKE 'codex_local_%' THEN 'codex'
-             ELSE COALESCE(NULLIF(s.provider, ''), 'claude')
-           END AS provider
+           COALESCE(NULLIF(s.provider, ''), 'claude') AS provider
     FROM sessions s
     JOIN projects p ON p.id = s.project_id
     WHERE s.is_pinned = 1 AND COALESCE(s.is_hidden, 0) = 0
     ORDER BY last_user_msg_at DESC
-  `).all() as Array<{ id: string; claude_session_id: string | null; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_automation: number | null; automation_id: string | null; folder_path: string; folder_name: string; provider: 'claude' | 'codex' }>
+  `).all() as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_automation: number | null; automation_id: string | null; folder_path: string; folder_name: string; provider: 'claude' | 'codex' }>
 
   return rows.map((r) => ({
-    sessionId: r.claude_session_id ?? r.id,
+    sessionId: r.id,
     title: r.title ?? 'Untitled',
     lastActiveAt: r.last_user_msg_at,
     provider: r.provider,

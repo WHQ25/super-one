@@ -6,7 +6,7 @@ import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPac
 interface AgentAPI {
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
   dequeueMessage(projectPath: string, clientMessageId: string): Promise<boolean>
-  prewarm(projectPath: string, hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[] }): Promise<void>
+  prewarm(projectPath: string, hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[]; sessionId?: string }): Promise<void>
   interrupt(projectPath: string): Promise<boolean>
   respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): Promise<void>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
@@ -16,6 +16,7 @@ interface AgentAPI {
   respondToPlanApproval(projectPath: string, requestId: string, approved: boolean, feedback?: string): Promise<void>
   createSession(projectPath: string): Promise<string>
   resetSession(projectPath: string, newSessionId?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
+  truncateAtCheckpoint(projectPath: string, checkpointId: string): Promise<boolean>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   activateSession(projectPath: string, sessionId: string): Promise<void>
   rewindFiles(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
@@ -188,9 +189,7 @@ interface AppAPI {
   resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode): Promise<void>
   loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
   renameSession(sessionId: string, title: string): Promise<void>
-  createSession(projectPath: string, claudeSessionId: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string, title?: string): Promise<void>
-  saveSessionState(claudeSessionId: string, data: { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; title?: string; provider?: string }): Promise<void>
-  loadSessionState(claudeSessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string } | null>
+  loadSessionState(sessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string } | null>
   deleteSession(sessionId: string): Promise<void>
   deleteSessionsOlderThan(folderPath: string, cutoffDate: string): Promise<string[]>
   pinSession(sessionId: string, pinned: boolean): Promise<void>

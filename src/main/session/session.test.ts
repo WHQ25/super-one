@@ -712,6 +712,19 @@ describe('Session persist hook', () => {
     expect(session.snapshot.messages.find((m) => m.id === 'a2')?.status).toBe('error')
   })
 
+  it('fires onProviderSessionIdChange when backend emits new provider session id', () => {
+    const calls: Array<[string, string]> = []
+    const { backend } = makeSession({
+      onProviderSessionIdChange: (sid, providerSessionId) => calls.push([sid, providerSessionId]),
+    })
+    backend.fireProviderSessionId('prov-abc')
+    expect(calls).toEqual([['sess-1', 'prov-abc']])
+    backend.fireProviderSessionId('prov-abc')
+    expect(calls).toEqual([['sess-1', 'prov-abc']])
+    backend.fireProviderSessionId('prov-xyz')
+    expect(calls).toEqual([['sess-1', 'prov-abc'], ['sess-1', 'prov-xyz']])
+  })
+
   it('does not fire onStateChange when accumulated message list is empty', () => {
     const calls: SessionStateChange[] = []
     const { backend } = makeSession({ onStateChange: (s) => calls.push(s) })

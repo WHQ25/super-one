@@ -58,6 +58,7 @@ export interface SessionConstructorOptions {
   initialTotalCostUsd?: number
   initialContextTokens?: number
   onStateChange?: (snapshot: SessionStateChange) => void
+  onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
 }
 
 const DEFAULT_SANDBOX: SandboxInfo = { enabled: true, autoAllowBash: false }
@@ -101,6 +102,7 @@ export class Session implements SessionContract {
   private additionalDirectories: string[]
 
   private onStateChange?: (snapshot: SessionStateChange) => void
+  private onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
 
   private abortController: AbortController | null = null
   private backendStarted = false
@@ -126,10 +128,15 @@ export class Session implements SessionContract {
     this._totalCostUsd = opts.initialTotalCostUsd ?? 0
     this._contextTokens = opts.initialContextTokens ?? 0
     this.onStateChange = opts.onStateChange
+    this.onProviderSessionIdChange = opts.onProviderSessionIdChange
 
     this.unsubs.push(this.backend.onEvent((e) => this.forwardEvent(e)))
     this.unsubs.push(this.backend.onProviderSessionId((id) => {
+      if (this._providerSessionId === id) return
       this._providerSessionId = id
+      try { this.onProviderSessionIdChange?.(this.id, id) } catch (err) {
+        log.warn('[Session] onProviderSessionIdChange hook error:', err)
+      }
     }))
   }
 

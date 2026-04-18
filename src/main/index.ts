@@ -18,7 +18,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
-import { loadSessionStateBySid, saveSessionStateBySid } from './session/session-repo'
+import { loadSessionStateBySid, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { buildProviderEnv } from './agent/provider-env'
 import type { SessionProvider } from './session/types'
 import {
@@ -105,7 +105,14 @@ const sessionManager = new SessionManagerImpl({
         title: snapshot.title ?? undefined,
       })
     } catch (err) {
-      console.warn('[sessionManager] saveSessionStateBySid failed:', err)
+      log.warn('[sessionManager] saveSessionStateBySid failed:', err)
+    }
+  },
+  onProviderSessionIdChange: (sid, providerSessionId) => {
+    try {
+      updateProviderSessionId(sid, providerSessionId)
+    } catch (err) {
+      log.warn('[sessionManager] updateProviderSessionId failed:', err)
     }
   },
   loadSession: (sessionId) => {

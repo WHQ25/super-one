@@ -29,6 +29,7 @@ export interface SessionManagerPersistence {
   onSessionCreated?: (session: { id: string; projectPath: string; providerId: string }) => void
   onSessionDisposed?: (sessionId: string) => void
   onSessionStateChange?: (snapshot: SessionStateChange) => void
+  onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
   loadSession?: (sessionId: string) => LoadedSessionData | null
   resolveProviderConfig?: (provider: SessionProvider) => unknown
 }
@@ -119,6 +120,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       onStateChange: this.persistence.onSessionStateChange
         ? (snapshot) => this.persistence.onSessionStateChange!(snapshot)
         : undefined,
+      onProviderSessionIdChange: this.persistence.onProviderSessionIdChange
+        ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
+        : undefined,
     })
 
     this.registerSession(session, opts.projectPath)
@@ -185,6 +189,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       initialContextTokens: data.contextTokens,
       onStateChange: this.persistence.onSessionStateChange
         ? (snapshot) => this.persistence.onSessionStateChange!(snapshot)
+        : undefined,
+      onProviderSessionIdChange: this.persistence.onProviderSessionIdChange
+        ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
         : undefined,
     })
 

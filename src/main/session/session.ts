@@ -301,6 +301,49 @@ export class Session implements SessionContract {
     await this.backend.steer(input)
   }
 
+  setCodexPlanApproval(
+    messageId: string,
+    approval: { status: 'approved' | 'rejected'; feedback?: string },
+  ): void {
+    this.assertNotDisposed()
+    if (this.harnessId !== 'codex') return
+    const msgIdx = this._messages.findIndex((m) => m.id === messageId)
+    if (msgIdx >= 0) {
+      const msg = this._messages[msgIdx]
+      const existingCodexMeta = msg.metadata?.codex
+      if (existingCodexMeta) {
+        const updated: ChatMessage = {
+          ...msg,
+          metadata: {
+            ...(msg.metadata ?? {}),
+            codex: { ...existingCodexMeta, planApproval: approval },
+          },
+        }
+        this._messages = this._messages.map((m, i) => (i === msgIdx ? updated : m))
+        this.notifyStateChange()
+      }
+    }
+    this.forwardEvent({
+      type: 'codex_plan_approval',
+      messageId,
+      status: approval.status,
+      ...(approval.feedback ? { feedback: approval.feedback } : {}),
+      projectPath: this.projectPath,
+      sessionId: this.id,
+    } as AgentEvent)
+  }
+
+  notifyCodexCollaborationMode(mode: string): void {
+    this.assertNotDisposed()
+    if (this.harnessId !== 'codex') return
+    this.forwardEvent({
+      type: 'codex_collaboration_mode_change',
+      mode,
+      projectPath: this.projectPath,
+      sessionId: this.id,
+    } as AgentEvent)
+  }
+
   isStreaming(): boolean {
     return this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting'
   }

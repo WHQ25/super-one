@@ -543,6 +543,72 @@ describe('Session message accumulation', () => {
     expect(finished?.status).toBe('interrupted')
     expect(finished?.content[0]).toMatchObject({ type: 'text', text: 'Codex run interrupted.' })
   })
+
+  it('setCodexPlanApproval writes metadata.codex.planApproval and emits codex_plan_approval', () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'codex_plan_1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' },
+    })
+    backend.emit({
+      type: 'message_complete',
+      messageId: 'codex_plan_1',
+      metadata: {
+        codex: {
+          finalResponse: 'please approve',
+          durationMs: 10,
+          items: [],
+          threadId: 'thread-plan',
+          usage: null,
+        },
+      } as unknown as Record<string, unknown>,
+    })
+    const captured: AgentEvent[] = []
+    session.on((e) => captured.push(e))
+
+    session.setCodexPlanApproval('codex_plan_1', { status: 'approved', feedback: 'LGTM' })
+
+    const msg = session.snapshot.messages.find((m) => m.id === 'codex_plan_1')
+    expect(msg?.metadata?.codex?.planApproval).toEqual({ status: 'approved', feedback: 'LGTM' })
+
+    const approvalEvt = captured.find((e) => e.type === 'codex_plan_approval') as Extract<AgentEvent, { type: 'codex_plan_approval' }> | undefined
+    expect(approvalEvt).toBeDefined()
+    expect(approvalEvt?.messageId).toBe('codex_plan_1')
+    expect(approvalEvt?.status).toBe('approved')
+    expect(approvalEvt?.feedback).toBe('LGTM')
+    expect(approvalEvt?.sessionId).toBe('sess-1')
+    expect(approvalEvt?.projectPath).toBe('/tmp/proj')
+  })
+
+  it('setCodexPlanApproval is a no-op for non-codex sessions', () => {
+    const { session } = makeSession({ harnessId: 'claude' })
+    const captured: AgentEvent[] = []
+    session.on((e) => captured.push(e))
+    session.setCodexPlanApproval('anything', { status: 'approved' })
+    expect(captured.find((e) => e.type === 'codex_plan_approval')).toBeUndefined()
+  })
+
+  it('notifyCodexCollaborationMode emits codex_collaboration_mode_change', () => {
+    const { session } = makeSession({ harnessId: 'codex' })
+    const captured: AgentEvent[] = []
+    session.on((e) => captured.push(e))
+
+    session.notifyCodexCollaborationMode('parallel')
+
+    const modeEvt = captured.find((e) => e.type === 'codex_collaboration_mode_change') as Extract<AgentEvent, { type: 'codex_collaboration_mode_change' }> | undefined
+    expect(modeEvt).toBeDefined()
+    expect(modeEvt?.mode).toBe('parallel')
+    expect(modeEvt?.sessionId).toBe('sess-1')
+    expect(modeEvt?.projectPath).toBe('/tmp/proj')
+  })
+
+  it('notifyCodexCollaborationMode is a no-op for non-codex sessions', () => {
+    const { session } = makeSession({ harnessId: 'claude' })
+    const captured: AgentEvent[] = []
+    session.on((e) => captured.push(e))
+    session.notifyCodexCollaborationMode('parallel')
+    expect(captured.find((e) => e.type === 'codex_collaboration_mode_change')).toBeUndefined()
+  })
 })
 
 describe('Session persist hook', () => {

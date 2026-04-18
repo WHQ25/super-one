@@ -640,10 +640,16 @@ export class AgentService {
       }
       case 'codex_plan_approval': {
         if (!command.sessionId) break
-        this.updateCodexPlanApproval(command.sessionId, command.messageId, {
+        const approval = {
           status: command.status,
           ...(command.feedback ? { feedback: command.feedback } : {}),
-        })
+        }
+        const session = this.sessionManager?.getSession(command.sessionId)
+        if (session && session.snapshot.harnessId === 'codex') {
+          session.setCodexPlanApproval(command.messageId, approval)
+        } else {
+          this.updateCodexPlanApproval(command.sessionId, command.messageId, approval)
+        }
         break
       }
       case 'set_permission_mode': {

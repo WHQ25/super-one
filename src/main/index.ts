@@ -594,11 +594,21 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLAN_APPROVAL, (_event, projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) => {
+    const existing = sessionManager.getSession(sessionId)
+    if (existing && existing.snapshot.harnessId === 'codex') {
+      existing.setCodexPlanApproval(messageId, { status, ...(feedback ? { feedback } : {}) })
+      return
+    }
     agentService.updateCodexPlanApproval(sessionId, messageId, { status, ...(feedback ? { feedback } : {}) })
     emitAgentEvent({ type: 'codex_plan_approval', messageId, status, ...(feedback ? { feedback } : {}), projectPath, sessionId } as AgentEvent)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_COLLABORATION_MODE_CHANGE, (_event, projectPath: string, sessionId: string, mode: string) => {
+    const existing = sessionManager.getSession(sessionId)
+    if (existing && existing.snapshot.harnessId === 'codex') {
+      existing.notifyCodexCollaborationMode(mode)
+      return
+    }
     emitAgentEvent({ type: 'codex_collaboration_mode_change', mode, projectPath, sessionId } as AgentEvent)
   })
 

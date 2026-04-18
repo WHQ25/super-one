@@ -176,6 +176,11 @@ export interface Session {
   dequeueMessage(clientMessageId: string): boolean
   getPendingInteractions(): AgentEvent[]
   steer(input: string): Promise<void>
+  setCodexPlanApproval(
+    messageId: string,
+    approval: { status: 'approved' | 'rejected'; feedback?: string },
+  ): void
+  notifyCodexCollaborationMode(mode: string): void
   isStreaming(): boolean
   truncateMessagesAt(checkpointId: string): void
   dispose(): Promise<void>

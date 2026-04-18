@@ -151,7 +151,7 @@ export interface Session {
   readonly projectPath: string
   readonly cwd: string
   readonly snapshot: SessionSnapshot
-  send(request: SendMessageRequest): Promise<void>
+  send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void>
   interrupt(): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
   setSandboxMode(mode: SandboxMode): SandboxInfo

@@ -7,7 +7,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import { readProjectAdditionalDirs, writeProjectAdditionalDirs } from './project-additional-dirs'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
-import { AgentIpcChannels, type AgentEvent, type ChatMessage, type CodexRunResult, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type ChatMessage, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexRunResult, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
@@ -409,55 +409,35 @@ export class AgentService {
       } as AgentEvent)
     }
     this.broadcastEventToRenderer({ type: 'remote_session_start', remoteProjectPath: projectPath, remoteSessionId: sessionId })
-    const { userMessage, assistantMessage } = this.beginCodexTurn(projectPath, sessionId, {
-      userMessageId,
-      userText: command.content,
-      assistantMessageId,
-      providerId: 'remote',
-      images: command.images,
-      gitBranch: command.gitBranch ?? command.worktreeBranch ?? null,
-    })
-    this.remoteControlService?.broadcastAgentEvent({ type: 'message_start', message: userMessage, projectPath, sessionId } as AgentEvent)
-    this.remoteControlService?.broadcastAgentEvent({ type: 'message_start', message: assistantMessage, projectPath, sessionId } as AgentEvent)
-    this.remoteControlService?.broadcastAgentEvent({ type: 'status_change', status: 'streaming', projectPath, sessionId } as AgentEvent)
-    this.broadcastEventToRenderer({ type: 'message_start', message: userMessage, projectPath, sessionId })
-    this.broadcastEventToRenderer({ type: 'message_start', message: assistantMessage, projectPath, sessionId })
-    this.broadcastEventToRenderer({ type: 'status_change', status: 'streaming', projectPath, sessionId })
-    const runStart = Date.now()
     try {
-      const result = await this.codexRun?.(sessionId, projectPath, {
-        prompt: command.content,
-        model: command.model,
-        reasoningEffort: command.effort as string | undefined,
-        permissionPreset: command.permissionPreset,
-        collaborationMode: command.collaborationMode,
-        threadId: command.threadId,
-        messageId: assistantMessageId,
-        images: command.images,
-      })
-      if (result) {
-        this.completeCodexTurn(sessionId, {
-          messageId: assistantMessageId,
-          result,
-          durationMs: Date.now() - runStart,
-          fallbackText: 'Codex completed without returning text.',
-        })
+      const mgr = this.requireSessionManager()
+      let session = mgr.getSession(sessionId)
+      if (!session) {
+        try { session = mgr.resumeSession(sessionId) } catch {
+          session = mgr.createSession({
+            projectPath,
+            providerId: 'codex-base',
+            id: sessionId,
+          })
+        }
       }
-      this.remoteControlService?.broadcastAgentEvent({ type: 'message_complete', messageId: assistantMessageId, metadata: { durationMs: Date.now() - runStart }, projectPath, sessionId } as AgentEvent)
-      this.remoteControlService?.broadcastAgentEvent({ type: 'status_change', status: 'idle', projectPath, sessionId } as AgentEvent)
-      this.broadcastEventToRenderer({ type: 'message_complete', messageId: assistantMessageId, projectPath, sessionId })
-      this.broadcastEventToRenderer({ type: 'status_change', status: 'idle', projectPath, sessionId })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.failCodexTurn(sessionId, {
-        messageId: assistantMessageId,
-        status: /interrupt|abort/i.test(message) ? 'interrupted' : 'error',
-        text: /interrupt|abort/i.test(message) ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
-      })
-      this.remoteControlService?.broadcastAgentEvent({ type: /interrupt|abort/i.test(message) ? 'message_interrupted' : 'message_error', messageId: assistantMessageId, projectPath, sessionId } as AgentEvent)
-      this.remoteControlService?.broadcastAgentEvent({ type: 'status_change', status: 'idle', projectPath, sessionId } as AgentEvent)
-      this.broadcastEventToRenderer({ type: 'status_change', status: 'idle', projectPath, sessionId })
-      throw error
+      if (session.snapshot.harnessId !== 'codex') {
+        throw new Error(`Session ${sessionId} has harness=${session.snapshot.harnessId}, expected codex`)
+      }
+      await session.send({
+        content: command.content,
+        clientMessageId: userMessageId,
+        assistantMessageId,
+        images: command.images,
+        model: command.model,
+        effort: command.effort as SendMessageRequest['effort'] | undefined,
+        codex: {
+          permissionPreset: command.permissionPreset as CodexPermissionPreset | undefined,
+          collaborationMode: command.collaborationMode as CodexCollaborationMode | undefined,
+          threadId: command.threadId,
+          reasoningEffort: command.effort as CodexReasoningEffort | undefined,
+        },
+      }, { providerOrigin: 'remote' })
     } finally {
       this.remoteControlService?.clearRemoteSessionFilter()
       this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId })

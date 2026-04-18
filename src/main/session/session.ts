@@ -152,7 +152,7 @@ export class Session implements SessionContract {
     }
   }
 
-  async send(request: SendMessageRequest): Promise<void> {
+  async send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void> {
     const prev = this._sendChain
     let release!: () => void
     this._sendChain = new Promise<void>((r) => { release = r })
@@ -165,7 +165,7 @@ export class Session implements SessionContract {
       if (request.effort !== undefined) this.effort = request.effort
       if (request.model !== undefined) this.model = request.model
       if (request.additionalDirs !== undefined) this.additionalDirectories = request.additionalDirs
-      this.appendUserMessage(request)
+      this.appendUserMessage(request, opts?.providerOrigin ?? 'local')
       if (this.backendStarted && (effortChanged || dirsChanged)) {
         log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s', this.id, effortChanged, dirsChanged)
         await this.backend.rebuild(this.buildBackendStartOpts())
@@ -456,7 +456,8 @@ export class Session implements SessionContract {
       this._currentMessageId = null
     }
     this.applyReducer(event)
-    const tagged = { ...event, sessionId: this.id }
+    const existingProjectPath = (event as { projectPath?: string }).projectPath
+    const tagged = { ...event, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath }
     const traceMessageId = (event as Record<string, unknown>).messageId as string | undefined
       ?? this._currentMessageId
       ?? ''
@@ -551,8 +552,8 @@ export class Session implements SessionContract {
     }
   }
 
-  private appendUserMessage(request: SendMessageRequest): void {
-    const userMsg = buildClaudeUserMessage(request, 'local')
+  private appendUserMessage(request: SendMessageRequest, providerOrigin: 'local' | 'remote'): void {
+    const userMsg = buildClaudeUserMessage(request, providerOrigin)
     if (!this._messages.some((m) => m.id === userMsg.id)) {
       this._messages = [...this._messages, userMsg]
     }

@@ -19,6 +19,17 @@ vi.mock('../agent/claude-query', () => ({
 }))
 
 import { harnessRegistry } from './harness-registry'
+import { setCodexServiceFactory } from './backends/codex-backend'
+
+setCodexServiceFactory(() => ({
+  run: vi.fn(),
+  interrupt: vi.fn(),
+  reset: vi.fn(),
+  respondToPermission: vi.fn(),
+  respondToQuestion: vi.fn(),
+  dismissQuestion: vi.fn(),
+  steer: vi.fn(async () => {}),
+}) as never)
 
 describe('harnessRegistry', () => {
   it('lists claude and codex harnesses', () => {

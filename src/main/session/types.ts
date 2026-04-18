@@ -82,6 +82,8 @@ export interface SessionStateChange {
 }
 
 export interface BackendStartOptions {
+  sessionId: string
+  projectPath: string
   cwd: string
   config: unknown
   permissionMode: PermissionMode

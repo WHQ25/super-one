@@ -93,6 +93,8 @@ import { ClaudeBackend } from './claude-backend'
 
 function makeStartOpts() {
   return {
+    sessionId: 'sess-test',
+    projectPath: '/tmp/proj',
     cwd: '/tmp/proj',
     config: { apiKey: 'sk-test' },
     permissionMode: 'default' as const,
@@ -262,6 +264,8 @@ describe('ClaudeBackend', () => {
     it('forwards buildClaudeOptions(opts) to warmupManager.prewarm', () => {
       const backend = new ClaudeBackend()
       backend.prewarm({
+        sessionId: 'sess-prewarm',
+        projectPath: '/tmp/proj',
         cwd: '/tmp/proj',
         config: { apiKey: 'sk-test' },
         permissionMode: 'default',

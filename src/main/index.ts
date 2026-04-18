@@ -50,6 +50,7 @@ import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-
 import { getDb, closeDb, getCachedResources, setCachedResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw } from './database'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
+import { setCodexServiceFactory } from './session/backends/codex-backend'
 import { AutomationService } from './automation-service'
 import { listAutomationsForProject, createAutomation as dbCreateAutomation, updateAutomation as dbUpdateAutomation, deleteAutomation as dbDeleteAutomation } from './db-automations'
 import { trace, closeTraceDb } from './agent/event-trace'
@@ -76,6 +77,7 @@ if (is.dev) {
 
 const agentService = new AgentService()
 const codexService = new CodexExperimentService()
+setCodexServiceFactory(() => codexService)
 const automationService = new AutomationService()
 function resolveBaseProviderConfig(provider: SessionProvider): unknown {
   if (!provider.isBase) return provider.config

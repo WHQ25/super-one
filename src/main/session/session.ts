@@ -270,6 +270,8 @@ export class Session implements SessionContract {
   prewarm(hint?: PrewarmHint): void {
     const dirs = hint?.additionalDirs ?? this.additionalDirectories
     const opts: BackendStartOptions = {
+      sessionId: this.id,
+      projectPath: this.projectPath,
       cwd: this.cwd,
       config: this.providerConfig,
       permissionMode: this.permissionMode,
@@ -348,6 +350,8 @@ export class Session implements SessionContract {
   private buildBackendStartOpts(): BackendStartOptions {
     this.abortController = new AbortController()
     return {
+      sessionId: this.id,
+      projectPath: this.projectPath,
       cwd: this.cwd,
       config: this.providerConfig,
       permissionMode: this.permissionMode,

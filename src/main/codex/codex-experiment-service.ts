@@ -2244,3 +2244,12 @@ export class CodexExperimentService {
     this.projectAuth.clear()
   }
 }
+
+let sharedCodexService: CodexExperimentService | null = null
+export function getSharedCodexService(): CodexExperimentService {
+  if (!sharedCodexService) sharedCodexService = new CodexExperimentService()
+  return sharedCodexService
+}
+export function setSharedCodexServiceForTest(instance: CodexExperimentService | null): void {
+  sharedCodexService = instance
+}

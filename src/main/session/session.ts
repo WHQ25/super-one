@@ -12,6 +12,7 @@ import type {
   SendMessageRequest,
 } from '../../shared/agent-types'
 import log from '../logger'
+import { trace } from '../agent/event-trace'
 import {
   applyClaudeEventToRuntime,
   buildClaudeUserMessage,
@@ -387,6 +388,10 @@ export class Session implements SessionContract {
     }
     this.applyReducer(event)
     const tagged = { ...event, sessionId: this.id }
+    const traceMessageId = (event as Record<string, unknown>).messageId as string | undefined
+      ?? this._currentMessageId
+      ?? ''
+    trace('agent.emit', event.type, tagged, traceMessageId)
     for (const cb of this.eventListeners) {
       try { cb(tagged) } catch (err) { log.warn('[Session] event listener error:', err) }
     }

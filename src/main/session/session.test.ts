@@ -6,6 +6,11 @@ vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
+const traceMock = vi.fn()
+vi.mock('../agent/event-trace', () => ({
+  trace: (...args: unknown[]) => traceMock(...args),
+}))
+
 import { Session, type SessionConstructorOptions } from './session'
 
 class FakeBackend implements SessionBackend {
@@ -360,6 +365,27 @@ describe('Session event forwarding', () => {
     expect(session.snapshot.providerSessionId).toBeNull()
     backend.fireProviderSessionId('sdk-xyz')
     expect(session.snapshot.providerSessionId).toBe('sdk-xyz')
+  })
+
+  it('traces every emitted event via agent.emit with currentMessageId fallback', () => {
+    const { session, backend } = makeSession()
+    traceMock.mockClear()
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'msg-42', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    backend.emit({ type: 'content_delta', messageId: 'msg-42', delta: { type: 'text', text: 'hi' } })
+    backend.emit({ type: 'status_change', status: 'streaming' })
+
+    expect(traceMock).toHaveBeenCalledTimes(3)
+    const first = traceMock.mock.calls[0]
+    expect(first[0]).toBe('agent.emit')
+    expect(first[1]).toBe('message_start')
+    expect(first[2]).toMatchObject({ type: 'message_start', sessionId: session.id })
+
+    const statusCall = traceMock.mock.calls[2]
+    expect(statusCall[1]).toBe('status_change')
+    expect(statusCall[3]).toBe('msg-42')
   })
 })
 

@@ -23,6 +23,7 @@ import {
 import {
   applyCodexEventToRuntime,
   extractCodexTitle,
+  finalizeCodexAssistantMessage,
   type CodexSessionRuntime,
 } from '../agent/codex-session-runtime'
 import type {
@@ -438,6 +439,44 @@ export class Session implements SessionContract {
         worktreePath: null,
         streamingTokensByMessageId: this._streamingTokensByMessageId,
         lastUsageByMessageId: this._lastUsageByMessageId,
+      }
+      if (event.type === 'message_start') {
+        const existing = this._messages.find((m) => m.id === event.message.id)
+        this._messages = existing ? this._messages : [...this._messages, event.message]
+        return
+      }
+      if (
+        event.type === 'message_complete' ||
+        event.type === 'message_interrupted' ||
+        event.type === 'message_error'
+      ) {
+        const codexMeta = event.type === 'message_complete'
+          ? (event.metadata as Record<string, unknown> | undefined)?.codex as Record<string, unknown> | undefined
+          : undefined
+        const finalText = (codexMeta?.finalResponse as string | undefined)
+          ?? (event.type === 'message_interrupted' ? 'Codex run interrupted.' : event.type === 'message_error' ? `Codex run failed: ${event.error}` : '')
+        const result = codexMeta ? {
+          threadId: (codexMeta.threadId as string | null) ?? null,
+          finalResponse: (codexMeta.finalResponse as string | undefined) ?? '',
+          usage: (codexMeta.usage as CodexSessionRuntime['lastUsageByMessageId'][string] | null) ?? null,
+          items: (codexMeta.items as never) ?? [],
+        } : undefined
+        const status: 'complete' | 'interrupted' | 'error' = event.type === 'message_complete'
+          ? 'complete'
+          : event.type === 'message_interrupted' ? 'interrupted' : 'error'
+        const next = finalizeCodexAssistantMessage(runtime, {
+          messageId: event.messageId,
+          status,
+          text: finalText,
+          result,
+          durationMs: codexMeta?.durationMs as number | undefined,
+        })
+        this._messages = next.messages
+        this._totalCostUsd = next.totalCostUsd
+        this._contextTokens = next.contextTokens
+        this._streamingTokensByMessageId = next.streamingTokensByMessageId
+        this._lastUsageByMessageId = next.lastUsageByMessageId
+        return
       }
       const next = applyCodexEventToRuntime(runtime, event)
       this._messages = next.messages

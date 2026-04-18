@@ -148,6 +148,17 @@ export class CodexBackend implements SessionBackend {
     const sessionKey = startOpts.sessionId
     const projectPath = startOpts.projectPath
 
+    this.emit({
+      type: 'message_start',
+      message: {
+        id: assistantMessageId,
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'codex',
+      },
+    })
     this.emit({ type: 'status_change', status: 'streaming' })
     const callbacks = this.buildCallbacks(assistantMessageId)
     const runStart = Date.now()

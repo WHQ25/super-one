@@ -186,18 +186,30 @@ describe('CodexBackend send()', () => {
     expect(request.permissionPreset).toBe('full-access')
   })
 
-  it('emits status_change streaming → message_complete → status_change idle on success', async () => {
+  it('emits message_start → status_change streaming → message_complete → status_change idle on success', async () => {
     const pending = backend.send({ content: 'hi' })
     service.resolveRun(makeResult({ finalResponse: 'bye', threadId: 'th-1', usage: null }))
     await pending
 
     const types = events.map((e) => e.type)
-    expect(types).toEqual(['status_change', 'message_complete', 'status_change'])
-    expect((events[0] as { status: string }).status).toBe('streaming')
-    expect((events[2] as { status: string }).status).toBe('idle')
-    const complete = events[1] as Record<string, unknown>
+    expect(types).toEqual(['message_start', 'status_change', 'message_complete', 'status_change'])
+    expect((events[1] as { status: string }).status).toBe('streaming')
+    expect((events[3] as { status: string }).status).toBe('idle')
+    const start = events[0] as { message: { id: string; role: string; providerId: string } }
+    expect(start.message.role).toBe('assistant')
+    expect(start.message.providerId).toBe('codex')
+    const complete = events[2] as Record<string, unknown>
     expect(complete.type).toBe('message_complete')
     expect((complete.metadata as Record<string, unknown>).codex).toMatchObject({ finalResponse: 'bye', threadId: 'th-1' })
+  })
+
+  it('message_start id matches the messageId used in message_complete', async () => {
+    const pending = backend.send({ content: 'x' })
+    service.resolveRun(makeResult())
+    await pending
+    const start = events.find((e) => e.type === 'message_start') as { message: { id: string } }
+    const complete = events.find((e) => e.type === 'message_complete') as { messageId: string }
+    expect(start.message.id).toBe(complete.messageId)
   })
 
   it('emits message_error on non-interrupt failure', async () => {

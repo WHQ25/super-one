@@ -496,6 +496,53 @@ describe('Session message accumulation', () => {
     const msg = session.snapshot.messages.find((m) => m.id === 'a1')
     expect(msg?.metadata?.codex?.threadId).toBe('thread-abc')
   })
+
+  it('codex message_start appends the assistant placeholder to _messages', () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+    expect(session.snapshot.messages).toHaveLength(0)
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'codex_msg_1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' },
+    })
+    expect(session.snapshot.messages.find((m) => m.id === 'codex_msg_1')).toBeDefined()
+    expect(session.snapshot.currentMessageId).toBe('codex_msg_1')
+  })
+
+  it('codex message_complete finalizes the assistant message content from metadata.codex', () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'codex_m2', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' },
+    })
+    backend.emit({
+      type: 'message_complete',
+      messageId: 'codex_m2',
+      metadata: {
+        codex: {
+          finalResponse: 'all done',
+          durationMs: 42,
+          items: [],
+          threadId: 'thread-42',
+          usage: null,
+        },
+      } as unknown as Record<string, unknown>,
+    })
+    const finished = session.snapshot.messages.find((m) => m.id === 'codex_m2')
+    expect(finished?.status).toBe('complete')
+    expect(finished?.content).toEqual([{ type: 'text', text: 'all done' }])
+  })
+
+  it('codex message_interrupted finalizes the assistant message with interrupted status', () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'codex_m3', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' },
+    })
+    backend.emit({ type: 'message_interrupted', messageId: 'codex_m3' })
+    const finished = session.snapshot.messages.find((m) => m.id === 'codex_m3')
+    expect(finished?.status).toBe('interrupted')
+    expect(finished?.content[0]).toMatchObject({ type: 'text', text: 'Codex run interrupted.' })
+  })
 })
 
 describe('Session persist hook', () => {

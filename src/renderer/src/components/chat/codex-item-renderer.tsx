@@ -16,6 +16,7 @@ import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { useChatStore } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
+import { parseFileLinkTarget } from '@/lib/file-link'
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '../../../../shared/agent-types'
@@ -73,12 +74,10 @@ function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const projectPath = useChatStore.getState().activeProject
   const href = rawHref ? decodeURIComponent(rawHref) : rawHref
   if (href && projectPath) {
-    const lineMatch = href.match(/#L(\d+)$/)
-    const cleanHref = lineMatch ? href.slice(0, -lineMatch[0].length) : href
-    const lineNumber = lineMatch ? parseInt(lineMatch[1], 10) : undefined
-    if (cleanHref.startsWith(projectPath + '/')) {
-      const text = typeof children === 'string' ? children : (cleanHref.split('/').pop() || '')
-      return <InlineFileChip name={text} filePath={cleanHref} lineNumber={lineNumber} />
+    const { filePath, lineNumber } = parseFileLinkTarget(href)
+    if (filePath.startsWith(projectPath + '/')) {
+      const text = typeof children === 'string' ? children : (filePath.split('/').pop() || '')
+      return <InlineFileChip name={text} filePath={filePath} lineNumber={lineNumber} />
     }
   }
   return <a href={rawHref} {...rest}>{children}</a>

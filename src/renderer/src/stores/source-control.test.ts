@@ -125,4 +125,18 @@ describe('selectFile', () => {
 
     expect(store.getState().activeTab).toBe('file')
   })
+
+  it('should strip a colon line suffix before loading the file', async () => {
+    const promise = store.getState().selectFile('/project', 'README.md:12')
+    expect(store.getState().selectedFile).toBe('README.md')
+    expect(store.getState().scrollToLine?.line).toBe(12)
+
+    resolveDiff({ diff: '' })
+    resolveContent({ content: '# Hello' })
+    await promise
+
+    expect(mockGetGitDiffFile).toHaveBeenCalledWith('/project', 'README.md', false)
+    expect(mockGetGitReadFile).toHaveBeenCalledWith('/project', 'README.md')
+    expect(store.getState().activeTab).toBe('file')
+  })
 })

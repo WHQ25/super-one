@@ -1,5 +1,6 @@
 import type { DockviewApi, AddPanelPositionOptions } from 'dockview-core'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { normalizeFileLinkTarget } from '@/lib/file-link'
 
 let dockApi: DockviewApi | null = null
 let pendingAction: (() => void) | null = null
@@ -32,13 +33,14 @@ function execOrDefer(fn: () => void) {
 
 function addFilePanel(filePath: string, position?: AddPanelPositionOptions) {
   if (!dockApi) return
-  const fileName = filePath.split('/').pop() ?? filePath
+  const normalizedPath = normalizeFileLinkTarget(filePath)
+  const fileName = normalizedPath.split('/').pop() ?? normalizedPath
   dockApi.addPanel({
-    id: `file:${filePath}`,
+    id: `file:${normalizedPath}`,
     component: 'file-preview',
     tabComponent: 'file-preview-tab',
     title: fileName,
-    params: { filePath },
+    params: { filePath: normalizedPath },
     ...(position ? { position } : {}),
   })
 }
@@ -47,7 +49,8 @@ export function openFileTab(filePath: string) {
   ensureVisible()
   execOrDefer(() => {
     if (!dockApi) return
-    const panelId = `file:${filePath}`
+    const normalizedPath = normalizeFileLinkTarget(filePath)
+    const panelId = `file:${normalizedPath}`
     const existing = dockApi.panels.find((p) => p.id === panelId)
     if (existing) {
       existing.api.setActive()
@@ -56,11 +59,11 @@ export function openFileTab(filePath: string) {
     const activePanel = dockApi.activePanel
     if (activePanel?.id.startsWith('file:')) {
       const group = activePanel.group
-      addFilePanel(filePath, group ? { referenceGroup: group, direction: 'within' } : undefined)
+      addFilePanel(normalizedPath, group ? { referenceGroup: group, direction: 'within' } : undefined)
       activePanel.api.close()
       return
     }
-    addFilePanel(filePath)
+    addFilePanel(normalizedPath)
   })
 }
 
@@ -68,7 +71,8 @@ export function openNewFileTab(filePath: string, options?: { direction?: 'within
   ensureVisible()
   execOrDefer(() => {
     if (!dockApi) return
-    const panelId = `file:${filePath}`
+    const normalizedPath = normalizeFileLinkTarget(filePath)
+    const panelId = `file:${normalizedPath}`
     const existing = dockApi.panels.find((p) => p.id === panelId)
     if (existing) {
       existing.api.setActive()
@@ -79,7 +83,7 @@ export function openNewFileTab(filePath: string, options?: { direction?: 'within
       : options?.direction && options.direction !== 'within'
         ? { direction: options.direction }
         : undefined
-    addFilePanel(filePath, position)
+    addFilePanel(normalizedPath, position)
   })
 }
 

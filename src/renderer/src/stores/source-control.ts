@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { GitStatusFile, GitFileDiff, GitFileContent } from '../../../shared/agent-types'
+import { parseFileLinkTarget } from '@/lib/file-link'
 
 interface SourceControlState {
   files: GitStatusFile[]
@@ -39,22 +40,25 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
   },
 
   selectFile: async (projectPath, path, lineNumber) => {
-    const file = get().files.find((f) => f.path === path)
-    const isSameFile = get().selectedFile === path
-    set({ selectedFile: path, ...(lineNumber != null ? { scrollToLine: { line: lineNumber, seq: Date.now() } } : isSameFile ? {} : { scrollToLine: null }) })
+    const parsed = parseFileLinkTarget(path)
+    const targetPath = parsed.filePath
+    const targetLineNumber = lineNumber ?? parsed.lineNumber
+    const file = get().files.find((f) => f.path === targetPath)
+    const isSameFile = get().selectedFile === targetPath
+    set({ selectedFile: targetPath, ...(targetLineNumber != null ? { scrollToLine: { line: targetLineNumber, seq: Date.now() } } : isSameFile ? {} : { scrollToLine: null }) })
     try {
       const [diff, content] = await Promise.all([
-        window.app.getGitDiffFile(projectPath, path, file?.staged ?? false),
-        window.app.getGitReadFile(projectPath, path),
+        window.app.getGitDiffFile(projectPath, targetPath, file?.staged ?? false),
+        window.app.getGitReadFile(projectPath, targetPath),
       ])
-      if (get().selectedFile !== path) return
-      const isMd = /\.(?:md|mdx|markdown)$/i.test(path)
+      if (get().selectedFile !== targetPath) return
+      const isMd = /\.(?:md|mdx|markdown)$/i.test(targetPath)
       const isBinaryPreview = content.language === 'image' || content.language === 'pdf' || content.language === 'video' || content.language === 'audio'
       const isSvg = content.language === 'svg'
-      const autoTab = lineNumber ? 'file' : isBinaryPreview ? 'preview' : diff.diff ? 'changes' : (isMd || isSvg) ? 'preview' : 'file'
-      set({ fileDiff: diff, fileContent: content, ...(isSameFile && !lineNumber ? {} : { activeTab: autoTab }) })
+      const autoTab = targetLineNumber ? 'file' : isBinaryPreview ? 'preview' : diff.diff ? 'changes' : (isMd || isSvg) ? 'preview' : 'file'
+      set({ fileDiff: diff, fileContent: content, ...(isSameFile && !targetLineNumber ? {} : { activeTab: autoTab }) })
     } catch {
-      if (get().selectedFile !== path) return
+      if (get().selectedFile !== targetPath) return
       set({ fileDiff: null, fileContent: null })
     }
   },

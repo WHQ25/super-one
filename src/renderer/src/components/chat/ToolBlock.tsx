@@ -22,6 +22,7 @@ import { InChatMiniAppBlock } from './InChatMiniAppBlock'
 import { ToolRendererFrame } from './ToolRendererFrame'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { parseFileLinkTarget } from '@/lib/file-link'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
@@ -539,13 +540,17 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
 })
 
 export function FileChip({ name, title, filePath, lineNumber, className }: { name: string; title: string; filePath?: string; lineNumber?: number; className?: string }) {
+  const parsed = filePath ? parseFileLinkTarget(filePath) : null
+  const targetPath = parsed?.filePath
+  const targetLineNumber = lineNumber ?? parsed?.lineNumber
+
   const handleClick = (e: React.MouseEvent): void => {
     e.stopPropagation()
-    if (!filePath) return
+    if (!targetPath) return
     const projectPath = useChatStore.getState().activeProject
     if (!projectPath) return
-    const relative = filePath.startsWith(projectPath + '/') ? filePath.slice(projectPath.length + 1) : filePath
-    useSourceControlStore.getState().selectFile(projectPath, relative, lineNumber)
+    const relative = targetPath.startsWith(projectPath + '/') ? targetPath.slice(projectPath.length + 1) : targetPath
+    useSourceControlStore.getState().selectFile(projectPath, relative, targetLineNumber)
     openFileTab(relative)
   }
   return (
@@ -557,7 +562,7 @@ export function FileChip({ name, title, filePath, lineNumber, className }: { nam
     >
       <FileIcon name={name} size={12} className="shrink-0" />
       <span className={cn('truncate', className)}>{name}</span>
-      {lineNumber != null && <span className="text-muted-foreground text-[10px]">#L{lineNumber}</span>}
+      {targetLineNumber != null && <span className="text-muted-foreground text-[10px]">#L{targetLineNumber}</span>}
     </span>
   )
 }

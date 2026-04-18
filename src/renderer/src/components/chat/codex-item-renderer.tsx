@@ -108,7 +108,6 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
   const homedir = useActiveSession((s) => s.homedir)
   const display = getCommandDisplay(item, cwd, homedir)
   const action = item.commandActions?.[0]
-  const autoExpandOnRun = action?.type !== 'read' && action?.type !== 'search'
   const realRunning = item.status === 'in_progress'
   const [showRunning, setShowRunning] = useState(realRunning)
 
@@ -123,18 +122,14 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
 
   const isRunning = isStreaming && showRunning
   const [expanded, setExpanded] = useState(false)
-
-  useEffect(() => {
-    if (autoExpandOnRun) setExpanded(isRunning)
-  }, [autoExpandOnRun, isRunning])
   const output = `${item.aggregatedOutput ?? ''}${item.exitCode !== undefined ? `\n\nExit code ${item.exitCode}` : ''}`.trim()
 
   return (
     <div className={cn('tool-node my-0.5 min-w-0 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" onClick={() => setExpanded((e) => !e)}>
         <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
-        <span className="font-medium text-foreground">
-          {isRunning && !expanded ? <>{display.label === 'Bash' ? 'Running' : display.label === 'Read' ? 'Reading' : 'Searching'}…</> : display.label}
+        <span className={cn('font-medium text-foreground', isRunning && 'animate-shimmer')}>
+          {isRunning ? <>{display.label === 'Bash' ? 'Running' : display.label === 'Read' ? 'Reading' : 'Searching'}…</> : display.label}
         </span>
         {action?.type === 'read' && action.path
           ? <FileChip name={action.path.split('/').pop() || ''} title={display.summary} filePath={action.path} />

@@ -211,6 +211,19 @@ export class SessionManagerImpl implements SessionManagerContract {
     return false
   }
 
+  markAllNeedsRebuild(harnessId?: SessionProvider['harnessId']): void {
+    const resolver = this.persistence.resolveProviderConfig
+    for (const session of this.sessions.values()) {
+      if (harnessId && session.snapshot.harnessId !== harnessId) continue
+      const provider = getSessionProvider(session.snapshot.providerId)
+      if (!provider) continue
+      const nextConfig = resolver ? resolver(provider) : provider.config
+      try { session.updateProviderConfig(nextConfig) } catch (err) {
+        log.debug('[SessionManager] updateProviderConfig failed for sid=%s:', session.id, err)
+      }
+    }
+  }
+
   async disposeSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId)
     if (!session) return

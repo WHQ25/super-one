@@ -789,8 +789,8 @@ export class AgentService {
     })
   }
 
-  markAllNeedsRebuild(): void {
-    /* no-op: new architecture reloads plugins per-session on demand */
+  markAllNeedsRebuild(harnessId?: 'claude' | 'codex'): void {
+    this.sessionManager?.markAllNeedsRebuild(harnessId)
   }
 
 

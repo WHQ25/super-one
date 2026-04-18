@@ -87,6 +87,7 @@ export class Session implements SessionContract {
   private _currentMessageId: string | null = null
   private _providerSessionId: string | null = null
   private _lastUserMessageAt: number | null = null
+  private _providerConfigStale = false
 
   private _messages: ChatMessage[] = []
   private _totalCostUsd = 0
@@ -173,9 +174,11 @@ export class Session implements SessionContract {
       if (request.model !== undefined) this.model = request.model
       if (request.additionalDirs !== undefined) this.additionalDirectories = request.additionalDirs
       this.appendUserMessage(request, opts?.providerOrigin ?? 'local')
-      if (this.backendStarted && (effortChanged || dirsChanged)) {
-        log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s', this.id, effortChanged, dirsChanged)
+      const providerConfigStale = this._providerConfigStale
+      if (this.backendStarted && (effortChanged || dirsChanged || providerConfigStale)) {
+        log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s providerConfigStale=%s', this.id, effortChanged, dirsChanged, providerConfigStale)
         await this.backend.rebuild(this.buildBackendStartOpts())
+        this._providerConfigStale = false
       } else {
         await this.ensureStarted()
       }
@@ -417,6 +420,12 @@ export class Session implements SessionContract {
 
   getCurrentSandboxInfo(): SandboxInfo {
     return this.sandboxInfo
+  }
+
+  updateProviderConfig(nextConfig: unknown): void {
+    this.assertNotDisposed()
+    this.providerConfig = nextConfig
+    this._providerConfigStale = true
   }
 
   private buildBackendStartOpts(): BackendStartOptions {

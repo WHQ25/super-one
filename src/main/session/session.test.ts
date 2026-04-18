@@ -712,6 +712,30 @@ describe('Session persist hook', () => {
     expect(session.snapshot.messages.find((m) => m.id === 'a2')?.status).toBe('error')
   })
 
+  it('rebuilds backend with new config after updateProviderConfig on next send', async () => {
+    const { session, backend } = makeSession()
+    const p0 = session.send({ content: 'boot', clientMessageId: 'u0' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p0
+    expect(backend.rebuildCalls).toHaveLength(0)
+
+    session.updateProviderConfig({ apiKey: 'sk-new', baseUrl: 'https://new.example' })
+
+    const p1 = session.send({ content: 'after rotate', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    expect(backend.rebuildCalls[0].config).toEqual({ apiKey: 'sk-new', baseUrl: 'https://new.example' })
+    backend.resolveSend?.()
+    await p1
+
+    const p2 = session.send({ content: 'again', clientMessageId: 'u2' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    backend.resolveSend?.()
+    await p2
+  })
+
   it('fires onProviderSessionIdChange when backend emits new provider session id', () => {
     const calls: Array<[string, string]> = []
     const { backend } = makeSession({

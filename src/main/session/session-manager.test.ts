@@ -328,6 +328,39 @@ describe('SessionManager', () => {
       expect(resolver).toHaveBeenCalledTimes(1)
       expect(resolver.mock.calls[0][0]?.id).toBe('claude-base')
     })
+
+    it('markAllNeedsRebuild re-resolves provider config for every tracked session', () => {
+      let revision = 0
+      const resolver = vi.fn(() => ({ apiKey: `resolved-${++revision}` }))
+      const mgr2 = new SessionManagerImpl({ resolveProviderConfig: resolver })
+      const sessionA = mgr2.createSession({ projectPath: '/p-a', providerId: 'claude-base' })
+      const sessionB = mgr2.createSession({ projectPath: '/p-b', providerId: 'claude-base' })
+      expect(resolver).toHaveBeenCalledTimes(2)
+
+      mgr2.markAllNeedsRebuild()
+
+      expect(resolver).toHaveBeenCalledTimes(4)
+      expect((sessionA as unknown as { providerConfig: unknown }).providerConfig).toEqual({ apiKey: 'resolved-3' })
+      expect((sessionB as unknown as { providerConfig: unknown }).providerConfig).toEqual({ apiKey: 'resolved-4' })
+    })
+
+    it('markAllNeedsRebuild(harnessId) scopes the refresh to matching sessions only', () => {
+      let revision = 0
+      const resolver = vi.fn(() => ({ apiKey: `resolved-${++revision}` }))
+      const mgr2 = new SessionManagerImpl({ resolveProviderConfig: resolver })
+      const claudeSession = mgr2.createSession({ projectPath: '/p-a', providerId: 'claude-base' })
+      const codexSession = mgr2.createSession({ projectPath: '/p-b', providerId: 'codex-base' })
+      resolver.mockClear()
+      revision = 0
+
+      mgr2.markAllNeedsRebuild('claude')
+
+      expect(resolver).toHaveBeenCalledTimes(1)
+      expect(resolver.mock.calls[0][0]?.id).toBe('claude-base')
+      expect((claudeSession as unknown as { providerConfig: unknown }).providerConfig).toEqual({ apiKey: 'resolved-1' })
+      // Codex session config untouched.
+      expect((codexSession as unknown as { providerConfig: unknown }).providerConfig).not.toEqual({ apiKey: 'resolved-1' })
+    })
   })
 
   describe('resumeSession', () => {

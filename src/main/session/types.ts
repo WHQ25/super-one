@@ -187,6 +187,7 @@ export interface Session {
     approval: { status: 'approved' | 'rejected'; feedback?: string },
   ): void
   notifyCodexCollaborationMode(mode: string): void
+  updateProviderConfig(nextConfig: unknown): void
   isStreaming(): boolean
   truncateMessagesAt(checkpointId: string): void
   dispose(): Promise<void>

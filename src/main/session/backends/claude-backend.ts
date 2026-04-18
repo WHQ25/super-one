@@ -181,6 +181,8 @@ export class ClaudeBackend implements SessionBackend {
     this.bridge = null
     this.query = null
     this.iterationDone = null
+    this.eventListeners.clear()
+    this.providerSessionIdListeners.clear()
   }
 
   prewarm(opts: BackendStartOptions): void {

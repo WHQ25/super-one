@@ -62,9 +62,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     for (const [sid, pp] of this.sessionProjects) {
       if (pp === projectPath) targets.push(sid)
     }
-    for (const sid of targets) {
-      await this.disposeSession(sid)
-    }
+    await Promise.all(targets.map((sid) => this.disposeSession(sid)))
     this.projectResources.invalidate(projectPath)
   }
 

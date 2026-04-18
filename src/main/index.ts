@@ -280,6 +280,12 @@ function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: s
   return fresh
 }
 
+function getCodexSession(sessionId: string): ReturnType<typeof sessionManager.getSession> {
+  const existing = sessionManager.getSession(sessionId)
+  if (!existing || existing.snapshot.harnessId !== 'codex') return null
+  return existing
+}
+
 async function runCodexTurnViaSessionManager(
   session: ReturnType<typeof sessionManager.getSession> & object,
   assistantMessageId: string,
@@ -427,15 +433,12 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_RESET, async (_event, sessionId: string) => {
-    const existing = sessionManager.getSession(sessionId)
-    if (existing && existing.snapshot.harnessId === 'codex') {
-      await sessionManager.disposeSession(sessionId)
-    }
+    if (getCodexSession(sessionId)) await sessionManager.disposeSession(sessionId)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_INTERRUPT, async (_event, sessionId: string) => {
-    const existing = sessionManager.getSession(sessionId)
-    if (!existing || existing.snapshot.harnessId !== 'codex') return false
+    const existing = getCodexSession(sessionId)
+    if (!existing) return false
     await existing.interrupt()
     return true
   })
@@ -443,27 +446,21 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
     (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) => {
-      const existing = sessionManager.getSession(sessionId)
-      if (!existing || existing.snapshot.harnessId !== 'codex') return
-      existing.respondToPermission(requestId, allow, alwaysAllow, reason)
+      getCodexSession(sessionId)?.respondToPermission(requestId, allow, alwaysAllow, reason)
     },
   )
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_ANSWER_QUESTION,
     (_event, sessionId: string, requestId: string, answers: Record<string, string>) => {
-      const existing = sessionManager.getSession(sessionId)
-      if (!existing || existing.snapshot.harnessId !== 'codex') return
-      existing.respondToQuestion(requestId, answers)
+      getCodexSession(sessionId)?.respondToQuestion(requestId, answers)
     },
   )
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_DISMISS_QUESTION,
     (_event, sessionId: string, requestId: string) => {
-      const existing = sessionManager.getSession(sessionId)
-      if (!existing || existing.snapshot.harnessId !== 'codex') return
-      existing.dismissQuestion(requestId)
+      getCodexSession(sessionId)?.dismissQuestion(requestId)
     },
   )
 
@@ -476,31 +473,22 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLAN_APPROVAL, (_event, _projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) => {
-    const existing = sessionManager.getSession(sessionId)
-    if (!existing || existing.snapshot.harnessId !== 'codex') return
-    existing.setCodexPlanApproval(messageId, { status, ...(feedback ? { feedback } : {}) })
+    getCodexSession(sessionId)?.setCodexPlanApproval(messageId, { status, ...(feedback ? { feedback } : {}) })
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_COLLABORATION_MODE_CHANGE, (_event, _projectPath: string, sessionId: string, mode: string) => {
-    const existing = sessionManager.getSession(sessionId)
-    if (!existing || existing.snapshot.harnessId !== 'codex') return
-    existing.notifyCodexCollaborationMode(mode)
+    getCodexSession(sessionId)?.notifyCodexCollaborationMode(mode)
   })
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_STEER,
     (_event, sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string) => {
-      const existing = sessionManager.getSession(sessionId)
-      if (!existing || existing.snapshot.harnessId !== 'codex') {
-        throw new Error(`CODEX_STEER: no codex session found for sid=${sessionId}`)
-      }
-      const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const resolvedUserMessageId = userMessageId ?? `user_${Date.now()}`
-      const resolvedUserText = userMessageText ?? input
+      const existing = getCodexSession(sessionId)
+      if (!existing) throw new Error(`CODEX_STEER: no codex session found for sid=${sessionId}`)
       return existing.steer(input, {
-        newAssistantMessageId: assistantMessageId,
-        newUserMessageId: resolvedUserMessageId,
-        newUserText: resolvedUserText,
+        newAssistantMessageId: messageId ?? `codex_${Date.now()}`,
+        newUserMessageId: userMessageId ?? `user_${Date.now()}`,
+        newUserText: userMessageText ?? input,
       })
     },
   )

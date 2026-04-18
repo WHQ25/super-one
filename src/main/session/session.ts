@@ -426,6 +426,10 @@ export class Session implements SessionContract {
 
   updateProviderConfig(nextConfig: unknown): void {
     this.assertNotDisposed()
+    if (this.providerConfig === nextConfig) return
+    try {
+      if (JSON.stringify(this.providerConfig) === JSON.stringify(nextConfig)) return
+    } catch { /* fall through to rebuild */ }
     this.providerConfig = nextConfig
     this._needsRebuild = true
   }

@@ -1284,20 +1284,29 @@ function _hydrateSessionState(
 }
 
 let _cachedDefaultPermissionMode: PermissionMode | null = null
-async function _getDefaultPermissionMode(): Promise<PermissionMode> {
-  if (_cachedDefaultPermissionMode !== null) return _cachedDefaultPermissionMode
+let _cachedDefaultSandboxMode: SandboxMode | null = null
+async function _loadDefaultSessionPrefs(): Promise<void> {
   try {
     const prefs = await window.app.getUserPreferences()
     _cachedDefaultPermissionMode = (prefs.defaultPermissionMode as PermissionMode) || 'default'
+    _cachedDefaultSandboxMode = (prefs.defaultSandboxMode as SandboxMode) || null
   } catch {
     _cachedDefaultPermissionMode = 'default'
+    _cachedDefaultSandboxMode = null
   }
-  return _cachedDefaultPermissionMode
 }
-_getDefaultPermissionMode()
+async function _getDefaultPermissionMode(): Promise<PermissionMode> {
+  if (_cachedDefaultPermissionMode === null) await _loadDefaultSessionPrefs()
+  return _cachedDefaultPermissionMode ?? 'default'
+}
+function sandboxModeToInfo(mode: SandboxMode): SandboxInfo {
+  return { enabled: mode !== 'off', autoAllowBash: mode === 'auto' }
+}
+_loadDefaultSessionPrefs()
 export function invalidateDefaultPermissionModeCache(): void {
   _cachedDefaultPermissionMode = null
-  _getDefaultPermissionMode()
+  _cachedDefaultSandboxMode = null
+  _loadDefaultSessionPrefs()
 }
 
 async function _syncAndResumeSession(projectPath: string, sessionId: string, get: () => ChatStore, cwd: string): Promise<void> {
@@ -2304,6 +2313,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const project = createDefaultProjectState()
       project.agents = s.userAgents
       project.codexModels = s.cachedCodexModels
+      if (_cachedDefaultSandboxMode) project.sandboxInfo = sandboxModeToInfo(_cachedDefaultSandboxMode)
       const draftId = createSessionId()
       project._activeSessionId = draftId
       const newSession = createDefaultPerSessionState()

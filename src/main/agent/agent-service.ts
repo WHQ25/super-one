@@ -38,6 +38,7 @@ import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from 
 import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
 import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, listCodexSkills, readCodexSkillContent, readCodexSkillFile, deleteCodexSkill } from '../skills-service'
+import { readUserPreferences } from '../claude-preferences-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
@@ -850,12 +851,22 @@ export class AgentService {
       try {
         return mgr.resumeSession(requestedSid)
       } catch {
-        return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', id: requestedSid, gitBranch })
+        const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
+        return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', id: requestedSid, gitBranch, permissionMode, sandboxMode })
       }
     }
     const active = mgr.getActiveSession(projectPath)
     if (active) return active
-    return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', gitBranch })
+    const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
+    return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', gitBranch, permissionMode, sandboxMode })
+  }
+
+  private readDefaultSessionPrefs(): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
+    const prefs = readUserPreferences()
+    return {
+      permissionMode: (prefs.defaultPermissionMode as PermissionMode) || 'default',
+      sandboxMode: (prefs.defaultSandboxMode as SandboxMode) || undefined,
+    }
   }
 
   setup(): void {
@@ -941,10 +952,7 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.CREATE_SESSION, async (_event, projectPath: string) => {
       const mgr = this.requireSessionManager()
-      const { readUserPreferences } = await import('../claude-preferences-service')
-      const prefs = readUserPreferences()
-      const permissionMode = (prefs.defaultPermissionMode as PermissionMode) || 'default'
-      const sandboxMode = prefs.defaultSandboxMode as SandboxMode | undefined
+      const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
       const session = mgr.createSession({ projectPath, providerId: 'claude-base', permissionMode, sandboxMode })
       return session.snapshot.id
     })
@@ -958,10 +966,7 @@ export class AgentService {
         newSessionId: newSessionId ?? '(auto)',
       })
       if (existing) await mgr.disposeSession(existing.snapshot.id)
-      const { readUserPreferences } = await import('../claude-preferences-service')
-      const prefs = readUserPreferences()
-      const permissionMode = (prefs.defaultPermissionMode as PermissionMode) || 'default'
-      const sandboxMode = prefs.defaultSandboxMode as SandboxMode | undefined
+      const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
       const fresh = mgr.createSession({ projectPath, providerId: 'claude-base', permissionMode, sandboxMode, id: newSessionId })
       return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
     })
@@ -1392,10 +1397,7 @@ export class AgentService {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       const mgr = this.requireSessionManager()
       mgr.clearActiveSession(projectPath)
-      const { readUserPreferences } = await import('../claude-preferences-service')
-      const prefs = readUserPreferences()
-      const permissionMode = (prefs.defaultPermissionMode as PermissionMode) || 'default'
-      const sandboxMode = (prefs.defaultSandboxMode as SandboxMode | undefined)
+      const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
       const sandboxInfo = sandboxMode !== undefined
         ? { enabled: sandboxMode !== 'off', autoAllowBash: sandboxMode === 'auto' }
         : { enabled: true, autoAllowBash: false }

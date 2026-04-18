@@ -141,7 +141,7 @@ export function PreferencesPage() {
 
         <div className="rounded-lg border border-border">
           <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">Session Defaults</p>
+            <p className="text-xs font-medium text-muted-foreground">User Settings</p>
           </div>
           <div className="flex items-center justify-between gap-4 border-b border-border p-4">
             <div className="min-w-0">

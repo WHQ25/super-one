@@ -197,6 +197,34 @@ describe('ensureSession', () => {
     expect(session.permissionMode).toBe('plan')
   })
 
+  it('applies user preference sandboxMode to new project sandboxInfo', async () => {
+    mockWindowApp.getUserPreferences.mockResolvedValue({
+      outputStyle: '',
+      defaultPermissionMode: '',
+      defaultSandboxMode: 'off',
+    })
+    invalidateDefaultPermissionModeCache()
+    await new Promise((r) => setTimeout(r, 0))
+
+    useChatStore.getState().ensureSession('/sandbox-off')
+    const proj = useChatStore.getState().projectSessions['/sandbox-off']
+    expect(proj.sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
+  })
+
+  it('applies user preference sandboxMode auto to new project sandboxInfo', async () => {
+    mockWindowApp.getUserPreferences.mockResolvedValue({
+      outputStyle: '',
+      defaultPermissionMode: '',
+      defaultSandboxMode: 'auto',
+    })
+    invalidateDefaultPermissionModeCache()
+    await new Promise((r) => setTimeout(r, 0))
+
+    useChatStore.getState().ensureSession('/sandbox-auto')
+    const proj = useChatStore.getState().projectSessions['/sandbox-auto']
+    expect(proj.sandboxInfo).toEqual({ enabled: true, autoAllowBash: true })
+  })
+
   it('triggers prewarm when a new project session is created', () => {
     mockWindowAgent.prewarm.mockClear()
     useChatStore.getState().ensureSession('/prewarm-new')

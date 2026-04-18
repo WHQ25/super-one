@@ -591,11 +591,22 @@ export interface SendMessageRequest {
   images?: ImageAttachment[]
   additionalDirs?: string[]
   clientMessageId?: string
+  assistantMessageId?: string
   sessionId?: string
   gitBranch?: string
   worktreePath?: string
   priority?: 'now' | 'next' | 'later'
   taskBudget?: number
+  codex?: CodexSendExtras
+}
+
+export interface CodexSendExtras {
+  permissionPreset?: CodexPermissionPreset
+  reasoningEffort?: CodexReasoningEffort
+  collaborationMode?: CodexCollaborationMode
+  threadId?: string
+  cwd?: string
+  prompt?: string
 }
 
 // --- Model selection ---

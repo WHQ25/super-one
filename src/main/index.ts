@@ -27,6 +27,7 @@ import {
   type CodexPermissionPreset,
   type CodexReasoningEffort,
   type CodexReviewTarget,
+  type CodexRunResult,
   type AgentEvent,
   type CodexThreadItem,
   type CodexUsageInfo,
@@ -357,6 +358,24 @@ function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Arr
   setAllowedDirectories(appId, dirs)
 }
 
+function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string) {
+  const existing = sessionManager.getSession(sessionId)
+  if (existing) {
+    if (existing.snapshot.harnessId !== 'codex') {
+      throw new Error(`Session ${sessionId} is not a codex session (harness=${existing.snapshot.harnessId})`)
+    }
+    sessionManager.setActiveSession(projectPath, existing.snapshot.id)
+    return existing
+  }
+  const fresh = sessionManager.createSession({
+    projectPath,
+    id: sessionId,
+    providerId: 'codex-base',
+    cwd,
+  })
+  return fresh
+}
+
 function registerIpcHandlers(): void {
   // Setup agent IPC handlers (does NOT auto-initialize)
   agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))
@@ -445,42 +464,49 @@ function registerIpcHandlers(): void {
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const persistedUserMessageId = userMessageId ?? `user_${Date.now()}`
-      agentService.beginCodexTurn(projectPath, sessionId, {
-        userMessageId: persistedUserMessageId,
-        userText: userMessageText ?? prompt,
-        assistantMessageId,
-        providerId: 'local',
-        images,
-        gitBranch: gitBranch ?? null,
-        worktreePath: worktreePath ?? null,
-        cwd,
+      const session = getOrCreateCodexSession(sessionId, projectPath, cwd)
+
+      let captured: CodexRunResult | null = null
+      let turnError: Error | null = null
+      const unsub = session.on((ev) => {
+        if (!('messageId' in ev) || (ev as { messageId?: string }).messageId !== assistantMessageId) return
+        if (ev.type === 'message_complete') {
+          const meta = (ev.metadata as Record<string, unknown> | undefined)?.codex as Record<string, unknown> | undefined
+          captured = {
+            threadId: (meta?.threadId as string | null | undefined) ?? null,
+            finalResponse: (meta?.finalResponse as string | undefined) ?? '',
+            usage: (meta?.usage as CodexUsageInfo | null | undefined) ?? null,
+            items: (meta?.items as CodexThreadItem[] | undefined) ?? [],
+          }
+        } else if (ev.type === 'message_error') {
+          turnError = new Error(ev.error || 'Codex run failed')
+        } else if (ev.type === 'message_interrupted') {
+          turnError = new Error('Codex run interrupted')
+        }
       })
-      const { callbacks, route } = createCodexCallbacks(assistantMessageId, sessionId, projectPath)
-      const runStart = Date.now()
+
       try {
-        const result = await codexService.run(
-          sessionId,
-          projectPath,
-          { prompt, model, reasoningEffort, permissionPreset, collaborationMode, threadId, messageId: assistantMessageId, images, cwd },
-          callbacks,
-        )
-        agentService.completeCodexTurn(sessionId, {
-          messageId: route.getMessageId() ?? assistantMessageId,
-          result,
-          durationMs: Date.now() - runStart,
-          fallbackText: 'Codex completed without returning text.',
+        await session.send({
+          content: userMessageText ?? prompt,
+          model,
+          images,
+          clientMessageId: persistedUserMessageId,
+          assistantMessageId,
+          gitBranch,
+          worktreePath,
+          codex: {
+            prompt,
+            reasoningEffort,
+            permissionPreset,
+            collaborationMode,
+            threadId,
+            cwd,
+          },
         })
-        return result
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        agentService.failCodexTurn(sessionId, {
-          messageId: route.getMessageId() ?? assistantMessageId,
-          status: /interrupt|abort/i.test(message) ? 'interrupted' : 'error',
-          text: /interrupt|abort/i.test(message) ? 'Codex run interrupted.' : `Codex run failed: ${message}`,
-        })
-        throw error
+        if (turnError) throw turnError
+        return captured ?? { threadId: null, finalResponse: '', usage: null, items: [] }
       } finally {
-        route.dispose()
+        unsub()
       }
     },
   )

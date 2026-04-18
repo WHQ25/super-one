@@ -131,18 +131,20 @@ export class CodexBackend implements SessionBackend {
     if (!startOpts) throw new Error('CodexBackend missing startOpts')
 
     const config = readConfig(startOpts.config)
-    const assistantMessageId = `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const assistantMessageId = request.assistantMessageId
+      ?? `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.currentMessageId = assistantMessageId
 
     const codexRequest: CodexRunRequest = {
-      prompt: request.content,
+      prompt: request.codex?.prompt ?? request.content,
       images: request.images,
       model: request.model ?? config.model,
-      reasoningEffort: mapEffort(request.effort) ?? config.reasoningEffort,
-      permissionPreset: config.permissionPreset ?? mapPermissionMode(startOpts.permissionMode),
-      threadId: this.providerSessionId ?? undefined,
+      reasoningEffort: request.codex?.reasoningEffort ?? mapEffort(request.effort) ?? config.reasoningEffort,
+      permissionPreset: request.codex?.permissionPreset ?? config.permissionPreset ?? mapPermissionMode(startOpts.permissionMode),
+      collaborationMode: request.codex?.collaborationMode,
+      threadId: request.codex?.threadId ?? this.providerSessionId ?? undefined,
       messageId: assistantMessageId,
-      cwd: startOpts.cwd,
+      cwd: request.codex?.cwd ?? startOpts.cwd,
     }
 
     const sessionKey = startOpts.sessionId

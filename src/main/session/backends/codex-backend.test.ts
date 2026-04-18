@@ -175,6 +175,43 @@ describe('CodexBackend send()', () => {
     expect(request.images).toHaveLength(1)
   })
 
+  it('honors request.assistantMessageId when provided (renderer-provided id)', async () => {
+    const pending = backend.send({ content: 'x', assistantMessageId: 'renderer_msg_99' })
+    service.resolveRun(makeResult())
+    await pending
+    const [, , req] = service.runMock.mock.calls[0]!
+    expect(req.messageId).toBe('renderer_msg_99')
+    const start = events.find((e) => e.type === 'message_start') as { message: { id: string } }
+    expect(start.message.id).toBe('renderer_msg_99')
+  })
+
+  it('request.codex.prompt overrides content for the Codex API request', async () => {
+    const pending = backend.send({ content: 'user-visible text', codex: { prompt: 'codex-specific prompt' } })
+    service.resolveRun(makeResult())
+    await pending
+    const [, , req] = service.runMock.mock.calls[0]!
+    expect(req.prompt).toBe('codex-specific prompt')
+  })
+
+  it('passes codex-specific extras (collaborationMode / threadId / permissionPreset / reasoningEffort) to service.run', async () => {
+    const pending = backend.send({
+      content: 'x',
+      codex: {
+        collaborationMode: 'plan',
+        threadId: 'th-override',
+        permissionPreset: 'full-access',
+        reasoningEffort: 'high',
+      },
+    })
+    service.resolveRun(makeResult())
+    await pending
+    const [, , req] = service.runMock.mock.calls[0]!
+    expect(req.collaborationMode).toBe('plan')
+    expect(req.threadId).toBe('th-override')
+    expect(req.permissionPreset).toBe('full-access')
+    expect(req.reasoningEffort).toBe('high')
+  })
+
   it('maps bypassPermissions → full-access preset', async () => {
     await backend.close()
     backend = new CodexBackend(service)

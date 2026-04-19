@@ -218,6 +218,18 @@ function readItemId(rec: Record<string, unknown>): string | null {
     ?? readString(asRecord(rec.item)?.id)
 }
 
+function readNotificationThreadId(params: Record<string, unknown>): string | null {
+  return readString(params.threadId)
+    ?? readString(params.thread_id)
+    ?? readString(asRecord(params.thread)?.id)
+}
+
+function readNotificationTurnId(params: Record<string, unknown>): string | null {
+  return readString(params.turnId)
+    ?? readString(params.turn_id)
+    ?? readString(asRecord(params.turn)?.id)
+}
+
 function readDeltaText(rec: Record<string, unknown>): string {
   return readString(rec.delta)
     ?? readString(rec.textDelta)
@@ -1532,10 +1544,10 @@ export class CodexExperimentService {
     }
 
     const isRelevantEvent = (params: Record<string, unknown>): boolean => {
-      const notifThreadId = readString(params.threadId)
+      const notifThreadId = readNotificationThreadId(params)
       if (notifThreadId && subscribedChildThreads.has(notifThreadId)) return true
       if (!activeTurnId) return true
-      const turnId = readString(params.turnId) ?? readString(asRecord(params.turn)?.id)
+      const turnId = readNotificationTurnId(params)
       return !turnId || turnId === activeTurnId
     }
 
@@ -1571,7 +1583,7 @@ export class CodexExperimentService {
         continue
       }
 
-      const notifThreadId = readString(params.threadId)
+      const notifThreadId = readNotificationThreadId(params)
       const isChildThreadEvent = notifThreadId ? subscribedChildThreads.has(notifThreadId) : false
 
       if (isChildThreadEvent && notifThreadId) {

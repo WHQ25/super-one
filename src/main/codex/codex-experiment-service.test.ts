@@ -138,6 +138,96 @@ describe('CodexExperimentService auth state', () => {
   })
 })
 
+describe('CodexExperimentService child thread routing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('routes snake_case child thread events into collab childItems instead of top-level items', async () => {
+    const service = new CodexExperimentService()
+    const session = { ...createSession('/project', null), threadId: 'main-thread' }
+    const notifications = [
+      {
+        method: 'item/completed',
+        params: {
+          thread_id: 'main-thread',
+          item: {
+            id: 'collab-1',
+            type: 'collabAgentToolCall',
+            tool: 'spawnAgent',
+            status: 'completed',
+            receiver_thread_ids: ['child-1'],
+            agents_states: {
+              'child-1': {
+                status: 'running',
+                nickname: 'worker',
+              },
+            },
+          },
+        },
+      },
+      {
+        method: 'item/started',
+        params: {
+          thread_id: 'child-1',
+          item: {
+            id: 'child-msg-1',
+            type: 'agent_message',
+            text: 'child hello',
+          },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: {
+          turn: {
+            status: 'completed',
+          },
+        },
+      },
+    ]
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    }
+    const onItemDelta = vi.fn()
+
+    const result = await (service as any).streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta },
+    )
+
+    expect(mockConnection.request).toHaveBeenCalledWith('thread/resume', {
+      threadId: 'child-1',
+      persistExtendedHistory: false,
+    })
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]).toMatchObject({
+      id: 'collab-1',
+      type: 'collab_tool_call',
+      childItems: {
+        'child-1': [
+          {
+            id: 'child-msg-1',
+            type: 'agent_message',
+            text: 'child hello',
+          },
+        ],
+      },
+    })
+    expect(onItemDelta.mock.calls.some(([, item]) => item?.type === 'agent_message')).toBe(false)
+  })
+})
+
 describe('CodexExperimentService run', () => {
   beforeEach(() => {
     vi.clearAllMocks()

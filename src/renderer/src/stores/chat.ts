@@ -3315,6 +3315,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
     window.agent.respondToPlanApproval(activeProject, requestId, approved, feedback, activeSid)
+    if (approved) {
+      const nextMode: PermissionMode = postApprovalMode ?? 'default'
+      void window.agent.setPermissionMode(activeProject, nextMode)
+    }
     set((s) => {
       const perSessionUpdate = updateActivePerSession(s, () => ({
         pendingPlanApproval: null,

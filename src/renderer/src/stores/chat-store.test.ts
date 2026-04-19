@@ -3921,6 +3921,84 @@ describe('interaction response routing', () => {
       '/test', 'p1', true, 'ok', 'a',
     )
   })
+
+  it('respondToPlanApproval(approved=true, postApprovalMode="acceptEdits") also tells main to switch mode', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: {
+            a: {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              permissionMode: 'plan',
+              pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
+            },
+          },
+        },
+      },
+    })
+
+    mockWindowAgent.setPermissionMode.mockClear()
+    useChatStore.getState().respondToPlanApproval('p1', true, undefined, 'acceptEdits')
+
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'acceptEdits')
+  })
+
+  it('respondToPlanApproval(approved=true, no postApprovalMode) defaults to switching main to "default"', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: {
+            a: {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              permissionMode: 'plan',
+              pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
+            },
+          },
+        },
+      },
+    })
+
+    mockWindowAgent.setPermissionMode.mockClear()
+    useChatStore.getState().respondToPlanApproval('p1', true)
+
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'default')
+  })
+
+  it('respondToPlanApproval(approved=false) does NOT invoke setPermissionMode', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: {
+            a: {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              permissionMode: 'plan',
+              pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
+            },
+          },
+        },
+      },
+    })
+
+    mockWindowAgent.setPermissionMode.mockClear()
+    useChatStore.getState().respondToPlanApproval('p1', false, 'rejected')
+
+    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+  })
 })
 
 describe('cross-session event routing race conditions', () => {

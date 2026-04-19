@@ -6,6 +6,7 @@ const hoisted = vi.hoisted(() => {
     emit: ((e: AgentEvent) => void) | null
     onSessionId: ((id: string) => void) | null
     onQueuedTurnStart: ((messageId: string) => void) | null
+    onStepBoundary: (() => void) | null
     bridge: unknown
     iterationDone: { resolve: () => void; promise: Promise<void> } | null
     createSessionQueryMock: ReturnType<typeof vi.fn>
@@ -20,6 +21,7 @@ const hoisted = vi.hoisted(() => {
     emit: null,
     onSessionId: null,
     onQueuedTurnStart: null,
+    onStepBoundary: null,
     bridge: null,
     iterationDone: null,
     createSessionQueryMock: vi.fn(),
@@ -31,10 +33,11 @@ const hoisted = vi.hoisted(() => {
     mockQuerySetModel: vi.fn(async () => {}),
   }
   captured.createSessionQueryMock.mockImplementation(
-    (bridge: unknown, _opts: unknown, emit: (e: AgentEvent) => void, _getMid: () => string, _getTs: () => number, _getInterrupted: () => boolean, onSessionId: (id: string) => void, onQueuedTurnStart: (id: string) => void) => {
+    (bridge: unknown, _opts: unknown, emit: (e: AgentEvent) => void, _getMid: () => string, _getTs: () => number, _getInterrupted: () => boolean, onSessionId: (id: string) => void, onQueuedTurnStart: (id: string) => void, onStepBoundary: () => void) => {
       captured.emit = emit
       captured.onSessionId = onSessionId
       captured.onQueuedTurnStart = onQueuedTurnStart
+      captured.onStepBoundary = onStepBoundary
       captured.bridge = bridge
       let resolveIter: () => void = () => {}
       const promise = new Promise<void>((resolve) => { resolveIter = resolve })
@@ -112,6 +115,7 @@ describe('ClaudeBackend', () => {
     hoisted.captured.emit = null
     hoisted.captured.onSessionId = null
     hoisted.captured.onQueuedTurnStart = null
+    hoisted.captured.onStepBoundary = null
     hoisted.captured.bridge = null
     hoisted.captured.iterationDone = null
     hoisted.captured.createSessionQueryMock.mockClear()
@@ -265,6 +269,93 @@ describe('ClaudeBackend', () => {
       await backend.start(makeStartOpts())
       await backend.interrupt()
       expect(hoisted.captured.mockQueryInterrupt).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('queued send (priority=next)', () => {
+    it('holds in pendingQueued while a turn is active and flushes on step boundary', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+      await backend.send({ content: 'queued', clientMessageId: 'user_2', priority: 'next' })
+
+      expect(bridgePushSpy).not.toHaveBeenCalled()
+
+      hoisted.captured.onStepBoundary?.()
+      expect(bridgePushSpy).toHaveBeenCalledTimes(1)
+      const [, tag] = bridgePushSpy.mock.calls[0]!
+      expect(tag).toBe('user_2')
+
+      const startEvt = events.find((e) => e.type === 'message_start') as Extract<AgentEvent, { type: 'message_start' }> | undefined
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: startEvt!.message.id, metadata: {} })
+      await firstSend
+    })
+
+    it('pushes directly with tag when no turn is active', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+
+      await backend.send({ content: 'queued', clientMessageId: 'user_q', priority: 'next' })
+
+      expect(bridgePushSpy).toHaveBeenCalledTimes(1)
+      const [, tag] = bridgePushSpy.mock.calls[0]!
+      expect(tag).toBe('user_q')
+    })
+
+    it('does not emit message_start or status_change for queued sends', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+
+      await backend.send({ content: 'queued', clientMessageId: 'user_q', priority: 'next' })
+
+      expect(events.some((e) => e.type === 'message_start')).toBe(false)
+      expect(events.some((e) => e.type === 'status_change')).toBe(false)
+    })
+
+    it('dequeueMessage removes a queued send held in pendingQueued before it reaches the bridge', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      await backend.send({ content: 'queued', clientMessageId: 'user_2', priority: 'next' })
+
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+      const removed = backend.dequeueMessage('user_2')
+      expect(removed).toBe(true)
+
+      hoisted.captured.onStepBoundary?.()
+      expect(bridgePushSpy).not.toHaveBeenCalled()
+
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: 'msg_any' })
+      hoisted.captured.iterationDone?.resolve()
+      await backend.close().catch(() => {})
+      await firstSend.catch(() => {})
+    })
+
+    it('emits queued_message_consumed when the bridge iterator consumes a tagged message', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+
+      await backend.send({ content: 'queued', clientMessageId: 'user_q', priority: 'next' })
+
+      const bridge = hoisted.captured.bridge as AsyncIterable<unknown>
+      const iterator = bridge[Symbol.asyncIterator]()
+      await iterator.next()
+
+      const consumedEvent = events.find((e) => e.type === 'queued_message_consumed') as Extract<AgentEvent, { type: 'queued_message_consumed' }> | undefined
+      expect(consumedEvent?.clientMessageId).toBe('user_q')
     })
   })
 

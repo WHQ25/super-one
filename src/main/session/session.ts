@@ -128,6 +128,7 @@ export class Session implements SessionContract {
   private unsubs: Array<() => void> = []
   private _cachedInitReady: AgentEvent | null = null
   private _cachedWorktreeMissing: AgentEvent | null = null
+  private _pendingQueuedRequests = new Map<string, { request: SendMessageRequest; providerOrigin: 'local' | 'remote' }>()
 
   constructor(opts: SessionConstructorOptions) {
     this.id = opts.id
@@ -198,6 +199,20 @@ export class Session implements SessionContract {
   }
 
   async send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void> {
+    const providerOrigin = opts?.providerOrigin ?? 'local'
+    const isQueued = request.priority === 'next' && this.isStreaming()
+    if (isQueued) {
+      this.assertNotDisposed()
+      if (!this.backendStarted) {
+        log.warn('[Session] queued send before backend start sid=%s — promoting to normal send', this.id)
+      } else {
+        if (request.clientMessageId) {
+          this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin })
+        }
+        await this.backend.send(request)
+        return
+      }
+    }
     const prev = this._sendChain
     let release!: () => void
     this._sendChain = new Promise<void>((r) => { release = r })
@@ -210,7 +225,7 @@ export class Session implements SessionContract {
       if (request.effort !== undefined) this.effort = request.effort
       if (request.model !== undefined) this.model = request.model
       if (request.additionalDirs !== undefined) this.additionalDirectories = request.additionalDirs
-      this.appendUserMessage(request, opts?.providerOrigin ?? 'local')
+      this.appendUserMessage(request, providerOrigin)
       const needsRebuild = this._needsRebuild
       if (this.backendStarted && (effortChanged || dirsChanged || needsRebuild)) {
         log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s needsRebuild=%s', this.id, effortChanged, dirsChanged, needsRebuild)
@@ -235,6 +250,7 @@ export class Session implements SessionContract {
     if (this._status !== 'streaming' && this._status !== 'starting') return
     const prev = this._status
     this._status = 'interrupting'
+    this._pendingQueuedRequests.clear()
     try {
       await this.backend.interrupt()
     } catch (err) {
@@ -335,6 +351,7 @@ export class Session implements SessionContract {
   }
 
   dequeueMessage(clientMessageId: string): boolean {
+    this._pendingQueuedRequests.delete(clientMessageId)
     if (!this.backendStarted) return false
     return this.backend.dequeueMessage(clientMessageId)
   }
@@ -431,6 +448,7 @@ export class Session implements SessionContract {
   async dispose(): Promise<void> {
     if (this._status === 'disposed') return
     this._status = 'disposed'
+    this._pendingQueuedRequests.clear()
     for (const unsub of this.unsubs) {
       try { unsub() } catch { /* ignore */ }
     }
@@ -557,7 +575,13 @@ export class Session implements SessionContract {
   }
 
   private forwardEvent(event: AgentEvent): AgentEvent {
-    if (event.type === 'message_start') {
+    if (event.type === 'queued_message_consumed') {
+      const pending = this._pendingQueuedRequests.get(event.clientMessageId)
+      if (pending) {
+        this.appendUserMessage(pending.request, pending.providerOrigin)
+        this._pendingQueuedRequests.delete(event.clientMessageId)
+      }
+    } else if (event.type === 'message_start') {
       this._currentMessageId = event.message.id
     } else if (
       event.type === 'message_complete' ||

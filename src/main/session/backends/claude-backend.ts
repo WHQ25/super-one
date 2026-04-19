@@ -1,4 +1,4 @@
-import type { CanUseTool, Query } from '@anthropic-ai/claude-agent-sdk'
+import type { CanUseTool, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { MessageBridge } from '../../agent/message-bridge'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions } from '../../agent/claude-query'
 import { getSharedWarmupManager } from '../../agent/warmup-manager'
@@ -44,6 +44,7 @@ export class ClaudeBackend implements SessionBackend {
   private interrupted = false
   private turnResolves = new Map<string, () => void>()
   private providerSessionId: string | null = null
+  private pendingQueued: Array<{ msg: SDKUserMessage; clientMessageId: string }> = []
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
@@ -95,6 +96,9 @@ export class ClaudeBackend implements SessionBackend {
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.bridge) throw new Error('ClaudeBackend already started')
     this.bridge = new MessageBridge()
+    this.bridge.onConsumed = (tag) => {
+      this.emit({ type: 'queued_message_consumed', clientMessageId: tag })
+    }
     this.providerSessionId = opts.providerSessionId ?? null
 
     const queryOptions: SessionQueryOptions = {
@@ -126,7 +130,7 @@ export class ClaudeBackend implements SessionBackend {
         this.currentStartTime = Date.now()
         this.interrupted = false
       },
-      () => { /* step boundary no-op */ },
+      () => this.flushPendingQueued(),
     )
 
     this.query = handle.query
@@ -135,6 +139,23 @@ export class ClaudeBackend implements SessionBackend {
 
   async send(request: SendMessageRequest): Promise<void> {
     if (!this.bridge || !this.query) throw new Error('ClaudeBackend not started')
+
+    const isQueued = request.priority === 'next'
+    if (isQueued) {
+      const userMsg = buildUserMessage(request, this.providerSessionId ?? '')
+      const tag = request.clientMessageId
+      if (!tag) {
+        log.warn('[ClaudeBackend] queued send missing clientMessageId, pushing untagged')
+        this.bridge.push(userMsg)
+        return
+      }
+      if (this.turnResolves.size > 0) {
+        this.pendingQueued.push({ msg: userMsg, clientMessageId: tag })
+      } else {
+        this.bridge.push(userMsg, tag)
+      }
+      return
+    }
 
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.currentMessageId = messageId
@@ -170,8 +191,17 @@ export class ClaudeBackend implements SessionBackend {
     await turnDone
   }
 
+  private flushPendingQueued(): void {
+    if (!this.bridge || this.pendingQueued.length === 0) return
+    for (const item of this.pendingQueued) {
+      this.bridge.push(item.msg, item.clientMessageId)
+    }
+    this.pendingQueued = []
+  }
+
   async interrupt(): Promise<void> {
     this.interrupted = true
+    this.pendingQueued = []
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, 'backend.interrupt')
     if (this.query) {
       try { await this.query.interrupt() } catch (err) {
@@ -183,6 +213,7 @@ export class ClaudeBackend implements SessionBackend {
   async close(): Promise<void> {
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()
+    this.pendingQueued = []
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, 'backend.close')
     if (this.query) {
       try { this.query.close() } catch { /* ignore */ }
@@ -212,6 +243,7 @@ export class ClaudeBackend implements SessionBackend {
     const resumeId = this.providerSessionId ?? undefined
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()
+    this.pendingQueued = []
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, 'backend.rebuild')
     if (this.query) {
       try { this.query.close() } catch { /* ignore */ }
@@ -323,6 +355,11 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   dequeueMessage(clientMessageId: string): boolean {
+    const idx = this.pendingQueued.findIndex((p) => p.clientMessageId === clientMessageId)
+    if (idx !== -1) {
+      this.pendingQueued.splice(idx, 1)
+      return true
+    }
     return this.bridge?.dequeue(clientMessageId) ?? false
   }
 

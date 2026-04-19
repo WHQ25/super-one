@@ -42,7 +42,7 @@ vi.mock('../logger', () => ({
   },
 }))
 
-import { clearCliCache, findSystemClaude, getClaudeCliPath } from './resolve-cli'
+import { clearCliCache, dedupePath, findSystemClaude, getClaudeCliPath } from './resolve-cli'
 
 const originalPlatform = process.platform
 
@@ -110,5 +110,33 @@ describe('resolve-cli', () => {
 
     expect(result).toBe('/usr/local/bin/claude')
     expect(spawnSyncMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('dedupePath', () => {
+  it('removes duplicate entries preserving first-seen order', () => {
+    expect(dedupePath('/a:/b:/a:/c:/b')).toBe('/a:/b:/c')
+  })
+
+  it('drops empty entries from leading/trailing/adjacent colons', () => {
+    expect(dedupePath(':/a::/b:')).toBe('/a:/b')
+  })
+
+  it('returns empty string for empty input', () => {
+    expect(dedupePath('')).toBe('')
+  })
+
+  it('handles real-world bloated PATH with repeated inits', () => {
+    const bloated = [
+      '/Users/jeff/.antigravity/antigravity/bin',
+      '/Users/jeff/.antigravity/antigravity/bin',
+      '/Users/jeff/.cargo/bin',
+      '/opt/homebrew/bin',
+      '/Users/jeff/.cargo/bin',
+      '/opt/homebrew/bin',
+    ].join(':')
+    const result = dedupePath(bloated)
+    expect(result).toBe('/Users/jeff/.antigravity/antigravity/bin:/Users/jeff/.cargo/bin:/opt/homebrew/bin')
+    expect(result.length).toBeLessThan(bloated.length)
   })
 })

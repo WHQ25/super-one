@@ -9,6 +9,17 @@ const moduleRequire = createRequire(import.meta.url)
 
 let cachedPath: string | undefined
 
+export function dedupePath(path: string): string {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const entry of path.split(':')) {
+    if (!entry || seen.has(entry)) continue
+    seen.add(entry)
+    out.push(entry)
+  }
+  return out.join(':')
+}
+
 export function fixPath(): void {
   if (process.platform === 'win32') return
   try {
@@ -19,8 +30,13 @@ export function fixPath(): void {
     })
     const shellPath = result.toString().trim()
     if (shellPath) {
-      process.env.PATH = shellPath
-      log.info('[fixPath] PATH updated via %s', shell)
+      const before = shellPath.length
+      const deduped = dedupePath(shellPath)
+      process.env.PATH = deduped
+      log.info('[fixPath] PATH updated via %s bytes=%d (deduped from %d)', shell, deduped.length, before)
+      if (deduped.length > 1024) {
+        log.warn('[fixPath] PATH still %dB after dedup — may trigger spawn ENAMETOOLONG on macOS', deduped.length)
+      }
     }
   } catch {
     log.warn('[fixPath] Failed to get PATH from login shell')

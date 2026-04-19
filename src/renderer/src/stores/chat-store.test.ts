@@ -1484,7 +1484,7 @@ describe('switchSession Case A (in _sessions)', () => {
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('ses-b')
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test', 'default')
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
   })
 
   it('switches pointer and resumes runtime for non-running target session', async () => {
@@ -1512,7 +1512,7 @@ describe('switchSession Case A (in _sessions)', () => {
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('ses-b')
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test', 'default')
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
     expect(after._sessions['ses-b'].selectedModel).toBe('claude-sonnet-4-6')
     expect(after._sessions['ses-b'].selectedEffort).toBe('medium')
   })
@@ -1568,7 +1568,7 @@ describe('switchSession Case B (from DB)', () => {
     expect(after._sessions['db-session'].selectedModel).toBe('claude-sonnet-4-6')
     expect(after._sessions['db-session'].selectedEffort).toBe('medium')
     expect(after.showHistory).toBe(false)
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', '/test', 'default')
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
   })
 
   it('handles null loadSessionState gracefully', async () => {
@@ -1604,7 +1604,7 @@ describe('switchSession Case B (from DB)', () => {
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['pref-session'].permissionMode).toBe('acceptEdits')
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'pref-session', '/test', 'acceptEdits')
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'pref-session', '/test')
   })
 
   it('passes permissionMode to resumeSession in Case B', async () => {
@@ -1621,7 +1621,7 @@ describe('switchSession Case B (from DB)', () => {
 
     await useChatStore.getState().switchSession('order-session')
 
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'order-session', '/test', 'default')
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'order-session', '/test')
   })
 })
 
@@ -1647,7 +1647,7 @@ describe('switchSession Case A permissionMode sync', () => {
 
     await useChatStore.getState().switchSession('ses-b')
 
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test', 'default')
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
   })
 
   it('does not overwrite old session permissionMode when switching', async () => {
@@ -1674,6 +1674,52 @@ describe('switchSession Case A permissionMode sync', () => {
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['ses-a'].permissionMode).toBe('acceptEdits')
     expect(after._sessions['ses-b'].permissionMode).toBe('default')
+  })
+
+  it('scenario: resuming a DB session adopts permissionMode and sandboxInfo returned by main (user prefs applied authoritatively)', async () => {
+    setupProject('/test')
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      gitBranch: null,
+      provider: 'claude',
+    })
+    mockWindowApp.resumeSession.mockResolvedValue({
+      permissionMode: 'acceptEdits',
+      sandboxInfo: { enabled: false, autoAllowBash: false },
+    })
+
+    await useChatStore.getState().switchSession('resumed-sid')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['resumed-sid'].permissionMode).toBe('acceptEdits')
+    expect(after.sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
+  })
+
+  it('scenario: if main returns undefined (resume failed), store keeps pre-resume state', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'ses-a',
+          sandboxInfo: { enabled: true, autoAllowBash: false },
+          _sessions: {
+            'ses-a': createDefaultPerSessionState(),
+            'ses-b': { ...createDefaultPerSessionState(), permissionMode: 'plan' as never, sessionProvider: 'claude' },
+          },
+        },
+      },
+    })
+    mockWindowApp.resumeSession.mockResolvedValue(undefined)
+
+    await useChatStore.getState().switchSession('ses-b')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['ses-b'].permissionMode).toBe('plan')
+    expect(after.sandboxInfo).toEqual({ enabled: true, autoAllowBash: false })
   })
 })
 
@@ -3308,7 +3354,7 @@ describe('worktree_missing event (main -> renderer signal)', () => {
     await useChatStore.getState().switchSession(sid)
 
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', null)
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', sid, '/test', 'default')
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', sid, '/test')
   })
 
   it('switchSession Case B no longer calls pathExists (main is the source of truth)', async () => {

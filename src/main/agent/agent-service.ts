@@ -1379,12 +1379,19 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, _worktreeCwd?: string, permissionMode?: PermissionMode) => {
       const mgr = this.requireSessionManager()
+      const defaults = this.readDefaultSessionPrefs()
+      const effectiveMode = permissionMode ?? defaults.permissionMode
       let session = mgr.getSession(sessionId)
       if (!session) {
-        try { session = mgr.resumeSession(sessionId) } catch { return }
+        try { session = mgr.resumeSession(sessionId, { permissionMode: effectiveMode, sandboxMode: defaults.sandboxMode }) } catch { return }
+      } else if (permissionMode) {
+        await session.setPermissionMode(permissionMode)
       }
       try { mgr.setActiveSession(projectPath, sessionId) } catch { /* session from another project, skip */ }
-      if (permissionMode) await session.setPermissionMode(permissionMode)
+      return {
+        permissionMode: session.getCurrentPermissionMode(),
+        sandboxInfo: session.getCurrentSandboxInfo(),
+      }
     })
 
     ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {

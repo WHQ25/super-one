@@ -1312,9 +1312,28 @@ export function invalidateDefaultPermissionModeCache(): void {
   _loadDefaultSessionPrefs()
 }
 
-async function _syncAndResumeSession(projectPath: string, sessionId: string, get: () => ChatStore, cwd: string): Promise<void> {
-  const targetMode = getActivePerSession(get()).permissionMode
-  await window.app.resumeSession(projectPath, sessionId, cwd, targetMode)
+async function _syncAndResumeSession(projectPath: string, sessionId: string, set: ChatStoreSet, cwd: string): Promise<void> {
+  const result = await window.app.resumeSession(projectPath, sessionId, cwd)
+  if (!result) return
+  set((s) => {
+    const proj = s.projectSessions[projectPath]
+    if (!proj) return {}
+    const sess = proj._sessions[sessionId]
+    if (!sess) return {}
+    return {
+      projectSessions: {
+        ...s.projectSessions,
+        [projectPath]: {
+          ...proj,
+          sandboxInfo: result.sandboxInfo,
+          _sessions: {
+            ...proj._sessions,
+            [sessionId]: { ...sess, permissionMode: result.permissionMode },
+          },
+        },
+      },
+    }
+  })
 }
 
 function _truncateAtCheckpoint(
@@ -3585,7 +3604,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       if (targetSession.sessionProvider !== 'codex') {
         try {
-          await _syncAndResumeSession(activeProject, sessionId, get, _getSessionCwd(activeProject, runtimeSession))
+          await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, runtimeSession))
         } catch (err) {
           console.warn('[chat] resumeSession failed:', err)
         }
@@ -3681,7 +3700,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     if (restoredSession.sessionProvider !== 'codex') {
       try {
-        await _syncAndResumeSession(activeProject, sessionId, get, _getSessionCwd(activeProject, getProject(get())._sessions[sessionId]))
+        await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, getProject(get())._sessions[sessionId]))
       } catch (err) {
         console.warn('[chat] resumeSession failed:', err)
       }

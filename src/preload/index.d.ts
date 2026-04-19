@@ -197,7 +197,7 @@ interface AppAPI {
   listSessions(projectPath: string): Promise<SessionHistoryEntry[]>
   listSessionsForFolder(folderPath: string): Promise<SessionHistoryEntry[]>
   listSessionsForFolderPage(folderPath: string, limit: number, offset: number): Promise<SessionHistoryEntry[]>
-  resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode): Promise<void>
+  resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined>
   loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
   renameSession(sessionId: string, title: string): Promise<void>
   loadSessionState(sessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string } | null>

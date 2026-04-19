@@ -230,7 +230,7 @@ export interface SessionManager {
   invalidateProjectResources(cwd: string): void
 
   createSession(opts: SessionCreateOptions): Session
-  resumeSession(sessionId: string): Session
+  resumeSession(sessionId: string, opts?: { permissionMode?: PermissionMode; sandboxMode?: SandboxMode }): Session
   getSession(sessionId: string): Session | null
   disposeSession(sessionId: string): Promise<void>
 

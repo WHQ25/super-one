@@ -176,7 +176,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     this.activeByProject.delete(projectPath)
   }
 
-  resumeSession(sessionId: string): SessionContract {
+  resumeSession(sessionId: string, opts?: { permissionMode?: import('../../shared/agent-types').PermissionMode; sandboxMode?: import('../../shared/agent-types').SandboxMode }): SessionContract {
     const existing = this.sessions.get(sessionId)
     if (existing) return existing
     if (!this.persistence.loadSession) {
@@ -194,6 +194,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       ? this.persistence.resolveProviderConfig(provider)
       : provider.config
     const { cwd: resumedCwd, missingWorktreePath } = resolveResumedCwd(data)
+    const sandboxInfo = opts?.sandboxMode !== undefined
+      ? { enabled: opts.sandboxMode !== 'off', autoAllowBash: opts.sandboxMode === 'auto' }
+      : undefined
     const session = new Session({
       id: sessionId,
       projectPath: data.projectPath,
@@ -202,6 +205,8 @@ export class SessionManagerImpl implements SessionManagerContract {
       harnessId: provider.harnessId,
       providerConfig,
       backend,
+      permissionMode: opts?.permissionMode,
+      sandboxInfo,
       resumedProviderSessionId: data.providerSessionId ?? undefined,
       initialMessages: data.messages,
       initialTotalCostUsd: data.totalCostUsd,

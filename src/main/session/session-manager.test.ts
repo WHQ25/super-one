@@ -596,6 +596,71 @@ describe('SessionManager', () => {
       mgr2.resumeSession('sid-wt-here')
       expect(captured.some((e) => e.type === 'worktree_missing')).toBe(false)
     })
+
+    it('applies permissionMode from opts to the resumed session (not persisted stale mode)', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+
+      const session = mgr2.resumeSession('sid-pref', { permissionMode: 'acceptEdits' })
+
+      expect(session.getCurrentPermissionMode()).toBe('acceptEdits')
+    })
+
+    it('applies sandboxMode from opts to the resumed session', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+
+      const session = mgr2.resumeSession('sid-sandbox', { sandboxMode: 'off' })
+
+      expect(session.getCurrentSandboxInfo()).toEqual({ enabled: false, autoAllowBash: false })
+    })
+
+    it('resumeSession with sandboxMode="auto" enables sandbox with autoAllowBash', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+
+      const session = mgr2.resumeSession('sid-auto', { sandboxMode: 'auto' })
+
+      expect(session.getCurrentSandboxInfo()).toEqual({ enabled: true, autoAllowBash: true })
+    })
+
+    it('resumeSession without opts leaves Session ctor defaults untouched (backward compat)', () => {
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+
+      const session = mgr2.resumeSession('sid-noopts')
+
+      expect(session.getCurrentPermissionMode()).toBe('default')
+      expect(session.getCurrentSandboxInfo()).toEqual({ enabled: true, autoAllowBash: false })
+    })
   })
 
   describe('project resources cache', () => {

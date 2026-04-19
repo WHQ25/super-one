@@ -93,8 +93,11 @@ jobs:
               staging/*
           fi
 
-      - name: Show release URL
+      - name: Show release summary
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view "${{ inputs.release_tag }}" --json url,isDraft,isPrerelease,assets --jq '"URL: \(.url)\nDraft: \(.isDraft)\nPrerelease: \(.isPrerelease)\nAssets: \([.assets[] | .name] | join(\", \"))"'
+          echo "Release: ${{ inputs.release_tag }}"
+          gh release view "${{ inputs.release_tag }}" --json url,isDraft,isPrerelease -q '.url, .isDraft, .isPrerelease'
+          echo "Assets:"
+          gh release view "${{ inputs.release_tag }}" --json assets -q '.assets[].name'

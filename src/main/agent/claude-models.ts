@@ -1,6 +1,7 @@
 import { query, type Query } from '@anthropic-ai/claude-agent-sdk'
 import type { ModelOption } from '../../shared/agent-types'
 import log from '../logger'
+import { resolveSdkClaudeBinary } from './claude-binary'
 
 /** Create a throwaway query to fetch the model list. */
 export async function fetchModels(cwd: string, env?: Record<string, string | undefined>): Promise<ModelOption[]> {
@@ -10,6 +11,7 @@ export async function fetchModels(cwd: string, env?: Record<string, string | und
       prompt: 'hi',
       options: {
         cwd,
+        pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
         maxTurns: 0,
         permissionMode: 'bypassPermissions',
         env,

@@ -1,6 +1,50 @@
 import { startup, type Options, type WarmQuery } from '@anthropic-ai/claude-agent-sdk'
+import { createRequire } from 'node:module'
+import { existsSync } from 'node:fs'
 import log from '../logger'
 import { trace } from './event-trace'
+
+function probeClaudeBinary(opts: Options): string {
+  const parts: string[] = []
+  parts.push(`optsCwd=${opts.cwd ?? '<none>'}`)
+  parts.push(`optsPathToCli=${opts.pathToClaudeCodeExecutable ?? '<none>'}`)
+  if (opts.pathToClaudeCodeExecutable) {
+    const p = opts.pathToClaudeCodeExecutable
+    const unpackedP = p.includes('/app.asar/') ? p.replace('/app.asar/', '/app.asar.unpacked/') : p
+    try { parts.push(`pathExists=${existsSync(p)}`) } catch (e) { parts.push(`pathExists=err(${(e as Error).message})`) }
+    if (unpackedP !== p) {
+      try { parts.push(`unpackedExists=${existsSync(unpackedP)}`) } catch (e) { parts.push(`unpackedExists=err(${(e as Error).message})`) }
+    }
+  } else {
+    try {
+      const req = createRequire(import.meta.url)
+      try {
+        const sdkMain = req.resolve('@anthropic-ai/claude-agent-sdk')
+        parts.push(`sdkMain=${sdkMain}`)
+      } catch (e) {
+        parts.push(`sdkMain=resolve FAILED: ${(e as Error).message}`)
+      }
+      const ext = process.platform === 'win32' ? '.exe' : ''
+      const candidates = process.platform === 'linux'
+        ? [`@anthropic-ai/claude-agent-sdk-linux-${process.arch}-musl/claude${ext}`, `@anthropic-ai/claude-agent-sdk-linux-${process.arch}/claude${ext}`]
+        : [`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude${ext}`]
+      for (const c of candidates) {
+        try {
+          const p = req.resolve(c)
+          const unpackedP = p.includes('/app.asar/') ? p.replace('/app.asar/', '/app.asar.unpacked/') : p
+          const exists = (() => { try { return existsSync(p) } catch (e) { return `err(${(e as Error).message})` } })()
+          const unpackedExists = unpackedP !== p ? (() => { try { return existsSync(unpackedP) } catch (e) { return `err(${(e as Error).message})` } })() : '(same)'
+          parts.push(`native[${c}] -> ${p} (exists=${exists}, unpackedExists=${unpackedExists})`)
+        } catch (e) {
+          parts.push(`native[${c}] -> resolve FAILED: ${(e as Error).message}`)
+        }
+      }
+    } catch (e) {
+      parts.push(`probe-err=${(e as Error).message}`)
+    }
+  }
+  return parts.join(' | ')
+}
 
 interface WarmupSlot {
   key: string
@@ -73,8 +117,9 @@ export class WarmupManager {
       const envSize = Object.entries(process.env).reduce((n, [k, v]) => n + k.length + (v?.length ?? 0) + 2, 0)
       const pathLen = (process.env.PATH ?? '').length
       const cwd = (() => { try { return process.cwd() } catch { return '<cwd-error>' } })()
+      const binDiag = probeClaudeBinary(options)
       log.warn(
-        '[warmup] startup() failed msg=%s code=%s errno=%s syscall=%s cwd=%s(len=%d) envBytes=%d pathLen=%d cli=%s stack=%s',
+        '[warmup] startup() failed msg=%s code=%s errno=%s syscall=%s cwd=%s(len=%d) envBytes=%d pathLen=%d cli=%s diag=%s stack=%s',
         e?.message ?? String(err),
         e?.code ?? 'none',
         e?.errno ?? 'none',
@@ -83,9 +128,10 @@ export class WarmupManager {
         envSize,
         pathLen,
         options.pathToClaudeCodeExecutable ?? 'none',
+        binDiag,
         e?.stack ?? 'none',
       )
-      trace('warmup', 'error', { key, error: String(err), code: e?.code, errno: e?.errno, syscall: e?.syscall, envBytes: envSize, pathLen, cwd })
+      trace('warmup', 'error', { key, error: String(err), code: e?.code, errno: e?.errno, syscall: e?.syscall, envBytes: envSize, pathLen, cwd, binDiag })
     })
   }
 

@@ -7,6 +7,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import { readProjectAdditionalDirs, writeProjectAdditionalDirs } from './project-additional-dirs'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
+import { resolveSdkClaudeBinary } from './claude-binary'
 import { AgentIpcChannels, type AgentEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
@@ -1280,6 +1281,7 @@ export class AgentService {
           options: {
             env: mergedEnv,
             cwd: process.cwd(),
+            pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
             maxTurns: 1,
             permissionMode: 'bypassPermissions',
             systemPrompt: 'Reply with a single word. Do not use any tools.',

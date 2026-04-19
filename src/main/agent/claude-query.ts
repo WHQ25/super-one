@@ -6,6 +6,7 @@ import { trace } from './event-trace'
 import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
 import { getSuperoneMcpServer } from '../mcp/superone-mcp-server'
 import type { WarmupManager } from './warmup-manager'
+import { resolveSdkClaudeBinary } from './claude-binary'
 
 export interface SessionQueryOptions {
   cwd: string
@@ -31,6 +32,7 @@ const SYSTEM_PROMPT_APPEND = 'You have a powerful `show_widget` tool (via the `w
 export function buildClaudeOptions(opts: SessionQueryOptions): Options {
   return {
     cwd: opts.cwd,
+    pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
     model: opts.model,
     effort: opts.effort,
     thinking: { type: 'adaptive', display: 'summarized' },

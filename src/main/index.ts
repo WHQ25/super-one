@@ -15,6 +15,7 @@ import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getIn
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept } from './mcp/superone-mcp-server'
 import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import { resolveSdkClaudeBinary } from './agent/claude-binary'
 import { fixPath } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
@@ -1347,7 +1348,7 @@ function registerIpcHandlers(): void {
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
     const q = query({
       prompt: 'hi',
-      options: { cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
+      options: { cwd: app.getPath('userData'), pathToClaudeCodeExecutable: resolveSdkClaudeBinary(), maxTurns: 0, permissionMode: 'default' },
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')

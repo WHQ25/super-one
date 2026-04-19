@@ -4,6 +4,20 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.21.2-alpha] - 2026-04-19
+
+### Changed
+
+- **ESC hold-to-interrupt shortened to 600ms** (from 1000ms) for a snappier stop gesture in the chat composer.
+
+### Fixed
+
+- **Queued messages flush correctly after interrupt/cancel** in `ClaudeBackend`, so text typed while the agent was running no longer gets dropped.
+- **Mini-app tools reach the SDK on resume** — `markAllNeedsRebuild` now forces a rebuild so dynamically-registered MCP tools are re-applied.
+- **Removed-worktree sessions render READ-ONLY** instead of erroring, making it obvious the underlying worktree no longer exists on disk.
+- **New sessions inherit user preferences** (model, permission mode, etc.) at creation time rather than only after the first turn.
+- **Embedded JS/CSS inside HTML files** now gets proper syntax highlighting in the diff view.
+
 ## [0.21.1-alpha] - 2026-04-18
 
 ### Fixed

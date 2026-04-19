@@ -143,11 +143,8 @@ vi.mock('../mcp/superone-mcp-server', () => ({
 
 vi.mock('./resolve-cli', () => ({
   fixPath: vi.fn(),
-  findSystemClaude: vi.fn(),
-  resolveSdkCli: vi.fn(),
-  clearCliCache: vi.fn(),
-  getClaudeCliPath: vi.fn(),
-  getNodeRuntime: vi.fn(() => ({ path: 'node', args: [] })),
+  dedupePath: vi.fn((p: string) => p),
+  getNodeRuntime: vi.fn(() => ({})),
 }))
 
 const { AgentService } = await import('./agent-service')

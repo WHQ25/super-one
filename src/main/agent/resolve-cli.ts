@@ -1,13 +1,8 @@
-import { execFileSync, spawnSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import { existsSync } from 'node:fs'
-import { createRequire } from 'module'
 import { basename, dirname, join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import log from '../logger'
-
-const moduleRequire = createRequire(import.meta.url)
-
-let cachedPath: string | undefined
 
 export function dedupePath(path: string): string {
   const seen = new Set<string>()
@@ -41,57 +36,6 @@ export function fixPath(): void {
   } catch {
     log.warn('[fixPath] Failed to get PATH from login shell')
   }
-}
-
-export function findSystemClaude(): string | undefined {
-  const cmd = process.platform === 'win32' ? 'where' : '/usr/bin/which'
-  try {
-    log.info('[findSystemClaude] probing with %s on %s/%s', cmd, process.platform, process.arch)
-    const result = execFileSync(cmd, ['claude'], { timeout: 3000, stdio: 'pipe' })
-    const bins = result.toString().split(/\r?\n/).map((v) => v.trim()).filter(Boolean)
-    log.info('[findSystemClaude] candidates=%d', bins.length)
-    for (const bin of bins) {
-      if (process.platform === 'win32') {
-        const probe = spawnSync(bin, ['--version'], {
-          timeout: 3000,
-          stdio: 'pipe',
-          shell: true,
-          windowsHide: true,
-        })
-        const ok = !probe.error && probe.status === 0
-        log.info('[findSystemClaude] candidate=%s ok=%s', bin, ok)
-        if (ok) return bin
-      } else {
-        execFileSync(bin, ['--version'], { timeout: 3000, stdio: 'pipe' })
-        log.info('[findSystemClaude] candidate=%s ok=true', bin)
-        return bin
-      }
-    }
-  } catch (err) {
-    log.warn('[findSystemClaude] failed: %s', (err as Error).message)
-  }
-  return undefined
-}
-
-export function resolveSdkCli(): string | undefined {
-  try {
-    const sdkDir = moduleRequire.resolve('@anthropic-ai/claude-agent-sdk').replace(/[/\\][^/\\]+$/, '')
-    const sep = sdkDir.includes('\\') ? '\\' : '/'
-    return `${sdkDir}${sep}cli.js`.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
-  } catch {
-    return undefined
-  }
-}
-
-export function clearCliCache(): void {
-  cachedPath = undefined
-}
-
-export function getClaudeCliPath(): string | undefined {
-  if (cachedPath !== undefined) return cachedPath || undefined
-  cachedPath = findSystemClaude() ?? resolveSdkCli() ?? ''
-  log.info('[resolve-cli] resolved=%s platform=%s arch=%s', cachedPath || 'none', process.platform, process.arch)
-  return cachedPath || undefined
 }
 
 export interface NodeRuntime {

@@ -5,20 +5,13 @@ directories:
 
 files:
   - out/**/*
-  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-linux"
-  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/arm64-linux"
-  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-win32"
-  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/arm64-win32"
-  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/audio-capture/x64-linux"
-  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/audio-capture/arm64-linux"
-  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/audio-capture/x64-win32"
-  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/audio-capture/arm64-win32"
   - "!node_modules/@img/sharp-*"
+
+afterPack: "./build/afterPack.cjs"
 
 asarUnpack:
   - "**/*.node"
-  - "node_modules/@anthropic-ai/claude-agent-sdk/cli.js"
-  - "node_modules/@anthropic-ai/claude-agent-sdk/vendor/**"
+  - "node_modules/@anthropic-ai/claude-agent-sdk-*/claude*"
   - "node_modules/@openai/codex*/**"
 
 publish:

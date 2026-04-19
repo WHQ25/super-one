@@ -20,7 +20,6 @@ import { sanitizeGitRef } from '../path-security'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
 import { clearAllPendingCalls as clearAllPendingMiniAppCalls } from '../mcp/superone-mcp-server'
-import { resolveSdkCli, getNodeRuntime } from './resolve-cli'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -1271,21 +1270,14 @@ export class AgentService {
       if (data.api_key && env.ANTHROPIC_AUTH_TOKEN !== undefined) env.ANTHROPIC_AUTH_TOKEN = data.api_key
       try {
         const { query: testQuery } = await import('@anthropic-ai/claude-agent-sdk')
-        const cliPath = resolveSdkCli()
-        const runtime = getNodeRuntime()
-        const mergedEnv = { ...process.env, ...runtime.env, ...env }
+        const mergedEnv = { ...process.env, ...env }
         trace('providers.test', 'options', {
-          cliPath: cliPath ?? 'none',
-          cliExists: cliPath ? existsSync(cliPath) : false,
-          executable: runtime.executable ?? 'none',
           cwd: process.cwd(),
           envKeys: Object.keys(mergedEnv),
         })
         const q = testQuery({
           prompt: 'Reply with "ok" only.',
           options: {
-            pathToClaudeCodeExecutable: cliPath,
-            executable: runtime.executable as any,
             env: mergedEnv,
             cwd: process.cwd(),
             maxTurns: 1,

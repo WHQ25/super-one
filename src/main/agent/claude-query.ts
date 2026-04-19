@@ -3,7 +3,6 @@ import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMess
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
 import { trace } from './event-trace'
-import { getNodeRuntime, resolveSdkCli } from './resolve-cli'
 import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
 import { getSuperoneMcpServer } from '../mcp/superone-mcp-server'
 import type { WarmupManager } from './warmup-manager'
@@ -30,11 +29,7 @@ export interface SessionQueryOptions {
 const SYSTEM_PROMPT_APPEND = 'You have a powerful `show_widget` tool (via the `widget` MCP server) for rendering visual content inline — diagrams, charts, dashboards, data tables, interactive widgets, illustrations, and any visual explanation. Prefer show_widget over plain text/markdown when the user asks for something visual, data-heavy, or interactive. For mermaid diagrams (ERD, sequence, flowchart, etc.), use fenced ```mermaid code blocks instead — the host app renders them natively.\n\nWhen building or modifying a mini-app, call `read_miniapp_guide` (via the `superone` MCP server) first to load the relevant development guide.'
 
 export function buildClaudeOptions(opts: SessionQueryOptions): Options {
-  const cliPath = resolveSdkCli()
-  const runtime = getNodeRuntime()
   return {
-    pathToClaudeCodeExecutable: cliPath,
-    executable: runtime.executable as Options['executable'],
     cwd: opts.cwd,
     model: opts.model,
     effort: opts.effort,
@@ -58,7 +53,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     sessionId: opts.sessionId,
     abortController: opts.abortController,
     additionalDirectories: opts.additionalDirectories,
-    env: runtime.env || opts.env ? { ...runtime.env, ...opts.env } : undefined,
+    env: opts.env,
     stderr: (data: string) => {
       log.warn('[claude-cli]', data.trimEnd())
       if (data.includes('FileHistory') || data.includes('checkpoint') || data.includes('file_history')) {
@@ -102,7 +97,6 @@ export function createSessionQuery(
   trace('provider.query', 'create_session', { envKeys: options.env ? Object.keys(options.env) : null, model: options.model, resume: options.resume })
 
   const sdkOptions = buildClaudeOptions({ ...options, canUseTool: timedCanUseTool })
-  log.info('[claude-query] resolved SDK CLI path=%s', sdkOptions.pathToClaudeCodeExecutable ?? 'none')
 
   let q: Query
   const warm = options.warmupManager?.consume(sdkOptions)

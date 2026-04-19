@@ -69,7 +69,10 @@ class FakeBackend implements SessionBackend {
   }
 
   async setModel(_model: string): Promise<void> {}
-  async setPermissionMode(_mode: import('../../shared/agent-types').PermissionMode): Promise<void> {}
+  setPermissionModeCalls: import('../../shared/agent-types').PermissionMode[] = []
+  async setPermissionMode(mode: import('../../shared/agent-types').PermissionMode): Promise<void> {
+    this.setPermissionModeCalls.push(mode)
+  }
   respondToPermission(): void {}
   respondToQuestion(): void {}
   dismissQuestion(): void {}
@@ -331,6 +334,80 @@ describe('Session state machine', () => {
     expect(backend.rebuildCalls).toHaveLength(0)
     backend.resolveSend?.()
     await p2
+  })
+
+  describe('setPermissionMode bypass boundary', () => {
+    async function bootAndIdle(s: Session, b: FakeBackend) {
+      const p = s.send({ content: 'boot', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+      b.resolveSend?.()
+      await p
+    }
+
+    it('idle → bypass: rebuilds backend immediately, does not call backend.setPermissionMode', async () => {
+      await bootAndIdle(session, backend)
+      expect(backend.rebuildCalls).toHaveLength(0)
+
+      await session.setPermissionMode('bypassPermissions')
+
+      expect(backend.rebuildCalls).toHaveLength(1)
+      expect(backend.rebuildCalls[0].permissionMode).toBe('bypassPermissions')
+      expect(backend.setPermissionModeCalls).toHaveLength(0)
+    })
+
+    it('bypass → default: rebuilds backend immediately (symmetric case)', async () => {
+      ;({ session, backend } = makeSession({ permissionMode: 'bypassPermissions' }))
+      await bootAndIdle(session, backend)
+      expect(backend.rebuildCalls).toHaveLength(0)
+
+      await session.setPermissionMode('default')
+
+      expect(backend.rebuildCalls).toHaveLength(1)
+      expect(backend.rebuildCalls[0].permissionMode).toBe('default')
+      expect(backend.setPermissionModeCalls).toHaveLength(0)
+    })
+
+    it('streaming + bypass switch: defers rebuild to next send', async () => {
+      const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(session.snapshot.status).toBe('streaming')
+
+      await session.setPermissionMode('bypassPermissions')
+      expect(backend.rebuildCalls).toHaveLength(0)
+      expect(backend.setPermissionModeCalls).toHaveLength(0)
+      expect((session as unknown as { _needsRebuild: boolean })._needsRebuild).toBe(true)
+
+      backend.resolveSend?.()
+      await pending
+
+      const p2 = session.send({ content: 'after', clientMessageId: 'u1' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(backend.rebuildCalls).toHaveLength(1)
+      expect(backend.rebuildCalls[0].permissionMode).toBe('bypassPermissions')
+      expect((session as unknown as { _needsRebuild: boolean })._needsRebuild).toBe(false)
+      backend.resolveSend?.()
+      await p2
+    })
+
+    it('default → acceptEdits: fast path, calls backend.setPermissionMode, no rebuild', async () => {
+      await bootAndIdle(session, backend)
+
+      await session.setPermissionMode('acceptEdits')
+
+      expect(backend.setPermissionModeCalls).toEqual(['acceptEdits'])
+      expect(backend.rebuildCalls).toHaveLength(0)
+    })
+
+    it('repeated same mode: no backend call at all', async () => {
+      ;({ session, backend } = makeSession({ permissionMode: 'plan' }))
+      await bootAndIdle(session, backend)
+
+      await session.setPermissionMode('plan')
+      await session.setPermissionMode('plan')
+
+      expect(backend.setPermissionModeCalls).toHaveLength(0)
+      expect(backend.rebuildCalls).toHaveLength(0)
+    })
   })
 })
 

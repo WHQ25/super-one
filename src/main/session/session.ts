@@ -264,8 +264,22 @@ export class Session implements SessionContract {
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.assertNotDisposed()
+    const prev = this.permissionMode
+    if (prev === mode) return
     this.permissionMode = mode
-    if (this.backendStarted) await this.backend.setPermissionMode(mode)
+    if (!this.backendStarted) return
+
+    const bypassCrossed = (prev === 'bypassPermissions') !== (mode === 'bypassPermissions')
+    if (!bypassCrossed) {
+      await this.backend.setPermissionMode(mode)
+      return
+    }
+
+    if (this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting') {
+      this._needsRebuild = true
+      return
+    }
+    await this.backend.rebuild(this.buildBackendStartOpts())
   }
 
   setSandboxMode(mode: SandboxMode): SandboxInfo {

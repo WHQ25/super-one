@@ -1,0 +1,100 @@
+name: Promote to Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g. v0.21.5-alpha)'
+        required: true
+      target_sha:
+        description: 'Commit SHA to tag when released (defaults to main HEAD)'
+        required: false
+      mac_run_id:
+        description: 'Build macOS run ID (leave blank to skip)'
+        required: false
+      win_run_id:
+        description: 'Build Windows run ID (leave blank to skip)'
+        required: false
+      linux_run_id:
+        description: 'Build Linux run ID (leave blank to skip)'
+        required: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Download macOS artifact
+        if: ${{ inputs.mac_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          path: staging
+          name: dist-mac
+          run-id: ${{ inputs.mac_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Windows artifact
+        if: ${{ inputs.win_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          path: staging
+          name: dist-win
+          run-id: ${{ inputs.win_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Linux artifact
+        if: ${{ inputs.linux_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          path: staging
+          name: dist-linux
+          run-id: ${{ inputs.linux_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List staging contents
+        run: |
+          if [ ! -d staging ]; then
+            echo "::error::No artifacts downloaded — at least one of mac_run_id / win_run_id / linux_run_id is required"
+            exit 1
+          fi
+          ls -la staging/
+
+      - name: Resolve target SHA
+        id: sha
+        run: |
+          if [ -n "${{ inputs.target_sha }}" ]; then
+            echo "sha=${{ inputs.target_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists — uploading artifacts (--clobber)"
+            gh release upload "$TAG" staging/* --clobber
+          else
+            echo "Creating new draft release $TAG at ${{ steps.sha.outputs.sha }}"
+            gh release create "$TAG" \
+              --draft \
+              --prerelease \
+              --target "${{ steps.sha.outputs.sha }}" \
+              --title "$TAG" \
+              --notes "Draft — see CHANGELOG.md" \
+              staging/*
+          fi
+
+      - name: Show release URL
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${{ inputs.release_tag }}" --json url,isDraft,isPrerelease,assets --jq '"URL: \(.url)\nDraft: \(.isDraft)\nPrerelease: \(.isPrerelease)\nAssets: \([.assets[] | .name] | join(\", \"))"'

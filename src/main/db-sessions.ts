@@ -33,7 +33,7 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
   const db = getDb()
   const baseSql = `
     SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
-           s.is_automation, s.automation_id,
+           s.is_automation, s.automation_id, s.provider_session_id,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
            COALESCE(NULLIF(s.provider, ''), 'claude') AS provider
     FROM sessions s
@@ -42,7 +42,7 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
   const rows = (limit != null
     ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(projectId, limit, offset ?? 0)
     : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider: 'claude' | 'codex' }>
+  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider: 'claude' | 'codex' }>
 
   return rows.map((r) => ({
     sessionId: r.id,
@@ -57,6 +57,7 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
     ...(r.worktree_path ? { worktreePath: r.worktree_path } : {}),
     ...(r.is_automation ? { isAutomation: true } : {}),
     ...(r.automation_id ? { automationId: r.automation_id } : {}),
+    ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
   }))
 }
 
@@ -301,7 +302,7 @@ export function hideSession(sessionId: string, hidden: boolean): void {
 export function listPinnedSessions(): PinnedSessionEntry[] {
   const db = getDb()
   const rows = db.prepare(`
-    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_automation, s.automation_id,
+    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_automation, s.automation_id, s.provider_session_id,
            p.path AS folder_path, p.name AS folder_name,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
            COALESCE(NULLIF(s.provider, ''), 'claude') AS provider
@@ -309,7 +310,7 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
     JOIN projects p ON p.id = s.project_id
     WHERE s.is_pinned = 1 AND COALESCE(s.is_hidden, 0) = 0
     ORDER BY last_user_msg_at DESC
-  `).all() as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_automation: number | null; automation_id: string | null; folder_path: string; folder_name: string; provider: 'claude' | 'codex' }>
+  `).all() as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; folder_path: string; folder_name: string; provider: 'claude' | 'codex' }>
 
   return rows.map((r) => ({
     sessionId: r.id,
@@ -320,6 +321,7 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
     ...(r.is_worktree ? { isWorktree: true } : {}),
     ...(r.is_automation ? { isAutomation: true } : {}),
     ...(r.automation_id ? { automationId: r.automation_id } : {}),
+    ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
     isPinned: true,
     folderPath: r.folder_path,
     folderName: r.folder_name,

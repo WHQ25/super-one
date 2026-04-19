@@ -70,6 +70,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           title: title ?? 'New session',
           lastActiveAt: new Date().toISOString(),
           provider: data.sessionProvider ?? undefined,
+          providerSessionId: data.session?.sessionId || undefined,
           messageCount: data.messages.length,
           isWorktree: !!data._worktreeBaseBranch,
           gitBranch: data._worktreeBaseBranch ?? undefined,
@@ -364,7 +365,16 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                         </ContextMenuItem>
                         <ContextMenuSeparator />
                         <ContextMenuItem
-                          onClick={() => { navigator.clipboard.writeText(session.sessionId); toast.success(`${session.provider === 'codex' ? 'Codex' : 'Claude Code'} Session ID Copied`) }}
+                          onClick={() => {
+                            const providerLabel = session.provider === 'codex' ? 'Codex' : 'Claude Code'
+                            if (session.providerSessionId) {
+                              navigator.clipboard.writeText(session.providerSessionId)
+                              toast.success(`${providerLabel} Session ID Copied`)
+                            } else {
+                              navigator.clipboard.writeText(session.sessionId)
+                              toast.success(`${providerLabel} Session ID not ready — copied internal id`)
+                            }
+                          }}
                           className="text-xs"
                         >
                           <Copy className="size-3.5" />

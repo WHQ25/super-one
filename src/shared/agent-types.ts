@@ -911,6 +911,7 @@ export interface SessionHistoryEntry {
   title: string        // First user message, truncated
   lastActiveAt: string // File modification time
   provider?: 'claude' | 'codex'
+  providerSessionId?: string // Claude Code SDK session UUID / Codex thread id
   gitBranch?: string
   messageCount: number // Total user + assistant messages
   isWorktree?: boolean // true if session was created in a git worktree

@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 const STOP_COLOR = '#E24B4A'
 
-const HOLD_DURATION = 1000
+const HOLD_DURATION = 600
 const DEAD_ZONE = 100
 
 interface StopButtonProps {

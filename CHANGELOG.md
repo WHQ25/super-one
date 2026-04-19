@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 
 - **Codex child thread events** now route to the correct session instead of being dropped.
+- **Packaged app failed to warm up with `spawn ENOTDIR`** — Electron's asar→unpacked path rewrite doesn't cover ESM `child_process.spawn` in this scenario, so the bundled Claude native binary was being spawned from inside `app.asar` and refused by the OS. Fixed by resolving the binary and forcing its `app.asar.unpacked` path at every SDK call site (chat query, prewarm, model list, auth bootstrap, provider test).
 
 ## [0.21.2-alpha] - 2026-04-19
 

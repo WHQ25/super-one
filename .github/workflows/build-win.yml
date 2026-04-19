@@ -22,8 +22,9 @@ jobs:
           fetch-depth: 1
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bun run build:win
+      - run: bun run build:win -- --publish never
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
           POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
       - uses: actions/upload-artifact@v4

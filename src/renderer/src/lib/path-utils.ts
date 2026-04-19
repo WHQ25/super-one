@@ -37,6 +37,20 @@ export function toLocalFileUrl(filePath: string): string {
     : `local-file://${encoded}`
 }
 
+export function toAssetUrl(path: string | undefined | null): string | null {
+  if (!path) return null
+  if (/^(?:https?:|data:|blob:|file:|local-file:)/.test(path)) return path
+  if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) return toLocalFileUrl(path)
+  return null
+}
+
+export function resolveAssetUrls(paths: Array<string | undefined | null>): string[] {
+  const urls = paths
+    .map((path) => toAssetUrl(path))
+    .filter((path): path is string => path !== null)
+  return Array.from(new Set(urls))
+}
+
 let _mediaServerPort = 0
 if (typeof window !== 'undefined' && window.app?.getMediaServerPort) {
   window.app.getMediaServerPort().then((p) => { _mediaServerPort = p })

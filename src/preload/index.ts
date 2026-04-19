@@ -381,9 +381,41 @@ const appAPI = {
   codexDeleteSkill: (projectPath: string, name: string, scope: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_DELETE, projectPath, name, scope),
 
+  // Codex Plugins
+  codexListPlugins: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_LIST, projectPath),
+  codexReadPlugin: (projectPath: string, key: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_READ, projectPath, key),
+  codexReadPluginFile: (projectPath: string, pluginKey: string, relativePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_READ_FILE, projectPath, pluginKey, relativePath),
+  codexDeletePlugin: (projectPath: string, key: string, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_DELETE, projectPath, key, scope),
+  codexListMarketplacePlugins: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_LIST_MARKETPLACE, projectPath),
+  codexInstallPlugin: (projectPath: string, key: string, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_INSTALL, projectPath, key, scope),
+
   // Codex MCP config
   codexListMcpConfigs: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_LIST_CONFIG, projectPath),
+  codexSaveMcpConfig: (
+    projectPath: string,
+    name: string,
+    config: {
+      type?: 'stdio' | 'http' | 'sse'
+      command?: string
+      args?: string[]
+      env?: Record<string, string>
+      url?: string
+      headers?: Record<string, string>
+    },
+    scope: string
+  ) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_SAVE_CONFIG, projectPath, name, config, scope),
+  codexDeleteMcpConfig: (projectPath: string, name: string, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_DELETE_CONFIG, projectPath, name, scope),
+  codexToggleMcpConfig: (projectPath: string, name: string, disabled: boolean, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_TOGGLE_CONFIG, projectPath, name, disabled, scope),
 
   // MCP config
   listMcpConfigs: (projectPath: string) =>

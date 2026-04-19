@@ -1,28 +1,34 @@
 import { join } from 'path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { existsSyncMock, readFileSyncMock } = vi.hoisted(() => ({
+const { existsSyncMock, mkdirSyncMock, readFileSyncMock, writeFileSyncMock } = vi.hoisted(() => ({
   existsSyncMock: vi.fn(),
+  mkdirSyncMock: vi.fn(),
   readFileSyncMock: vi.fn(),
+  writeFileSyncMock: vi.fn(),
 }))
 
 const homedirMock = vi.hoisted(() => vi.fn(() => '/home/testuser'))
 
 vi.mock('fs', () => ({
   existsSync: existsSyncMock,
+  mkdirSync: mkdirSyncMock,
   readFileSync: readFileSyncMock,
+  writeFileSync: writeFileSyncMock,
 }))
 
 vi.mock('os', () => ({
   homedir: homedirMock,
 }))
 
-import { listCodexMcpConfigs } from './codex-config-service'
+import { deleteCodexMcpConfig, listCodexMcpConfigs, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
 
 describe('listCodexMcpConfigs', () => {
   beforeEach(() => {
     existsSyncMock.mockReset()
+    mkdirSyncMock.mockReset()
     readFileSyncMock.mockReset()
+    writeFileSyncMock.mockReset()
   })
 
   it('returns empty array when no config files exist', () => {
@@ -178,5 +184,142 @@ model = "gpt-4o"
 
     const result = listCodexMcpConfigs('/project')
     expect(result).toEqual([])
+  })
+})
+
+describe('saveCodexMcpConfig', () => {
+  beforeEach(() => {
+    existsSyncMock.mockReset()
+    mkdirSyncMock.mockReset()
+    readFileSyncMock.mockReset()
+    writeFileSyncMock.mockReset()
+  })
+
+  it('writes a stdio server to user config', () => {
+    existsSyncMock.mockReturnValue(false)
+
+    saveCodexMcpConfig(
+      'filesystem',
+      {
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-filesystem'],
+        env: { HOME: '/home/user' },
+      },
+      'user',
+      '/project',
+    )
+
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/home/testuser', '.codex', 'config.toml'),
+      expect.stringContaining('[mcp_servers.filesystem]'),
+      'utf-8',
+    )
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/home/testuser', '.codex', 'config.toml'),
+      expect.stringContaining('command = "npx"'),
+      'utf-8',
+    )
+  })
+
+  it('writes an http server to project config', () => {
+    existsSyncMock.mockReturnValue(false)
+
+    saveCodexMcpConfig(
+      'remote',
+      {
+        type: 'http',
+        url: 'https://api.example.com/mcp',
+        headers: { Authorization: 'Bearer token' },
+      },
+      'project',
+      '/project',
+    )
+
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/project', '.codex', 'config.toml'),
+      expect.stringContaining('url = "https://api.example.com/mcp"'),
+      'utf-8',
+    )
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/project', '.codex', 'config.toml'),
+      expect.stringContaining('Authorization = "Bearer token"'),
+      'utf-8',
+    )
+  })
+})
+
+describe('toggleCodexMcpConfig', () => {
+  beforeEach(() => {
+    existsSyncMock.mockReset()
+    mkdirSyncMock.mockReset()
+    readFileSyncMock.mockReset()
+    writeFileSyncMock.mockReset()
+  })
+
+  it('writes enabled = false when disabling a server', () => {
+    existsSyncMock.mockReturnValue(true)
+    readFileSyncMock.mockReturnValue(`
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+`)
+
+    toggleCodexMcpConfig('linear', true, 'user', '/project')
+
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/home/testuser', '.codex', 'config.toml'),
+      expect.stringContaining('enabled = false'),
+      'utf-8',
+    )
+  })
+
+  it('writes enabled = true when enabling a server', () => {
+    existsSyncMock.mockReturnValue(true)
+    readFileSyncMock.mockReturnValue(`
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+enabled = false
+`)
+
+    toggleCodexMcpConfig('linear', false, 'user', '/project')
+
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/home/testuser', '.codex', 'config.toml'),
+      expect.stringContaining('enabled = true'),
+      'utf-8',
+    )
+  })
+})
+
+describe('deleteCodexMcpConfig', () => {
+  beforeEach(() => {
+    existsSyncMock.mockReset()
+    mkdirSyncMock.mockReset()
+    readFileSyncMock.mockReset()
+    writeFileSyncMock.mockReset()
+  })
+
+  it('removes the target server from config', () => {
+    existsSyncMock.mockReturnValue(true)
+    readFileSyncMock.mockReturnValue(`
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+
+[mcp_servers.docs]
+url = "https://developers.openai.com/mcp"
+`)
+
+    deleteCodexMcpConfig('linear', 'user', '/project')
+
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/home/testuser', '.codex', 'config.toml'),
+      expect.not.stringContaining('[mcp_servers.linear]'),
+      'utf-8',
+    )
+    expect(writeFileSyncMock).toHaveBeenCalledWith(
+      join('/home/testuser', '.codex', 'config.toml'),
+      expect.stringContaining('[mcp_servers.docs]'),
+      'utf-8',
+    )
   })
 })

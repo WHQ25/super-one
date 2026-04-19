@@ -18,7 +18,7 @@ const codexConfigSchema = z.object({
   extraEnv: z.record(z.string(), z.string()).optional(),
   initializeTimeoutMs: z.number().positive().optional(),
   permissionPreset: z.enum(['default', 'full-access']).optional(),
-  reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high']).optional(),
+  reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
 }).passthrough()
 
 const claudeHarness: Harness = {

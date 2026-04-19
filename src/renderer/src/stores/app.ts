@@ -344,8 +344,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSettingsProvider: (provider) => {
     const currentTab = get().settingsTab
-    // Codex only supports 'skills' and 'mcp' tabs
-    const needsTabSwitch = provider === 'codex' && (currentTab === 'providers' || currentTab === 'agents' || currentTab === 'plugins' || currentTab === 'preferences')
+    const needsTabSwitch = provider === 'codex' && (currentTab === 'providers' || currentTab === 'agents' || currentTab === 'preferences')
     set({
       settingsProvider: provider,
       ...(needsTabSwitch ? { settingsTab: 'skills' } : {}),

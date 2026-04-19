@@ -3,7 +3,7 @@ import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir } from 'fs/promises'
 import { homedir } from 'os'
-import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-security'
+import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { execFileSync, spawn } from 'child_process'
 import { gitRun } from './git-run'
 import { is } from '@electron-toolkit/utils'
@@ -15,7 +15,7 @@ import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getIn
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept } from './mcp/superone-mcp-server'
 import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { fixPath, getNodeRuntime, resolveSdkCli } from './agent/resolve-cli'
+import { fixPath } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
 import { loadSessionStateBySid, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
@@ -49,6 +49,8 @@ import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-
 import { getDb, closeDb, getCachedResources, setCachedResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw } from './database'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
+import { CodexPluginsService } from './codex/codex-plugins-service'
+import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
 import { setCodexServiceFactory } from './session/backends/codex-backend'
 import { AutomationService } from './automation-service'
 import { listAutomationsForProject, createAutomation as dbCreateAutomation, updateAutomation as dbUpdateAutomation, deleteAutomation as dbDeleteAutomation } from './db-automations'
@@ -76,6 +78,7 @@ if (is.dev) {
 
 const agentService = new AgentService()
 const codexService = new CodexExperimentService()
+const codexPluginsService = new CodexPluginsService(codexService)
 setCodexServiceFactory(() => codexService)
 const automationService = new AutomationService()
 function resolveBaseProviderConfig(provider: SessionProvider): unknown {
@@ -476,6 +479,42 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CODEX_SET_AUTH, (_event, projectPath: string, request: CodexSetAuthRequest) => {
     return codexService.setAuth(projectPath, request)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_LIST, (_event, projectPath: string) => {
+    return codexPluginsService.listPlugins(projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_READ, (_event, projectPath: string, key: string) => {
+    return codexPluginsService.readPlugin(projectPath, key)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_READ_FILE, (_event, projectPath: string, key: string, relativePath: string) => {
+    return codexPluginsService.readPluginFile(projectPath, key, relativePath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_DELETE, async (_event, projectPath: string, key: string) => {
+    await codexPluginsService.uninstallPlugin(projectPath, key)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_LIST_MARKETPLACE, (_event, projectPath: string) => {
+    return codexPluginsService.listMarketplacePlugins(projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_INSTALL, async (_event, projectPath: string, key: string) => {
+    await codexPluginsService.installPlugin(projectPath, key)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_MCP_SAVE_CONFIG, (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: 'user' | 'project') => {
+    saveCodexMcpConfig(name, config, scope, projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_MCP_DELETE_CONFIG, (_event, projectPath: string, name: string, scope: 'user' | 'project') => {
+    deleteCodexMcpConfig(name, scope, projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_MCP_TOGGLE_CONFIG, (_event, projectPath: string, name: string, disabled: boolean, scope: 'user' | 'project') => {
+    toggleCodexMcpConfig(name, disabled, scope, projectPath)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLAN_APPROVAL, (_event, _projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) => {
@@ -1306,12 +1345,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ConnectResult> => {
     log.info('[CONNECT_CLAUDE] cwd:', app.getPath('userData'))
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
-    const cliPath = resolveSdkCli()
-    log.info('[CONNECT_CLAUDE] SDK CLI path=%s', cliPath ?? 'none')
-    const runtime = getNodeRuntime()
     const q = query({
       prompt: 'hi',
-      options: { pathToClaudeCodeExecutable: cliPath, executable: runtime.executable as any, env: runtime.env, cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
+      options: { cwd: app.getPath('userData'), maxTurns: 0, permissionMode: 'default' },
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')
@@ -1555,8 +1591,8 @@ app.whenReady().then(() => {
       const filePath = rawPath.replace(/^\/([A-Za-z]:)/, '$1')
       const resolved = resolveRealPath(filePath)
       const folders = getRecentFolders()
-      const tmpDirs = [process.env.TMPDIR, '/tmp', '/private/tmp'].filter(Boolean) as string[]
-      if (!isPathWithinAllowed(resolved, [...folders.map((f) => f.path), ...tmpDirs])) {
+      const allowedRoots = getReadableAssetRoots(folders.map((f) => f.path))
+      if (!isPathWithinAllowed(resolved, allowedRoots)) {
         log.warn('[local-file] blocked path outside project folders:', resolved)
         return new Response('Forbidden', { status: 403 })
       }

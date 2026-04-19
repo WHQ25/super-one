@@ -193,6 +193,15 @@ function readStringArray(value: unknown): string[] {
     .filter((entry): entry is string => entry !== null)
 }
 
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const result: string[] = []
+  for (const value of values) {
+    if (!value || result.includes(value)) continue
+    result.push(value)
+  }
+  return result
+}
+
 function readTextPart(value: unknown): string | null {
   const direct = readString(value)
   if (direct !== null) return direct
@@ -228,6 +237,50 @@ function readNotificationTurnId(params: Record<string, unknown>): string | null 
   return readString(params.turnId)
     ?? readString(params.turn_id)
     ?? readString(asRecord(params.turn)?.id)
+}
+
+function normalizeCollabTool(value: unknown): CodexCollabTool | null {
+  switch (readString(value)) {
+    case 'spawnAgent':
+    case 'spawn_agent':
+      return 'spawnAgent'
+    case 'sendInput':
+    case 'send_input':
+      return 'sendInput'
+    case 'wait':
+    case 'wait_agent':
+      return 'wait'
+    case 'closeAgent':
+    case 'close_agent':
+      return 'closeAgent'
+    case 'resumeAgent':
+    case 'resume_agent':
+      return 'resumeAgent'
+    default:
+      return null
+  }
+}
+
+function normalizeCollabAgentStatus(value: unknown): CodexCollabAgentStatus | null {
+  switch (readString(value)) {
+    case 'pendingInit':
+    case 'pending_init':
+      return 'pendingInit'
+    case 'running':
+      return 'running'
+    case 'completed':
+      return 'completed'
+    case 'errored':
+    case 'error':
+      return 'errored'
+    case 'shutdown':
+      return 'shutdown'
+    case 'notFound':
+    case 'not_found':
+      return 'notFound'
+    default:
+      return null
+  }
 }
 
 function readDeltaText(rec: Record<string, unknown>): string {
@@ -593,13 +646,18 @@ function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadItem): C
     case 'contextCompaction':
       return { id, type: 'compaction' }
 
-    case 'collabAgentToolCall': {
+    case 'collabAgentToolCall':
+    case 'collabToolCall': {
       const prevCollab = previous?.type === 'collab_tool_call' ? previous : null
-      const tool = (readString(rec.tool) ?? prevCollab?.tool ?? 'spawnAgent') as CodexCollabTool
+      const tool = normalizeCollabTool(rec.tool) ?? prevCollab?.tool ?? 'spawnAgent'
       const statusStr = readString(rec.status)
       const status: 'in_progress' | 'completed' = statusStr === 'completed' ? 'completed' : 'in_progress'
       const senderThreadId = readString(rec.senderThreadId) ?? readString(rec.sender_thread_id) ?? prevCollab?.senderThreadId
-      const receiverThreadIds = readStringArray(rec.receiverThreadIds ?? rec.receiver_thread_ids)
+      const receiverThreadIds = uniqueStrings([
+        ...readStringArray(rec.receiverThreadIds ?? rec.receiver_thread_ids),
+        readString(rec.receiverThreadId ?? rec.receiver_thread_id),
+        readString(rec.newThreadId ?? rec.new_thread_id),
+      ])
       const prompt = readString(rec.prompt) ?? prevCollab?.prompt
 
       const agentsStates: Record<string, CodexCollabAgentState> = { ...(prevCollab?.agentsStates ?? {}) }
@@ -611,10 +669,25 @@ function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadItem): C
           const prevAgentState = prevCollab?.agentsStates?.[agentId]
           agentsStates[agentId] = {
             ...prevAgentState,
-            status: (readString(stateRec.status) ?? 'running') as CodexCollabAgentStatus,
+            status: normalizeCollabAgentStatus(stateRec.status) ?? prevAgentState?.status ?? 'running',
             ...(stateRec.nickname != null ? { nickname: readString(stateRec.nickname) ?? undefined } : {}),
             ...(stateRec.role != null ? { role: readString(stateRec.role) ?? undefined } : {}),
             ...(stateRec.message != null ? { message: readString(stateRec.message) ?? undefined } : {}),
+          }
+        }
+      }
+
+      const rawAgentStatus = rec.agentStatus ?? rec.agent_status
+      const agentStatusRec = asRecord(rawAgentStatus)
+      if (!rawStates && receiverThreadIds.length > 0 && rawAgentStatus != null) {
+        for (const agentId of receiverThreadIds) {
+          const prevAgentState = prevCollab?.agentsStates?.[agentId]
+          agentsStates[agentId] = {
+            ...prevAgentState,
+            status: normalizeCollabAgentStatus(agentStatusRec?.status ?? rawAgentStatus) ?? prevAgentState?.status ?? 'running',
+            ...(agentStatusRec?.nickname != null ? { nickname: readString(agentStatusRec.nickname) ?? undefined } : {}),
+            ...(agentStatusRec?.role != null ? { role: readString(agentStatusRec.role) ?? undefined } : {}),
+            ...(agentStatusRec?.message != null ? { message: readString(agentStatusRec.message) ?? undefined } : {}),
           }
         }
       }
@@ -1346,6 +1419,14 @@ export class CodexExperimentService {
     const models = await this.fetchModelsFromAppServer(auth)
     log.info('[codex] listModels: fetched %d models', models.length)
     return models
+  }
+
+  async withAppServerRequest<T>(
+    projectPath: string,
+    fn: (request: AppServerConnection['request']) => Promise<T>,
+  ): Promise<T> {
+    const auth = this.getProjectAuth(projectPath)
+    return this.withAppServerConnection(auth, undefined, async (connection) => fn(connection.request))
   }
 
   private async resolveThread(

@@ -8,6 +8,7 @@ vi.mock('./app', () => ({
 
 const mockWindowApp = {
   toggleMcpConfig: vi.fn().mockResolvedValue(undefined),
+  codexToggleMcpConfig: vi.fn().mockResolvedValue(undefined),
   checkMcpServers: vi.fn().mockResolvedValue({ status: [], meta: {} }),
   listMcpLibrary: vi.fn().mockResolvedValue([]),
   deleteSkill: vi.fn().mockResolvedValue(undefined),
@@ -15,14 +16,25 @@ const mockWindowApp = {
   listSkills: vi.fn().mockResolvedValue([]),
   codexListSkills: vi.fn().mockResolvedValue([]),
   listMcpConfigs: vi.fn().mockResolvedValue([]),
+  codexListMcpConfigs: vi.fn().mockResolvedValue([]),
   saveMcpConfig: vi.fn().mockResolvedValue(undefined),
+  codexSaveMcpConfig: vi.fn().mockResolvedValue(undefined),
   deleteMcpConfig: vi.fn().mockResolvedValue(undefined),
+  codexDeleteMcpConfig: vi.fn().mockResolvedValue(undefined),
   deleteMcpLibraryEntry: vi.fn().mockResolvedValue(undefined),
   installSkill: vi.fn().mockResolvedValue(undefined),
   deletePlugin: vi.fn().mockResolvedValue(undefined),
+  codexDeletePlugin: vi.fn().mockResolvedValue(undefined),
   listPlugins: vi.fn().mockResolvedValue([]),
+  codexListPlugins: vi.fn().mockResolvedValue([]),
   installPlugin: vi.fn().mockResolvedValue(undefined),
+  codexInstallPlugin: vi.fn().mockResolvedValue(undefined),
   listMarketplacePlugins: vi.fn().mockResolvedValue([]),
+  codexListMarketplacePlugins: vi.fn().mockResolvedValue([]),
+  readPlugin: vi.fn().mockResolvedValue(null),
+  codexReadPlugin: vi.fn().mockResolvedValue(null),
+  readPluginFile: vi.fn().mockResolvedValue(null),
+  codexReadPluginFile: vi.fn().mockResolvedValue(null),
 }
 
 vi.stubGlobal('window', { app: mockWindowApp })
@@ -112,6 +124,21 @@ describe('toggleMcpConfig', () => {
     await store.getState().toggleMcpConfig('srv', true, 'project')
 
     expect(mockWindowApp.toggleMcpConfig).toHaveBeenCalledWith('/project', 'srv', true, 'project')
+  })
+
+  it('should use Codex IPC when provider is codex', async () => {
+    vi.mocked(useAppStore.getState).mockReturnValue({
+      currentFolder: '/project',
+      settingsProvider: 'codex',
+    } as ReturnType<typeof useAppStore.getState>)
+    resetStore({
+      codexMcpConfigs: [{ name: 'srv', disabled: false }],
+    })
+
+    await store.getState().toggleMcpConfig('srv', true, 'user')
+
+    expect(mockWindowApp.codexToggleMcpConfig).toHaveBeenCalledWith('/project', 'srv', true, 'user')
+    expect(mockWindowApp.toggleMcpConfig).not.toHaveBeenCalled()
   })
 
   it('should only update the matching server in configs and status', async () => {
@@ -206,6 +233,18 @@ describe('deleteMcpConfig', () => {
     expect(mockWindowApp.deleteMcpConfig).toHaveBeenCalledWith('/project', 'srv', 'user')
     expect(store.getState().selectedMcpName).toBeNull()
   })
+
+  it('should use Codex delete path when provider is codex', async () => {
+    vi.mocked(useAppStore.getState).mockReturnValue({
+      currentFolder: '/project',
+      settingsProvider: 'codex',
+    } as ReturnType<typeof useAppStore.getState>)
+
+    await store.getState().deleteMcpConfig('srv', 'user')
+
+    expect(mockWindowApp.codexDeleteMcpConfig).toHaveBeenCalledWith('/project', 'srv', 'user')
+    expect(mockWindowApp.deleteMcpConfig).not.toHaveBeenCalled()
+  })
 })
 
 describe('saveMcpConfig', () => {
@@ -217,6 +256,20 @@ describe('saveMcpConfig', () => {
     expect(mockWindowApp.saveMcpConfig).toHaveBeenCalledWith('/project', 'new-srv', config, 'user')
     expect(mockWindowApp.listMcpConfigs).toHaveBeenCalled()
     expect(mockWindowApp.checkMcpServers).toHaveBeenCalled()
+  })
+
+  it('should use Codex save path when provider is codex', async () => {
+    vi.mocked(useAppStore.getState).mockReturnValue({
+      currentFolder: '/project',
+      settingsProvider: 'codex',
+    } as ReturnType<typeof useAppStore.getState>)
+
+    const config = { command: 'node', args: ['server.js'] }
+    await store.getState().saveMcpConfig('new-srv', config, 'user')
+
+    expect(mockWindowApp.codexSaveMcpConfig).toHaveBeenCalledWith('/project', 'new-srv', config, 'user')
+    expect(mockWindowApp.saveMcpConfig).not.toHaveBeenCalled()
+    expect(mockWindowApp.codexListMcpConfigs).toHaveBeenCalled()
   })
 })
 
@@ -248,6 +301,18 @@ describe('deletePlugin', () => {
     expect(store.getState().pluginFilePath).toBeNull()
     expect(mockWindowApp.listPlugins).toHaveBeenCalled()
   })
+
+  it('should use Codex delete path when provider is codex', async () => {
+    vi.mocked(useAppStore.getState).mockReturnValue({
+      currentFolder: '/project',
+      settingsProvider: 'codex',
+    } as ReturnType<typeof useAppStore.getState>)
+
+    await store.getState().deletePlugin('test', 'user')
+
+    expect(mockWindowApp.codexDeletePlugin).toHaveBeenCalledWith('/project', 'test', 'user')
+    expect(mockWindowApp.deletePlugin).not.toHaveBeenCalled()
+  })
 })
 
 describe('installPlugin', () => {
@@ -257,6 +322,20 @@ describe('installPlugin', () => {
     expect(mockWindowApp.installPlugin).toHaveBeenCalledWith('/project', 'my-plugin', 'user')
     expect(mockWindowApp.listPlugins).toHaveBeenCalled()
     expect(mockWindowApp.listMarketplacePlugins).toHaveBeenCalled()
+  })
+
+  it('should use Codex install path when provider is codex', async () => {
+    vi.mocked(useAppStore.getState).mockReturnValue({
+      currentFolder: '/project',
+      settingsProvider: 'codex',
+    } as ReturnType<typeof useAppStore.getState>)
+
+    await store.getState().installPlugin('my-plugin', 'user')
+
+    expect(mockWindowApp.codexInstallPlugin).toHaveBeenCalledWith('/project', 'my-plugin', 'user')
+    expect(mockWindowApp.installPlugin).not.toHaveBeenCalled()
+    expect(mockWindowApp.codexListPlugins).toHaveBeenCalled()
+    expect(mockWindowApp.codexListMarketplacePlugins).toHaveBeenCalled()
   })
 })
 

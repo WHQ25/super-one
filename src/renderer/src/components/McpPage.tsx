@@ -31,22 +31,35 @@ export function McpIcon({ name, meta, size = 'sm' }: { name: string; meta?: McpS
   )
 }
 
-function ServerCard({ config, status, meta, readOnly }: { config: McpServerConfig; status?: McpServerInfo; meta?: McpServerMeta; readOnly?: boolean }) {
+function ServerCard({
+  config,
+  status,
+  meta,
+  interactive = true,
+  statusMode = 'live',
+}: {
+  config: McpServerConfig
+  status?: McpServerInfo
+  meta?: McpServerMeta
+  interactive?: boolean
+  statusMode?: 'live' | 'managed'
+}) {
   const { selectMcp, toggleMcpConfig, checkMcpServers } = useSettingsStore()
   const [reconnecting, setReconnecting] = useState(false)
-  const serverStatus = status?.status ?? (config.disabled ? 'disabled' : readOnly ? 'connected' : 'pending')
+  const isManaged = statusMode === 'managed'
+  const serverStatus = status?.status ?? (config.disabled ? 'disabled' : isManaged ? 'connected' : 'pending')
   const isEnabled = !config.disabled
   const isConnected = serverStatus === 'connected'
   const isPending = serverStatus === 'pending' || reconnecting
   const isFailed = isEnabled && !isConnected && !isPending
   const toolCount = status?.toolCount ?? 0
 
-  const dotColor = readOnly
+  const dotColor = isManaged
     ? (config.disabled ? 'bg-red-500' : 'bg-green-500')
     : (isConnected ? 'bg-green-500' : isPending ? 'bg-yellow-500' : 'bg-red-500')
   const statusText = config.disabled
     ? 'disabled'
-    : readOnly
+    : isManaged
       ? config.type
       : isPending
         ? 'connecting...'
@@ -66,10 +79,10 @@ function ServerCard({ config, status, meta, readOnly }: { config: McpServerConfi
 
   return (
     <div
-      onClick={() => !readOnly && selectMcp(config.name)}
+      onClick={() => interactive && selectMcp(config.name)}
       className={cn(
         'flex items-center gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors',
-        !readOnly && 'cursor-pointer hover:bg-accent/50',
+        interactive && 'cursor-pointer hover:bg-accent/50',
         config.disabled && 'opacity-50'
       )}
     >
@@ -77,7 +90,7 @@ function ServerCard({ config, status, meta, readOnly }: { config: McpServerConfi
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium truncate">{config.name}</p>
-          {!readOnly && isFailed && (
+          {!isManaged && isFailed && (
             <button
               onClick={handleReconnect}
               className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground transition-colors"
@@ -91,7 +104,7 @@ function ServerCard({ config, status, meta, readOnly }: { config: McpServerConfi
           <span className="text-xs text-muted-foreground">{statusText}</span>
         </div>
       </div>
-      {!readOnly && (
+      {interactive && (
         <>
           <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
             <Switch
@@ -690,14 +703,35 @@ function ClaudeAiSection({ servers, loading, onToggle }: { servers: McpServerInf
   )
 }
 
-function ServerSection({ title, configs, mcpStatus, mcpMeta, readOnly }: { title: string; configs: McpServerConfig[]; mcpStatus: McpServerInfo[]; mcpMeta: Record<string, McpServerMeta>; readOnly?: boolean }) {
+function ServerSection({
+  title,
+  configs,
+  mcpStatus,
+  mcpMeta,
+  interactive = true,
+  statusMode = 'live',
+}: {
+  title: string
+  configs: McpServerConfig[]
+  mcpStatus: McpServerInfo[]
+  mcpMeta: Record<string, McpServerMeta>
+  interactive?: boolean
+  statusMode?: 'live' | 'managed'
+}) {
   if (configs.length === 0) return null
   return (
     <div>
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
       <div className="grid grid-cols-2 gap-3">
         {configs.map((config) => (
-          <ServerCard key={config.name} config={config} status={mcpStatus.find((s) => s.name === config.name)} meta={mcpMeta[config.name]} readOnly={readOnly} />
+          <ServerCard
+            key={config.name}
+            config={config}
+            status={mcpStatus.find((s) => s.name === config.name)}
+            meta={mcpMeta[config.name]}
+            interactive={interactive}
+            statusMode={statusMode}
+          />
         ))}
       </div>
     </div>
@@ -737,17 +771,26 @@ export function McpPage() {
 
   const claudeaiServers = isCodex ? [] : mcpStatus.filter((s) => s.scope === 'claudeai')
 
-  if (!isCodex && selectedMcpName) {
-    const claudeaiServer = claudeaiServers.find((s) => s.name === selectedMcpName)
-    if (claudeaiServer) return <ClaudeAiDetailPage server={claudeaiServer} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />
-    const config = mcpConfigs.find((c) => c.name === selectedMcpName)
-    const status = mcpStatus.find((s) => s.name === selectedMcpName)
-    if (config) return <McpDetailPage config={config} status={status} meta={mcpMeta[config.name]} />
-  }
-
   const currentConfigs = isCodex ? codexMcpConfigs : mcpConfigs
   const userConfigs = currentConfigs.filter((c) => c.scope === 'user')
   const projectConfigs = currentConfigs.filter((c) => c.scope === 'project')
+  const codexCardStatus = currentConfigs.map((config) => ({
+    name: config.name,
+    scope: config.scope,
+    status: config.disabled ? 'disabled' : 'connected',
+    toolCount: 0,
+    tools: [],
+  })) as McpServerInfo[]
+
+  if (selectedMcpName) {
+    if (!isCodex) {
+      const claudeaiServer = claudeaiServers.find((s) => s.name === selectedMcpName)
+      if (claudeaiServer) return <ClaudeAiDetailPage server={claudeaiServer} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />
+    }
+    const config = currentConfigs.find((c) => c.name === selectedMcpName)
+    const status = (isCodex ? codexCardStatus : mcpStatus).find((s) => s.name === selectedMcpName)
+    if (config) return <McpDetailPage config={config} status={status} meta={isCodex ? undefined : mcpMeta[config.name]} />
+  }
 
   const hasAnyServer = currentConfigs.length > 0 || claudeaiServers.length > 0
 
@@ -757,34 +800,29 @@ export function McpPage() {
         <div>
           <h2 className="text-lg font-semibold">MCP Servers</h2>
           <p className="text-sm text-muted-foreground">Manage Model Context Protocol server configurations</p>
-          {isCodex && (
-            <p className="mt-1 text-xs text-muted-foreground">Codex MCP configurations are currently read-only</p>
-          )}
         </div>
         <div className="flex gap-2">
           <ProjectSelector mode="switch" />
           {!isCodex && (
-            <>
-              <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing}>
-                <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-                Refresh
-              </Button>
-              {mcpLibrary.length > 0 && (
-                <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}>
-                  <Library className="size-4" />
-                  Library
-                </Button>
-              )}
-              <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}>
-                <Plus className="size-4" />
-                Add Server
-              </Button>
-            </>
+            <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing}>
+              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+              Refresh
+            </Button>
           )}
+          {!isCodex && mcpLibrary.length > 0 && (
+            <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}>
+              <Library className="size-4" />
+              Library
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}>
+            <Plus className="size-4" />
+            Add Server
+          </Button>
         </div>
       </div>
 
-      {!isCodex && addView === 'form' && (
+      {addView === 'form' && (
         <div className="mb-4">
           <AddServerForm onClose={() => setAddView('none')} />
         </div>
@@ -806,8 +844,20 @@ export function McpPage() {
       ) : (
         <div className="space-y-6">
           <ClaudeAiSection servers={claudeaiServers} loading={checking} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />
-          <ServerSection title="User" configs={userConfigs} mcpStatus={isCodex ? [] : mcpStatus} mcpMeta={isCodex ? {} : mcpMeta} readOnly={isCodex} />
-          <ServerSection title="Project" configs={projectConfigs} mcpStatus={isCodex ? [] : mcpStatus} mcpMeta={isCodex ? {} : mcpMeta} readOnly={isCodex} />
+          <ServerSection
+            title="User"
+            configs={userConfigs}
+            mcpStatus={isCodex ? codexCardStatus : mcpStatus}
+            mcpMeta={isCodex ? {} : mcpMeta}
+            statusMode={isCodex ? 'managed' : 'live'}
+          />
+          <ServerSection
+            title="Project"
+            configs={projectConfigs}
+            mcpStatus={isCodex ? codexCardStatus : mcpStatus}
+            mcpMeta={isCodex ? {} : mcpMeta}
+            statusMode={isCodex ? 'managed' : 'live'}
+          />
         </div>
       )}
     </div>

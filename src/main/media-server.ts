@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'http'
 import { createReadStream, statSync } from 'fs'
 import { extname } from 'path'
-import { resolveRealPath, isPathWithinAllowed } from './path-security'
+import { resolveRealPath, isPathWithinAllowed, getReadableAssetRoots } from './path-security'
 import { getRecentFolders } from './recent-folders'
 import log from './logger'
 
@@ -16,9 +16,7 @@ let server: Server | null = null
 let port = 0
 
 function getAllowedRoots(): string[] {
-  const folders = getRecentFolders().map((f) => f.path)
-  const tmpDirs = [process.env.TMPDIR, '/tmp', '/private/tmp'].filter(Boolean) as string[]
-  return [...folders, ...tmpDirs]
+  return getReadableAssetRoots(getRecentFolders().map((f) => f.path))
 }
 
 export function startMediaServer(): Promise<number> {

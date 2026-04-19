@@ -98,8 +98,19 @@ interface AppAPI {
   codexReadSkillFile(projectPath: string, skillName: string, relativePath: string): Promise<string | null>
   codexDeleteSkill(projectPath: string, name: string, scope: ResourceScope): Promise<void>
 
+  // Codex Plugins
+  codexListPlugins(projectPath: string): Promise<PluginInfo[]>
+  codexReadPlugin(projectPath: string, key: string): Promise<PluginDetail | null>
+  codexReadPluginFile(projectPath: string, pluginKey: string, relativePath: string): Promise<string | null>
+  codexDeletePlugin(projectPath: string, key: string, scope: ResourceScope): Promise<void>
+  codexListMarketplacePlugins(projectPath: string): Promise<MarketplacePlugin[]>
+  codexInstallPlugin(projectPath: string, key: string, scope: ResourceScope): Promise<void>
+
   // Codex MCP config
   codexListMcpConfigs(projectPath: string): Promise<McpServerConfig[]>
+  codexSaveMcpConfig(projectPath: string, name: string, config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>, scope: ResourceScope): Promise<void>
+  codexDeleteMcpConfig(projectPath: string, name: string, scope: ResourceScope): Promise<void>
+  codexToggleMcpConfig(projectPath: string, name: string, disabled: boolean, scope: ResourceScope): Promise<void>
 
   // MCP config
   listMcpConfigs(projectPath: string): Promise<McpServerConfig[]>

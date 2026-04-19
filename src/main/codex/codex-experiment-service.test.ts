@@ -226,6 +226,96 @@ describe('CodexExperimentService child thread routing', () => {
     })
     expect(onItemDelta.mock.calls.some(([, item]) => item?.type === 'agent_message')).toBe(false)
   })
+
+  it('normalizes modern collabToolCall payloads into the legacy internal shape', async () => {
+    const service = new CodexExperimentService()
+    const session = { ...createSession('/project', null), threadId: 'main-thread' }
+    const notifications = [
+      {
+        method: 'item/completed',
+        params: {
+          threadId: 'main-thread',
+          item: {
+            id: 'collab-2',
+            type: 'collabToolCall',
+            tool: 'spawn_agent',
+            status: 'completed',
+            receiverThreadId: 'child-2',
+            agentStatus: {
+              status: 'pending_init',
+              nickname: 'worker-2',
+              role: 'explorer',
+            },
+          },
+        },
+      },
+      {
+        method: 'item/started',
+        params: {
+          threadId: 'child-2',
+          item: {
+            id: 'child-msg-2',
+            type: 'agent_message',
+            text: 'child hi',
+          },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: {
+          turn: {
+            status: 'completed',
+          },
+        },
+      },
+    ]
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    }
+
+    const result = await (service as any).streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta: vi.fn() },
+    )
+
+    expect(mockConnection.request).toHaveBeenCalledWith('thread/resume', {
+      threadId: 'child-2',
+      persistExtendedHistory: false,
+    })
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]).toMatchObject({
+      id: 'collab-2',
+      type: 'collab_tool_call',
+      tool: 'spawnAgent',
+      receiverThreadIds: ['child-2'],
+      agentsStates: {
+        'child-2': {
+          status: 'pendingInit',
+          nickname: 'worker-2',
+          role: 'explorer',
+        },
+      },
+      childItems: {
+        'child-2': [
+          {
+            id: 'child-msg-2',
+            type: 'agent_message',
+            text: 'child hi',
+          },
+        ],
+      },
+    })
+  })
 })
 
 describe('CodexExperimentService run', () => {

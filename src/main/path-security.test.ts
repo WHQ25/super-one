@@ -1,6 +1,6 @@
 import { resolve } from 'path'
 import { describe, it, expect } from 'vitest'
-import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-security'
+import { getReadableAssetRoots, resolveRealPath, isPathWithinAllowed, sanitizeGitRef } from './path-security'
 
 describe('resolveRealPath', () => {
   it('resolves relative path to absolute', () => {
@@ -75,3 +75,24 @@ describe('sanitizeGitRef', () => {
   })
 })
 
+describe('getReadableAssetRoots', () => {
+  it('includes project roots, temp roots, and codex plugin cache root', () => {
+    expect(getReadableAssetRoots(['/projects/myapp'], { homeDir: '/Users/alice', tmpDir: '/var/tmp/test' })).toEqual([
+      '/projects/myapp',
+      '/var/tmp/test',
+      '/tmp',
+      '/private/tmp',
+      '/Users/alice/.codex/.tmp/plugins',
+      '/Users/alice/.codex/.tmp/bundled-marketplaces',
+    ])
+  })
+
+  it('deduplicates repeated roots', () => {
+    expect(getReadableAssetRoots(['/tmp'], { homeDir: '/Users/alice', tmpDir: '/tmp' })).toEqual([
+      '/tmp',
+      '/private/tmp',
+      '/Users/alice/.codex/.tmp/plugins',
+      '/Users/alice/.codex/.tmp/bundled-marketplaces',
+    ])
+  })
+})

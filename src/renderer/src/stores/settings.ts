@@ -193,6 +193,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   saveMcpConfig: async (name, config, scope) => {
     const pp = getProjectPath()
+    const provider = useAppStore.getState().settingsProvider
+    if (provider === 'codex') {
+      await window.app.codexSaveMcpConfig(pp, name, config, scope)
+      await get().fetchCodexMcpConfigs()
+      return
+    }
     await window.app.saveMcpConfig(pp, name, config, scope)
     await get().fetchMcpConfigs()
     await get().checkMcpServers()
@@ -200,6 +206,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   deleteMcpConfig: async (name, scope) => {
     const pp = getProjectPath()
+    const provider = useAppStore.getState().settingsProvider
+    if (provider === 'codex') {
+      await window.app.codexDeleteMcpConfig(pp, name, scope)
+      set({ selectedMcpName: null })
+      await get().fetchCodexMcpConfigs()
+      return
+    }
     await window.app.deleteMcpConfig(pp, name, scope)
     set({ selectedMcpName: null })
     await get().fetchMcpConfigs()
@@ -207,6 +220,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   toggleMcpConfig: async (name, disabled, scope) => {
+    const provider = useAppStore.getState().settingsProvider
+    if (provider === 'codex') {
+      set((state) => ({
+        codexMcpConfigs: state.codexMcpConfigs.map((c) =>
+          c.name === name ? { ...c, disabled } : c
+        ),
+      }))
+      const pp = getProjectPath()
+      await window.app.codexToggleMcpConfig(pp, name, disabled, scope)
+      await get().fetchCodexMcpConfigs()
+      return
+    }
     // Optimistic update: flip config + set pending status immediately
     set((state) => ({
       mcpConfigs: state.mcpConfigs.map((c) =>
@@ -250,19 +275,28 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   fetchPlugins: async () => {
     const pp = getProjectPath()
-    const plugins = await window.app.listPlugins(pp)
+    const provider = useAppStore.getState().settingsProvider
+    const plugins = provider === 'codex'
+      ? await window.app.codexListPlugins(pp)
+      : await window.app.listPlugins(pp)
     set({ plugins })
   },
 
   readPlugin: async (key) => {
     const pp = getProjectPath()
-    const detail = await window.app.readPlugin(pp, key)
+    const provider = useAppStore.getState().settingsProvider
+    const detail = provider === 'codex'
+      ? await window.app.codexReadPlugin(pp, key)
+      : await window.app.readPlugin(pp, key)
     set({ pluginDetail: detail })
   },
 
   readPluginFile: async (pluginKey, relativePath) => {
     const pp = getProjectPath()
-    const content = await window.app.readPluginFile(pp, pluginKey, relativePath)
+    const provider = useAppStore.getState().settingsProvider
+    const content = provider === 'codex'
+      ? await window.app.codexReadPluginFile(pp, pluginKey, relativePath)
+      : await window.app.readPluginFile(pp, pluginKey, relativePath)
     set({ pluginFileContent: content, pluginFilePath: relativePath })
   },
 
@@ -270,7 +304,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   deletePlugin: async (key, scope) => {
     const pp = getProjectPath()
-    await window.app.deletePlugin(pp, key, scope)
+    const provider = useAppStore.getState().settingsProvider
+    if (provider === 'codex') {
+      await window.app.codexDeletePlugin(pp, key, scope)
+    } else {
+      await window.app.deletePlugin(pp, key, scope)
+    }
     set({ pluginDetail: null, pluginFileContent: null, pluginFilePath: null })
     await get().fetchPlugins()
   },
@@ -278,7 +317,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   fetchMarketplacePlugins: async () => {
     try {
       const pp = getProjectPath()
-      const marketplacePlugins = await window.app.listMarketplacePlugins(pp)
+      const provider = useAppStore.getState().settingsProvider
+      const marketplacePlugins = provider === 'codex'
+        ? await window.app.codexListMarketplacePlugins(pp)
+        : await window.app.listMarketplacePlugins(pp)
       set({ marketplacePlugins })
     } catch {
       // ignore
@@ -287,7 +329,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   installPlugin: async (key, scope) => {
     const pp = getProjectPath()
-    await window.app.installPlugin(pp, key, scope)
+    const provider = useAppStore.getState().settingsProvider
+    if (provider === 'codex') {
+      await window.app.codexInstallPlugin(pp, key, scope)
+    } else {
+      await window.app.installPlugin(pp, key, scope)
+    }
     await get().fetchPlugins()
     await get().fetchMarketplacePlugins()
   },

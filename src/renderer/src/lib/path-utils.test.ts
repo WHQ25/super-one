@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shortenPath, homePath, toLocalFileUrl } from './path-utils'
+import { shortenPath, homePath, resolveAssetUrls, toAssetUrl, toLocalFileUrl } from './path-utils'
 
 describe('shortenPath', () => {
   it('returns relative path when shortest', () => {
@@ -95,5 +95,42 @@ describe('toLocalFileUrl', () => {
 
   it('encodes hash signs in filenames', () => {
     expect(toLocalFileUrl('/Users/alice/file#1.png')).toBe('local-file:///Users/alice/file%231.png')
+  })
+})
+
+describe('toAssetUrl', () => {
+  it('passes through remote urls', () => {
+    expect(toAssetUrl('https://example.com/logo.png')).toBe('https://example.com/logo.png')
+  })
+
+  it('converts absolute local paths', () => {
+    expect(toAssetUrl('/Users/alice/project/logo.png')).toBe('local-file:///Users/alice/project/logo.png')
+  })
+
+  it('converts windows absolute local paths', () => {
+    expect(toAssetUrl('C:\\Users\\alice\\project\\logo.png')).toBe('local-file:///C:/Users/alice/project/logo.png')
+  })
+
+  it('drops unresolved relative paths', () => {
+    expect(toAssetUrl('./assets/logo.png')).toBeNull()
+  })
+})
+
+describe('resolveAssetUrls', () => {
+  it('keeps valid asset urls in order', () => {
+    expect(resolveAssetUrls(['https://example.com/logo.png', '/Users/alice/project/icon.png'])).toEqual([
+      'https://example.com/logo.png',
+      'local-file:///Users/alice/project/icon.png',
+    ])
+  })
+
+  it('deduplicates repeated urls', () => {
+    expect(resolveAssetUrls(['/Users/alice/project/icon.png', '/Users/alice/project/icon.png'])).toEqual([
+      'local-file:///Users/alice/project/icon.png',
+    ])
+  })
+
+  it('drops unresolved relative urls', () => {
+    expect(resolveAssetUrls(['./assets/logo.png', null, undefined])).toEqual([])
   })
 })

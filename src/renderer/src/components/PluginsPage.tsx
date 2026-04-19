@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
 import {
   ArrowLeft,
   ChevronDown,
@@ -6,10 +6,6 @@ import {
   ExternalLink,
   Folder,
   FolderOpen,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Code,
-  BookOpen,
   Search,
   Download,
   Terminal,
@@ -31,7 +27,18 @@ import { Button } from '@/components/ui/button'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
-import type { MarketplacePlugin, PluginInfo, ResourceScope, SkillFileEntry } from '../../../shared/agent-types'
+import { resolveAssetUrls } from '@/lib/path-utils'
+import type {
+  MarketplacePlugin,
+  PluginAppSummary,
+  PluginAuthPolicy,
+  PluginDetail,
+  PluginInfo,
+  PluginInstallPolicy,
+  PluginSkillSummary,
+  ResourceScope,
+  SkillFileEntry,
+} from '../../../shared/agent-types'
 import { cn } from '@/lib/utils'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
@@ -174,6 +181,234 @@ function buildPath(prefix: string, name: string): string {
   return prefix ? `${prefix}/${name}` : name
 }
 
+function PluginAvatar({ name, iconPath, logoPath, className }: { name: string; iconPath?: string; logoPath?: string; className?: string }) {
+  const [failedSrcs, setFailedSrcs] = useState<string[]>([])
+  const candidates = useMemo(() => resolveAssetUrls([logoPath, iconPath]), [iconPath, logoPath])
+  const src = candidates.find((candidate) => !failedSrcs.includes(candidate))
+
+  useEffect(() => {
+    setFailedSrcs([])
+  }, [candidates])
+
+  if (src) {
+    return (
+      <div className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-white', className)}>
+        <img
+          src={src}
+          alt={name}
+          onError={() => setFailedSrcs((current) => current.includes(src) ? current : [...current, src])}
+          className="size-full object-cover"
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn('flex shrink-0 items-center justify-center rounded-full bg-muted font-medium uppercase text-muted-foreground', className)}>
+      {name[0]}
+    </div>
+  )
+}
+
+function humanizePolicy(value: PluginInstallPolicy | PluginAuthPolicy | undefined): string | null {
+  if (!value) return null
+  return value.toLowerCase().split('_').map((part) => part[0]?.toUpperCase() + part.slice(1)).join(' ')
+}
+
+function getPluginTitle(plugin: { name: string; displayName?: string }): string {
+  return plugin.displayName || plugin.name
+}
+
+function MetaPill({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-muted px-2 py-1 text-[10px] font-medium text-muted-foreground">
+      {children}
+    </span>
+  )
+}
+
+function DetailGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
+      {children}
+    </div>
+  )
+}
+
+function DetailLink({ label, href }: { label: string; href?: string }) {
+  if (!href) return null
+  return (
+    <button
+      onClick={() => window.open(href)}
+      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+    >
+      {label}
+      <ExternalLink className="size-3" />
+    </button>
+  )
+}
+
+function PluginAppsList({ apps }: { apps: PluginAppSummary[] }) {
+  if (apps.length === 0) return null
+  return (
+    <DetailGroup title="Apps">
+      <div className="flex flex-col gap-2">
+        {apps.map((app) => (
+          <div key={app.id} className="rounded-md border border-border bg-background p-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">{app.name}</span>
+              {app.needsAuth && <MetaPill>Needs auth</MetaPill>}
+            </div>
+            {app.description && <p className="mt-1 text-xs text-muted-foreground">{app.description}</p>}
+            {app.installUrl && (
+              <div className="mt-2">
+                <DetailLink label="Install" href={app.installUrl} />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </DetailGroup>
+  )
+}
+
+function PluginSkillsList({ skills }: { skills: PluginSkillSummary[] }) {
+  if (skills.length === 0) return null
+  return (
+    <DetailGroup title="Skills">
+      <div className="flex flex-col gap-2">
+        {skills.map((skill) => (
+          <div key={skill.path} className="rounded-md border border-border bg-background p-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">{skill.displayName || skill.name}</span>
+              {!skill.enabled && <MetaPill>Disabled</MetaPill>}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{skill.shortDescription || skill.description}</p>
+          </div>
+        ))}
+      </div>
+    </DetailGroup>
+  )
+}
+
+function PluginScreenshots({ screenshots }: { screenshots: string[] }) {
+  const imageUrls = useMemo(() => resolveAssetUrls(screenshots), [screenshots])
+  if (imageUrls.length === 0) return null
+  return (
+    <DetailGroup title="Screenshots">
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {imageUrls.map((src) => (
+          <img
+            key={src}
+            src={src}
+            alt="plugin screenshot"
+            className="h-24 w-40 shrink-0 rounded-md border border-border bg-white object-cover"
+          />
+        ))}
+      </div>
+    </DetailGroup>
+  )
+}
+
+function PluginDetailsPanel({
+  plugin,
+  apps,
+  skills,
+  mcpServers,
+}: {
+  plugin: PluginInfo | MarketplacePlugin | PluginDetail
+  apps?: PluginAppSummary[]
+  skills?: PluginSkillSummary[]
+  mcpServers?: string[]
+}) {
+  const longDescription = plugin.longDescription && plugin.longDescription !== plugin.description
+    ? plugin.longDescription
+    : null
+  const installPolicy = humanizePolicy(plugin.installPolicy)
+  const authPolicy = humanizePolicy(plugin.authPolicy)
+  const prompts = plugin.defaultPrompts ?? []
+  const capabilities = plugin.capabilities ?? []
+  const screenshots = plugin.screenshots ?? []
+  const metadata = [
+    'version' in plugin && plugin.version ? `Version ${plugin.version}` : null,
+    plugin.category,
+    plugin.brandColor ? `Brand ${plugin.brandColor}` : null,
+    plugin.enabled === false ? 'Disabled' : null,
+    installPolicy ? `Install ${installPolicy}` : null,
+    authPolicy ? `Auth ${authPolicy}` : null,
+  ].filter((value): value is string => !!value)
+
+  return (
+    <div className="space-y-4 p-3">
+      {longDescription && (
+        <DetailGroup title="Overview">
+          <p className="text-sm text-muted-foreground">{longDescription}</p>
+        </DetailGroup>
+      )}
+
+      {metadata.length > 0 && (
+        <DetailGroup title="Metadata">
+          <div className="flex flex-wrap gap-1.5">
+            {metadata.map((value) => (
+              <MetaPill key={value}>{value}</MetaPill>
+            ))}
+          </div>
+        </DetailGroup>
+      )}
+
+      {(capabilities.length > 0 || mcpServers?.length) && (
+        <div className="grid gap-3 md:grid-cols-2">
+          {capabilities.length > 0 && (
+            <DetailGroup title="Capabilities">
+              <div className="flex flex-wrap gap-1.5">
+                {capabilities.map((capability) => (
+                  <MetaPill key={capability}>{capability}</MetaPill>
+                ))}
+              </div>
+            </DetailGroup>
+          )}
+          {(mcpServers?.length ?? 0) > 0 && (
+            <DetailGroup title="MCP Servers">
+              <div className="flex flex-wrap gap-1.5">
+                {mcpServers?.map((server) => (
+                  <MetaPill key={server}>{server}</MetaPill>
+                ))}
+              </div>
+            </DetailGroup>
+          )}
+        </div>
+      )}
+
+      {(plugin.websiteUrl || plugin.privacyPolicyUrl || plugin.termsOfServiceUrl) && (
+        <DetailGroup title="Links">
+          <div className="flex flex-wrap gap-2">
+            <DetailLink label="Website" href={plugin.websiteUrl} />
+            <DetailLink label="Privacy" href={plugin.privacyPolicyUrl} />
+            <DetailLink label="Terms" href={plugin.termsOfServiceUrl} />
+          </div>
+        </DetailGroup>
+      )}
+
+      {prompts.length > 0 && (
+        <DetailGroup title="Starter Prompts">
+          <div className="flex flex-wrap gap-2">
+            {prompts.map((prompt) => (
+              <span key={prompt} className="rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground">
+                {prompt}
+              </span>
+            ))}
+          </div>
+        </DetailGroup>
+      )}
+
+      <PluginScreenshots screenshots={screenshots} />
+      <PluginSkillsList skills={skills ?? []} />
+      <PluginAppsList apps={apps ?? []} />
+    </div>
+  )
+}
+
 // --- File tree ---
 
 function FileTreeNode({
@@ -302,10 +537,8 @@ function ContentBadges({ plugin }: { plugin: PluginInfo }) {
 // --- Installed plugin card ---
 
 function PluginCard({ plugin }: { plugin: PluginInfo }) {
-  const { pluginDetail, pluginFileContent, pluginFilePath, readPlugin, readPluginFile, clearPluginDetail } = useSettingsStore()
+  const { pluginDetail, readPlugin, clearPluginDetail } = useSettingsStore()
   const isExpanded = pluginDetail?.key === plugin.key
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [mdRawView, setMdRawView] = useState(false)
 
   const handleToggle = () => {
     if (isExpanded) {
@@ -315,13 +548,6 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
     }
   }
 
-  const handleFileSelect = useCallback(
-    (_key: string, relativePath: string) => {
-      readPluginFile(plugin.key, relativePath)
-    },
-    [readPluginFile, plugin.key]
-  )
-
   return (
     <div className="rounded-lg border border-border bg-card">
       <div
@@ -329,12 +555,10 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
         onClick={handleToggle}
         className="flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
       >
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted font-medium uppercase text-muted-foreground text-sm">
-          {plugin.name[0]}
-        </div>
+        <PluginAvatar name={plugin.name} iconPath={plugin.iconPath} logoPath={plugin.logoPath} className="size-9 text-sm" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{plugin.name}</span>
+            <span className="text-sm font-medium">{getPluginTitle(plugin)}</span>
             {plugin.author && (
               <span className="text-xs text-muted-foreground">by {plugin.author}</span>
             )}
@@ -356,55 +580,13 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
       </div>
 
       {isExpanded && pluginDetail && (
-        <div className="flex border-t border-border" style={{ height: 320 }}>
-          {sidebarOpen && (
-            <div className="w-[200px] shrink-0 overflow-y-auto border-r border-border p-2">
-              <FileTree
-                entries={pluginDetail.files}
-                itemKey={plugin.key}
-                selectedPath={pluginFilePath}
-                onSelect={handleFileSelect}
-              />
-            </div>
-          )}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex items-center gap-1.5 shrink-0 border-b border-border px-2 py-1">
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
-              >
-                {sidebarOpen ? <PanelLeftClose className="size-3.5" /> : <PanelLeftOpen className="size-3.5" />}
-              </button>
-              {pluginFilePath && (
-                <span className="flex-1 text-[11px] text-muted-foreground truncate">{pluginFilePath}</span>
-              )}
-              {pluginFilePath && isMarkdown(pluginFilePath) && (
-                <button
-                  onClick={() => setMdRawView(!mdRawView)}
-                  className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
-                  title={mdRawView ? 'Preview' : 'Source'}
-                >
-                  {mdRawView ? <BookOpen className="size-3.5" /> : <Code className="size-3.5" />}
-                </button>
-              )}
-            </div>
-            <div className="flex-1 overflow-auto p-2">
-              {pluginFileContent != null && pluginFilePath ? (
-                isMarkdown(pluginFilePath) && !mdRawView ? (
-                  <MarkdownView content={pluginFileContent} />
-                ) : (
-                  <FileContentView
-                    code={pluginFileContent}
-                    language={inferLanguage(pluginFilePath)}
-                  />
-                )
-              ) : (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                  Select a file to preview
-                </div>
-              )}
-            </div>
-          </div>
+        <div className="border-t border-border">
+          <PluginDetailsPanel
+            plugin={pluginDetail}
+            apps={pluginDetail.apps}
+            skills={pluginDetail.skills}
+            mcpServers={pluginDetail.mcpServers}
+          />
         </div>
       )}
     </div>
@@ -427,9 +609,19 @@ function PluginSection({ title, plugins }: { title: string; plugins: PluginInfo[
 
 // --- Marketplace plugin card ---
 
-function PluginInstallCard({ plugin, onInstall }: { plugin: MarketplacePlugin; onInstall: (key: string, scope: ResourceScope) => void }) {
+function PluginInstallCard({
+  plugin,
+  onInstall,
+  allowProjectInstall,
+}: {
+  plugin: MarketplacePlugin
+  onInstall: (key: string, scope: ResourceScope) => void
+  allowProjectInstall: boolean
+}) {
+  const [expanded, setExpanded] = useState(false)
   const [installing, setInstalling] = useState(false)
   const [scopeChoice, setScopeChoice] = useState(false)
+  const installScopes = allowProjectInstall ? (['user', 'project'] as const) : (['user'] as const)
 
   const handleInstall = async (scope: ResourceScope) => {
     setScopeChoice(false)
@@ -442,68 +634,78 @@ function PluginInstallCard({ plugin, onInstall }: { plugin: MarketplacePlugin; o
   }
 
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-3">
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted font-medium uppercase text-muted-foreground text-sm">
-        {plugin.name[0]}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{plugin.name}</span>
-          {plugin.author && (
-            <span className="text-xs text-muted-foreground">by {plugin.author}</span>
+    <div className="rounded-lg border border-border bg-card">
+      <div
+        role="button"
+        onClick={() => setExpanded((current) => !current)}
+        className="flex cursor-pointer items-start gap-3 p-3 transition-colors hover:bg-muted/50"
+      >
+        <PluginAvatar name={plugin.name} iconPath={plugin.iconPath} logoPath={plugin.logoPath} className="size-9 text-sm" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">{getPluginTitle(plugin)}</span>
+            {plugin.author && (
+              <span className="text-xs text-muted-foreground">by {plugin.author}</span>
+            )}
+          </div>
+          {plugin.description && (
+            <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{plugin.description}</p>
+          )}
+          {plugin.installCount != null && (
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              {plugin.installCount.toLocaleString()} installs
+            </p>
           )}
         </div>
-        {plugin.description && (
-          <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{plugin.description}</p>
-        )}
-        {plugin.installCount != null && (
-          <p className="mt-1 text-[10px] text-muted-foreground">
-            {plugin.installCount.toLocaleString()} installs
-          </p>
-        )}
-      </div>
-      <div className="shrink-0">
-        {plugin.installed ? (
-          <span className="inline-flex items-center rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-            Installed
-          </span>
-        ) : scopeChoice ? (
-          <div className="flex gap-1">
-            {(['user', 'project'] as const).map((s) => (
+        <div className="flex items-center gap-2 shrink-0" onClick={(event) => event.stopPropagation()}>
+          {plugin.installed ? (
+            <span className="inline-flex items-center rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+              Installed
+            </span>
+          ) : scopeChoice ? (
+            <div className="flex gap-1">
+              {installScopes.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => handleInstall(s)}
+                  disabled={installing}
+                  className="rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  {s}
+                </button>
+              ))}
               <button
-                key={s}
-                onClick={() => handleInstall(s)}
-                disabled={installing}
-                className="rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                onClick={() => setScopeChoice(false)}
+                className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
-                {s}
+                Cancel
               </button>
-            ))}
-            <button
-              onClick={() => setScopeChoice(false)}
-              className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => allowProjectInstall ? setScopeChoice(true) : handleInstall('user')}
+              disabled={installing}
             >
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setScopeChoice(true)}
-            disabled={installing}
-          >
-            {installing ? (
-              'Installing...'
-            ) : (
-              <>
-                <Download className="size-3.5" />
-                Install
-              </>
-            )}
-          </Button>
-        )}
+              {installing ? (
+                'Installing...'
+              ) : (
+                <>
+                  <Download className="size-3.5" />
+                  Install
+                </>
+              )}
+            </Button>
+          )}
+          {expanded ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
+        </div>
       </div>
+      {expanded && (
+        <div className="border-t border-border">
+          <PluginDetailsPanel plugin={plugin} />
+        </div>
+      )}
     </div>
   )
 }
@@ -516,6 +718,8 @@ interface MarketplaceSummary {
   installedCount: number
   lastUpdated?: string
   source?: string
+  iconPath?: string
+  logoPath?: string
 }
 
 function formatRelativeTime(iso: string): string {
@@ -538,9 +742,7 @@ function MarketplaceListCard({ mp, onClick }: { mp: MarketplaceSummary; onClick:
       onClick={onClick}
       className="flex w-full cursor-pointer items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent/50"
     >
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted font-medium uppercase text-muted-foreground">
-        {mp.name[0]}
-      </div>
+      <PluginAvatar name={mp.name} iconPath={mp.iconPath} logoPath={mp.logoPath} className="size-10 text-base" />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{mp.name}</p>
         {mp.source && (
@@ -602,12 +804,16 @@ function MarketplaceDetailView({
   onBack,
   onInstall,
   onUpdateMarketplace,
+  canUpdateMarketplace,
+  allowProjectInstall,
 }: {
   summary: MarketplaceSummary
   plugins: MarketplacePlugin[]
   onBack: () => void
   onInstall: (key: string, scope: ResourceScope) => void
   onUpdateMarketplace: () => Promise<void>
+  canUpdateMarketplace: boolean
+  allowProjectInstall: boolean
 }) {
   const [search, setSearch] = useState('')
   const [updating, setUpdating] = useState(false)
@@ -648,15 +854,17 @@ function MarketplaceDetailView({
           <h2 className="text-lg font-semibold">{summary.name}</h2>
           <div className="flex items-center gap-2">
             <ProjectSelector mode="switch" />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleUpdate}
-              disabled={updating}
-            >
-              <RefreshCw className={cn('size-3.5', updating && 'animate-spin')} />
-              {updating ? 'Updating...' : 'Update'}
-            </Button>
+            {canUpdateMarketplace && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleUpdate}
+                disabled={updating}
+              >
+                <RefreshCw className={cn('size-3.5', updating && 'animate-spin')} />
+                {updating ? 'Updating...' : 'Update'}
+              </Button>
+            )}
           </div>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -694,7 +902,7 @@ function MarketplaceDetailView({
       ) : (
         <div className="flex flex-col gap-2">
           {filtered.map((plugin) => (
-            <PluginInstallCard key={plugin.key} plugin={plugin} onInstall={onInstall} />
+            <PluginInstallCard key={plugin.key} plugin={plugin} onInstall={onInstall} allowProjectInstall={allowProjectInstall} />
           ))}
         </div>
       )}
@@ -708,6 +916,7 @@ type PluginsTab = 'marketplace' | 'installed'
 
 export function PluginsPage() {
   const currentFolder = useAppStore((s) => s.currentFolder)
+  const settingsProvider = useAppStore((s) => s.settingsProvider)
   const {
     plugins,
     marketplacePlugins,
@@ -718,13 +927,14 @@ export function PluginsPage() {
   } = useSettingsStore()
   const [tab, setTab] = useState<PluginsTab>('marketplace')
   const [selectedMarketplace, setSelectedMarketplace] = useState<string | null>(null)
+  const isCodex = settingsProvider === 'codex'
 
   useEffect(() => {
     clearPluginDetail()
     setSelectedMarketplace(null)
     fetchPlugins()
     fetchMarketplacePlugins()
-  }, [currentFolder, clearPluginDetail, fetchPlugins, fetchMarketplacePlugins])
+  }, [currentFolder, settingsProvider, clearPluginDetail, fetchPlugins, fetchMarketplacePlugins])
 
   // Derive marketplace summaries from plugins data
   const marketplaceSummaries = useMemo(() => {
@@ -732,11 +942,23 @@ export function PluginsPage() {
     for (const p of marketplacePlugins) {
       let mp = map.get(p.marketplace)
       if (!mp) {
-        mp = { name: p.marketplace, pluginCount: 0, installedCount: 0, lastUpdated: p.marketplaceLastUpdated, source: p.marketplaceSource }
+        mp = {
+          name: p.marketplace,
+          pluginCount: 0,
+          installedCount: 0,
+          lastUpdated: p.marketplaceLastUpdated,
+          source: p.marketplaceSource,
+          iconPath: p.iconPath,
+          logoPath: p.logoPath,
+        }
         map.set(p.marketplace, mp)
       }
       mp.pluginCount++
       if (p.installed) mp.installedCount++
+      if (!mp.logoPath && p.logoPath) mp.logoPath = p.logoPath
+      if (!mp.iconPath && p.iconPath) mp.iconPath = p.iconPath
+      if (!mp.lastUpdated && p.marketplaceLastUpdated) mp.lastUpdated = p.marketplaceLastUpdated
+      if (!mp.source && p.marketplaceSource) mp.source = p.marketplaceSource
     }
     // Sort by plugin count descending
     return Array.from(map.values()).sort((a, b) => b.pluginCount - a.pluginCount)
@@ -783,6 +1005,8 @@ export function PluginsPage() {
               await window.app.updateMarketplace(selectedMarketplace!)
               await fetchMarketplacePlugins()
             }}
+            canUpdateMarketplace={!isCodex}
+            allowProjectInstall={!isCodex}
           />
         </div>
       )
@@ -794,7 +1018,9 @@ export function PluginsPage() {
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Plugins</h2>
-          <p className="text-sm text-muted-foreground">Browse and manage Claude Code plugins</p>
+          <p className="text-sm text-muted-foreground">
+            {isCodex ? 'Browse and manage Codex plugins' : 'Browse and manage Claude Code plugins'}
+          </p>
         </div>
         <ProjectSelector mode="switch" />
       </div>
@@ -824,12 +1050,12 @@ export function PluginsPage() {
       {tab === 'marketplace' && (
         marketplaceSummaries.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
-            <p className="text-sm text-muted-foreground">No marketplaces found</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Install a marketplace with: claude plugin marketplace add
-            </p>
-          </div>
-        ) : (
+              <p className="text-sm text-muted-foreground">No marketplaces found</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isCodex ? 'Install a marketplace with: codex marketplace add <source>' : 'Install a marketplace with: claude plugin marketplace add'}
+              </p>
+            </div>
+          ) : (
           <div className="flex flex-col gap-2">
             {marketplaceSummaries.map((mp) => (
               <MarketplaceListCard
@@ -849,12 +1075,12 @@ export function PluginsPage() {
             <div className="rounded-lg border border-dashed border-border p-8 text-center">
               <p className="text-sm text-muted-foreground">No plugins installed</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Browse the Marketplace to install plugins
+                Browse the Marketplace to install {isCodex ? 'Codex' : 'Claude Code'} plugins
               </p>
             </div>
           ) : (
             <div className="space-y-6">
-              {updatablePlugins.length > 0 && (
+              {!isCodex && updatablePlugins.length > 0 && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">
                     {updatablePlugins.length} update{updatablePlugins.length !== 1 ? 's' : ''} available

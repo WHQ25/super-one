@@ -741,13 +741,48 @@ export interface PluginManifest {
   author?: { name: string; email?: string }
 }
 
+export type PluginInstallPolicy = 'NOT_AVAILABLE' | 'AVAILABLE' | 'INSTALLED_BY_DEFAULT'
+export type PluginAuthPolicy = 'ON_INSTALL' | 'ON_USE'
+
+export interface PluginAppSummary {
+  id: string
+  name: string
+  description?: string
+  installUrl?: string
+  needsAuth: boolean
+}
+
+export interface PluginSkillSummary {
+  name: string
+  displayName?: string
+  description: string
+  shortDescription?: string
+  path: string
+  enabled: boolean
+}
+
 export interface PluginInfo {
   name: string            // e.g., "code-review"
   marketplace: string     // e.g., "claude-plugins-official"
   key: string             // e.g., "code-review@claude-plugins-official"
   scope: ResourceScope
   description: string
+  displayName?: string
+  longDescription?: string
   author?: string
+  category?: string
+  capabilities?: string[]
+  websiteUrl?: string
+  privacyPolicyUrl?: string
+  termsOfServiceUrl?: string
+  defaultPrompts?: string[]
+  brandColor?: string
+  iconPath?: string
+  logoPath?: string
+  screenshots?: string[]
+  enabled?: boolean
+  installPolicy?: PluginInstallPolicy
+  authPolicy?: PluginAuthPolicy
   version?: string
   installPath: string
   installedAt?: string
@@ -761,6 +796,9 @@ export interface PluginInfo {
 }
 
 export interface PluginDetail extends PluginInfo {
+  apps?: PluginAppSummary[]
+  skills?: PluginSkillSummary[]
+  mcpServers?: string[]
   files: SkillFileEntry[]
 }
 
@@ -769,7 +807,22 @@ export interface MarketplacePlugin {
   marketplace: string
   key: string              // "name@marketplace"
   description: string
+  displayName?: string
+  longDescription?: string
   author?: string
+  category?: string
+  capabilities?: string[]
+  websiteUrl?: string
+  privacyPolicyUrl?: string
+  termsOfServiceUrl?: string
+  defaultPrompts?: string[]
+  brandColor?: string
+  iconPath?: string
+  logoPath?: string
+  screenshots?: string[]
+  enabled?: boolean
+  installPolicy?: PluginInstallPolicy
+  authPolicy?: PluginAuthPolicy
   installCount?: number
   installed: boolean
   installedScope?: ResourceScope
@@ -1142,8 +1195,19 @@ export const AgentIpcChannels = {
   CODEX_SKILLS_READ_FILE: 'codex:skills-read-file',
   CODEX_SKILLS_DELETE: 'codex:skills-delete',
 
+  // Codex plugins
+  CODEX_PLUGINS_LIST: 'codex:plugins-list',
+  CODEX_PLUGINS_READ: 'codex:plugins-read',
+  CODEX_PLUGINS_READ_FILE: 'codex:plugins-read-file',
+  CODEX_PLUGINS_DELETE: 'codex:plugins-delete',
+  CODEX_PLUGINS_LIST_MARKETPLACE: 'codex:plugins-list-marketplace',
+  CODEX_PLUGINS_INSTALL: 'codex:plugins-install',
+
   // Codex MCP config
   CODEX_MCP_LIST_CONFIG: 'codex:mcp-list-config',
+  CODEX_MCP_SAVE_CONFIG: 'codex:mcp-save-config',
+  CODEX_MCP_DELETE_CONFIG: 'codex:mcp-delete-config',
+  CODEX_MCP_TOGGLE_CONFIG: 'codex:mcp-toggle-config',
 
   // MCP config
   MCP_LIST_CONFIG: 'mcp:list-config',

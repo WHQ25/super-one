@@ -1,7 +1,7 @@
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { homedir } from 'os'
-import { existsSync, readFileSync } from 'fs'
-import { parse } from 'smol-toml'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { parse, stringify } from 'smol-toml'
 import type { McpServerConfig, ResourceScope } from '../shared/agent-types'
 
 interface TomlMcpServer {
@@ -13,22 +13,29 @@ interface TomlMcpServer {
   enabled?: boolean
 }
 
+function getCodexConfigPath(scope: ResourceScope, cwd: string): string {
+  return scope === 'project'
+    ? join(cwd, '.codex', 'config.toml')
+    : join(homedir(), '.codex', 'config.toml')
+}
+
+function readConfigFile(filePath: string): Record<string, unknown> {
+  if (!existsSync(filePath)) return {}
+
+  try {
+    return parse(readFileSync(filePath, 'utf-8')) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+function writeConfigFile(filePath: string, data: Record<string, unknown>): void {
+  mkdirSync(dirname(filePath), { recursive: true })
+  writeFileSync(filePath, stringify(data), 'utf-8')
+}
+
 function parseConfigFile(filePath: string, scope: ResourceScope): McpServerConfig[] {
-  if (!existsSync(filePath)) return []
-
-  let content: string
-  try {
-    content = readFileSync(filePath, 'utf-8')
-  } catch {
-    return []
-  }
-
-  let parsed: Record<string, unknown>
-  try {
-    parsed = parse(content) as Record<string, unknown>
-  } catch {
-    return []
-  }
+  const parsed = readConfigFile(filePath)
 
   const mcpServers = parsed.mcp_servers as Record<string, TomlMcpServer> | undefined
   if (!mcpServers || typeof mcpServers !== 'object') return []
@@ -79,4 +86,64 @@ export function listCodexMcpConfigs(cwd: string): McpServerConfig[] {
   }
 
   return Array.from(merged.values())
+}
+
+export function saveCodexMcpConfig(
+  name: string,
+  config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>,
+  scope: ResourceScope,
+  cwd: string,
+): void {
+  const filePath = getCodexConfigPath(scope, cwd)
+  const data = readConfigFile(filePath)
+  const mcpServers = (
+    data.mcp_servers && typeof data.mcp_servers === 'object'
+      ? data.mcp_servers
+      : {}
+  ) as Record<string, TomlMcpServer>
+
+  if (config.type === 'http' || config.type === 'sse') {
+    mcpServers[name] = {
+      url: config.url ?? '',
+      ...(config.headers && Object.keys(config.headers).length > 0 ? { http_headers: config.headers } : {}),
+    }
+  } else {
+    mcpServers[name] = {
+      command: config.command ?? '',
+      args: config.args ?? [],
+      ...(config.env && Object.keys(config.env).length > 0 ? { env: config.env } : {}),
+    }
+  }
+
+  data.mcp_servers = mcpServers
+  writeConfigFile(filePath, data)
+}
+
+export function toggleCodexMcpConfig(name: string, disabled: boolean, scope: ResourceScope, cwd: string): void {
+  const filePath = getCodexConfigPath(scope, cwd)
+  const data = readConfigFile(filePath)
+  const mcpServers = data.mcp_servers as Record<string, TomlMcpServer> | undefined
+  if (!mcpServers?.[name]) return
+
+  if (disabled) {
+    mcpServers[name].enabled = false
+  } else {
+    mcpServers[name].enabled = true
+  }
+
+  writeConfigFile(filePath, data)
+}
+
+export function deleteCodexMcpConfig(name: string, scope: ResourceScope, cwd: string): void {
+  const filePath = getCodexConfigPath(scope, cwd)
+  const data = readConfigFile(filePath)
+  const mcpServers = data.mcp_servers as Record<string, TomlMcpServer> | undefined
+  if (!mcpServers?.[name]) return
+
+  delete mcpServers[name]
+  if (Object.keys(mcpServers).length === 0) {
+    delete data.mcp_servers
+  }
+
+  writeConfigFile(filePath, data)
 }

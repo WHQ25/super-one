@@ -72,4 +72,9 @@ describe('harnessRegistry', () => {
     const h = harnessRegistry.get('claude')!
     expect(h.configSchema).toBeDefined()
   })
+
+  it('codex configSchema accepts xhigh reasoning effort', () => {
+    const h = harnessRegistry.get('codex')!
+    expect(() => h.configSchema.parse({ reasoningEffort: 'xhigh' })).not.toThrow()
+  })
 })

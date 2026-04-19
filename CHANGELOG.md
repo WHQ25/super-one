@@ -4,6 +4,21 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.21.5-alpha] - 2026-04-19
+
+### Added
+
+- **Codex plugins management** — install, list, delete, and browse marketplace plugins per project.
+- **Per-project Codex MCP config** — save, delete, and toggle MCP servers scoped to user or project.
+
+### Changed
+
+- **Claude Agent SDK upgraded to 0.2.114** (from 0.2.111), now using per-platform native binaries.
+
+### Fixed
+
+- **Codex child thread events** now route to the correct session instead of being dropped.
+
 ## [0.21.2-alpha] - 2026-04-19
 
 ### Changed

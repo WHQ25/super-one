@@ -69,8 +69,23 @@ export class WarmupManager {
       trace('warmup', 'ready', { key, durMs: dur })
     }).catch((err) => {
       if (this.inflightKey === key) this.inflightKey = null
-      log.warn('[warmup] startup() failed: %s', err instanceof Error ? err.message : String(err))
-      trace('warmup', 'error', { key, error: String(err) })
+      const e = err as NodeJS.ErrnoException
+      const envSize = Object.entries(process.env).reduce((n, [k, v]) => n + k.length + (v?.length ?? 0) + 2, 0)
+      const pathLen = (process.env.PATH ?? '').length
+      const cwd = (() => { try { return process.cwd() } catch { return '<cwd-error>' } })()
+      log.warn(
+        '[warmup] startup() failed msg=%s code=%s errno=%s syscall=%s cwd=%s(len=%d) envBytes=%d pathLen=%d cli=%s stack=%s',
+        e?.message ?? String(err),
+        e?.code ?? 'none',
+        e?.errno ?? 'none',
+        e?.syscall ?? 'none',
+        cwd, cwd.length,
+        envSize,
+        pathLen,
+        options.pathToClaudeCodeExecutable ?? 'none',
+        e?.stack ?? 'none',
+      )
+      trace('warmup', 'error', { key, error: String(err), code: e?.code, errno: e?.errno, syscall: e?.syscall, envBytes: envSize, pathLen, cwd })
     })
   }
 

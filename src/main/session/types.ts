@@ -141,6 +141,7 @@ export interface SessionBackend {
   close(): Promise<void>
   setModel(model: string): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
+  setSandbox(sandboxInfo: SandboxInfo): Promise<void>
   respondToPermission(
     requestId: string,
     allow: boolean,
@@ -176,7 +177,7 @@ export interface Session {
   send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void>
   interrupt(): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
-  setSandboxMode(mode: SandboxMode): SandboxInfo
+  setSandboxMode(mode: SandboxMode): Promise<SandboxInfo>
   getCurrentPermissionMode(): PermissionMode
   getCurrentSandboxInfo(): SandboxInfo
   setModel(model: string): Promise<void>

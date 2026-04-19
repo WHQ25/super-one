@@ -282,10 +282,25 @@ export class Session implements SessionContract {
     await this.backend.rebuild(this.buildBackendStartOpts())
   }
 
-  setSandboxMode(mode: SandboxMode): SandboxInfo {
-    this.sandboxInfo = {
+  async setSandboxMode(mode: SandboxMode): Promise<SandboxInfo> {
+    this.assertNotDisposed()
+    const next: SandboxInfo = {
       enabled: mode !== 'off',
       autoAllowBash: mode === 'auto',
+    }
+    if (
+      this.sandboxInfo.enabled === next.enabled &&
+      this.sandboxInfo.autoAllowBash === next.autoAllowBash
+    ) {
+      return this.sandboxInfo
+    }
+    this.sandboxInfo = next
+    if (this.backendStarted) {
+      try {
+        await this.backend.setSandbox(next)
+      } catch (err) {
+        log.warn('[Session] backend.setSandbox failed:', err)
+      }
     }
     return this.sandboxInfo
   }

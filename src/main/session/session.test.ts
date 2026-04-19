@@ -73,6 +73,10 @@ class FakeBackend implements SessionBackend {
   async setPermissionMode(mode: import('../../shared/agent-types').PermissionMode): Promise<void> {
     this.setPermissionModeCalls.push(mode)
   }
+  setSandboxCalls: import('../../shared/agent-types').SandboxInfo[] = []
+  async setSandbox(info: import('../../shared/agent-types').SandboxInfo): Promise<void> {
+    this.setSandboxCalls.push(info)
+  }
   respondToPermission(): void {}
   respondToQuestion(): void {}
   dismissQuestion(): void {}
@@ -407,6 +411,51 @@ describe('Session state machine', () => {
 
       expect(backend.setPermissionModeCalls).toHaveLength(0)
       expect(backend.rebuildCalls).toHaveLength(0)
+    })
+  })
+
+  describe('setSandboxMode', () => {
+    async function bootAndIdle(s: Session, b: FakeBackend) {
+      const p = s.send({ content: 'boot', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+      b.resolveSend?.()
+      await p
+    }
+
+    it('after backend started, propagates sandbox change to backend', async () => {
+      await bootAndIdle(session, backend)
+      expect(backend.setSandboxCalls).toHaveLength(0)
+
+      const updated = await session.setSandboxMode('off')
+
+      expect(updated).toEqual({ enabled: false, autoAllowBash: false })
+      expect(backend.setSandboxCalls).toEqual([{ enabled: false, autoAllowBash: false }])
+      expect(session.getCurrentSandboxInfo()).toEqual({ enabled: false, autoAllowBash: false })
+    })
+
+    it('before backend started, only updates local state', async () => {
+      const updated = await session.setSandboxMode('off')
+
+      expect(updated).toEqual({ enabled: false, autoAllowBash: false })
+      expect(backend.setSandboxCalls).toHaveLength(0)
+      expect(backend.started).toBe(false)
+    })
+
+    it('repeated same mode: no backend call', async () => {
+      await bootAndIdle(session, backend)
+
+      await session.setSandboxMode('on')
+      await session.setSandboxMode('on')
+
+      expect(backend.setSandboxCalls).toHaveLength(0)
+    })
+
+    it('auto mode passes autoAllowBash=true to backend', async () => {
+      await bootAndIdle(session, backend)
+
+      await session.setSandboxMode('auto')
+
+      expect(backend.setSandboxCalls).toEqual([{ enabled: true, autoAllowBash: true }])
     })
   })
 })

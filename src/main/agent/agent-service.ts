@@ -927,7 +927,7 @@ export class AgentService {
       await this.getOrCreateActiveSession(projectPath).setPermissionMode(mode)
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, (_event, projectPath: string, mode: SandboxMode) => {
+    ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       return this.getOrCreateActiveSession(projectPath).setSandboxMode(mode)
     })

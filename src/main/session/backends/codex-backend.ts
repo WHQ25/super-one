@@ -287,6 +287,8 @@ export class CodexBackend implements SessionBackend {
     this.assertStarted()
   }
 
+  async setSandbox(): Promise<void> {}
+
   respondToPermission(
     requestId: string,
     allow: boolean,

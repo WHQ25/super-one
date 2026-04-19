@@ -20,6 +20,7 @@ import type {
   PermissionMode,
   QuestionAnnotations,
   RewindFilesResult,
+  SandboxInfo,
   SendMessageRequest,
 } from '../../../shared/agent-types'
 import log from '../../logger'
@@ -264,6 +265,14 @@ export class ClaudeBackend implements SessionBackend {
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     if (!this.query) return
     await this.query.setPermissionMode(mode)
+  }
+
+  async setSandbox(sandboxInfo: SandboxInfo): Promise<void> {
+    if (!this.query) return
+    const sandbox = sandboxInfo.enabled
+      ? { enabled: true, autoAllowBashIfSandboxed: sandboxInfo.autoAllowBash, failIfUnavailable: true }
+      : { enabled: false }
+    await this.query.applyFlagSettings({ sandbox })
   }
 
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): void {

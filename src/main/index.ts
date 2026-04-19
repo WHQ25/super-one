@@ -221,6 +221,16 @@ function createWindow(): void {
         _e.preventDefault()
         const action = input.key === '-' ? 'out' : input.key === '0' ? 'reset' : 'in'
         mainWindow?.webContents.send(AgentIpcChannels.CONTENT_ZOOM, action)
+        return
+      }
+    }
+    if (!is.dev) {
+      if ((input.control || input.meta) && input.key.toLowerCase() === 'r') {
+        _e.preventDefault()
+        return
+      }
+      if (input.key === 'F5') {
+        _e.preventDefault()
       }
     }
   })

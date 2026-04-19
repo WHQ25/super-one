@@ -249,13 +249,13 @@ In development mode, `electron-log` writes to `dev.log` in the project root (con
 
 For packaged builds (`build:mac-dev`), logs are written to `~/Library/Logs/super-one/main.log` (macOS default `electron-log` location).
 
-## Testing (TDD)
+## Testing
 
-Follow **Test-Driven Development** — write tests before implementation.
+Follow **Test-Driven Development** with an **integration-first** philosophy — the testing trophy, not the pyramid. Most bugs in this Electron app come from cross-layer wire-up (store → IPC → session → backend), not single-function logic errors. Integration tests catch these; unit tests don't.
 
 ### TDD Workflow
 
-1. **Red**: Write a failing test that describes the desired behavior
+1. **Red**: Write a failing test at the layer where the bug or feature lives
 2. **Green**: Write the minimum code to make the test pass
 3. **Refactor**: Clean up the code while keeping tests green
 
@@ -266,14 +266,28 @@ Follow **Test-Driven Development** — write tests before implementation.
 - **Setup file**: `vitest.setup.ts` (imports `@testing-library/jest-dom/vitest`)
 - **Co-location**: Test files live next to source files as `*.test.ts` / `*.test.tsx`
 
+### Layers — prefer higher (more integration)
+
+| Layer | What it tests | Mock only | When to use |
+|---|---|---|---|
+| **Integration (default)** | Multiple real modules collaborating across a user scenario | True external boundaries: Claude SDK subprocess, `window.agent` IPC, `fs`, `child_process`, network | **Most tests** — permission flow, session lifecycle, IPC wire-up, store reducers over multi-step scenarios |
+| **Component** | Single React component + user events | `window.agent`, `window.app` | Keyboard shortcuts, focus management, visible UI state |
+| **Unit** | Pure function / class in isolation | — | Complex branching logic in utilities (`tool-display.ts`, `claude-permissions.ts`, schema validators) |
+
 ### Rules
 
-- **Tests first**: For new features and bug fixes, write the test before writing the implementation. For bug fixes, the test should reproduce the bug (fail), then the fix makes it pass.
-- **Run tests after changes**: Always run `bun run test` after implementing to verify all tests pass.
-- **Scope**: Test pure logic, utilities, store actions, and IPC handlers. Do not test trivial UI wiring or third-party library internals.
-- **Naming**: Use descriptive `describe` / `it` blocks: `describe('functionName', () => { it('should return X when given Y', ...) })`.
-- **No mocking by default**: Prefer testing real logic. Only mock external boundaries (IPC, filesystem, network).
-- **Regression tests for bug fixes**: Every bug fix must include a test that reproduces the bug scenario. This prevents the same bug from reappearing in the future.
+- **Default to integration**: when adding a feature or fixing a bug, write the test at the highest reasonable layer. Pick unit only when the logic under test is pure and complex (parsers, schema validators, reducers with many branches).
+- **Scenario-style naming**: `describe('user scenario', () => { it('given X, when Y, then Z', ...) })`. Prefer scenarios over function names — `it('switches session to acceptEdits after approving plan')` beats `it('setPermissionMode calls backend')`.
+- **Mock only at true boundaries**: real `Session`, real Zustand stores, real reducers, real IPC-handler logic. Mock only the Claude SDK subprocess (via `FakeBackend`), `window.agent`/`window.app` in renderer, `fs`, `child_process`, and network. If you're reaching for `vi.mock` on an internal module, stop and re-scope the test one layer up.
+- **Regression test = scenario test**: every bug fix gets an integration test that reproduces the bug scenario at the layer where it lived — not a narrow function test of the fix site.
+- **Skip trivial forwarding**: don't test `foo.bar(x)` → `api.bar(x)` passthroughs. Test the scenario across the forwarding, not the forwarding itself.
+- **Run tests after changes**: always `bun run test` after implementing.
+
+### Good examples to follow
+
+- `src/main/session/session.test.ts` — `FakeBackend` + real `Session`; scenarios like "switch cwd during streaming defers rebuild to next send", "bypass mode boundary triggers backend rebuild"
+- `src/renderer/src/stores/chat-store.test.ts` — real Zustand store + mocked `window.agent`; scenarios like "respondToPlanApproval triggers setPermissionMode IPC when approved"
+- `src/main/session/isolation.integration.test.ts` — multi-session isolation scenarios with fake backends
 
 ### Mini-App Platform
 

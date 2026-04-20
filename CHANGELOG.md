@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.21.6-alpha] - 2026-04-20
+
+### Added
+
+- **Refresh shortcuts no longer reload the app** in packaged builds — Cmd/Ctrl+R, Cmd/Ctrl+Shift+R, and F5 are intercepted so streaming chat and in-memory state aren't lost. Dev mode is unchanged so HMR reload still works.
+
+### Fixed
+
+- **Sandbox toggle now propagates to the running session** — previously, turning Sandbox Off in the UI left the SDK subprocess on its startup sandbox config, so tool calls kept requesting sandbox permissions.
+- **Plan approval now syncs permission mode to main** — approving a plan previously only flipped the UI to `acceptEdits`, while the backend session stayed on the old mode and Edit/Write kept prompting.
+- **Resumed sessions honor user default permission and sandbox mode** instead of falling back to `default` + hardcoded sandbox. Main is now the authoritative source; the renderer reflects what main actually applied.
+- **Switching in/out of `bypassPermissions` mode rebuilds the backend** — the SDK's `allowDangerouslySkipPermissions` flag is fixed at init, so the session now defers a rebuild to the next `send()`, mirroring the `switchCwd` pattern.
+
 ## [0.21.5-alpha] - 2026-04-19
 
 ### Added

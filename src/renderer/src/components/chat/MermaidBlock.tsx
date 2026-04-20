@@ -1,60 +1,75 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Check, Code, Copy, Expand, Eye, Loader2 } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import mermaid from 'mermaid'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { HighlightedCodeBlock } from './CodeBlock'
-import { MermaidFullscreen, normalizeSvg } from './MermaidFullscreen'
-import type { Size } from './MermaidFullscreen'
+import { MermaidFullscreen } from './MermaidFullscreen'
 
-const MAX_H = 600
-const OVERFLOW_THRESHOLD = 0.2
-const OVERFLOW_RENDER_RATIO = 0.5
+export const MAX_H = 500
+export const OVERFLOW_THRESHOLD = 0.3
+export const OVERFLOW_RENDER_RATIO = 0.6
 
-function MermaidPreview({ normalized, containerRef, containerWidth, isThemeSwitching }: {
-  normalized: { html: string; size: Size }
-  containerRef: React.RefObject<HTMLDivElement | null>
-  containerWidth: number
+export function parseSize(svg: string): { w: number; h: number } {
+  const m = svg.match(/viewBox="([^"]+)"/)
+  if (!m) return { w: 0, h: 0 }
+  const [, , w, h] = m[1].split(/[\s,]+/).map(Number)
+  return { w: Number.isFinite(w) && w > 0 ? w : 0, h: Number.isFinite(h) && h > 0 ? h : 0 }
+}
+
+export function computeLayout(
+  svgW: number,
+  svgH: number,
+  containerW: number,
+): { overflow: boolean; overflowW: number } {
+  if (containerW <= 0 || svgW <= 0 || svgH <= 0) return { overflow: false, overflowW: 0 }
+  const widthScale = Math.min(containerW / svgW, 1)
+  if (svgH * widthScale <= MAX_H) return { overflow: false, overflowW: 0 }
+  const fittedW = svgW * (MAX_H / svgH)
+  if (fittedW >= containerW * OVERFLOW_THRESHOLD) return { overflow: false, overflowW: 0 }
+  return { overflow: true, overflowW: containerW * OVERFLOW_RENDER_RATIO }
+}
+
+function MermaidPreview({ svg, isThemeSwitching }: {
+  svg: string
   isThemeSwitching: boolean
 }) {
-  const { html, size } = normalized
-  const svgW = size.width
-  const svgH = size.height
+  const outerRef = useRef<HTMLDivElement>(null)
+  const [containerW, setContainerW] = useState(0)
+  const { w: svgW, h: svgH } = useMemo(() => parseSize(svg), [svg])
 
-  let mode: 'fit' | 'overflow' = 'fit'
-  let svgStyle: React.CSSProperties | undefined
+  useEffect(() => {
+    if (!outerRef.current) return
+    const ro = new ResizeObserver(([entry]) => setContainerW(entry.contentRect.width))
+    ro.observe(outerRef.current)
+    return () => ro.disconnect()
+  }, [])
 
-  if (containerWidth > 0 && svgW > 0 && svgH > 0) {
-    const widthScale = Math.min(containerWidth / svgW, 1)
-    const scaledW = svgW * widthScale
-    const scaledH = svgH * widthScale
-    if (scaledH <= MAX_H) {
-      svgStyle = { width: scaledW, height: scaledH }
-    } else {
-      const fitScale = MAX_H / svgH
-      const fittedW = svgW * fitScale
-      if (fittedW >= containerWidth * OVERFLOW_THRESHOLD) {
-        svgStyle = { width: fittedW, height: MAX_H }
-      } else {
-        mode = 'overflow'
-        svgStyle = { width: containerWidth * OVERFLOW_RENDER_RATIO, height: svgH * (containerWidth * OVERFLOW_RENDER_RATIO / svgW) }
-      }
-    }
-  }
+  const { overflow, overflowW } = computeLayout(svgW, svgH, containerW)
 
   return (
     <div className="relative">
       <div
-        ref={containerRef}
-        className={mode === 'overflow'
-          ? 'max-h-[600px] overflow-auto p-4 [&_svg]:mx-auto'
-          : 'p-4 [&_svg]:mx-auto'
+        ref={outerRef}
+        className={overflow
+          ? 'overflow-auto p-4'
+          : 'p-4 [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:max-h-[500px]'
         }
-        dangerouslySetInnerHTML={{ __html: svgStyle
-          ? html.replace(/<svg/, `<svg style="width:${svgStyle.width}px;height:${svgStyle.height}px"`)
-          : html
-        }}
-      />
+        style={overflow ? { maxHeight: MAX_H } : undefined}
+      >
+        {overflow
+          ? (
+            <div
+              className="mx-auto [&_svg]:block [&_svg]:w-full [&_svg]:h-auto [&_svg]:!max-w-full"
+              style={{ width: overflowW }}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          )
+          : (
+            <div dangerouslySetInnerHTML={{ __html: svg }} />
+          )
+        }
+      </div>
       {isThemeSwitching && (
         <div className="absolute inset-0 flex items-center justify-center rounded-md bg-background/80 backdrop-blur-sm">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
@@ -125,17 +140,6 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
     setTimeout(() => setCopied(false), 2000)
   }, [code])
 
-  const normalized = useMemo(() => svg ? normalizeSvg(svg) : null, [svg])
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(0)
-
-  useEffect(() => {
-    if (!containerRef.current) return
-    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
-    ro.observe(containerRef.current)
-    return () => ro.disconnect()
-  }, [svg])
-
   if (!isComplete) {
     return <HighlightedCodeBlock code={code} language="mermaid" codePlugin={codePlugin} />
   }
@@ -204,9 +208,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
           )
           : (
             <MermaidPreview
-              normalized={normalized!}
-              containerRef={containerRef}
-              containerWidth={containerWidth}
+              svg={svg}
               isThemeSwitching={isThemeSwitching}
             />
           )

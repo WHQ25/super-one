@@ -16,24 +16,20 @@ const PAN_MARGIN = 350
 export interface Size { width: number; height: number }
 interface Point { x: number; y: number }
 
-export function normalizeSvg(raw: string): { html: string; size: Size } {
-  const doc = new DOMParser().parseFromString(raw, 'image/svg+xml')
-  const el = doc.querySelector('svg')
-  if (!el) return { html: raw, size: { width: 800, height: 600 } }
-  let w: number, h: number
-  const vb = el.getAttribute('viewBox')
-  if (vb) {
-    const parts = vb.split(/[\s,]+/).map(Number)
-    w = parts[2]; h = parts[3]
-  } else {
-    w = parseFloat(el.getAttribute('width') || '') || el.clientWidth || 800
-    h = parseFloat(el.getAttribute('height') || '') || el.clientHeight || 600
-    el.setAttribute('viewBox', `0 0 ${w} ${h}`)
+export function parseSvgSize(raw: string): Size {
+  const m = raw.match(/viewBox="([^"]+)"/)
+  if (m) {
+    const parts = m[1].split(/[\s,]+/).map(Number)
+    if (parts.length >= 4 && parts[2] > 0 && parts[3] > 0) {
+      return { width: parts[2], height: parts[3] }
+    }
   }
-  el.removeAttribute('style')
-  el.setAttribute('width', w.toString())
-  el.setAttribute('height', h.toString())
-  return { html: new XMLSerializer().serializeToString(el), size: { width: w, height: h } }
+  const wm = raw.match(/\bwidth="([\d.]+)"/)
+  const hm = raw.match(/\bheight="([\d.]+)"/)
+  return {
+    width: wm ? parseFloat(wm[1]) : 800,
+    height: hm ? parseFloat(hm[1]) : 600,
+  }
 }
 
 // --- Minimap ---
@@ -57,19 +53,6 @@ function Minimap({ svg, svgSize, containerSize, effectiveScale, pan, onNavigate 
 
   const scaledW = svgSize.width * mmScale
   const scaledH = svgSize.height * mmScale
-
-  const processedSvg = useMemo(() => {
-    const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
-    const el = doc.querySelector('svg')
-    if (!el) return svg
-    el.removeAttribute('width')
-    el.removeAttribute('height')
-    if (!el.getAttribute('viewBox'))
-      el.setAttribute('viewBox', `0 0 ${svgSize.width} ${svgSize.height}`)
-    el.setAttribute('width', scaledW.toString())
-    el.setAttribute('height', scaledH.toString())
-    return new XMLSerializer().serializeToString(el)
-  }, [svg, scaledW, scaledH, svgSize])
 
   const vpW = Math.min((containerSize.width / effectiveScale) * mmScale, MINIMAP_SIZE.width)
   const vpH = Math.min((containerSize.height / effectiveScale) * mmScale, MINIMAP_SIZE.height)
@@ -100,7 +83,11 @@ function Minimap({ svg, svgSize, containerSize, effectiveScale, pan, onNavigate 
       onClick={handleClick}
     >
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <div className="opacity-50" dangerouslySetInnerHTML={{ __html: processedSvg }} />
+        <div
+          className="opacity-50 [&_svg]:block [&_svg]:w-full [&_svg]:h-full [&_svg]:!max-w-none"
+          style={{ width: scaledW, height: scaledH }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
       </div>
       <div
         className="pointer-events-none absolute border-2 border-blue-400/60 bg-blue-400/15 transition-all duration-75"
@@ -119,7 +106,7 @@ interface MermaidFullscreenProps {
 }
 
 export function MermaidFullscreen({ svg, open, onOpenChange }: MermaidFullscreenProps) {
-  const normalized = useMemo(() => normalizeSvg(svg), [svg])
+  const svgSize = useMemo(() => parseSvgSize(svg), [svg])
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
@@ -130,7 +117,6 @@ export function MermaidFullscreen({ svg, open, onOpenChange }: MermaidFullscreen
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<HTMLDivElement>(null)
 
-  const svgSize = normalized.size
   const effectiveScale = baseScaleRef.current * zoom
 
   const tx = svgSize.width > 0
@@ -354,15 +340,17 @@ export function MermaidFullscreen({ svg, open, onOpenChange }: MermaidFullscreen
               >
                 <div
                   ref={svgRef}
-                  className={isDragging || isKeyPanning ? '' : 'transition-transform duration-150 ease-out'}
+                  className={`${isDragging || isKeyPanning ? '' : 'transition-transform duration-150 ease-out'} [&_svg]:block [&_svg]:w-full [&_svg]:h-full [&_svg]:!max-w-none`}
                   style={{
                     position: 'absolute',
                     left: 0,
                     top: 0,
+                    width: svgSize.width,
+                    height: svgSize.height,
                     transformOrigin: '0 0',
                     transform: `translate(${tx}px, ${ty}px) scale(${effectiveScale})`,
                   }}
-                  dangerouslySetInnerHTML={{ __html: normalized.html }}
+                  dangerouslySetInnerHTML={{ __html: svg }}
                 />
               </div>
               {showMinimap && (

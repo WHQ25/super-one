@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.21.8-alpha] - 2026-04-21
+
+### Added
+
+- **Live-streaming diff for Edit/Write/FileChange tool calls** — tool blocks now auto-expand and pin their diff view to the bottom while tool input streams in, with syntax-highlighted tokens updating in place as partial JSON arrives. Manual scroll is suppressed during streaming and restored on completion.
+- **Background status for tasks still running after the turn result arrives** — when the SDK emits its final result but background tasks are still active, the session stays in a new `background` status instead of flipping to `idle`. The sidebar shows a distinct pulse icon, and "New Session" / session-switch actions correctly park the session rather than killing the subprocess.
+
+### Fixed
+
+- **Adding a folder no longer fails when `git init` fails** — the auto `git init` on project add is now tolerant. Projects without a usable git executable (or with a folder that can't be initialized) still open successfully; the failure reason is written to the main process log.
+- **Switching back to a session whose worktree was deleted externally now shows the read-only banner** — `switchSession` used to trust its cached worktree path and silently re-activated a removed worktree. It now probes the path before reuse and flips the session to read-only inline, matching DB-restored session behavior.
+
 ## [0.21.7-alpha] - 2026-04-21
 
 ### Fixed

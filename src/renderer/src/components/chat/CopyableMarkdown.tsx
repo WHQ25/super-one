@@ -96,41 +96,54 @@ export function normalizeCodeFences(text: string): string {
 
 const INSIGHT_HEADER_LINE = /^`?★\s+(.+?)\s+─{3,}`?\s*$/
 const INSIGHT_FOOTER_LINE = /^`?─{3,}`?\s*$/
+const FENCE_LINE = /^`{3,}[\w-]*\s*$/
 
 type TextSegment = { type: 'text'; content: string } | { type: 'insight'; title: string; content: string }
 
 export function splitByInsightBlocks(text: string): TextSegment[] {
   const lines = text.split('\n')
   const segments: TextSegment[] = []
-  let current: string[] = []
-  let insightTitle: string | null = null
-  let insightLines: string[] = []
-  for (const line of lines) {
-    if (insightTitle === null) {
-      const m = line.match(INSIGHT_HEADER_LINE)
-      if (m) {
-        if (current.length > 0) segments.push({ type: 'text', content: current.join('\n') })
-        current = []
-        insightTitle = m[1].trim()
-        insightLines = []
-      } else {
-        current.push(line)
-      }
-    } else {
-      if (INSIGHT_FOOTER_LINE.test(line)) {
-        segments.push({ type: 'insight', title: insightTitle, content: insightLines.join('\n') })
-        insightTitle = null
-        insightLines = []
-      } else {
-        insightLines.push(line)
-      }
+  let textBuf: string[] = []
+
+  const flushText = () => {
+    if (textBuf.length > 0) {
+      segments.push({ type: 'text', content: textBuf.join('\n') })
+      textBuf = []
     }
   }
-  if (insightTitle !== null) {
-    current.push(`\`★ ${insightTitle} ${'─'.repeat(37)}\``)
-    current.push(...insightLines)
+
+  let i = 0
+  while (i < lines.length) {
+    const headerMatch = lines[i].match(INSIGHT_HEADER_LINE)
+    if (!headerMatch) {
+      textBuf.push(lines[i])
+      i++
+      continue
+    }
+    let footerIdx = -1
+    for (let j = i + 1; j < lines.length; j++) {
+      if (INSIGHT_FOOTER_LINE.test(lines[j])) { footerIdx = j; break }
+    }
+    if (footerIdx === -1) {
+      flushText()
+      textBuf.push(`\`★ ${headerMatch[1].trim()} ${'─'.repeat(37)}\``)
+      for (let j = i + 1; j < lines.length; j++) textBuf.push(lines[j])
+      i = lines.length
+      break
+    }
+    const prevIsFence = textBuf.length > 0 && FENCE_LINE.test(textBuf[textBuf.length - 1])
+    const nextIsFence = footerIdx + 1 < lines.length && FENCE_LINE.test(lines[footerIdx + 1])
+    const stripFences = prevIsFence && nextIsFence
+    if (stripFences) textBuf.pop()
+    flushText()
+    segments.push({
+      type: 'insight',
+      title: headerMatch[1].trim(),
+      content: lines.slice(i + 1, footerIdx).join('\n'),
+    })
+    i = footerIdx + 1 + (stripFences ? 1 : 0)
   }
-  if (current.length > 0) segments.push({ type: 'text', content: current.join('\n') })
+  flushText()
   return segments
 }
 

@@ -159,6 +159,51 @@ describe('splitByInsightBlocks', () => {
       { type: 'insight', title: 'Title', content: 'Body' },
     ])
   })
+
+  it('strips wrapping code fences around an insight block', () => {
+    const text = '```\n★ Insight ─────────────────\nBody line\n─────────────────────────────\n```'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'insight', title: 'Insight', content: 'Body line' },
+    ])
+  })
+
+  it('strips wrapping code fences with a language tag', () => {
+    const text = 'Before\n```markdown\n★ Insight ─────────────────\nBody\n─────────────────────────────\n```\nAfter'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'text', content: 'Before' },
+      { type: 'insight', title: 'Insight', content: 'Body' },
+      { type: 'text', content: 'After' },
+    ])
+  })
+
+  it('leaves genuine code blocks untouched', () => {
+    const text = '```ts\nconst x = 1\n```'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'text', content: '```ts\nconst x = 1\n```' },
+    ])
+  })
+
+  it('does not strip an unmatched leading fence', () => {
+    const text = '```\n★ Insight ─────────────\nBody\n─────────────────────\nAfter'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'text', content: '```' },
+      { type: 'insight', title: 'Insight', content: 'Body' },
+      { type: 'text', content: 'After' },
+    ])
+  })
+
+  it('does not strip an unmatched trailing fence', () => {
+    const text = '★ Insight ─────────────\nBody\n─────────────────────\n```'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'insight', title: 'Insight', content: 'Body' },
+      { type: 'text', content: '```' },
+    ])
+  })
 })
 
 describe('CopyableMarkdown', () => {

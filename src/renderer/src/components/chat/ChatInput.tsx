@@ -269,7 +269,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           .deleteRange({ from: info.atPos, to: info.atPos + 1 + info.query.length })
           .insertContentAt(info.atPos, [
             { type: 'mention', attrs: { kind, value, displayName } },
-            { type: 'text', text: ' ' },
           ])
           .run()
 
@@ -289,7 +288,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           if (node.isText) {
             current += node.text ?? ''
           } else if (node.type.name === 'mention') {
-            current += `@${(node.attrs as MentionNodeAttrs).value}`
+            current += ` @${(node.attrs as MentionNodeAttrs).value} `
           } else if (node.type.name === 'hardBreak') {
             current += '\n'
           } else if (node.type.name === 'pasteChip') {
@@ -459,13 +458,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             .focus()
             .insertContentAt(cursor, [
               { type: 'mention', attrs: { kind, value, displayName } },
-              { type: 'text', text: ' ' },
             ])
             .run()
           return
         }
-        const suffix = text.length > 0 && !text.endsWith(' ') ? ' ' : ''
-        setText(`${text}${suffix}@${value} `)
+        setText(`${text}@${value}`)
       },
       [addMention, setText, text],
     )

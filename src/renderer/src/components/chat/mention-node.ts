@@ -32,6 +32,10 @@ export const MentionNode = Node.create({
     return ['span', mergeAttributes({ 'data-mention': '' }, HTMLAttributes)]
   },
 
+  renderText({ node }) {
+    return ` @${(node.attrs as MentionNodeAttrs).value} `
+  },
+
   addNodeView() {
     return ReactNodeViewRenderer(MentionChip, { as: 'span', className: 'mention-chip-wrapper' })
   },

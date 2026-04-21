@@ -37,7 +37,7 @@ const mockWindowAgent = {
   getSessionId: vi.fn().mockResolvedValue(''),
   sendMessage: vi.fn().mockResolvedValue(undefined),
   readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
-  respondToPermission: vi.fn().mockResolvedValue(undefined),
+  respondToPermission: vi.fn().mockResolvedValue(true),
   answerQuestion: vi.fn().mockResolvedValue(undefined),
   dismissQuestion: vi.fn().mockResolvedValue(undefined),
   respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
@@ -854,7 +854,7 @@ describe('hasPendingInteraction', () => {
     expect(after.hasPendingInteraction).toBe(true)
   })
 
-  it('queues multiple permission_request events and respondToPermission dequeues by FIFO', () => {
+  it('queues multiple permission_request events and respondToPermission dequeues by FIFO', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -890,19 +890,19 @@ describe('hasPendingInteraction', () => {
     expect(mid._sessions['a'].pendingPermissions).toHaveLength(3)
     expect(mid._sessions['a'].pendingPermissions.map((p: { requestId: string }) => p.requestId)).toEqual(['r1', 'r2', 'r3'])
 
-    useChatStore.getState().respondToPermission('r1', true)
+    await useChatStore.getState().respondToPermission('r1', true)
 
     const after1 = useChatStore.getState().projectSessions['/test']
     expect(after1._sessions['a'].pendingPermissions).toHaveLength(2)
     expect(after1._sessions['a'].pendingPermissions[0].requestId).toBe('r2')
 
-    useChatStore.getState().respondToPermission('r2', false)
+    await useChatStore.getState().respondToPermission('r2', false)
 
     const after2 = useChatStore.getState().projectSessions['/test']
     expect(after2._sessions['a'].pendingPermissions).toHaveLength(1)
     expect(after2._sessions['a'].pendingPermissions[0].requestId).toBe('r3')
 
-    useChatStore.getState().respondToPermission('r3', true)
+    await useChatStore.getState().respondToPermission('r3', true)
 
     const after3 = useChatStore.getState().projectSessions['/test']
     expect(after3._sessions['a'].pendingPermissions).toHaveLength(0)
@@ -3864,7 +3864,7 @@ describe('interaction response routing', () => {
     vi.clearAllMocks()
   })
 
-  it('respondToPermission calls IPC with active sessionId', () => {
+  it('respondToPermission calls IPC with active sessionId', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     useChatStore.setState({
@@ -3883,11 +3883,38 @@ describe('interaction response routing', () => {
       },
     })
 
-    useChatStore.getState().respondToPermission('r1', true)
+    const result = await useChatStore.getState().respondToPermission('r1', true)
 
     expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
       '/test', 'r1', true, undefined, undefined, undefined, 'a',
     )
+    expect(result).toBe(true)
+  })
+
+  it('respondToPermission keeps the prompt when ack is false', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    mockWindowAgent.respondToPermission.mockResolvedValueOnce(false)
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: {
+            a: {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              pendingPermissions: [{ requestId: 'r1', toolName: 'Bash', input: {}, allowAlwaysAllow: false }],
+            },
+          },
+        },
+      },
+    })
+
+    const result = await useChatStore.getState().respondToPermission('r1', true)
+
+    expect(result).toBe(false)
+    expect(useChatStore.getState().projectSessions['/test']._sessions['a'].pendingPermissions).toHaveLength(1)
   })
 
   it('answerQuestion calls IPC with active sessionId', () => {

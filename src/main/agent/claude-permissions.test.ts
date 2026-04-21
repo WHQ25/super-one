@@ -33,7 +33,7 @@ describe('respondToPermission', () => {
     const resolve = vi.fn()
     map.set('req1', { resolve, toolUseID: 'tu1' })
 
-    respondToPermission(map, 'req1', true, true, 'reason', [0, 2])
+    expect(respondToPermission(map, 'req1', true, true, 'reason', [0, 2])).toBe(true)
 
     expect(resolve).toHaveBeenCalledWith({ allow: true, alwaysAllow: true, reason: 'reason', selectedSuggestions: [0, 2] })
   })
@@ -49,7 +49,7 @@ describe('respondToPermission', () => {
 
   it('should no-op for unknown requestId', () => {
     const map = new Map<string, PendingPermission>()
-    expect(() => respondToPermission(map, 'unknown', true)).not.toThrow()
+    expect(respondToPermission(map, 'unknown', true)).toBe(false)
   })
 })
 

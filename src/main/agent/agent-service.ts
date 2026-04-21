@@ -344,8 +344,12 @@ export class AgentService {
         }
         const agent = this.findSessionBySid(projectPath, command.sessionId)
         if (agent) {
-          agent.respondToPermission(command.requestId, command.decision, undefined, command.reason, command.selectedSuggestions)
-          this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'permission', requestId: command.requestId, projectPath, sessionId: command.sessionId })
+          const handled = agent.respondToPermission(command.requestId, command.decision, undefined, command.reason, command.selectedSuggestions)
+          if (handled) {
+            this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'permission', requestId: command.requestId, projectPath, sessionId: command.sessionId })
+          } else {
+            log.warn('[AgentService] respond_permission: request %s not found for session %s', command.requestId, command.sessionId)
+          }
         } else {
           log.warn('[AgentService] respond_permission: no agent for session %s', command.sessionId)
         }
@@ -919,7 +923,9 @@ export class AgentService {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
       trace('permission.flow', 'ipc_response', { projectPath, sessionId: sessionId ?? null, allow, alwaysAllow, reason }, requestId)
-      this.resolveInteractionSession(projectPath, sessionId)?.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
+      const session = this.resolveInteractionSession(projectPath, sessionId)
+      if (!session) return false
+      return session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {

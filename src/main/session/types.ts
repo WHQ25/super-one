@@ -148,7 +148,7 @@ export interface SessionBackend {
     alwaysAllow?: boolean,
     reason?: string,
     selectedSuggestions?: number[],
-  ): void
+  ): boolean
   respondToQuestion(
     requestId: string,
     answers: Record<string, string>,
@@ -187,7 +187,7 @@ export interface Session {
     alwaysAllow?: boolean,
     reason?: string,
     selectedSuggestions?: number[],
-  ): void
+  ): boolean
   respondToQuestion(
     requestId: string,
     answers: Record<string, string>,

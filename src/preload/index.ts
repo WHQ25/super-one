@@ -16,7 +16,7 @@ const agentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, projectPath),
 
   respondToPermission: (projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, projectPath, requestId, allow, alwaysAllow, reason, selectedSuggestions, sessionId),
+    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, projectPath, requestId, allow, alwaysAllow, reason, selectedSuggestions, sessionId) as Promise<boolean>,
 
   setPermissionMode: (projectPath: string, mode: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_PERMISSION_MODE, projectPath, mode),

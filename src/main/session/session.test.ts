@@ -77,7 +77,7 @@ class FakeBackend implements SessionBackend {
   async setSandbox(info: import('../../shared/agent-types').SandboxInfo): Promise<void> {
     this.setSandboxCalls.push(info)
   }
-  respondToPermission(): void {}
+  respondToPermission(): boolean { return true }
   respondToQuestion(): void {}
   dismissQuestion(): void {}
   respondToPlanApproval(): void {}

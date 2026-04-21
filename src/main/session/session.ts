@@ -311,9 +311,9 @@ export class Session implements SessionContract {
     if (this.backendStarted) await this.backend.setModel(model)
   }
 
-  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): void {
+  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[]): boolean {
     this.assertNotDisposed()
-    this.backend.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
+    return this.backend.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
   }
 
   respondToQuestion(requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): void {

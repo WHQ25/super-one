@@ -279,14 +279,16 @@ export function respondToPermission(
   alwaysAllow?: boolean,
   reason?: string,
   selectedSuggestions?: number[]
-): void {
+): boolean {
   const pending = pendingPermissions.get(requestId)
   if (pending) {
     pendingPermissions.delete(requestId)
     trace('permission.flow', 'resolve', { source: 'response', allow, alwaysAllow, reason }, requestId)
     pending.resolve({ allow, alwaysAllow, reason, selectedSuggestions })
+    return true
   } else {
     trace('permission.flow', 'resolve_miss', { reason: 'not_in_pending_map', allow }, requestId)
+    return false
   }
 }
 

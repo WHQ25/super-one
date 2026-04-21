@@ -320,7 +320,7 @@ interface ChatStore {
   clearAttachments: () => void
 
   // Permission actions
-  respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel') => void
+  respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel') => Promise<boolean>
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   cyclePermissionMode: () => void
   togglePlanModeShortcut: () => void
@@ -3212,32 +3212,44 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateActivePerSession(s,() => ({ attachments: [] })))
   },
 
-  respondToPermission: (requestId, allow, alwaysAllow, reason, selectedSuggestions, decision) => {
+  respondToPermission: async (requestId, allow, alwaysAllow, reason, selectedSuggestions, decision) => {
     const { activeProject } = get()
-    if (!activeProject) return
+    if (!activeProject) return false
     const session = getActivePerSession(get(), activeProject)
     const respondedRequest = session.pendingPermissions.find((p) => p.requestId === requestId)
     if (!respondedRequest) {
       window.app.trace?.('permission.flow', 'click_miss', { reason: 'not_in_active_session_pending', activeProject }, requestId)
-      return
+      return false
     }
     const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
     window.app.trace?.('permission.flow', 'user_click', { allow, activeSid, provider: session.sessionProvider }, requestId)
-    if (session.sessionProvider === 'codex') {
-      const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-      if (sid) void window.app.codexRespondToPermission(sid, requestId, allow, alwaysAllow, reason, decision)
-    } else {
-      void window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions, activeSid)
+    let handled = false
+    try {
+      if (session.sessionProvider === 'codex') {
+        const sid = _getEffectiveSessionId(getProject(get(), activeProject))
+        if (sid) handled = await window.app.codexRespondToPermission(sid, requestId, allow, alwaysAllow, reason, decision)
+      } else {
+        handled = await window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions, activeSid)
+      }
+    } catch (err) {
+      console.warn('[chat] respondToPermission failed:', err)
+      return false
     }
-    const updates: Partial<PerSessionState> = {
-      pendingPermissions: session.pendingPermissions.filter((p) => p.requestId !== requestId),
-    }
-    if (allow && selectedSuggestions) {
-      const mode = extractModeFromSuggestions(respondedRequest?.suggestions, selectedSuggestions)
-      if (mode) updates.permissionMode = mode as PermissionMode
+    if (!handled) {
+      window.app.trace?.('permission.flow', 'ack_miss', { activeProject, activeSid, provider: session.sessionProvider }, requestId)
+      return false
     }
     set((s) => {
-      const perSessionUpdate = updateActivePerSession(s, () => updates)
+      const perSessionUpdate = updateActivePerSession(s, (sess) => {
+        const updates: Partial<PerSessionState> = {
+          pendingPermissions: sess.pendingPermissions.filter((p) => p.requestId !== requestId),
+        }
+        if (allow && selectedSuggestions) {
+          const mode = extractModeFromSuggestions(respondedRequest?.suggestions, selectedSuggestions)
+          if (mode) updates.permissionMode = mode as PermissionMode
+        }
+        return updates
+      })
       const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
       if (proj) {
         return {
@@ -3249,6 +3261,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       return perSessionUpdate
     })
+    return true
   },
 
   setPermissionMode: async (mode) => {

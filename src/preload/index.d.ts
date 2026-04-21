@@ -8,7 +8,7 @@ interface AgentAPI {
   dequeueMessage(projectPath: string, clientMessageId: string): Promise<boolean>
   prewarm(projectPath: string, hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[]; sessionId?: string }): Promise<void>
   interrupt(projectPath: string): Promise<boolean>
-  respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string): Promise<void>
+  respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string): Promise<boolean>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
   setSandboxMode(projectPath: string, mode: SandboxMode): Promise<SandboxInfo>
   answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations, sessionId?: string): Promise<void>

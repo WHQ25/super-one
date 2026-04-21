@@ -53,7 +53,7 @@ class FakeBackend implements SessionBackend {
   async setModel(): Promise<void> {}
   async setPermissionMode(): Promise<void> {}
   async setSandbox(): Promise<void> {}
-  respondToPermission(): void {}
+  respondToPermission(): boolean { return true }
   respondToQuestion(): void {}
   dismissQuestion(): void {}
   respondToPlanApproval(): void {}

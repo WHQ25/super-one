@@ -57,7 +57,7 @@ export interface CodexServiceDeps {
     alwaysAllow?: boolean,
     reason?: string,
     decision?: 'cancel',
-  ): void
+  ): boolean
   respondToQuestion(
     sessionId: string,
     requestId: string,
@@ -295,10 +295,10 @@ export class CodexBackend implements SessionBackend {
     alwaysAllow?: boolean,
     reason?: string,
     _selectedSuggestions?: number[],
-  ): void {
+  ): boolean {
     const startOpts = this.startOpts
-    if (!startOpts) return
-    this.service.respondToPermission(startOpts.sessionId, requestId, allow, alwaysAllow, reason)
+    if (!startOpts) return false
+    return this.service.respondToPermission(startOpts.sessionId, requestId, allow, alwaysAllow, reason)
   }
 
   respondToQuestion(requestId: string, answers: Record<string, string>, _annotations?: QuestionAnnotations): void {

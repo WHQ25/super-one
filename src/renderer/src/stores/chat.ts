@@ -3,7 +3,7 @@ import { useAppStore } from './app'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode } from './chat-helpers'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
@@ -53,6 +53,7 @@ export interface PerSessionState {
   totalCostUsd: number
   contextTokens: number
   contextWindow: number | null
+  detailedUsage: ContextUsageInfo | null
   subagentTokens: Record<string, { input: number; output: number }>
   taskProgress: Record<string, { description: string; lastToolName?: string; summary?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; outputFile?: string; toolHistory: Array<{ toolName: string; description: string }> }>
   streamingTokens: { input: number; output: number }
@@ -133,6 +134,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     totalCostUsd: 0,
     contextTokens: 0,
     contextWindow: null,
+    detailedUsage: null,
     subagentTokens: {},
     taskProgress: {},
     streamingTokens: { input: 0, output: 0 },
@@ -304,6 +306,9 @@ interface ChatStore {
 
   // Draft text
   setDraftText: (text: string) => void
+
+  // Context usage detail (per-session, in-memory)
+  setDetailedUsage: (projectPath: string, sessionId: string, usage: ContextUsageInfo | null) => void
 
   // Model actions
   setSelectedModel: (model: string) => void
@@ -3026,6 +3031,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (prevText.length === 0 && text.length > 0) {
       triggerPrewarm(get(), activeProject)
     }
+  },
+
+  setDetailedUsage: (projectPath, sessionId, usage) => {
+    set((s) => {
+      const project = s.projectSessions[projectPath]
+      if (!project?._sessions[sessionId]) return {}
+      return updatePerSession(s, projectPath, sessionId, () => ({ detailedUsage: usage }))
+    })
   },
 
   setSelectedModel: (model) => {

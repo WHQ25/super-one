@@ -409,6 +409,63 @@ describe('no data loss on session switch', () => {
     expect(final._sessions['b'].draftText).toBe('typed-in-b')
     expect(final._sessions['c'].draftText).toBe('typed-in-c')
   })
+
+  it('setDetailedUsage writes to the named sid only and does not leak across sessions', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: {
+            a: createDefaultPerSessionState(),
+            b: createDefaultPerSessionState(),
+          },
+        },
+      },
+    })
+
+    const usageA = { totalTokens: 5000, maxTokens: 200000, percentage: 2.5, model: 'claude-sonnet-4-6', categories: [] }
+    useChatStore.getState().setDetailedUsage('/test', 'a', usageA)
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['a'].detailedUsage).toEqual(usageA)
+    expect(after._sessions['b'].detailedUsage).toBeNull()
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...useChatStore.getState().projectSessions['/test'],
+          _activeSessionId: 'b',
+        },
+      },
+    })
+
+    expect(useChatStore.getState().projectSessions['/test']._sessions['b'].detailedUsage).toBeNull()
+  })
+
+  it('setDetailedUsage drops writes when target sid no longer exists', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: { a: createDefaultPerSessionState() },
+        },
+      },
+    })
+
+    useChatStore.getState().setDetailedUsage('/test', 'evicted-sid', { totalTokens: 9999, maxTokens: 200000, percentage: 5, model: 'claude-sonnet-4-6', categories: [] })
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['a'].detailedUsage).toBeNull()
+    expect(after._sessions['evicted-sid']).toBeUndefined()
+  })
 })
 
 describe('concurrent streaming sessions', () => {

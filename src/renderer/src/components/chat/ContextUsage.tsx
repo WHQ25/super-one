@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
-import { DEFAULT_CONTEXT_WINDOW, type ContextUsageInfo } from '../../../../shared/agent-types'
+import { DEFAULT_CONTEXT_WINDOW } from '../../../../shared/agent-types'
 
 const EXTENDED_CONTEXT_WINDOW = 1_000_000
 
@@ -22,27 +22,39 @@ export function ContextUsage() {
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const totalCostUsd = useActiveSession((s) => s.totalCostUsd)
   const status = useActiveSession((s) => s.status)
+  const detailedUsage = useActiveSession((s) => s.detailedUsage)
+  const activeSessionId = useActiveSession((s) => s._activeSessionId)
   const availableModels = useChatStore((s) => s.availableModels)
   const activeProject = useChatStore((s) => s.activeProject)
+  const setDetailedUsage = useChatStore((s) => s.setDetailedUsage)
 
-  const [detailedUsage, setDetailedUsage] = useState<ContextUsageInfo | null>(null)
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const prevStatusRef = useRef(status)
+  const prevSessionRef = useRef<{ sid: string | null; model: string }>({ sid: activeSessionId ?? null, model: selectedModel })
 
   useEffect(() => {
-    setDetailedUsage(null)
-  }, [selectedModel])
+    const prev = prevSessionRef.current
+    const sidChanged = prev.sid !== activeSessionId
+    const modelChanged = prev.model !== selectedModel
+    prevSessionRef.current = { sid: activeSessionId ?? null, model: selectedModel }
+    if (sidChanged || !modelChanged) return
+    if (!activeProject || !activeSessionId) return
+    setDetailedUsage(activeProject, activeSessionId, null)
+  }, [selectedModel, activeProject, activeSessionId, setDetailedUsage])
 
   useEffect(() => {
     const wasStreaming = prevStatusRef.current === 'streaming'
     prevStatusRef.current = status
-    if (!wasStreaming || status !== 'idle' || !activeProject) return
+    if (!wasStreaming || status !== 'idle' || !activeProject || !activeSessionId) return
     if (sessionProvider && sessionProvider !== 'claude') return
-    window.agent.getContextUsage(activeProject).then((usage) => {
-      if (usage) setDetailedUsage(usage)
+    const sid = activeSessionId
+    const project = activeProject
+    window.agent.getContextUsage(project, sid).then((usage) => {
+      if (!usage) return
+      setDetailedUsage(project, sid, usage)
     }).catch(() => {})
-  }, [status, activeProject, sessionProvider])
+  }, [status, activeProject, activeSessionId, sessionProvider, setDetailedUsage])
 
   const activeProvider = sessionProvider ?? preferredProvider
   const currentModel = availableModels.find((m) => m.id === selectedModel)

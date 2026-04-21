@@ -430,6 +430,20 @@ describe('ClaudeBackend', () => {
       expect(prewarmOpts.canUseTool).toBe(sentinelCanUseTool)
       expect(startOpts.canUseTool).toBe(sentinelCanUseTool)
     })
+
+    it('prewarm() forwards sessionId into buildClaudeOptions so WarmupManager isolates slots per-session', () => {
+      const backend = new ClaudeBackend()
+      backend.prewarm({ ...makeStartOpts(), sessionId: 'sess-unique' })
+      const built = hoisted.captured.buildClaudeOptionsMock.mock.calls[0]![0] as { sessionId?: string }
+      expect(built.sessionId).toBe('sess-unique')
+    })
+
+    it('start() forwards sessionId into createSessionQuery opts so the SDK subprocess is keyed per-session', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start({ ...makeStartOpts(), sessionId: 'sess-unique-2' })
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      expect((opts as { sessionId?: string }).sessionId).toBe('sess-unique-2')
+    })
   })
 
   describe('rebuild()', () => {

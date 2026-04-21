@@ -88,6 +88,7 @@ export class ClaudeBackend implements SessionBackend {
       canUseTool,
       trackPlanFile,
       resume: opts.providerSessionId,
+      sessionId: opts.sessionId,
       abortController: opts.abortController,
       additionalDirectories: opts.additionalDirectories,
       env: Object.keys(env).length > 0 ? env : undefined,

@@ -25,6 +25,7 @@ export function isLiveSession(
 ): boolean {
   return !!isUnseen
     || session?.status === 'streaming'
+    || session?.status === 'background'
     || (session?.pendingPermissions?.length ?? 0) > 0
     || !!session?.pendingQuestion
     || !!session?.pendingPlanApproval

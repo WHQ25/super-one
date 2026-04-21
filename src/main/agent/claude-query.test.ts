@@ -247,6 +247,7 @@ describe('createSessionQuery', () => {
           },
         },
       },
+      { type: 'system', subtype: 'session_state_changed', state: 'idle', session_id: 'sess-1' },
     ]
 
     const events: Array<Record<string, unknown>> = []
@@ -361,7 +362,7 @@ describe('createSessionQuery', () => {
     expect(usageEvents[2]).toMatchObject({ inputTokens: 218, outputTokens: 20 })
   })
 
-  it('emits message_error on non-success result subtype and stays idle', async () => {
+  it('emits message_error on non-success result subtype and idle when no background tasks active', async () => {
     state.messages = [
       {
         type: 'result',
@@ -386,14 +387,14 @@ describe('createSessionQuery', () => {
       messageId: 'msg-error',
       error: 'failure-1; failure-2',
     })
-    expect(events).toContainEqual({
-      type: 'status_change',
-      status: 'idle',
-    })
+    expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
   })
 
-  it('emits message_interrupted when result arrives after interruption', async () => {
-    state.messages = [{ type: 'result', subtype: 'success', usage: {} }]
+  it('emits message_interrupted and idle when result arrives after interruption (clears active tasks)', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 't1', description: 'bg' },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
 
     const events: Array<Record<string, unknown>> = []
     const handle = createSessionQuery(
@@ -430,122 +431,6 @@ describe('createSessionQuery', () => {
       error: 'stream crashed',
     })
     expect(events).toContainEqual({ type: 'status_change', status: 'error' })
-  })
-
-  it('emits early idle when background tasks are running after main agent completes', async () => {
-    state.messages = [
-      { type: 'system', subtype: 'init', session_id: 'sess-bg' },
-      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'agent-tool', name: 'Agent', input: {} }] } },
-      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'bg task' },
-      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'done' }] } },
-      { type: 'system', subtype: 'task_progress', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'progress', usage: {} },
-      { type: 'system', subtype: 'task_progress', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'progress2', usage: {} },
-      { type: 'system', subtype: 'task_notification', task_id: 'bg-1', status: 'completed', output_file: '' },
-      { type: 'result', subtype: 'success', usage: {} },
-    ]
-
-    const events: Array<Record<string, unknown>> = []
-    const handle = createSessionQuery(
-      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
-      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
-      (event) => events.push(event as unknown as Record<string, unknown>),
-      () => 'msg-bg',
-      () => Date.now() - 100,
-      () => false
-    )
-    await handle.iterationDone
-
-    const statusChanges = events
-      .filter((e) => e.type === 'status_change')
-      .map((e) => e.status)
-    expect(statusChanges[0]).toBe('idle')
-    expect(statusChanges[statusChanges.length - 1]).toBe('idle')
-  })
-
-  it('emits early idle on task_notification without task_progress', async () => {
-    state.messages = [
-      { type: 'system', subtype: 'init', session_id: 'sess-no-progress' },
-      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'agent-tool', name: 'Agent', input: {} }] } },
-      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'bg task' },
-      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'done' }] } },
-      { type: 'stream_event', event: { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 50 } } },
-      { type: 'system', subtype: 'task_notification', task_id: 'bg-1', status: 'completed', output_file: '' },
-      { type: 'result', subtype: 'success', usage: {} },
-    ]
-
-    const events: Array<Record<string, unknown>> = []
-    const handle = createSessionQuery(
-      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
-      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
-      (event) => events.push(event as unknown as Record<string, unknown>),
-      () => 'msg-no-progress',
-      () => Date.now() - 100,
-      () => false
-    )
-    await handle.iterationDone
-
-    const statusChanges = events
-      .filter((e) => e.type === 'status_change')
-      .map((e) => e.status)
-    expect(statusChanges[0]).toBe('idle')
-    expect(statusChanges).toContain('idle')
-    const earlyIdleIdx = statusChanges.indexOf('idle')
-    expect(earlyIdleIdx).toBeLessThan(statusChanges.length - 1)
-  })
-
-  it('emits early idle when task_started fires after main agent final response', async () => {
-    state.messages = [
-      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'agent-tool', name: 'Agent', input: {} }] } },
-      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'final response' }] } },
-      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'bg task' },
-      { type: 'system', subtype: 'task_progress', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'progress', usage: {} },
-      { type: 'result', subtype: 'success', usage: {} },
-    ]
-
-    const events: Array<Record<string, unknown>> = []
-    const handle = createSessionQuery(
-      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
-      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
-      (event) => events.push(event as unknown as Record<string, unknown>),
-      () => 'msg-late-start',
-      () => Date.now() - 100,
-      () => false
-    )
-    await handle.iterationDone
-
-    const statusChanges = events
-      .filter((e) => e.type === 'status_change')
-      .map((e) => e.status)
-    expect(statusChanges[0]).toBe('idle')
-    expect(statusChanges[statusChanges.length - 1]).toBe('idle')
-  })
-
-  it('re-emits streaming when main agent resumes after early idle', async () => {
-    state.messages = [
-      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'bg task' },
-      { type: 'assistant', message: { content: [] } },
-      { type: 'stream_event', event: { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 10 } } },
-      { type: 'system', subtype: 'task_progress', task_id: 'bg-1', tool_use_id: 'agent-tool', description: 'progress', usage: {} },
-      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'resumed' }] } },
-      { type: 'stream_event', event: { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 20 } } },
-      { type: 'result', subtype: 'success', usage: {} },
-    ]
-
-    const events: Array<Record<string, unknown>> = []
-    const handle = createSessionQuery(
-      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
-      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
-      (event) => events.push(event as unknown as Record<string, unknown>),
-      () => 'msg-resume',
-      () => Date.now() - 100,
-      () => false
-    )
-    await handle.iterationDone
-
-    const statusChanges = events
-      .filter((e) => e.type === 'status_change')
-      .map((e) => e.status)
-    expect(statusChanges).toEqual(['idle', 'streaming', 'idle', 'idle'])
   })
 
   it('uses per-turn messageId so result(A) keeps turn-A id when sendMessage(B) changes currentMessageId', async () => {
@@ -872,5 +757,129 @@ describe('createSessionQuery', () => {
     expect(thinkingDeltas).toHaveLength(1)
     expect((thinkingDeltas[0].delta as Record<string, unknown>).thinking).toBe('')
     expect(thinkingDeltas[0].messageId).toBe('msg-thinking-anchor')
+  })
+})
+
+describe('session_state_changed drives idle transition', () => {
+  function statusTrail(events: Array<Record<string, unknown>>): string[] {
+    return events
+      .filter((e) => e.type === 'status_change')
+      .map((e) => e.status as string)
+  }
+
+  it('emits status_change:idle when SDK sends session_state_changed:idle', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'init', session_id: 'sid' },
+      { type: 'system', subtype: 'session_state_changed', state: 'idle', session_id: 'sid' },
+    ]
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-state-idle',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+    expect(statusTrail(events)).toEqual(['idle'])
+  })
+
+  it('transitions result→background→idle across a running background task (regression for dispose-on-reset)', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'init', session_id: 'sid' },
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 't1', description: 'sleep 30', task_type: 'local_bash' },
+      { type: 'result', subtype: 'success', session_id: 'sid', usage: {} },
+      { type: 'system', subtype: 'task_notification', task_id: 'bg-1', tool_use_id: 't1', status: 'completed', output_file: '/tmp/out' },
+    ]
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-bg-regression',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(statusTrail(events)).toEqual(['background', 'idle'])
+    const completeIdx = events.findIndex((e) => e.type === 'message_complete')
+    const notifIdx = events.findIndex((e) => e.type === 'task_notification')
+    const idleIdx = events.findIndex((e) => e.type === 'status_change' && e.status === 'idle')
+    expect(completeIdx).toBeGreaterThanOrEqual(0)
+    expect(notifIdx).toBeGreaterThan(completeIdx)
+    expect(idleIdx).toBeGreaterThan(notifIdx)
+  })
+
+  it('emits idle immediately on result when no background tasks are active', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'init', session_id: 'sid' },
+      { type: 'result', subtype: 'success', session_id: 'sid', usage: {} },
+    ]
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-no-bg',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+    expect(statusTrail(events)).toEqual(['idle'])
+  })
+
+  it('task_updated with completed status triggers deferred idle (after background) when result already arrived', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 't1', description: 'bg' },
+      { type: 'result', subtype: 'success', session_id: 'sid', usage: {} },
+      { type: 'system', subtype: 'task_updated', task_id: 'bg-1', patch: { status: 'completed' } },
+    ]
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-task-updated',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+    expect(statusTrail(events)).toEqual(['background', 'idle'])
+  })
+
+  it('maps session_state_changed:running to streaming', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'session_state_changed', state: 'running', session_id: 'sid' },
+    ]
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-state-running',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+    expect(statusTrail(events)).toEqual(['streaming'])
+  })
+
+  it('maps session_state_changed:requires_action to streaming (park, not dispose)', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'session_state_changed', state: 'requires_action', session_id: 'sid' },
+    ]
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-state-ra',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+    expect(statusTrail(events)).toEqual(['streaming'])
   })
 })

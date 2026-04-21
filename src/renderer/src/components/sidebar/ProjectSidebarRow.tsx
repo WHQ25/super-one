@@ -1,6 +1,6 @@
 import { memo, useMemo, useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { Bot, CalendarClock, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, Pin, Play, Smartphone, SquarePen, Trash2 } from 'lucide-react'
+import { Bot, CalendarClock, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, Pin, Play, Smartphone, SquareActivity, SquarePen, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useChatStore } from '@/stores/chat'
@@ -289,6 +289,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               derived.sessionsToShow.map((session) => {
                 const sessionEntry = projectSession?._sessions?.[session.sessionId]
                 const isRunning = sessionEntry?.status === 'streaming'
+                const isBackground = sessionEntry?.status === 'background'
                 const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
                 const pendingReason = getPendingReason(sessionEntry?.pendingPermissions, sessionEntry?.pendingQuestion, sessionEntry?.pendingPlanApproval)
                 return (
@@ -317,15 +318,17 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                             <span className="pointer-events-none group-hover/session:opacity-0 transition-opacity">
                               {isRunning
                                 ? <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
-                                : isUnseen
-                                  ? <CircleCheck className="size-3 text-green-400" />
-                                  : session.isAutomation
-                                    ? <CalendarClock className="size-3 text-sidebar-foreground/70" />
-                                    : session.isWorktree
-                                      ? <GitFork className="size-3 text-sidebar-foreground/70" />
-                                      : remoteSessionId === session.sessionId
-                                        ? <Smartphone className="size-3 text-sidebar-foreground/70" />
-                                        : <MessageSquare className="size-3 text-sidebar-foreground/70" />
+                                : isBackground
+                                  ? <SquareActivity className="size-3 animate-pulse text-sidebar-foreground/70" />
+                                  : isUnseen
+                                    ? <CircleCheck className="size-3 text-green-400" />
+                                    : session.isAutomation
+                                      ? <CalendarClock className="size-3 text-sidebar-foreground/70" />
+                                      : session.isWorktree
+                                        ? <GitFork className="size-3 text-sidebar-foreground/70" />
+                                        : remoteSessionId === session.sessionId
+                                          ? <Smartphone className="size-3 text-sidebar-foreground/70" />
+                                          : <MessageSquare className="size-3 text-sidebar-foreground/70" />
                               }
                             </span>
                           </div>

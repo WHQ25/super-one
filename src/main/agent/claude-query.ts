@@ -152,7 +152,7 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
   return msg
 }
 
-interface IterateMessagesOptions {
+export interface IterateMessagesOptions {
   emit: (event: AgentEvent) => void
   getCurrentMessageId: () => string
   getCurrentStartTime: () => number
@@ -165,7 +165,7 @@ interface IterateMessagesOptions {
   timing: { pausedMs: number }
 }
 
-async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
+export async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
   const { emit: rawEmit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile, onQueuedTurnStart, onStepBoundary, bridge, timing } = opts
   const emit = rawEmit
   // Track content_block index → tool_use_id for input_json_delta correlation
@@ -187,14 +187,17 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
   // Subagent token accumulation per parent_tool_use_id
   const subagentTracking = new Map<string, { stepIds: Set<string>; input: number; output: number }>()
 
-  let pendingBackgroundTasks = 0
-  let earlyIdleEmitted = false
-  let earlyIdlePauseStart = 0
-  const backgroundToolUseIds = new Set<string>()
   let turnMessageId = getCurrentMessageId()
   let turnActive = false
   let resultSeen = false
   let turnUserEchoSeen = false
+
+  const activeBackgroundTaskIds = new Set<string>()
+  const maybeEmitDeferredIdle = () => {
+    if (resultSeen && activeBackgroundTaskIds.size === 0 && turnMessageId === getCurrentMessageId()) {
+      emit({ type: 'status_change', status: 'idle' })
+    }
+  }
 
   log.debug('[iterateMessages] starting iteration loop')
   try {
@@ -225,22 +228,9 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               createdAt: new Date().toISOString(),
               providerId: 'claude',
             } })
-            if (earlyIdlePauseStart) {
-              timing.pausedMs += Date.now() - earlyIdlePauseStart
-              earlyIdlePauseStart = 0
-            }
             emit({ type: 'status_change', status: 'streaming' })
-            earlyIdleEmitted = false
             resultSeen = false
             turnActive = true
-          } else if (earlyIdleEmitted) {
-            log.debug('[iterateMessages] re-emit streaming: main agent resumed after early idle')
-            if (earlyIdlePauseStart) {
-              timing.pausedMs += Date.now() - earlyIdlePauseStart
-              earlyIdlePauseStart = 0
-            }
-            emit({ type: 'status_change', status: 'streaming' })
-            earlyIdleEmitted = false
           }
           const latestId = getCurrentMessageId()
           if (!turnActive || latestId !== turnMessageId) {
@@ -260,20 +250,6 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
         const parentToolUseId = userMsg.parent_tool_use_id ?? null
         const isSynthetic = userMsg.isSynthetic === true ? true : undefined
         const isReplay = userMsg.isReplay === true ? true : undefined
-        if (!parentToolUseId && earlyIdleEmitted) {
-          const msgContent2 = userMsg.message?.content
-          const isBackgroundResult = Array.isArray(msgContent2) && msgContent2.length > 0 &&
-            msgContent2.every((b: any) => b.type === 'tool_result' && backgroundToolUseIds.has(b.tool_use_id))
-          if (!isBackgroundResult) {
-            log.debug('[iterateMessages] re-emit streaming: user message after early idle')
-            if (earlyIdlePauseStart) {
-              timing.pausedMs += Date.now() - earlyIdlePauseStart
-              earlyIdlePauseStart = 0
-            }
-            emit({ type: 'status_change', status: 'streaming' })
-            earlyIdleEmitted = false
-          }
-        }
         const msgContent = userMsg.message?.content
 
         if (!parentToolUseId && typeof msgContent === 'string') {
@@ -423,9 +399,15 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               indicator: sys.status ?? null,
               permissionMode: sys.permissionMode,
             })
+          } else if (sys.subtype === 'session_state_changed') {
+            const state = sys.state as 'idle' | 'running' | 'requires_action' | undefined
+            if (state === 'idle') {
+              emit({ type: 'status_change', status: 'idle' })
+            } else if (state === 'running' || state === 'requires_action') {
+              emit({ type: 'status_change', status: 'streaming' })
+            }
           } else if (sys.subtype === 'task_started') {
-            pendingBackgroundTasks++
-            if (sys.tool_use_id) backgroundToolUseIds.add(sys.tool_use_id)
+            if (sys.task_id) activeBackgroundTaskIds.add(sys.task_id)
             emit({
               type: 'task_started',
               taskId: sys.task_id ?? '',
@@ -433,6 +415,12 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               description: sys.description ?? '',
               taskType: sys.task_type,
             })
+          } else if (sys.subtype === 'task_updated') {
+            const patchStatus = sys.patch?.status as string | undefined
+            if (sys.task_id && (patchStatus === 'completed' || patchStatus === 'failed' || patchStatus === 'killed')) {
+              activeBackgroundTaskIds.delete(sys.task_id)
+              maybeEmitDeferredIdle()
+            }
           } else if (sys.subtype === 'task_progress') {
             emit({
               type: 'task_progress',
@@ -448,7 +436,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
               },
             })
           } else if (sys.subtype === 'task_notification') {
-            pendingBackgroundTasks = Math.max(0, pendingBackgroundTasks - 1)
+            if (sys.task_id) activeBackgroundTaskIds.delete(sys.task_id)
             emit({
               type: 'task_notification',
               taskId: sys.task_id ?? '',
@@ -462,6 +450,7 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
                 durationMs: sys.usage.duration_ms ?? 0,
               } : undefined,
             })
+            maybeEmitDeferredIdle()
           } else if (sys.subtype === 'hook_progress') {
             emit({
               type: 'hook_progress',
@@ -728,12 +717,6 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
                 })
               }
             }
-            const stopReason = event.delta?.stop_reason
-            if (!streamParent && pendingBackgroundTasks > 0 && stopReason && stopReason !== 'tool_use') {
-              emit({ type: 'status_change', status: 'idle' })
-              earlyIdleEmitted = true
-              earlyIdlePauseStart = Date.now()
-            }
           }
           break
         }
@@ -782,14 +765,11 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result = msg as any
           log.debug(`[iterateMessages] result subtype=${result.subtype} session_id=${result.session_id ?? '(none)'}`)
-          if (earlyIdlePauseStart) {
-            timing.pausedMs += Date.now() - earlyIdlePauseStart
-            earlyIdlePauseStart = 0
-          }
           const metadata = buildResultMetadata(result, getCurrentStartTime(), timing.pausedMs, lastAssistantUsage)
 
           if (getInterrupted()) {
             emit({ type: 'message_interrupted', messageId, metadata })
+            activeBackgroundTaskIds.clear()
           } else if (result.subtype === 'success') {
             emit({ type: 'message_complete', messageId, metadata })
           } else {
@@ -801,7 +781,10 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
           turnActive = false
           onStepBoundary?.()
           if (messageId === getCurrentMessageId()) {
-            emit({ type: 'status_change', status: 'idle' })
+            emit({
+              type: 'status_change',
+              status: activeBackgroundTaskIds.size === 0 ? 'idle' : 'background',
+            })
           }
           break
         }
@@ -842,10 +825,6 @@ async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<
     const messageId = getCurrentMessageId()
     const interrupted = getInterrupted()
     log.debug(`[iterateMessages] catch — interrupted=${interrupted}, error=${err instanceof Error ? err.message : String(err)}`)
-    if (earlyIdlePauseStart) {
-      timing.pausedMs += Date.now() - earlyIdlePauseStart
-      earlyIdlePauseStart = 0
-    }
     if (interrupted) {
       emit({ type: 'message_interrupted', messageId, metadata: { durationMs: Date.now() - getCurrentStartTime() - timing.pausedMs } })
       emit({ type: 'status_change', status: 'idle' })

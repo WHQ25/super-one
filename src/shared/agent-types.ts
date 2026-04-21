@@ -579,7 +579,7 @@ export type AgentEventBase =
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string }
 
-export type AgentStatus = 'idle' | 'streaming' | 'error'
+export type AgentStatus = 'idle' | 'streaming' | 'background' | 'error'
 
 // --- Renderer → Main requests ---
 

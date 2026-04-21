@@ -1374,9 +1374,13 @@ function _computeHasPendingInteraction(project: ProjectState): boolean {
   )
 }
 
+function _isBusyStatus(status: PerSessionState['status']): boolean {
+  return status === 'streaming' || status === 'background'
+}
+
 function _isLiveSession(session: PerSessionState | undefined): boolean {
   return !!session && (
-    session.status === 'streaming'
+    _isBusyStatus(session.status)
     || session.pendingPermissions.length > 0
     || !!session.pendingQuestion
     || !!session.pendingPlanApproval
@@ -1385,7 +1389,7 @@ function _isLiveSession(session: PerSessionState | undefined): boolean {
 }
 
 function _needsForegroundActivation(session: PerSessionState): boolean {
-  return session.status === 'streaming' || session.pendingPermissions.length > 0 || !!session.pendingQuestion || !!session.pendingPlanApproval
+  return _isBusyStatus(session.status) || session.pendingPermissions.length > 0 || !!session.pendingQuestion || !!session.pendingPlanApproval
 }
 
 let _resetSessionLock: Promise<void> | null = null
@@ -2310,7 +2314,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const activeSession = project._activeSessionId ? project._sessions[project._activeSessionId] : null
         const rs = get().remoteSession
         const isRemote = rs && rs.projectPath === currentProject && project._activeSessionId === rs.sessionId
-        if ((activeSession?.status === 'streaming' || activeSession?.awaitingAssistantReply) && !isRemote) {
+        if ((activeSession && (_isBusyStatus(activeSession.status) || activeSession.awaitingAssistantReply)) && !isRemote) {
           await _parkActiveSession(currentProject, project._activeSessionId)
         }
       }
@@ -2901,7 +2905,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (activeSession.status !== 'streaming' && currentSid) {
           await window.app.codexReset(currentSid).catch(() => {})
         }
-      } else if (activeSession.status === 'streaming' || activeSession.awaitingAssistantReply) {
+      } else if (_isBusyStatus(activeSession.status) || activeSession.awaitingAssistantReply) {
         agentConfig = await _parkActiveSession(activeProject, project._activeSessionId, newSessionId)
       } else {
         agentConfig = await window.agent.resetSession(activeProject, newSessionId)
@@ -3586,7 +3590,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Case A: Session already in _sessions (background streaming or parked)
     if (project._sessions[sessionId]) {
       const activeSession = getActivePerSession(get())
-      if (activeSession.status === 'streaming' || activeSession.awaitingAssistantReply) {
+      if (_isBusyStatus(activeSession.status) || activeSession.awaitingAssistantReply) {
         await _parkActiveSession(activeProject, project._activeSessionId)
       }
 
@@ -3669,7 +3673,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const freshProject = getProject(get())
     const freshActiveSession = getActivePerSession(get())
-    if (freshActiveSession.status === 'streaming') {
+    if (_isBusyStatus(freshActiveSession.status)) {
       await _parkActiveSession(activeProject, freshProject._activeSessionId)
     }
 

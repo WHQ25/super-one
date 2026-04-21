@@ -1,7 +1,7 @@
 import type { CanUseTool, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { MessageBridge } from '../../agent/message-bridge'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions } from '../../agent/claude-query'
-import { getSharedWarmupManager } from '../../agent/warmup-manager'
+import { WarmupManager } from '../../agent/warmup-manager'
 import {
   createCanUseTool,
   rejectAllPending,
@@ -57,7 +57,7 @@ export class ClaudeBackend implements SessionBackend {
   private canUseToolHandle: CanUseTool | null = null
   private trackPlanFileHandle: ((filePath: string) => void) | null = null
 
-  private warmupManager = getSharedWarmupManager()
+  private warmupManager = new WarmupManager()
 
   private ensurePermissionHandles(): { canUseTool: CanUseTool; trackPlanFile: (filePath: string) => void } {
     if (!this.canUseToolHandle || !this.trackPlanFileHandle) {
@@ -88,7 +88,6 @@ export class ClaudeBackend implements SessionBackend {
       canUseTool,
       trackPlanFile,
       resume: opts.providerSessionId,
-      sessionId: opts.sessionId,
       abortController: opts.abortController,
       additionalDirectories: opts.additionalDirectories,
       env: Object.keys(env).length > 0 ? env : undefined,
@@ -227,6 +226,7 @@ export class ClaudeBackend implements SessionBackend {
     this.iterationDone = null
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()
+    this.warmupManager.dispose()
   }
 
   prewarm(opts: BackendStartOptions): void {

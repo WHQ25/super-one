@@ -380,7 +380,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.OPEN_FOLDER, async (_event, folderPath: string) => {
     if (!existsSync(folderPath)) return false
     if (!existsSync(join(folderPath, '.git'))) {
-      execFileSync('git', ['init'], { cwd: folderPath })
+      try {
+        execFileSync('git', ['init'], { cwd: folderPath })
+      } catch (err) {
+        log.warn('[OPEN_FOLDER] git init failed for %s: %s', folderPath, err instanceof Error ? err.message : String(err))
+      }
     }
     addRecentFolder(folderPath)
     await agentService.openFolder(folderPath)

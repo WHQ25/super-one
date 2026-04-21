@@ -4,6 +4,20 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.21.9-alpha] - 2026-04-22
+
+### Fixed
+
+- **Permission mode stays in sync after the "Switch to acceptEdits" suggestion is applied** — when the CLI applied the mode switch directly (bypassing our setPermissionMode IPC), the session's cached mode went stale, so switching back to `default` was treated as a no-op and the next edit would auto-approve. The backend now forwards session-scoped setMode suggestions from `canUseTool` so `Session.permissionMode` updates and the renderer receives a `permission_mode_change` event.
+- **Context usage no longer bleeds between sessions that share a model** — the token count and category breakdown are now stored per-session and cleared on session switch instead of only on model change. `getContextUsage` is addressed by `sessionId` end-to-end, closing the reverse race where an in-flight fetch for session A could return session B's usage after a switch.
+- **Mention chips insert with correct spacing** — a chip inserted directly after non-whitespace text was serialized without surrounding spaces (e.g. `abc@hello.py`), which the user-bubble parser's mention guard then rejected. The mention atom is now self-contained with leading/trailing spaces in both the serializer and rendered text.
+- **Insight blocks wrapped in code fences render as insights** — models sometimes emit the star/divider insight block inside a ``` fence, which previously rendered as a raw code block. The splitter now detects and strips paired wrapping fences while leaving unmatched fences untouched so genuine code blocks are preserved.
+- **Sidebar session menu "Open Folder" reveals the project in Finder** — the menu item was wired to an IPC that opens the project inside SuperOne (a no-op when already open). It now calls `showInFolder` with an empty relative path, which resolves to the project root and opens it in the system file manager.
+
+### Performance
+
+- **Project switch no longer shows a blank file tree on first open** — `fetchTree` is now triggered fire-and-forget from every `currentFolder` entry point (open folder, switch project, open tmp folder), so the `listDir` IPC overlaps the rest of the project switch instead of starting only when the FileTree component mounts. A root-dedupe field in the file-tree store makes the component's own fetch a no-op.
+
 ## [0.21.8-alpha] - 2026-04-21
 
 ### Added

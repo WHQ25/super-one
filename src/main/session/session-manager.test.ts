@@ -65,6 +65,7 @@ class FakeBackend implements SessionBackend {
   async reloadPlugins() { return false }
   onEvent(h: (e: AgentEvent) => void) { this.eventListeners.add(h); return () => { this.eventListeners.delete(h) } }
   onProviderSessionId(h: (id: string) => void) { this.providerSessionIdListeners.add(h); return () => { this.providerSessionIdListeners.delete(h) } }
+  onPermissionModeApplied() { return () => {} }
   emit(e: AgentEvent): void { for (const cb of this.eventListeners) cb(e) }
 }
 

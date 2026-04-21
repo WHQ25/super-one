@@ -24,6 +24,7 @@ import type {
   SendMessageRequest,
 } from '../../../shared/agent-types'
 import log from '../../logger'
+import { trace } from '../../agent/event-trace'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 interface ClaudeConfig {
@@ -49,6 +50,7 @@ export class ClaudeBackend implements SessionBackend {
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
+  private permissionModeAppliedListeners = new Set<(mode: PermissionMode) => void>()
 
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
@@ -66,11 +68,18 @@ export class ClaudeBackend implements SessionBackend {
         this.pendingQuestions,
         this.pendingPlanApprovals,
         (e) => this.emit(e),
+        (mode) => this.emitPermissionModeApplied(mode),
       )
       this.canUseToolHandle = handles.canUseTool
       this.trackPlanFileHandle = handles.trackPlanFile
     }
     return { canUseTool: this.canUseToolHandle, trackPlanFile: this.trackPlanFileHandle }
+  }
+
+  private emitPermissionModeApplied(mode: PermissionMode): void {
+    for (const cb of this.permissionModeAppliedListeners) {
+      try { cb(mode) } catch (err) { log.warn('[ClaudeBackend] permissionModeApplied listener error:', err) }
+    }
   }
 
   private buildQueryOptions(opts: BackendStartOptions): SessionQueryOptions {
@@ -226,6 +235,7 @@ export class ClaudeBackend implements SessionBackend {
     this.iterationDone = null
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()
+    this.permissionModeAppliedListeners.clear()
     this.warmupManager.dispose()
   }
 
@@ -264,8 +274,18 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
-    if (!this.query) return
-    await this.query.setPermissionMode(mode)
+    if (!this.query) {
+      trace('permission.flow', 'backend_setMode_no_query', { mode })
+      return
+    }
+    trace('permission.flow', 'backend_setMode_sdk_call', { mode })
+    try {
+      await this.query.setPermissionMode(mode)
+      trace('permission.flow', 'backend_setMode_sdk_done', { mode })
+    } catch (err) {
+      trace('permission.flow', 'backend_setMode_sdk_error', { mode, err: (err as Error)?.message })
+      throw err
+    }
   }
 
   async setSandbox(sandboxInfo: SandboxInfo): Promise<void> {
@@ -389,6 +409,11 @@ export class ClaudeBackend implements SessionBackend {
   onProviderSessionId(handler: (id: string) => void): () => void {
     this.providerSessionIdListeners.add(handler)
     return () => { this.providerSessionIdListeners.delete(handler) }
+  }
+
+  onPermissionModeApplied(handler: (mode: PermissionMode) => void): () => void {
+    this.permissionModeAppliedListeners.add(handler)
+    return () => { this.permissionModeAppliedListeners.delete(handler) }
   }
 
   getCurrentProviderSessionId(): string | null {

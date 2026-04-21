@@ -387,6 +387,10 @@ export class CodexBackend implements SessionBackend {
     return () => { this.providerSessionIdListeners.delete(handler) }
   }
 
+  onPermissionModeApplied(_handler: (mode: PermissionMode) => void): () => void {
+    return () => {}
+  }
+
   getCurrentProviderSessionId(): string | null {
     return this.providerSessionId
   }

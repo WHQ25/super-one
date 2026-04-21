@@ -98,6 +98,16 @@ class FakeBackend implements SessionBackend {
     return () => { this.providerSessionIdListeners.delete(handler) }
   }
 
+  permissionModeAppliedListeners = new Set<(mode: import('../../shared/agent-types').PermissionMode) => void>()
+  onPermissionModeApplied(handler: (mode: import('../../shared/agent-types').PermissionMode) => void): () => void {
+    this.permissionModeAppliedListeners.add(handler)
+    return () => { this.permissionModeAppliedListeners.delete(handler) }
+  }
+
+  firePermissionModeApplied(mode: import('../../shared/agent-types').PermissionMode): void {
+    for (const cb of this.permissionModeAppliedListeners) cb(mode)
+  }
+
   emit(event: AgentEvent): void {
     for (const cb of this.eventListeners) cb(event)
   }
@@ -411,6 +421,33 @@ describe('Session state machine', () => {
 
       expect(backend.setPermissionModeCalls).toHaveLength(0)
       expect(backend.rebuildCalls).toHaveLength(0)
+    })
+
+    it('suggestion-driven mode change from backend syncs session.permissionMode so later switch-back is not treated as noop', async () => {
+      await bootAndIdle(session, backend)
+      const emitted: AgentEvent[] = []
+      session.on((e) => emitted.push(e))
+
+      backend.firePermissionModeApplied('acceptEdits')
+
+      expect(session.getCurrentPermissionMode()).toBe('acceptEdits')
+      expect(emitted.some((e) => e.type === 'permission_mode_change' && e.mode === 'acceptEdits')).toBe(true)
+
+      await session.setPermissionMode('default')
+
+      expect(backend.setPermissionModeCalls).toEqual(['default'])
+      expect(session.getCurrentPermissionMode()).toBe('default')
+    })
+
+    it('backend-applied mode equal to current is a noop (no event, no duplicate update)', async () => {
+      await bootAndIdle(session, backend)
+      const emitted: AgentEvent[] = []
+      session.on((e) => emitted.push(e))
+
+      backend.firePermissionModeApplied('default')
+
+      expect(emitted.some((e) => e.type === 'permission_mode_change')).toBe(false)
+      expect(session.getCurrentPermissionMode()).toBe('default')
     })
   })
 

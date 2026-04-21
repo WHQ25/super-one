@@ -4,7 +4,7 @@ import { homedir } from 'os'
 import log from '../logger'
 import { isToolPreapproved } from '../mcp/superone-mcp-server'
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentEvent, QuestionAnnotations } from '../../shared/agent-types'
+import type { AgentEvent, PermissionMode, QuestionAnnotations } from '../../shared/agent-types'
 import { trace } from './event-trace'
 
 export interface PendingPermission {
@@ -33,7 +33,8 @@ export function createCanUseTool(
   pendingPermissions: Map<string, PendingPermission>,
   pendingQuestions: Map<string, PendingQuestion>,
   pendingPlanApprovals: Map<string, PendingPlanApproval>,
-  emit: (event: AgentEvent) => void
+  emit: (event: AgentEvent) => void,
+  onPermissionModeApplied?: (mode: PermissionMode) => void,
 ) {
   const plansDir = join(homedir(), '.claude', 'plans')
   let trackedPlanFilePath: string | null = null
@@ -56,6 +57,7 @@ export function createCanUseTool(
       signal: AbortSignal
     }
   ) => {
+    trace('permission.flow', 'canUseTool_enter', { toolName, toolUseId: context.toolUseID })
     // Track Write/Edit to plan files (also tracked from event stream for auto-allowed calls)
     if (
       (toolName === 'Write' || toolName === 'Edit') &&
@@ -134,6 +136,17 @@ export function createCanUseTool(
         updatedPermissions = context.suggestions.filter((_, i) => result.selectedSuggestions!.includes(i))
       } else if (result.alwaysAllow) {
         updatedPermissions = context.suggestions
+      }
+      if (onPermissionModeApplied && updatedPermissions?.length) {
+        const sessionSetMode = [...updatedPermissions].reverse().find(
+          (p) => p.type === 'setMode' && (p.destination ?? 'session') === 'session',
+        ) as Extract<PermissionUpdate, { type: 'setMode' }> | undefined
+        if (sessionSetMode) {
+          trace('permission.flow', 'applied_setMode', { requestId, mode: sessionSetMode.mode })
+          try { onPermissionModeApplied(sessionSetMode.mode as PermissionMode) } catch (err) {
+            log.warn('[canUseTool] onPermissionModeApplied error:', err)
+          }
+        }
       }
       return {
         behavior: 'allow' as const,

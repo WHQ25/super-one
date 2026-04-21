@@ -167,6 +167,7 @@ export interface SessionBackend {
   handleCommand?(cmd: BackendCommand): Promise<void>
   onEvent(handler: (event: BackendEvent) => void): () => void
   onProviderSessionId(handler: (id: string) => void): () => void
+  onPermissionModeApplied(handler: (mode: PermissionMode) => void): () => void
 }
 
 export interface Session {

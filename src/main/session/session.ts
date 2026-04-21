@@ -164,6 +164,12 @@ export class Session implements SessionContract {
         log.warn('[Session] onProviderSessionIdChange hook error:', err)
       }
     }))
+    this.unsubs.push(this.backend.onPermissionModeApplied((mode) => {
+      if (this.permissionMode === mode) return
+      trace('permission.flow', 'session_mode_synced_from_backend', { sid: this.id, prev: this.permissionMode, next: mode })
+      this.permissionMode = mode
+      this.forwardEvent({ type: 'permission_mode_change', mode })
+    }))
     this.emitInitReady()
     if (this._missingWorktreePath) {
       this._cachedWorktreeMissing = this.forwardEvent({
@@ -265,20 +271,36 @@ export class Session implements SessionContract {
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.assertNotDisposed()
     const prev = this.permissionMode
-    if (prev === mode) return
+    trace('permission.flow', 'session_setMode_in', { sid: this.id, prev, next: mode, status: this._status, backendStarted: this.backendStarted })
+    if (prev === mode) {
+      trace('permission.flow', 'session_setMode_noop', { sid: this.id, mode })
+      return
+    }
     this.permissionMode = mode
-    if (!this.backendStarted) return
+    if (!this.backendStarted) {
+      trace('permission.flow', 'session_setMode_skip_backend', { sid: this.id, reason: 'backend_not_started' })
+      return
+    }
 
     const bypassCrossed = (prev === 'bypassPermissions') !== (mode === 'bypassPermissions')
     if (!bypassCrossed) {
-      await this.backend.setPermissionMode(mode)
+      trace('permission.flow', 'session_setMode_fast_path', { sid: this.id, prev, next: mode })
+      try {
+        await this.backend.setPermissionMode(mode)
+        trace('permission.flow', 'session_setMode_fast_done', { sid: this.id, mode })
+      } catch (err) {
+        trace('permission.flow', 'session_setMode_fast_error', { sid: this.id, mode, err: (err as Error)?.message })
+        throw err
+      }
       return
     }
 
     if (this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting') {
       this._needsRebuild = true
+      trace('permission.flow', 'session_setMode_defer_rebuild', { sid: this.id, mode, status: this._status })
       return
     }
+    trace('permission.flow', 'session_setMode_rebuild', { sid: this.id, mode })
     await this.backend.rebuild(this.buildBackendStartOpts())
   }
 

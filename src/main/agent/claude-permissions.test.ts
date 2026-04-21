@@ -292,6 +292,55 @@ describe('createCanUseTool', () => {
     expect(result.updatedPermissions).toEqual([suggestions[0], suggestions[2]])
   })
 
+  it('invokes onPermissionModeApplied when a selected setMode suggestion changes the session mode', async () => {
+    const suggestions = [
+      { type: 'addRules' as const, rules: [], destination: 'session' as const },
+      { type: 'setMode' as const, mode: 'acceptEdits' as const, destination: 'session' as const },
+    ]
+    const appliedModes: string[] = []
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit, (m) => appliedModes.push(m))
+
+    const promise = canUseTool('Edit', { file_path: '/tmp/a.txt' }, makeContext({ suggestions }))
+    const [id] = [...perms.keys()]
+    respondToPermission(perms, id, true, false, undefined, [1])
+
+    const result = await promise
+    expect(result.behavior).toBe('allow')
+    expect(result.updatedPermissions).toEqual([suggestions[1]])
+    expect(appliedModes).toEqual(['acceptEdits'])
+  })
+
+  it('does not invoke onPermissionModeApplied when no setMode suggestion is selected', async () => {
+    const suggestions = [
+      { type: 'addRules' as const, rules: [], destination: 'session' as const },
+      { type: 'setMode' as const, mode: 'acceptEdits' as const, destination: 'session' as const },
+    ]
+    const appliedModes: string[] = []
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit, (m) => appliedModes.push(m))
+
+    const promise = canUseTool('Edit', { file_path: '/tmp/a.txt' }, makeContext({ suggestions }))
+    const [id] = [...perms.keys()]
+    respondToPermission(perms, id, true, false, undefined, [0])
+
+    await promise
+    expect(appliedModes).toEqual([])
+  })
+
+  it('invokes onPermissionModeApplied when alwaysAllow batches in a setMode suggestion', async () => {
+    const suggestions = [
+      { type: 'setMode' as const, mode: 'bypassPermissions' as const, destination: 'session' as const },
+    ]
+    const appliedModes: string[] = []
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit, (m) => appliedModes.push(m))
+
+    const promise = canUseTool('Edit', { file_path: '/tmp/a.txt' }, makeContext({ suggestions }))
+    const [id] = [...perms.keys()]
+    respondToPermission(perms, id, true, true)
+
+    await promise
+    expect(appliedModes).toEqual(['bypassPermissions'])
+  })
+
   it('should deny immediately when signal is aborted', async () => {
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
 

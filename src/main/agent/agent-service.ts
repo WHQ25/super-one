@@ -935,7 +935,9 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
-      await this.getOrCreateActiveSession(projectPath).setPermissionMode(mode)
+      const session = this.getOrCreateActiveSession(projectPath)
+      trace('permission.flow', 'ipc_setMode', { projectPath, mode, sid: session.id, status: session.snapshot.status })
+      await session.setPermissionMode(mode)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode) => {
@@ -1021,9 +1023,12 @@ export class AgentService {
       return session.getMcpServerStatus()
     })
 
-    ipcMain.handle(AgentIpcChannels.GET_CONTEXT_USAGE, async (_event, projectPath: string) => {
-      const session = this.sessionManager?.getActiveSession(projectPath)
+    ipcMain.handle(AgentIpcChannels.GET_CONTEXT_USAGE, async (_event, projectPath: string, sessionId?: string) => {
+      const session = sessionId
+        ? this.sessionManager?.getSession(sessionId)
+        : this.sessionManager?.getActiveSession(projectPath)
       if (!session) return null
+      if (sessionId && session.snapshot.projectPath !== projectPath) return null
       return session.getContextUsage()
     })
 

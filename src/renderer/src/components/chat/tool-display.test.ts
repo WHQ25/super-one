@@ -65,4 +65,39 @@ describe('parseToolInput', () => {
   it('treats raw bash input as a command', () => {
     expect(parseToolInput('ls -la', 'Bash')).toEqual({ command: 'ls -la' })
   })
+
+  it('extracts partial Edit fields from incomplete streaming JSON', () => {
+    const partial = '{"file_path":"/tmp/a.ts","old_string":"foo","new_string":"bar'
+    expect(parseToolInput(partial, 'Edit')).toEqual({
+      file_path: '/tmp/a.ts',
+      old_string: 'foo',
+      new_string: 'bar',
+    })
+  })
+
+  it('extracts partial Write content from incomplete streaming JSON', () => {
+    const partial = '{"file_path":"/tmp/a.ts","content":"line1\\nline2'
+    expect(parseToolInput(partial, 'Write')).toEqual({
+      file_path: '/tmp/a.ts',
+      content: 'line1\nline2',
+    })
+  })
+
+  it('extracts partial FileChange fields from incomplete streaming JSON', () => {
+    const partial = '{"file_path":"/tmp/a.ts","kind":"edit","diff":"@@ -1 +1 @@\\n-old'
+    expect(parseToolInput(partial, 'FileChange')).toEqual({
+      file_path: '/tmp/a.ts',
+      kind: 'edit',
+      diff: '@@ -1 +1 @@\n-old',
+    })
+  })
+
+  it('returns complete params once streaming JSON finalizes', () => {
+    const complete = '{"file_path":"/tmp/a.ts","old_string":"foo","new_string":"bar"}'
+    expect(parseToolInput(complete, 'Edit')).toEqual({
+      file_path: '/tmp/a.ts',
+      old_string: 'foo',
+      new_string: 'bar',
+    })
+  })
 })

@@ -162,6 +162,7 @@ interface ToolBlockProps {
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
 const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
+const TOOL_DIFF_OPTS = { streamdownOnly: true } as const
 
 
 
@@ -248,11 +249,19 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   }, [deniedFeedback])
 
   const lineDelta = useMemo(() => (!isStreaming && !isDenied && !isError) ? computeLineDelta(toolName, params) : null, [toolName, params, isStreaming, isDenied, isError])
-  const hasDiff = DIFF_TOOLS.has(toolName) && !isStreaming && !isDenied && !isError && (
+  const hasStreamingDiffContent = DIFF_TOOLS.has(toolName) && isStreaming && (
+    toolName === 'Edit'
+      ? String(params.new_string ?? '').length > 0 || String(params.old_string ?? '').length > 0
+      : toolName === 'Write'
+        ? String(params.content ?? '').length > 0
+        : String(params.diff ?? '').length > 0
+  )
+  const hasCompleteDiff = DIFF_TOOLS.has(toolName) && !isStreaming && !isDenied && !isError && (
     toolName === 'FileChange'
       ? String(params.diff ?? '').length > 0
       : Object.keys(params).length > 0
   )
+  const hasDiff = hasCompleteDiff || hasStreamingDiffContent
   const hasResult = !!cleanResult && !isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
   const expandable = hasDiff || hasResult || hasQA
@@ -260,10 +269,10 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   const gridRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
-    if (DIFF_TOOLS.has(toolName) && hasDiff && !isStreaming) {
+    if (DIFF_TOOLS.has(toolName) && hasDiff) {
       setExpanded(true)
       const grid = gridRef.current
-      if (grid) {
+      if (grid && !isStreaming) {
         grid.style.transition = 'none'
         requestAnimationFrame(() => { grid.style.transition = '' })
       }
@@ -519,9 +528,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         >
           <div className="overflow-hidden">
             <div className="px-2 pb-1.5">
-              {toolName === 'Edit' && <EditDiff params={params} />}
-              {toolName === 'Write' && <WriteDiff params={params} />}
-              {toolName === 'FileChange' && <FileChangeDiff params={params} />}
+              {toolName === 'Edit' && <EditDiff params={params} isStreaming={isStreaming} />}
+              {toolName === 'Write' && <WriteDiff params={params} isStreaming={isStreaming} />}
+              {toolName === 'FileChange' && <FileChangeDiff params={params} isStreaming={isStreaming} />}
               {isError && cleanResult && (
                 <div className="text-xs text-amber-400/90">{extractToolError(cleanResult)}</div>
               )}
@@ -929,17 +938,18 @@ function buildDiffSourceText(lines: DiffLine[]): { oldText: string; newText: str
 
 
 /** Unified diff for Edit tool with actual file line numbers. */
-export function EditDiff({ params }: { params: Record<string, unknown> }) {
+export function EditDiff({ params, isStreaming }: { params: Record<string, unknown>; isStreaming?: boolean }) {
   const oldStr = String(params.old_string ?? '')
   const newStr = String(params.new_string ?? '')
   const filePath = String(params.file_path ?? '')
   const activeProject = useChatStore((s) => s.activeProject)
   const [startLine, setStartLine] = useState(1)
   const language = inferLanguage(filePath)
-  const oldTokens = useHighlightedTokens(oldStr, language)
-  const newTokens = useHighlightedTokens(newStr, language)
+  const oldTokens = useHighlightedTokens(oldStr, language, TOOL_DIFF_OPTS)
+  const newTokens = useHighlightedTokens(newStr, language, TOOL_DIFF_OPTS)
 
   useEffect(() => {
+    if (isStreaming) return
     if (!filePath || !activeProject) return
     let cancelled = false
     const tryFind = async (): Promise<void> => {
@@ -956,7 +966,7 @@ export function EditDiff({ params }: { params: Record<string, unknown> }) {
     }
     tryFind()
     return () => { cancelled = true }
-  }, [filePath, oldStr, newStr, activeProject])
+  }, [filePath, oldStr, newStr, activeProject, isStreaming])
 
   const lines = useMemo(
     () => buildDiffLines(oldStr, newStr, startLine),
@@ -964,15 +974,15 @@ export function EditDiff({ params }: { params: Record<string, unknown> }) {
   )
 
   if (!oldStr && !newStr) return null
-  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} />
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} autoScrollBottom={isStreaming} />
 }
 
 /** Content preview for Write tool (all lines are additions). */
-export function WriteDiff({ params }: { params: Record<string, unknown> }) {
+export function WriteDiff({ params, isStreaming }: { params: Record<string, unknown>; isStreaming?: boolean }) {
   const content = String(params.content ?? '')
   const filePath = String(params.file_path ?? '')
   const language = inferLanguage(filePath)
-  const tokens = useHighlightedTokens(content, language)
+  const tokens = useHighlightedTokens(content, language, TOOL_DIFF_OPTS)
 
   const lines = useMemo<DiffLine[]>(() => {
     if (!content) return []
@@ -980,21 +990,21 @@ export function WriteDiff({ params }: { params: Record<string, unknown> }) {
   }, [content])
 
   if (lines.length === 0) return null
-  return <DiffView lines={lines} newTokens={tokens} />
+  return <DiffView lines={lines} newTokens={tokens} autoScrollBottom={isStreaming} />
 }
 
-function FileChangeDiff({ params }: { params: Record<string, unknown> }) {
+function FileChangeDiff({ params, isStreaming }: { params: Record<string, unknown>; isStreaming?: boolean }) {
   const diff = String(params.diff ?? '')
   const kind = String(params.kind ?? '')
   const filePath = String(params.file_path ?? '')
   const language = inferLanguage(filePath)
   const lines = useMemo(() => buildFileChangeDiffLines(kind, diff), [kind, diff])
   const { oldText, newText } = useMemo(() => buildDiffSourceText(lines), [lines])
-  const oldTokens = useHighlightedTokens(oldText, language)
-  const newTokens = useHighlightedTokens(newText, language)
+  const oldTokens = useHighlightedTokens(oldText, language, TOOL_DIFF_OPTS)
+  const newTokens = useHighlightedTokens(newText, language, TOOL_DIFF_OPTS)
 
   if (!diff || lines.length === 0) return null
-  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} />
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} autoScrollBottom={isStreaming} />
 }
 
 /** ExitPlanMode: shows pending / approved / rejected state.

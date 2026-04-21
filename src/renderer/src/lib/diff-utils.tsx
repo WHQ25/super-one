@@ -37,6 +37,11 @@ export function inferLanguage(filePath: string): string {
   return EXT_LANG[ext] ?? 'text'
 }
 
+export interface HLToken { content: string; style?: React.CSSProperties }
+
+const HIGHLIGHT_LINE_LIMIT = 10000
+const HIGHLIGHT_CHUNK_SIZE = 100
+
 const COMPANION_LANGS: Record<string, string[]> = {
   html: ['javascript', 'css'],
   vue: ['javascript', 'typescript', 'css', 'html'],
@@ -77,12 +82,6 @@ async function getFileHighlighter(theme: string, lang: string): Promise<Highligh
   return hl
 }
 
-export interface HLToken { content: string; style?: React.CSSProperties }
-
-const HIGHLIGHT_LINE_LIMIT = 10000
-const HIGHLIGHT_CHUNK_SIZE = 100
-
-
 type HighlightRawToken = { content: string; color?: string; bgColor?: string; htmlStyle?: Record<string, string> }
 type HighlightResult = { tokens: HighlightRawToken[][] }
 
@@ -104,36 +103,43 @@ function extractTokens(res: HighlightResult): HLToken[][] {
   return res.tokens.map((line) => line.map((t) => ({ content: t.content, style: internStyle(t) })))
 }
 
-export function useHighlightedTokens(code: string, language: string): HLToken[][] | null {
+export interface UseHighlightedTokensOptions {
+  /** When true, always use the streamdown plugin (no chunked path, no separate highlighter load). Suitable for tool diffs that stream. */
+  streamdownOnly?: boolean
+}
+
+export function useHighlightedTokens(code: string, language: string, options?: UseHighlightedTokensOptions): HLToken[][] | null {
   const [tokens, setTokens] = useState<HLToken[][] | null>(null)
   const isDark = useIsDark()
   const plugin = isDark ? codePlugin : codePluginLight
+  const currentSeqRef = useRef(0)
+  const committedSeqRef = useRef(0)
+  const streamdownOnly = options?.streamdownOnly === true
 
   useEffect(() => {
     if (!code) { setTokens(null); return }
     const lineCount = code.split('\n').length
     if (lineCount > HIGHLIGHT_LINE_LIMIT) { setTokens(null); return }
-    let cancelled = false
+    const mySeq = ++currentSeqRef.current
     const lang = plugin.supportsLanguage(language as never) ? language : 'md'
     const themes = plugin.getThemes()
     const needsCompanions = hasCompanions(lang)
 
-    if (lineCount <= HIGHLIGHT_CHUNK_SIZE && !needsCompanions) {
+    if (streamdownOnly || (lineCount <= HIGHLIGHT_CHUNK_SIZE && !needsCompanions)) {
       let handled = false
       const apply = (res: HighlightResult) => {
-        if (cancelled || handled) return
+        if (handled) return
         handled = true
-        const extracted = extractTokens(res)
-        startTransition(() => { if (!cancelled) setTokens(extracted) })
+        if (mySeq < committedSeqRef.current) return
+        committedSeqRef.current = mySeq
+        setTokens(extractTokens(res))
       }
-      const idleId = requestIdleCallback(() => {
-        if (cancelled) return
-        const result = plugin.highlight({ code, language: lang as never, themes }, apply)
-        if (result) apply(result)
-      }, { timeout: 80 })
-      return () => { cancelled = true; cancelIdleCallback(idleId) }
+      const result = plugin.highlight({ code, language: lang as never, themes }, apply)
+      if (result) apply(result)
+      return
     }
 
+    let cancelled = false
     const theme = (isDark ? 'github-dark' : 'github-light') as BundledTheme
     const idleId = requestIdleCallback(() => {
       if (cancelled) return
@@ -143,7 +149,7 @@ export function useHighlightedTokens(code: string, language: string): HLToken[][
         const accumulated: (HLToken[] | undefined)[] = new Array(codeLines.length)
         let gramState: GrammarState | undefined
 
-        const processChunk = (chunkIdx: number) => {
+        const processChunk = (chunkIdx: number): void => {
           if (cancelled) return
           const start = chunkIdx * HIGHLIGHT_CHUNK_SIZE
           if (start >= codeLines.length) return
@@ -154,14 +160,14 @@ export function useHighlightedTokens(code: string, language: string): HLToken[][
           gramState = hl.getLastGrammarState(tokens) as GrammarState | undefined
           const extracted = tokens.map((line: ThemedToken[]) => line.map((t) => ({ content: t.content, style: internStyle(t as HighlightRawToken) })))
           for (let i = 0; i < extracted.length; i++) accumulated[start + i] = extracted[i]
-          startTransition(() => { if (!cancelled) setTokens([...accumulated] as HLToken[][]) })
+          if (!cancelled) startTransition(() => setTokens([...accumulated] as HLToken[][]))
           requestIdleCallback(() => processChunk(chunkIdx + 1), { timeout: 16 })
         }
         processChunk(0)
       }).catch(() => {})
     }, { timeout: 50 })
     return () => { cancelled = true; cancelIdleCallback(idleId) }
-  }, [code, language, isDark, plugin])
+  }, [code, language, isDark, plugin, streamdownOnly])
 
   return tokens
 }
@@ -367,7 +373,8 @@ export const DiffView = forwardRef<HTMLDivElement, {
   className?: string
   hideScrollbar?: boolean
   scrollToLine?: { line: number; seq: number } | null
-}>(function DiffView({ lines, oldTokens, newTokens, fontSize, maxHeight, className, hideScrollbar, scrollToLine }, ref) {
+  autoScrollBottom?: boolean
+}>(function DiffView({ lines, oldTokens, newTokens, fontSize, maxHeight, className, hideScrollbar, scrollToLine, autoScrollBottom }, ref) {
   const maxLine = useMemo(() => lines.reduce((m, l) => Math.max(m, l.lineNum), 0), [lines])
   const gw = gutterWidth(maxLine)
   const [minContentWidth, setMinContentWidth] = useState('0px')
@@ -444,9 +451,22 @@ export const DiffView = forwardRef<HTMLDivElement, {
     }
   }, [scrollToLine])
 
+  useLayoutEffect(() => {
+    if (!autoScrollBottom) return
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [autoScrollBottom, lines.length, virtualizer.getTotalSize()])
+
   const outerClassName = useMemo(() =>
-    cn('overflow-auto rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground', maxHeight ?? 'max-h-[300px]', hideScrollbar && 'hide-scrollbar', className),
-    [maxHeight, hideScrollbar, className],
+    cn(
+      'rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground',
+      autoScrollBottom ? 'overflow-hidden' : 'overflow-auto',
+      maxHeight ?? 'max-h-[300px]',
+      hideScrollbar && 'hide-scrollbar',
+      className,
+    ),
+    [autoScrollBottom, maxHeight, hideScrollbar, className],
   )
 
   return (

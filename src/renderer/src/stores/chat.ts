@@ -13,6 +13,8 @@ const CODEX_LAST_SELECTION_STORAGE_KEY = 'super-one.codex.last-selection.v1'
 const CODEX_APPROVE_PLAN_PROMPT = 'Plan approved, start implementation.'
 export const CODEX_REJECT_PLAN_PLACEHOLDER = 'Tell Codex what to do differently'
 
+const STREAMING_INPUT_TOOLS = new Set(['Edit', 'Write', 'FileChange', 'NotebookEdit'])
+
 export type MentionKind = 'file' | 'directory' | 'agent'
 export interface Mention {
   kind: MentionKind
@@ -886,7 +888,11 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         partialLen: event.partialJson.length,
         matchesWidget: targetBlock?.type === 'tool_use' && targetBlock.toolName.endsWith('__show_widget'),
       })
-      if (targetBlock?.type === 'tool_use' && targetBlock.toolName.endsWith('__show_widget')) {
+      const shouldAccumulate = targetBlock?.type === 'tool_use' && (
+        targetBlock.toolName.endsWith('__show_widget') ||
+        STREAMING_INPUT_TOOLS.has(targetBlock.toolName)
+      )
+      if (shouldAccumulate) {
         return {
           lastEventAt: Date.now(),
           messages: session.messages.map((msg) => {

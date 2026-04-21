@@ -25,36 +25,7 @@ export function parseWidgetResult(text: string): WidgetData | null {
   return null
 }
 
-function extractJsonStringValue(json: string, key: string): string | undefined {
-  const re = new RegExp(`"${key}":\\s*"`)
-  const match = re.exec(json)
-  if (!match) return undefined
-  let i = match.index + match[0].length
-  let value = ''
-  while (i < json.length) {
-    if (json[i] === '\\' && i + 1 < json.length) {
-      const next = json[i + 1]
-      if (next === '"') { value += '"'; i += 2 }
-      else if (next === '\\') { value += '\\'; i += 2 }
-      else if (next === 'n') { value += '\n'; i += 2 }
-      else if (next === 'r') { value += '\r'; i += 2 }
-      else if (next === 't') { value += '\t'; i += 2 }
-      else if (next === '/') { value += '/'; i += 2 }
-      else { value += json[i]; i++ }
-    } else if (json[i] === '"') {
-      return value
-    } else {
-      value += json[i]
-      i++
-    }
-  }
-  return value
-}
-
-function extractJsonNumberValue(json: string, key: string): number | undefined {
-  const match = json.match(new RegExp(`"${key}":\\s*(\\d+)`))
-  return match ? Number(match[1]) : undefined
-}
+import { extractJsonStringValue, extractJsonNumberValue } from '../partial-json'
 
 export function parsePartialWidgetInput(partialJson: string): WidgetData | null {
   const code = extractJsonStringValue(partialJson, 'widget_code')

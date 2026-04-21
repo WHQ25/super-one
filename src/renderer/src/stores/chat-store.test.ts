@@ -3562,6 +3562,100 @@ describe('handleAgentEvent supplemental', () => {
     })
   })
 
+  describe('tool_input_delta accumulation for streaming diff tools', () => {
+    it('accumulates partialJson into tool_use.input for Edit tool', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-edit', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-edit',
+        delta: { type: 'tool_use', toolName: 'Edit', toolUseId: 'tu-1', input: '', status: 'streaming' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'tool_input_delta',
+        messageId: 'msg-edit',
+        toolUseId: 'tu-1',
+        partialJson: '{"file_path":"/x","new',
+      } as never))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'tool_input_delta',
+        messageId: 'msg-edit',
+        toolUseId: 'tu-1',
+        partialJson: '_string":"hello',
+      } as never))
+
+      const session = getActiveDraftSession('/test')!
+      const msg = session.messages.find((m) => m.id === 'msg-edit')
+      const block = msg?.content.find((b) => b.type === 'tool_use')
+      expect(block?.type).toBe('tool_use')
+      if (block?.type !== 'tool_use') return
+      expect(block.input).toBe('{"file_path":"/x","new_string":"hello')
+    })
+
+    it('accumulates partialJson for Write tool', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-write', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-write',
+        delta: { type: 'tool_use', toolName: 'Write', toolUseId: 'tu-w', input: '', status: 'streaming' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'tool_input_delta',
+        messageId: 'msg-write',
+        toolUseId: 'tu-w',
+        partialJson: '{"content":"line1',
+      } as never))
+
+      const session = getActiveDraftSession('/test')!
+      const msg = session.messages.find((m) => m.id === 'msg-write')
+      const block = msg?.content.find((b) => b.type === 'tool_use')
+      if (block?.type !== 'tool_use') return
+      expect(block.input).toBe('{"content":"line1')
+    })
+
+    it('does NOT accumulate partialJson for non-streaming-diff tools like Bash', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-bash', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-bash',
+        delta: { type: 'tool_use', toolName: 'Bash', toolUseId: 'tu-b', input: '', status: 'streaming' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'tool_input_delta',
+        messageId: 'msg-bash',
+        toolUseId: 'tu-b',
+        partialJson: '{"command":"ls',
+      } as never))
+
+      const session = getActiveDraftSession('/test')!
+      const msg = session.messages.find((m) => m.id === 'msg-bash')
+      const block = msg?.content.find((b) => b.type === 'tool_use')
+      if (block?.type !== 'tool_use') return
+      expect(block.input).toBe('')
+    })
+  })
+
   describe('message_complete', () => {
     it('sets message status to complete and updates cost', () => {
       setupProject('/test')

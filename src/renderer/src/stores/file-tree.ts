@@ -29,6 +29,7 @@ interface FileTreeState {
   dragOverPath: string | null
   _visibleList: VisibleItem[]
   _visibleVersion: number
+  _currentRoot: string | null
 
   fetchTree: (projectPath: string) => Promise<void>
   refreshTree: (projectPath: string) => Promise<void>
@@ -164,17 +165,22 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   dragOverPath: null,
   _visibleList: [],
   _visibleVersion: 0,
+  _currentRoot: null,
 
   fetchTree: async (projectPath) => {
-    set({ loading: true })
+    const s = get()
+    if (s._currentRoot === projectPath && (s.loading || s.nodes.size > 0)) return
+    set({ loading: true, _currentRoot: projectPath })
     try {
       const entries = await window.app.listDir(projectPath, '')
+      if (get()._currentRoot !== projectPath) return
       const nodes = new Map<string, FlatNode>()
       const rootChildPaths = entriesToNodes(entries, '', 0, nodes)
       nodes.set('', { entry: { name: '', path: '', isDirectory: true }, depth: -1, parentPath: '', childPaths: rootChildPaths, isLoaded: true })
       const _visibleList = computeVisible(nodes, new Set(), new Set())
       set({ nodes, expandedDirs: new Set(), loadingDirs: new Set(), loading: false, _visibleList, _visibleVersion: get()._visibleVersion + 1 })
     } catch {
+      if (get()._currentRoot !== projectPath) return
       set({ nodes: new Map(), loading: false, _visibleList: [], _visibleVersion: get()._visibleVersion + 1 })
     }
   },
@@ -255,6 +261,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
       dragOverPath: null,
       _visibleList: [],
       _visibleVersion: get()._visibleVersion + 1,
+      _currentRoot: null,
     })
   },
 

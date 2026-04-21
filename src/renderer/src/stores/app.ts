@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { RecentFolder, RemoteDeviceConfig, SetupEvent, SettingsProvider, UpdateEvent } from '../../../shared/agent-types'
+import { useFileTreeStore } from './file-tree'
 
 export type { RemoteDeviceConfig }
 
@@ -102,10 +103,15 @@ interface AppState {
   getWorktreeState: (projectPath: string) => WorktreeState
 }
 
+function prefetchFileTree(folderPath: string): void {
+  void useFileTreeStore.getState().fetchTree(folderPath)
+}
+
 async function openFolderDirect(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<boolean> {
   const ok = await window.app.openFolder(folderPath)
   if (!ok) return false
   set({ currentFolder: folderPath })
+  prefetchFileTree(folderPath)
   useAppStore.getState().fetchRecentFolders()
   const { useChatStore } = await import('./chat')
   useChatStore.getState().ensureSession(folderPath)
@@ -182,6 +188,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ok = await window.app.addRecentFolder(folderPath)
     if (!ok) return
     set({ currentFolder: folderPath })
+    prefetchFileTree(folderPath)
     await useAppStore.getState().fetchRecentFolders()
     const { useChatStore } = await import('./chat')
     useChatStore.getState().ensureSession(folderPath)
@@ -195,7 +202,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   openTmpFolder: async () => {
     const tmpPath = await window.app.openTmpFolder()
     set({ currentFolder: tmpPath, tmpFolder: tmpPath })
-    // Activate tmp project session
+    prefetchFileTree(tmpPath)
     const { useChatStore } = await import('./chat')
     useChatStore.getState().ensureSession(tmpPath)
     await useChatStore.getState().switchProject(tmpPath)
@@ -237,6 +244,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   switchToProject: async (folderPath: string) => {
     set({ currentFolder: folderPath })
+    prefetchFileTree(folderPath)
     const { useChatStore } = await import('./chat')
     useChatStore.getState().ensureSession(folderPath)
     await useChatStore.getState().switchProject(folderPath)

@@ -3600,9 +3600,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await _parkActiveSession(activeProject, project._activeSessionId)
       }
 
+      const cachedTarget = project._sessions[sessionId]
+      const worktreeMissing =
+        !!cachedTarget._worktreePath &&
+        !cachedTarget._worktreeRemoved &&
+        !(await window.app.pathExists(cachedTarget._worktreePath))
+
       set((s) => {
         const proj = getProject(s, activeProject)
         const targetSession = proj._sessions[sessionId]
+        const patched: PerSessionState = worktreeMissing
+          ? { ...targetSession, _worktreeRemoved: true, cwd: activeProject }
+          : { ...targetSession, cwd: _getSessionCwd(activeProject, targetSession) }
         return {
           projectSessions: {
             ...s.projectSessions,
@@ -3612,14 +3621,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               showHistory: false,
               _sessions: {
                 ...proj._sessions,
-                [sessionId]: { ...targetSession, cwd: _getSessionCwd(activeProject, targetSession) },
+                [sessionId]: patched,
               },
             },
           },
         }
       })
 
-      const targetSession = project._sessions[sessionId]
+      const targetSession = get().projectSessions[activeProject]!._sessions[sessionId]
       const runtimeSession = targetSession
 
       window.app.trace?.('agent.store', 'switchSession:A', {

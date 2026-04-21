@@ -17,6 +17,7 @@ export function resolveSdkClaudeBinary(): string | undefined {
       try {
         let p = req.resolve(c)
         if (p.includes('/app.asar/')) p = p.replace('/app.asar/', '/app.asar.unpacked/')
+        if (p.includes('\\app.asar\\')) p = p.replace('\\app.asar\\', '\\app.asar.unpacked\\')
         cached = p
         return p
       } catch { /* try next */ }

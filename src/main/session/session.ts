@@ -604,6 +604,9 @@ export class Session implements SessionContract {
   }
 
   private forwardEvent(event: AgentEvent): AgentEvent {
+    if (event.type === 'permission_request') {
+      log.info('[Session.forwardEvent] permission_request sessionId=%s listeners=%d requestId=%s', this.id, this.eventListeners.size, event.request.requestId)
+    }
     if (event.type === 'queued_message_consumed') {
       const pending = this._pendingQueuedRequests.get(event.clientMessageId)
       if (pending) {

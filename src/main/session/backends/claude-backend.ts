@@ -395,6 +395,9 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private emit(event: AgentEvent): void {
+    if (event.type === 'permission_request') {
+      log.info('[ClaudeBackend.emit] permission_request listeners=%d requestId=%s', this.eventListeners.size, event.request.requestId)
+    }
     for (const cb of this.eventListeners) {
       try { cb(event) } catch (err) { log.warn('[ClaudeBackend] event listener error:', err) }
     }

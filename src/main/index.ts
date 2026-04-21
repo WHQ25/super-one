@@ -138,6 +138,11 @@ const sessionManager = new SessionManagerImpl({
   },
 })
 sessionManager.onAny((_sid, event) => {
+  if (event.type === 'permission_request') {
+    const alive = !!mainWindow && !mainWindow.isDestroyed()
+    log.info('[onAny] permission_request sid=%s sessionId=%s projectPath=%s windowAlive=%s requestId=%s',
+      _sid, event.sessionId ?? '(none)', event.projectPath ?? '(none)', alive, event.request.requestId)
+  }
   agentService.notifyEventSubscribers(event)
   safeSend(AgentIpcChannels.EVENT, event)
 })

@@ -4,6 +4,14 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.21.7-alpha] - 2026-04-21
+
+### Fixed
+
+- **Permission prompts stuck after switching sessions** — The shared `WarmupManager` let a warm SDK subprocess outlive the backend that created it. When one session disposed and another session's warm slot key matched, the second session consumed the first session's subprocess — whose `canUseTool` closure was still bound to the disposed backend. Permission requests emitted into an empty listener set and the prompt never reached the UI. Each `ClaudeBackend` now owns its own `WarmupManager` and disposes it on close, so warm slots die with the backend that owns them.
+- **Permission prompt stays visible when the backend can't resolve it** — `respondToPermission` now returns an ack boolean through the backend → `Session` → IPC → store chain, so if the main process has no pending request for the given id (stale click, session already moved on), the renderer keeps the prompt instead of silently clearing it.
+- **Mermaid diagrams render all nodes** — the SVG `foreignObject` coordinate bug that was dropping nodes from rendered Mermaid charts is resolved.
+
 ## [0.21.6-alpha] - 2026-04-20
 
 ### Added

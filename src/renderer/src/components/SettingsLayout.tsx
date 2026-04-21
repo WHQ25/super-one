@@ -29,7 +29,7 @@ const providerTabs = [
   { id: 'preferences' as const, label: 'Preference', icon: Palette },
 ]
 
-const codexTabs = new Set<string>(['providers', 'skills', 'mcp', 'plugins'])
+const codexTabs = new Set<string>(['providers', 'skills', 'mcp', 'plugins', 'preferences'])
 
 const providers: { id: SettingsProvider; label: string }[] = [
   { id: 'claude', label: 'Claude Code' },

@@ -58,7 +58,13 @@ const mockWindowApp = {
   codexInterrupt: vi.fn().mockResolvedValue(false),
   codexPlanApproval: vi.fn().mockResolvedValue(undefined),
   codexCollaborationModeChange: vi.fn().mockResolvedValue(undefined),
-  getUserPreferences: vi.fn().mockResolvedValue({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' }),
+  getAppSettings: vi.fn().mockResolvedValue({
+    analyticsEnabled: true,
+    agentPreference: {
+      claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
+      codex: { defaultModel: '', defaultReasoningEffort: '' },
+    },
+  }),
 }
 
 Object.defineProperty(window, 'agent', { value: mockWindowAgent, configurable: true })

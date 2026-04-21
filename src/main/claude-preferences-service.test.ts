@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   mkdirSync: vi.fn<(path: string, options?: { recursive?: boolean }) => void>(),
   readFileSync: vi.fn<(path: string, encoding: string) => string>(),
   writeFileSync: vi.fn<(path: string, content: string) => void>(),
-  homedir: vi.fn<() => string>(),
 }))
 
 vi.mock('fs', () => ({
@@ -15,51 +14,9 @@ vi.mock('fs', () => ({
   writeFileSync: mocks.writeFileSync,
 }))
 
-vi.mock('os', () => ({
-  homedir: mocks.homedir,
-}))
-
-import { readUserPreferences, saveUserPreferences, readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
+import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 
 const CWD = '/mock-project'
-
-describe('user preferences (~/.claude/settings.json)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.homedir.mockReturnValue('/mock-home')
-    mocks.existsSync.mockReturnValue(false)
-  })
-
-  it('reads outputStyle from user settings', () => {
-    mocks.existsSync.mockReturnValue(true)
-    mocks.readFileSync.mockReturnValue(JSON.stringify({ outputStyle: 'concise', defaultPermissionMode: '', defaultSandboxMode: '' }))
-    expect(readUserPreferences()).toEqual({ outputStyle: 'concise', defaultPermissionMode: '', defaultSandboxMode: '' })
-  })
-
-  it('returns empty when missing', () => {
-    expect(readUserPreferences()).toEqual({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' })
-  })
-
-  it('saves outputStyle to user settings', () => {
-    mocks.existsSync.mockReturnValue(true)
-    mocks.readFileSync.mockReturnValue(JSON.stringify({ fastMode: true }))
-    expect(saveUserPreferences({ outputStyle: ' detailed ' })).toEqual({ outputStyle: 'detailed', defaultPermissionMode: '', defaultSandboxMode: '' })
-    expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      '/mock-home/.claude/settings.json',
-      JSON.stringify({ fastMode: true, outputStyle: 'detailed' }, null, 2),
-    )
-  })
-
-  it('removes outputStyle when empty', () => {
-    mocks.existsSync.mockReturnValue(true)
-    mocks.readFileSync.mockReturnValue(JSON.stringify({ fastMode: true, outputStyle: 'verbose' }))
-    expect(saveUserPreferences({ outputStyle: '   ' })).toEqual({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' })
-    expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      '/mock-home/.claude/settings.json',
-      JSON.stringify({ fastMode: true }, null, 2),
-    )
-  })
-})
 
 describe('project preferences ({cwd}/.claude/settings.local.json)', () => {
   beforeEach(() => {
@@ -69,18 +26,18 @@ describe('project preferences ({cwd}/.claude/settings.local.json)', () => {
 
   it('reads outputStyle from project local settings', () => {
     mocks.existsSync.mockReturnValue(true)
-    mocks.readFileSync.mockReturnValue(JSON.stringify({ outputStyle: 'Explanatory', defaultPermissionMode: '', defaultSandboxMode: '' }))
-    expect(readProjectPreferences(CWD)).toEqual({ outputStyle: 'Explanatory', defaultPermissionMode: '', defaultSandboxMode: '' })
+    mocks.readFileSync.mockReturnValue(JSON.stringify({ outputStyle: 'Explanatory' }))
+    expect(readProjectPreferences(CWD)).toEqual({ outputStyle: 'Explanatory' })
   })
 
   it('returns empty when missing', () => {
-    expect(readProjectPreferences(CWD)).toEqual({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' })
+    expect(readProjectPreferences(CWD)).toEqual({ outputStyle: '' })
   })
 
   it('saves outputStyle to project local settings', () => {
     mocks.existsSync.mockReturnValue(true)
     mocks.readFileSync.mockReturnValue(JSON.stringify({ fastMode: true }))
-    expect(saveProjectPreferences(CWD, { outputStyle: 'Learning', defaultPermissionMode: '', defaultSandboxMode: '' })).toEqual({ outputStyle: 'Learning', defaultPermissionMode: '', defaultSandboxMode: '' })
+    expect(saveProjectPreferences(CWD, { outputStyle: 'Learning' })).toEqual({ outputStyle: 'Learning' })
     expect(mocks.mkdirSync).toHaveBeenCalledWith('/mock-project/.claude', { recursive: true })
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
       '/mock-project/.claude/settings.local.json',
@@ -91,10 +48,20 @@ describe('project preferences ({cwd}/.claude/settings.local.json)', () => {
   it('removes outputStyle when empty', () => {
     mocks.existsSync.mockReturnValue(true)
     mocks.readFileSync.mockReturnValue(JSON.stringify({ outputStyle: 'verbose' }))
-    expect(saveProjectPreferences(CWD, { outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' })).toEqual({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' })
+    expect(saveProjectPreferences(CWD, { outputStyle: '' })).toEqual({ outputStyle: '' })
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
       '/mock-project/.claude/settings.local.json',
       JSON.stringify({}, null, 2),
+    )
+  })
+
+  it('preserves other fields when saving outputStyle', () => {
+    mocks.existsSync.mockReturnValue(true)
+    mocks.readFileSync.mockReturnValue(JSON.stringify({ defaultPermissionMode: 'plan', outputStyle: 'old' }))
+    expect(saveProjectPreferences(CWD, { outputStyle: 'new' })).toEqual({ outputStyle: 'new' })
+    expect(mocks.writeFileSync).toHaveBeenCalledWith(
+      '/mock-project/.claude/settings.local.json',
+      JSON.stringify({ defaultPermissionMode: 'plan', outputStyle: 'new' }, null, 2),
     )
   })
 })

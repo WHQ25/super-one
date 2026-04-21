@@ -45,7 +45,13 @@ const mockWindowApp = {
   pathExists: vi.fn().mockResolvedValue(true),
   resumeSession: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
-  getUserPreferences: vi.fn().mockResolvedValue({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' }),
+  getAppSettings: vi.fn().mockResolvedValue({
+    analyticsEnabled: true,
+    agentPreference: {
+      claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
+      codex: { defaultModel: '', defaultReasoningEffort: '' },
+    },
+  }),
 }
 
 Object.defineProperty(window, 'agent', { value: mockWindowAgent, writable: true, configurable: true })

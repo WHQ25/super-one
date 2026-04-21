@@ -557,10 +557,6 @@ const appAPI = {
   },
 
   // Settings
-  getUserPreferences: () =>
-    ipcRenderer.invoke(AgentIpcChannels.CLAUDE_USER_PREFERENCES_GET),
-  saveUserPreferences: (preferences: { outputStyle: string }) =>
-    ipcRenderer.invoke(AgentIpcChannels.CLAUDE_USER_PREFERENCES_SAVE, preferences),
   getProjectPreferences: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CLAUDE_PROJECT_PREFERENCES_GET, projectPath),
   saveProjectPreferences: (projectPath: string, preferences: { outputStyle: string }) =>

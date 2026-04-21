@@ -76,8 +76,6 @@ export interface SessionInfo {
 
 export interface ClaudePreferences {
   outputStyle: string
-  defaultPermissionMode: string
-  defaultSandboxMode: string
 }
 
 // --- Usage / cost tracking ---
@@ -1222,8 +1220,6 @@ export const AgentIpcChannels = {
   MCP_LIST_LIBRARY: 'mcp:list-library',
   MCP_DELETE_LIBRARY_ENTRY: 'mcp:delete-library-entry',
 
-  CLAUDE_USER_PREFERENCES_GET: 'claude:user-preferences-get',
-  CLAUDE_USER_PREFERENCES_SAVE: 'claude:user-preferences-save',
   CLAUDE_PROJECT_PREFERENCES_GET: 'claude:project-preferences-get',
   CLAUDE_PROJECT_PREFERENCES_SAVE: 'claude:project-preferences-save',
 
@@ -1449,4 +1445,24 @@ export interface RemoteDeviceConfig {
 
 export interface AppSettings {
   analyticsEnabled: boolean
+  agentPreference: {
+    claude: {
+      defaultModel: string
+      defaultEffort: EffortLevel | ''
+      defaultPermissionMode: PermissionMode | ''
+      defaultSandboxMode: SandboxMode | ''
+    }
+    codex: {
+      defaultModel: string
+      defaultReasoningEffort: CodexReasoningEffort | ''
+    }
+  }
+}
+
+export interface AppSettingsPatch {
+  analyticsEnabled?: boolean
+  agentPreference?: {
+    claude?: Partial<AppSettings['agentPreference']['claude']>
+    codex?: Partial<AppSettings['agentPreference']['codex']>
+  }
 }

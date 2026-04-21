@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, ApiProvider, AppSettings, Automation, AutomationRunStatus, BashOutputEvent, ChatMessage, ClaudePreferences, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
+import type { AgentEvent, AgentInfo, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, ChatMessage, ClaudePreferences, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
 import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest } from '../shared/miniapp-types'
 
 
@@ -161,13 +161,11 @@ interface AppAPI {
   onBashOutputEvent(callback: (event: BashOutputEvent) => void): () => void
 
   // Settings
-  getUserPreferences(): Promise<ClaudePreferences>
-  saveUserPreferences(preferences: Partial<ClaudePreferences>): Promise<ClaudePreferences>
   getProjectPreferences(projectPath: string): Promise<ClaudePreferences>
   saveProjectPreferences(projectPath: string, preferences: Partial<ClaudePreferences>): Promise<ClaudePreferences>
   setFastMode(enabled: boolean): Promise<void>
   getAppSettings(): Promise<AppSettings>
-  saveAppSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  saveAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
 
   // Logging
   getLogPath(): Promise<string>

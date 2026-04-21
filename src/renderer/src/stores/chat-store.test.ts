@@ -63,7 +63,35 @@ const mockWindowApp = {
   codexInterrupt: vi.fn().mockResolvedValue(false),
   codexPlanApproval: vi.fn().mockResolvedValue(undefined),
   codexCollaborationModeChange: vi.fn().mockResolvedValue(undefined),
-  getUserPreferences: vi.fn().mockResolvedValue({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' }),
+  getAppSettings: vi.fn().mockResolvedValue({
+    analyticsEnabled: true,
+    agentPreference: {
+      claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
+      codex: { defaultModel: '', defaultReasoningEffort: '' },
+    },
+  }),
+}
+
+type ClaudePrefPatch = {
+  defaultModel?: string
+  defaultEffort?: string
+  defaultPermissionMode?: string
+  defaultSandboxMode?: string
+}
+function mockAppSettingsWithClaude(patch: ClaudePrefPatch) {
+  mockWindowApp.getAppSettings.mockResolvedValue({
+    analyticsEnabled: true,
+    agentPreference: {
+      claude: {
+        defaultModel: '',
+        defaultEffort: '',
+        defaultPermissionMode: '',
+        defaultSandboxMode: '',
+        ...patch,
+      },
+      codex: { defaultModel: '', defaultReasoningEffort: '' },
+    },
+  })
 }
 
 const eventTarget = new EventTarget()
@@ -77,7 +105,7 @@ vi.stubGlobal('window', {
 })
 vi.stubGlobal('localStorage', mockLocalStorage)
 
-const { useChatStore, createSessionId, createDefaultPerSessionState, createDefaultProjectState, invalidateDefaultPermissionModeCache, getDefaultEffortForModel } = await import('./chat')
+const { useChatStore, createSessionId, createDefaultPerSessionState, createDefaultProjectState, invalidateDefaultPermissionModeCache, invalidateDefaultCodexPreferencesCache, invalidateDefaultClaudePreferencesCache, getDefaultEffortForModel } = await import('./chat')
 const createDraftSessionId = createSessionId
 const isDraftSession = (id: string | null): boolean => !!id
 
@@ -152,10 +180,12 @@ function makeMessage(id: string, role: 'user' | 'assistant'): ChatMessage {
 beforeEach(() => {
   resetStore()
   vi.clearAllMocks()
-  mockWindowApp.getUserPreferences.mockResolvedValue({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' })
+  mockAppSettingsWithClaude({})
   mockLocalStorage.clear()
   globalThis.localStorage?.removeItem('super-one.codex.last-selection.v1')
   invalidateDefaultPermissionModeCache()
+  invalidateDefaultClaudePreferencesCache()
+  invalidateDefaultCodexPreferencesCache()
 })
 
 describe('ensureSession', () => {
@@ -184,11 +214,7 @@ describe('ensureSession', () => {
   })
 
   it('applies user preference permissionMode to new session', async () => {
-    mockWindowApp.getUserPreferences.mockResolvedValue({
-      outputStyle: '',
-      defaultPermissionMode: 'plan',
-      defaultSandboxMode: '',
-    })
+    mockAppSettingsWithClaude({ defaultPermissionMode: 'plan' })
     invalidateDefaultPermissionModeCache()
     await new Promise((r) => setTimeout(r, 0))
 
@@ -198,11 +224,7 @@ describe('ensureSession', () => {
   })
 
   it('applies user preference sandboxMode to new project sandboxInfo', async () => {
-    mockWindowApp.getUserPreferences.mockResolvedValue({
-      outputStyle: '',
-      defaultPermissionMode: '',
-      defaultSandboxMode: 'off',
-    })
+    mockAppSettingsWithClaude({ defaultSandboxMode: 'off' })
     invalidateDefaultPermissionModeCache()
     await new Promise((r) => setTimeout(r, 0))
 
@@ -212,11 +234,7 @@ describe('ensureSession', () => {
   })
 
   it('applies user preference sandboxMode auto to new project sandboxInfo', async () => {
-    mockWindowApp.getUserPreferences.mockResolvedValue({
-      outputStyle: '',
-      defaultPermissionMode: '',
-      defaultSandboxMode: 'auto',
-    })
+    mockAppSettingsWithClaude({ defaultSandboxMode: 'auto' })
     invalidateDefaultPermissionModeCache()
     await new Promise((r) => setTimeout(r, 0))
 
@@ -1445,6 +1463,40 @@ describe('codex model cache + defaults', () => {
     expect(session.selectedCodexReasoningEffort).toBe('high')
   })
 
+  it('prefers app-level codex defaults over remembered selection', async () => {
+    globalThis.localStorage?.setItem('super-one.codex.last-selection.v1', JSON.stringify({
+      modelId: 'gpt-5.4',
+      reasoningEffort: 'low',
+    }))
+    mockWindowApp.getAppSettings.mockResolvedValue({
+      analyticsEnabled: true,
+      agentPreference: { codex: { defaultModel: 'gpt-5.4', defaultReasoningEffort: 'high' } },
+    })
+    invalidateDefaultCodexPreferencesCache()
+    await new Promise((r) => setTimeout(r, 0))
+
+    useChatStore.getState().setGlobalResources(
+      [],
+      {},
+      [],
+      [],
+      [],
+      [],
+      [
+        {
+          id: 'gpt-5.4',
+          name: 'GPT-5.4',
+          supportedReasoningEfforts: [{ value: 'low', description: 'low' }, { value: 'high', description: 'high' }],
+        } as never,
+      ] as never[],
+    )
+
+    useChatStore.getState().ensureSession('/codex-pref')
+    const session = getActiveDraftSession('/codex-pref')!
+    expect(session.selectedCodexModel).toBe('gpt-5.4')
+    expect(session.selectedCodexReasoningEffort).toBe('high')
+  })
+
   it('seeds new session with remembered codex selection when available', () => {
     globalThis.localStorage?.setItem('super-one.codex.last-selection.v1', JSON.stringify({
       modelId: 'gpt-5.4',
@@ -1469,6 +1521,30 @@ describe('codex model cache + defaults', () => {
 
     useChatStore.getState().ensureSession('/codex-memory')
     const session = getActiveDraftSession('/codex-memory')!
+    expect(session.selectedCodexModel).toBe('gpt-5.4')
+    expect(session.selectedCodexReasoningEffort).toBe('low')
+  })
+
+  it('applies app-level codex defaults when models load after session creation', async () => {
+    mockWindowApp.getAppSettings.mockResolvedValue({
+      analyticsEnabled: true,
+      agentPreference: { codex: { defaultModel: 'gpt-5.4', defaultReasoningEffort: 'low' } },
+    })
+    invalidateDefaultCodexPreferencesCache()
+    await new Promise((r) => setTimeout(r, 0))
+
+    useChatStore.getState().ensureSession('/codex-refresh-default')
+    useChatStore.setState({ activeProject: '/codex-refresh-default' })
+    mockWindowApp.codexListModels.mockResolvedValueOnce([
+      {
+        id: 'gpt-5.4',
+        name: 'GPT-5.4',
+        supportedReasoningEfforts: [{ value: 'low', description: 'low' }, { value: 'high', description: 'high' }],
+      } as never,
+    ])
+
+    await useChatStore.getState().refreshCodexModels(true)
+    const session = getActiveDraftSession('/codex-refresh-default')!
     expect(session.selectedCodexModel).toBe('gpt-5.4')
     expect(session.selectedCodexReasoningEffort).toBe('low')
   })
@@ -1642,11 +1718,7 @@ describe('switchSession Case B (from DB)', () => {
 
   it('uses defaultPermissionMode from user preferences', async () => {
     setupProject('/test')
-    mockWindowApp.getUserPreferences.mockResolvedValue({
-      outputStyle: '',
-      defaultPermissionMode: 'acceptEdits',
-      defaultSandboxMode: '',
-    })
+    mockAppSettingsWithClaude({ defaultPermissionMode: 'acceptEdits' })
     invalidateDefaultPermissionModeCache()
     await new Promise((r) => setTimeout(r, 0))
     mockWindowApp.loadSessionState.mockResolvedValue({
@@ -1666,7 +1738,7 @@ describe('switchSession Case B (from DB)', () => {
 
   it('passes permissionMode to resumeSession in Case B', async () => {
     setupProject('/test')
-    mockWindowApp.getUserPreferences.mockResolvedValue({ outputStyle: '', defaultPermissionMode: '', defaultSandboxMode: '' })
+    mockAppSettingsWithClaude({})
     mockWindowApp.loadSessionState.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,

@@ -1,12 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { homedir } from 'os'
 import { dirname, join } from 'path'
+import type { ClaudePreferences } from '../shared/agent-types'
 
-export interface ClaudePreferences {
-  outputStyle: string
-  defaultPermissionMode: string
-  defaultSandboxMode: string
-}
+export type { ClaudePreferences }
 
 function readJsonFile(filePath: string): Record<string, unknown> {
   if (!existsSync(filePath)) return {}
@@ -21,22 +17,18 @@ function readPreferencesFromFile(filePath: string): ClaudePreferences {
   const data = readJsonFile(filePath)
   return {
     outputStyle: typeof data.outputStyle === 'string' ? data.outputStyle : '',
-    defaultPermissionMode: typeof data.defaultPermissionMode === 'string' ? data.defaultPermissionMode : '',
-    defaultSandboxMode: typeof data.defaultSandboxMode === 'string' ? data.defaultSandboxMode : '',
   }
 }
 
 function savePreferencesToFile(filePath: string, preferences: Partial<ClaudePreferences>): ClaudePreferences {
   const data = readJsonFile(filePath)
 
-  for (const key of ['outputStyle', 'defaultPermissionMode', 'defaultSandboxMode'] as const) {
-    if (key in preferences) {
-      const val = (preferences[key] ?? '').trim()
-      if (val) {
-        data[key] = val
-      } else {
-        delete data[key]
-      }
+  if ('outputStyle' in preferences) {
+    const val = (preferences.outputStyle ?? '').trim()
+    if (val) {
+      data.outputStyle = val
+    } else {
+      delete data.outputStyle
     }
   }
 
@@ -45,17 +37,7 @@ function savePreferencesToFile(filePath: string, preferences: Partial<ClaudePref
 
   return {
     outputStyle: typeof data.outputStyle === 'string' ? data.outputStyle : '',
-    defaultPermissionMode: typeof data.defaultPermissionMode === 'string' ? data.defaultPermissionMode : '',
-    defaultSandboxMode: typeof data.defaultSandboxMode === 'string' ? data.defaultSandboxMode : '',
   }
-}
-
-export function readUserPreferences(): ClaudePreferences {
-  return readPreferencesFromFile(join(homedir(), '.claude', 'settings.json'))
-}
-
-export function saveUserPreferences(preferences: Partial<ClaudePreferences>): ClaudePreferences {
-  return savePreferencesToFile(join(homedir(), '.claude', 'settings.json'), preferences)
 }
 
 export function readProjectPreferences(cwd: string): ClaudePreferences {

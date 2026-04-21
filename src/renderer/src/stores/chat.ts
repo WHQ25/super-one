@@ -61,8 +61,12 @@ export interface PerSessionState {
   codexTurnLastUsage: CodexUsageInfo | null
   selectedModel: string
   selectedEffort?: EffortLevel
+  modelUserChosen: boolean
+  effortUserChosen: boolean
   selectedCodexModel: string
   selectedCodexReasoningEffort?: CodexReasoningEffort
+  codexModelUserChosen: boolean
+  codexReasoningEffortUserChosen: boolean
   selectedCodexPermissionPreset: CodexPermissionPreset
   selectedCodexCollaborationMode: CodexCollaborationMode
   codexPlanRejectHintActive: boolean
@@ -142,8 +146,12 @@ export function createDefaultPerSessionState(): PerSessionState {
     codexTurnLastUsage: null,
     selectedModel: '',
     selectedEffort: undefined,
+    modelUserChosen: false,
+    effortUserChosen: false,
     selectedCodexModel: '',
     selectedCodexReasoningEffort: undefined,
+    codexModelUserChosen: false,
+    codexReasoningEffortUserChosen: false,
     selectedCodexPermissionPreset: 'default',
     selectedCodexCollaborationMode: 'default',
     codexPlanRejectHintActive: false,
@@ -188,11 +196,29 @@ export function getDefaultEffortForModel(model?: ModelOption): EffortLevel | und
   return levels[0]
 }
 
+function resolveDefaultClaudeModel(models: ModelOption[]): ModelOption | undefined {
+  const preferredId = _cachedDefaultClaudeSelection?.modelId
+  if (preferredId) {
+    const match = models.find((m) => m.id === preferredId)
+    if (match) return match
+  }
+  return models[0]
+}
+
+function resolveDefaultClaudeEffort(model: ModelOption | undefined): EffortLevel | undefined {
+  const preferredEffort = _cachedDefaultClaudeSelection?.effort
+  const supported = model?.supportedEffortLevels
+  if (preferredEffort && supported?.includes(preferredEffort)) {
+    return preferredEffort
+  }
+  return getDefaultEffortForModel(model)
+}
+
 function applyDefaultModel(session: PerSessionState, models: ModelOption[]): void {
-  const defaultModel = models[0]
+  const defaultModel = resolveDefaultClaudeModel(models)
   if (defaultModel) {
     session.selectedModel = defaultModel.id
-    const effort = getDefaultEffortForModel(defaultModel)
+    const effort = resolveDefaultClaudeEffort(defaultModel)
     if (effort) session.selectedEffort = effort
   }
 }
@@ -1299,14 +1325,54 @@ function _hydrateSessionState(
 
 let _cachedDefaultPermissionMode: PermissionMode | null = null
 let _cachedDefaultSandboxMode: SandboxMode | null = null
+let _cachedDefaultClaudeSelection: { modelId: string; effort?: EffortLevel } | null = null
+let _cachedDefaultCodexSelection: { modelId: string; reasoningEffort?: CodexReasoningEffort } | null = null
+
+function toCodexReasoningEffort(value: unknown): CodexReasoningEffort | undefined {
+  switch (value) {
+    case 'minimal':
+    case 'low':
+    case 'medium':
+    case 'high':
+    case 'xhigh':
+      return value
+    default:
+      return undefined
+  }
+}
+
+function toEffortLevel(value: unknown): EffortLevel | undefined {
+  switch (value) {
+    case 'low':
+    case 'medium':
+    case 'high':
+    case 'xhigh':
+    case 'max':
+      return value
+    default:
+      return undefined
+  }
+}
+
 async function _loadDefaultSessionPrefs(): Promise<void> {
   try {
-    const prefs = await window.app.getUserPreferences()
-    _cachedDefaultPermissionMode = (prefs.defaultPermissionMode as PermissionMode) || 'default'
-    _cachedDefaultSandboxMode = (prefs.defaultSandboxMode as SandboxMode) || null
+    const appSettings = await window.app.getAppSettings()
+    const claude = appSettings.agentPreference?.claude
+    _cachedDefaultPermissionMode = (claude?.defaultPermissionMode as PermissionMode) || 'default'
+    _cachedDefaultSandboxMode = (claude?.defaultSandboxMode as SandboxMode) || null
+    _cachedDefaultClaudeSelection = {
+      modelId: typeof claude?.defaultModel === 'string' ? claude.defaultModel : '',
+      effort: toEffortLevel(claude?.defaultEffort),
+    }
+    _cachedDefaultCodexSelection = {
+      modelId: typeof appSettings.agentPreference?.codex?.defaultModel === 'string' ? appSettings.agentPreference.codex.defaultModel : '',
+      reasoningEffort: toCodexReasoningEffort(appSettings.agentPreference?.codex?.defaultReasoningEffort),
+    }
   } catch {
     _cachedDefaultPermissionMode = 'default'
     _cachedDefaultSandboxMode = null
+    _cachedDefaultClaudeSelection = { modelId: '', effort: undefined }
+    _cachedDefaultCodexSelection = { modelId: '', reasoningEffort: undefined }
   }
 }
 async function _getDefaultPermissionMode(): Promise<PermissionMode> {
@@ -1317,10 +1383,92 @@ function sandboxModeToInfo(mode: SandboxMode): SandboxInfo {
   return { enabled: mode !== 'off', autoAllowBash: mode === 'auto' }
 }
 _loadDefaultSessionPrefs()
-export function invalidateDefaultPermissionModeCache(): void {
+
+function _clearDefaultPrefsCache(): void {
   _cachedDefaultPermissionMode = null
   _cachedDefaultSandboxMode = null
+  _cachedDefaultClaudeSelection = null
+  _cachedDefaultCodexSelection = null
+}
+
+export function invalidateDefaultPermissionModeCache(): void {
+  _clearDefaultPrefsCache()
   _loadDefaultSessionPrefs()
+}
+
+export function invalidateDefaultClaudePreferencesCache(): void {
+  _clearDefaultPrefsCache()
+  void _loadDefaultSessionPrefs().then(() => _reapplyAgentDefaultsToSessions('claude'))
+}
+
+export function invalidateDefaultCodexPreferencesCache(): void {
+  _clearDefaultPrefsCache()
+  void _loadDefaultSessionPrefs().then(() => _reapplyAgentDefaultsToSessions('codex'))
+}
+
+function _reapplyAgentDefaultsToSessions(kind: 'claude' | 'codex'): void {
+  const state = useChatStore.getState()
+  const availableModels = state.availableModels
+  const nextProjects: Record<string, ProjectState> = { ...state.projectSessions }
+  let changed = false
+  for (const [projectPath, project] of Object.entries(state.projectSessions)) {
+    const codexModels = project.codexModels
+    let projectChanged = false
+    const nextSessions: Record<string, PerSessionState> = { ...project._sessions }
+    for (const [sid, sess] of Object.entries(project._sessions)) {
+      if (kind === 'claude') {
+        const patch = _computeClaudeDefaultPatch(sess, availableModels)
+        if (patch) {
+          nextSessions[sid] = { ...sess, ...patch }
+          projectChanged = true
+        }
+      } else {
+        const patch = _computeCodexDefaultPatch(sess, codexModels)
+        if (patch) {
+          nextSessions[sid] = { ...sess, ...patch }
+          projectChanged = true
+        }
+      }
+    }
+    if (projectChanged) {
+      nextProjects[projectPath] = { ...project, _sessions: nextSessions }
+      changed = true
+    }
+  }
+  if (changed) useChatStore.setState({ projectSessions: nextProjects })
+}
+
+function _computeClaudeDefaultPatch(sess: PerSessionState, models: ModelOption[]): Partial<PerSessionState> | null {
+  if (sess.modelUserChosen && sess.effortUserChosen) return null
+  if (models.length === 0) return null
+  const patch: Partial<PerSessionState> = {}
+  if (!sess.modelUserChosen) {
+    const nextModel = resolveDefaultClaudeModel(models)
+    if (nextModel && nextModel.id !== sess.selectedModel) patch.selectedModel = nextModel.id
+    if (!sess.effortUserChosen) {
+      const nextEffort = resolveDefaultClaudeEffort(nextModel)
+      if (nextEffort !== sess.selectedEffort) patch.selectedEffort = nextEffort
+    }
+  } else if (!sess.effortUserChosen) {
+    const activeModel = models.find((m) => m.id === sess.selectedModel)
+    const nextEffort = resolveDefaultClaudeEffort(activeModel)
+    if (nextEffort !== sess.selectedEffort) patch.selectedEffort = nextEffort
+  }
+  return Object.keys(patch).length === 0 ? null : patch
+}
+
+function _computeCodexDefaultPatch(sess: PerSessionState, models: ModelOption[]): Partial<PerSessionState> | null {
+  if (sess.codexModelUserChosen && sess.codexReasoningEffortUserChosen) return null
+  if (models.length === 0) return null
+  const selected = resolveDefaultCodexSelection(models)
+  const patch: Partial<PerSessionState> = {}
+  if (!sess.codexModelUserChosen && selected.modelId && selected.modelId !== sess.selectedCodexModel) {
+    patch.selectedCodexModel = selected.modelId
+  }
+  if (!sess.codexReasoningEffortUserChosen && selected.reasoningEffort !== sess.selectedCodexReasoningEffort) {
+    patch.selectedCodexReasoningEffort = selected.reasoningEffort
+  }
+  return Object.keys(patch).length === 0 ? null : patch
 }
 
 async function _syncAndResumeSession(projectPath: string, sessionId: string, set: ChatStoreSet, cwd: string): Promise<void> {
@@ -1561,6 +1709,27 @@ export function resolveCodexModelSelection(
   }
 }
 
+function resolveDefaultCodexSelection(models: ModelOption[]): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
+  const remembered = readLastCodexSelection()
+  const defaults = _cachedDefaultCodexSelection ?? { modelId: '', reasoningEffort: undefined }
+  return resolveCodexModelSelection(
+    models,
+    defaults.modelId || remembered.modelId,
+    defaults.reasoningEffort ?? remembered.reasoningEffort,
+  )
+}
+
+function resolveSessionCodexSelection(
+  models: ModelOption[],
+  selectedCodexModel: string,
+  selectedCodexReasoningEffort?: CodexReasoningEffort,
+): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
+  if (selectedCodexModel || selectedCodexReasoningEffort) {
+    return resolveCodexModelSelection(models, selectedCodexModel, selectedCodexReasoningEffort)
+  }
+  return resolveDefaultCodexSelection(models)
+}
+
 function readLastCodexSelection(): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
   try {
     const raw = globalThis.localStorage?.getItem(CODEX_LAST_SELECTION_STORAGE_KEY)
@@ -1625,7 +1794,7 @@ function getCodexPlanActionContext(
   const hasPlan = !!lastAssistantMessage?.metadata?.codex?.items.some((item) => item.type === 'plan')
   if (!hasPlan) return null
 
-  const resolvedCodexSelection = resolveCodexModelSelection(
+  const resolvedCodexSelection = resolveSessionCodexSelection(
     project.codexModels,
     session.selectedCodexModel,
     session.selectedCodexReasoningEffort,
@@ -2001,9 +2170,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const activeSid = patched._activeSessionId
         if (activeSid && patched._sessions[activeSid]) {
           const sess = patched._sessions[activeSid]
+          let updated = sess
           if (!sess.selectedModel && models.length > 0) {
-            const updated = { ...sess }
+            updated = updated === sess ? { ...sess } : updated
             applyDefaultModel(updated, models)
+          }
+          if (effectiveCodexModels.length > 0 && (!updated.selectedCodexModel || !updated.selectedCodexReasoningEffort)) {
+            const selected = resolveSessionCodexSelection(
+              effectiveCodexModels,
+              updated.selectedCodexModel,
+              updated.selectedCodexReasoningEffort,
+            )
+            if (
+              selected.modelId !== updated.selectedCodexModel
+              || selected.reasoningEffort !== updated.selectedCodexReasoningEffort
+            ) {
+              updated = updated === sess ? { ...sess } : updated
+              updated.selectedCodexModel = selected.modelId
+              updated.selectedCodexReasoningEffort = selected.reasoningEffort
+            }
+          }
+          if (updated !== sess) {
             patched._sessions = { ...patched._sessions, [activeSid]: updated }
             projectChanged = true
           }
@@ -2241,7 +2428,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           )
         ) {
           const snapshot = updatedSession
-          setTimeout(() => _prepareSessionSnapshot(projectPath, effectiveSid, snapshot), 0)
+          setTimeout(() => _prepareSessionSnapshot(effectiveSid, snapshot), 0)
         }
       }
 
@@ -2256,7 +2443,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               const evictSid = targetSid
               const evictProjectPath = projectPath
               setTimeout(() => {
-                _prepareSessionSnapshot(evictProjectPath, effectiveSid, snapshot).then(() => {
+                _prepareSessionSnapshot(effectiveSid, snapshot).then(() => {
                   set((s) => {
                     const proj = s.projectSessions[evictProjectPath]
                     if (!proj?._sessions[evictSid]) return {}
@@ -2380,12 +2567,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       newSession.cwd = projectPath
       if (_cachedDefaultPermissionMode) newSession.permissionMode = _cachedDefaultPermissionMode
       applyDefaultModel(newSession, s.availableModels)
-      const rememberedCodexSelection = readLastCodexSelection()
-      const codexSelection = resolveCodexModelSelection(
-        project.codexModels,
-        rememberedCodexSelection.modelId || newSession.selectedCodexModel,
-        rememberedCodexSelection.reasoningEffort ?? newSession.selectedCodexReasoningEffort,
-      )
+      const codexSelection = resolveDefaultCodexSelection(project.codexModels)
       newSession.selectedCodexModel = codexSelection.modelId
       newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
       project._sessions = { [draftId]: newSession }
@@ -2476,7 +2658,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
       ? (codexCommand ?? { kind: 'run', prompt: finalContent })
       : null
-    const resolvedCodexSelection = resolveCodexModelSelection(
+    const resolvedCodexSelection = resolveSessionCodexSelection(
       project.codexModels,
       selectedCodexModel,
       selectedCodexReasoningEffort,
@@ -2836,12 +3018,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       newSession.cwd = projectPath
       if (_cachedDefaultPermissionMode) newSession.permissionMode = _cachedDefaultPermissionMode
       applyDefaultModel(newSession, s.availableModels)
-      const rememberedCodexSelection = readLastCodexSelection()
-      const codexSelection = resolveCodexModelSelection(
-        proj.codexModels,
-        rememberedCodexSelection.modelId || newSession.selectedCodexModel,
-        rememberedCodexSelection.reasoningEffort ?? newSession.selectedCodexReasoningEffort,
-      )
+      const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
       newSession.selectedCodexModel = codexSelection.modelId
       newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
       return {
@@ -2884,12 +3061,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const newSession = createDefaultPerSessionState()
       newSession.cwd = activeProject
       applyDefaultModel(newSession, s.availableModels)
-      const rememberedCodexSelection = readLastCodexSelection()
-      const codexSelection = resolveCodexModelSelection(
-        proj.codexModels,
-        rememberedCodexSelection.modelId || newSession.selectedCodexModel,
-        rememberedCodexSelection.reasoningEffort ?? newSession.selectedCodexReasoningEffort,
-      )
+      const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
       newSession.selectedCodexModel = codexSelection.modelId
       newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
       return {
@@ -3057,6 +3229,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const patch: Partial<PerSessionState> = {
       selectedModel: model,
       selectedEffort: defaultEffort,
+      modelUserChosen: true,
+      effortUserChosen: false,
       contextWindow: null,
     }
     if (shouldDowngrade) patch.permissionMode = 'default'
@@ -3070,7 +3244,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setSelectedEffort: (effort) => {
     const { activeProject } = get()
     if (!activeProject) return
-    set((s) => updateActivePerSession(s,() => ({ selectedEffort: effort })))
+    set((s) => updateActivePerSession(s,() => ({ selectedEffort: effort, effortUserChosen: true })))
     if (getActivePerSession(get(), activeProject).draftText.length > 0) {
       triggerPrewarm(get(), activeProject)
     }
@@ -3090,6 +3264,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateActivePerSession(s, () => ({
       selectedCodexModel: model,
       selectedCodexReasoningEffort: selectedEffort,
+      codexModelUserChosen: true,
+      codexReasoningEffortUserChosen: false,
     })))
   },
 
@@ -3103,6 +3279,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     saveLastCodexSelection(sess.selectedCodexModel, selectedEffort)
     set((s) => updateActivePerSession(s, () => ({
       selectedCodexReasoningEffort: selectedEffort,
+      codexReasoningEffortUserChosen: true,
     })))
   },
 
@@ -3138,7 +3315,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const activeSid = proj._activeSessionId
         if (!activeSid) return {}
         const sess = proj._sessions[activeSid] ?? createDefaultPerSessionState()
-        const next = resolveCodexModelSelection(
+        const next = resolveSessionCodexSelection(
           proj.codexModels,
           sess.selectedCodexModel,
           sess.selectedCodexReasoningEffort,
@@ -3176,7 +3353,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const proj = getProject(s, activeProject)
         const activeSid = proj._activeSessionId
         const sess = activeSid ? (proj._sessions[activeSid] ?? createDefaultPerSessionState()) : createDefaultPerSessionState()
-        const selected = resolveCodexModelSelection(
+        const selected = resolveSessionCodexSelection(
           models,
           sess.selectedCodexModel,
           sess.selectedCodexReasoningEffort,
@@ -3214,7 +3391,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (provider === 'codex') {
       const project = getProject(get(), activeProject)
       const session = getActivePerSession(get())
-      const selected = resolveCodexModelSelection(
+      const selected = resolveSessionCodexSelection(
         project.codexModels,
         session.selectedCodexModel,
         session.selectedCodexReasoningEffort,
@@ -3727,11 +3904,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (restoredProvider !== 'codex') {
       applyDefaultModel(restoredSession, get().availableModels)
     } else {
-      const rememberedCodexSelection = readLastCodexSelection()
-      const codexSelection = resolveCodexModelSelection(
+      const codexSelection = resolveSessionCodexSelection(
         freshProject.codexModels,
-        rememberedCodexSelection.modelId || restoredSession.selectedCodexModel,
-        rememberedCodexSelection.reasoningEffort ?? restoredSession.selectedCodexReasoningEffort,
+        restoredSession.selectedCodexModel,
+        restoredSession.selectedCodexReasoningEffort,
       )
       restoredSession.selectedCodexModel = codexSelection.modelId
       restoredSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort

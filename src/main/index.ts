@@ -57,7 +57,7 @@ import { AutomationService } from './automation-service'
 import { listAutomationsForProject, createAutomation as dbCreateAutomation, updateAutomation as dbUpdateAutomation, deleteAutomation as dbDeleteAutomation } from './db-automations'
 import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
-import { readUserPreferences, saveUserPreferences, readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
+import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest } from '../shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
@@ -1256,16 +1256,6 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.BASH_OUTPUT_READ_FILE, (_e, filePath: string, tailLines: number) => {
     return readBashOutputTail(filePath, tailLines)
-  })
-
-  ipcMain.handle(AgentIpcChannels.CLAUDE_USER_PREFERENCES_GET, () => {
-    return readUserPreferences()
-  })
-
-  ipcMain.handle(AgentIpcChannels.CLAUDE_USER_PREFERENCES_SAVE, (_e, preferences) => {
-    const result = saveUserPreferences(preferences)
-    agentService.markAllNeedsRebuild()
-    return result
   })
 
   ipcMain.handle(AgentIpcChannels.CLAUDE_PROJECT_PREFERENCES_GET, (_e, projectPath: string) => {

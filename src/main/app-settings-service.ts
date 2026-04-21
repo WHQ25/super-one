@@ -1,12 +1,90 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import type { AppSettings } from '../shared/agent-types'
+import type { AppSettings, AppSettingsPatch, EffortLevel, PermissionMode, SandboxMode } from '../shared/agent-types'
 
-export type { AppSettings }
+export type { AppSettings, AppSettingsPatch }
+
+type ClaudePref = AppSettings['agentPreference']['claude']
+type CodexPref = AppSettings['agentPreference']['codex']
 
 const defaults: AppSettings = {
   analyticsEnabled: true,
+  agentPreference: {
+    claude: {
+      defaultModel: '',
+      defaultEffort: '',
+      defaultPermissionMode: '',
+      defaultSandboxMode: '',
+    },
+    codex: {
+      defaultModel: '',
+      defaultReasoningEffort: '',
+    },
+  },
+}
+
+function isEffortLevel(value: unknown): value is EffortLevel {
+  return value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
+}
+
+function isPermissionMode(value: unknown): value is PermissionMode {
+  return value === 'default' || value === 'acceptEdits' || value === 'bypassPermissions' || value === 'plan' || value === 'dontAsk' || value === 'auto'
+}
+
+function isSandboxMode(value: unknown): value is SandboxMode {
+  return value === 'off' || value === 'on' || value === 'auto'
+}
+
+function isCodexReasoningEffort(value: unknown): value is CodexPref['defaultReasoningEffort'] {
+  return value === '' || value === 'minimal' || value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh'
+}
+
+function readClaudePreference(data: Record<string, unknown>): ClaudePref {
+  const agentPreference = data.agentPreference && typeof data.agentPreference === 'object'
+    ? data.agentPreference as Record<string, unknown>
+    : undefined
+  const claudePreference = agentPreference?.claude && typeof agentPreference.claude === 'object'
+    ? agentPreference.claude as Record<string, unknown>
+    : undefined
+
+  return {
+    defaultModel: typeof claudePreference?.defaultModel === 'string'
+      ? claudePreference.defaultModel
+      : defaults.agentPreference.claude.defaultModel,
+    defaultEffort: claudePreference?.defaultEffort === '' || isEffortLevel(claudePreference?.defaultEffort)
+      ? (claudePreference.defaultEffort as EffortLevel | '')
+      : defaults.agentPreference.claude.defaultEffort,
+    defaultPermissionMode: claudePreference?.defaultPermissionMode === '' || isPermissionMode(claudePreference?.defaultPermissionMode)
+      ? (claudePreference.defaultPermissionMode as PermissionMode | '')
+      : defaults.agentPreference.claude.defaultPermissionMode,
+    defaultSandboxMode: claudePreference?.defaultSandboxMode === '' || isSandboxMode(claudePreference?.defaultSandboxMode)
+      ? (claudePreference.defaultSandboxMode as SandboxMode | '')
+      : defaults.agentPreference.claude.defaultSandboxMode,
+  }
+}
+
+function readCodexPreference(data: Record<string, unknown>): CodexPref {
+  const agentPreference = data.agentPreference && typeof data.agentPreference === 'object'
+    ? data.agentPreference as Record<string, unknown>
+    : undefined
+  const codexPreference = agentPreference?.codex && typeof agentPreference.codex === 'object'
+    ? agentPreference.codex as Record<string, unknown>
+    : undefined
+
+  const legacyDefaultModel = typeof data.codexDefaultModel === 'string' ? data.codexDefaultModel : undefined
+  const legacyDefaultReasoningEffort = isCodexReasoningEffort(data.codexDefaultReasoningEffort)
+    ? data.codexDefaultReasoningEffort
+    : undefined
+
+  return {
+    defaultModel: typeof codexPreference?.defaultModel === 'string'
+      ? codexPreference.defaultModel
+      : (legacyDefaultModel ?? defaults.agentPreference.codex.defaultModel),
+    defaultReasoningEffort: isCodexReasoningEffort(codexPreference?.defaultReasoningEffort)
+      ? codexPreference.defaultReasoningEffort
+      : (legacyDefaultReasoningEffort ?? defaults.agentPreference.codex.defaultReasoningEffort),
+  }
 }
 
 function getSettingsPath(): string {
@@ -18,15 +96,37 @@ export function readAppSettings(): AppSettings {
     const data = JSON.parse(readFileSync(getSettingsPath(), 'utf-8'))
     return {
       analyticsEnabled: typeof data.analyticsEnabled === 'boolean' ? data.analyticsEnabled : defaults.analyticsEnabled,
+      agentPreference: {
+        claude: readClaudePreference(data),
+        codex: readCodexPreference(data),
+      },
     }
   } catch {
-    return { ...defaults }
+    return {
+      analyticsEnabled: defaults.analyticsEnabled,
+      agentPreference: {
+        claude: { ...defaults.agentPreference.claude },
+        codex: { ...defaults.agentPreference.codex },
+      },
+    }
   }
 }
 
-export function saveAppSettings(patch: Partial<AppSettings>): AppSettings {
+export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
   const current = readAppSettings()
-  const merged = { ...current, ...patch }
+  const merged: AppSettings = {
+    analyticsEnabled: patch.analyticsEnabled ?? current.analyticsEnabled,
+    agentPreference: {
+      claude: {
+        ...current.agentPreference.claude,
+        ...patch.agentPreference?.claude,
+      },
+      codex: {
+        ...current.agentPreference.codex,
+        ...patch.agentPreference?.codex,
+      },
+    },
+  }
   writeFileSync(getSettingsPath(), JSON.stringify(merged, null, 2))
   return merged
 }

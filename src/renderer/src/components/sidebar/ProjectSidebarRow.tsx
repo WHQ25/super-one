@@ -391,7 +391,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                           Copy Working Directory
                         </ContextMenuItem>
                         <ContextMenuItem
-                          onClick={() => window.app.openFolder(session.worktreePath ?? folder.path)}
+                          onClick={() => window.app.showInFolder(session.worktreePath ?? folder.path, '')}
                           className="text-xs"
                         >
                           <FolderOpen className="size-3.5" />

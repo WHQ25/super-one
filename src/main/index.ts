@@ -1140,9 +1140,13 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.FILE_SHOW_IN_FOLDER, (_event, folderPath: string, relPath: string) => {
+  ipcMain.handle(AgentIpcChannels.FILE_SHOW_IN_FOLDER, async (_event, folderPath: string, relPath: string) => {
     const absPath = validatePathInProject(folderPath, relPath)
-    shell.showItemInFolder(absPath)
+    if (relPath === '') {
+      await shell.openPath(absPath)
+    } else {
+      shell.showItemInFolder(absPath)
+    }
   })
 
   ipcMain.handle(AgentIpcChannels.OPEN_EXTERNAL_LINK, (_event, url: string) => {

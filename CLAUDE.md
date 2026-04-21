@@ -264,7 +264,10 @@ Follow **Test-Driven Development** with an **integration-first** philosophy — 
 - **Framework**: Vitest with globals enabled
 - **Environment**: `node` by default, `jsdom` for `.test.tsx` files (auto-matched)
 - **Setup file**: `vitest.setup.ts` (imports `@testing-library/jest-dom/vitest`)
-- **Co-location**: Test files live next to source files as `*.test.ts` / `*.test.tsx`
+- **Directory layout**:
+  - Unit + component-level integration: co-located as `*.test.ts` / `*.test.tsx`
+  - Cross-layer / E2E integration: `src/test/integration/`, named by scenario (e.g. `permission-flow.test.ts`)
+  - Shared fixtures: `src/test/fixtures/` (extract when used in 2+ files)
 
 ### Layers — prefer higher (more integration)
 
@@ -277,7 +280,7 @@ Follow **Test-Driven Development** with an **integration-first** philosophy — 
 ### Rules
 
 - **Default to integration**: when adding a feature or fixing a bug, write the test at the highest reasonable layer. Pick unit only when the logic under test is pure and complex (parsers, schema validators, reducers with many branches).
-- **Scenario-style naming**: `describe('user scenario', () => { it('given X, when Y, then Z', ...) })`. Prefer scenarios over function names — `it('switches session to acceptEdits after approving plan')` beats `it('setPermissionMode calls backend')`.
+- **Scenario-style naming**: `describe` uses a noun phrase for the scenario (`describe('session cwd switching', ...)`); `it` combines behavior with condition/result (`it('defers rebuild until next send when cwd changes mid-stream', ...)`). Reading the `it` name should surface both trigger and outcome — no given/when/then template required. Prefer scenarios over function names — `it('switches session to acceptEdits after approving plan')` beats `it('setPermissionMode calls backend')`.
 - **Mock only at true boundaries**: real `Session`, real Zustand stores, real reducers, real IPC-handler logic. Mock only the Claude SDK subprocess (via `FakeBackend`), `window.agent`/`window.app` in renderer, `fs`, `child_process`, and network. If you're reaching for `vi.mock` on an internal module, stop and re-scope the test one layer up.
 - **Regression test = scenario test**: every bug fix gets an integration test that reproduces the bug scenario at the layer where it lived — not a narrow function test of the fix site.
 - **Skip trivial forwarding**: don't test `foo.bar(x)` → `api.bar(x)` passthroughs. Test the scenario across the forwarding, not the forwarding itself.

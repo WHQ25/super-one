@@ -71,6 +71,11 @@ export class AgentService {
 
   private broadcastEventToRenderer(event: AgentEvent): void {
     trace('remote.debug', 'broadcastEventToRenderer', { type: event.type, projectPath: event.projectPath, sessionId: event.sessionId, messageId: 'messageId' in event ? event.messageId : undefined })
+    if (event.type === 'permission_request') {
+      const alive = !!this.mainWindow && !this.mainWindow.isDestroyed()
+      log.info('[broadcast] permission_request requestId=%s toolName=%s sessionId=%s projectPath=%s windowAlive=%s',
+        event.request.requestId, event.request.toolName, event.sessionId ?? '(none)', event.projectPath ?? '(none)', alive)
+    }
     this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.EVENT, event)
   }
 

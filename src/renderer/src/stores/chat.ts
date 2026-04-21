@@ -2099,6 +2099,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           isTargetActive: targetSid === project._activeSessionId,
           toolName: event.request.toolName,
         }, event.request.requestId)
+        if (targetSid !== project._activeSessionId) {
+          console.warn('[permission-drift] permission_request landed on non-active session', {
+            requestId: event.request.requestId,
+            toolName: event.request.toolName,
+            eventSessionId,
+            targetSid,
+            activeSid: project._activeSessionId,
+            matchType,
+            knownSids: Object.keys(project._sessions),
+          })
+        }
+      }
+
+      if (matchType === 'lazy_session') {
+        console.warn('[session-drift] lazy_session created from incoming event', {
+          eventType: event.type,
+          eventSessionId,
+          activeSid: project._activeSessionId,
+          knownSids: Object.keys(project._sessions).filter((k) => k !== eventSessionId),
+        })
       }
 
       if (!project._sessions[targetSid]) {

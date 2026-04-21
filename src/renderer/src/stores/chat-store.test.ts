@@ -4505,3 +4505,102 @@ describe('streamingTokens lifecycle around turn boundaries', () => {
     expect(after.streamingTokens).toEqual({ input: 50, output: 20 })
   })
 })
+
+describe('session id drift regression (permission prompt stuck)', () => {
+  beforeEach(() => {
+    resetStore()
+    vi.clearAllMocks()
+  })
+
+  function seedActiveSession(sid: string) {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: sid,
+          _sessions: {
+            [sid]: { ...createDefaultPerSessionState(), status: 'streaming' as const },
+          },
+        },
+      },
+    })
+  }
+
+  it('routes permission_request tagged with unknown sessionId into a lazy session, hidden from active UI', () => {
+    seedActiveSession('alpha')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'permission_request',
+      sessionId: 'beta',
+      request: { requestId: 'r1', toolName: 'Edit', input: { file_path: '/x' }, allowAlwaysAllow: false } as never,
+    }))
+
+    const proj = useChatStore.getState().projectSessions['/test']
+    expect(proj._activeSessionId).toBe('alpha')
+    expect(proj._sessions['alpha'].pendingPermissions).toHaveLength(0)
+    expect(proj._sessions['beta']?.pendingPermissions).toHaveLength(1)
+    expect(proj._sessions['beta'].pendingPermissions[0].requestId).toBe('r1')
+  })
+
+  it('still flags hasPendingInteraction when the lazy session holds the prompt, so the sidebar shows a badge', () => {
+    seedActiveSession('alpha')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'permission_request',
+      sessionId: 'beta',
+      request: { requestId: 'r1', toolName: 'Edit', input: {}, allowAlwaysAllow: false } as never,
+    }))
+
+    const proj = useChatStore.getState().projectSessions['/test']
+    expect(proj.hasPendingInteraction).toBe(true)
+  })
+
+  it('does not clear active session stale pendingPermissions when message_interrupted targets a different session', () => {
+    seedActiveSession('alpha')
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        '/test': {
+          ...s.projectSessions['/test'],
+          _sessions: {
+            ...s.projectSessions['/test']._sessions,
+            alpha: {
+              ...s.projectSessions['/test']._sessions['alpha'],
+              pendingPermissions: [{ requestId: 'r-old', toolName: 'Edit', input: {}, allowAlwaysAllow: false }],
+            },
+          },
+        },
+      },
+    }))
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_interrupted',
+      sessionId: 'beta',
+      messageId: 'msg-b',
+    } as never))
+
+    const proj = useChatStore.getState().projectSessions['/test']
+    expect(proj._sessions['alpha'].pendingPermissions).toHaveLength(1)
+  })
+
+  it('permission_request deduped per session: same requestId arriving on both drifted and active sessions still surfaces on drifted only', () => {
+    seedActiveSession('alpha')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'permission_request',
+      sessionId: 'beta',
+      request: { requestId: 'r1', toolName: 'Edit', input: {}, allowAlwaysAllow: false } as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'permission_request',
+      sessionId: 'alpha',
+      request: { requestId: 'r1', toolName: 'Edit', input: {}, allowAlwaysAllow: false } as never,
+    }))
+
+    const proj = useChatStore.getState().projectSessions['/test']
+    expect(proj._sessions['alpha'].pendingPermissions).toHaveLength(1)
+    expect(proj._sessions['beta'].pendingPermissions).toHaveLength(1)
+  })
+})

@@ -103,6 +103,7 @@ export function createCanUseTool(
       },
     }
     trace('permission.flow', 'emit_request', { toolName, toolUseId: context.toolUseID, signalAborted: context.signal.aborted }, requestId)
+    log.info('[canUseTool] emit permission_request requestId=%s toolName=%s toolUseId=%s', requestId, toolName, context.toolUseID)
     emit(permEvent)
 
     const result = await new Promise<{ allow: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[] }>((resolve) => {

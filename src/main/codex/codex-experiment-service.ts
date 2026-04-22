@@ -1,21 +1,31 @@
-import { execFileSync, spawn } from 'child_process'
 import { mkdirSync, unlinkSync, writeFileSync } from 'fs'
-import { createRequire } from 'module'
 import { tmpdir } from 'os'
 import { basename, extname, join } from 'path'
-import { createInterface } from 'readline'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
-import { getNodeRuntime } from '../agent/resolve-cli'
-import { getActiveProviderRaw } from '../database'
 import {
-  CODEX_PERMISSION_PRESETS,
-  DEFAULT_CODEX_PERMISSION_PRESET,
-  DEFAULT_CODEX_PERMISSION_PROFILE,
-} from '../../shared/agent-types'
+  APP_SERVER_RESPONSE_TIMEOUT_MS,
+  asRecord,
+  buildAppServerEnv,
+  buildCollaborationMode,
+  compactRecord,
+  createAppServerConnection,
+  extractJsonRpcErrorMessage,
+  mapAppServerModel,
+  normalizeApiKey,
+  readString,
+  resolveApiKey,
+  resolveMode,
+  resolvePermissionProfile,
+  withTimeout,
+  type AppServerConnection,
+  type AppServerNotification,
+  type CodexAppServerModel,
+  type CodexProjectAuth,
+  type JsonRpcRequestId,
+} from './app-server-connection'
 import type {
   AskUserQuestionRequest,
-  CodexApprovalMode,
   CodexAuthMode,
   CodexAuthStatus,
   CodexCollaborationMode,
@@ -42,11 +52,6 @@ import type {
   CodexRunResult,
   CodexSetAuthRequest,
 } from '../../shared/agent-types'
-
-interface CodexProjectAuth {
-  mode: CodexAuthMode
-  apiKey?: string
-}
 
 interface CodexSession {
   projectPath: string
@@ -90,32 +95,6 @@ interface PendingCodexApproval {
   reject: (error: Error) => void
 }
 
-interface CodexAppServerModel {
-  id: string
-  model: string
-  displayName: string
-  description: string
-  isDefault: boolean
-  supportedReasoningEfforts: ReasoningEffortOption[]
-  defaultReasoningEffort?: CodexReasoningEffort
-}
-
-type JsonRpcRequestId = string | number
-
-interface AppServerNotification {
-  requestIdRaw?: JsonRpcRequestId
-  requestId?: string
-  method: string
-  params: Record<string, unknown>
-}
-
-interface AppServerConnection {
-  request(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>
-  respond(requestId: JsonRpcRequestId, result?: Record<string, unknown>): Promise<void>
-  notify(method: string, params?: Record<string, unknown>): Promise<void>
-  nextNotification(): Promise<AppServerNotification>
-}
-
 type ParsedApprovalRequest =
   | {
     request: PermissionRequest
@@ -126,52 +105,6 @@ type ParsedApprovalRequest =
     responseKind: 'user_input'
     questions: AppServerUserInputQuestion[]
   }
-
-const APP_SERVER_RESPONSE_TIMEOUT_MS = 15_000
-const moduleRequire = createRequire(import.meta.url)
-
-function resolveCodexPlatformPackage(platform: NodeJS.Platform = process.platform, arch: string = process.arch): string | null {
-  if (platform === 'darwin' && arch === 'x64') return '@openai/codex-darwin-x64'
-  if (platform === 'darwin' && arch === 'arm64') return '@openai/codex-darwin-arm64'
-  if (platform === 'linux' && arch === 'x64') return '@openai/codex-linux-x64'
-  if (platform === 'linux' && arch === 'arm64') return '@openai/codex-linux-arm64'
-  if (platform === 'win32' && arch === 'x64') return '@openai/codex-win32-x64'
-  if (platform === 'win32' && arch === 'arm64') return '@openai/codex-win32-arm64'
-  return null
-}
-
-function hasCodexPlatformPackage(packageName: string): boolean {
-  try {
-    moduleRequire.resolve(`${packageName}/package.json`)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function findSystemCodexCli(): string | null {
-  const cmd = process.platform === 'win32' ? 'where' : '/usr/bin/which'
-  try {
-    const out = execFileSync(cmd, ['codex'], { timeout: 3000, stdio: 'pipe' }).toString()
-    const candidate = out.split(/\r?\n/).map((v) => v.trim()).find(Boolean)
-    return candidate ?? null
-  } catch {
-    return null
-  }
-}
-
-function normalizeApiKey(value?: string): string | undefined {
-  const key = value?.trim()
-  return key ? key : undefined
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' ? value as Record<string, unknown> : null
-}
-
-function readString(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
 
 function readBoolean(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null
@@ -307,14 +240,6 @@ function toReasoningEffort(value: unknown): CodexReasoningEffort | null {
     : null
 }
 
-function compactRecord(input: Record<string, unknown>): Record<string, unknown> {
-  const output: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(input)) {
-    if (value !== undefined) output[key] = value
-  }
-  return output
-}
-
 function sanitizeAttachmentName(name: string): string {
   const trimmed = basename(name.trim() || 'image')
   const cleaned = trimmed.replace(/[^A-Za-z0-9._-]/g, '-')
@@ -373,50 +298,6 @@ function persistImageAttachments(projectPath: string, images: ImageAttachment[])
   } catch (error) {
     cleanupPersistedImageAttachments(writtenPaths)
     throw error
-  }
-}
-
-function resolveApiKey(mode: CodexAuthMode, sessionApiKey?: string): string | undefined {
-  if (mode === 'chatgpt') return undefined
-  if (mode === 'apiKey') return normalizeApiKey(sessionApiKey) ?? normalizeApiKey(process.env.CODEX_API_KEY)
-  return normalizeApiKey(sessionApiKey) ?? normalizeApiKey(process.env.CODEX_API_KEY)
-}
-
-function resolveMode(mode: CodexAuthMode, sessionApiKey?: string): 'chatgpt' | 'apiKey' {
-  return resolveApiKey(mode, sessionApiKey) ? 'apiKey' : 'chatgpt'
-}
-
-function resolvePermissionProfile(
-  permissionPreset?: CodexPermissionPreset,
-): {
-  permissionPreset: CodexPermissionPreset
-  approvalPolicy: CodexApprovalMode
-  sandboxMode: CodexSandboxMode
-  networkAccessEnabled: boolean
-} {
-  const resolvedPreset = permissionPreset ?? DEFAULT_CODEX_PERMISSION_PRESET
-  const profile = CODEX_PERMISSION_PRESETS[resolvedPreset] ?? DEFAULT_CODEX_PERMISSION_PROFILE
-  return {
-    permissionPreset: resolvedPreset,
-    approvalPolicy: profile.approvalPolicy,
-    sandboxMode: profile.sandboxMode,
-    networkAccessEnabled: profile.networkAccessEnabled,
-  }
-}
-
-function buildCollaborationMode(
-  collaborationMode: CodexCollaborationMode | undefined,
-  model?: string,
-  reasoningEffort?: CodexReasoningEffort,
-): Record<string, unknown> | undefined {
-  if (!collaborationMode || !model) return undefined
-  return {
-    mode: collaborationMode,
-    settings: {
-      model,
-      reasoning_effort: reasoningEffort ?? null,
-      developer_instructions: null,
-    },
   }
 }
 
@@ -755,12 +636,6 @@ function deriveFinalResponse(items: CodexThreadItem[]): string {
   return ''
 }
 
-function extractJsonRpcErrorMessage(raw: unknown): string {
-  const rec = asRecord(raw)
-  if (!rec) return 'Unknown app-server error'
-  return readString(rec.message) ?? 'Unknown app-server error'
-}
-
 function extractTurnErrorMessage(raw: unknown): string {
   const rec = asRecord(raw)
   if (!rec) return 'Codex turn failed'
@@ -920,22 +795,6 @@ function mapApprovalRequest(notification: AppServerNotification): ParsedApproval
   return null
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error) => {
-        clearTimeout(timer)
-        reject(error)
-      },
-    )
-  })
-}
-
 function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
   if (!raw || typeof raw !== 'object') return null
   const rec = raw as Record<string, unknown>
@@ -980,7 +839,6 @@ function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
 export class CodexExperimentService {
   private sessions = new Map<string, CodexSession>()  // key = sessionId
   private projectAuth = new Map<string, CodexProjectAuth>()  // key = projectPath
-  private codexCliScriptPath: string | null = null
 
   private rejectPendingApprovals(session: CodexSession, message: string): void {
     if (session.pendingApprovals.size === 0) return
@@ -1085,49 +943,6 @@ export class CodexExperimentService {
     return existing
   }
 
-  private resolveCodexCliScriptPath(): string {
-    if (this.codexCliScriptPath) return this.codexCliScriptPath
-    let resolved = moduleRequire.resolve('@openai/codex/bin/codex.js')
-    resolved = resolved.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
-    log.info('[codex] Resolved CLI script:', resolved)
-    this.codexCliScriptPath = resolved
-    return this.codexCliScriptPath
-  }
-
-  private buildAppServerEnv(auth: CodexProjectAuth): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...process.env }
-    if (process.versions.electron) {
-      env.ELECTRON_RUN_AS_NODE = '1'
-    }
-    const codexProvider = getActiveProviderRaw('codex')
-    if (codexProvider) {
-      const configs = JSON.parse(codexProvider.agent_configs || '{}')
-      const cc = configs.codex
-      if (codexProvider.api_key) env.CODEX_API_KEY = codexProvider.api_key
-      if (cc?.base_url) env.OPENAI_BASE_URL = cc.base_url
-      try { Object.assign(env, JSON.parse(cc?.extra_env || '{}')) } catch {}
-      return env
-    }
-    if (auth.mode === 'chatgpt') {
-      delete env.CODEX_API_KEY
-      return env
-    }
-    const apiKey = resolveApiKey(auth.mode, auth.apiKey)
-    if (apiKey) env.CODEX_API_KEY = apiKey
-    return env
-  }
-
-  private mapAppServerModel(m: CodexAppServerModel): ModelOption {
-    return {
-      id: m.model,
-      name: m.displayName || m.model,
-      description: m.description,
-      isDefault: m.isDefault,
-      supportedReasoningEfforts: m.supportedReasoningEfforts,
-      defaultReasoningEffort: m.defaultReasoningEffort,
-    }
-  }
-
   private buildThreadConfig(
     permissionProfile: {
       sandboxMode: CodexSandboxMode
@@ -1175,210 +990,21 @@ export class CodexExperimentService {
     signal: AbortSignal | undefined,
     fn: (connection: AppServerConnection) => Promise<T>,
   ): Promise<T> {
-    if (signal?.aborted) {
-      throw new Error('Codex run interrupted')
-    }
-
-    const codexScript = this.resolveCodexCliScriptPath()
-    const env = this.buildAppServerEnv(auth)
-    const expectedPackage = resolveCodexPlatformPackage()
-    const hasBundledPackage = expectedPackage ? hasCodexPlatformPackage(expectedPackage) : false
-    const systemCodexCli = !hasBundledPackage ? findSystemCodexCli() : null
-    log.info(
-      '[codex] app-server launch platform=%s arch=%s mode=%s script=%s expectedPackage=%s bundledPackage=%s systemCodex=%s',
-      process.platform,
-      process.arch,
-      auth.mode,
-      codexScript,
-      expectedPackage ?? 'unknown',
-      hasBundledPackage,
-      systemCodexCli ?? 'none',
-    )
-
-    if (!hasBundledPackage && !systemCodexCli) {
-      const hint = process.platform === 'darwin'
-        ? 'Rebuild dependencies with: bun install --frozen-lockfile --os=darwin --cpu=*'
-        : 'Rebuild dependencies for the current target architecture'
-      throw new Error(`Missing Codex runtime package (${expectedPackage ?? 'unknown'}). ${hint}`)
-    }
-
-    const child = systemCodexCli
-      ? spawn(systemCodexCli, ['app-server', '--listen', 'stdio://'], {
-          env,
-          stdio: ['pipe', 'pipe', 'pipe'],
-          shell: process.platform === 'win32',
-          windowsHide: process.platform === 'win32',
-        })
-      : spawn(getNodeRuntime().executable ?? process.execPath, [codexScript, 'app-server', '--listen', 'stdio://'], {
-          env,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        })
-
-    const stdout = child.stdout
-    const stdin = child.stdin
-    if (!stdout || !stdin) {
-      child.kill()
-      throw new Error('Failed to start Codex app-server')
-    }
-
-    const rl = createInterface({ input: stdout })
-    const iterator = rl[Symbol.asyncIterator]()
-    const stderrChunks: string[] = []
-    child.stderr?.setEncoding('utf8')
-    child.stderr?.on('data', (chunk: string) => stderrChunks.push(chunk))
-
-    const onAbort = () => {
-      if (!child.killed) child.kill()
-    }
-    signal?.addEventListener('abort', onAbort)
-
-    const sendMessage = async (payload: Record<string, unknown>): Promise<void> => {
-      await new Promise<void>((resolve, reject) => {
-        stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
-          if (error) reject(error)
-          else resolve()
-        })
-      })
-    }
-
-    const readMessage = async (): Promise<Record<string, unknown>> => {
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const next = await iterator.next()
-        if (next.done) {
-          throw new Error('Codex app-server closed unexpectedly')
-        }
-        const line = `${next.value}`.trim()
-        if (!line) continue
-
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(line)
-        } catch {
-          continue
-        }
-
-        const rec = asRecord(parsed)
-        if (rec) return rec
-      }
-    }
-
-    const notificationQueue: AppServerNotification[] = []
-    let nextRequestId = 1
-
-      const waitForResponse = async (id: number, label: string): Promise<Record<string, unknown>> => {
-        const expectedId = String(id)
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          const msg = await withTimeout(readMessage(), APP_SERVER_RESPONSE_TIMEOUT_MS, `Codex app-server ${label}`)
-
-          const method = readString(msg.method)
-          if (method) {
-            const rawId = ('id' in msg && (typeof msg.id === 'string' || typeof msg.id === 'number'))
-              ? (msg.id as JsonRpcRequestId)
-              : undefined
-            notificationQueue.push({
-              requestIdRaw: rawId,
-              requestId: rawId !== undefined ? String(rawId) : undefined,
-              method,
-              params: asRecord(msg.params) ?? {},
-            })
-            continue
-          }
-
-        if (!('id' in msg)) continue
-        if (String(msg.id) !== expectedId) continue
-
-        if ('error' in msg && msg.error) {
-          throw new Error(extractJsonRpcErrorMessage(msg.error))
-        }
-
-        const result = asRecord(msg.result)
-        return result ?? {}
-      }
-    }
-
-    const connection: AppServerConnection = {
-      request: async (method, params) => {
-        const requestId = nextRequestId
-        nextRequestId += 1
-        await sendMessage(compactRecord({ id: requestId, method, params }))
-        return waitForResponse(requestId, method)
-      },
-
-      respond: async (requestId, result) => {
-        await sendMessage(compactRecord({ id: requestId, result: result ?? {} }))
-      },
-
-      notify: async (method, params) => {
-        await sendMessage(compactRecord({ method, params }))
-      },
-
-      nextNotification: async () => {
-        if (notificationQueue.length > 0) {
-          const queued = notificationQueue.shift()
-          if (queued) return queued
-        }
-
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          const msg = await readMessage()
-          const method = readString(msg.method)
-          if (!method) continue
-          const rawId = ('id' in msg && (typeof msg.id === 'string' || typeof msg.id === 'number'))
-            ? (msg.id as JsonRpcRequestId)
-            : undefined
-          return {
-            requestIdRaw: rawId,
-            requestId: rawId !== undefined ? String(rawId) : undefined,
-            method,
-            params: asRecord(msg.params) ?? {},
-          }
-        }
-      },
-    }
-
+    const handle = await createAppServerConnection(auth, signal)
     try {
-      await connection.request('initialize', {
-        clientInfo: {
-          name: 'super-one',
-          title: 'Super One',
-          version: '0.1.0',
-        },
-        capabilities: {
-          experimentalApi: true,
-        },
-      })
-      await connection.notify('initialized')
-
-      return await fn(connection)
+      return await fn(handle.connection)
     } catch (error) {
-      const stderr = stderrChunks.join('').trim()
-      log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
-      if (stderr.includes('Missing optional dependency')) {
-        log.error(
-          '[codex] missing optional dependency detected platform=%s arch=%s expectedPackage=%s',
-          process.platform,
-          process.arch,
-          expectedPackage ?? 'unknown',
-        )
-      }
-      if (stderr) log.error('[codex] app-server stderr:', stderr)
+      const stderr = handle.getStderr().trim()
       if (stderr) {
+        log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
+        log.error('[codex] app-server stderr:', stderr)
         const message = error instanceof Error ? error.message : String(error)
         const debugLogPath = String(log.transports.file.getFile().path)
         throw new Error(`${message}\n${stderr}\nDebug log: ${debugLogPath}`)
       }
       throw error
     } finally {
-      signal?.removeEventListener('abort', onAbort)
-      rl.close()
-      try {
-        stdin.end()
-      } catch {
-        // ignore
-      }
-      if (!child.killed) child.kill()
+      await handle.close()
     }
   }
 
@@ -1405,7 +1031,7 @@ export class CodexExperimentService {
         cursor = readString(result.nextCursor)
       } while (cursor)
 
-      const mapped = models.map((m) => this.mapAppServerModel(m))
+      const mapped = models.map((m) => mapAppServerModel(m))
       if (!mapped.some((m) => m.isDefault) && mapped[0]) {
         mapped[0] = { ...mapped[0], isDefault: true }
       }

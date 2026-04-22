@@ -19,6 +19,7 @@ import type {
   SendMessageRequest,
 } from '../../../shared/agent-types'
 import log from '../../logger'
+import { trace } from '../../agent/event-trace'
 import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 export interface CodexRunStreamCallbacksDeps {
@@ -90,6 +91,27 @@ function mapEffort(effort: EffortLevel | undefined): CodexReasoningEffort | unde
 function readConfig(raw: unknown): CodexBackendConfig {
   if (raw && typeof raw === 'object') return raw as CodexBackendConfig
   return {}
+}
+
+function getCodexTraceTextLength(item: CodexThreadItem): number | undefined {
+  switch (item.type) {
+    case 'agent_message':
+    case 'reasoning':
+    case 'plan':
+    case 'review':
+      return item.text.length
+    default:
+      return undefined
+  }
+}
+
+function summarizeCodexItemsForTrace(items: CodexThreadItem[]): Array<{ id: string; type: CodexThreadItem['type']; textLen?: number }> {
+  return items.slice(-3).map((item) => {
+    const textLen = getCodexTraceTextLength(item)
+    return textLen === undefined
+      ? { id: item.id, type: item.type }
+      : { id: item.id, type: item.type, textLen }
+  })
 }
 
 let codexServiceFactory: (() => CodexServiceDeps) | null = null
@@ -223,6 +245,17 @@ export class CodexBackend implements SessionBackend {
         }
         const finalText = result.finalResponse?.trim()
           || (mode === 'compact' ? 'Conversation compacted.' : 'Codex completed without returning text.')
+        trace('codex.turn', 'message_complete_prepare', {
+          sessionId: sessionKey,
+          projectPath,
+          assistantMessageId,
+          currentMessageId: this.currentMessageId,
+          runningAssistantId,
+          threadId: result.threadId,
+          finalResponseLength: finalText.length,
+          itemsLength: result.items.length,
+          itemsTail: summarizeCodexItemsForTrace(result.items),
+        }, runningAssistantId)
         this.emit({
           type: 'message_complete',
           messageId: runningAssistantId,
@@ -322,6 +355,13 @@ export class CodexBackend implements SessionBackend {
     if (!startOpts) throw new Error('CodexBackend not started')
     switch (cmd.kind) {
       case 'codex.steer': {
+        trace('codex.steer', 'dispatch', {
+          sessionId: startOpts.sessionId,
+          currentMessageId: this.currentMessageId,
+          newAssistantMessageId: cmd.newAssistantMessageId ?? null,
+          newUserMessageId: cmd.newUserMessageId ?? null,
+          inputLength: cmd.input.length,
+        }, cmd.newAssistantMessageId ?? this.currentMessageId ?? '')
         if (cmd.newAssistantMessageId) {
           this.emit({
             type: 'message_start',

@@ -501,6 +501,36 @@ function pruneTransientCodexItems(items: CodexThreadItem[]): CodexThreadItem[] {
   return items
 }
 
+function getCodexTraceTextLength(item: CodexThreadItem): number | undefined {
+  switch (item.type) {
+    case 'agent_message':
+    case 'reasoning':
+    case 'plan':
+    case 'review':
+      return item.text.length
+    default:
+      return undefined
+  }
+}
+
+function summarizeCodexTraceItem(item: CodexThreadItem): { id: string; type: CodexThreadItem['type']; textLen?: number } {
+  const textLen = getCodexTraceTextLength(item)
+  return textLen === undefined
+    ? { id: item.id, type: item.type }
+    : { id: item.id, type: item.type, textLen }
+}
+
+function getCodexTraceItems(message: ChatMessage | undefined | null): {
+  length: number
+  tail: Array<{ id: string; type: CodexThreadItem['type']; textLen?: number }>
+} {
+  const items = message?.metadata?.codex?.items ?? []
+  return {
+    length: items.length,
+    tail: items.slice(-3).map(summarizeCodexTraceItem),
+  }
+}
+
 function getCodexContextTokens(usage: CodexUsageInfo): number {
   return usage.lastInputTokens
 }
@@ -2329,6 +2359,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       const targetSession = project._sessions[targetSid]
       const delta = applyEventToSession(targetSession, event)
+      const updatedSession = { ...targetSession, ...delta }
+
       if (import.meta.env.DEV) {
         const codexItemTrace = event.type === 'codex_item_delta'
           ? {
@@ -2387,8 +2419,40 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             displayFooterOutput: footerTokens.output,
           }, event.messageId)
         }
+        if (updatedSession.sessionProvider === 'codex' && (event.type === 'codex_item_delta' || event.type === 'message_complete')) {
+          const beforeMessage = targetSession.messages.find((msg) => msg.id === event.messageId)
+          const afterMessage = updatedSession.messages.find((msg) => msg.id === event.messageId)
+          const prevItems = getCodexTraceItems(beforeMessage)
+          const nextItems = getCodexTraceItems(afterMessage)
+          const completionItems = event.type === 'message_complete'
+            ? getCodexCompletionEventMeta(event.metadata)?.items ?? []
+            : []
+          window.app.trace?.('codex.live', event.type, {
+            targetSid,
+            eventSessionId,
+            activeSid: project._activeSessionId,
+            messageId: event.messageId,
+            lastAssistantMessageIdBefore: targetSession.lastAssistantMessageId,
+            lastAssistantMessageIdAfter: updatedSession.lastAssistantMessageId,
+            activeCodexMessageIdBefore: targetSession.activeCodexMessageId,
+            activeCodexMessageIdAfter: updatedSession.activeCodexMessageId,
+            prevItemsLength: prevItems.length,
+            nextItemsLength: nextItems.length,
+            prevItemsTail: prevItems.tail,
+            nextItemsTail: nextItems.tail,
+            ...(event.type === 'codex_item_delta'
+              ? {
+                  phase: event.phase,
+                  incomingItem: summarizeCodexTraceItem(event.item),
+                }
+              : {
+                  completionItemsLength: completionItems.length,
+                  completionItemsTail: completionItems.slice(-3).map(summarizeCodexTraceItem),
+                  finalResponseLength: getCodexCompletionEventMeta(event.metadata)?.finalResponse?.length ?? 0,
+                }),
+          }, event.messageId)
+        }
       }
-      const updatedSession = { ...targetSession, ...delta }
 
       const updatedSessions = { ...project._sessions, [targetSid]: updatedSession }
       const updatedProject = { ...project, _sessions: updatedSessions }

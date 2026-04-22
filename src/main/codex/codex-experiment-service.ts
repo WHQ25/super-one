@@ -19,6 +19,7 @@ import {
   resolvePermissionProfile,
   withTimeout,
   type AppServerConnection,
+  type AppServerConnectionHandle,
   type AppServerNotification,
   type CodexAppServerModel,
   type CodexProjectAuth,
@@ -64,6 +65,8 @@ interface CodexSession {
   pendingApprovals: Map<string, PendingCodexApproval>
   activeTurnId: string | null
   steerFn: ((input: string) => Promise<void>) | null
+  connectionHandle: AppServerConnectionHandle | null
+  connectionAuth: CodexProjectAuth | null
 }
 
 interface CodexRunStreamCallbacks {
@@ -877,6 +880,68 @@ export class CodexExperimentService {
       pendingApprovals: new Map<string, PendingCodexApproval>(),
       activeTurnId: null,
       steerFn: null,
+      connectionHandle: null,
+      connectionAuth: null,
+    }
+  }
+
+  private async closeSessionConnection(session: CodexSession): Promise<void> {
+    const handle = session.connectionHandle
+    session.connectionHandle = null
+    session.connectionAuth = null
+    session.threadId = null
+    if (handle) {
+      try { await handle.close() } catch (err) {
+        log.warn('[codex] close connection error:', err instanceof Error ? err.message : String(err))
+      }
+    }
+  }
+
+  private authsMatch(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
+    return a.mode === b.mode && normalizeApiKey(a.apiKey) === normalizeApiKey(b.apiKey)
+  }
+
+  private async withSessionConnection<T>(
+    session: CodexSession,
+    auth: CodexProjectAuth,
+    signal: AbortSignal | undefined,
+    fn: (connection: AppServerConnection) => Promise<T>,
+  ): Promise<T> {
+    if (session.connectionHandle && session.connectionAuth && !this.authsMatch(session.connectionAuth, auth)) {
+      await this.closeSessionConnection(session)
+    }
+
+    if (!session.connectionHandle) {
+      const handle = await createAppServerConnection(auth, signal)
+      handle.onClosed((info) => {
+        if (session.connectionHandle === handle) {
+          session.connectionHandle = null
+          session.connectionAuth = null
+          session.threadId = null
+          log.info('[codex] app-server exited code=%s signal=%s', info.code, info.signal)
+        }
+      })
+      session.connectionHandle = handle
+      session.connectionAuth = { mode: auth.mode, apiKey: auth.apiKey }
+    }
+
+    const handle = session.connectionHandle
+    try {
+      return await fn(handle.connection)
+    } catch (error) {
+      const stderr = handle.getStderr().trim()
+      const childExited = session.connectionHandle !== handle
+      if (stderr || childExited) {
+        log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
+        if (stderr) log.error('[codex] app-server stderr:', stderr)
+        await this.closeSessionConnection(session)
+        if (stderr) {
+          const message = error instanceof Error ? error.message : String(error)
+          const debugLogPath = String(log.transports.file.getFile().path)
+          throw new Error(`${message}\n${stderr}\nDebug log: ${debugLogPath}`)
+        }
+      }
+      throw error
     }
   }
 
@@ -929,6 +994,7 @@ export class CodexExperimentService {
     ) {
       this.rejectPendingApprovals(existing, 'Codex run interrupted')
       if (existing.runningController) existing.runningController.abort()
+      void this.closeSessionConnection(existing)
       const recreated = this.createSession(
         projectPath,
         requestedModel ?? existing.model,
@@ -1653,7 +1719,7 @@ export class CodexExperimentService {
       )
 
       const auth = this.getProjectAuth(projectPath)
-      const streamed = await this.withAppServerConnection(auth, controller.signal, async (connection) => {
+      const streamed = await this.withSessionConnection(session, auth, controller.signal, async (connection) => {
         const resolvedThreadId = await this.resolveThread(connection, session, effectiveCwd, permissionProfile)
 
         const turnStartResult = await connection.request(
@@ -1754,7 +1820,7 @@ export class CodexExperimentService {
       const effectiveCwd = this.resolveCwd(session, projectPath, request.cwd)
       const auth = this.getProjectAuth(projectPath)
 
-      const streamed = await this.withAppServerConnection(auth, controller.signal, async (connection) => {
+      const streamed = await this.withSessionConnection(session, auth, controller.signal, async (connection) => {
         const resolvedThreadId = await this.resolveThread(connection, session, effectiveCwd, permissionProfile)
 
         await connection.request('review/start', compactRecord({
@@ -1811,7 +1877,7 @@ export class CodexExperimentService {
       const effectiveCwd = this.resolveCwd(session, projectPath, request.cwd)
       const auth = this.getProjectAuth(projectPath)
 
-      const streamed = await this.withAppServerConnection(auth, controller.signal, async (connection) => {
+      const streamed = await this.withSessionConnection(session, auth, controller.signal, async (connection) => {
         const resolvedThreadId = await this.resolveThread(connection, session, effectiveCwd, permissionProfile)
 
         await connection.request('thread/compact/start', { threadId: resolvedThreadId })
@@ -1904,6 +1970,7 @@ export class CodexExperimentService {
     session.threadId = null
     session.effectiveCwd = null
     session.runningController = null
+    void this.closeSessionConnection(session)
   }
 
   setAuth(projectPath: string, request: CodexSetAuthRequest): CodexAuthStatus {
@@ -1924,6 +1991,7 @@ export class CodexExperimentService {
       session.runningController = null
       session.activeTurnId = null
       session.steerFn = null
+      void this.closeSessionConnection(session)
     }
 
     this.projectAuth.set(projectPath, { mode, apiKey: normalizeApiKey(apiKey) })
@@ -1949,6 +2017,7 @@ export class CodexExperimentService {
       if (session.projectPath !== projectPath) continue
       this.rejectPendingApprovals(session, 'Codex run interrupted')
       if (session.runningController) session.runningController.abort()
+      void this.closeSessionConnection(session)
       this.sessions.delete(sessionId)
     }
     this.projectAuth.delete(projectPath)
@@ -1958,6 +2027,7 @@ export class CodexExperimentService {
     for (const [, session] of this.sessions) {
       this.rejectPendingApprovals(session, 'Codex run interrupted')
       if (session.runningController) session.runningController.abort()
+      void this.closeSessionConnection(session)
     }
     this.sessions.clear()
     this.projectAuth.clear()

@@ -352,7 +352,7 @@ describe('CodexExperimentService run', () => {
       request: vi.fn().mockResolvedValue({ turn: { id: 'turn-1' } }),
     }
 
-    vi.spyOn(service as any, 'withAppServerConnection').mockImplementation(async (_auth, _signal, fn) => fn(mockConnection))
+    vi.spyOn(service as any, 'withSessionConnection').mockImplementation(async (_session, _auth, _signal, fn) => fn(mockConnection))
     vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-1')
     vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-1', usage: null, items: [] })
 
@@ -377,7 +377,7 @@ describe('CodexExperimentService run', () => {
       request: vi.fn().mockResolvedValue({ turn: { id: 'turn-2' } }),
     }
 
-    vi.spyOn(service as any, 'withAppServerConnection').mockImplementation(async (_auth, _signal, fn) => fn(mockConnection))
+    vi.spyOn(service as any, 'withSessionConnection').mockImplementation(async (_session, _auth, _signal, fn) => fn(mockConnection))
     vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-2')
     vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-2', usage: null, items: [] })
 
@@ -397,7 +397,7 @@ describe('CodexExperimentService run', () => {
       request: vi.fn().mockResolvedValue({ turn: { id: 'turn-3' } }),
     }
 
-    vi.spyOn(service as any, 'withAppServerConnection').mockImplementation(async (_auth, _signal, fn) => fn(mockConnection))
+    vi.spyOn(service as any, 'withSessionConnection').mockImplementation(async (_session, _auth, _signal, fn) => fn(mockConnection))
     vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-3')
     vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-3', usage: null, items: [] })
 

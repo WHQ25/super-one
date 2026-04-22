@@ -1,6 +1,7 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AgentEvent, AgentInfo, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, ChatMessage, ClaudePreferences, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ConnectResult, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeInfo } from '../shared/agent-types'
 import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest } from '../shared/miniapp-types'
+import type { LiveSessionSnapshot } from '../shared/session-types'
 
 
 interface AgentAPI {
@@ -19,6 +20,7 @@ interface AgentAPI {
   truncateAtCheckpoint(projectPath: string, checkpointId: string): Promise<boolean>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   activateSession(projectPath: string, sessionId: string): Promise<void>
+  getLiveSnapshots(): Promise<LiveSessionSnapshot[]>
   rewindFiles(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
   previewRewind(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
   rewindCodeAndChat(projectPath: string, userMessageId: string): Promise<RewindFilesResult>

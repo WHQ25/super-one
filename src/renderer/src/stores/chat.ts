@@ -4,6 +4,7 @@ import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, g
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
+import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '../../../shared/event-seq-utils'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
@@ -302,6 +303,7 @@ interface ChatStore {
 
   // Event handling
   handleAgentEvent: (event: AgentEvent) => void
+  syncLiveSnapshots: () => Promise<void>
 
   // Project switching
   switchProject: (projectPath: string) => Promise<void>
@@ -653,9 +655,17 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     }
 
     case 'content_delta': {
+      const targetMsg = session.messages.find((m) => m.id === event.messageId)
+      if (targetMsg && isReplayedEventForMessage(event, targetMsg)) {
+        return { lastEventAt: Date.now() }
+      }
       let updatedMessages = session.messages.map((msg) => {
         if (msg.id !== event.messageId) return msg
-        return { ...msg, content: applyDelta(msg.content, event.delta) }
+        return {
+          ...msg,
+          content: applyDelta(msg.content, event.delta),
+          ...applySeqToMessage(event),
+        }
       })
 
       let extraUpdates: Partial<PerSessionState> = {}
@@ -940,6 +950,9 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
 
     case 'tool_input_delta': {
       const targetMsg = session.messages.find((m) => m.id === event.messageId)
+      if (targetMsg && isReplayedEventForMessage(event, targetMsg)) {
+        return { lastEventAt: Date.now() }
+      }
       const targetBlock = targetMsg?.content.find(
         (b) => b.type === 'tool_use' && b.toolUseId === event.toolUseId
       )
@@ -965,6 +978,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
                   ? { ...b, input: b.input + event.partialJson }
                   : b
               ),
+              ...applySeqToMessage(event),
             }
           }),
         }
@@ -1023,7 +1037,14 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         },
       }
 
-    case 'message_usage':
+    case 'message_usage': {
+      const usageTarget = session.messages.find((m) => m.id === event.messageId)
+      if (usageTarget && isReplayedEventForMessage(event, usageTarget)) {
+        return { lastEventAt: Date.now() }
+      }
+      const messagesWithSeq = usageTarget
+        ? session.messages.map((m) => (m.id === event.messageId ? { ...m, ...applySeqToMessage(event) } : m))
+        : session.messages
       if (event.codexUsage) {
         const nextStreamingTokens = accumulateCodexFooterTokens(session.streamingTokens, event.codexUsage, session.codexTurnLastUsage)
         return {
@@ -1036,11 +1057,17 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           contextWindow: event.codexUsage.contextWindow > 0 ? event.codexUsage.contextWindow : session.contextWindow,
           codexUsageSnapshot: event.codexUsage,
           codexTurnLastUsage: event.codexUsage,
+          messages: messagesWithSeq,
         }
       }
-      return { lastEventAt: Date.now(), streamingTokens: { input: event.inputTokens, output: event.outputTokens } }
+      return { lastEventAt: Date.now(), streamingTokens: { input: event.inputTokens, output: event.outputTokens }, messages: messagesWithSeq }
+    }
 
-    case 'codex_thread_started':
+    case 'codex_thread_started': {
+      const target = session.messages.find((m) => m.id === event.messageId)
+      if (target && isReplayedEventForMessage(event, target)) {
+        return { lastEventAt: Date.now() }
+      }
       return {
         lastEventAt: Date.now(),
         messages: session.messages.map((msg) => {
@@ -1055,11 +1082,17 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
                 threadId: event.threadId,
               },
             },
+            ...applySeqToMessage(event),
           }
         }),
       }
+    }
 
-    case 'codex_item_delta':
+    case 'codex_item_delta': {
+      const target = session.messages.find((m) => m.id === event.messageId)
+      if (target && isReplayedEventForMessage(event, target)) {
+        return { lastEventAt: Date.now() }
+      }
       return {
         lastEventAt: Date.now(),
         messages: session.messages.map((msg) => {
@@ -1075,9 +1108,11 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
                 items: nextItems,
               },
             },
+            ...applySeqToMessage(event),
           }
         }),
       }
+    }
 
     case 'slash_command_output': {
       const cmd = session._pendingSlashCommand
@@ -2565,6 +2600,73 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
     if (event.type === 'worktree_missing' && projectPath === get().activeProject) {
       useAppStore.getState().setActiveWorktree(projectPath, null)
+    }
+  },
+
+  syncLiveSnapshots: async () => {
+    const getSnap = window.agent.getLiveSnapshots
+    if (!getSnap) return
+    let entries
+    try {
+      entries = await getSnap()
+    } catch (err) {
+      console.warn('[chat] getLiveSnapshots failed:', err)
+      return
+    }
+    if (!entries || entries.length === 0) return
+
+    const activeByProject = new Map<string, string>()
+    for (const entry of entries) {
+      if (entry.isActive) activeByProject.set(entry.projectPath, entry.sid)
+    }
+
+    set((s) => {
+      const nextProjects = { ...s.projectSessions }
+      const touchedProjects = new Map<string, string>()
+      for (const entry of entries) {
+        const prevProject = nextProjects[entry.projectPath] ?? createDefaultProjectState()
+        const prevSession = prevProject._sessions[entry.sid] ?? createDefaultPerSessionState()
+        const mergedMessages = mergeMessagesByMaxSeq(entry.snapshot.messages as ChatMessage[], prevSession.messages)
+        const provider: ChatProvider = entry.snapshot.harnessId === 'codex' ? 'codex' : 'claude'
+        const inferredStatus: AgentStatus = entry.isStreaming ? 'streaming' : prevSession.status === 'error' ? 'error' : 'idle'
+        const mergedSession: PerSessionState = {
+          ...prevSession,
+          cwd: entry.snapshot.cwd,
+          messages: mergedMessages,
+          totalCostUsd: Math.max(prevSession.totalCostUsd, entry.snapshot.totalCostUsd),
+          contextTokens: Math.max(prevSession.contextTokens, entry.snapshot.contextTokens),
+          status: inferredStatus,
+          awaitingAssistantReply: entry.isStreaming && !entry.snapshot.currentMessageId
+            ? prevSession.awaitingAssistantReply
+            : false,
+          sessionProvider: provider,
+          permissionMode: entry.permissionMode,
+          lastAssistantMessageId: entry.snapshot.currentMessageId ?? prevSession.lastAssistantMessageId,
+          _worktreePath: entry.snapshot.worktreePath ?? prevSession._worktreePath,
+          _worktreeBaseBranch: entry.snapshot.gitBranch ?? prevSession._worktreeBaseBranch,
+          _worktreeRemoved: entry.snapshot.worktreeMissing,
+          _historyHydrated: true,
+        }
+        const nextSessions = { ...prevProject._sessions, [entry.sid]: mergedSession }
+        touchedProjects.set(entry.projectPath, entry.sid)
+        const nextActiveSid = activeByProject.get(entry.projectPath) ?? prevProject._activeSessionId ?? entry.sid
+        nextProjects[entry.projectPath] = {
+          ...prevProject,
+          _sessions: nextSessions,
+          _activeSessionId: nextActiveSid,
+          sandboxInfo: entry.sandboxInfo,
+        }
+      }
+      return { projectSessions: nextProjects }
+    })
+
+    for (const entry of entries) {
+      for (const ev of entry.replayEvents) {
+        try { get().handleAgentEvent(ev as AgentEvent) } catch (err) { console.warn('[chat] replay event error:', err) }
+      }
+      for (const ev of entry.pendingInteractions) {
+        try { get().handleAgentEvent(ev as AgentEvent) } catch (err) { console.warn('[chat] pending interaction error:', err) }
+      }
     }
   },
 
@@ -4117,6 +4219,25 @@ export function useBashOutput(toolUseId: string): { content: string; finished: b
 }
 
 /** Apply a content delta to the content array, merging consecutive text blocks and deduplicating tool_use. */
+export function mergeMessagesByMaxSeq(snap: ChatMessage[], existing: ChatMessage[]): ChatMessage[] {
+  const existingById = new Map(existing.map((m) => [m.id, m]))
+  const result: ChatMessage[] = []
+  const seen = new Set<string>()
+  for (const sm of snap) {
+    const em = existingById.get(sm.id)
+    if (!em) {
+      result.push(sm)
+    } else {
+      result.push(compareMessageSeq(em, sm) > 0 ? em : sm)
+    }
+    seen.add(sm.id)
+  }
+  for (const em of existing) {
+    if (!seen.has(em.id)) result.push(em)
+  }
+  return result
+}
+
 export function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {
   if (delta.type === 'text') {
     const last = content[content.length - 1]

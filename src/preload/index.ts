@@ -48,6 +48,9 @@ const agentAPI = {
   activateSession: (projectPath: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ACTIVATE_SESSION, projectPath, sessionId),
 
+  getLiveSnapshots: () =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_LIVE_SNAPSHOTS),
+
   rewindFiles: (projectPath: string, userMessageId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.REWIND_FILES, projectPath, userMessageId),
 

@@ -12,8 +12,9 @@ import type {
   SendMessageRequest,
   SlashCommandInfo,
 } from '../../shared/agent-types'
+import type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus } from '../../shared/session-types'
 
-export type HarnessId = 'claude' | 'codex'
+export type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus }
 
 export interface Harness {
   readonly id: HarnessId
@@ -32,14 +33,6 @@ export interface SessionProvider {
   updatedAt: number
 }
 
-export type SessionStatus =
-  | 'idle'
-  | 'starting'
-  | 'streaming'
-  | 'interrupting'
-  | 'ended'
-  | 'disposed'
-
 export interface SessionCreateOptions {
   projectPath: string
   cwd?: string
@@ -53,27 +46,6 @@ export interface SessionCreateOptions {
   resumeFrom?: string
   title?: string
   gitBranch?: string | null
-}
-
-export interface SessionSnapshot {
-  readonly id: string
-  readonly projectPath: string
-  readonly cwd: string
-  readonly providerId: string
-  readonly harnessId: HarnessId
-  readonly status: SessionStatus
-  readonly providerSessionId: string | null
-  readonly currentMessageId: string | null
-  readonly createdAt: number
-  readonly lastUserMessageAt: number | null
-  readonly messages: ReadonlyArray<ChatMessage>
-  readonly totalCostUsd: number
-  readonly contextTokens: number
-  readonly title: string | null
-  readonly isWorktree: boolean
-  readonly worktreePath: string | null
-  readonly gitBranch: string | null
-  readonly worktreeMissing: boolean
 }
 
 export interface SessionStateChange {
@@ -230,6 +202,7 @@ export interface SessionManager {
   openProject(projectPath: string): void
   closeProject(projectPath: string): Promise<void>
   listProjectSessions(projectPath: string): SessionSnapshot[]
+  listLiveSnapshots(): LiveSessionSnapshot[]
   getProjectResources(cwd: string): ProjectResources
   invalidateProjectResources(cwd: string): void
 

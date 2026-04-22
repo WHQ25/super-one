@@ -1,4 +1,5 @@
 import type { AgentEvent, ChatMessage, CodexRunResult, CodexThreadItem, CodexUsageInfo } from '../../shared/agent-types'
+import { applySeqToMessage, isReplayedEventForMessage } from '../../shared/event-seq-utils'
 import { buildClaudeUserMessage, extractClaudeTitle, type PersistedClaudeSessionState } from './claude-session-runtime'
 
 export type PersistedCodexSessionState = PersistedClaudeSessionState
@@ -237,6 +238,8 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
   switch (event.type) {
     case 'message_usage': {
       if (!event.codexUsage) return runtime
+      const target = runtime.messages.find((m) => m.id === event.messageId)
+      if (target && isReplayedEventForMessage(event, target)) return runtime
       const previous = runtime.lastUsageByMessageId[event.messageId] ?? null
       const current = runtime.streamingTokensByMessageId[event.messageId] ?? { input: 0, output: 0 }
       const nextStreamingTokens = accumulateCodexFooterTokens(current, event.codexUsage, previous)
@@ -252,6 +255,7 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
               usage: event.codexUsage ?? null,
             },
           },
+          ...applySeqToMessage(event),
         }
       })
       return {
@@ -276,6 +280,7 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
         ...runtime,
         messages: runtime.messages.map((message) => {
           if (message.id !== event.messageId) return message
+          if (isReplayedEventForMessage(event, message)) return message
           const prevCodex = message.metadata?.codex ?? { threadId: null, usage: null, items: [] }
           return {
             ...message,
@@ -286,6 +291,7 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
                 threadId: event.threadId,
               },
             },
+            ...applySeqToMessage(event),
           }
         }),
       }
@@ -294,6 +300,7 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
         ...runtime,
         messages: runtime.messages.map((message) => {
           if (message.id !== event.messageId) return message
+          if (isReplayedEventForMessage(event, message)) return message
           const prevCodex = message.metadata?.codex ?? { threadId: null, usage: null, items: [] }
           return {
             ...message,
@@ -304,6 +311,7 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
                 items: upsertCodexItem(prevCodex.items, event.item),
               },
             },
+            ...applySeqToMessage(event),
           }
         }),
       }

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import type { AgentEvent, ChatMessage, ContentBlock, SendMessageRequest, SessionInfo } from '../../shared/agent-types'
+import { applySeqToMessage, isReplayedEventForMessage } from '../../shared/event-seq-utils'
 
 export interface PersistedClaudeSessionState {
   messages: ChatMessage[]
@@ -252,11 +253,15 @@ export function applyClaudeEventToRuntime(
     case 'content_delta':
       return {
         ...runtime,
-        messages: runtime.messages.map((message) => (
-          message.id !== event.messageId
-            ? message
-            : { ...message, content: applyDelta(message.content, event.delta) }
-        )),
+        messages: runtime.messages.map((message) => {
+          if (message.id !== event.messageId) return message
+          if (isReplayedEventForMessage(event, message)) return message
+          return {
+            ...message,
+            content: applyDelta(message.content, event.delta),
+            ...applySeqToMessage(event),
+          }
+        }),
       }
     case 'message_complete': {
       const usage = event.metadata?.usage

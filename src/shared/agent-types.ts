@@ -321,6 +321,8 @@ export interface ChatMessage {
   checkpointId?: string
   resumePointId?: string
   rewound?: 'code' | 'conversation' | 'code_and_chat'
+  _lastAppliedSeq?: number
+  _lastAppliedEpoch?: number
 }
 
 // --- Permission request ---
@@ -575,7 +577,7 @@ export type AgentEventBase =
   | { type: 'queued_message_consumed'; clientMessageId: string }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
 
-export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string }
+export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
 
 export type AgentStatus = 'idle' | 'streaming' | 'background' | 'error'
 
@@ -1260,6 +1262,9 @@ export const AgentIpcChannels = {
   // Concurrent session management
   PARK_SESSION: 'agent:park-session',
   ACTIVATE_SESSION: 'agent:activate-session',
+
+  // Live session snapshots for renderer resync
+  GET_LIVE_SNAPSHOTS: 'agent:get-live-snapshots',
 
   // Session history
   SESSIONS_LIST: 'sessions:list',

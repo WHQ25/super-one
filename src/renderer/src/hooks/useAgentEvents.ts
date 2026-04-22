@@ -7,10 +7,29 @@ export function useAgentEvents(): void {
   const handleAgentEvent = useChatStore((s) => s.handleAgentEvent)
 
   useEffect(() => {
+    let hydrated = false
+    let disposed = false
+    const buffer: AgentEvent[] = []
     const cleanup = window.agent.onAgentEvent((event) => {
+      if (disposed) return
+      if (!hydrated) {
+        buffer.push(event as AgentEvent)
+        return
+      }
       handleAgentEvent(event as AgentEvent)
     })
-    return cleanup
+    void useChatStore.getState().syncLiveSnapshots().finally(() => {
+      hydrated = true
+      if (disposed) return
+      for (const ev of buffer) {
+        try { handleAgentEvent(ev) } catch (err) { console.warn('[useAgentEvents] flush error:', err) }
+      }
+      buffer.length = 0
+    })
+    return () => {
+      disposed = true
+      cleanup()
+    }
   }, [handleAgentEvent])
 
   useEffect(() => {

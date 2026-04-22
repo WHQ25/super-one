@@ -623,6 +623,52 @@ describe('Session message accumulation', () => {
     expect(msg?.content).toEqual([{ type: 'text', text: 'Hello world' }])
   })
 
+  it('tags emitted events with a monotonic per-session seq and tracks _lastAppliedSeq on streaming message', () => {
+    const { session, backend } = makeSession()
+    const seen: number[] = []
+    session.on((ev) => {
+      if (typeof ev.seq === 'number') seen.push(ev.seq)
+    })
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    backend.emit({ type: 'content_delta', messageId: 'a1', delta: { type: 'text', text: 'X' } })
+    backend.emit({ type: 'content_delta', messageId: 'a1', delta: { type: 'text', text: 'Y' } })
+
+    for (let i = 1; i < seen.length; i++) {
+      expect(seen[i]).toBeGreaterThan(seen[i - 1])
+    }
+    const msg = session.snapshot.messages.find((m) => m.id === 'a1')
+    expect(msg?._lastAppliedSeq).toBe(seen[seen.length - 1])
+    expect(msg?.content).toEqual([{ type: 'text', text: 'XY' }])
+  })
+
+  it('ignores a replayed content_delta whose (epoch, seq) was already applied', () => {
+    const { session, backend } = makeSession()
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    const captured: Array<{ epoch?: number; seq?: number }> = []
+    session.on((ev) => {
+      if (ev.type === 'content_delta') captured.push({ epoch: ev.epoch, seq: ev.seq })
+    })
+    backend.emit({ type: 'content_delta', messageId: 'a1', delta: { type: 'text', text: 'Hello' } })
+    const first = captured[0]
+
+    backend.emit(({
+      type: 'content_delta',
+      messageId: 'a1',
+      delta: { type: 'text', text: 'Hello' },
+      seq: first.seq,
+      epoch: first.epoch,
+    } as unknown as Parameters<typeof backend.emit>[0]))
+
+    const msg = session.snapshot.messages.find((m) => m.id === 'a1')
+    expect(msg?.content).toEqual([{ type: 'text', text: 'Hello' }])
+  })
+
   it('updates totalCostUsd and contextTokens from message_complete metadata', () => {
     const { session, backend } = makeSession()
     backend.emit({
@@ -663,6 +709,39 @@ describe('Session message accumulation', () => {
     })
     const msg = session.snapshot.messages.find((m) => m.id === 'a1')
     expect(msg?.metadata?.codex?.threadId).toBe('thread-abc')
+  })
+
+  it('ignores replayed codex_item_delta with stale (epoch, seq)', () => {
+    const { session, backend } = makeSession({
+      harnessId: 'codex',
+      initialMessages: [
+        { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' },
+      ],
+    })
+    const captured: Array<{ epoch?: number; seq?: number }> = []
+    session.on((ev) => {
+      if (ev.type === 'codex_item_delta') captured.push({ epoch: ev.epoch, seq: ev.seq })
+    })
+    backend.emit({
+      type: 'codex_item_delta',
+      messageId: 'a1',
+      phase: 'started',
+      item: { id: 'item-1', type: 'reasoning', text: 'thinking...' } as never,
+    })
+    const first = captured[0]
+
+    backend.emit(({
+      type: 'codex_item_delta',
+      messageId: 'a1',
+      phase: 'updated',
+      item: { id: 'item-1', type: 'reasoning', text: 'DIFFERENT' } as never,
+      epoch: first.epoch,
+      seq: first.seq,
+    } as unknown as Parameters<typeof backend.emit>[0]))
+
+    const msg = session.snapshot.messages.find((m) => m.id === 'a1')
+    const item = msg?.metadata?.codex?.items?.[0] as { text?: string } | undefined
+    expect(item?.text).toBe('thinking...')
   })
 
   it('codex message_start appends the assistant placeholder to _messages', () => {

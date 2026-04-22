@@ -26,6 +26,7 @@ import {
   finalizeCodexAssistantMessage,
   type CodexSessionRuntime,
 } from '../agent/codex-session-runtime'
+import { nextEventSeq } from './event-seq'
 import type {
   BackendCommand,
   BackendStartOptions,
@@ -644,9 +645,12 @@ export class Session implements SessionContract {
     ) {
       this._currentMessageId = null
     }
-    this.applyReducer(event)
-    const existingProjectPath = (event as { projectPath?: string }).projectPath
-    const tagged = { ...event, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent
+    const sequenced = event.seq === undefined
+      ? ({ ...event, ...nextEventSeq() } as AgentEvent)
+      : event
+    this.applyReducer(sequenced)
+    const existingProjectPath = (sequenced as { projectPath?: string }).projectPath
+    const tagged = { ...sequenced, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent
     const traceMessageId = (event as Record<string, unknown>).messageId as string | undefined
       ?? this._currentMessageId
       ?? ''

@@ -10,6 +10,7 @@ import { getSessionProvider } from './session-provider-repo'
 import { ProjectResourceCache } from './project-resource-cache'
 import { Session } from './session'
 import type {
+  LiveSessionSnapshot,
   ProjectResources,
   Session as SessionContract,
   SessionCreateOptions,
@@ -88,6 +89,26 @@ export class SessionManagerImpl implements SessionManagerContract {
       if (pp !== projectPath) continue
       const s = this.sessions.get(sid)
       if (s) out.push(s.snapshot)
+    }
+    return out
+  }
+
+  listLiveSnapshots(): LiveSessionSnapshot[] {
+    const out: LiveSessionSnapshot[] = []
+    for (const [sid, projectPath] of this.sessionProjects) {
+      const session = this.sessions.get(sid)
+      if (!session) continue
+      out.push({
+        sid,
+        projectPath,
+        isActive: this.activeByProject.get(projectPath) === sid,
+        isStreaming: session.isStreaming(),
+        permissionMode: session.getCurrentPermissionMode(),
+        sandboxInfo: session.getCurrentSandboxInfo(),
+        snapshot: session.snapshot,
+        pendingInteractions: session.getPendingInteractions(),
+        replayEvents: session.getReplayEvents(),
+      })
     }
     return out
   }

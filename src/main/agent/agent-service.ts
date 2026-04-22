@@ -1430,6 +1430,10 @@ export class AgentService {
       try { mgr.setActiveSession(projectPath, sessionId) } catch { /* belongs to another project */ }
     })
 
+    ipcMain.handle(AgentIpcChannels.GET_LIVE_SNAPSHOTS, () => {
+      return this.requireSessionManager().listLiveSnapshots()
+    })
+
     ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, (_event, projectPath: string, sessionId: string, limit: number, cursor?: number) => {
       return loadSessionMessages(projectPath, sessionId, limit, cursor)
     })
@@ -1579,6 +1583,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.PARK_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.ACTIVATE_SESSION)
+    ipcMain.removeHandler(AgentIpcChannels.GET_LIVE_SNAPSHOTS)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE)

@@ -11,9 +11,17 @@ export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
 import { readOutputFile } from './agent/claude-session-runtime'
 import { initHighlighter, highlightCodeSync, highlightCodeByLang, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
-
-const subtle = webcrypto.subtle
-const encoder = new TextEncoder()
+import {
+  bytesToHex,
+  deriveKeys,
+  importRawAesKey,
+  encryptPayload,
+  decryptPayload,
+  computeHmacToken,
+  computeRoomId,
+} from './remote-control-crypto'
+import { LanServer, listLanIpAddresses } from './lan-server'
+import { LanAdvertiser } from './lan-advertiser'
 
 const PAIRING_TIMEOUT_MS = 3 * 60 * 1000
 const MAX_RECONNECT_DELAY_MS = 30_000
@@ -437,75 +445,6 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
 
 const THROTTLE_INTERVAL_MS = 2_000
 
-function bytesToHex(bytes: ArrayBuffer): string {
-  return Array.from(new Uint8Array(bytes))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
-  const arr = hex.match(/.{2}/g)!.map((h) => parseInt(h, 16))
-  return new Uint8Array(arr) as Uint8Array<ArrayBuffer>
-}
-
-async function importKeyMaterial(masterSecretHex: string): Promise<webcrypto.CryptoKey> {
-  return subtle.importKey('raw', hexToBytes(masterSecretHex), 'HKDF', false, ['deriveBits'])
-}
-
-async function deriveKeys(masterSecretHex: string): Promise<{
-  channelKeyHex: string
-  aesKey: webcrypto.CryptoKey
-}> {
-  const keyMaterial = await importKeyMaterial(masterSecretHex)
-  const channelBits = await subtle.deriveBits(
-    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encoder.encode('channel-key') },
-    keyMaterial,
-    256,
-  )
-  const channelKeyHex = bytesToHex(channelBits)
-
-  const aesBits = await subtle.deriveBits(
-    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encoder.encode('aes-key') },
-    await importKeyMaterial(masterSecretHex),
-    256,
-  )
-  const aesKey = await subtle.importKey('raw', aesBits, 'AES-GCM', false, ['encrypt', 'decrypt'])
-
-  return { channelKeyHex, aesKey }
-}
-
-async function importRawAesKey(keyHex: string): Promise<webcrypto.CryptoKey> {
-  return subtle.importKey('raw', hexToBytes(keyHex), 'AES-GCM', false, ['encrypt', 'decrypt'])
-}
-
-async function encryptPayload(aesKey: webcrypto.CryptoKey, payload: unknown): Promise<string> {
-  const iv = webcrypto.getRandomValues(new Uint8Array(12))
-  const encrypted = await subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, encoder.encode(JSON.stringify(payload)))
-  const result = new Uint8Array(12 + encrypted.byteLength)
-  result.set(iv, 0)
-  result.set(new Uint8Array(encrypted), 12)
-  return Buffer.from(result).toString('base64')
-}
-
-async function decryptPayload(aesKey: webcrypto.CryptoKey, data: string): Promise<unknown> {
-  const bytes = Buffer.from(data, 'base64')
-  const iv = bytes.subarray(0, 12)
-  const ciphertext = bytes.subarray(12)
-  const decrypted = await subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ciphertext)
-  return JSON.parse(new TextDecoder().decode(decrypted))
-}
-
-async function computeHmacToken(channelKeyHex: string, role: string, timestamp: string): Promise<string> {
-  const key = await subtle.importKey('raw', hexToBytes(channelKeyHex), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const sig = await subtle.sign('HMAC', key, encoder.encode(`${role}:${timestamp}`))
-  return bytesToHex(sig)
-}
-
-async function computeRoomId(channelKeyHex: string): Promise<string> {
-  const hash = await subtle.digest('SHA-256', hexToBytes(channelKeyHex))
-  return bytesToHex(hash).substring(0, 32)
-}
-
 interface PairingSession {
   channelId: string
   aesKey: webcrypto.CryptoKey
@@ -535,7 +474,10 @@ export interface RemoteControlCallbacks {
 export class RemoteControlService {
   private relayWs: WebSocket | null = null
   private keys: { channelKeyHex: string; aesKey: webcrypto.CryptoKey } | null = null
-  private onlineDeviceIds = new Set<string>()
+  private relayDeviceIds = new Set<string>()
+  private lanDeviceIds = new Set<string>()
+  private lanServer: LanServer | null = null
+  private lanAdvertiser: LanAdvertiser | null = null
   private currentConfig: RemoteDeviceConfig | null = null
   private sleepBlockerProcess: ChildProcess | null = null
   private powerBlockerId: number | null = null
@@ -572,7 +514,26 @@ export class RemoteControlService {
   }
 
   getOnlineDeviceIds(): Set<string> {
-    return this.onlineDeviceIds
+    const union = new Set<string>()
+    for (const id of this.relayDeviceIds) union.add(id)
+    for (const id of this.lanDeviceIds) union.add(id)
+    return union
+  }
+
+  getLanPort(): number | null {
+    return this.lanServer?.getPort() ?? null
+  }
+
+  private markDeviceOnline(deviceName: string, deviceId: string, via: 'relay' | 'lan'): void {
+    const wasOnline = this.relayDeviceIds.has(deviceId) || this.lanDeviceIds.has(deviceId)
+    ;(via === 'relay' ? this.relayDeviceIds : this.lanDeviceIds).add(deviceId)
+    if (!wasOnline) this.callbacks.onClientRegistered?.({ deviceName, deviceId })
+  }
+
+  private markDeviceOffline(deviceId: string, via: 'relay' | 'lan'): void {
+    ;(via === 'relay' ? this.relayDeviceIds : this.lanDeviceIds).delete(deviceId)
+    const stillOnline = this.relayDeviceIds.has(deviceId) || this.lanDeviceIds.has(deviceId)
+    if (!stillOnline) this.callbacks.onClientDisconnected?.({ deviceId })
   }
 
   private acquirePowerLock(): void {
@@ -618,8 +579,68 @@ export class RemoteControlService {
     this.keys = await deriveKeys(config.masterSecret)
     this.intentionallyClosed = false
     await this.connectRelay()
+    await this.startLanServer()
     if (config.preventSleep) this.acquirePowerLock()
     log.info('[RemoteControl] Started for device:', config.deviceId)
+  }
+
+  private async startLanServer(): Promise<void> {
+    if (this.lanServer) return
+    const server = new LanServer({
+      getAesKey: () => this.keys?.aesKey ?? null,
+      isPairedDevice: (id) => this.callbacks.isPairedDevice?.(id) ?? false,
+      onCommand: (cmd, respond) => this.callbacks.onCommand(cmd, respond),
+      hostName: hostname(),
+      onClientRegistered: ({ deviceName, deviceId }) => this.markDeviceOnline(deviceName, deviceId, 'lan'),
+      onClientDisconnected: ({ deviceId }) => this.markDeviceOffline(deviceId, 'lan'),
+    })
+    try {
+      const { port } = await server.start()
+      this.lanServer = server
+      log.info(`[RemoteControl] LAN server listening on port ${port}`)
+      await this.startLanAdvertiser(port)
+    } catch (err) {
+      log.error('[RemoteControl] Failed to start LAN server:', err)
+    }
+  }
+
+  private async startLanAdvertiser(port: number): Promise<void> {
+    if (!this.keys) return
+    try {
+      const roomId = await computeRoomId(this.keys.channelKeyHex)
+      const advertiser = new LanAdvertiser()
+      advertiser.publish({
+        name: `superone-${roomId.substring(0, 8)}`,
+        port,
+        txt: { roomId, hostName: hostname() },
+      })
+      this.lanAdvertiser = advertiser
+    } catch (err) {
+      log.error('[RemoteControl] Failed to start LAN advertiser:', err)
+    }
+  }
+
+  private buildHandshakeFrame(): string {
+    const port = this.lanServer?.getPort()
+    const hosts = port ? listLanIpAddresses() : []
+    return JSON.stringify({
+      type: 'handshake',
+      hostName: hostname(),
+      ...(port && hosts.length > 0 ? { lan: { hosts, port } } : {}),
+    })
+  }
+
+  private async stopLanServer(): Promise<void> {
+    this.lanAdvertiser?.unpublish()
+    this.lanAdvertiser = null
+    const server = this.lanServer
+    this.lanServer = null
+    if (!server) return
+    for (const id of Array.from(this.lanDeviceIds)) {
+      this.markDeviceOffline(id, 'lan')
+    }
+    await server.stop()
+    log.info('[RemoteControl] LAN server stopped')
   }
 
   isRelayConnected(): boolean {
@@ -639,6 +660,7 @@ export class RemoteControlService {
       this.relayWs = null
       this.callbacks.onRelayStatusChanged?.(false)
     }
+    await this.stopLanServer()
     this.keys = null
     this.releasePowerLock()
   }
@@ -660,7 +682,7 @@ export class RemoteControlService {
       log.info('[RemoteControl] Relay connected')
       this.reconnectDelay = 1_000
       this.callbacks.onRelayStatusChanged?.(true)
-      ws.send(JSON.stringify({ type: 'handshake', hostName: hostname() }))
+      ws.send(this.buildHandshakeFrame())
     })
 
     ws.on('message', (raw) => {
@@ -709,16 +731,16 @@ export class RemoteControlService {
         if (this.callbacks.isPairedDevice && !this.callbacks.isPairedDevice(deviceId)) {
           log.warn('[RemoteControl] Rejecting unrecognized device:', deviceId)
           this.relayWs?.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
+          this.lanServer?.kickDevice(deviceId)
           return
         }
-        log.info('[RemoteControl] Client registered:', deviceName, deviceId)
-        this.onlineDeviceIds.add(deviceId)
-        this.callbacks.onClientRegistered?.({ deviceName, deviceId })
+        log.info('[RemoteControl] Client registered via relay:', deviceName, deviceId)
+        this.markDeviceOnline(deviceName, deviceId, 'relay')
         break
       }
       case 'peer_connected':
         log.info('[RemoteControl] Mobile peer connected')
-        this.relayWs?.send(JSON.stringify({ type: 'handshake', hostName: hostname() }))
+        this.relayWs?.send(this.buildHandshakeFrame())
         break
       case 'peer_disconnected': {
         log.info('[RemoteControl] Mobile peer disconnected')
@@ -731,9 +753,8 @@ export class RemoteControlService {
           this.remoteSessionFilter = null
           this.callbacks.onRemoteFilterCleared?.(filter)
         }
-        for (const id of this.onlineDeviceIds) {
-          this.onlineDeviceIds.delete(id)
-          this.callbacks.onClientDisconnected?.({ deviceId: id })
+        for (const id of Array.from(this.relayDeviceIds)) {
+          this.markDeviceOffline(id, 'relay')
         }
         break
       }
@@ -857,13 +878,26 @@ export class RemoteControlService {
   }
 
   async sendEventToMobile(event: Record<string, unknown>): Promise<void> {
-    if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
+    if (!this.keys) return
+    if (!this.hasAnyMobileTransport()) return
     try {
       const data = await encryptPayload(this.keys.aesKey, event)
-      this.relayWs.send(JSON.stringify({ type: 'event', data }))
+      this.broadcastEventFrame(data)
     } catch (err) {
       log.error('[RemoteControl] Failed to send event to mobile:', err)
     }
+  }
+
+  private hasAnyMobileTransport(): boolean {
+    const relayOpen = this.relayWs !== null && this.relayWs.readyState === WebSocket.OPEN
+    const lanActive = this.lanServer !== null && !this.lanServer.isEmpty()
+    return relayOpen || lanActive
+  }
+
+  private broadcastEventFrame(encryptedData: string): void {
+    const frame = JSON.stringify({ type: 'event', data: encryptedData })
+    if (this.relayWs?.readyState === WebSocket.OPEN) this.relayWs.send(frame)
+    this.lanServer?.broadcastFrame(frame)
   }
 
   async broadcastAgentEvent(event: AgentEvent): Promise<void> {
@@ -1066,9 +1100,10 @@ export class RemoteControlService {
   private queueSend(events: AgentEvent[]): void {
     if (events.length === 0) return
     this.sendQueue = this.sendQueue.then(async () => {
-      if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
+      if (!this.keys) return
+      if (!this.hasAnyMobileTransport()) return
       const data = await encryptPayload(this.keys.aesKey, events)
-      this.relayWs.send(JSON.stringify({ type: 'event', data }))
+      this.broadcastEventFrame(data)
     }).catch(err => log.error('[RemoteControl] Failed to send events:', err))
   }
 }

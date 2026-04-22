@@ -474,22 +474,25 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
-    (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string) => {
-      getCodexSession(sessionId)?.respondToPermission(requestId, allow, alwaysAllow, reason)
+    (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel') => {
+      if (!getCodexSession(sessionId)) return false
+      return codexService.respondToPermission(sessionId, requestId, allow, alwaysAllow, reason, decision)
     },
   )
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_ANSWER_QUESTION,
     (_event, sessionId: string, requestId: string, answers: Record<string, string>) => {
-      getCodexSession(sessionId)?.respondToQuestion(requestId, answers)
+      if (!getCodexSession(sessionId)) return false
+      return codexService.respondToQuestion(sessionId, requestId, answers)
     },
   )
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_DISMISS_QUESTION,
     (_event, sessionId: string, requestId: string) => {
-      getCodexSession(sessionId)?.dismissQuestion(requestId)
+      if (!getCodexSession(sessionId)) return false
+      return codexService.dismissQuestion(sessionId, requestId)
     },
   )
 

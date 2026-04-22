@@ -57,6 +57,7 @@ const mockWindowApp = {
   codexCompact: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
   codexListModels: vi.fn().mockResolvedValue([]),
   codexSteer: vi.fn().mockResolvedValue(undefined),
+  codexRespondToPermission: vi.fn().mockResolvedValue(true),
   codexAnswerQuestion: vi.fn().mockResolvedValue(true),
   codexDismissQuestion: vi.fn().mockResolvedValue(true),
   codexReset: vi.fn().mockResolvedValue(undefined),
@@ -4239,6 +4240,37 @@ describe('interaction response routing', () => {
 
     expect(result).toBe(false)
     expect(useChatStore.getState().projectSessions['/test']._sessions['a'].pendingPermissions).toHaveLength(1)
+  })
+
+  it('respondToPermission routes cancel decisions through codex IPC for codex sessions', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const codexSid = 'codex_local_perm_test'
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: codexSid,
+          _sessions: {
+            [codexSid]: {
+              ...proj._sessions[draftOf(proj)],
+              status: 'streaming' as const,
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+              pendingPermissions: [{ requestId: 'r1', toolName: 'Bash', input: {}, allowAlwaysAllow: true }],
+            },
+          },
+        },
+      },
+    })
+
+    const result = await useChatStore.getState().respondToPermission('r1', false, undefined, undefined, undefined, 'cancel')
+
+    expect(mockWindowApp.codexRespondToPermission).toHaveBeenCalledWith(codexSid, 'r1', false, undefined, undefined, 'cancel')
+    expect(mockWindowAgent.respondToPermission).not.toHaveBeenCalled()
+    expect(result).toBe(true)
+    expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingPermissions).toHaveLength(0)
   })
 
   it('answerQuestion calls IPC with active sessionId', () => {

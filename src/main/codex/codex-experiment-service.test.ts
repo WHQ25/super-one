@@ -138,6 +138,29 @@ describe('CodexExperimentService auth state', () => {
   })
 })
 
+describe('CodexExperimentService approval responses', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('resolves cancel decisions distinctly from declines', () => {
+    const service = new CodexExperimentService()
+    const resolve = vi.fn()
+    const session = createSession('/project', null)
+    session.pendingApprovals.set('req-1', {
+      responseKind: 'decision',
+      resolve,
+      reject: vi.fn(),
+    })
+
+    ;(service as any).sessions.set('sid-1', session)
+
+    expect(service.respondToPermission('sid-1', 'req-1', false, undefined, undefined, 'cancel')).toBe(true)
+    expect(resolve).toHaveBeenCalledWith({ decision: 'cancel' })
+    expect(session.pendingApprovals.has('req-1')).toBe(false)
+  })
+})
+
 describe('CodexExperimentService child thread routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()

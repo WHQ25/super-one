@@ -1,7 +1,18 @@
+import { diffLines } from 'diff'
 import { splitContentLines } from '@/lib/diff-utils'
 
 function countContentLines(text: string): number {
   return splitContentLines(text).length
+}
+
+function countEditDelta(oldStr: string, newStr: string): { added: number; removed: number } {
+  let added = 0
+  let removed = 0
+  for (const change of diffLines(oldStr, newStr)) {
+    if (change.added) added += change.count ?? 0
+    else if (change.removed) removed += change.count ?? 0
+  }
+  return { added, removed }
 }
 
 export function countUnifiedDiffDelta(diff: string): { added: number; removed: number } | null {
@@ -47,7 +58,8 @@ export function computeLineDelta(toolName: string, params: Record<string, unknow
     const oldStr = String(params.old_string ?? '')
     const newStr = String(params.new_string ?? '')
     if (!oldStr && !newStr) return null
-    return { added: countContentLines(newStr), removed: countContentLines(oldStr) }
+    const { added, removed } = countEditDelta(oldStr, newStr)
+    return added > 0 || removed > 0 ? { added, removed } : null
   }
   if (toolName === 'FileChange') {
     const kind = String(params.kind ?? '')

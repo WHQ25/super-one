@@ -140,9 +140,20 @@ describe('computeLineDelta', () => {
     expect(computeLineDelta('Write', { content: '' })).toBeNull()
   })
 
-  it('should count added and removed lines for Edit tool', () => {
+  it('should count only actually changed lines for Edit tool (LCS diff)', () => {
     expect(computeLineDelta('Edit', { old_string: 'a\nb', new_string: 'c\nd\ne' }))
       .toEqual({ added: 3, removed: 2 })
+  })
+
+  it('should ignore unchanged lines shared between old_string and new_string', () => {
+    const oldStr = 'keep1\nkeep2\nold\nkeep3'
+    const newStr = 'keep1\nkeep2\nnew\nkeep3'
+    expect(computeLineDelta('Edit', { old_string: oldStr, new_string: newStr }))
+      .toEqual({ added: 1, removed: 1 })
+  })
+
+  it('should return null for Edit when old_string equals new_string', () => {
+    expect(computeLineDelta('Edit', { old_string: 'a\nb', new_string: 'a\nb' })).toBeNull()
   })
 
   it('should return null for Edit with both strings empty', () => {

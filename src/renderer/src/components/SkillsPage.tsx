@@ -185,12 +185,12 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
       layoutId={layoutId}
       transition={{ layout: layoutTransition }}
       style={{ borderRadius: 8 }}
-      className="border border-border bg-card"
+      className="flex flex-col border border-border bg-card"
     >
       <div
         role="button"
         onClick={handleToggle}
-        className="flex cursor-pointer flex-col gap-1.5 p-4 text-left transition-colors hover:bg-muted/50"
+        className={`flex cursor-pointer flex-col gap-1.5 p-4 text-left transition-colors hover:bg-muted/50 ${isExpanded ? '' : 'flex-1'}`}
       >
         <div className="flex items-center gap-2">
           <Puzzle className="size-4 shrink-0 text-muted-foreground" />

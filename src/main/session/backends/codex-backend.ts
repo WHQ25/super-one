@@ -206,9 +206,14 @@ export class CodexBackend implements SessionBackend {
   async rebuild(opts: BackendStartOptions): Promise<void> {
     if (!this.started) { await this.start(opts); return }
     this.startOpts = opts
+    this.discardSessionConnection('rebuild')
   }
 
   private handleAuthChanged(): void {
+    this.discardSessionConnection('auth-changed')
+  }
+
+  private discardSessionConnection(reason: string): void {
     const session = this.session
     if (!session) return
     if (session.runningController) {
@@ -220,7 +225,7 @@ export class CodexBackend implements SessionBackend {
     session.threadId = null
     if (handle) {
       void handle.close().catch((err) => {
-        log.warn('[CodexBackend] close connection after auth change failed: %s', err instanceof Error ? err.message : String(err))
+        log.warn('[CodexBackend] close connection during %s failed: %s', reason, err instanceof Error ? err.message : String(err))
       })
     }
   }
@@ -449,10 +454,11 @@ export class CodexBackend implements SessionBackend {
     alwaysAllow?: boolean,
     reason?: string,
     _selectedSuggestions?: number[],
+    decision?: 'cancel',
   ): boolean {
     const session = this.session
     if (!session) return false
-    return respondToCodexPermission(session, requestId, allow, alwaysAllow, reason)
+    return respondToCodexPermission(session, requestId, allow, alwaysAllow, reason, decision)
   }
 
   respondToQuestion(requestId: string, answers: Record<string, string>, _annotations?: QuestionAnnotations): void {

@@ -222,4 +222,33 @@ describe('createAppServerConnection', () => {
 
     await handle.close()
   })
+
+  it('dispatches a request response even while a notification consumer is waiting', async () => {
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+
+    const handlePromise = createAppServerConnection({ mode: 'apiKey' })
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: {} })
+    const handle = await handlePromise
+
+    // Notification consumer is parked first, mirroring streamTurnEvents awaiting nextNotification().
+    const notificationPromise = handle.connection.nextNotification()
+
+    // Now fire a concurrent request (mirrors turn/steer from the UI mid-turn).
+    const steerPromise = handle.connection.request('turn/steer', { text: 'stop' })
+    await nextTick()
+
+    // The server answers the request before any notification arrives.
+    writeLineToChild(child, { id: 2, result: { ok: true } })
+    await expect(steerPromise).resolves.toEqual({ ok: true })
+
+    // Then a notification comes in — the parked consumer should receive it.
+    writeLineToChild(child, { method: 'turn/completed', params: { turn: { status: 'completed' } } })
+    await expect(notificationPromise).resolves.toMatchObject({
+      method: 'turn/completed',
+    })
+
+    await handle.close()
+  })
 })

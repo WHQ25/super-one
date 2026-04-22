@@ -213,6 +213,21 @@ describe('CodexBackend lifecycle', () => {
     await backend.start({ ...makeStartOpts(), providerSessionId: 'thread-123' })
     expect(backend.getCurrentProviderSessionId()).toBe('thread-123')
   })
+
+  it('rebuild() closes the stale codex connection so new auth takes effect next send', async () => {
+    await backend.start(makeStartOpts())
+    const session = (backend as unknown as { session: Record<string, unknown> }).session
+    const close = vi.fn(async () => {})
+    session.connectionHandle = { close } as never
+    session.connectionAuth = { mode: 'auto' } as never
+    session.threadId = 'stale-thread'
+
+    await backend.rebuild(makeStartOpts())
+    expect(close).toHaveBeenCalled()
+    expect(session.connectionHandle).toBeNull()
+    expect(session.connectionAuth).toBeNull()
+    expect(session.threadId).toBeNull()
+  })
 })
 
 describe('CodexBackend send()', () => {
@@ -440,7 +455,12 @@ describe('CodexBackend interrupt / approval forwarding', () => {
 
   it('respondToPermission forwards allow + reason to respondToCodexPermission', () => {
     backend.respondToPermission('req-1', true, false, 'because')
-    expect(service.respondPermissionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'req-1', true, false, 'because')
+    expect(service.respondPermissionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'req-1', true, false, 'because', undefined)
+  })
+
+  it('respondToPermission forwards cancel decision through to respondToCodexPermission', () => {
+    backend.respondToPermission('req-1', false, undefined, undefined, undefined, 'cancel')
+    expect(service.respondPermissionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'req-1', false, undefined, undefined, 'cancel')
   })
 
   it('respondToQuestion / dismissQuestion forward to codex-turn module', () => {

@@ -333,39 +333,84 @@ export async function createAppServerConnection(
     }
   }
 
+  interface ResponseWaiter {
+    resolve: (value: Record<string, unknown>) => void
+    reject: (err: Error) => void
+    timer: ReturnType<typeof setTimeout>
+  }
+
+  const responseWaiters = new Map<string, ResponseWaiter>()
   const notificationQueue: AppServerNotification[] = []
+  const notificationWaiters: Array<(n: AppServerNotification | null, err?: Error) => void> = []
+  let readerError: Error | null = null
   let nextRequestId = 1
 
-  const waitForResponse = async (id: number, label: string): Promise<Record<string, unknown>> => {
-    const expectedId = String(id)
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const msg = await withTimeout(readMessage(), APP_SERVER_RESPONSE_TIMEOUT_MS, `Codex app-server ${label}`)
+  const rejectAllWaiters = (err: Error): void => {
+    for (const waiter of responseWaiters.values()) {
+      clearTimeout(waiter.timer)
+      waiter.reject(err)
+    }
+    responseWaiters.clear()
+    while (notificationWaiters.length > 0) {
+      const waiter = notificationWaiters.shift()
+      waiter?.(null, err)
+    }
+  }
 
-      const method = readString(msg.method)
-      if (method) {
+  const dispatchNotification = (notif: AppServerNotification): void => {
+    const waiter = notificationWaiters.shift()
+    if (waiter) waiter(notif)
+    else notificationQueue.push(notif)
+  }
+
+  void (async () => {
+    try {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const msg = await readMessage()
+        const method = readString(msg.method)
         const rawId = ('id' in msg && (typeof msg.id === 'string' || typeof msg.id === 'number'))
           ? (msg.id as JsonRpcRequestId)
           : undefined
-        notificationQueue.push({
-          requestIdRaw: rawId,
-          requestId: rawId !== undefined ? String(rawId) : undefined,
-          method,
-          params: asRecord(msg.params) ?? {},
-        })
-        continue
+
+        if (method) {
+          dispatchNotification({
+            requestIdRaw: rawId,
+            requestId: rawId !== undefined ? String(rawId) : undefined,
+            method,
+            params: asRecord(msg.params) ?? {},
+          })
+          continue
+        }
+
+        if (rawId === undefined) continue
+        const key = String(rawId)
+        const waiter = responseWaiters.get(key)
+        if (!waiter) continue
+        responseWaiters.delete(key)
+        clearTimeout(waiter.timer)
+        if ('error' in msg && msg.error) {
+          waiter.reject(new Error(extractJsonRpcErrorMessage(msg.error)))
+        } else {
+          waiter.resolve(asRecord(msg.result) ?? {})
+        }
       }
-
-      if (!('id' in msg)) continue
-      if (String(msg.id) !== expectedId) continue
-
-      if ('error' in msg && msg.error) {
-        throw new Error(extractJsonRpcErrorMessage(msg.error))
-      }
-
-      const result = asRecord(msg.result)
-      return result ?? {}
+    } catch (err) {
+      readerError = err instanceof Error ? err : new Error(String(err))
+      rejectAllWaiters(readerError)
     }
+  })()
+
+  const waitForResponse = (id: number, label: string): Promise<Record<string, unknown>> => {
+    if (readerError) return Promise.reject(readerError)
+    const key = String(id)
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        responseWaiters.delete(key)
+        reject(new Error(`Codex app-server ${label} timed out after ${APP_SERVER_RESPONSE_TIMEOUT_MS}ms`))
+      }, APP_SERVER_RESPONSE_TIMEOUT_MS)
+      responseWaiters.set(key, { resolve, reject, timer })
+    })
   }
 
   const connection: AppServerConnection = {
@@ -385,26 +430,16 @@ export async function createAppServerConnection(
     },
 
     nextNotification: async () => {
-      if (notificationQueue.length > 0) {
-        const queued = notificationQueue.shift()
-        if (queued) return queued
-      }
-
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const msg = await readMessage()
-        const method = readString(msg.method)
-        if (!method) continue
-        const rawId = ('id' in msg && (typeof msg.id === 'string' || typeof msg.id === 'number'))
-          ? (msg.id as JsonRpcRequestId)
-          : undefined
-        return {
-          requestIdRaw: rawId,
-          requestId: rawId !== undefined ? String(rawId) : undefined,
-          method,
-          params: asRecord(msg.params) ?? {},
-        }
-      }
+      const queued = notificationQueue.shift()
+      if (queued) return queued
+      if (readerError) throw readerError
+      return new Promise<AppServerNotification>((resolve, reject) => {
+        notificationWaiters.push((notif, err) => {
+          if (err) reject(err)
+          else if (notif) resolve(notif)
+          else reject(new Error('Codex app-server connection closed'))
+        })
+      })
     },
   }
 

@@ -148,6 +148,7 @@ export interface SessionBackend {
     alwaysAllow?: boolean,
     reason?: string,
     selectedSuggestions?: number[],
+    decision?: 'cancel',
   ): boolean
   respondToQuestion(
     requestId: string,
@@ -188,6 +189,7 @@ export interface Session {
     alwaysAllow?: boolean,
     reason?: string,
     selectedSuggestions?: number[],
+    decision?: 'cancel',
   ): boolean
   respondToQuestion(
     requestId: string,

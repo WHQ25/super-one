@@ -474,10 +474,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
-    (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, _decision?: 'cancel') => {
+    (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel') => {
       const session = getCodexSession(sessionId)
       if (!session) return false
-      return session.respondToPermission(requestId, allow, alwaysAllow, reason)
+      return session.respondToPermission(requestId, allow, alwaysAllow, reason, undefined, decision)
     },
   )
 

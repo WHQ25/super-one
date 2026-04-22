@@ -1,0 +1,89 @@
+import type {
+  CodexPermissionPreset,
+  CodexReasoningEffort,
+} from '../../shared/agent-types'
+import {
+  CODEX_PERMISSION_PRESETS,
+  DEFAULT_CODEX_PERMISSION_PRESET,
+  DEFAULT_CODEX_PERMISSION_PROFILE,
+} from '../../shared/agent-types'
+import type { AppServerConnectionHandle, CodexProjectAuth } from './app-server-connection'
+
+export interface AppServerUserInputQuestion {
+  id: string
+  header: string
+  question: string
+  isOther: boolean
+  options: string[]
+}
+
+export type CodexApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel'
+
+export type PendingCodexApprovalResponse =
+  | { decision: CodexApprovalDecision }
+  | { answers: Record<string, { answers: string[] }> }
+
+export interface PendingCodexApproval {
+  responseKind: 'decision' | 'user_input'
+  questions?: AppServerUserInputQuestion[]
+  resolve: (response: PendingCodexApprovalResponse) => void
+  reject: (error: Error) => void
+}
+
+export interface CodexSession {
+  projectPath: string
+  model?: string
+  modelReasoningEffort?: CodexReasoningEffort
+  permissionPreset: CodexPermissionPreset
+  threadId: string | null
+  effectiveCwd: string | null
+  runningController: AbortController | null
+  pendingApprovals: Map<string, PendingCodexApproval>
+  activeTurnId: string | null
+  steerFn: ((input: string) => Promise<void>) | null
+  connectionHandle: AppServerConnectionHandle | null
+  connectionAuth: CodexProjectAuth | null
+}
+
+function resolvePermissionPreset(preset?: CodexPermissionPreset): CodexPermissionPreset {
+  const resolved = preset ?? DEFAULT_CODEX_PERMISSION_PRESET
+  const profile = CODEX_PERMISSION_PRESETS[resolved] ?? DEFAULT_CODEX_PERMISSION_PROFILE
+  return profile ? resolved : DEFAULT_CODEX_PERMISSION_PRESET
+}
+
+export function createCodexSession(
+  projectPath: string,
+  model?: string,
+  threadId?: string,
+  modelReasoningEffort?: CodexReasoningEffort,
+  permissionPreset?: CodexPermissionPreset,
+): CodexSession {
+  return {
+    projectPath,
+    model,
+    modelReasoningEffort,
+    permissionPreset: resolvePermissionPreset(permissionPreset),
+    threadId: threadId ?? null,
+    effectiveCwd: null,
+    runningController: null,
+    pendingApprovals: new Map<string, PendingCodexApproval>(),
+    activeTurnId: null,
+    steerFn: null,
+    connectionHandle: null,
+    connectionAuth: null,
+  }
+}
+
+export function codexSessionNeedsRebuild(
+  existing: CodexSession,
+  requestedModel?: string,
+  requestedThreadId?: string,
+  requestedReasoningEffort?: CodexReasoningEffort,
+  requestedPermissionPreset?: CodexPermissionPreset,
+): boolean {
+  if (requestedThreadId && requestedThreadId !== existing.threadId) return true
+  if (requestedModel && requestedModel !== existing.model) return true
+  if (requestedReasoningEffort && requestedReasoningEffort !== existing.modelReasoningEffort) return true
+  if (requestedPermissionPreset && requestedPermissionPreset !== existing.permissionPreset) return true
+  return false
+}

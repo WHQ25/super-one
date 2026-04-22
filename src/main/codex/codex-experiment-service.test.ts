@@ -38,6 +38,8 @@ function createSession(projectPath: string, runningController: AbortController |
     pendingApprovals: new Map(),
     activeTurnId: null,
     steerFn: null,
+    connectionHandle: null,
+    connectionAuth: null,
   }
 }
 
@@ -101,38 +103,23 @@ describe('CodexExperimentService auth state', () => {
     vi.clearAllMocks()
   })
 
-  it('reports running when any session in the project is active', () => {
+  it('setAuth emits onAuthChanged event for listeners on the same project', () => {
     const service = new CodexExperimentService()
+    const listener = vi.fn()
+    const otherListener = vi.fn()
+    service.onAuthChanged('/project', listener)
+    service.onAuthChanged('/other', otherListener)
 
-    ;(service as any).sessions.set('sid-a', createSession('/project', {} as AbortController))
-    ;(service as any).sessions.set('sid-b', createSession('/other', null))
+    service.setAuth('/project', { mode: 'chatgpt' })
 
-    expect(service.getAuthStatus('/project').isRunning).toBe(true)
-    expect(service.getAuthStatus('/other').isRunning).toBe(false)
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(otherListener).not.toHaveBeenCalled()
   })
 
-  it('aborts project sessions and clears running state when auth changes', () => {
+  it('getAuthStatus reports configured mode and resolved state (isRunning is always false at service level)', () => {
     const service = new CodexExperimentService()
-    const abortProject = vi.fn()
-    const abortOther = vi.fn()
-    const rejectPending = vi.fn()
-
-    const projectSession = createSession('/project', { abort: abortProject })
-    projectSession.pendingApprovals.set('req-1', {
-      responseKind: 'decision',
-      resolve: vi.fn(),
-      reject: rejectPending,
-    })
-
-    ;(service as any).sessions.set('sid-project', projectSession)
-    ;(service as any).sessions.set('sid-other', createSession('/other', { abort: abortOther }))
-
-    const status = service.setAuth('/project', { mode: 'chatgpt' })
-
-    expect(abortProject).toHaveBeenCalledTimes(1)
-    expect(rejectPending).toHaveBeenCalledTimes(1)
-    expect(abortOther).not.toHaveBeenCalled()
-    expect((service as any).sessions.get('sid-project').runningController).toBeNull()
+    service.setAuth('/project', { mode: 'chatgpt' })
+    const status = service.getAuthStatus('/project')
     expect(status.mode).toBe('chatgpt')
     expect(status.isRunning).toBe(false)
   })
@@ -153,9 +140,7 @@ describe('CodexExperimentService approval responses', () => {
       reject: vi.fn(),
     })
 
-    ;(service as any).sessions.set('sid-1', session)
-
-    expect(service.respondToPermission('sid-1', 'req-1', false, undefined, undefined, 'cancel')).toBe(true)
+    expect(service.respondToPermission(session as any, 'req-1', false, undefined, undefined, 'cancel')).toBe(true)
     expect(resolve).toHaveBeenCalledWith({ decision: 'cancel' })
     expect(session.pendingApprovals.has('req-1')).toBe(false)
   })
@@ -356,7 +341,10 @@ describe('CodexExperimentService run', () => {
     vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-1')
     vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-1', usage: null, items: [] })
 
-    await service.run('sid-1', '/project', {
+    const session = createSession('/project', null) as any
+    session.model = 'gpt-5.4'
+    session.modelReasoningEffort = 'high'
+    await service.run(session, '/project', {
       prompt: 'Test prompt',
       model: 'gpt-5.4',
       reasoningEffort: 'high',
@@ -381,7 +369,9 @@ describe('CodexExperimentService run', () => {
     vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-2')
     vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-2', usage: null, items: [] })
 
-    await service.run('sid-2', '/project', {
+    const session2 = createSession('/project', null) as any
+    session2.model = 'gpt-5.4'
+    await service.run(session2, '/project', {
       prompt: 'Test prompt',
       model: 'gpt-5.4',
       permissionPreset: 'default',
@@ -401,7 +391,9 @@ describe('CodexExperimentService run', () => {
     vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-3')
     vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-3', usage: null, items: [] })
 
-    await service.run('sid-3', '/project', {
+    const session3 = createSession('/project', null) as any
+    session3.model = 'gpt-5.4'
+    await service.run(session3, '/project', {
       prompt: 'Test prompt',
       model: 'gpt-5.4',
       permissionPreset: 'default',

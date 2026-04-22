@@ -20,6 +20,13 @@ import type {
 } from '../../../shared/agent-types'
 import log from '../../logger'
 import { trace } from '../../agent/event-trace'
+import type { CodexRunStreamCallbacks } from '../../codex/codex-experiment-service'
+import type { CodexSession } from '../../codex/codex-session'
+import {
+  codexSessionNeedsRebuild,
+  createCodexSession,
+} from '../../codex/codex-session'
+import type { CodexProjectAuth } from '../../codex/app-server-connection'
 import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 export interface CodexRunStreamCallbacksDeps {
@@ -31,28 +38,30 @@ export interface CodexRunStreamCallbacksDeps {
 }
 
 export interface CodexServiceDeps {
+  getProjectAuth(projectPath: string): CodexProjectAuth
+  onAuthChanged(projectPath: string, cb: () => void): () => void
   run(
-    sessionId: string,
+    session: CodexSession,
     projectPath: string,
     request: CodexRunRequest,
-    callbacks?: CodexRunStreamCallbacksDeps,
+    callbacks?: CodexRunStreamCallbacks,
   ): Promise<CodexRunResult>
   review(
-    sessionId: string,
+    session: CodexSession,
     projectPath: string,
     request: CodexReviewRequest,
-    callbacks?: CodexRunStreamCallbacksDeps,
+    callbacks?: CodexRunStreamCallbacks,
   ): Promise<CodexRunResult>
   compact(
-    sessionId: string,
+    session: CodexSession,
     projectPath: string,
     request: CodexCompactRequest,
-    callbacks?: CodexRunStreamCallbacksDeps,
+    callbacks?: CodexRunStreamCallbacks,
   ): Promise<CodexRunResult>
-  interrupt(sessionId: string): boolean
-  reset(sessionId: string): void
+  interrupt(session: CodexSession): boolean
+  reset(session: CodexSession): void
   respondToPermission(
-    sessionId: string,
+    session: CodexSession,
     requestId: string,
     allow: boolean,
     alwaysAllow?: boolean,
@@ -60,12 +69,13 @@ export interface CodexServiceDeps {
     decision?: 'cancel',
   ): boolean
   respondToQuestion(
-    sessionId: string,
+    session: CodexSession,
     requestId: string,
     answers: Record<string, string>,
-  ): void
-  dismissQuestion(sessionId: string, requestId: string): void
-  steer(sessionId: string, input: string): Promise<void>
+  ): boolean
+  dismissQuestion(session: CodexSession, requestId: string): boolean
+  steer(session: CodexSession, input: string): Promise<void>
+  closeSessionConnection(session: CodexSession): Promise<void>
 }
 
 interface CodexBackendConfig {
@@ -132,6 +142,9 @@ export class CodexBackend implements SessionBackend {
   private activeRun: Promise<void> | null = null
   private swapRunAssistantId: ((nextId: string) => void) | null = null
 
+  private session: CodexSession | null = null
+  private authChangedUnsub: (() => void) | null = null
+
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
 
@@ -150,16 +163,73 @@ export class CodexBackend implements SessionBackend {
     if (opts.providerSessionId) {
       this.providerSessionId = opts.providerSessionId
     }
+    this.session = createCodexSession(
+      opts.projectPath,
+      undefined,
+      opts.providerSessionId ?? undefined,
+      undefined,
+      undefined,
+    )
+    this.authChangedUnsub = this.service.onAuthChanged(opts.projectPath, () => {
+      this.handleAuthChanged()
+    })
     this.started = true
   }
 
   prewarm(_opts: BackendStartOptions): void {
-    // Codex has no prewarm equivalent (no persistent subprocess to warm).
+    // Codex has no prewarm equivalent yet — future work: spawn the app-server
+    // eagerly and run initialize so the first turn skips that cost.
   }
 
   async rebuild(opts: BackendStartOptions): Promise<void> {
     if (!this.started) { await this.start(opts); return }
     this.startOpts = opts
+  }
+
+  private handleAuthChanged(): void {
+    const session = this.session
+    if (!session) return
+    if (session.runningController) {
+      try { session.runningController.abort() } catch { /* ignore */ }
+    }
+    void this.service.closeSessionConnection(session)
+  }
+
+  private ensureSessionForRequest(
+    requestedModel?: string,
+    requestedThreadId?: string,
+    requestedReasoningEffort?: CodexReasoningEffort,
+    requestedPermissionPreset?: CodexPermissionPreset,
+  ): CodexSession {
+    const startOpts = this.startOpts
+    if (!startOpts) throw new Error('CodexBackend missing startOpts')
+    const existing = this.session
+    if (!existing) {
+      const created = createCodexSession(
+        startOpts.projectPath,
+        requestedModel,
+        requestedThreadId,
+        requestedReasoningEffort,
+        requestedPermissionPreset,
+      )
+      this.session = created
+      return created
+    }
+
+    if (codexSessionNeedsRebuild(existing, requestedModel, requestedThreadId, requestedReasoningEffort, requestedPermissionPreset)) {
+      this.service.reset(existing)
+      const recreated = createCodexSession(
+        startOpts.projectPath,
+        requestedModel ?? existing.model,
+        requestedThreadId ?? existing.threadId ?? undefined,
+        requestedReasoningEffort ?? existing.modelReasoningEffort,
+        requestedPermissionPreset ?? existing.permissionPreset,
+      )
+      this.session = recreated
+      return recreated
+    }
+
+    return existing
   }
 
   async send(request: SendMessageRequest): Promise<void> {
@@ -171,7 +241,6 @@ export class CodexBackend implements SessionBackend {
     const assistantMessageId = request.assistantMessageId
       ?? `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     const mode = request.codex?.mode ?? 'run'
-    const sessionKey = startOpts.sessionId
     const projectPath = startOpts.projectPath
     const resolvedPermissionPreset = request.codex?.permissionPreset
       ?? config.permissionPreset
@@ -182,6 +251,13 @@ export class CodexBackend implements SessionBackend {
     const resolvedModel = request.model ?? config.model
     const resolvedThreadId = request.codex?.threadId ?? this.providerSessionId ?? undefined
     const resolvedCwd = request.codex?.cwd ?? startOpts.cwd
+
+    const session = this.ensureSessionForRequest(
+      resolvedModel,
+      resolvedThreadId,
+      resolvedReasoningEffort,
+      resolvedPermissionPreset,
+    )
 
     this.currentMessageId = assistantMessageId
     let runningAssistantId = assistantMessageId
@@ -219,7 +295,7 @@ export class CodexBackend implements SessionBackend {
             messageId: assistantMessageId,
             cwd: resolvedCwd,
           }
-          result = await this.service.review(sessionKey, projectPath, reviewRequest, callbacks)
+          result = await this.service.review(session, projectPath, reviewRequest, callbacks)
         } else if (mode === 'compact') {
           const compactRequest: CodexCompactRequest = {
             model: resolvedModel,
@@ -228,7 +304,7 @@ export class CodexBackend implements SessionBackend {
             messageId: assistantMessageId,
             cwd: resolvedCwd,
           }
-          result = await this.service.compact(sessionKey, projectPath, compactRequest, callbacks)
+          result = await this.service.compact(session, projectPath, compactRequest, callbacks)
         } else {
           const codexRequest: CodexRunRequest = {
             prompt: request.codex?.prompt ?? request.content,
@@ -241,12 +317,11 @@ export class CodexBackend implements SessionBackend {
             messageId: assistantMessageId,
             cwd: resolvedCwd,
           }
-          result = await this.service.run(sessionKey, projectPath, codexRequest, callbacks)
+          result = await this.service.run(session, projectPath, codexRequest, callbacks)
         }
         const finalText = result.finalResponse?.trim()
           || (mode === 'compact' ? 'Conversation compacted.' : 'Codex completed without returning text.')
         trace('codex.turn', 'message_complete_prepare', {
-          sessionId: sessionKey,
           projectPath,
           assistantMessageId,
           currentMessageId: this.currentMessageId,
@@ -291,10 +366,10 @@ export class CodexBackend implements SessionBackend {
 
   async interrupt(): Promise<void> {
     if (!this.started) return
-    const startOpts = this.startOpts
-    if (!startOpts) return
+    const session = this.session
+    if (!session) return
     try {
-      this.service.interrupt(startOpts.sessionId)
+      this.service.interrupt(session)
     } catch (err) {
       log.warn('[CodexBackend] interrupt threw: %s', err instanceof Error ? err.message : String(err))
     }
@@ -302,9 +377,14 @@ export class CodexBackend implements SessionBackend {
 
   async close(): Promise<void> {
     if (this.disposed) return
-    const startOpts = this.startOpts
-    try { if (startOpts) this.service.reset(startOpts.sessionId) } catch { /* ignore */ }
+    const session = this.session
+    try { if (session) this.service.reset(session) } catch { /* ignore */ }
     if (this.activeRun) { try { await this.activeRun } catch { /* ignore */ } }
+    if (this.authChangedUnsub) {
+      try { this.authChangedUnsub() } catch { /* ignore */ }
+      this.authChangedUnsub = null
+    }
+    this.session = null
     this.disposed = true
     this.started = false
     this.startOpts = null
@@ -329,21 +409,21 @@ export class CodexBackend implements SessionBackend {
     reason?: string,
     _selectedSuggestions?: number[],
   ): boolean {
-    const startOpts = this.startOpts
-    if (!startOpts) return false
-    return this.service.respondToPermission(startOpts.sessionId, requestId, allow, alwaysAllow, reason)
+    const session = this.session
+    if (!session) return false
+    return this.service.respondToPermission(session, requestId, allow, alwaysAllow, reason)
   }
 
   respondToQuestion(requestId: string, answers: Record<string, string>, _annotations?: QuestionAnnotations): void {
-    const startOpts = this.startOpts
-    if (!startOpts) return
-    this.service.respondToQuestion(startOpts.sessionId, requestId, answers)
+    const session = this.session
+    if (!session) return
+    this.service.respondToQuestion(session, requestId, answers)
   }
 
   dismissQuestion(requestId: string): void {
-    const startOpts = this.startOpts
-    if (!startOpts) return
-    this.service.dismissQuestion(startOpts.sessionId, requestId)
+    const session = this.session
+    if (!session) return
+    this.service.dismissQuestion(session, requestId)
   }
 
   respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {
@@ -353,6 +433,8 @@ export class CodexBackend implements SessionBackend {
   async handleCommand(cmd: BackendCommand): Promise<void> {
     const startOpts = this.startOpts
     if (!startOpts) throw new Error('CodexBackend not started')
+    const session = this.session
+    if (!session) throw new Error('CodexBackend session not initialized')
     switch (cmd.kind) {
       case 'codex.steer': {
         trace('codex.steer', 'dispatch', {
@@ -376,7 +458,7 @@ export class CodexBackend implements SessionBackend {
           })
           this.swapRunAssistantId?.(cmd.newAssistantMessageId)
         }
-        await this.service.steer(startOpts.sessionId, cmd.input)
+        await this.service.steer(session, cmd.input)
         return
       }
       case 'codex.plan_approval':

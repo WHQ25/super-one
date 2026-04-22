@@ -16,6 +16,39 @@ vi.mock('../../logger', () => ({
 
 vi.mock('../../codex/codex-experiment-service', () => ({
   getSharedCodexService: vi.fn(),
+  createCodexSession: (
+    projectPath: string,
+    model?: string,
+    threadId?: string,
+    modelReasoningEffort?: unknown,
+    permissionPreset?: string,
+  ) => ({
+    projectPath,
+    model,
+    modelReasoningEffort,
+    permissionPreset: permissionPreset ?? 'default',
+    threadId: threadId ?? null,
+    effectiveCwd: null,
+    runningController: null,
+    pendingApprovals: new Map(),
+    activeTurnId: null,
+    steerFn: null,
+    connectionHandle: null,
+    connectionAuth: null,
+  }),
+  codexSessionNeedsRebuild: (
+    existing: { threadId: string | null; model?: string; modelReasoningEffort?: unknown; permissionPreset?: string },
+    requestedModel?: string,
+    requestedThreadId?: string,
+    requestedReasoningEffort?: unknown,
+    requestedPermissionPreset?: string,
+  ) => {
+    if (requestedThreadId && requestedThreadId !== existing.threadId) return true
+    if (requestedModel && requestedModel !== existing.model) return true
+    if (requestedReasoningEffort && requestedReasoningEffort !== existing.modelReasoningEffort) return true
+    if (requestedPermissionPreset && requestedPermissionPreset !== existing.permissionPreset) return true
+    return false
+  },
 }))
 
 import { CodexBackend, type CodexRunStreamCallbacksDeps, type CodexServiceDeps } from './codex-backend'
@@ -83,6 +116,7 @@ function makeFakeService(): CodexServiceDeps & {
   const dismissQuestionMock = vi.fn()
   const steerMock = vi.fn(async () => {})
 
+  const authChangedListeners = new Set<() => void>()
   return {
     run: runMock as unknown as CodexServiceDeps['run'],
     review: reviewMock as unknown as CodexServiceDeps['review'],
@@ -93,6 +127,12 @@ function makeFakeService(): CodexServiceDeps & {
     respondToQuestion: respondQuestionMock as unknown as CodexServiceDeps['respondToQuestion'],
     dismissQuestion: dismissQuestionMock as unknown as CodexServiceDeps['dismissQuestion'],
     steer: steerMock as unknown as CodexServiceDeps['steer'],
+    getProjectAuth: (() => ({ mode: 'auto' as const })) as CodexServiceDeps['getProjectAuth'],
+    onAuthChanged: ((_projectPath: string, cb: () => void) => {
+      authChangedListeners.add(cb)
+      return () => { authChangedListeners.delete(cb) }
+    }) as CodexServiceDeps['onAuthChanged'],
+    closeSessionConnection: (async () => {}) as CodexServiceDeps['closeSessionConnection'],
     get capturedCallbacks() { return state.capturedCallbacks },
     runMock,
     reviewMock,
@@ -135,7 +175,7 @@ describe('CodexBackend lifecycle', () => {
     await backend.start(makeStartOpts())
     await backend.close()
     await expect(backend.start(makeStartOpts())).rejects.toThrow(/disposed/)
-    expect(service.resetMock).toHaveBeenCalledWith('sess-test')
+    expect(service.resetMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }))
   })
 
   it('send() throws when not started', async () => {
@@ -172,8 +212,8 @@ describe('CodexBackend send()', () => {
     await pending
 
     expect(service.runMock).toHaveBeenCalledOnce()
-    const [sessionId, projectPath, request] = service.runMock.mock.calls[0]!
-    expect(sessionId).toBe('sess-test')
+    const [session, projectPath, request] = service.runMock.mock.calls[0]!
+    expect(session.projectPath).toBe('/tmp/proj')
     expect(projectPath).toBe('/tmp/proj')
     expect(request.prompt).toBe('hello')
     expect(request.model).toBe('gpt-5-max')
@@ -358,24 +398,24 @@ describe('CodexBackend interrupt / approval forwarding', () => {
 
   it('interrupt() forwards to service with sessionKey', async () => {
     await backend.interrupt()
-    expect(service.interruptMock).toHaveBeenCalledWith('sess-test')
+    expect(service.interruptMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }))
   })
 
   it('respondToPermission forwards allow + reason to service', () => {
     backend.respondToPermission('req-1', true, false, 'because')
-    expect(service.respondPermissionMock).toHaveBeenCalledWith('sess-test', 'req-1', true, false, 'because')
+    expect(service.respondPermissionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'req-1', true, false, 'because')
   })
 
   it('respondToQuestion / dismissQuestion forward to service', () => {
     backend.respondToQuestion('q-1', { a: 'yes' })
     backend.dismissQuestion('q-1')
-    expect(service.respondQuestionMock).toHaveBeenCalledWith('sess-test', 'q-1', { a: 'yes' })
-    expect(service.dismissQuestionMock).toHaveBeenCalledWith('sess-test', 'q-1')
+    expect(service.respondQuestionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'q-1', { a: 'yes' })
+    expect(service.dismissQuestionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'q-1')
   })
 
   it('handleCommand(codex.steer) forwards input to service', async () => {
     await backend.handleCommand({ kind: 'codex.steer', input: 'stop' })
-    expect(service.steerMock).toHaveBeenCalledWith('sess-test', 'stop')
+    expect(service.steerMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'stop')
   })
 
   it('handleCommand(codex.steer) with newAssistantMessageId emits message_start + swaps current messageId for subsequent events', async () => {
@@ -412,7 +452,7 @@ describe('CodexBackend interrupt / approval forwarding', () => {
 
     const completeEvt = events.find((e) => e.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }> | undefined
     expect(completeEvt?.messageId).toBe('asst-2')
-    expect(service.steerMock).toHaveBeenCalledWith('sess-test', 'redirect')
+    expect(service.steerMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'redirect')
   })
 
   it('handleCommand(codex.plan_approval / codex.collaboration_mode_change) is a backend no-op', async () => {

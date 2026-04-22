@@ -31,6 +31,9 @@ setCodexServiceFactory(() => ({
   respondToQuestion: vi.fn(),
   dismissQuestion: vi.fn(),
   steer: vi.fn(async () => {}),
+  getProjectAuth: vi.fn(() => ({ mode: 'auto' })),
+  onAuthChanged: vi.fn(() => () => {}),
+  closeSessionConnection: vi.fn(async () => {}),
 }) as never)
 
 describe('harnessRegistry', () => {

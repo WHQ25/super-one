@@ -54,48 +54,29 @@ import type {
   CodexSetAuthRequest,
 } from '../../shared/agent-types'
 
-interface CodexSession {
-  projectPath: string
-  model?: string
-  modelReasoningEffort?: CodexReasoningEffort
-  permissionPreset: CodexPermissionPreset
-  threadId: string | null
-  effectiveCwd: string | null
-  runningController: AbortController | null
-  pendingApprovals: Map<string, PendingCodexApproval>
-  activeTurnId: string | null
-  steerFn: ((input: string) => Promise<void>) | null
-  connectionHandle: AppServerConnectionHandle | null
-  connectionAuth: CodexProjectAuth | null
-}
+export {
+  createCodexSession,
+  codexSessionNeedsRebuild,
+  type CodexSession,
+  type PendingCodexApproval,
+  type CodexApprovalDecision,
+  type PendingCodexApprovalResponse,
+  type AppServerUserInputQuestion,
+} from './codex-session'
+import type {
+  CodexSession,
+  PendingCodexApproval,
+  PendingCodexApprovalResponse,
+  CodexApprovalDecision,
+  AppServerUserInputQuestion,
+} from './codex-session'
 
-interface CodexRunStreamCallbacks {
+export interface CodexRunStreamCallbacks {
   onThreadStarted?: (threadId: string) => void
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
   onPermissionRequest?: (request: PermissionRequest) => void
   onAskUserQuestion?: (request: AskUserQuestionRequest) => void
-}
-
-type CodexApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel'
-
-type PendingCodexApprovalResponse =
-  | { decision: CodexApprovalDecision }
-  | { answers: Record<string, { answers: string[] }> }
-
-interface AppServerUserInputQuestion {
-  id: string
-  header: string
-  question: string
-  isOther: boolean
-  options: string[]
-}
-
-interface PendingCodexApproval {
-  responseKind: 'decision' | 'user_input'
-  questions?: AppServerUserInputQuestion[]
-  resolve: (response: PendingCodexApprovalResponse) => void
-  reject: (error: Error) => void
 }
 
 type ParsedApprovalRequest =
@@ -840,10 +821,10 @@ function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
 }
 
 export class CodexExperimentService {
-  private sessions = new Map<string, CodexSession>()  // key = sessionId
   private projectAuth = new Map<string, CodexProjectAuth>()  // key = projectPath
+  private authChangedListeners = new Map<string, Set<() => void>>()  // projectPath → listeners
 
-  private rejectPendingApprovals(session: CodexSession, message: string): void {
+  rejectPendingApprovals(session: CodexSession, message: string): void {
     if (session.pendingApprovals.size === 0) return
     const error = new Error(message)
     for (const pending of session.pendingApprovals.values()) {
@@ -852,7 +833,7 @@ export class CodexExperimentService {
     session.pendingApprovals.clear()
   }
 
-  private getProjectAuth(projectPath: string): CodexProjectAuth {
+  getProjectAuth(projectPath: string): CodexProjectAuth {
     let auth = this.projectAuth.get(projectPath)
     if (!auth) {
       auth = { mode: 'auto' }
@@ -861,31 +842,25 @@ export class CodexExperimentService {
     return auth
   }
 
-  private createSession(
-    projectPath: string,
-    model?: string,
-    threadId?: string,
-    modelReasoningEffort?: CodexReasoningEffort,
-    permissionPreset?: CodexPermissionPreset,
-  ): CodexSession {
-    const resolvedPermissionProfile = resolvePermissionProfile(permissionPreset)
-    return {
-      projectPath,
-      model,
-      modelReasoningEffort,
-      permissionPreset: resolvedPermissionProfile.permissionPreset,
-      threadId: threadId ?? null,
-      effectiveCwd: null,
-      runningController: null,
-      pendingApprovals: new Map<string, PendingCodexApproval>(),
-      activeTurnId: null,
-      steerFn: null,
-      connectionHandle: null,
-      connectionAuth: null,
+  onAuthChanged(projectPath: string, cb: () => void): () => void {
+    let set = this.authChangedListeners.get(projectPath)
+    if (!set) {
+      set = new Set()
+      this.authChangedListeners.set(projectPath, set)
+    }
+    set.add(cb)
+    return () => { set!.delete(cb) }
+  }
+
+  private emitAuthChanged(projectPath: string): void {
+    const set = this.authChangedListeners.get(projectPath)
+    if (!set) return
+    for (const cb of set) {
+      try { cb() } catch (err) { log.warn('[codex] auth-changed listener error:', err) }
     }
   }
 
-  private async closeSessionConnection(session: CodexSession): Promise<void> {
+  async closeSessionConnection(session: CodexSession): Promise<void> {
     const handle = session.connectionHandle
     session.connectionHandle = null
     session.connectionAuth = null
@@ -901,7 +876,7 @@ export class CodexExperimentService {
     return a.mode === b.mode && normalizeApiKey(a.apiKey) === normalizeApiKey(b.apiKey)
   }
 
-  private async withSessionConnection<T>(
+  async withSessionConnection<T>(
     session: CodexSession,
     auth: CodexProjectAuth,
     signal: AbortSignal | undefined,
@@ -945,68 +920,13 @@ export class CodexExperimentService {
     }
   }
 
-  private resolveCwd(session: CodexSession, projectPath: string, requestedCwd?: string): string {
+  resolveCwd(session: CodexSession, projectPath: string, requestedCwd?: string): string {
     const cwd = requestedCwd || session.effectiveCwd || projectPath
     if (session.effectiveCwd && session.effectiveCwd !== cwd) {
       session.threadId = null
     }
     session.effectiveCwd = cwd
     return cwd
-  }
-
-  private ensureSession(
-    sessionId: string,
-    projectPath: string,
-    requestedModel?: string,
-    requestedThreadId?: string,
-    requestedReasoningEffort?: CodexReasoningEffort,
-    requestedPermissionPreset?: CodexPermissionPreset,
-  ): CodexSession {
-    const existing = this.sessions.get(sessionId)
-    if (!existing) {
-      const created = this.createSession(
-        projectPath,
-        requestedModel,
-        requestedThreadId,
-        requestedReasoningEffort,
-        requestedPermissionPreset,
-      )
-      this.sessions.set(sessionId, created)
-      return created
-    }
-
-    const shouldSwitchThread = Boolean(requestedThreadId && requestedThreadId !== existing.threadId)
-    const shouldSwitchModel = Boolean(requestedModel && requestedModel !== existing.model)
-    const shouldSwitchReasoningEffort = Boolean(
-      requestedReasoningEffort
-      && requestedReasoningEffort !== existing.modelReasoningEffort,
-    )
-    const shouldSwitchPermissionPreset = Boolean(
-      requestedPermissionPreset
-      && requestedPermissionPreset !== existing.permissionPreset,
-    )
-
-    if (
-      shouldSwitchThread
-      || shouldSwitchModel
-      || shouldSwitchReasoningEffort
-      || shouldSwitchPermissionPreset
-    ) {
-      this.rejectPendingApprovals(existing, 'Codex run interrupted')
-      if (existing.runningController) existing.runningController.abort()
-      void this.closeSessionConnection(existing)
-      const recreated = this.createSession(
-        projectPath,
-        requestedModel ?? existing.model,
-        requestedThreadId ?? existing.threadId ?? undefined,
-        requestedReasoningEffort ?? existing.modelReasoningEffort,
-        requestedPermissionPreset ?? existing.permissionPreset,
-      )
-      this.sessions.set(sessionId, recreated)
-      return recreated
-    }
-
-    return existing
   }
 
   private buildThreadConfig(
@@ -1682,7 +1602,7 @@ export class CodexExperimentService {
   }
 
   async run(
-    sessionId: string,
+    session: CodexSession,
     projectPath: string,
     request: CodexRunRequest,
     callbacks?: CodexRunStreamCallbacks,
@@ -1694,14 +1614,6 @@ export class CodexExperimentService {
       throw new Error('Codex prompt is empty')
     }
 
-    const session = this.ensureSession(
-      sessionId,
-      projectPath,
-      request.model,
-      request.threadId,
-      request.reasoningEffort,
-      request.permissionPreset,
-    )
     if (session.runningController) {
       throw new Error('Codex is already running for this project')
     }
@@ -1786,28 +1698,19 @@ export class CodexExperimentService {
     }
   }
 
-  async steer(sessionId: string, input: string): Promise<void> {
-    const session = this.sessions.get(sessionId)
-    if (!session?.steerFn) {
+  async steer(session: CodexSession, input: string): Promise<void> {
+    if (!session.steerFn) {
       throw new Error('No active Codex turn to steer')
     }
     await session.steerFn(input)
   }
 
   async review(
-    sessionId: string,
+    session: CodexSession,
     projectPath: string,
     request: CodexReviewRequest,
     callbacks?: CodexRunStreamCallbacks,
   ): Promise<CodexRunResult> {
-    const session = this.ensureSession(
-      sessionId,
-      projectPath,
-      request.model,
-      request.threadId,
-      undefined,
-      request.permissionPreset,
-    )
     if (session.runningController) {
       throw new Error('Codex is already running for this project')
     }
@@ -1852,19 +1755,11 @@ export class CodexExperimentService {
   }
 
   async compact(
-    sessionId: string,
+    session: CodexSession,
     projectPath: string,
     request: CodexCompactRequest,
     callbacks?: CodexRunStreamCallbacks,
   ): Promise<CodexRunResult> {
-    const session = this.ensureSession(
-      sessionId,
-      projectPath,
-      request.model,
-      request.threadId,
-      undefined,
-      request.permissionPreset,
-    )
     if (session.runningController) {
       throw new Error('Codex is already running for this project')
     }
@@ -1904,23 +1799,20 @@ export class CodexExperimentService {
     }
   }
 
-  interrupt(sessionId: string): boolean {
-    const session = this.sessions.get(sessionId)
-    if (!session?.runningController) return false
+  interrupt(session: CodexSession): boolean {
+    if (!session.runningController) return false
     session.runningController.abort()
     return true
   }
 
   respondToPermission(
-    sessionId: string,
+    session: CodexSession,
     requestId: string,
     allow: boolean,
     alwaysAllow?: boolean,
     reason?: string,
     decision?: 'cancel',
   ): boolean {
-    const session = this.sessions.get(sessionId)
-    if (!session) return false
     const pending = session.pendingApprovals.get(requestId)
     if (!pending) return false
 
@@ -1937,12 +1829,10 @@ export class CodexExperimentService {
   }
 
   respondToQuestion(
-    sessionId: string,
+    session: CodexSession,
     requestId: string,
     answers: Record<string, string>,
   ): boolean {
-    const session = this.sessions.get(sessionId)
-    if (!session) return false
     const pending = session.pendingApprovals.get(requestId)
     if (!pending || pending.responseKind !== 'user_input') return false
 
@@ -1951,9 +1841,7 @@ export class CodexExperimentService {
     return true
   }
 
-  dismissQuestion(sessionId: string, requestId: string): boolean {
-    const session = this.sessions.get(sessionId)
-    if (!session) return false
+  dismissQuestion(session: CodexSession, requestId: string): boolean {
     const pending = session.pendingApprovals.get(requestId)
     if (!pending || pending.responseKind !== 'user_input') return false
 
@@ -1962,9 +1850,7 @@ export class CodexExperimentService {
     return true
   }
 
-  reset(sessionId: string): void {
-    const session = this.sessions.get(sessionId)
-    if (!session) return
+  reset(session: CodexSession): void {
     this.rejectPendingApprovals(session, 'Codex run interrupted')
     if (session.runningController) session.runningController.abort()
     session.threadId = null
@@ -1984,53 +1870,31 @@ export class CodexExperimentService {
       throw new Error('API key mode requires apiKey or CODEX_API_KEY')
     }
 
-    for (const session of this.sessions.values()) {
-      if (session.projectPath !== projectPath) continue
-      this.rejectPendingApprovals(session, 'Codex run interrupted')
-      if (session.runningController) session.runningController.abort()
-      session.runningController = null
-      session.activeTurnId = null
-      session.steerFn = null
-      void this.closeSessionConnection(session)
-    }
-
     this.projectAuth.set(projectPath, { mode, apiKey: normalizeApiKey(apiKey) })
+    this.emitAuthChanged(projectPath)
     return this.getAuthStatus(projectPath)
   }
 
   getAuthStatus(projectPath: string): CodexAuthStatus {
     const auth = this.getProjectAuth(projectPath)
-    const isRunning = Array.from(this.sessions.values()).some(
-      (session) => session.projectPath === projectPath && Boolean(session.runningController),
-    )
     return {
       mode: auth.mode,
       resolvedMode: resolveMode(auth.mode, auth.apiKey),
       hasEnvApiKey: Boolean(normalizeApiKey(process.env.CODEX_API_KEY)),
       hasSessionApiKey: Boolean(normalizeApiKey(auth.apiKey)),
-      isRunning,
+      isRunning: false,
     }
   }
 
   closeProject(projectPath: string): void {
-    for (const [sessionId, session] of this.sessions) {
-      if (session.projectPath !== projectPath) continue
-      this.rejectPendingApprovals(session, 'Codex run interrupted')
-      if (session.runningController) session.runningController.abort()
-      void this.closeSessionConnection(session)
-      this.sessions.delete(sessionId)
-    }
     this.projectAuth.delete(projectPath)
+    this.emitAuthChanged(projectPath)
+    this.authChangedListeners.delete(projectPath)
   }
 
   dispose(): void {
-    for (const [, session] of this.sessions) {
-      this.rejectPendingApprovals(session, 'Codex run interrupted')
-      if (session.runningController) session.runningController.abort()
-      void this.closeSessionConnection(session)
-    }
-    this.sessions.clear()
     this.projectAuth.clear()
+    this.authChangedListeners.clear()
   }
 }
 

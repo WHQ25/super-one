@@ -35,7 +35,7 @@ vi.mock('./app-server-connection', async () => {
   }
 })
 
-const { CodexExperimentService } = await import('./codex-experiment-service')
+const { CodexExperimentService, createCodexSession } = await import('./codex-experiment-service')
 
 function makeFakeHandle() {
   let closed = false
@@ -71,25 +71,14 @@ describe('Codex session connection reuse', () => {
     const handle = makeFakeHandle()
     createHandleMock.mockResolvedValue(handle)
 
-    // Stub per-turn internals that we don't need to exercise here.
     vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-abc')
     vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-abc', usage: null, items: [] })
 
-    await service.run('sid-reuse', '/project', {
-      prompt: 'first',
-      model: 'gpt-5.4',
-      permissionPreset: 'default',
-    })
-    await service.run('sid-reuse', '/project', {
-      prompt: 'second',
-      model: 'gpt-5.4',
-      permissionPreset: 'default',
-    })
-    await service.run('sid-reuse', '/project', {
-      prompt: 'third',
-      model: 'gpt-5.4',
-      permissionPreset: 'default',
-    })
+    const session = createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default')
+
+    await service.run(session, '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
+    await service.run(session, '/project', { prompt: 'second', model: 'gpt-5.4', permissionPreset: 'default' })
+    await service.run(session, '/project', { prompt: 'third', model: 'gpt-5.4', permissionPreset: 'default' })
 
     expect(createHandleMock).toHaveBeenCalledTimes(1)
     expect(handle.close).not.toHaveBeenCalled()
@@ -104,16 +93,18 @@ describe('Codex session connection reuse', () => {
     vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-abc')
     vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-abc', usage: null, items: [] })
 
-    await service.run('sid-reset', '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
-    service.reset('sid-reset')
+    const session = createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default')
+
+    await service.run(session, '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
+    service.reset(session)
     await new Promise((r) => setImmediate(r))
     expect(handleA.close).toHaveBeenCalled()
 
-    await service.run('sid-reset', '/project', { prompt: 'second', model: 'gpt-5.4', permissionPreset: 'default' })
+    await service.run(session, '/project', { prompt: 'second', model: 'gpt-5.4', permissionPreset: 'default' })
     expect(createHandleMock).toHaveBeenCalledTimes(2)
   })
 
-  it('tears down the connection when auth changes for the project', async () => {
+  it('emits onAuthChanged event so subscribers can close their connections', async () => {
     const service = new CodexExperimentService()
     const handle = makeFakeHandle()
     createHandleMock.mockResolvedValue(handle)
@@ -121,12 +112,20 @@ describe('Codex session connection reuse', () => {
     vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-abc')
     vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-abc', usage: null, items: [] })
 
-    await service.run('sid-auth', '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
-    expect(createHandleMock).toHaveBeenCalledTimes(1)
+    const session = createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default')
+    const unsub = service.onAuthChanged('/project', () => {
+      void service.closeSessionConnection(session)
+    })
+    try {
+      await service.run(session, '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
+      expect(createHandleMock).toHaveBeenCalledTimes(1)
 
-    service.setAuth('/project', { mode: 'apiKey', apiKey: 'sk-test-1234567890' })
-    await new Promise((r) => setImmediate(r))
-    expect(handle.close).toHaveBeenCalled()
+      service.setAuth('/project', { mode: 'apiKey', apiKey: 'sk-test-1234567890' })
+      await new Promise((r) => setImmediate(r))
+      expect(handle.close).toHaveBeenCalled()
+    } finally {
+      unsub()
+    }
   })
 
   it('clears the cached handle when the child process exits', async () => {
@@ -138,10 +137,11 @@ describe('Codex session connection reuse', () => {
     vi.spyOn(service as any, 'resolveThread').mockResolvedValue('thread-abc')
     vi.spyOn(service as any, 'streamTurnEvents').mockResolvedValue({ threadId: 'thread-abc', usage: null, items: [] })
 
-    await service.run('sid-exit', '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
+    const session = createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default')
+    await service.run(session, '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
     handleA.__fireExit({ code: 1, signal: null, stderr: 'boom' })
 
-    await service.run('sid-exit', '/project', { prompt: 'second', model: 'gpt-5.4', permissionPreset: 'default' })
+    await service.run(session, '/project', { prompt: 'second', model: 'gpt-5.4', permissionPreset: 'default' })
     expect(createHandleMock).toHaveBeenCalledTimes(2)
   })
 })

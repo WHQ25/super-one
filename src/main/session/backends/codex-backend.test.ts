@@ -14,8 +14,62 @@ vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
-vi.mock('../../codex/codex-experiment-service', () => ({
-  getSharedCodexService: vi.fn(),
+vi.mock('../../agent/resolve-cli', () => ({
+  getNodeRuntime: vi.fn(() => ({})),
+}))
+
+vi.mock('../../database', () => ({
+  getActiveProviderRaw: vi.fn(() => null),
+}))
+
+const turnMocks = vi.hoisted(() => {
+  const state = {
+    capturedCallbacks: undefined as unknown,
+    resolveRun: (_r: unknown) => {},
+    rejectRun: (_e: Error) => {},
+  }
+  const captureImpl = (
+    _session: unknown,
+    _auth: unknown,
+    _projectPath: string,
+    _request: unknown,
+    callbacks?: unknown,
+  ) => {
+    state.capturedCallbacks = callbacks
+    return new Promise((resolve, reject) => {
+      state.resolveRun = resolve
+      state.rejectRun = reject
+    })
+  }
+  return {
+    state,
+    runCodexTurn: vi.fn(captureImpl),
+    reviewCodexTurn: vi.fn(captureImpl),
+    compactCodexTurn: vi.fn(captureImpl),
+    steerCodex: vi.fn(async () => {}),
+    interruptCodex: vi.fn(() => true),
+    resetCodexSession: vi.fn(),
+    respondToCodexPermission: vi.fn(() => true),
+    respondToCodexQuestion: vi.fn(() => true),
+    dismissCodexQuestion: vi.fn(() => true),
+    prewarmCodexConnection: vi.fn(async () => null),
+  }
+})
+
+vi.mock('../../codex/codex-turn', () => ({
+  runCodexTurn: turnMocks.runCodexTurn,
+  reviewCodexTurn: turnMocks.reviewCodexTurn,
+  compactCodexTurn: turnMocks.compactCodexTurn,
+  steerCodex: turnMocks.steerCodex,
+  interruptCodex: turnMocks.interruptCodex,
+  resetCodexSession: turnMocks.resetCodexSession,
+  respondToCodexPermission: turnMocks.respondToCodexPermission,
+  respondToCodexQuestion: turnMocks.respondToCodexQuestion,
+  dismissCodexQuestion: turnMocks.dismissCodexQuestion,
+  prewarmCodexConnection: turnMocks.prewarmCodexConnection,
+}))
+
+vi.mock('../../codex/codex-session', () => ({
   createCodexSession: (
     projectPath: string,
     model?: string,
@@ -77,74 +131,47 @@ function makeResult(overrides: Partial<CodexRunResult> = {}): CodexRunResult {
 
 function makeFakeService(): CodexServiceDeps & {
   capturedCallbacks: CodexRunStreamCallbacksDeps | undefined
-  runMock: ReturnType<typeof vi.fn>
-  reviewMock: ReturnType<typeof vi.fn>
-  compactMock: ReturnType<typeof vi.fn>
-  interruptMock: ReturnType<typeof vi.fn>
-  resetMock: ReturnType<typeof vi.fn>
-  respondPermissionMock: ReturnType<typeof vi.fn>
-  respondQuestionMock: ReturnType<typeof vi.fn>
-  dismissQuestionMock: ReturnType<typeof vi.fn>
-  steerMock: ReturnType<typeof vi.fn>
+  runMock: typeof turnMocks.runCodexTurn
+  reviewMock: typeof turnMocks.reviewCodexTurn
+  compactMock: typeof turnMocks.compactCodexTurn
+  interruptMock: typeof turnMocks.interruptCodex
+  resetMock: typeof turnMocks.resetCodexSession
+  respondPermissionMock: typeof turnMocks.respondToCodexPermission
+  respondQuestionMock: typeof turnMocks.respondToCodexQuestion
+  dismissQuestionMock: typeof turnMocks.dismissCodexQuestion
+  steerMock: typeof turnMocks.steerCodex
   resolveRun: (result: CodexRunResult) => void
   rejectRun: (err: Error) => void
 } {
-  const state = {
-    capturedCallbacks: undefined as CodexRunStreamCallbacksDeps | undefined,
-    resolveRun: (_r: CodexRunResult) => {},
-    rejectRun: (_e: Error) => {},
-  }
-  const captureImpl = (
-    _sessionId: string,
-    _projectPath: string,
-    _request: CodexRunRequest,
-    callbacks?: CodexRunStreamCallbacksDeps,
-  ) => {
-    state.capturedCallbacks = callbacks
-    return new Promise<CodexRunResult>((resolve, reject) => {
-      state.resolveRun = resolve
-      state.rejectRun = reject
-    })
-  }
-  const runMock = vi.fn(captureImpl)
-  const reviewMock = vi.fn(captureImpl)
-  const compactMock = vi.fn(captureImpl)
-  const interruptMock = vi.fn(() => true)
-  const resetMock = vi.fn()
-  const respondPermissionMock = vi.fn()
-  const respondQuestionMock = vi.fn()
-  const dismissQuestionMock = vi.fn()
-  const steerMock = vi.fn(async () => {})
+  turnMocks.runCodexTurn.mockClear()
+  turnMocks.reviewCodexTurn.mockClear()
+  turnMocks.compactCodexTurn.mockClear()
+  turnMocks.steerCodex.mockClear()
+  turnMocks.interruptCodex.mockClear()
+  turnMocks.resetCodexSession.mockClear()
+  turnMocks.respondToCodexPermission.mockClear()
+  turnMocks.respondToCodexQuestion.mockClear()
+  turnMocks.dismissCodexQuestion.mockClear()
 
   const authChangedListeners = new Set<() => void>()
   return {
-    run: runMock as unknown as CodexServiceDeps['run'],
-    review: reviewMock as unknown as CodexServiceDeps['review'],
-    compact: compactMock as unknown as CodexServiceDeps['compact'],
-    interrupt: interruptMock as unknown as CodexServiceDeps['interrupt'],
-    reset: resetMock as unknown as CodexServiceDeps['reset'],
-    respondToPermission: respondPermissionMock as unknown as CodexServiceDeps['respondToPermission'],
-    respondToQuestion: respondQuestionMock as unknown as CodexServiceDeps['respondToQuestion'],
-    dismissQuestion: dismissQuestionMock as unknown as CodexServiceDeps['dismissQuestion'],
-    steer: steerMock as unknown as CodexServiceDeps['steer'],
     getProjectAuth: (() => ({ mode: 'auto' as const })) as CodexServiceDeps['getProjectAuth'],
     onAuthChanged: ((_projectPath: string, cb: () => void) => {
       authChangedListeners.add(cb)
       return () => { authChangedListeners.delete(cb) }
     }) as CodexServiceDeps['onAuthChanged'],
-    closeSessionConnection: (async () => {}) as CodexServiceDeps['closeSessionConnection'],
-    get capturedCallbacks() { return state.capturedCallbacks },
-    runMock,
-    reviewMock,
-    compactMock,
-    interruptMock,
-    resetMock,
-    respondPermissionMock,
-    respondQuestionMock,
-    dismissQuestionMock,
-    steerMock,
-    resolveRun: (r) => state.resolveRun(r),
-    rejectRun: (e) => state.rejectRun(e),
+    get capturedCallbacks() { return turnMocks.state.capturedCallbacks as CodexRunStreamCallbacksDeps | undefined },
+    runMock: turnMocks.runCodexTurn,
+    reviewMock: turnMocks.reviewCodexTurn,
+    compactMock: turnMocks.compactCodexTurn,
+    interruptMock: turnMocks.interruptCodex,
+    resetMock: turnMocks.resetCodexSession,
+    respondPermissionMock: turnMocks.respondToCodexPermission,
+    respondQuestionMock: turnMocks.respondToCodexQuestion,
+    dismissQuestionMock: turnMocks.dismissCodexQuestion,
+    steerMock: turnMocks.steerCodex,
+    resolveRun: (r) => turnMocks.state.resolveRun(r),
+    rejectRun: (e) => turnMocks.state.rejectRun(e),
   }
 }
 
@@ -201,7 +228,7 @@ describe('CodexBackend send()', () => {
     await backend.start(makeStartOpts())
   })
 
-  it('forwards prompt / images / model / effort / permissionPreset / threadId / cwd to codex service', async () => {
+  it('forwards prompt / images / model / effort / permissionPreset / threadId / cwd to codex turn', async () => {
     const pending = backend.send({
       content: 'hello',
       model: 'gpt-5-max',
@@ -212,7 +239,12 @@ describe('CodexBackend send()', () => {
     await pending
 
     expect(service.runMock).toHaveBeenCalledOnce()
-    const [session, projectPath, request] = service.runMock.mock.calls[0]!
+    const [session, _auth, projectPath, request] = service.runMock.mock.calls[0]! as [
+      { projectPath: string },
+      unknown,
+      string,
+      CodexRunRequest,
+    ]
     expect(session.projectPath).toBe('/tmp/proj')
     expect(projectPath).toBe('/tmp/proj')
     expect(request.prompt).toBe('hello')
@@ -228,7 +260,7 @@ describe('CodexBackend send()', () => {
     const pending = backend.send({ content: 'x', assistantMessageId: 'renderer_msg_99' })
     service.resolveRun(makeResult())
     await pending
-    const [, , req] = service.runMock.mock.calls[0]!
+    const [, , , req] = service.runMock.mock.calls[0]! as [unknown, unknown, string, CodexRunRequest]
     expect(req.messageId).toBe('renderer_msg_99')
     const start = events.find((e) => e.type === 'message_start') as { message: { id: string } }
     expect(start.message.id).toBe('renderer_msg_99')
@@ -238,11 +270,11 @@ describe('CodexBackend send()', () => {
     const pending = backend.send({ content: 'user-visible text', codex: { prompt: 'codex-specific prompt' } })
     service.resolveRun(makeResult())
     await pending
-    const [, , req] = service.runMock.mock.calls[0]!
+    const [, , , req] = service.runMock.mock.calls[0]! as [unknown, unknown, string, CodexRunRequest]
     expect(req.prompt).toBe('codex-specific prompt')
   })
 
-  it('passes codex-specific extras (collaborationMode / threadId / permissionPreset / reasoningEffort) to service.run', async () => {
+  it('passes codex-specific extras (collaborationMode / threadId / permissionPreset / reasoningEffort) to runCodexTurn', async () => {
     const pending = backend.send({
       content: 'x',
       codex: {
@@ -254,14 +286,14 @@ describe('CodexBackend send()', () => {
     })
     service.resolveRun(makeResult())
     await pending
-    const [, , req] = service.runMock.mock.calls[0]!
+    const [, , , req] = service.runMock.mock.calls[0]! as [unknown, unknown, string, CodexRunRequest]
     expect(req.collaborationMode).toBe('plan')
     expect(req.threadId).toBe('th-override')
     expect(req.permissionPreset).toBe('full-access')
     expect(req.reasoningEffort).toBe('high')
   })
 
-  it('codex.mode=review routes to service.review with the target', async () => {
+  it('codex.mode=review routes to reviewCodexTurn with the target', async () => {
     const pending = backend.send({
       content: '/review',
       assistantMessageId: 'rev_1',
@@ -271,7 +303,12 @@ describe('CodexBackend send()', () => {
     await pending
     expect(service.reviewMock).toHaveBeenCalledOnce()
     expect(service.runMock).not.toHaveBeenCalled()
-    const [, , req] = service.reviewMock.mock.calls[0]!
+    const [, , , req] = service.reviewMock.mock.calls[0]! as [
+      unknown,
+      unknown,
+      string,
+      { target: { type: string }; messageId: string },
+    ]
     expect(req.target).toEqual({ type: 'uncommittedChanges' })
     expect(req.messageId).toBe('rev_1')
   })
@@ -283,7 +320,7 @@ describe('CodexBackend send()', () => {
     })).rejects.toThrow(/reviewTarget/)
   })
 
-  it('codex.mode=compact routes to service.compact', async () => {
+  it('codex.mode=compact routes to compactCodexTurn', async () => {
     const pending = backend.send({
       content: '/compact',
       assistantMessageId: 'comp_1',
@@ -304,7 +341,7 @@ describe('CodexBackend send()', () => {
     const pending = backend.send({ content: 'x' })
     service.resolveRun(makeResult())
     await pending
-    const request = service.runMock.mock.calls[0]![2]
+    const request = (service.runMock.mock.calls[0] as [unknown, unknown, string, CodexRunRequest])[3]
     expect(request.permissionPreset).toBe('full-access')
   })
 
@@ -379,7 +416,7 @@ describe('CodexBackend send()', () => {
     backend.onProviderSessionId((id) => heard.push(id))
     const pending = backend.send({ content: 'x' })
     service.capturedCallbacks!.onThreadStarted!('thread-A')
-    service.capturedCallbacks!.onThreadStarted!('thread-A') // duplicate should de-dup
+    service.capturedCallbacks!.onThreadStarted!('thread-A')
     service.resolveRun(makeResult())
     await pending
     expect(heard).toEqual(['thread-A'])
@@ -396,24 +433,24 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     await backend.start(makeStartOpts())
   })
 
-  it('interrupt() forwards to service with sessionKey', async () => {
+  it('interrupt() forwards to interruptCodex with session object', async () => {
     await backend.interrupt()
     expect(service.interruptMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }))
   })
 
-  it('respondToPermission forwards allow + reason to service', () => {
+  it('respondToPermission forwards allow + reason to respondToCodexPermission', () => {
     backend.respondToPermission('req-1', true, false, 'because')
     expect(service.respondPermissionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'req-1', true, false, 'because')
   })
 
-  it('respondToQuestion / dismissQuestion forward to service', () => {
+  it('respondToQuestion / dismissQuestion forward to codex-turn module', () => {
     backend.respondToQuestion('q-1', { a: 'yes' })
     backend.dismissQuestion('q-1')
     expect(service.respondQuestionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'q-1', { a: 'yes' })
     expect(service.dismissQuestionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'q-1')
   })
 
-  it('handleCommand(codex.steer) forwards input to service', async () => {
+  it('handleCommand(codex.steer) forwards input to steerCodex', async () => {
     await backend.handleCommand({ kind: 'codex.steer', input: 'stop' })
     expect(service.steerMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'stop')
   })

@@ -18,23 +18,34 @@ vi.mock('../agent/claude-query', () => ({
   buildUserMessage: vi.fn(),
 }))
 
+vi.mock('../agent/resolve-cli', () => ({
+  getNodeRuntime: vi.fn(() => ({})),
+}))
+
+vi.mock('../database', () => ({
+  getActiveProviderRaw: vi.fn(() => null),
+}))
+
+vi.mock('../codex/codex-turn', () => ({
+  runCodexTurn: vi.fn(),
+  reviewCodexTurn: vi.fn(),
+  compactCodexTurn: vi.fn(),
+  steerCodex: vi.fn(async () => {}),
+  interruptCodex: vi.fn(() => false),
+  resetCodexSession: vi.fn(),
+  respondToCodexPermission: vi.fn(() => true),
+  respondToCodexQuestion: vi.fn(() => true),
+  dismissCodexQuestion: vi.fn(() => true),
+  prewarmCodexConnection: vi.fn(async () => null),
+}))
+
 import { harnessRegistry } from './harness-registry'
 import { setCodexServiceFactory } from './backends/codex-backend'
 
 setCodexServiceFactory(() => ({
-  run: vi.fn(),
-  review: vi.fn(),
-  compact: vi.fn(),
-  interrupt: vi.fn(),
-  reset: vi.fn(),
-  respondToPermission: vi.fn(),
-  respondToQuestion: vi.fn(),
-  dismissQuestion: vi.fn(),
-  steer: vi.fn(async () => {}),
   getProjectAuth: vi.fn(() => ({ mode: 'auto' })),
   onAuthChanged: vi.fn(() => () => {}),
-  closeSessionConnection: vi.fn(async () => {}),
-}) as never)
+}))
 
 describe('harnessRegistry', () => {
   it('lists claude and codex harnesses', () => {

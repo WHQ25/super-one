@@ -20,13 +20,25 @@ import type {
 } from '../../../shared/agent-types'
 import log from '../../logger'
 import { trace } from '../../agent/event-trace'
-import type { CodexRunStreamCallbacks } from '../../codex/codex-experiment-service'
 import type { CodexSession } from '../../codex/codex-session'
 import {
   codexSessionNeedsRebuild,
   createCodexSession,
 } from '../../codex/codex-session'
-import type { CodexProjectAuth } from '../../codex/app-server-connection'
+import type { AppServerConnectionHandle, CodexProjectAuth } from '../../codex/app-server-connection'
+import {
+  compactCodexTurn,
+  dismissCodexQuestion,
+  interruptCodex,
+  prewarmCodexConnection,
+  resetCodexSession,
+  respondToCodexPermission,
+  respondToCodexQuestion,
+  reviewCodexTurn,
+  runCodexTurn,
+  steerCodex,
+  type CodexRunStreamCallbacks,
+} from '../../codex/codex-turn'
 import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 export interface CodexRunStreamCallbacksDeps {
@@ -40,42 +52,6 @@ export interface CodexRunStreamCallbacksDeps {
 export interface CodexServiceDeps {
   getProjectAuth(projectPath: string): CodexProjectAuth
   onAuthChanged(projectPath: string, cb: () => void): () => void
-  run(
-    session: CodexSession,
-    projectPath: string,
-    request: CodexRunRequest,
-    callbacks?: CodexRunStreamCallbacks,
-  ): Promise<CodexRunResult>
-  review(
-    session: CodexSession,
-    projectPath: string,
-    request: CodexReviewRequest,
-    callbacks?: CodexRunStreamCallbacks,
-  ): Promise<CodexRunResult>
-  compact(
-    session: CodexSession,
-    projectPath: string,
-    request: CodexCompactRequest,
-    callbacks?: CodexRunStreamCallbacks,
-  ): Promise<CodexRunResult>
-  interrupt(session: CodexSession): boolean
-  reset(session: CodexSession): void
-  respondToPermission(
-    session: CodexSession,
-    requestId: string,
-    allow: boolean,
-    alwaysAllow?: boolean,
-    reason?: string,
-    decision?: 'cancel',
-  ): boolean
-  respondToQuestion(
-    session: CodexSession,
-    requestId: string,
-    answers: Record<string, string>,
-  ): boolean
-  dismissQuestion(session: CodexSession, requestId: string): boolean
-  steer(session: CodexSession, input: string): Promise<void>
-  closeSessionConnection(session: CodexSession): Promise<void>
 }
 
 interface CodexBackendConfig {
@@ -124,6 +100,10 @@ function summarizeCodexItemsForTrace(items: CodexThreadItem[]): Array<{ id: stri
   })
 }
 
+function authsEqual(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
+  return a.mode === b.mode && (a.apiKey ?? '') === (b.apiKey ?? '')
+}
+
 let codexServiceFactory: (() => CodexServiceDeps) | null = null
 export function setCodexServiceFactory(factory: (() => CodexServiceDeps) | null): void {
   codexServiceFactory = factory
@@ -144,6 +124,9 @@ export class CodexBackend implements SessionBackend {
 
   private session: CodexSession | null = null
   private authChangedUnsub: (() => void) | null = null
+
+  private warmHandlePromise: Promise<AppServerConnectionHandle | null> | null = null
+  private warmAuth: CodexProjectAuth | null = null
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
@@ -170,15 +153,54 @@ export class CodexBackend implements SessionBackend {
       undefined,
       undefined,
     )
+    await this.adoptWarmHandle()
     this.authChangedUnsub = this.service.onAuthChanged(opts.projectPath, () => {
       this.handleAuthChanged()
     })
     this.started = true
   }
 
-  prewarm(_opts: BackendStartOptions): void {
-    // Codex has no prewarm equivalent yet — future work: spawn the app-server
-    // eagerly and run initialize so the first turn skips that cost.
+  prewarm(opts: BackendStartOptions): void {
+    if (this.started || this.disposed) return
+    if (this.warmHandlePromise) return
+    const auth = this.service.getProjectAuth(opts.projectPath)
+    this.warmAuth = { mode: auth.mode, apiKey: auth.apiKey }
+    const promise = prewarmCodexConnection(auth).catch((err) => {
+      log.warn('[CodexBackend] prewarm failed: %s', err instanceof Error ? err.message : String(err))
+      if (this.warmHandlePromise === promise) {
+        this.warmHandlePromise = null
+        this.warmAuth = null
+      }
+      return null
+    })
+    this.warmHandlePromise = promise
+  }
+
+  private async adoptWarmHandle(): Promise<void> {
+    if (!this.warmHandlePromise || !this.session) return
+    const session = this.session
+    const startOpts = this.startOpts
+    if (!startOpts) return
+    const warmAuth = this.warmAuth
+    const warmHandle = await this.warmHandlePromise.catch(() => null)
+    this.warmHandlePromise = null
+    this.warmAuth = null
+    if (!warmHandle) return
+    const currentAuth = this.service.getProjectAuth(startOpts.projectPath)
+    if (!warmAuth || !authsEqual(warmAuth, currentAuth)) {
+      try { await warmHandle.close() } catch { /* ignore */ }
+      return
+    }
+    warmHandle.onClosed((info) => {
+      if (session.connectionHandle === warmHandle) {
+        session.connectionHandle = null
+        session.connectionAuth = null
+        session.threadId = null
+        log.info('[codex] app-server exited code=%s signal=%s', info.code, info.signal)
+      }
+    })
+    session.connectionHandle = warmHandle
+    session.connectionAuth = { mode: currentAuth.mode, apiKey: currentAuth.apiKey }
   }
 
   async rebuild(opts: BackendStartOptions): Promise<void> {
@@ -192,7 +214,15 @@ export class CodexBackend implements SessionBackend {
     if (session.runningController) {
       try { session.runningController.abort() } catch { /* ignore */ }
     }
-    void this.service.closeSessionConnection(session)
+    const handle = session.connectionHandle
+    session.connectionHandle = null
+    session.connectionAuth = null
+    session.threadId = null
+    if (handle) {
+      void handle.close().catch((err) => {
+        log.warn('[CodexBackend] close connection after auth change failed: %s', err instanceof Error ? err.message : String(err))
+      })
+    }
   }
 
   private ensureSessionForRequest(
@@ -217,7 +247,7 @@ export class CodexBackend implements SessionBackend {
     }
 
     if (codexSessionNeedsRebuild(existing, requestedModel, requestedThreadId, requestedReasoningEffort, requestedPermissionPreset)) {
-      this.service.reset(existing)
+      resetCodexSession(existing)
       const recreated = createCodexSession(
         startOpts.projectPath,
         requestedModel ?? existing.model,
@@ -259,6 +289,8 @@ export class CodexBackend implements SessionBackend {
       resolvedPermissionPreset,
     )
 
+    const auth = this.service.getProjectAuth(projectPath)
+
     this.currentMessageId = assistantMessageId
     let runningAssistantId = assistantMessageId
     this.swapRunAssistantId = (nextId: string) => {
@@ -295,7 +327,7 @@ export class CodexBackend implements SessionBackend {
             messageId: assistantMessageId,
             cwd: resolvedCwd,
           }
-          result = await this.service.review(session, projectPath, reviewRequest, callbacks)
+          result = await reviewCodexTurn(session, auth, projectPath, reviewRequest, callbacks)
         } else if (mode === 'compact') {
           const compactRequest: CodexCompactRequest = {
             model: resolvedModel,
@@ -304,7 +336,7 @@ export class CodexBackend implements SessionBackend {
             messageId: assistantMessageId,
             cwd: resolvedCwd,
           }
-          result = await this.service.compact(session, projectPath, compactRequest, callbacks)
+          result = await compactCodexTurn(session, auth, projectPath, compactRequest, callbacks)
         } else {
           const codexRequest: CodexRunRequest = {
             prompt: request.codex?.prompt ?? request.content,
@@ -317,7 +349,7 @@ export class CodexBackend implements SessionBackend {
             messageId: assistantMessageId,
             cwd: resolvedCwd,
           }
-          result = await this.service.run(session, projectPath, codexRequest, callbacks)
+          result = await runCodexTurn(session, auth, projectPath, codexRequest, callbacks)
         }
         const finalText = result.finalResponse?.trim()
           || (mode === 'compact' ? 'Conversation compacted.' : 'Codex completed without returning text.')
@@ -369,7 +401,7 @@ export class CodexBackend implements SessionBackend {
     const session = this.session
     if (!session) return
     try {
-      this.service.interrupt(session)
+      interruptCodex(session)
     } catch (err) {
       log.warn('[CodexBackend] interrupt threw: %s', err instanceof Error ? err.message : String(err))
     }
@@ -378,7 +410,16 @@ export class CodexBackend implements SessionBackend {
   async close(): Promise<void> {
     if (this.disposed) return
     const session = this.session
-    try { if (session) this.service.reset(session) } catch { /* ignore */ }
+    try { if (session) resetCodexSession(session) } catch { /* ignore */ }
+    if (this.warmHandlePromise) {
+      const warmPromise = this.warmHandlePromise
+      this.warmHandlePromise = null
+      this.warmAuth = null
+      try {
+        const handle = await warmPromise
+        if (handle) await handle.close()
+      } catch { /* ignore */ }
+    }
     if (this.activeRun) { try { await this.activeRun } catch { /* ignore */ } }
     if (this.authChangedUnsub) {
       try { this.authChangedUnsub() } catch { /* ignore */ }
@@ -411,19 +452,19 @@ export class CodexBackend implements SessionBackend {
   ): boolean {
     const session = this.session
     if (!session) return false
-    return this.service.respondToPermission(session, requestId, allow, alwaysAllow, reason)
+    return respondToCodexPermission(session, requestId, allow, alwaysAllow, reason)
   }
 
   respondToQuestion(requestId: string, answers: Record<string, string>, _annotations?: QuestionAnnotations): void {
     const session = this.session
     if (!session) return
-    this.service.respondToQuestion(session, requestId, answers)
+    respondToCodexQuestion(session, requestId, answers)
   }
 
   dismissQuestion(requestId: string): void {
     const session = this.session
     if (!session) return
-    this.service.dismissQuestion(session, requestId)
+    dismissCodexQuestion(session, requestId)
   }
 
   respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {
@@ -458,7 +499,7 @@ export class CodexBackend implements SessionBackend {
           })
           this.swapRunAssistantId?.(cmd.newAssistantMessageId)
         }
-        await this.service.steer(session, cmd.input)
+        await steerCodex(session, cmd.input)
         return
       }
       case 'codex.plan_approval':
@@ -539,7 +580,7 @@ export class CodexBackend implements SessionBackend {
     }
   }
 
-  private buildCallbacks(): CodexRunStreamCallbacksDeps {
+  private buildCallbacks(): CodexRunStreamCallbacks {
     return {
       onThreadStarted: (threadId: string) => {
         this.fireProviderSessionId(threadId)

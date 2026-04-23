@@ -155,7 +155,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
 
   return (
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
-    <div ref={containerRef} className={cn('relative flex min-h-0 flex-col bg-card', zoom <= 1 && 'w-full flex-1')} style={zoom > 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : zoom < 1 ? { zoom } : undefined}>
+    <div ref={containerRef} className={cn('relative flex min-h-0 min-w-0 flex-col bg-card', zoom <= 1 && 'w-full flex-1')} style={zoom > 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : zoom < 1 ? { zoom } : undefined}>
       {fullscreenPlan ? (
         <CodexPlanFullscreenView
           text={fullscreenPlan.text}
@@ -176,12 +176,12 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       ) : (
         <>
           <SlashCommandOverlay />
-          <div className="relative flex-1 overflow-hidden">
+          <div className="relative min-w-0 flex-1 overflow-hidden">
             {messages.length === 0 && !hasActiveSession ? (
               <ChatSuggestions />
             ) : (
-              <ScrollArea key={historySessionId ?? 'default'} className="h-full animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
-                <div className="mx-auto flex max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
+              <ScrollArea key={historySessionId ?? 'default'} className="h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
+                <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
                   {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
                   {renderedMessages.map((msg) => {
                     const compactInfo = parseCompactMarker(msg)
@@ -252,7 +252,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               )}
             </AnimatePresence>
           </div>
-          <div className="mx-auto w-full max-w-3xl">
+          <div className="mx-auto w-full min-w-0 max-w-3xl">
             {worktreeRemoved ? (
               <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
                 <GitFork className="size-3.5 shrink-0" />

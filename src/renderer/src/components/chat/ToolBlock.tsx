@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, mem
 import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
-import { inferLanguage, useHighlightedTokens, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
+import { inferLanguage, useHighlightedTokens, useIncrementalHighlightedLines, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
 import { useChatStore, useActiveSession, useBashOutput } from '@/stores/chat'
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { useSettingsStore } from '@/stores/settings'
@@ -280,6 +280,10 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     }
   }, [isStreaming, hasDiff, toolName])
 
+  useLayoutEffect(() => {
+    if (isError) setExpanded(false)
+  }, [isError])
+
   // For unknown tools, show truncated raw input as fallback
   const summary = display.summary || (!isMcp && display.icon === 'wrench' && input.length > 0
     ? (input.length > 80 ? input.slice(0, 80) + '\u2026' : input)
@@ -529,21 +533,25 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         >
           <div className="overflow-hidden">
             <div className="px-2 pb-1.5">
-              {toolName === 'Edit' && (isStreaming
-                ? <CanvasEditDiff params={params} />
-                : <EditDiff params={params} />
+              {expanded && (
+                <>
+                  {toolName === 'Edit' && (isStreaming
+                    ? <CanvasEditDiff params={params} />
+                    : <EditDiff params={params} />
+                  )}
+                  {toolName === 'Write' && <WriteDiff params={params} isStreaming={isStreaming} />}
+                  {toolName === 'FileChange' && <FileChangeDiff params={params} isStreaming={isStreaming} />}
+                  {isError && cleanResult && (
+                    <div className="text-xs text-amber-400/90">{extractToolError(cleanResult)}</div>
+                  )}
+                  {hasResult && !isError && (!hasDiff || toolName === 'FileChange') && (
+                    <div>
+                      {isMcp ? <PrettyJSONCodeBlock text={cleanResult!} /> : <ToolResult text={cleanResult!} />}
+                    </div>
+                  )}
+                  {hasQA && <QAResult text={cleanResult!} />}
+                </>
               )}
-              {toolName === 'Write' && <WriteDiff params={params} isStreaming={isStreaming} />}
-              {toolName === 'FileChange' && <FileChangeDiff params={params} isStreaming={isStreaming} />}
-              {isError && cleanResult && (
-                <div className="text-xs text-amber-400/90">{extractToolError(cleanResult)}</div>
-              )}
-              {hasResult && !isError && (!hasDiff || toolName === 'FileChange') && (
-                <div>
-                  {isMcp ? <PrettyJSONCodeBlock text={cleanResult!} /> : <ToolResult text={cleanResult!} />}
-                </div>
-              )}
-              {hasQA && <QAResult text={cleanResult!} />}
             </div>
           </div>
         </div>
@@ -925,18 +933,18 @@ function buildFileChangeDiffLines(kind: string, diffText: string): DiffLine[] {
   return result
 }
 
-function buildDiffSourceText(lines: DiffLine[]): { oldText: string; newText: string } {
-  const oldParts: string[] = []
-  const newParts: string[] = []
+function buildDiffSourceLines(lines: DiffLine[]): { oldLines: string[]; newLines: string[] } {
+  const oldLines: string[] = []
+  const newLines: string[] = []
 
   for (const line of lines) {
-    if (line.kind !== 'added') oldParts.push(line.text)
-    if (line.kind !== 'removed') newParts.push(line.text)
+    if (line.kind !== 'added') oldLines.push(line.text)
+    if (line.kind !== 'removed') newLines.push(line.text)
   }
 
   return {
-    oldText: oldParts.join('\n'),
-    newText: newParts.join('\n'),
+    oldLines,
+    newLines,
   }
 }
 
@@ -984,12 +992,13 @@ export function WriteDiff({ params, isStreaming }: { params: Record<string, unkn
   const content = String(params.content ?? '')
   const filePath = String(params.file_path ?? '')
   const language = inferLanguage(filePath)
-  const tokens = useHighlightedTokens(content, language, TOOL_DIFF_OPTS)
+  const contentLines = useMemo(() => content ? content.split('\n') : [], [content])
+  const tokens = useIncrementalHighlightedLines(contentLines, language)
 
   const lines = useMemo<DiffLine[]>(() => {
-    if (!content) return []
-    return content.split('\n').map((text, i) => ({ kind: 'added' as const, lineNum: i + 1, text, sourceIdx: i }))
-  }, [content])
+    if (contentLines.length === 0) return []
+    return contentLines.map((text, i) => ({ kind: 'added' as const, lineNum: i + 1, text, sourceIdx: i }))
+  }, [contentLines])
 
   if (lines.length === 0) return null
   return <DiffView lines={lines} newTokens={tokens} autoScrollBottom={isStreaming} />
@@ -1001,9 +1010,9 @@ function FileChangeDiff({ params, isStreaming }: { params: Record<string, unknow
   const filePath = String(params.file_path ?? '')
   const language = inferLanguage(filePath)
   const lines = useMemo(() => buildFileChangeDiffLines(kind, diff), [kind, diff])
-  const { oldText, newText } = useMemo(() => buildDiffSourceText(lines), [lines])
-  const oldTokens = useHighlightedTokens(oldText, language, TOOL_DIFF_OPTS)
-  const newTokens = useHighlightedTokens(newText, language, TOOL_DIFF_OPTS)
+  const { oldLines, newLines } = useMemo(() => buildDiffSourceLines(lines), [lines])
+  const oldTokens = useIncrementalHighlightedLines(oldLines, language)
+  const newTokens = useIncrementalHighlightedLines(newLines, language)
 
   if (!diff || lines.length === 0) return null
   return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} autoScrollBottom={isStreaming} />

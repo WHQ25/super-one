@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { RecentFolder, RemoteDeviceConfig, SetupEvent, SettingsProvider, UpdateEvent } from '../../../shared/agent-types'
 import { useFileTreeStore } from './file-tree'
+import { perfEvent } from '@/lib/perf-trace'
+import { disposeHighlightCache } from '@/lib/highlight-cache'
 
 export type { RemoteDeviceConfig }
 
@@ -254,6 +256,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const wasActive = get().currentFolder === folderPath
     // Dispose agent and clean up DB (cascade deletes sessions + messages)
     await window.app.closeProject(folderPath).catch(() => {})
+    disposeHighlightCache(folderPath)
     const updated = await window.app.removeRecentFolder(folderPath)
     // Clean up in-memory worktree state
     set((s) => {
@@ -348,7 +351,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  navigateTo: (view) => set({ view }),
+  navigateTo: (view) => {
+    perfEvent('navigate', { from: get().view, to: view })
+    set({ view })
+  },
 
   setSettingsProvider: (provider) => {
     const currentTab = get().settingsTab

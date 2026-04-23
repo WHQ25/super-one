@@ -18,6 +18,7 @@ import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useRemoteControl } from '@/hooks/useRemoteControl'
 import { useFullscreen } from '@/hooks/useFullscreen'
+import { usePerfSampler } from '@/hooks/usePerfSampler'
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -27,6 +28,7 @@ import { useActiveSession } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 import { initAnalytics } from '@/lib/analytics'
+import { preloadFileHighlighter } from '@/lib/diff-utils'
 
 export const LAYOUT = {
   MIN_MAIN: 400,
@@ -38,6 +40,7 @@ export const LAYOUT = {
 function App(): React.JSX.Element {
   useAgentEvents()
   useRemoteControl()
+  usePerfSampler()
   const theme = useTheme()
   const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode, setLayoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode, setLayoutMode: s.setLayoutMode })))
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
@@ -51,6 +54,7 @@ function App(): React.JSX.Element {
     window.app.getAppSettings()
       .then((s) => { if (s.analyticsEnabled) initAnalytics() })
       .catch((err) => console.error('[analytics] failed to load app settings', err))
+    preloadFileHighlighter()
   }, [])
 
   useEffect(() => {

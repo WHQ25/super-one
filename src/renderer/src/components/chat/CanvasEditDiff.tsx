@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { gutterWidth, inferLanguage, useHighlightedTokens, type HLToken } from '@/lib/diff-utils'
+import { gutterWidth, inferLanguage, useHighlightedTokens, useIncrementalHighlightedLines, type HLToken } from '@/lib/diff-utils'
+import { getHighlightCache } from '@/lib/highlight-cache'
+import { useChatStore } from '@/stores/chat'
 import { getMonoCharWidth, MONO_FONT_FAMILY } from '@/lib/pretext-utils'
 import { useIsDark } from '@/hooks/use-is-dark'
 
@@ -122,7 +124,7 @@ const MARKER_ALPHA_MAX = 0.6
 
 const TYPE_SPEED_MS_PER_CHAR = 10
 
-const HIGHLIGHT_OPTS = { streamdownOnly: true } as const
+const MAX_CANVAS_LINES = 40
 
 function useStableTokens(current: HLToken[][] | null): HLToken[][] | null {
   const ref = useRef<HLToken[][] | null>(null)
@@ -231,10 +233,7 @@ function renderFrame(
   const charWidth = getMonoCharWidth()
   const layout = computeLayout(lines, charWidth)
 
-  const cssWidth = Math.max(
-    container.clientWidth,
-    Math.ceil(layout.textColX + layout.maxTextWidth + PAD_X),
-  )
+  const cssWidth = Math.max(1, container.clientWidth)
   const cssHeight = Math.max(
     LINE_HEIGHT + PAD_Y * 2,
     Math.ceil(PAD_Y + lines.length * LINE_HEIGHT + PAD_Y),
@@ -366,34 +365,39 @@ export function CanvasEditDiff({ params }: CanvasEditDiffProps) {
     return oldStr.slice(0, lastNewline + 1)
   }, [oldStr])
   const committedNewLines = useMemo(() => snapCommittedLines(newStr, false), [newStr])
-  const committedNewStr = useMemo(() => committedNewLines.join('\n'), [committedNewLines])
-
   const events = useMemo(
     () => greedyLineDiff(fullOldLines, committedNewLines, false),
     [fullOldLines, committedNewLines],
   )
 
-  const oldTokensFresh = useHighlightedTokens(committedOldStr, language, HIGHLIGHT_OPTS)
-  const newTokensFresh = useHighlightedTokens(committedNewStr, language, HIGHLIGHT_OPTS)
+  const activeProject = useChatStore((s) => s.activeProject)
+  const cache = useMemo(() => getHighlightCache(activeProject), [activeProject])
+  const oldTokensFresh = useHighlightedTokens(committedOldStr, language, { cache })
+  const newTokensFresh = useIncrementalHighlightedLines(committedNewLines, language)
   const oldTokens = useStableTokens(oldTokensFresh)
   const newTokens = useStableTokens(newTokensFresh)
 
   const displayLines = useMemo<DisplayLine[]>(() => {
-    if (!inEditPhase) {
-      return fullOldLines.map((text, i) => ({
-        key: `old:${i}`,
-        kind: 'oldPending' as const,
-        text,
-        lineNum: i + 1,
-        tokens: oldTokens?.[i],
-      }))
-    }
-    return buildDisplayLines(events, fullOldLines, oldTokens, newTokens)
+    const all = !inEditPhase
+      ? fullOldLines.map((text, i) => ({
+          key: `old:${i}`,
+          kind: 'oldPending' as const,
+          text,
+          lineNum: i + 1,
+          tokens: oldTokens?.[i],
+        }))
+      : buildDisplayLines(events, fullOldLines, oldTokens, newTokens)
+    return all.length > MAX_CANVAS_LINES ? all.slice(-MAX_CANVAS_LINES) : all
   }, [inEditPhase, events, fullOldLines, oldTokens, newTokens])
 
   const animatedLinesRef = useRef<AnimatedLine[]>([])
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    window.app?.trace?.('canvas-edit', 'mount', {})
+    return () => { window.app?.trace?.('canvas-edit', 'unmount', {}) }
+  }, [])
 
   useEffect(() => {
     animatedLinesRef.current = reconcileLines(animatedLinesRef.current, displayLines)

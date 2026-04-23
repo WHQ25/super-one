@@ -3,6 +3,7 @@ import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert } from 'lucide-reac
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
 import { inferLanguage, useHighlightedTokens, useIncrementalHighlightedLines, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
+import { getHighlightCache } from '@/lib/highlight-cache'
 import { useChatStore, useActiveSession, useBashOutput } from '@/stores/chat'
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { useSettingsStore } from '@/stores/settings'
@@ -163,17 +164,19 @@ interface ToolBlockProps {
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
 const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
-const TOOL_DIFF_OPTS = { streamdownOnly: true } as const
 
 
 
 export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand = true, backgroundActivity = false, grouped = false }: ToolBlockProps) {
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
+  const streamingInputPreview = useActiveSession((s) => toolUseId ? s._streamingToolInputPreviews[toolUseId] : undefined)
   const toolInterceptState = useChatStore((s) =>
     toolUseId ? Object.values(s.toolRenderers).find((r) => r.toolUseId === toolUseId && r.status === 'awaiting') : undefined,
   )
-  const params = useMemo(() => parseToolInput(input, toolName), [input, toolName])
+  const parsedParams = useMemo(() => parseToolInput(input, toolName), [input, toolName])
+  const isStreaming = status === 'streaming'
+  const params = isStreaming && streamingInputPreview ? streamingInputPreview : parsedParams
   const display = useMemo(() => getToolDisplay(toolName, params, cwd, homedir), [toolName, params, cwd, homedir])
   const mcpInfo = parseMcpToolName(toolName)
   const isMcp = mcpInfo !== null
@@ -186,7 +189,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     ? (mcpMeta[mcpInfo.serverName]?.icons?.[0]?.src
       ?? mcpLibrary.find((e) => e.name === mcpInfo.serverName)?.icons?.[0]?.src)
     : undefined
-  const isStreaming = status === 'streaming'
   const stallLevel = useStallLevel(isStreaming)
   const fileToolPath = FILE_PATH_TOOLS.has(toolName) ? String(params.file_path ?? params.notebook_path ?? '') : ''
   const fileToolName = fileToolPath ? fileToolPath.split('/').pop() || '' : ''
@@ -957,9 +959,10 @@ export function EditDiff({ params }: { params: Record<string, unknown> }) {
   const activeProject = useChatStore((s) => s.activeProject)
   const [startLine, setStartLine] = useState(1)
   const language = inferLanguage(filePath)
+  const cache = useMemo(() => getHighlightCache(activeProject), [activeProject])
 
-  const oldTokens = useHighlightedTokens(oldStr, language, TOOL_DIFF_OPTS)
-  const newTokens = useHighlightedTokens(newStr, language, TOOL_DIFF_OPTS)
+  const oldTokens = useHighlightedTokens(oldStr, language, { cache })
+  const newTokens = useHighlightedTokens(newStr, language, { cache })
 
   useEffect(() => {
     if (!filePath || !activeProject) return
@@ -989,33 +992,88 @@ export function EditDiff({ params }: { params: Record<string, unknown> }) {
 
 /** Content preview for Write tool (all lines are additions). */
 export function WriteDiff({ params, isStreaming }: { params: Record<string, unknown>; isStreaming?: boolean }) {
+  return isStreaming
+    ? <WriteDiffStreaming params={params} />
+    : <WriteDiffStatic params={params} />
+}
+
+function WriteDiffStreaming({ params }: { params: Record<string, unknown> }) {
   const content = String(params.content ?? '')
   const filePath = String(params.file_path ?? '')
   const language = inferLanguage(filePath)
   const contentLines = useMemo(() => content ? content.split('\n') : [], [content])
-  const tokens = useIncrementalHighlightedLines(contentLines, language)
-
+  const committedLines = useMemo(() => {
+    if (!content) return []
+    const idx = content.lastIndexOf('\n')
+    if (idx === -1) return []
+    return content.slice(0, idx).split('\n')
+  }, [content])
+  const tokens = useIncrementalHighlightedLines(committedLines, language)
   const lines = useMemo<DiffLine[]>(() => {
     if (contentLines.length === 0) return []
     return contentLines.map((text, i) => ({ kind: 'added' as const, lineNum: i + 1, text, sourceIdx: i }))
   }, [contentLines])
-
   if (lines.length === 0) return null
-  return <DiffView lines={lines} newTokens={tokens} autoScrollBottom={isStreaming} />
+  return <DiffView lines={lines} newTokens={tokens} autoScrollBottom />
+}
+
+function WriteDiffStatic({ params }: { params: Record<string, unknown> }) {
+  const content = String(params.content ?? '')
+  const filePath = String(params.file_path ?? '')
+  const language = inferLanguage(filePath)
+  const activeProject = useChatStore((s) => s.activeProject)
+  const cache = useMemo(() => getHighlightCache(activeProject), [activeProject])
+  const contentLines = useMemo(() => content ? content.split('\n') : [], [content])
+  const tokens = useHighlightedTokens(content, language, { cache })
+  const lines = useMemo<DiffLine[]>(() => {
+    if (contentLines.length === 0) return []
+    return contentLines.map((text, i) => ({ kind: 'added' as const, lineNum: i + 1, text, sourceIdx: i }))
+  }, [contentLines])
+  if (lines.length === 0) return null
+  return <DiffView lines={lines} newTokens={tokens} />
 }
 
 function FileChangeDiff({ params, isStreaming }: { params: Record<string, unknown>; isStreaming?: boolean }) {
+  return isStreaming
+    ? <FileChangeDiffStreaming params={params} />
+    : <FileChangeDiffStatic params={params} />
+}
+
+function FileChangeDiffStreaming({ params }: { params: Record<string, unknown> }) {
   const diff = String(params.diff ?? '')
   const kind = String(params.kind ?? '')
   const filePath = String(params.file_path ?? '')
   const language = inferLanguage(filePath)
   const lines = useMemo(() => buildFileChangeDiffLines(kind, diff), [kind, diff])
   const { oldLines, newLines } = useMemo(() => buildDiffSourceLines(lines), [lines])
-  const oldTokens = useIncrementalHighlightedLines(oldLines, language)
-  const newTokens = useIncrementalHighlightedLines(newLines, language)
-
+  const hasPartialTail = diff.length > 0 && !diff.endsWith('\n')
+  const committedOldLines = useMemo(
+    () => (hasPartialTail && oldLines.length > 0 ? oldLines.slice(0, -1) : oldLines),
+    [oldLines, hasPartialTail],
+  )
+  const committedNewLines = useMemo(
+    () => (hasPartialTail && newLines.length > 0 ? newLines.slice(0, -1) : newLines),
+    [newLines, hasPartialTail],
+  )
+  const oldTokens = useIncrementalHighlightedLines(committedOldLines, language)
+  const newTokens = useIncrementalHighlightedLines(committedNewLines, language)
   if (!diff || lines.length === 0) return null
-  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} autoScrollBottom={isStreaming} />
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} autoScrollBottom />
+}
+
+function FileChangeDiffStatic({ params }: { params: Record<string, unknown> }) {
+  const diff = String(params.diff ?? '')
+  const kind = String(params.kind ?? '')
+  const filePath = String(params.file_path ?? '')
+  const language = inferLanguage(filePath)
+  const activeProject = useChatStore((s) => s.activeProject)
+  const cache = useMemo(() => getHighlightCache(activeProject), [activeProject])
+  const lines = useMemo(() => buildFileChangeDiffLines(kind, diff), [kind, diff])
+  const { oldLines, newLines } = useMemo(() => buildDiffSourceLines(lines), [lines])
+  const oldTokens = useHighlightedTokens(oldLines.join('\n'), language, { cache })
+  const newTokens = useHighlightedTokens(newLines.join('\n'), language, { cache })
+  if (!diff || lines.length === 0) return null
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} />
 }
 
 /** ExitPlanMode: shows pending / approved / rejected state.

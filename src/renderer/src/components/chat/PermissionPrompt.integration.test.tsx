@@ -86,6 +86,7 @@ vi.mock('@/components/ui/tooltip', () => ({
 vi.mock('./ToolIcon', () => ({ ToolIcon: () => <span>icon</span> }))
 vi.mock('./tool-display', () => ({
   getToolDisplay: () => ({ icon: 'terminal', summary: 'ls' }),
+  extractPartialToolInput: () => ({}),
   parseMcpToolName: (name: string) => {
     const m = name.match(/^mcp__(.+?)__(.+)$/)
     return m ? { serverName: m[1], mcpToolName: m[2] } : null

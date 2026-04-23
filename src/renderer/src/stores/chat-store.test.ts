@@ -3794,7 +3794,7 @@ describe('handleAgentEvent supplemental', () => {
   })
 
   describe('tool_input_delta accumulation for streaming diff tools', () => {
-    it('accumulates partialJson into tool_use.input for Edit tool', () => {
+    it('surfaces streaming partial input as preview for Edit tool', () => {
       setupProject('/test')
 
       useChatStore.getState().handleAgentEvent(makeEvent({
@@ -3812,25 +3812,91 @@ describe('handleAgentEvent supplemental', () => {
         type: 'tool_input_delta',
         messageId: 'msg-edit',
         toolUseId: 'tu-1',
-        partialJson: '{"file_path":"/x","new',
+        partialJson: '{"file_path":"/x","new_string":"hello\n',
+      } as never))
+
+      const session = getActiveDraftSession('/test')!
+      const preview = session._streamingToolInputPreviews['tu-1']
+      expect(preview).toBeDefined()
+      expect(preview.file_path).toBe('/x')
+      expect(preview.new_string).toBe('hello\n')
+      const msg = session.messages.find((m) => m.id === 'msg-edit')
+      const block = msg?.content.find((b) => b.type === 'tool_use')
+      if (block?.type !== 'tool_use') return
+      expect(block.input).toBe('')
+    })
+
+    it('persists streaming partial input when the tool completes', () => {
+      setupProject('/test')
+      const rawInput = '{"file_path":"/x","old_string":"a","new_string":"hello\\n"}'
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-complete', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-complete',
+        delta: { type: 'tool_use', toolName: 'Edit', toolUseId: 'tu-complete', input: '', status: 'streaming' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'tool_input_delta',
+        messageId: 'msg-complete',
+        toolUseId: 'tu-complete',
+        partialJson: rawInput,
+      } as never))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-complete',
+        delta: { type: 'tool_result', toolUseId: 'tu-complete', summary: 'ok' } as never,
+      }))
+
+      const session = getActiveDraftSession('/test')!
+      expect(session._streamingToolInputPreviews['tu-complete']).toBeUndefined()
+      const msg = session.messages.find((m) => m.id === 'msg-complete')
+      const block = msg?.content.find((b) => b.type === 'tool_use')
+      expect(block?.type === 'tool_use' ? block.input : '').toBe(rawInput)
+    })
+
+    it('marks throttled streaming partial input as applied', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-seq', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-seq',
+        delta: { type: 'tool_use', toolName: 'Edit', toolUseId: 'tu-seq', input: '', status: 'streaming' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'tool_input_delta',
+        messageId: 'msg-seq',
+        toolUseId: 'tu-seq',
+        partialJson: '{"file_path":"/x","new_string":"a',
+        seq: 1,
       } as never))
 
       useChatStore.getState().handleAgentEvent(makeEvent({
         type: 'tool_input_delta',
-        messageId: 'msg-edit',
-        toolUseId: 'tu-1',
-        partialJson: '_string":"hello',
+        messageId: 'msg-seq',
+        toolUseId: 'tu-seq',
+        partialJson: 'b',
+        seq: 2,
       } as never))
 
       const session = getActiveDraftSession('/test')!
-      const msg = session.messages.find((m) => m.id === 'msg-edit')
-      const block = msg?.content.find((b) => b.type === 'tool_use')
-      expect(block?.type).toBe('tool_use')
-      if (block?.type !== 'tool_use') return
-      expect(block.input).toBe('{"file_path":"/x","new_string":"hello')
+      const msg = session.messages.find((m) => m.id === 'msg-seq')
+      expect(msg?._lastAppliedSeq).toBe(2)
     })
 
-    it('accumulates partialJson for Write tool', () => {
+    it('surfaces streaming partial input as preview for Write tool', () => {
       setupProject('/test')
 
       useChatStore.getState().handleAgentEvent(makeEvent({
@@ -3848,14 +3914,13 @@ describe('handleAgentEvent supplemental', () => {
         type: 'tool_input_delta',
         messageId: 'msg-write',
         toolUseId: 'tu-w',
-        partialJson: '{"content":"line1',
+        partialJson: '{"content":"line1\n',
       } as never))
 
       const session = getActiveDraftSession('/test')!
-      const msg = session.messages.find((m) => m.id === 'msg-write')
-      const block = msg?.content.find((b) => b.type === 'tool_use')
-      if (block?.type !== 'tool_use') return
-      expect(block.input).toBe('{"content":"line1')
+      const preview = session._streamingToolInputPreviews['tu-w']
+      expect(preview).toBeDefined()
+      expect(preview.content).toBe('line1\n')
     })
 
     it('does NOT accumulate partialJson for non-streaming-diff tools like Bash', () => {

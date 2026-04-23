@@ -3,8 +3,10 @@ import { useAppStore } from './app'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode } from './chat-helpers'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
+import { extractPartialToolInput } from '@/components/chat/tool-display'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '../../../shared/event-seq-utils'
+import { perfEvent } from '@/lib/perf-trace'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl'
 export type ChatProvider = 'claude' | 'codex'
@@ -15,6 +17,31 @@ const CODEX_APPROVE_PLAN_PROMPT = 'Plan approved, start implementation.'
 export const CODEX_REJECT_PLAN_PLACEHOLDER = 'Tell Codex what to do differently'
 
 const STREAMING_INPUT_TOOLS = new Set(['Edit', 'Write', 'FileChange', 'NotebookEdit'])
+const STREAMING_PREVIEW_THROTTLE_MS = 100
+const streamingToolInputRaw = new Map<string, string>()
+const streamingPreviewLastUpdate = new Map<string, number>()
+
+function markMessageEventApplied(messages: ChatMessage[], messageId: string, event: AgentEvent): ChatMessage[] | null {
+  if (event.seq === undefined) return null
+  return messages.map((msg) => (
+    msg.id === messageId ? { ...msg, ...applySeqToMessage(event) } : msg
+  ))
+}
+
+function persistStreamingToolInput(messages: ChatMessage[], messageId: string, toolUseId: string, input: string | undefined): ChatMessage[] {
+  if (input === undefined) return messages
+  return messages.map((msg) => {
+    if (msg.id !== messageId) return msg
+    return {
+      ...msg,
+      content: msg.content.map((block) => (
+        block.type === 'tool_use' && block.toolUseId === toolUseId && block.input !== input
+          ? { ...block, input }
+          : block
+      )),
+    }
+  })
+}
 
 export type MentionKind = 'file' | 'directory' | 'agent'
 export interface Mention {
@@ -83,6 +110,7 @@ export interface PerSessionState {
   pendingPlanApproval: PlanApprovalRequest | null
   planApprovalOutcome: { approved: boolean; feedback?: string } | null
   slashCommandOutput: { command: string; content: string; mode?: 'overlay' | 'popup' } | null
+  _streamingToolInputPreviews: Record<string, Record<string, unknown>>
   _pendingSlashCommand: string
   todos: Record<string, TodoItem>
   showTodos: boolean
@@ -168,6 +196,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     pendingPlanApproval: null,
     planApprovalOutcome: null,
     slashCommandOutput: null,
+    _streamingToolInputPreviews: {},
     _pendingSlashCommand: '',
     todos: {},
     showTodos: false,
@@ -671,8 +700,25 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       let extraUpdates: Partial<PerSessionState> = {}
       if (session.apiRetry) extraUpdates.apiRetry = null
 
+      if (event.delta.type === 'tool_use' && event.delta.toolUseId && event.delta.input) {
+        streamingToolInputRaw.delete(event.delta.toolUseId)
+        streamingPreviewLastUpdate.delete(event.delta.toolUseId)
+        if (session._streamingToolInputPreviews[event.delta.toolUseId]) {
+          const { [event.delta.toolUseId]: _, ...rest } = session._streamingToolInputPreviews
+          extraUpdates._streamingToolInputPreviews = rest
+        }
+      }
+
       if (event.delta.type === 'tool_result') {
         const resultDelta = event.delta
+        const streamingInput = streamingToolInputRaw.get(resultDelta.toolUseId)
+        updatedMessages = persistStreamingToolInput(updatedMessages, event.messageId, resultDelta.toolUseId, streamingInput)
+        streamingToolInputRaw.delete(resultDelta.toolUseId)
+        streamingPreviewLastUpdate.delete(resultDelta.toolUseId)
+        if (session._streamingToolInputPreviews[resultDelta.toolUseId]) {
+          const { [resultDelta.toolUseId]: _, ...rest } = session._streamingToolInputPreviews
+          extraUpdates._streamingToolInputPreviews = rest
+        }
         const msg = updatedMessages.find((m) => m.id === event.messageId)
         const toolBlock = msg?.content.find(
           (b) => b.type === 'tool_use' && b.toolUseId === resultDelta.toolUseId
@@ -967,6 +1013,29 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         STREAMING_INPUT_TOOLS.has(targetBlock.toolName)
       )
       if (shouldAccumulate) {
+        if (targetBlock?.type === 'tool_use' && STREAMING_INPUT_TOOLS.has(targetBlock.toolName)) {
+          const nextRaw = (streamingToolInputRaw.get(event.toolUseId) ?? '') + event.partialJson
+          streamingToolInputRaw.set(event.toolUseId, nextRaw)
+          const now = Date.now()
+          const hasPrev = !!session._streamingToolInputPreviews[event.toolUseId]
+          const addsCommittedLine = event.partialJson.includes('\\n') || event.partialJson.includes('\n')
+          const lastUpdate = streamingPreviewLastUpdate.get(event.toolUseId) ?? 0
+          const shouldExtract = !hasPrev || addsCommittedLine || (now - lastUpdate) >= STREAMING_PREVIEW_THROTTLE_MS
+          const appliedMessages = markMessageEventApplied(session.messages, event.messageId, event)
+          if (!shouldExtract) {
+            return { lastEventAt: now, ...(appliedMessages ? { messages: appliedMessages } : {}) }
+          }
+          streamingPreviewLastUpdate.set(event.toolUseId, now)
+          const nextPreview = extractPartialToolInput(nextRaw, targetBlock.toolName)
+          return {
+            lastEventAt: now,
+            ...(appliedMessages ? { messages: appliedMessages } : {}),
+            _streamingToolInputPreviews: {
+              ...session._streamingToolInputPreviews,
+              [event.toolUseId]: nextPreview,
+            },
+          }
+        }
         return {
           lastEventAt: Date.now(),
           messages: session.messages.map((msg) => {
@@ -2672,6 +2741,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   switchProject: async (projectPath: string) => {
     const currentProject = get().activeProject
+    perfEvent('project_switch', { from: currentProject, to: projectPath })
     if (currentProject && currentProject !== projectPath) {
       const project = get().projectSessions[currentProject]
       if (project) {
@@ -2751,6 +2821,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   sendMessage: async (content: string, segments?: Array<{ text: string; isPaste: boolean }>) => {
     const { activeProject, remoteSession } = get()
     if (!activeProject) return
+    perfEvent('message_send', { project: activeProject, len: content.length })
     if (remoteSession && remoteSession.projectPath === activeProject) {
       const project = get().projectSessions[activeProject]
       if (project?._activeSessionId === remoteSession.sessionId) return

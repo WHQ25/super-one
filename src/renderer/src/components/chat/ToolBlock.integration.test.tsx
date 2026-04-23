@@ -77,6 +77,7 @@ vi.mock('./tool-display', () => ({
   getToolDisplay: () => ({ icon: 'file-edit', summary: 'foo.ts' }),
   getToolVerb: (name: string) => name,
   parseToolInput: (input: string) => JSON.parse(input),
+  extractPartialToolInput: () => ({}),
   parseMcpToolName: () => null,
   formatReadMeta: () => '',
 }))

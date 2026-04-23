@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { useActiveSession } from '@/stores/chat'
+import { useState, useEffect } from 'react'
+import { useChatStore } from '@/stores/chat'
 
 export type StallLevel = 'normal' | 'warning' | 'critical'
 
@@ -20,18 +20,22 @@ export function getStallColor(level: StallLevel): string {
   return 'text-muted-foreground'
 }
 
+function readActiveLastEventAt(): number {
+  const state = useChatStore.getState()
+  const project = state.activeProject ? state.projectSessions[state.activeProject] : null
+  const session = project?._activeSessionId ? project._sessions[project._activeSessionId] : null
+  return session?.lastEventAt ?? 0
+}
+
 export function useStallLevel(active: boolean): StallLevel {
-  const lastEventAt = useActiveSession((s) => active ? s.lastEventAt : 0)
   const [level, setLevel] = useState<StallLevel>('normal')
-  const lastEventAtRef = useRef(lastEventAt)
-  lastEventAtRef.current = lastEventAt
 
   useEffect(() => {
     if (!active) {
       setLevel('normal')
       return
     }
-    const tick = () => setLevel(getStallLevel(lastEventAtRef.current))
+    const tick = (): void => setLevel(getStallLevel(readActiveLastEventAt()))
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)

@@ -17,8 +17,6 @@ import { AnsiText } from '@/lib/ansi'
 import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, tryPrettifyJson, parseQAPairs, extractToolError } from './tool-block-utils'
 import { WidgetBlock } from './WidgetBlock'
 import { CanvasEditDiff } from './CanvasEditDiff'
-
-const USE_CANVAS_EDIT_DIFF = import.meta.env.RENDERER_VITE_CANVAS_EDIT === '1'
 import { parseWidgetResult, parsePartialWidgetInput } from '../../../../shared/generative-ui/types'
 import { parseInChatResult } from '../../../../shared/miniapp-types'
 import { InChatMiniAppBlock } from './InChatMiniAppBlock'
@@ -531,9 +529,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         >
           <div className="overflow-hidden">
             <div className="px-2 pb-1.5">
-              {toolName === 'Edit' && (USE_CANVAS_EDIT_DIFF && isStreaming
+              {toolName === 'Edit' && (isStreaming
                 ? <CanvasEditDiff params={params} />
-                : <EditDiff params={params} isStreaming={isStreaming} />
+                : <EditDiff params={params} />
               )}
               {toolName === 'Write' && <WriteDiff params={params} isStreaming={isStreaming} />}
               {toolName === 'FileChange' && <FileChangeDiff params={params} isStreaming={isStreaming} />}
@@ -944,7 +942,7 @@ function buildDiffSourceText(lines: DiffLine[]): { oldText: string; newText: str
 
 
 /** Unified diff for Edit tool with actual file line numbers. */
-export function EditDiff({ params, isStreaming }: { params: Record<string, unknown>; isStreaming?: boolean }) {
+export function EditDiff({ params }: { params: Record<string, unknown> }) {
   const oldStr = String(params.old_string ?? '')
   const newStr = String(params.new_string ?? '')
   const filePath = String(params.file_path ?? '')
@@ -952,40 +950,10 @@ export function EditDiff({ params, isStreaming }: { params: Record<string, unkno
   const [startLine, setStartLine] = useState(1)
   const language = inferLanguage(filePath)
 
-  const committedNewStr = useMemo(() => {
-    if (isStreaming !== true) return newStr
-    if (newStr.length === 0) return ''
-    const idx = newStr.lastIndexOf('\n')
-    if (idx === -1) return ''
-    return newStr.slice(0, idx + 1)
-  }, [newStr, isStreaming])
-
   const oldTokens = useHighlightedTokens(oldStr, language, TOOL_DIFF_OPTS)
-  const newTokens = useHighlightedTokens(committedNewStr, language, TOOL_DIFF_OPTS)
-
-  const isPreEditPhase = isStreaming === true && committedNewStr.length === 0 && oldStr.length > 0
-
-  const diffRef = useRef<HTMLDivElement>(null)
-  const wasPreEditRef = useRef(isPreEditPhase)
-  const [isHolding, setIsHolding] = useState(false)
-
-  useLayoutEffect(() => {
-    if (wasPreEditRef.current && !isPreEditPhase && isStreaming === true) {
-      const el = diffRef.current
-      if (el) el.scrollTop = 0
-      setIsHolding(true)
-    }
-    wasPreEditRef.current = isPreEditPhase
-  }, [isPreEditPhase, isStreaming])
+  const newTokens = useHighlightedTokens(newStr, language, TOOL_DIFF_OPTS)
 
   useEffect(() => {
-    if (!isHolding) return
-    const id = window.setTimeout(() => setIsHolding(false), 600)
-    return () => window.clearTimeout(id)
-  }, [isHolding])
-
-  useEffect(() => {
-    if (isStreaming) return
     if (!filePath || !activeProject) return
     let cancelled = false
     const tryFind = async (): Promise<void> => {
@@ -1000,31 +968,15 @@ export function EditDiff({ params, isStreaming }: { params: Record<string, unkno
     }
     tryFind()
     return () => { cancelled = true }
-  }, [filePath, oldStr, newStr, activeProject, isStreaming])
+  }, [filePath, oldStr, newStr, activeProject])
 
-  const lines = useMemo<DiffLine[]>(() => {
-    if (isPreEditPhase) {
-      return oldStr.split('\n').map((text, i) => ({
-        kind: 'unchanged',
-        lineNum: startLine + i,
-        text,
-        sourceIdx: i,
-      }))
-    }
-    return buildDiffLines(oldStr, committedNewStr, startLine)
-  }, [oldStr, committedNewStr, startLine, isPreEditPhase])
+  const lines = useMemo<DiffLine[]>(
+    () => buildDiffLines(oldStr, newStr, startLine),
+    [oldStr, newStr, startLine],
+  )
 
   if (!oldStr && !newStr) return null
-  return (
-    <DiffView
-      ref={diffRef}
-      lines={lines}
-      oldTokens={oldTokens}
-      newTokens={newTokens}
-      autoScrollBottom={isStreaming === true && !isHolding}
-      className={cn('transition-opacity duration-500', isPreEditPhase && 'opacity-60')}
-    />
-  )
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} />
 }
 
 /** Content preview for Write tool (all lines are additions). */

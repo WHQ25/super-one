@@ -93,7 +93,7 @@ export const AppSidebar = memo(function AppSidebar() {
     return () => window.removeEventListener('keydown', handler)
   }, [isMac, setSidebarTab])
 
-  const [sortMode, setSortMode] = useState<SortMode>('added')
+  const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])

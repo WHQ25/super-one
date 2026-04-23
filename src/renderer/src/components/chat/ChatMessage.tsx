@@ -306,7 +306,7 @@ function LongTextChip({ text }: { text: string }) {
         <span className="min-w-0 truncate">{preview}</span>
         <span className="ml-auto shrink-0 text-white/50">{lineCount} lines</span>
       </button>
-      <PasteChipPreview open={open} onOpenChange={setOpen} text={text} lineCount={lineCount} />
+      <PasteChipPreview open={open} onOpenChange={setOpen} text={text} />
     </>
   )
 }

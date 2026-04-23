@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
-import { FileText, X } from 'lucide-react'
+import { FileText, UnfoldVertical, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { PasteChipPreview } from './PasteChipPreview'
 
 export function PasteChipView({ node, getPos, editor, selected }: NodeViewProps) {
@@ -16,6 +17,37 @@ export function PasteChipView({ node, getPos, editor, selected }: NodeViewProps)
     if (pos != null) {
       editor.chain().focus().deleteRange({ from: pos, to: pos + node.nodeSize }).run()
     }
+  }
+
+  const handleExpand = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const pos = getPos()
+    if (pos == null) return
+    const content = text.split('\n').map((line) =>
+      line
+        ? { type: 'paragraph', content: [{ type: 'text', text: line }] }
+        : { type: 'paragraph' }
+    )
+    editor
+      .chain()
+      .focus()
+      .insertContentAt({ from: pos, to: pos + node.nodeSize }, content)
+      .run()
+  }
+
+  const handleSave = (nextText: string) => {
+    const pos = getPos()
+    if (pos == null) return
+    const nextLineCount = nextText.split('\n').length
+    const nextPreview = nextText.slice(0, 60).replace(/\n/g, ' ')
+    editor
+      .chain()
+      .command(({ tr }) => {
+        tr.setNodeMarkup(pos, null, { text: nextText, lineCount: nextLineCount, preview: nextPreview })
+        return true
+      })
+      .run()
   }
 
   return (
@@ -38,6 +70,22 @@ export function PasteChipView({ node, getPos, editor, selected }: NodeViewProps)
         <span className="min-w-0 truncate text-muted-foreground">{preview}</span>
         <span className="ml-auto shrink-0 text-xs text-muted-foreground">{lineCount} lines</span>
       </div>
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onMouseDown={handleExpand}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+              contentEditable={false}
+            >
+              <UnfoldVertical className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <span>Expand to plain text</span>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <button
         onMouseDown={handleRemove}
         className="shrink-0 text-muted-foreground hover:text-foreground"
@@ -45,7 +93,7 @@ export function PasteChipView({ node, getPos, editor, selected }: NodeViewProps)
       >
         <X className="size-3.5" />
       </button>
-      <PasteChipPreview open={previewOpen} onOpenChange={setPreviewOpen} text={text} lineCount={lineCount} />
+      <PasteChipPreview open={previewOpen} onOpenChange={setPreviewOpen} text={text} onSave={handleSave} />
     </NodeViewWrapper>
   )
 }

@@ -4,6 +4,29 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.21.10-alpha] - 2026-04-23
+
+### Added
+
+- **Direct LAN transport for mobile clients** — mobile devices on the same WiFi now connect directly to the desktop via a local WebSocket server with mDNS zero-config discovery, bypassing the Cloudflare relay for lower latency. The relay stays available as automatic fallback when off-WiFi. End-to-end encryption reuses the existing per-pair AES-GCM key, so existing pairings keep working without re-pairing.
+- **Per-agent default preferences in Settings → Preferences** — Claude gains Default Model + Default Thinking Effort selectors alongside the existing Permission Mode and Sandbox defaults. Changes apply to every session that has not explicitly picked its own model, and the settings live in `app-settings.json` under `agentPreference.claude` so they survive across Claude CLI upgrades.
+- **Live streaming diff for the Edit tool** — Edit tool calls now render a canvas-based diff that animates line-by-line as `old_string` → `new_string` arrives, with cursor tracking and a cross-fade from pre-edit to full diff when `new_string` begins streaming. This replaces the previous plain diff rendering during streaming.
+- **Renderer resyncs with live main-process sessions after reload or crash** — reloading the renderer (or recovering from a renderer crash) mid-stream used to drop the in-flight session. The renderer now buffers incoming events while it pulls a live snapshot from the main process, replays the snapshot into the store, then flushes the buffer in order. Events carry a process-wide `(epoch, seq)` tuple so replays and reorderings are deduplicated at the reducer level.
+- **Paste chips are editable and unfoldable** — each paste chip in the chat input now exposes an unfold action (expands the chip back into inline paragraphs) and its preview dialog became a lightweight textarea editor that writes edits back to the chip in-place.
+
+### Fixed
+
+- **Edit tool's `+N -N` line count now matches the real diff** — the counter used to sum `old_string` / `new_string` line counts naively, so a one-line change reported `+5 -5`. It now uses the same `diffLines` LCS that `FileChange` uses and returns `null` when the two sides are identical.
+- **Codex turn/steer no longer hangs for 15 seconds** — a single-reader dispatcher on the app-server connection would silently drop the steer JSON-RPC response if a turn was parked in `nextNotification`, so `request()` waited for its 15s timeout. Responses and notifications now route through per-id waiters and a shared queue respectively.
+- **Switching Codex auth providers rebuilds the connection with the new env** — `CodexBackend.rebuild()` previously left the cached app-server running with stale auth, so the next turn kept using the old API key / base URL. The connection is now torn down whenever auth rotates or the session needs a rebuild.
+- **Codex permission Cancel is no longer collapsed into Decline** — the `decision='cancel'` flag was dropped between the IPC handler and the backend. The decision now threads through `SessionContract.respondToPermission` unchanged.
+- **Codex interaction IPC handlers return their result** — `respondToPermission` / `answerQuestion` / `dismissQuestion` now propagate their ack back to the renderer instead of resolving as `undefined`, so stale-click protection works against Codex the same way it does against Claude.
+- **Collapsed skill cards fill their row height** — skill cards now use a flex column layout so collapsed cards stretch to match the tallest card in the row.
+
+### Performance
+
+- **Codex reuses the app-server subprocess across turns of the same session** — `run` / `review` / `compact` used to spawn, initialize, and tear down a fresh `codex` subprocess on every message, adding roughly 1–2 seconds of overhead per turn. Each session now caches its `AppServerConnectionHandle` and only respawns on `reset()`, auth change, model/effort/thread reconfiguration, or child-process exit. `CodexBackend.prewarm()` also spawns the subprocess ahead of the first turn, mirroring the existing Claude warmup.
+
 ## [0.21.9-alpha] - 2026-04-22
 
 ### Fixed

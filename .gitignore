@@ -37,6 +37,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Event trace (dev only)
 event-trace.db*
 
+# Perf sampling artifacts (dev only)
+debug-data/
+
 # Finder (MacOS) folder config
 .DS_Store
 

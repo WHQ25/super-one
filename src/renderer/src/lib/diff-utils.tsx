@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { measureMaxLineWidth, getMonoFont, getMonoCharWidth, MONO_FONT_FAMILY } from '@/lib/pretext-utils'
 import { codePlugin, codePluginLight } from '@/components/chat/chat-shared'
 import { useIsDark } from '@/hooks/use-is-dark'
+import { buildHighlightKey, type HighlightCache } from './highlight-cache'
 
 const EXT_LANG: Record<string, string> = {
   ts: 'typescript', tsx: 'tsx', mts: 'typescript', cts: 'typescript',
@@ -61,8 +62,18 @@ function langsToLoad(lang: string): string[] {
 
 const fileHLEngine = createJavaScriptRegexEngine({ forgiving: true })
 let fileHLPromise: Promise<Highlighter> | null = null
+let fileHLResolved: Highlighter | null = null
 const fileHLLangs = new Set<string>()
 const fileHLThemes = new Set<string>()
+
+function getFileHighlighterSync(theme: string, lang: string): Highlighter | null {
+  if (!fileHLResolved) return null
+  if (!fileHLThemes.has(theme)) return null
+  for (const l of langsToLoad(lang)) {
+    if (!fileHLLangs.has(l)) return null
+  }
+  return fileHLResolved
+}
 
 async function getFileHighlighter(theme: string, lang: string): Promise<Highlighter> {
   const required = langsToLoad(lang)
@@ -70,9 +81,11 @@ async function getFileHighlighter(theme: string, lang: string): Promise<Highligh
     fileHLPromise = createHighlighter({ themes: [theme as BundledTheme], langs: required as BundledLanguage[], engine: fileHLEngine })
     required.forEach((l) => fileHLLangs.add(l))
     fileHLThemes.add(theme)
-    return fileHLPromise
+    fileHLResolved = await fileHLPromise
+    return fileHLResolved
   }
   const hl = await fileHLPromise
+  fileHLResolved = hl
   const loads: Promise<void>[] = []
   if (!fileHLThemes.has(theme)) loads.push(hl.loadTheme(theme as BundledTheme).then(() => { fileHLThemes.add(theme) }))
   for (const l of required) {
@@ -82,8 +95,17 @@ async function getFileHighlighter(theme: string, lang: string): Promise<Highligh
   return hl
 }
 
+const PRELOAD_LANGS = ['typescript', 'python', 'javascript', 'markdown', 'json']
+
+export function preloadFileHighlighter(): void {
+  for (const theme of ['github-dark', 'github-light']) {
+    for (const lang of PRELOAD_LANGS) {
+      getFileHighlighter(theme, lang).catch(() => {})
+    }
+  }
+}
+
 type HighlightRawToken = { content: string; color?: string; bgColor?: string; htmlStyle?: Record<string, string> }
-type HighlightResult = { tokens: HighlightRawToken[][] }
 
 const globalStyleCache = new Map<string, React.CSSProperties | undefined>()
 
@@ -99,13 +121,16 @@ function internStyle(t: HighlightRawToken): React.CSSProperties | undefined {
   return cached
 }
 
-function extractTokens(res: HighlightResult): HLToken[][] {
-  return res.tokens.map((line) => line.map((t) => ({ content: t.content, style: internStyle(t) })))
+function resolveHighlightLanguage(plugin: { supportsLanguage(lang: never): boolean }, language: string): string {
+  return plugin.supportsLanguage(language as never) ? language : 'md'
+}
+
+function toHLTokens(tokens: ThemedToken[][]): HLToken[][] {
+  return tokens.map((line) => line.map((t) => ({ content: t.content, style: internStyle(t as HighlightRawToken) })))
 }
 
 export interface UseHighlightedTokensOptions {
-  /** When true, always use the streamdown plugin (no chunked path, no separate highlighter load). Suitable for tool diffs that stream. */
-  streamdownOnly?: boolean
+  cache?: HighlightCache | null
 }
 
 export function useHighlightedTokens(code: string, language: string, options?: UseHighlightedTokensOptions): HLToken[][] | null {
@@ -114,34 +139,53 @@ export function useHighlightedTokens(code: string, language: string, options?: U
   const plugin = isDark ? codePlugin : codePluginLight
   const currentSeqRef = useRef(0)
   const committedSeqRef = useRef(0)
-  const streamdownOnly = options?.streamdownOnly === true
+  const cache = options?.cache ?? null
 
   useEffect(() => {
     if (!code) { setTokens(null); return }
     const lineCount = code.split('\n').length
     if (lineCount > HIGHLIGHT_LINE_LIMIT) { setTokens(null); return }
     const mySeq = ++currentSeqRef.current
-    const lang = plugin.supportsLanguage(language as never) ? language : 'md'
-    const themes = plugin.getThemes()
+    const lang = resolveHighlightLanguage(plugin, language)
+    const theme = (isDark ? 'github-dark' : 'github-light') as BundledTheme
     const needsCompanions = hasCompanions(lang)
+    const cacheable = !needsCompanions && lineCount <= HIGHLIGHT_CHUNK_SIZE
+    const cacheKey = cache && cacheable ? buildHighlightKey(theme, lang, code) : null
 
-    if (streamdownOnly || (lineCount <= HIGHLIGHT_CHUNK_SIZE && !needsCompanions)) {
-      let handled = false
-      const apply = (res: HighlightResult) => {
-        if (handled) return
-        handled = true
+    if (cache && cacheKey) {
+      const hit = cache.get(cacheKey)
+      if (hit) {
+        committedSeqRef.current = mySeq
+        setTokens(hit)
+        return
+      }
+    }
+
+    if (lineCount <= HIGHLIGHT_CHUNK_SIZE && !needsCompanions) {
+      let cancelled = false
+      getFileHighlighter(theme, lang).then((hl) => {
+        if (cancelled) return
+        const highlighted = hl.codeToTokensBase(code, { lang: lang as BundledLanguage, theme })
         if (mySeq < committedSeqRef.current) return
         committedSeqRef.current = mySeq
-        setTokens(extractTokens(res))
-      }
-      const result = plugin.highlight({ code, language: lang as never, themes }, apply)
-      if (result) apply(result)
-      return
+        const result = toHLTokens(highlighted)
+        if (cache && cacheKey) cache.set(cacheKey, result)
+        setTokens(result)
+      }).catch(() => {})
+      return () => { cancelled = true }
     }
 
     let cancelled = false
-    const theme = (isDark ? 'github-dark' : 'github-light') as BundledTheme
-    const idleId = requestIdleCallback(() => {
+    const idleIds = new Set<number>()
+    const scheduleIdle = (cb: () => void, timeout: number): void => {
+      const idleId = requestIdleCallback(() => {
+        idleIds.delete(idleId)
+        cb()
+      }, { timeout })
+      idleIds.add(idleId)
+    }
+
+    scheduleIdle(() => {
       if (cancelled) return
       getFileHighlighter(theme, lang).then((hl) => {
         if (cancelled) return
@@ -158,18 +202,111 @@ export function useHighlightedTokens(code: string, language: string, options?: U
 
           const tokens = hl.codeToTokensBase(chunkCode, { lang: lang as BundledLanguage, theme, grammarState: gramState })
           gramState = hl.getLastGrammarState(tokens) as GrammarState | undefined
-          const extracted = tokens.map((line: ThemedToken[]) => line.map((t) => ({ content: t.content, style: internStyle(t as HighlightRawToken) })))
+          const extracted = toHLTokens(tokens)
           for (let i = 0; i < extracted.length; i++) accumulated[start + i] = extracted[i]
           if (!cancelled) startTransition(() => setTokens([...accumulated] as HLToken[][]))
-          requestIdleCallback(() => processChunk(chunkIdx + 1), { timeout: 16 })
+          scheduleIdle(() => processChunk(chunkIdx + 1), 16)
         }
         processChunk(0)
       }).catch(() => {})
-    }, { timeout: 50 })
-    return () => { cancelled = true; cancelIdleCallback(idleId) }
-  }, [code, language, isDark, plugin, streamdownOnly])
+    }, 50)
+    return () => {
+      cancelled = true
+      for (const idleId of idleIds) cancelIdleCallback(idleId)
+      idleIds.clear()
+    }
+  }, [code, language, isDark, plugin, cache])
 
   return tokens
+}
+
+export function useIncrementalHighlightedLines(lines: string[], language: string): HLToken[][] | null {
+  const isDark = useIsDark()
+  const plugin = isDark ? codePlugin : codePluginLight
+  const theme: BundledTheme = isDark ? 'github-dark' : 'github-light'
+  const lang = resolveHighlightLanguage(plugin, language)
+
+  const prevLinesRef = useRef<string[]>([])
+  const prevTokensRef = useRef<HLToken[][] | null>(null)
+  const prevEndStateRef = useRef<GrammarState | undefined>(undefined)
+  const themeRef = useRef<BundledTheme | null>(null)
+  const langRef = useRef<string | null>(null)
+  const [, setReadyTick] = useState(0)
+
+  useMemo(() => {
+    if (getFileHighlighterSync(theme, lang)) return
+    getFileHighlighter(theme, lang).then(() => {
+      setReadyTick((t) => t + 1)
+    }).catch(() => {})
+  }, [theme, lang])
+
+  if (lines.length === 0 || lines.length > HIGHLIGHT_LINE_LIMIT) {
+    prevLinesRef.current = []
+    prevTokensRef.current = null
+    prevEndStateRef.current = undefined
+    themeRef.current = null
+    langRef.current = null
+    return null
+  }
+
+  const hl = getFileHighlighterSync(theme, lang)
+  if (!hl) return prevTokensRef.current
+
+  const prevLines = prevLinesRef.current
+  const prevTokens = prevTokensRef.current
+  const canReuse = themeRef.current === theme &&
+    langRef.current === lang &&
+    prevTokens !== null
+
+  if (canReuse && prevLines.length === lines.length) {
+    let identical = true
+    for (let i = 0; i < prevLines.length; i++) {
+      if (prevLines[i] !== lines[i]) { identical = false; break }
+    }
+    if (identical) return prevTokens
+  }
+
+  let isPureAppend = false
+  if (canReuse && prevTokens && lines.length > prevLines.length) {
+    isPureAppend = true
+    for (let i = 0; i < prevLines.length; i++) {
+      if (prevLines[i] !== lines[i]) { isPureAppend = false; break }
+    }
+  }
+
+  let nextTokens: HLToken[][]
+  let endState: GrammarState | undefined
+  if (isPureAppend && prevTokens) {
+    const appendedCode = lines.slice(prevLines.length).join('\n')
+    const raw = hl.codeToTokensBase(appendedCode, {
+      lang: lang as BundledLanguage,
+      theme,
+      grammarState: prevEndStateRef.current,
+    })
+    endState = hl.getLastGrammarState(raw) as GrammarState | undefined
+    nextTokens = prevTokens.concat(toHLTokens(raw))
+  } else {
+    const raw = hl.codeToTokensBase(lines.join('\n'), {
+      lang: lang as BundledLanguage,
+      theme,
+    })
+    endState = hl.getLastGrammarState(raw) as GrammarState | undefined
+    nextTokens = toHLTokens(raw)
+  }
+
+  prevLinesRef.current = lines
+  prevTokensRef.current = nextTokens
+  prevEndStateRef.current = endState
+  themeRef.current = theme
+  langRef.current = lang
+
+  window.app?.trace?.('highlight.incremental', isPureAppend ? 'append' : 'full', {
+    lines: nextTokens.length,
+    language: lang,
+    appended: isPureAppend ? lines.length - prevLines.length : lines.length,
+  })
+
+  return nextTokens
 }
 
 export interface DiffLine {

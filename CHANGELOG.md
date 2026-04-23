@@ -4,6 +4,30 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.21.11-alpha] - 2026-04-24
+
+### Added
+
+- **Language switching (zh/en) in Settings → Preferences** — full internationalization across settings and chat UI.
+- **Streaming tool input previews for Edit/Write/FileChange/NotebookEdit** — tool arguments render progressively as they stream, so long Edit/Write calls show their target file and partial content immediately instead of waiting for the full JSON.
+- **Error tool results auto-collapse** — tool blocks whose result is an error collapse by default, keeping chat scrollback clean while staying one click away.
+
+### Fixed
+
+- **Chat layout no longer overflows on narrow widths** — a missing `min-w-0` on the layout flex chain let long tool output push the chat column wider than its container. The chain now contains its content.
+
+### Changed
+
+- **Claude Agent SDK updated to 0.2.118** — brings parity with Claude Code CLI through v2.1.118 (rolls up v2.1.115–v2.1.118 upstream updates).
+- **Settings preferences reuse chat list components** — internal refactor, no behavior change.
+
+### Performance
+
+- **Per-project syntax highlighter cache** — code highlighting in diffs reuses a cached shiki instance per project instead of rebuilding per tool block; caches are disposed when the project closes.
+- **Incremental line-level highlighting for the streaming Edit diff** — CanvasEditDiff only re-highlights lines that actually changed, rather than the whole file, on each streaming delta.
+- **Common languages preloaded at app boot** — TypeScript / JavaScript / Python / Markdown / JSON highlighters load during startup so the first Edit tool doesn't wait on highlighter init.
+- **Streaming JSON parser rewrite** — `partial-json` string extractor replaces O(n²) character-by-character concat with an array accumulator plus a fast no-escape slice path.
+
 ## [0.21.10-alpha] - 2026-04-23
 
 ### Added

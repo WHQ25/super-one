@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ChevronDown, Loader2, Check, Zap } from 'lucide-react'
+import { ChevronDown, Loader2, Zap } from 'lucide-react'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from './chat-input-utils'
 import { CodexModeSelector } from './CodexModeSelector'
 import { FireText } from './FireText'
+import {
+  ClaudeModelList,
+  CodexModelList,
+  CodexReasoningEffortList,
+  EffortList,
+} from './ModelSelectorLists'
 import type { EffortLevel } from '../../../../shared/agent-types'
 
 const EFFORT_LABELS: Record<EffortLevel, string> = {
@@ -86,24 +92,12 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" side="top" className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">Select Model</div>
-            {availableModels.map((model) => (
-              <button
-                key={model.id}
-                onClick={() => { setSelectedModel(model.id); setModelOpen(false) }}
-                className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                  model.id === selectedModel ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
-                }`}
-              >
-                <div className="font-medium">{model.name}</div>
-                {model.description && (
-                  <div className="mt-0.5 text-[10px] text-muted-foreground">{model.description}</div>
-                )}
-              </button>
-            ))}
-            {availableModels.length === 0 && (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading models...</div>
-            )}
+            <ClaudeModelList
+              title="Select Model"
+              models={availableModels}
+              activeId={selectedModel ?? ''}
+              onSelect={(id) => { setSelectedModel(id); setModelOpen(false) }}
+            />
           </PopoverContent>
         </Popover>
 
@@ -116,19 +110,13 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
               </button>
             </PopoverTrigger>
             <PopoverContent align="start" side="top" className="w-48 border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">Thinking Effort</div>
-              {effortLevels.map((level) => (
-                <button
-                  key={level}
-                  onClick={() => { setSelectedEffort(level); setEffortOpen(false) }}
-                  className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                    level === selectedEffort ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  <div className="font-medium">{EFFORT_LABELS[level]}</div>
-                  {level === selectedEffort && <Check className="size-3.5 shrink-0" />}
-                </button>
-              ))}
+              <EffortList
+                title="Thinking Effort"
+                levels={effortLevels}
+                labels={EFFORT_LABELS}
+                activeLevel={selectedEffort ?? ''}
+                onSelect={(level) => { setSelectedEffort(level); setEffortOpen(false) }}
+              />
             </PopoverContent>
           </Popover>
         )}
@@ -156,25 +144,13 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" side="top" className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
-          <div className="px-2 py-1.5 text-xs text-muted-foreground">Select Model</div>
-          {codexModels.map((model) => (
-            <button
-              key={model.id}
-              onClick={() => { setSelectedCodexModel(model.id); setModelOpen(false) }}
-              className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                model.id === selectedCodexModel ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
-              }`}
-            >
-              <div className="font-medium">{formatCodexModelLabel(model.id || model.name)}</div>
-              {model.id === selectedCodexModel && <Check className="size-3.5 shrink-0" />}
-            </button>
-          ))}
-          {codexModelsLoading && (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading Codex models...</div>
-          )}
-          {!codexModelsLoading && codexModels.length === 0 && (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">Use default model (auto)</div>
-          )}
+          <CodexModelList
+            title="Select Model"
+            models={codexModels}
+            activeId={selectedCodexModel ?? ''}
+            onSelect={(id) => { setSelectedCodexModel(id); setModelOpen(false) }}
+            loading={codexModelsLoading}
+          />
         </PopoverContent>
       </Popover>
 
@@ -189,19 +165,12 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" side="top" className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">Reasoning Effort</div>
-            {codexReasoningEfforts.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => { setSelectedCodexReasoningEffort(option.value); setEffortOpen(false) }}
-                className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                  option.value === currentCodexReasoningEffort ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
-                }`}
-              >
-                <div className="font-medium">{formatReasoningEffortLabel(option.value)}</div>
-                {option.value === currentCodexReasoningEffort && <Check className="size-3.5 shrink-0" />}
-              </button>
-            ))}
+            <CodexReasoningEffortList
+              title="Reasoning Effort"
+              options={codexReasoningEfforts}
+              activeValue={currentCodexReasoningEffort ?? ''}
+              onSelect={(value) => { setSelectedCodexReasoningEffort(value); setEffortOpen(false) }}
+            />
           </PopoverContent>
         </Popover>
       )}

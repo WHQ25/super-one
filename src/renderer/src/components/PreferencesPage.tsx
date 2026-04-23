@@ -16,6 +16,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { modes as permissionModes } from '@/components/chat/PermissionModeSelector'
 import { PermissionModeList } from '@/components/chat/PermissionModeList'
 import { sandboxModes } from '@/components/chat/SandboxModeSelector'
+import {
+  ClaudeModelList,
+  CodexModelList,
+  CodexReasoningEffortList,
+  EffortList,
+} from '@/components/chat/ModelSelectorLists'
 import { checkAutoModePlanEligibility } from '@/lib/auto-mode-eligibility'
 import type { CodexReasoningEffort, EffortLevel, ModelOption, PermissionMode, SandboxMode } from '../../../shared/agent-types'
 
@@ -43,6 +49,8 @@ function ClaudePreferencesPage() {
   const [saving, setSaving] = useState(false)
   const [permOpen, setPermOpen] = useState(false)
   const [sandboxOpen, setSandboxOpen] = useState(false)
+  const [modelOpen, setModelOpen] = useState(false)
+  const [effortOpen, setEffortOpen] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -135,15 +143,17 @@ function ClaudePreferencesPage() {
         : ''
     await saveClaudeDefaults(
       { defaultModel: modelId, defaultEffort: nextEffort },
-      modelId ? t('settings.preferences.defaultModel.claudeUpdated') : t('settings.preferences.defaultModel.claudeCleared'),
+      modelId ? t('settings.preferences.defaultModel.claudeUpdated') : t('settings.preferences.defaultModel.claudeSystemDefault'),
     )
+    setModelOpen(false)
   }
 
   async function handleEffortSelect(effort: EffortLevel | '') {
     await saveClaudeDefaults(
       { defaultEffort: effort },
-      effort ? t('settings.preferences.effort.updated') : t('settings.preferences.effort.cleared'),
+      effort ? t('settings.preferences.effort.updated') : t('settings.preferences.effort.systemDefault'),
     )
+    setEffortOpen(false)
   }
 
   const disabled = loading || saving
@@ -151,6 +161,7 @@ function ClaudePreferencesPage() {
   const activeSandboxMode = defaultSandboxMode || 'on'
   const currentPerm = permissionModes.find((m) => m.id === activePermMode) ?? permissionModes[0]
   const currentSandbox = sandboxModes.find((m) => m.id === activeSandboxMode) ?? sandboxModes[1]
+  const pillTriggerClass = 'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60'
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -279,34 +290,33 @@ function ClaudePreferencesPage() {
                 {t('settings.preferences.defaultModel.claudeDescription')}
               </p>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <Popover open={modelOpen} onOpenChange={setModelOpen}>
+              <PopoverTrigger asChild>
                 <button
                   disabled={disabled || availableModels.length === 0}
-                  className="flex min-w-48 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                  className={pillTriggerClass}
                 >
-                  <span className="truncate">
-                    {selectedDefaultModel?.name ?? (defaultModel || t('common.notSet'))}
+                  <span className="max-w-[160px] truncate">
+                    {selectedDefaultModel?.name ?? (defaultModel || t('common.systemDefault'))}
                   </span>
-                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={() => handleModelSelect('')} className="flex items-center justify-between">
-                  <span>{t('common.notSet')}</span>
-                  {!defaultModel && <Check className="size-4 text-muted-foreground" />}
-                </DropdownMenuItem>
-                {availableModels.length === 0 && (
-                  <DropdownMenuItem disabled>{t('settings.preferences.defaultModel.empty')}</DropdownMenuItem>
-                )}
-                {availableModels.map((model) => (
-                  <DropdownMenuItem key={model.id} onClick={() => handleModelSelect(model.id)} className="flex items-center justify-between">
-                    <span className="truncate">{model.name}</span>
-                    {defaultModel === model.id && <Check className="size-4 text-muted-foreground" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </PopoverTrigger>
+              <PopoverContent align="end" side="bottom" className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1">
+                <ClaudeModelList
+                  title={t('settings.preferences.defaultModel.label')}
+                  models={availableModels}
+                  activeId={defaultModel}
+                  onSelect={handleModelSelect}
+                  clearOption={{
+                    label: t('common.systemDefault'),
+                    isActive: !defaultModel,
+                    onSelect: () => void handleModelSelect(''),
+                  }}
+                  emptyMessage={t('settings.preferences.defaultModel.empty')}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="flex items-center justify-between gap-4 p-4">
@@ -316,37 +326,40 @@ function ClaudePreferencesPage() {
                 {t('settings.preferences.effort.description')}
               </p>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <Popover open={effortOpen} onOpenChange={setEffortOpen}>
+              <PopoverTrigger asChild>
                 <button
                   disabled={disabled || !selectedDefaultModel || supportedEffortLevels.length === 0}
-                  className="flex min-w-40 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                  className={pillTriggerClass}
                 >
                   <span className="truncate">
-                    {displayedEffort ? CLAUDE_EFFORT_LABELS[displayedEffort] : t('common.notSet')}
+                    {displayedEffort ? CLAUDE_EFFORT_LABELS[displayedEffort] : t('common.systemDefault')}
                   </span>
-                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => handleEffortSelect('')} className="flex items-center justify-between">
-                  <span>{t('common.notSet')}</span>
-                  {!displayedEffort && <Check className="size-4 text-muted-foreground" />}
-                </DropdownMenuItem>
-                {!selectedDefaultModel && (
-                  <DropdownMenuItem disabled>{t('settings.preferences.effort.chooseModel')}</DropdownMenuItem>
+              </PopoverTrigger>
+              <PopoverContent align="end" side="bottom" className="w-48 border-border bg-card p-1">
+                {!selectedDefaultModel ? (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    {t('settings.preferences.effort.chooseModel')}
+                  </div>
+                ) : (
+                  <EffortList
+                    title={t('settings.preferences.effort.label')}
+                    levels={supportedEffortLevels}
+                    labels={CLAUDE_EFFORT_LABELS}
+                    activeLevel={displayedEffort}
+                    onSelect={handleEffortSelect}
+                    clearOption={{
+                      label: t('common.systemDefault'),
+                      isActive: !displayedEffort,
+                      onSelect: () => void handleEffortSelect(''),
+                    }}
+                    emptyMessage={t('settings.preferences.effort.unsupported')}
+                  />
                 )}
-                {selectedDefaultModel && supportedEffortLevels.length === 0 && (
-                  <DropdownMenuItem disabled>{t('settings.preferences.effort.unsupported')}</DropdownMenuItem>
-                )}
-                {supportedEffortLevels.map((level) => (
-                  <DropdownMenuItem key={level} onClick={() => handleEffortSelect(level)} className="flex items-center justify-between">
-                    <span>{CLAUDE_EFFORT_LABELS[level]}</span>
-                    {displayedEffort === level && <Check className="size-4 text-muted-foreground" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       </div>
@@ -365,6 +378,8 @@ function CodexPreferencesPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [modelsLoading, setModelsLoading] = useState(false)
+  const [modelOpen, setModelOpen] = useState(false)
+  const [effortOpen, setEffortOpen] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -404,6 +419,7 @@ function CodexPreferencesPage() {
     ? (resolveCodexReasoningEffort(selectedModel, defaultReasoningEffort || undefined) ?? '')
     : defaultReasoningEffort
   const disabled = loading || saving
+  const pillTriggerClass = 'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60'
 
   async function saveCodexDefaults(patch: {
     defaultModel?: string
@@ -439,8 +455,9 @@ function CodexPreferencesPage() {
         defaultModel: modelId,
         defaultReasoningEffort: nextReasoningEffort,
       },
-      modelId ? t('settings.preferences.defaultModel.codexUpdated') : t('settings.preferences.defaultModel.codexCleared'),
+      modelId ? t('settings.preferences.defaultModel.codexUpdated') : t('settings.preferences.defaultModel.codexSystemDefault'),
     )
+    setModelOpen(false)
   }
 
   async function handleReasoningEffortSelect(effort: CodexReasoningEffort | '') {
@@ -449,9 +466,14 @@ function CodexPreferencesPage() {
       : ''
     await saveCodexDefaults(
       { defaultReasoningEffort: nextReasoningEffort },
-      nextReasoningEffort ? t('settings.preferences.reasoningEffort.updated') : t('settings.preferences.reasoningEffort.cleared'),
+      nextReasoningEffort ? t('settings.preferences.reasoningEffort.updated') : t('settings.preferences.reasoningEffort.systemDefault'),
     )
+    setEffortOpen(false)
   }
+
+  const emptyModelsMessage = currentFolder
+    ? t('settings.preferences.defaultModel.empty')
+    : t('settings.preferences.defaultModel.emptyNoProject')
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -476,37 +498,35 @@ function CodexPreferencesPage() {
                 {t('settings.preferences.defaultModel.codexDescription')}
               </p>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <Popover open={modelOpen} onOpenChange={setModelOpen}>
+              <PopoverTrigger asChild>
                 <button
                   disabled={disabled || (modelsLoading && codexModels.length === 0)}
-                  className="flex min-w-48 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                  className={pillTriggerClass}
                 >
-                  <span className="truncate">
-                    {defaultModel ? formatCodexModelLabel(defaultModel) : t('common.notSet')}
+                  <span className="max-w-[160px] truncate">
+                    {defaultModel ? formatCodexModelLabel(defaultModel) : t('common.systemDefault')}
                   </span>
-                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={() => handleModelSelect('')} className="flex items-center justify-between">
-                  <span>{t('common.notSet')}</span>
-                  {!defaultModel && <Check className="size-4 text-muted-foreground" />}
-                </DropdownMenuItem>
-                {modelsLoading && codexModels.length === 0 && (
-                  <DropdownMenuItem disabled>{t('settings.preferences.defaultModel.loading')}</DropdownMenuItem>
-                )}
-                {!modelsLoading && codexModels.length === 0 && (
-                  <DropdownMenuItem disabled>{currentFolder ? t('settings.preferences.defaultModel.empty') : t('settings.preferences.defaultModel.emptyNoProject')}</DropdownMenuItem>
-                )}
-                {codexModels.map((model) => (
-                  <DropdownMenuItem key={model.id} onClick={() => handleModelSelect(model.id)} className="flex items-center justify-between">
-                    <span>{formatCodexModelLabel(model.id || model.name)}</span>
-                    {defaultModel === model.id && <Check className="size-4 text-muted-foreground" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </PopoverTrigger>
+              <PopoverContent align="end" side="bottom" className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1">
+                <CodexModelList
+                  title={t('settings.preferences.defaultModel.label')}
+                  models={codexModels}
+                  activeId={defaultModel}
+                  onSelect={handleModelSelect}
+                  clearOption={{
+                    label: t('common.systemDefault'),
+                    isActive: !defaultModel,
+                    onSelect: () => void handleModelSelect(''),
+                  }}
+                  loading={modelsLoading}
+                  loadingMessage={t('settings.preferences.defaultModel.loading')}
+                  emptyMessage={emptyModelsMessage}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="flex items-center justify-between gap-4 p-4">
@@ -516,37 +536,39 @@ function CodexPreferencesPage() {
                 {t('settings.preferences.reasoningEffort.description')}
               </p>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <Popover open={effortOpen} onOpenChange={setEffortOpen}>
+              <PopoverTrigger asChild>
                 <button
                   disabled={disabled || (!selectedModel && !displayedReasoningEffort)}
-                  className="flex min-w-40 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                  className={pillTriggerClass}
                 >
                   <span className="truncate">
-                    {displayedReasoningEffort ? formatReasoningEffortLabel(displayedReasoningEffort) : t('common.notSet')}
+                    {displayedReasoningEffort ? formatReasoningEffortLabel(displayedReasoningEffort) : t('common.systemDefault')}
                   </span>
-                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => handleReasoningEffortSelect('')} className="flex items-center justify-between">
-                  <span>{t('common.notSet')}</span>
-                  {!displayedReasoningEffort && <Check className="size-4 text-muted-foreground" />}
-                </DropdownMenuItem>
-                {!selectedModel && (
-                  <DropdownMenuItem disabled>{t('settings.preferences.effort.chooseModel')}</DropdownMenuItem>
+              </PopoverTrigger>
+              <PopoverContent align="end" side="bottom" className="w-48 border-border bg-card p-1">
+                {!selectedModel ? (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    {t('settings.preferences.effort.chooseModel')}
+                  </div>
+                ) : (
+                  <CodexReasoningEffortList
+                    title={t('settings.preferences.reasoningEffort.label')}
+                    options={supportedReasoningEfforts}
+                    activeValue={displayedReasoningEffort}
+                    onSelect={handleReasoningEffortSelect}
+                    clearOption={{
+                      label: t('common.systemDefault'),
+                      isActive: !displayedReasoningEffort,
+                      onSelect: () => void handleReasoningEffortSelect(''),
+                    }}
+                    emptyMessage={t('settings.preferences.effort.unsupported')}
+                  />
                 )}
-                {selectedModel && supportedReasoningEfforts.length === 0 && (
-                  <DropdownMenuItem disabled>{t('settings.preferences.effort.unsupported')}</DropdownMenuItem>
-                )}
-                {supportedReasoningEfforts.map((option) => (
-                  <DropdownMenuItem key={option.value} onClick={() => handleReasoningEffortSelect(option.value)} className="flex items-center justify-between">
-                    <span>{formatReasoningEffortLabel(option.value)}</span>
-                    {displayedReasoningEffort === option.value && <Check className="size-4 text-muted-foreground" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       </div>

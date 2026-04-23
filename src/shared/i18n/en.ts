@@ -5,7 +5,7 @@ export type Messages = {
     save: string
     close: string
     loading: string
-    notSet: string
+    systemDefault: string
     back: string
     retry: string
     continue: string
@@ -137,9 +137,9 @@ export type Messages = {
         empty: string
         emptyNoProject: string
         claudeUpdated: string
-        claudeCleared: string
+        claudeSystemDefault: string
         codexUpdated: string
-        codexCleared: string
+        codexSystemDefault: string
       }
       effort: {
         label: string
@@ -147,7 +147,7 @@ export type Messages = {
         chooseModel: string
         unsupported: string
         updated: string
-        cleared: string
+        systemDefault: string
         levels: {
           low: string
           medium: string
@@ -160,7 +160,7 @@ export type Messages = {
         label: string
         description: string
         updated: string
-        cleared: string
+        systemDefault: string
       }
     }
   }
@@ -511,7 +511,7 @@ export const en: Messages = {
     save: 'Save',
     close: 'Close',
     loading: 'Loading...',
-    notSet: 'Not set',
+    systemDefault: 'Default',
     back: 'Back',
     retry: 'Retry',
     continue: 'Continue',
@@ -655,9 +655,9 @@ export const en: Messages = {
         empty: 'No models available',
         emptyNoProject: 'Open a project to load models',
         claudeUpdated: 'Default Claude model updated',
-        claudeCleared: 'Default Claude model cleared',
+        claudeSystemDefault: 'Using system default Claude model',
         codexUpdated: 'Default Codex model updated',
-        codexCleared: 'Default Codex model cleared',
+        codexSystemDefault: 'Using system default Codex model',
       },
       effort: {
         label: 'Default Thinking Effort',
@@ -665,7 +665,7 @@ export const en: Messages = {
         chooseModel: 'Choose a default model first',
         unsupported: 'This model does not expose effort options',
         updated: 'Default thinking effort updated',
-        cleared: 'Default thinking effort cleared',
+        systemDefault: 'Using system default thinking effort',
         levels: {
           low: 'Low',
           medium: 'Medium',
@@ -678,7 +678,7 @@ export const en: Messages = {
         label: 'Default Reasoning Effort',
         description: 'Applied when the selected default model supports reasoning effort selection.',
         updated: 'Default reasoning effort updated',
-        cleared: 'Default reasoning effort cleared',
+        systemDefault: 'Using system default reasoning effort',
       },
     },
   },

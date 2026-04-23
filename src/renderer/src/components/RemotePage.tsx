@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { QRCodeSVG } from 'qrcode.react'
+import { useTranslation } from 'react-i18next'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -10,6 +11,7 @@ import type { PairedDevice } from '../../../shared/agent-types'
 type PairingStep = 'idle' | 'waiting_scan' | 'waiting_code'
 
 export function RemotePage() {
+  const { t } = useTranslation()
   const config = useAppStore((s) => s.remoteConfig)
   const setRemoteConfig = useAppStore((s) => s.setRemoteConfig)
   const [pairedDevices, setPairedDevices] = useState<PairedDevice[]>([])
@@ -43,13 +45,13 @@ export function RemotePage() {
       setPairingStep('idle')
       setQrValue('')
       setCodeInput('')
-      setCodeError('Pairing session expired. Please try again.')
+      setCodeError(t('resources.remote.sessionExpired'))
     })
 
     const unsubAlreadyPaired = window.app.onPairingAlreadyPaired(({ deviceName }) => {
       setPairingStep('idle')
       setQrValue('')
-      toast.warning(`${deviceName} is already paired with this device.`)
+      toast.warning(t('resources.remote.alreadyPaired', { name: deviceName }))
     })
 
     return () => {
@@ -71,7 +73,7 @@ export function RemotePage() {
 
   async function handleConfirmPairing() {
     if (codeInput.length !== 6) {
-      setCodeError('Please enter the 6-digit code shown on your phone.')
+      setCodeError(t('resources.remote.stepCode'))
       return
     }
     setConfirming(true)
@@ -83,7 +85,7 @@ export function RemotePage() {
       setQrValue('')
       setCodeInput('')
     } catch {
-      setCodeError('Incorrect code. Please check your phone and try again.')
+      setCodeError(t('resources.remote.codeError'))
     } finally {
       setConfirming(false)
     }
@@ -123,17 +125,17 @@ export function RemotePage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Remote Control</h2>
+        <h2 className="text-lg font-semibold">{t('resources.remote.title')}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Allow a mobile device to monitor and control this SuperOne instance.
+          {t('resources.remote.subtitle')}
         </p>
       </div>
 
       <div className="rounded-lg border border-border p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium">Enable Remote Control</p>
-            <p className="text-xs text-muted-foreground">Expose this device for remote pairing</p>
+            <p className="text-sm font-medium">{t('resources.remote.enableLabel')}</p>
+            <p className="text-xs text-muted-foreground">{t('resources.remote.enableDescription')}</p>
           </div>
           <Switch
             checked={config?.enabled ?? false}
@@ -143,8 +145,8 @@ export function RemotePage() {
 
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium">Prevent System Sleep</p>
-            <p className="text-xs text-muted-foreground">Prevent idle sleep when the screen is open. Does not apply when the lid is closed.</p>
+            <p className="text-sm font-medium">{t('resources.remote.preventSleepLabel')}</p>
+            <p className="text-xs text-muted-foreground">{t('resources.remote.preventSleepDescription')}</p>
           </div>
           <Switch
             checked={config?.preventSleep ?? false}
@@ -157,27 +159,27 @@ export function RemotePage() {
         <div className="rounded-lg border border-border p-4 space-y-4">
           {pairingStep === 'idle' && (
             <Button variant="outline" size="sm" onClick={handleStartPairing}>
-              Pair New Device
+              {t('resources.remote.pairNewDevice')}
             </Button>
           )}
 
           {pairingStep === 'waiting_scan' && (
             <div className="space-y-3">
-              <p className="text-sm font-semibold">Pair a New Device</p>
+              <p className="text-sm font-semibold">{t('resources.remote.pairTitle')}</p>
               <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-                <li>Open SuperOne on your phone and scan this QR code</li>
-                <li>Enter the 6-digit code shown on your phone</li>
+                <li>{t('resources.remote.stepScan')}</li>
+                <li>{t('resources.remote.stepCode')}</li>
               </ol>
               <div className="rounded-lg border border-border bg-white p-3 w-fit">
                 <QRCodeSVG value={qrValue} size={200} />
               </div>
               {import.meta.env.DEV && (
-                <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(qrValue); toast.success('Pairing link copied') }}>
-                  Copy Pairing Link
+                <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(qrValue); toast.success(t('resources.remote.linkCopied')) }}>
+                  {t('resources.remote.copyLink')}
                 </Button>
               )}
               <Button variant="ghost" size="sm" onClick={handleCancelPairing}>
-                Cancel
+                {t('common.cancel')}
               </Button>
             </div>
           )}
@@ -185,7 +187,7 @@ export function RemotePage() {
           {pairingStep === 'waiting_code' && (
             <div className="space-y-3">
               <p className="text-sm font-medium">
-                Enter the 6-digit code shown on <span className="text-foreground">{pendingDeviceName}</span>
+                {t('resources.remote.codePrompt')} <span className="text-foreground">{pendingDeviceName}</span>
               </p>
               <div className="flex items-center gap-2">
                 <input
@@ -198,10 +200,10 @@ export function RemotePage() {
                   onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleConfirmPairing()}
                 />
                 <Button onClick={handleConfirmPairing} disabled={confirming || codeInput.length !== 6}>
-                  {confirming ? 'Confirming…' : 'Confirm'}
+                  {confirming ? t('resources.remote.confirming') : t('resources.remote.confirm')}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={handleCancelPairing}>
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
               </div>
               {codeError && <p className="text-xs text-destructive">{codeError}</p>}
@@ -215,9 +217,9 @@ export function RemotePage() {
       )}
 
       <div className="rounded-lg border border-border p-4">
-        <p className="text-sm font-medium mb-3">Paired Devices</p>
+        <p className="text-sm font-medium mb-3">{t('resources.remote.paired')}</p>
         {pairedDevices.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No paired devices.</p>
+          <p className="text-xs text-muted-foreground">{t('resources.remote.noPaired')}</p>
         ) : (
           <ul className="space-y-2">
             {pairedDevices.map((device) => (
@@ -226,7 +228,7 @@ export function RemotePage() {
                   <span className={cn('size-2 rounded-full', device.online ? 'bg-green-500' : 'bg-muted-foreground/40')} />
                   <span>{device.name}</span>
                   <span className="text-xs text-muted-foreground">
-                    {device.online ? 'Online' : device.lastSeenAt ? `Last seen ${new Date(device.lastSeenAt).toLocaleDateString()}` : 'Never connected'}
+                    {device.online ? t('resources.remote.online') : device.lastSeenAt ? t('resources.remote.lastSeen', { date: new Date(device.lastSeenAt).toLocaleDateString() }) : t('resources.remote.neverConnected')}
                   </span>
                 </div>
                 <Button
@@ -235,7 +237,7 @@ export function RemotePage() {
                   className="h-7 text-xs text-muted-foreground hover:text-destructive"
                   onClick={() => handleRemoveDevice(device.id)}
                 >
-                  Remove
+                  {t('resources.remote.remove')}
                 </Button>
               </li>
             ))}
@@ -246,14 +248,14 @@ export function RemotePage() {
       {import.meta.env.DEV && (
         <div className="rounded-lg border border-border p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">Custom Relay Server</p>
+            <p className="text-sm font-medium">{t('resources.remote.customRelay')}</p>
             <Button
               variant="outline"
               size="sm"
               className="h-7 text-xs"
               onClick={() => window.open('https://deploy.workers.cloudflare.com/?url=https://github.com/WHQ25/super-one-relay', '_blank')}
             >
-              Deploy to Cloudflare
+              {t('resources.remote.deployCloudflare')}
             </Button>
           </div>
           <div className="flex items-center gap-2">
@@ -273,13 +275,13 @@ export function RemotePage() {
               onClick={checkRelay}
               disabled={!config?.relayUrl || relayStatus === 'checking'}
             >
-              {relayStatus === 'checking' ? 'Checking…' : 'Test'}
+              {relayStatus === 'checking' ? t('resources.remote.checking') : t('resources.remote.test')}
             </Button>
-            {relayStatus === 'ok' && <span className="text-xs text-green-600">Connected</span>}
-            {relayStatus === 'error' && <span className="text-xs text-destructive">Unreachable</span>}
+            {relayStatus === 'ok' && <span className="text-xs text-green-600">{t('resources.remote.relayConnected')}</span>}
+            {relayStatus === 'error' && <span className="text-xs text-destructive">{t('resources.remote.relayUnreachable')}</span>}
           </div>
           <p className="text-xs text-muted-foreground">
-            Override the default relay with your own Cloudflare Workers deployment. Leave empty to use the built-in relay.
+            {t('resources.remote.relayHint')}
           </p>
         </div>
       )}

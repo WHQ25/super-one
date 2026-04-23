@@ -1,0 +1,1023 @@
+export type Messages = {
+  common: {
+    cancel: string
+    confirm: string
+    save: string
+    close: string
+    loading: string
+    notSet: string
+    back: string
+    retry: string
+    continue: string
+    terminal: string
+  }
+  sidebar: {
+    newSession: string
+    tabs: {
+      sessions: string
+      files: string
+    }
+    pinned: string
+    projects: string
+    sort: {
+      recent: string
+      added: string
+    }
+    empty: string
+    settings: string
+    remote: {
+      label: string
+      connected: string
+      disconnected: string
+    }
+    deleteSession: {
+      title: string
+      descriptionPrefix: string
+      descriptionSuffix: string
+      dontAsk: string
+      delete: string
+    }
+    removeProject: {
+      title: string
+      description: string
+      remove: string
+    }
+    renameSession: {
+      title: string
+    }
+  }
+  shell: {
+    startup: {
+      title: string
+      tagline: string
+      openProject: string
+    }
+    setup: {
+      required: { title: string; description: string }
+      installing: { title: string; description: string }
+      success: { title: string; description: string }
+      error: { title: string; description: string }
+      install: string
+    }
+    update: {
+      checking: string
+      preparing: string
+      upToDate: string
+      downloading: string
+      downloadingWithProgress: string
+      ready: string
+      restart: string
+    }
+  }
+  settings: {
+    layout: {
+      tabs: {
+        general: string
+        apps: string
+        remote: string
+        providers: string
+        agents: string
+        skills: string
+        mcp: string
+        plugins: string
+        preferences: string
+      }
+      providers: {
+        claude: string
+        codex: string
+      }
+    }
+    general: {
+      title: string
+      subtitle: string
+      privacy: string
+      appearance: string
+      analytics: {
+        label: string
+        description: string
+        enabled: string
+        disabled: string
+      }
+      language: {
+        label: string
+        description: string
+        system: string
+        english: string
+        chinese: string
+        updated: string
+      }
+    }
+    preferences: {
+      title: string
+      claudeSubtitle: string
+      codexSubtitle: string
+      sections: { project: string; user: string }
+      outputStyle: {
+        label: string
+        description: string
+        defaultName: string
+        updated: string
+      }
+      permissionMode: {
+        label: string
+        description: string
+        updated: string
+      }
+      sandbox: {
+        label: string
+        description: string
+        menuTitle: string
+        updated: string
+      }
+      defaultModel: {
+        label: string
+        claudeDescription: string
+        codexDescription: string
+        loading: string
+        empty: string
+        emptyNoProject: string
+        claudeUpdated: string
+        claudeCleared: string
+        codexUpdated: string
+        codexCleared: string
+      }
+      effort: {
+        label: string
+        description: string
+        chooseModel: string
+        unsupported: string
+        updated: string
+        cleared: string
+        levels: {
+          low: string
+          medium: string
+          high: string
+          xhigh: string
+          max: string
+        }
+      }
+      reasoningEffort: {
+        label: string
+        description: string
+        updated: string
+        cleared: string
+      }
+    }
+  }
+  chat: {
+    placeholder: {
+      addInstructions: string
+      codexPlan: string
+      codexReject: string
+      codexAsk: string
+      claudePlan: string
+      claudeAsk: string
+    }
+    dropToAttach: string
+    permissionModeTitle: string
+    sandboxModeTitle: string
+    permissionModes: {
+      default: { label: string; description: string }
+      acceptEdits: { label: string; description: string }
+      auto: { label: string; description: string }
+      plan: { label: string; description: string }
+      dontAsk: { label: string; description: string }
+      bypassPermissions: { label: string; description: string }
+    }
+    sandboxModes: {
+      off: { label: string; description: string }
+      on: { label: string; description: string }
+      auto: { label: string; description: string }
+    }
+    suggestions: {
+      openProject: string
+      addProject: string
+      poweredBy: string
+    }
+    plan: {
+      review: string
+      requestedPermissions: string
+      approve: string
+      approveAccept: string
+      reject: string
+      feedbackPlaceholder: string
+      switchTo: string
+      acceptEdits: string
+      afterApproval: string
+    }
+  }
+  resources: {
+    sectionUser: string
+    sectionProject: string
+    agents: {
+      title: string
+      subtitle: string
+      empty: string
+      emptyHint: string
+    }
+    skills: {
+      title: string
+      subtitleClaude: string
+      subtitleCodex: string
+      empty: string
+      emptyHintClaude: string
+      emptyHintCodex: string
+      install: string
+      selectFile: string
+      deleteTitle: string
+      deleteDescSuffix: string
+      deleting: string
+      delete: string
+      deleteTooltip: string
+      previewToggle: string
+      sourceToggle: string
+    }
+    providers: {
+      title: string
+      subtitleClaude: string
+      subtitleCodex: string
+      add: string
+      connect: string
+      connected: string
+      defaultLabelClaude: string
+      defaultLabelCodex: string
+      defaultDescClaude: string
+      defaultDescCodex: string
+      empty: string
+      emptyHint: string
+    }
+    providerDialog: {
+      addTitle: string
+      addDescription: string
+      editDescription: string
+      name: string
+      namePlaceholder: string
+      apiKey: string
+      envShow: string
+      envHide: string
+      advancedShow: string
+      advancedHide: string
+      baseUrl: string
+      addVariable: string
+      testing: string
+      connected: string
+      connectionFailed: string
+      unknownError: string
+      noAgentConfig: string
+      test: string
+      save: string
+      delete: string
+    }
+    mcp: {
+      title: string
+      subtitle: string
+      add: string
+      refresh: string
+      library: string
+      statusDisabled: string
+      statusConnecting: string
+      statusFailed: string
+      toolsCount_one: string
+      toolsCount_other: string
+      empty: string
+      emptyHintClaude: string
+      emptyHintCodex: string
+      claudeAiTitle: string
+      claudeAiFetching: string
+      tools: string
+      noToolsConnected: string
+      noToolsDisabled: string
+      noToolsDisconnected: string
+      form: {
+        title: string
+        paste: string
+        name: string
+        namePlaceholder: string
+        type: string
+        command: string
+        commandPlaceholder: string
+        args: string
+        argsPlaceholder: string
+        env: string
+        url: string
+        urlPlaceholder: string
+        headers: string
+        scope: string
+        scopeUser: string
+        scopeProject: string
+        verifying: string
+        adding: string
+        add: string
+        verified: string
+        verificationFailed: string
+        clipboardInvalid: string
+        clipboardFailed: string
+      }
+      libraryView: {
+        title: string
+        empty: string
+        added: string
+        addCount: string
+        adding: string
+        deleteButton: string
+        deleteTitle: string
+        deleteDescription: string
+        deleting: string
+        delete: string
+      }
+      detail: {
+        authTitle: string
+        authDescription: string
+        authorizing: string
+        authorize: string
+        configuration: string
+        edit: string
+        commandLabel: string
+        argsLabel: string
+        environmentLabel: string
+        urlLabel: string
+        headersLabel: string
+        uninstallTitle: string
+        uninstallDescription: string
+        confirmQuestion: string
+        confirm: string
+        uninstall: string
+      }
+    }
+    plugins: {
+      title: string
+      subtitleClaude: string
+      subtitleCodex: string
+      tabMarketplace: string
+      tabInstalled: string
+      emptyMarketplace: string
+      emptyMarketplaceHintClaude: string
+      emptyMarketplaceHintCodex: string
+      emptyInstalled: string
+      emptyInstalledHintClaude: string
+      emptyInstalledHintCodex: string
+      updateAvailable: string
+      updateAll: string
+      updating: string
+      update: string
+      searchPlaceholder: string
+      searchNoMatch: string
+      marketplaceEmpty: string
+      detail: {
+        apps: string
+        needsAuth: string
+        install: string
+        skills: string
+        disabled: string
+        screenshots: string
+        overview: string
+        metadata: string
+        capabilities: string
+        mcpServers: string
+        links: string
+        website: string
+        privacy: string
+        terms: string
+        starterPrompts: string
+      }
+      capability: {
+        commands: string
+        agents: string
+        skills: string
+        hooks: string
+        mcp: string
+      }
+    }
+    schedule: {
+      label: string
+      simple: string
+      advanced: string
+      preset: {
+        once: string
+        hourly: string
+        daily: string
+        weekly: string
+      }
+      pickDate: string
+      atMinute: string
+      pastHour: string
+      time: string
+      cronExpression: string
+      nextRuns: string
+      days: {
+        mon: string
+        tue: string
+        wed: string
+        thu: string
+        fri: string
+        sat: string
+        sun: string
+      }
+    }
+    automation: {
+      editTitle: string
+      createTitle: string
+      editDescription: string
+      createDescription: string
+      name: string
+      namePlaceholder: string
+      provider: string
+      prompt: string
+      promptPlaceholder: string
+      enabled: string
+      enabledOn: string
+      enabledOff: string
+      agentSettingsShow: string
+      agentSettingsHide: string
+      select: string
+      defaultValue: string
+      fullAccess: string
+      defaultDesc: string
+      fullAccessDesc: string
+      model: string
+      effort: string
+      permission: string
+      sandbox: string
+      reasoning: string
+      save: string
+      create: string
+    }
+    remote: {
+      title: string
+      subtitle: string
+      enableLabel: string
+      enableDescription: string
+      preventSleepLabel: string
+      preventSleepDescription: string
+      pairNewDevice: string
+      pairTitle: string
+      stepScan: string
+      stepCode: string
+      copyLink: string
+      linkCopied: string
+      codePrompt: string
+      confirming: string
+      confirm: string
+      codeError: string
+      sessionExpired: string
+      alreadyPaired: string
+      paired: string
+      noPaired: string
+      online: string
+      lastSeen: string
+      neverConnected: string
+      remove: string
+      customRelay: string
+      deployCloudflare: string
+      checking: string
+      test: string
+      relayConnected: string
+      relayUnreachable: string
+      relayHint: string
+    }
+    apps: {
+      title: string
+      subtitle: string
+      loading: string
+      empty: string
+      emptyHint: string
+      noTools: string
+      toolCount_one: string
+      toolCount_other: string
+      sections: { personal: string; project: string }
+      preapprovalTitle: string
+      preapprovalDescription: string
+      noAppTools: string
+      permissions: string
+      uninstallTitle: string
+      uninstallDescription: string
+      confirmQuestion: string
+      confirm: string
+      uninstall: string
+      uninstalled: string
+      uninstallFailed: string
+      authorBy: string
+      readOnly: string
+      readWrite: string
+      network: string
+    }
+  }
+}
+
+export const en: Messages = {
+  common: {
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    save: 'Save',
+    close: 'Close',
+    loading: 'Loading...',
+    notSet: 'Not set',
+    back: 'Back',
+    retry: 'Retry',
+    continue: 'Continue',
+    terminal: 'Terminal',
+  },
+  sidebar: {
+    newSession: 'New Session',
+    tabs: {
+      sessions: 'Sessions',
+      files: 'Files',
+    },
+    pinned: 'Pinned',
+    projects: 'Projects',
+    sort: {
+      recent: 'Recent Activity',
+      added: 'Date Added',
+    },
+    empty: 'No projects yet',
+    settings: 'Settings',
+    remote: {
+      label: 'Remote Control',
+      connected: 'Connected',
+      disconnected: 'Disconnected',
+    },
+    deleteSession: {
+      title: 'Delete Session?',
+      descriptionPrefix: 'will be removed from SuperOne. You can still access it via',
+      descriptionSuffix: ':',
+      dontAsk: "Don't ask again",
+      delete: 'Delete',
+    },
+    removeProject: {
+      title: 'Remove Project?',
+      description: 'and all its chat sessions will be removed from SuperOne. Your project files will not be affected.',
+      remove: 'Remove',
+    },
+    renameSession: {
+      title: 'Rename Session',
+    },
+  },
+  shell: {
+    startup: {
+      title: 'Super One',
+      tagline: 'The one, the only!',
+      openProject: 'Open Project',
+    },
+    setup: {
+      required: {
+        title: 'Setup Required',
+        description: 'Claude Code is required to power this app. Install it to continue.',
+      },
+      installing: {
+        title: 'Installing Claude Code...',
+        description: "This may take a minute or two. Please don't close the app.",
+      },
+      success: {
+        title: 'Installation Complete',
+        description: 'Claude Code is ready to use.',
+      },
+      error: {
+        title: 'Installation Failed',
+        description: 'Something went wrong. Check the output below and try again.',
+      },
+      install: 'Install Claude Code',
+    },
+    update: {
+      checking: 'Checking for updates...',
+      preparing: 'Preparing update {{version}}...',
+      upToDate: "You're up to date",
+      downloading: 'Downloading {{version}}...',
+      downloadingWithProgress: 'Downloading {{version}}... {{progress}}%',
+      ready: 'v{{version}} is ready',
+      restart: 'Restart',
+    },
+  },
+  settings: {
+    layout: {
+      tabs: {
+        general: 'General',
+        apps: 'Mini Apps',
+        remote: 'Remote Control',
+        providers: 'Providers',
+        agents: 'Subagents',
+        skills: 'Skills',
+        mcp: 'MCP Servers',
+        plugins: 'Plugins',
+        preferences: 'Preference',
+      },
+      providers: {
+        claude: 'Claude Code',
+        codex: 'Codex',
+      },
+    },
+    general: {
+      title: 'General',
+      subtitle: 'Configure SuperOne application behavior',
+      privacy: 'Privacy',
+      appearance: 'Appearance',
+      analytics: {
+        label: 'Usage Analytics',
+        description: 'Send anonymous usage data to help improve SuperOne. No personal data or conversation content is collected.',
+        enabled: 'Analytics enabled',
+        disabled: 'Analytics disabled',
+      },
+      language: {
+        label: 'Language',
+        description: 'Interface language for SuperOne. Takes effect immediately.',
+        system: 'Follow system',
+        english: 'English',
+        chinese: '中文',
+        updated: 'Language updated',
+      },
+    },
+    preferences: {
+      title: 'Preferences',
+      claudeSubtitle: 'Configure Claude Code behavior',
+      codexSubtitle: 'Configure Codex defaults for new sessions',
+      sections: { project: 'Project Settings', user: 'User Settings' },
+      outputStyle: {
+        label: 'Output Style',
+        description: 'Controls how Claude formats responses - tone, structure, and level of detail.',
+        defaultName: 'Default',
+        updated: 'Output style updated',
+      },
+      permissionMode: {
+        label: 'Permission Mode',
+        description: 'Default permission mode when starting a new session.',
+        updated: 'Default permission mode updated',
+      },
+      sandbox: {
+        label: 'Sandbox',
+        description: 'Default sandbox mode when starting a new session.',
+        menuTitle: 'Sandbox Mode',
+        updated: 'Default sandbox mode updated',
+      },
+      defaultModel: {
+        label: 'Default Model',
+        claudeDescription: 'Applied to sessions that have not picked a model.',
+        codexDescription: 'Applied to new Codex sessions inside SuperOne. This does not modify local Codex settings.',
+        loading: 'Loading models...',
+        empty: 'No models available',
+        emptyNoProject: 'Open a project to load models',
+        claudeUpdated: 'Default Claude model updated',
+        claudeCleared: 'Default Claude model cleared',
+        codexUpdated: 'Default Codex model updated',
+        codexCleared: 'Default Codex model cleared',
+      },
+      effort: {
+        label: 'Default Thinking Effort',
+        description: 'Applied when the selected default model supports effort selection.',
+        chooseModel: 'Choose a default model first',
+        unsupported: 'This model does not expose effort options',
+        updated: 'Default thinking effort updated',
+        cleared: 'Default thinking effort cleared',
+        levels: {
+          low: 'Low',
+          medium: 'Medium',
+          high: 'High',
+          xhigh: 'Extra High',
+          max: 'Max',
+        },
+      },
+      reasoningEffort: {
+        label: 'Default Reasoning Effort',
+        description: 'Applied when the selected default model supports reasoning effort selection.',
+        updated: 'Default reasoning effort updated',
+        cleared: 'Default reasoning effort cleared',
+      },
+    },
+  },
+  chat: {
+    placeholder: {
+      addInstructions: 'Add instructions...',
+      codexPlan: "Let's make a plan! What's in your mind?",
+      codexReject: 'Tell Codex what to do differently',
+      codexAsk: 'Ask Codex anything, @ to mention, / for commands',
+      claudePlan: "Let's make a plan! What's in your mind?",
+      claudeAsk: 'Ask Claude anything, @ to mention files & agents, / for commands',
+    },
+    dropToAttach: 'Drop images or PDFs to attach',
+    permissionModeTitle: 'Permission Mode',
+    sandboxModeTitle: 'Sandbox Mode',
+    permissionModes: {
+      default: { label: 'Normal', description: 'Prompts for dangerous operations' },
+      acceptEdits: { label: 'Accept Edits', description: 'Auto-accept file edit operations' },
+      auto: { label: 'Auto', description: 'Model classifier decides each permission' },
+      plan: { label: 'Plan Mode', description: 'Planning only, no actual execution' },
+      dontAsk: { label: "Don't Ask", description: 'Deny anything not pre-approved' },
+      bypassPermissions: { label: 'Bypass', description: 'Bypass all permission checks' },
+    },
+    sandboxModes: {
+      off: { label: 'Sandbox Off', description: 'No execution isolation' },
+      on: { label: 'Sandbox', description: 'Commands run in sandboxed environment' },
+      auto: { label: 'Sandbox Auto', description: 'Sandbox with auto-allow Bash' },
+    },
+    suggestions: {
+      openProject: 'Open a project to get started',
+      addProject: 'Add Project',
+      poweredBy: 'Powered by',
+    },
+    plan: {
+      review: 'Review',
+      requestedPermissions: 'Requested permissions',
+      approve: 'Approve',
+      approveAccept: 'Approve & Accept Edits',
+      reject: 'Reject',
+      feedbackPlaceholder: 'Reject feedback (optional, Enter to submit)',
+      switchTo: 'Switch to',
+      acceptEdits: 'Accept Edits',
+      afterApproval: 'after approval',
+    },
+  },
+  resources: {
+    sectionUser: 'User',
+    sectionProject: 'Project',
+    agents: {
+      title: 'Subagents',
+      subtitle: 'Browse custom agent definitions',
+      empty: 'No agents found',
+      emptyHint: 'User: ~/.claude/agents/ | Project: .claude/agents/',
+    },
+    skills: {
+      title: 'Skills',
+      subtitleClaude: 'Manage Claude Code skills',
+      subtitleCodex: 'Manage Codex skills',
+      empty: 'No skills found',
+      emptyHintClaude: 'User: ~/.claude/skills/ | Project: .claude/skills/',
+      emptyHintCodex: 'User: ~/.agents/skills/ | Project: .agents/skills/',
+      install: 'Install Skill',
+      selectFile: 'Select a file to preview',
+      deleteTitle: 'Delete Skill?',
+      deleteDescSuffix: 'will be removed from your skills.',
+      deleting: 'Deleting...',
+      delete: 'Delete',
+      deleteTooltip: 'Delete skill',
+      previewToggle: 'Preview',
+      sourceToggle: 'Source',
+    },
+    providers: {
+      title: 'Providers',
+      subtitleClaude: 'Configure third-party Anthropic-compatible API providers',
+      subtitleCodex: 'Configure third-party OpenAI-compatible API providers for Codex',
+      add: 'Add Provider',
+      connect: 'Connect',
+      connected: 'Connected',
+      defaultLabelClaude: 'Claude Code (Default)',
+      defaultLabelCodex: 'Codex (Default)',
+      defaultDescClaude: 'Uses system environment / Claude CLI auth',
+      defaultDescCodex: 'Uses Codex session auth (ChatGPT login or API key)',
+      empty: 'No third-party providers configured',
+      emptyHint: 'Click "Add Provider" to connect a third-party API',
+    },
+    providerDialog: {
+      addTitle: 'Add Provider',
+      addDescription: 'Select a provider template to get started',
+      editDescription: 'Update provider configuration',
+      name: 'Name',
+      namePlaceholder: 'Provider name',
+      apiKey: 'API Key',
+      envShow: 'Show environment variables',
+      envHide: 'Hide environment variables',
+      advancedShow: 'Show advanced options',
+      advancedHide: 'Hide advanced options',
+      baseUrl: 'Base URL',
+      addVariable: 'Add variable',
+      testing: 'Testing connection...',
+      connected: 'Connected ✓',
+      connectionFailed: 'Connection failed',
+      unknownError: 'Unknown error',
+      noAgentConfig: 'No config for this agent',
+      test: 'Test',
+      save: 'Save',
+      delete: 'Delete',
+    },
+    mcp: {
+      title: 'MCP Servers',
+      subtitle: 'Manage Model Context Protocol server configurations',
+      add: 'Add Server',
+      refresh: 'Refresh',
+      library: 'Library',
+      statusDisabled: 'disabled',
+      statusConnecting: 'connecting...',
+      statusFailed: 'failed',
+      toolsCount_one: '{{count}} tool',
+      toolsCount_other: '{{count}} tools',
+      empty: 'No MCP servers configured',
+      emptyHintClaude: 'User: ~/.claude.json | Project: .claude/settings.json, .mcp.json',
+      emptyHintCodex: 'User: ~/.codex/config.toml | Project: .codex/config.toml',
+      claudeAiTitle: 'Claude.ai',
+      claudeAiFetching: 'Fetching claude.ai servers...',
+      tools: 'Tools',
+      noToolsConnected: 'No tools available',
+      noToolsDisabled: 'Enable the server to see available tools',
+      noToolsDisconnected: 'Connect the server to see available tools',
+      form: {
+        title: 'Add MCP Server',
+        paste: 'Paste',
+        name: 'Name',
+        namePlaceholder: 'my-server',
+        type: 'Type',
+        command: 'Command',
+        commandPlaceholder: 'npx',
+        args: 'Args (space-separated)',
+        argsPlaceholder: '-y @modelcontextprotocol/server-filesystem',
+        env: 'Environment Variables',
+        url: 'URL',
+        urlPlaceholder: 'https://api.example.com/mcp',
+        headers: 'Headers',
+        scope: 'Scope',
+        scopeUser: 'user',
+        scopeProject: 'project',
+        verifying: 'Verifying...',
+        adding: 'Adding Server...',
+        add: 'Add',
+        verified: 'Verified',
+        verificationFailed: 'Connection verification failed',
+        clipboardInvalid: 'Clipboard does not contain a recognized MCP config',
+        clipboardFailed: 'Failed to read clipboard',
+      },
+      libraryView: {
+        title: 'Add from Library',
+        empty: 'No servers in library yet. Servers are saved automatically after a successful connection.',
+        added: 'Added',
+        addCount: 'Add {{count}} server',
+        adding: 'Adding...',
+        deleteButton: 'Delete',
+        deleteTitle: 'Delete MCPs from Library?',
+        deleteDescription: 'This will remove {{count}} selected server(s) from MCP library.',
+        deleting: 'Deleting...',
+        delete: 'Delete',
+      },
+      detail: {
+        authTitle: 'Authorization Required',
+        authDescription: 'This server requires OAuth authorization to connect.',
+        authorizing: 'Authorizing...',
+        authorize: 'Authorize',
+        configuration: 'Configuration',
+        edit: 'Edit',
+        commandLabel: 'Command',
+        argsLabel: 'Args',
+        environmentLabel: 'Environment',
+        urlLabel: 'URL',
+        headersLabel: 'Headers',
+        uninstallTitle: 'Uninstall',
+        uninstallDescription: 'Remove this MCP server configuration. This cannot be undone.',
+        confirmQuestion: 'Are you sure?',
+        confirm: 'Confirm',
+        uninstall: 'Uninstall Server',
+      },
+    },
+    plugins: {
+      title: 'Plugins',
+      subtitleClaude: 'Browse and manage Claude Code plugins',
+      subtitleCodex: 'Browse and manage Codex plugins',
+      tabMarketplace: 'Marketplaces',
+      tabInstalled: 'Installed ({{count}})',
+      emptyMarketplace: 'No marketplaces found',
+      emptyMarketplaceHintClaude: 'Install a marketplace with: claude plugin marketplace add',
+      emptyMarketplaceHintCodex: 'Install a marketplace with: codex marketplace add <source>',
+      emptyInstalled: 'No plugins installed',
+      emptyInstalledHintClaude: 'Browse the Marketplace to install Claude Code plugins',
+      emptyInstalledHintCodex: 'Browse the Marketplace to install Codex plugins',
+      updateAvailable: '{{count}} update(s) available',
+      updateAll: 'Update All',
+      updating: 'Updating...',
+      update: 'Update',
+      searchPlaceholder: 'Search plugins...',
+      searchNoMatch: 'No plugins match your search',
+      marketplaceEmpty: 'No plugins in this marketplace',
+      detail: {
+        apps: 'Apps',
+        needsAuth: 'Needs auth',
+        install: 'Install',
+        skills: 'Skills',
+        disabled: 'Disabled',
+        screenshots: 'Screenshots',
+        overview: 'Overview',
+        metadata: 'Metadata',
+        capabilities: 'Capabilities',
+        mcpServers: 'MCP Servers',
+        links: 'Links',
+        website: 'Website',
+        privacy: 'Privacy',
+        terms: 'Terms',
+        starterPrompts: 'Starter Prompts',
+      },
+      capability: {
+        commands: 'Commands',
+        agents: 'Agents',
+        skills: 'Skills',
+        hooks: 'Hooks',
+        mcp: 'MCP',
+      },
+    },
+    schedule: {
+      label: 'Schedule',
+      simple: 'Simple',
+      advanced: 'Advanced',
+      preset: {
+        once: 'once',
+        hourly: 'hourly',
+        daily: 'daily',
+        weekly: 'weekly',
+      },
+      pickDate: 'Pick a date',
+      atMinute: 'At minute',
+      pastHour: 'past the hour',
+      time: 'Time',
+      cronExpression: 'Cron Expression',
+      nextRuns: '→ Next: {{runs}}',
+      days: {
+        mon: 'Mon',
+        tue: 'Tue',
+        wed: 'Wed',
+        thu: 'Thu',
+        fri: 'Fri',
+        sat: 'Sat',
+        sun: 'Sun',
+      },
+    },
+    automation: {
+      editTitle: 'Edit Automation',
+      createTitle: 'Create Automation',
+      editDescription: 'Update scheduled task configuration',
+      createDescription: 'Set up a scheduled task for this project',
+      name: 'Name',
+      namePlaceholder: 'Daily code review',
+      provider: 'Provider',
+      prompt: 'Prompt',
+      promptPlaceholder: 'Review recent commits and suggest improvements...',
+      enabled: 'Enabled',
+      enabledOn: 'Scheduler will run this automation',
+      enabledOff: 'Paused — will not run on schedule',
+      agentSettingsShow: 'Show agent settings',
+      agentSettingsHide: 'Hide agent settings',
+      select: 'Select',
+      defaultValue: 'Default',
+      fullAccess: 'Full Access',
+      defaultDesc: 'Sandboxed, request approval',
+      fullAccessDesc: 'No sandbox, no approval needed',
+      model: 'Model',
+      effort: 'Effort',
+      permission: 'Permission',
+      sandbox: 'Sandbox',
+      reasoning: 'Reasoning',
+      save: 'Save',
+      create: 'Create',
+    },
+    remote: {
+      title: 'Remote Control',
+      subtitle: 'Allow a mobile device to monitor and control this SuperOne instance.',
+      enableLabel: 'Enable Remote Control',
+      enableDescription: 'Expose this device for remote pairing',
+      preventSleepLabel: 'Prevent System Sleep',
+      preventSleepDescription: 'Prevent idle sleep when the screen is open. Does not apply when the lid is closed.',
+      pairNewDevice: 'Pair New Device',
+      pairTitle: 'Pair a New Device',
+      stepScan: 'Open SuperOne on your phone and scan this QR code',
+      stepCode: 'Enter the 6-digit code shown on your phone',
+      copyLink: 'Copy Pairing Link',
+      linkCopied: 'Pairing link copied',
+      codePrompt: 'Enter the 6-digit code shown on',
+      confirming: 'Confirming…',
+      confirm: 'Confirm',
+      codeError: 'Incorrect code. Please check your phone and try again.',
+      sessionExpired: 'Pairing session expired. Please try again.',
+      alreadyPaired: '{{name}} is already paired with this device.',
+      paired: 'Paired Devices',
+      noPaired: 'No paired devices.',
+      online: 'Online',
+      lastSeen: 'Last seen {{date}}',
+      neverConnected: 'Never connected',
+      remove: 'Remove',
+      customRelay: 'Custom Relay Server',
+      deployCloudflare: 'Deploy to Cloudflare',
+      checking: 'Checking…',
+      test: 'Test',
+      relayConnected: 'Connected',
+      relayUnreachable: 'Unreachable',
+      relayHint: 'Override the default relay with your own Cloudflare Workers deployment. Leave empty to use the built-in relay.',
+    },
+    apps: {
+      title: 'Mini Apps',
+      subtitle: 'Manage installed apps and tool preapproval settings',
+      loading: 'Loading...',
+      empty: 'No mini apps installed',
+      emptyHint: 'Drop .s1app files in the sidebar to install',
+      noTools: 'No tools',
+      toolCount_one: '{{count}} tool',
+      toolCount_other: '{{count}} tools',
+      sections: { personal: 'Personal', project: 'Project' },
+      preapprovalTitle: 'Tool Pre-approval',
+      preapprovalDescription: 'Enabled tools skip permission prompts when the agent uses them.',
+      noAppTools: 'This app has no tools.',
+      permissions: 'Permissions',
+      uninstallTitle: 'Uninstall',
+      uninstallDescription: 'Remove this app and all its data. This cannot be undone.',
+      confirmQuestion: 'Are you sure?',
+      confirm: 'Confirm',
+      uninstall: 'Uninstall App',
+      uninstalled: 'Uninstalled {{name}}',
+      uninstallFailed: 'Uninstall failed',
+      authorBy: 'by {{name}}',
+      readOnly: 'Read only',
+      readWrite: 'Read & Write',
+      network: 'Network',
+    },
+  },
+}

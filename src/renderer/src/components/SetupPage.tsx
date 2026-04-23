@@ -1,5 +1,6 @@
 import { useEffect, useRef, useMemo } from 'react'
 import { Download, CheckCircle, XCircle, ArrowRight, Loader2, Terminal } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
@@ -27,6 +28,7 @@ function TerminalOutput({ text }: { text: string }): React.JSX.Element {
 }
 
 export function SetupPage(): React.JSX.Element {
+  const { t } = useTranslation()
   const { installStatus, installOutput, startInstall, handleSetupEvent, continueToMain } = useAppStore(useShallow((s) => ({ installStatus: s.installStatus, installOutput: s.installOutput, startInstall: s.startInstall, handleSetupEvent: s.handleSetupEvent, continueToMain: s.continueToMain })))
   const outputRef = useRef<HTMLDivElement>(null)
 
@@ -50,9 +52,9 @@ export function SetupPage(): React.JSX.Element {
       <div className="text-center">
         {installStatus === 'idle' && (
           <>
-            <h1 className="text-2xl font-bold">Setup Required</h1>
+            <h1 className="text-2xl font-bold">{t('shell.setup.required.title')}</h1>
             <p className="mt-2 text-muted-foreground">
-              Claude Code is required to power this app. Install it to continue.
+              {t('shell.setup.required.description')}
             </p>
           </>
         )}
@@ -60,10 +62,10 @@ export function SetupPage(): React.JSX.Element {
           <>
             <div className="flex items-center justify-center gap-2">
               <Loader2 className="size-5 animate-spin text-primary" />
-              <h1 className="text-2xl font-bold">Installing Claude Code...</h1>
+              <h1 className="text-2xl font-bold">{t('shell.setup.installing.title')}</h1>
             </div>
             <p className="mt-2 text-muted-foreground">
-              This may take a minute or two. Please don't close the app.
+              {t('shell.setup.installing.description')}
             </p>
           </>
         )}
@@ -71,19 +73,19 @@ export function SetupPage(): React.JSX.Element {
           <>
             <div className="flex items-center justify-center gap-2 text-green-600 dark:text-green-400">
               <CheckCircle className="size-5" />
-              <h1 className="text-2xl font-bold">Installation Complete</h1>
+              <h1 className="text-2xl font-bold">{t('shell.setup.success.title')}</h1>
             </div>
-            <p className="mt-2 text-muted-foreground">Claude Code is ready to use.</p>
+            <p className="mt-2 text-muted-foreground">{t('shell.setup.success.description')}</p>
           </>
         )}
         {installStatus === 'error' && (
           <>
             <div className="flex items-center justify-center gap-2 text-red-600 dark:text-red-400">
               <XCircle className="size-5" />
-              <h1 className="text-2xl font-bold">Installation Failed</h1>
+              <h1 className="text-2xl font-bold">{t('shell.setup.error.title')}</h1>
             </div>
             <p className="mt-2 text-muted-foreground">
-              Something went wrong. Check the output below and try again.
+              {t('shell.setup.error.description')}
             </p>
           </>
         )}
@@ -92,18 +94,18 @@ export function SetupPage(): React.JSX.Element {
       {installStatus === 'idle' && (
         <Button size="lg" onClick={startInstall}>
           <Download className="size-5" />
-          Install Claude Code
+          {t('shell.setup.install')}
         </Button>
       )}
       {installStatus === 'success' && (
         <Button size="lg" onClick={continueToMain}>
-          Continue
+          {t('common.continue')}
           <ArrowRight className="size-5" />
         </Button>
       )}
       {installStatus === 'error' && (
         <Button size="lg" variant="outline" onClick={startInstall}>
-          Retry
+          {t('common.retry')}
         </Button>
       )}
 
@@ -117,7 +119,7 @@ export function SetupPage(): React.JSX.Element {
             </div>
             <div className="flex flex-1 items-center justify-center gap-1.5 text-xs text-zinc-400">
               <Terminal className="size-3" />
-              <span>Terminal</span>
+              <span>{t('common.terminal')}</span>
             </div>
             <div className="w-[42px]" />
           </div>

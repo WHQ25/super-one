@@ -1,4 +1,5 @@
 import { Shield, FastForward, ShieldOff, PenLine, Zap, Lock } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { PermissionMode } from '../../../../shared/agent-types'
 import type { AutoModeEligibility } from '@/lib/auto-mode-eligibility'
 
@@ -74,12 +75,16 @@ interface PermissionModeListProps {
 }
 
 export function PermissionModeList({ activeMode, autoEligibility, onSelect }: PermissionModeListProps) {
+  const { t } = useTranslation()
   return (
     <>
-      <div className="px-2 py-1.5 text-xs text-muted-foreground">Permission Mode</div>
+      <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('chat.permissionModeTitle')}</div>
       {modes.map((mode) => {
         const isAutoBlocked = mode.id === 'auto' && !autoEligibility.ok
-        const description = isAutoBlocked ? autoEligibility.message : mode.description
+        const label = t(`chat.permissionModes.${mode.id}.label`)
+        const description = isAutoBlocked
+          ? autoEligibility.message
+          : t(`chat.permissionModes.${mode.id}.description`)
         const active = mode.id === activeMode
         const showDivider = mode.id === 'dontAsk'
         return (
@@ -100,7 +105,7 @@ export function PermissionModeList({ activeMode, autoEligibility, onSelect }: Pe
             >
               <div className={`flex items-center gap-1.5 font-medium ${mode.color}`}>
                 {mode.icon}
-                {mode.label}
+                {label}
               </div>
               <div className="mt-0.5 text-[10px] text-muted-foreground">{description}</div>
             </button>

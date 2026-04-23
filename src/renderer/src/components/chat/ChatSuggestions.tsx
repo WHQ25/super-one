@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useActiveSession, useChatStore, type ChatProvider } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
@@ -115,6 +116,7 @@ function ProviderSelector() {
 }
 
 function ActiveProviderHint() {
+  const { t } = useTranslation()
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const providers = useSettingsStore((s) => s.providers)
   const fetchProviders = useSettingsStore((s) => s.fetchProviders)
@@ -129,13 +131,14 @@ function ActiveProviderHint() {
 
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="text-xs text-muted-foreground">Powered by</span>
+      <span className="text-xs text-muted-foreground">{t('chat.suggestions.poweredBy')}</span>
       <ProviderLabel provider={activeProvider} fallback={activeProvider.name} size={12} />
     </span>
   )
 }
 
 export function ChatSuggestions() {
+  const { t } = useTranslation()
   const layoutMode = useAppStore((s) => s.layoutMode)
   const selectAndOpenFolder = useAppStore((s) => s.selectAndOpenFolder)
   const openFolder = useAppStore((s) => s.openFolder)
@@ -151,12 +154,12 @@ export function ChatSuggestions() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
         <ProviderSelector />
-        <p className="text-sm text-muted-foreground">Open a project to get started</p>
+        <p className="text-sm text-muted-foreground">{t('chat.suggestions.openProject')}</p>
         {hasRecent ? (
           <DropdownMenu onOpenChange={setAddOpen}>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent">
-                Add Project
+                {t('chat.suggestions.addProject')}
                 <ChevronDown className={cn('size-4 text-muted-foreground transition-transform duration-200', addOpen && 'rotate-180')} />
               </button>
             </DropdownMenuTrigger>
@@ -172,7 +175,7 @@ export function ChatSuggestions() {
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => selectAndOpenFolder()} className="gap-2">
                 <Plus className="size-4 shrink-0" />
-                <span>Add Project</span>
+                <span>{t('chat.suggestions.addProject')}</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -181,7 +184,7 @@ export function ChatSuggestions() {
             onClick={() => selectAndOpenFolder()}
             className="rounded-lg px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Add Project
+            {t('chat.suggestions.addProject')}
           </button>
         )}
       </div>

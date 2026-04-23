@@ -2,12 +2,13 @@ import { useState, useMemo } from 'react'
 import { CalendarIcon, Clock } from 'lucide-react'
 import { format } from 'date-fns'
 import { Cron } from 'croner'
+import { useTranslation } from 'react-i18next'
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { AutomationSchedule } from '../../../shared/agent-types'
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
 const DAY_VALUES = [1, 2, 3, 4, 5, 6, 0]
 
 type SchedulePreset = 'once' | 'hourly' | 'daily' | 'weekly'
@@ -87,6 +88,7 @@ export function SchedulePicker({
   value: AutomationSchedule
   onChange: (schedule: AutomationSchedule) => void
 }) {
+  const { t } = useTranslation()
   const [advanced, setAdvanced] = useState(value.preset === 'custom')
   const [calendarOpen, setCalendarOpen] = useState(false)
   const preset: SchedulePreset = (value.preset as SchedulePreset) ?? (value.type === 'one-time' ? 'once' : 'daily')
@@ -172,7 +174,7 @@ export function SchedulePicker({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">Schedule</span>
+        <span className="text-xs font-medium text-muted-foreground">{t('settings.schedule.label')}</span>
         <button
           type="button"
           className="text-[11px] text-muted-foreground underline"
@@ -187,7 +189,7 @@ export function SchedulePicker({
             }
           }}
         >
-          {advanced ? 'Simple' : 'Advanced'}
+          {advanced ? t('settings.schedule.simple') : t('settings.schedule.advanced')}
         </button>
       </div>
 
@@ -205,7 +207,7 @@ export function SchedulePicker({
                     : 'border-border text-muted-foreground hover:border-primary/50'
                 }`}
               >
-                {p}
+                {t(`settings.schedule.preset.${p}`)}
               </button>
             ))}
           </div>
@@ -216,7 +218,7 @@ export function SchedulePicker({
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1.5 text-xs font-normal">
                     <CalendarIcon className="size-3.5 text-muted-foreground" />
-                    {selectedDate ? format(selectedDate, 'MMM d, yyyy') : 'Pick a date'}
+                    {selectedDate ? format(selectedDate, 'MMM d, yyyy') : t('settings.schedule.pickDate')}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-auto border-border p-0">
@@ -234,7 +236,7 @@ export function SchedulePicker({
 
           {preset === 'hourly' && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">At minute</span>
+              <span className="text-xs text-muted-foreground">{t('settings.schedule.atMinute')}</span>
               <input
                 type="number"
                 min={0}
@@ -243,13 +245,13 @@ export function SchedulePicker({
                 value={value.minuteOfHour ?? 0}
                 onChange={(e) => updateMinute(parseInt(e.target.value) || 0)}
               />
-              <span className="text-xs text-muted-foreground">past the hour</span>
+              <span className="text-xs text-muted-foreground">{t('settings.schedule.pastHour')}</span>
             </div>
           )}
 
           {preset === 'daily' && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Time</span>
+              <span className="text-xs text-muted-foreground">{t('settings.schedule.time')}</span>
               <TimePicker value={value.timeOfDay ?? '09:00'} onChange={updateTime} />
             </div>
           )}
@@ -257,12 +259,12 @@ export function SchedulePicker({
           {preset === 'weekly' && (
             <div className="flex flex-col gap-2">
               <div className="flex gap-1">
-                {DAYS.map((day, i) => {
+                {DAY_KEYS.map((dayKey, i) => {
                   const dayVal = DAY_VALUES[i]
                   const selected = value.dayOfWeek?.includes(dayVal) ?? false
                   return (
                     <button
-                      key={day}
+                      key={dayKey}
                       type="button"
                       onClick={() => toggleDay(dayVal)}
                       className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
@@ -271,13 +273,13 @@ export function SchedulePicker({
                           : 'border-border text-muted-foreground hover:border-primary/50'
                       }`}
                     >
-                      {day}
+                      {t(`settings.schedule.days.${dayKey}`)}
                     </button>
                   )
                 })}
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Time</span>
+                <span className="text-xs text-muted-foreground">{t('settings.schedule.time')}</span>
                 <TimePicker value={value.timeOfDay ?? '09:00'} onChange={updateTime} />
               </div>
             </div>
@@ -288,7 +290,7 @@ export function SchedulePicker({
       {advanced && (
         <div className="flex flex-col gap-2">
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-muted-foreground">Cron Expression</span>
+            <span className="text-[11px] text-muted-foreground">{t('settings.schedule.cronExpression')}</span>
             <input
               type="text"
               className="rounded-md border border-border bg-background px-2 py-1 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
@@ -302,7 +304,7 @@ export function SchedulePicker({
 
       {nextRuns.length > 0 && (
         <div className="text-[11px] text-muted-foreground">
-          → Next: {nextRuns.map(formatNextRun).join(', ')}
+          {t('settings.schedule.nextRuns', { runs: nextRuns.map(formatNextRun).join(', ') })}
         </div>
       )}
     </div>

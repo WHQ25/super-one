@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CalendarClock, Check, ChevronDown, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -90,6 +91,7 @@ function PopoverSelect<T extends string>({
   renderOption?: (option: (typeof options)[number], selected: boolean) => React.ReactNode
   width?: string
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const current = options.find((o) => o.id === value)
 
@@ -102,7 +104,7 @@ function PopoverSelect<T extends string>({
             {renderTrigger ? renderTrigger(current) : (
               <>
                 {current?.icon}
-                <span>{current?.label ?? 'Select'}</span>
+                <span>{current?.label ?? t('settings.automation.select')}</span>
               </>
             )}
             <ChevronDown className={`size-3 text-muted-foreground transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
@@ -153,6 +155,7 @@ export function AutomationDialog({
   projectPath: string
   onSaved?: () => void
 }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState<FormState>(() => initForm(editAutomation))
   const [showAgentSettings, setShowAgentSettings] = useState(false)
 
@@ -196,22 +199,22 @@ export function AutomationDialog({
   const isValid = form.name.trim() && form.prompt.trim()
 
   const claudeModelOptions = [
-    { id: '', label: 'Default' },
+    { id: '', label: t('settings.automation.defaultValue') },
     ...(availableModels ?? []).map((m) => ({ id: m.id, label: m.name, description: m.description })),
   ]
 
   const codexModelOptions = [
-    { id: '', label: 'Default' },
+    { id: '', label: t('settings.automation.defaultValue') },
     ...(cachedCodexModels ?? []).map((m) => ({ id: m.id, label: formatCodexModelLabel(m.id || m.name) })),
   ]
 
   const effortOptions = [
-    { id: '' as EffortLevel | '', label: 'Default' },
+    { id: '' as EffortLevel | '', label: t('settings.automation.defaultValue') },
     ...EFFORT_LEVELS.map((l) => ({ id: l as EffortLevel | '', label: EFFORT_LABELS[l] })),
   ]
 
   const codexReasoningOptions = [
-    { id: '', label: 'Default' },
+    { id: '', label: t('settings.automation.defaultValue') },
     ...(['minimal', 'low', 'medium', 'high', 'xhigh'] as const).map((v) => ({
       id: v,
       label: formatReasoningEffortLabel(v),
@@ -219,8 +222,8 @@ export function AutomationDialog({
   ]
 
   const codexPermOptions = [
-    { id: 'default' as const, label: 'Default', description: 'Sandboxed, request approval' },
-    { id: 'full-access' as const, label: 'Full Access', description: 'No sandbox, no approval needed' },
+    { id: 'default' as const, label: t('settings.automation.defaultValue'), description: t('settings.automation.defaultDesc') },
+    { id: 'full-access' as const, label: t('settings.automation.fullAccess'), description: t('settings.automation.fullAccessDesc') },
   ]
 
   return (
@@ -229,26 +232,26 @@ export function AutomationDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarClock className="size-4 text-muted-foreground" />
-            {editAutomation ? 'Edit Automation' : 'Create Automation'}
+            {editAutomation ? t('settings.automation.editTitle') : t('settings.automation.createTitle')}
           </DialogTitle>
           <DialogDescription>
-            {editAutomation ? 'Update scheduled task configuration' : 'Set up a scheduled task for this project'}
+            {editAutomation ? t('settings.automation.editDescription') : t('settings.automation.createDescription')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="-mx-6 flex max-h-[60vh] flex-col gap-4 overflow-y-auto px-6 py-2">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">Name</span>
+            <span className="text-xs font-medium text-muted-foreground">{t('settings.automation.name')}</span>
             <input
               className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Daily code review"
+              placeholder={t('settings.automation.namePlaceholder')}
             />
           </label>
 
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">Provider</span>
+            <span className="text-xs font-medium text-muted-foreground">{t('settings.automation.provider')}</span>
             <div className="flex gap-1 rounded-lg bg-muted p-1">
               {(['claude', 'codex'] as AgentType[]).map((t) => (
                 <button
@@ -268,12 +271,12 @@ export function AutomationDialog({
           </div>
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">Prompt</span>
+            <span className="text-xs font-medium text-muted-foreground">{t('settings.automation.prompt')}</span>
             <textarea
               className="min-h-[80px] resize-y rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
               value={form.prompt}
               onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
-              placeholder="Review recent commits and suggest improvements..."
+              placeholder={t('settings.automation.promptPlaceholder')}
               rows={3}
             />
           </label>
@@ -286,9 +289,9 @@ export function AutomationDialog({
           {editAutomation && (
             <div className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2">
               <div className="flex flex-col">
-                <span className="text-xs font-medium">Enabled</span>
+                <span className="text-xs font-medium">{t('settings.automation.enabled')}</span>
                 <span className="text-[10px] text-muted-foreground">
-                  {form.enabled ? 'Scheduler will run this automation' : 'Paused — will not run on schedule'}
+                  {form.enabled ? t('settings.automation.enabledOn') : t('settings.automation.enabledOff')}
                 </span>
               </div>
               <Switch
@@ -304,7 +307,7 @@ export function AutomationDialog({
               className="text-xs text-muted-foreground underline"
               onClick={() => setShowAgentSettings(!showAgentSettings)}
             >
-              {showAgentSettings ? 'Hide' : 'Show'} agent settings
+              {showAgentSettings ? t('settings.automation.agentSettingsHide') : t('settings.automation.agentSettingsShow')}
             </button>
 
             {showAgentSettings && (
@@ -312,28 +315,28 @@ export function AutomationDialog({
                 {form.agentType === 'claude' && (
                   <>
                     <PopoverSelect
-                      label="Model"
+                      label={t('settings.automation.model')}
                       value={form.claudeConfig.model ?? ''}
                       options={claudeModelOptions}
                       onChange={(v) => updateClaude({ model: v || undefined })}
                       width="w-64"
                     />
                     <PopoverSelect
-                      label="Effort"
+                      label={t('settings.automation.effort')}
                       value={(form.claudeConfig.effort ?? '') as string}
                       options={effortOptions as { id: string; label: string }[]}
                       onChange={(v) => updateClaude({ effort: (v || undefined) as EffortLevel | undefined })}
                     />
                     <PopoverSelect
-                      label="Permission"
+                      label={t('settings.automation.permission')}
                       value={form.claudeConfig.permissionMode ?? 'bypassPermissions'}
-                      options={permissionModes.map((m) => ({ ...m, description: m.description }))}
+                      options={permissionModes.map((m) => ({ ...m, label: t(`chat.permissionModes.${m.id}.label`), description: t(`chat.permissionModes.${m.id}.description`) }))}
                       onChange={(v) => updateClaude({ permissionMode: v as ClaudeRunConfig['permissionMode'] })}
                     />
                     <PopoverSelect
-                      label="Sandbox"
+                      label={t('settings.automation.sandbox')}
                       value={form.claudeConfig.sandboxMode ?? 'on'}
-                      options={sandboxModes.map((m) => ({ ...m, description: m.description }))}
+                      options={sandboxModes.map((m) => ({ ...m, label: t(`chat.sandboxModes.${m.id}.label`), description: t(`chat.sandboxModes.${m.id}.description`) }))}
                       onChange={(v) => updateClaude({ sandboxMode: v as ClaudeRunConfig['sandboxMode'] })}
                     />
                   </>
@@ -342,20 +345,20 @@ export function AutomationDialog({
                 {form.agentType === 'codex' && (
                   <>
                     <PopoverSelect
-                      label="Model"
+                      label={t('settings.automation.model')}
                       value={form.codexConfig.model ?? ''}
                       options={codexModelOptions}
                       onChange={(v) => updateCodex({ model: v || undefined })}
                       width="w-64"
                     />
                     <PopoverSelect
-                      label="Reasoning"
+                      label={t('settings.automation.reasoning')}
                       value={(form.codexConfig.reasoningEffort ?? '') as string}
                       options={codexReasoningOptions as { id: string; label: string }[]}
                       onChange={(v) => updateCodex({ reasoningEffort: (v || undefined) as CodexRunConfig['reasoningEffort'] })}
                     />
                     <PopoverSelect
-                      label="Permission"
+                      label={t('settings.automation.permission')}
                       value={form.codexConfig.permissionPreset ?? 'default'}
                       options={codexPermOptions}
                       onChange={(v) => updateCodex({ permissionPreset: v as CodexRunConfig['permissionPreset'] })}
@@ -371,13 +374,13 @@ export function AutomationDialog({
           <div>
             {editAutomation && (
               <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleDelete}>
-                <Trash2 className="size-3.5" /> Delete
+                <Trash2 className="size-3.5" /> {t('resources.providerDialog.delete')}
               </Button>
             )}
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!isValid}>{editAutomation ? 'Save' : 'Create'}</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+            <Button onClick={handleSubmit} disabled={!isValid}>{editAutomation ? t('settings.automation.save') : t('settings.automation.create')}</Button>
           </div>
         </DialogFooter>
       </DialogContent>

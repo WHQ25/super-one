@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -45,6 +46,7 @@ function destLabel(destination: string): string {
 }
 
 function SuggestionContent({ s }: { s: Record<string, unknown> }) {
+  const { t } = useTranslation()
   const type = s.type as string | undefined
   const destination = (s.destination as string) ?? 'session'
   const rules = s.rules as Array<{ toolName?: string; ruleContent?: string }> | undefined
@@ -73,7 +75,7 @@ function SuggestionContent({ s }: { s: Record<string, unknown> }) {
           Switch to{' '}
           <span className={`inline-flex items-center gap-0.5 font-medium ${mode.color}`}>
             {mode.icon}
-            {mode.label}
+            {t(`chat.permissionModes.${mode.id}.label`)}
           </span>
         </>
       )

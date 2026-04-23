@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import type { AppSettings, AppSettingsPatch, EffortLevel, PermissionMode, SandboxMode } from '../shared/agent-types'
+import type { AppSettings, AppSettingsPatch, EffortLevel, Locale, PermissionMode, SandboxMode } from '../shared/agent-types'
 
 export type { AppSettings, AppSettingsPatch }
 
@@ -10,6 +10,7 @@ type CodexPref = AppSettings['agentPreference']['codex']
 
 const defaults: AppSettings = {
   analyticsEnabled: true,
+  locale: '',
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -22,6 +23,10 @@ const defaults: AppSettings = {
       defaultReasoningEffort: '',
     },
   },
+}
+
+function isLocale(value: unknown): value is Locale {
+  return value === 'en' || value === 'zh'
 }
 
 function isEffortLevel(value: unknown): value is EffortLevel {
@@ -96,6 +101,7 @@ export function readAppSettings(): AppSettings {
     const data = JSON.parse(readFileSync(getSettingsPath(), 'utf-8'))
     return {
       analyticsEnabled: typeof data.analyticsEnabled === 'boolean' ? data.analyticsEnabled : defaults.analyticsEnabled,
+      locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
@@ -104,6 +110,7 @@ export function readAppSettings(): AppSettings {
   } catch {
     return {
       analyticsEnabled: defaults.analyticsEnabled,
+      locale: defaults.locale,
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
@@ -116,6 +123,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
   const current = readAppSettings()
   const merged: AppSettings = {
     analyticsEnabled: patch.analyticsEnabled ?? current.analyticsEnabled,
+    locale: patch.locale ?? current.locale,
     agentPreference: {
       claude: {
         ...current.agentPreference.claude,

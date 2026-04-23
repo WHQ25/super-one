@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Plus, ChevronRight, Clipboard, X, ArrowLeft, Check, Library, RefreshCw, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -44,6 +45,7 @@ function ServerCard({
   interactive?: boolean
   statusMode?: 'live' | 'managed'
 }) {
+  const { t } = useTranslation()
   const { selectMcp, toggleMcpConfig, checkMcpServers } = useSettingsStore()
   const [reconnecting, setReconnecting] = useState(false)
   const isManaged = statusMode === 'managed'
@@ -58,14 +60,14 @@ function ServerCard({
     ? (config.disabled ? 'bg-red-500' : 'bg-green-500')
     : (isConnected ? 'bg-green-500' : isPending ? 'bg-yellow-500' : 'bg-red-500')
   const statusText = config.disabled
-    ? 'disabled'
+    ? t('resources.mcp.statusDisabled')
     : isManaged
       ? config.type
       : isPending
-        ? 'connecting...'
+        ? t('resources.mcp.statusConnecting')
         : isFailed && status?.error
           ? status.error
-          : `${toolCount} tool${toolCount !== 1 ? 's' : ''}`
+          : t('resources.mcp.toolsCount', { count: toolCount })
 
   const handleReconnect = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -251,6 +253,7 @@ function extractFromRaw(name: string | undefined, raw: Record<string, unknown>):
 }
 
 function AddServerForm({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation()
   const { saveMcpConfig } = useSettingsStore()
   const [name, setName] = useState('')
   const [type, setType] = useState<'stdio' | 'http' | 'sse'>('stdio')
@@ -270,7 +273,7 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
       const text = await navigator.clipboard.readText()
       const parsed = parseClipboardConfig(text)
       if (!parsed) {
-        setError('Clipboard does not contain a recognized MCP config')
+        setError(t('resources.mcp.form.clipboardInvalid'))
         return
       }
       if (parsed.name) setName(parsed.name)
@@ -282,7 +285,7 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
       if (parsed.headers) setHeaders(parsed.headers)
       setError('')
     } catch {
-      setError('Failed to read clipboard')
+      setError(t('resources.mcp.form.clipboardFailed'))
     }
   }
 
@@ -309,7 +312,7 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
       try {
         verifiedHeaders = await window.app.oauthAuthorize(url.trim(), kvToRecord(headers), type)
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Connection verification failed')
+        setError(e instanceof Error ? e.message : t('resources.mcp.form.verificationFailed'))
         setAuthorizing(false)
         return
       }
@@ -333,19 +336,19 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
   return (
     <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-medium">Add MCP Server</h3>
+        <h3 className="text-sm font-medium">{t('resources.mcp.form.title')}</h3>
         <Button type="button" variant="ghost" size="sm" onClick={handlePaste} className="gap-1.5 text-xs">
           <Clipboard className="size-3.5" />
-          Paste
+          {t('resources.mcp.form.paste')}
         </Button>
       </div>
       <div className="space-y-3">
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Name</label>
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="my-server" />
+          <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.name')}</label>
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder={t('resources.mcp.form.namePlaceholder')} />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Type</label>
+          <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.type')}</label>
           <div className="flex gap-2">
             {(['stdio', 'http', 'sse'] as const).map((t) => (
               <button key={t} type="button" onClick={() => setType(t)} className={cn('rounded-md px-3 py-1 text-xs transition-colors', type === t ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground')}>
@@ -357,16 +360,16 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
         {type === 'stdio' ? (
           <>
             <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Command</label>
-              <input className={inputClass} value={command} onChange={(e) => setCommand(e.target.value)} placeholder="npx" />
+              <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.command')}</label>
+              <input className={inputClass} value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t('resources.mcp.form.commandPlaceholder')} />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Args (space-separated)</label>
-              <input className={inputClass} value={args} onChange={(e) => setArgs(e.target.value)} placeholder="-y @modelcontextprotocol/server-filesystem" />
+              <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.args')}</label>
+              <input className={inputClass} value={args} onChange={(e) => setArgs(e.target.value)} placeholder={t('resources.mcp.form.argsPlaceholder')} />
             </div>
             <div>
               <div className="mb-1 flex items-center gap-1">
-                <label className="text-xs text-muted-foreground">Environment Variables</label>
+                <label className="text-xs text-muted-foreground">{t('resources.mcp.form.env')}</label>
                 <button type="button" onClick={() => setEnv([...env, { key: '', value: '' }])} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
                   <Plus className="size-3.5" />
                 </button>
@@ -377,12 +380,12 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <div>
-              <label className="mb-1 block text-xs text-muted-foreground">URL</label>
-              <input className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://api.example.com/mcp" />
+              <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.url')}</label>
+              <input className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('resources.mcp.form.urlPlaceholder')} />
             </div>
             <div>
               <div className="mb-1 flex items-center gap-1">
-                <label className="text-xs text-muted-foreground">Headers</label>
+                <label className="text-xs text-muted-foreground">{t('resources.mcp.form.headers')}</label>
                 <button type="button" onClick={() => setHeaders([...headers, { key: '', value: '' }])} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
                   <Plus className="size-3.5" />
                 </button>
@@ -392,7 +395,7 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
           </>
         )}
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Scope</label>
+          <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.scope')}</label>
           <div className="flex gap-2">
             {(['user', 'project'] as const).map((s) => (
               <button key={s} type="button" onClick={() => setScope(s)} className={cn('rounded-md px-3 py-1 text-xs transition-colors', scope === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground')}>
@@ -404,16 +407,16 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
         {error && <p className="text-xs text-destructive">{error}</p>}
         <div className="flex items-center justify-end gap-2">
           {!verified && !adding && (
-            <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={authorizing}>Cancel</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={authorizing}>{t('common.cancel')}</Button>
           )}
           {verified && (
             <span className="flex items-center gap-1 text-xs text-green-500">
               <Check className="size-3.5" />
-              Verified
+              {t('resources.mcp.form.verified')}
             </span>
           )}
           <Button type="submit" size="sm" disabled={!isValid || authorizing || adding}>
-            {authorizing ? 'Verifying...' : adding ? 'Adding Server...' : 'Add'}
+            {authorizing ? t('resources.mcp.form.verifying') : adding ? t('resources.mcp.form.adding') : t('resources.mcp.form.add')}
           </Button>
         </div>
       </div>
@@ -422,6 +425,7 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
 }
 
 function LibraryView({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation()
   const { mcpLibrary, mcpConfigs, saveMcpConfig, fetchMcpLibrary, deleteMcpLibraryEntry } = useSettingsStore()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [scope, setScope] = useState<'user' | 'project'>('user')
@@ -484,10 +488,10 @@ function LibraryView({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
             <ArrowLeft className="size-4" />
           </button>
-          <h3 className="text-sm font-medium">Add from Library</h3>
+          <h3 className="text-sm font-medium">{t('resources.mcp.libraryView.title')}</h3>
         </div>
         <p className="text-sm text-muted-foreground text-center py-6">
-          No servers in library yet. Servers are saved automatically after a successful connection.
+          {t('resources.mcp.libraryView.empty')}
         </p>
       </div>
     )
@@ -499,7 +503,7 @@ function LibraryView({ onClose }: { onClose: () => void }) {
         <button onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-4" />
         </button>
-        <h3 className="text-sm font-medium">Add from Library</h3>
+        <h3 className="text-sm font-medium">{t('resources.mcp.libraryView.title')}</h3>
       </div>
 
       {/* Grid */}
@@ -535,7 +539,7 @@ function LibraryView({ onClose }: { onClose: () => void }) {
                 </div>
               )}
               {isAdded && (
-                <span className="absolute right-1.5 top-1.5 text-[10px] text-muted-foreground">Added</span>
+                <span className="absolute right-1.5 top-1.5 text-[10px] text-muted-foreground">{t('resources.mcp.libraryView.added')}</span>
               )}
               <McpIcon name={entry.name} meta={{ name: entry.name, icons: entry.icons }} />
               <span className="text-xs font-medium truncate w-full">{entry.name}</span>
@@ -569,10 +573,10 @@ function LibraryView({ onClose }: { onClose: () => void }) {
             onClick={() => setDeleteConfirmOpen(true)}
           >
             <Trash2 className="size-4" />
-            Delete {selectedEntries.length > 0 ? selectedEntries.length : ''}
+            {t('resources.mcp.libraryView.deleteButton')} {selectedEntries.length > 0 ? selectedEntries.length : ''}
           </Button>
           <Button size="sm" disabled={addableEntries.length === 0 || adding || deleting} onClick={handleAdd}>
-            {adding ? 'Adding...' : `Add ${addableEntries.length} server${addableEntries.length !== 1 ? 's' : ''}`}
+            {adding ? t('resources.mcp.libraryView.adding') : t('resources.mcp.libraryView.addCount', { count: addableEntries.length })}
           </Button>
         </div>
       </div>
@@ -580,15 +584,15 @@ function LibraryView({ onClose }: { onClose: () => void }) {
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent showCloseButton={false} className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete MCPs from Library?</DialogTitle>
+            <DialogTitle>{t('resources.mcp.libraryView.deleteTitle')}</DialogTitle>
             <DialogDescription>
-              This will remove <span className="font-medium text-foreground">{selectedEntries.length}</span> selected server{selectedEntries.length !== 1 ? 's' : ''} from MCP library.
+              {t('resources.mcp.libraryView.deleteDescription', { count: selectedEntries.length })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleting || selectedEntries.length === 0}>
-              {deleting ? 'Deleting...' : 'Delete'}
+              {deleting ? t('resources.mcp.libraryView.deleting') : t('resources.mcp.libraryView.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -598,6 +602,7 @@ function LibraryView({ onClose }: { onClose: () => void }) {
 }
 
 function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onToggle: (name: string, disabled: boolean) => void }) {
+  const { t } = useTranslation()
   const { selectMcp } = useSettingsStore()
   const isDisabled = server.status === 'disabled'
   const isConnected = server.status === 'connected'
@@ -611,7 +616,7 @@ function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onTog
           className="mb-3 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="size-3" />
-          Back
+          {t('common.back')}
         </button>
         <div className="flex items-center gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-base font-medium uppercase text-muted-foreground">
@@ -630,7 +635,7 @@ function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onTog
 
       <div className="rounded-lg border border-border bg-card p-4">
         <h3 className="mb-3 text-sm font-medium">
-          Tools
+          {t('resources.mcp.tools')}
           {server.toolCount != null && (
             <span className="ml-2 text-xs text-muted-foreground">({server.toolCount})</span>
           )}
@@ -648,7 +653,7 @@ function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onTog
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {isConnected ? 'No tools available' : isDisabled ? 'Enable the server to see available tools' : 'Connect the server to see available tools'}
+            {isConnected ? t('resources.mcp.noToolsConnected') : isDisabled ? t('resources.mcp.noToolsDisabled') : t('resources.mcp.noToolsDisconnected')}
           </p>
         )}
       </div>
@@ -657,15 +662,16 @@ function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onTog
 }
 
 function ClaudeAiSection({ servers, loading, onToggle }: { servers: McpServerInfo[]; loading?: boolean; onToggle: (name: string, disabled: boolean) => void }) {
+  const { t } = useTranslation()
   const { selectMcp } = useSettingsStore()
   if (servers.length === 0 && !loading) return null
   return (
     <div>
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Claude.ai</h3>
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('resources.mcp.claudeAiTitle')}</h3>
       {loading && servers.length === 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-4">
           <RefreshCw className="size-3.5 animate-spin text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">Fetching claude.ai servers...</span>
+          <span className="text-xs text-muted-foreground">{t('resources.mcp.claudeAiFetching')}</span>
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
@@ -674,7 +680,7 @@ function ClaudeAiSection({ servers, loading, onToggle }: { servers: McpServerInf
           const isConnected = server.status === 'connected'
           const isPending = server.status === 'pending'
           const dotColor = isConnected ? 'bg-green-500' : isPending ? 'bg-yellow-500' : isDisabled ? 'bg-red-500' : 'bg-red-500'
-          const statusText = isDisabled ? 'disabled' : isPending ? 'connecting...' : isConnected ? `${server.toolCount ?? 0} tool${(server.toolCount ?? 0) !== 1 ? 's' : ''}` : server.error ?? 'failed'
+          const statusText = isDisabled ? t('resources.mcp.statusDisabled') : isPending ? t('resources.mcp.statusConnecting') : isConnected ? t('resources.mcp.toolsCount', { count: server.toolCount ?? 0 }) : server.error ?? t('resources.mcp.statusFailed')
           return (
             <div
               key={server.name}
@@ -739,6 +745,7 @@ function ServerSection({
 }
 
 export function McpPage() {
+  const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, codexMcpConfigs, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchCodexMcpConfigs, selectMcp, toggleMcpConfig } = useSettingsStore()
@@ -798,26 +805,26 @@ export function McpPage() {
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">MCP Servers</h2>
-          <p className="text-sm text-muted-foreground">Manage Model Context Protocol server configurations</p>
+          <h2 className="text-lg font-semibold">{t('resources.mcp.title')}</h2>
+          <p className="text-sm text-muted-foreground">{t('resources.mcp.subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <ProjectSelector mode="switch" />
           {!isCodex && (
             <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing}>
               <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-              Refresh
+              {t('resources.mcp.refresh')}
             </Button>
           )}
           {!isCodex && mcpLibrary.length > 0 && (
             <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}>
               <Library className="size-4" />
-              Library
+              {t('resources.mcp.library')}
             </Button>
           )}
           <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}>
             <Plus className="size-4" />
-            Add Server
+            {t('resources.mcp.add')}
           </Button>
         </div>
       </div>
@@ -836,23 +843,23 @@ export function McpPage() {
 
       {!hasAnyServer ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">No MCP servers configured</p>
+          <p className="text-sm text-muted-foreground">{t('resources.mcp.empty')}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {isCodex ? 'User: ~/.codex/config.toml | Project: .codex/config.toml' : 'User: ~/.claude.json | Project: .claude/settings.json, .mcp.json'}
+            {isCodex ? t('resources.mcp.emptyHintCodex') : t('resources.mcp.emptyHintClaude')}
           </p>
         </div>
       ) : (
         <div className="space-y-6">
           <ClaudeAiSection servers={claudeaiServers} loading={checking} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />
           <ServerSection
-            title="User"
+            title={t('resources.sectionUser')}
             configs={userConfigs}
             mcpStatus={isCodex ? codexCardStatus : mcpStatus}
             mcpMeta={isCodex ? {} : mcpMeta}
             statusMode={isCodex ? 'managed' : 'live'}
           />
           <ServerSection
-            title="Project"
+            title={t('resources.sectionProject')}
             configs={projectConfigs}
             mcpStatus={isCodex ? codexCardStatus : mcpStatus}
             mcpMeta={isCodex ? {} : mcpMeta}

@@ -18,6 +18,7 @@ import {
   ArrowUpCircle,
   RefreshCw,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
@@ -250,20 +251,21 @@ function DetailLink({ label, href }: { label: string; href?: string }) {
 }
 
 function PluginAppsList({ apps }: { apps: PluginAppSummary[] }) {
+  const { t } = useTranslation()
   if (apps.length === 0) return null
   return (
-    <DetailGroup title="Apps">
+    <DetailGroup title={t('resources.plugins.detail.apps')}>
       <div className="flex flex-col gap-2">
         {apps.map((app) => (
           <div key={app.id} className="rounded-md border border-border bg-background p-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{app.name}</span>
-              {app.needsAuth && <MetaPill>Needs auth</MetaPill>}
+              {app.needsAuth && <MetaPill>{t('resources.plugins.detail.needsAuth')}</MetaPill>}
             </div>
             {app.description && <p className="mt-1 text-xs text-muted-foreground">{app.description}</p>}
             {app.installUrl && (
               <div className="mt-2">
-                <DetailLink label="Install" href={app.installUrl} />
+                <DetailLink label={t('resources.plugins.detail.install')} href={app.installUrl} />
               </div>
             )}
           </div>
@@ -274,15 +276,16 @@ function PluginAppsList({ apps }: { apps: PluginAppSummary[] }) {
 }
 
 function PluginSkillsList({ skills }: { skills: PluginSkillSummary[] }) {
+  const { t } = useTranslation()
   if (skills.length === 0) return null
   return (
-    <DetailGroup title="Skills">
+    <DetailGroup title={t('resources.plugins.detail.skills')}>
       <div className="flex flex-col gap-2">
         {skills.map((skill) => (
           <div key={skill.path} className="rounded-md border border-border bg-background p-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{skill.displayName || skill.name}</span>
-              {!skill.enabled && <MetaPill>Disabled</MetaPill>}
+              {!skill.enabled && <MetaPill>{t('resources.plugins.detail.disabled')}</MetaPill>}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">{skill.shortDescription || skill.description}</p>
           </div>
@@ -293,10 +296,11 @@ function PluginSkillsList({ skills }: { skills: PluginSkillSummary[] }) {
 }
 
 function PluginScreenshots({ screenshots }: { screenshots: string[] }) {
+  const { t } = useTranslation()
   const imageUrls = useMemo(() => resolveAssetUrls(screenshots), [screenshots])
   if (imageUrls.length === 0) return null
   return (
-    <DetailGroup title="Screenshots">
+    <DetailGroup title={t('resources.plugins.detail.screenshots')}>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {imageUrls.map((src) => (
           <img
@@ -322,6 +326,7 @@ function PluginDetailsPanel({
   skills?: PluginSkillSummary[]
   mcpServers?: string[]
 }) {
+  const { t } = useTranslation()
   const longDescription = plugin.longDescription && plugin.longDescription !== plugin.description
     ? plugin.longDescription
     : null
@@ -334,7 +339,7 @@ function PluginDetailsPanel({
     'version' in plugin && plugin.version ? `Version ${plugin.version}` : null,
     plugin.category,
     plugin.brandColor ? `Brand ${plugin.brandColor}` : null,
-    plugin.enabled === false ? 'Disabled' : null,
+    plugin.enabled === false ? t('resources.plugins.detail.disabled') : null,
     installPolicy ? `Install ${installPolicy}` : null,
     authPolicy ? `Auth ${authPolicy}` : null,
   ].filter((value): value is string => !!value)
@@ -342,13 +347,13 @@ function PluginDetailsPanel({
   return (
     <div className="space-y-4 p-3">
       {longDescription && (
-        <DetailGroup title="Overview">
+        <DetailGroup title={t('resources.plugins.detail.overview')}>
           <p className="text-sm text-muted-foreground">{longDescription}</p>
         </DetailGroup>
       )}
 
       {metadata.length > 0 && (
-        <DetailGroup title="Metadata">
+        <DetailGroup title={t('resources.plugins.detail.metadata')}>
           <div className="flex flex-wrap gap-1.5">
             {metadata.map((value) => (
               <MetaPill key={value}>{value}</MetaPill>
@@ -360,7 +365,7 @@ function PluginDetailsPanel({
       {(capabilities.length > 0 || mcpServers?.length) && (
         <div className="grid gap-3 md:grid-cols-2">
           {capabilities.length > 0 && (
-            <DetailGroup title="Capabilities">
+            <DetailGroup title={t('resources.plugins.detail.capabilities')}>
               <div className="flex flex-wrap gap-1.5">
                 {capabilities.map((capability) => (
                   <MetaPill key={capability}>{capability}</MetaPill>
@@ -369,7 +374,7 @@ function PluginDetailsPanel({
             </DetailGroup>
           )}
           {(mcpServers?.length ?? 0) > 0 && (
-            <DetailGroup title="MCP Servers">
+            <DetailGroup title={t('resources.plugins.detail.mcpServers')}>
               <div className="flex flex-wrap gap-1.5">
                 {mcpServers?.map((server) => (
                   <MetaPill key={server}>{server}</MetaPill>
@@ -381,17 +386,17 @@ function PluginDetailsPanel({
       )}
 
       {(plugin.websiteUrl || plugin.privacyPolicyUrl || plugin.termsOfServiceUrl) && (
-        <DetailGroup title="Links">
+        <DetailGroup title={t('resources.plugins.detail.links')}>
           <div className="flex flex-wrap gap-2">
-            <DetailLink label="Website" href={plugin.websiteUrl} />
-            <DetailLink label="Privacy" href={plugin.privacyPolicyUrl} />
-            <DetailLink label="Terms" href={plugin.termsOfServiceUrl} />
+            <DetailLink label={t('resources.plugins.detail.website')} href={plugin.websiteUrl} />
+            <DetailLink label={t('resources.plugins.detail.privacy')} href={plugin.privacyPolicyUrl} />
+            <DetailLink label={t('resources.plugins.detail.terms')} href={plugin.termsOfServiceUrl} />
           </div>
         </DetailGroup>
       )}
 
       {prompts.length > 0 && (
-        <DetailGroup title="Starter Prompts">
+        <DetailGroup title={t('resources.plugins.detail.starterPrompts')}>
           <div className="flex flex-wrap gap-2">
             {prompts.map((prompt) => (
               <span key={prompt} className="rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground">
@@ -509,24 +514,25 @@ function FileTree({
 // --- Content badges ---
 
 const BADGE_CONFIG = [
-  { key: 'hasCommands', label: 'Commands', icon: Terminal },
-  { key: 'hasAgents', label: 'Agents', icon: Bot },
-  { key: 'hasSkills', label: 'Skills', icon: Puzzle },
-  { key: 'hasHooks', label: 'Hooks', icon: Webhook },
-  { key: 'hasMcpServers', label: 'MCP', icon: Server },
+  { key: 'hasCommands', labelKey: 'resources.plugins.capability.commands', icon: Terminal },
+  { key: 'hasAgents', labelKey: 'resources.plugins.capability.agents', icon: Bot },
+  { key: 'hasSkills', labelKey: 'resources.plugins.capability.skills', icon: Puzzle },
+  { key: 'hasHooks', labelKey: 'resources.plugins.capability.hooks', icon: Webhook },
+  { key: 'hasMcpServers', labelKey: 'resources.plugins.capability.mcp', icon: Server },
 ] as const
 
 function ContentBadges({ plugin }: { plugin: PluginInfo }) {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-wrap gap-1">
-      {BADGE_CONFIG.map(({ key, label, icon: Icon }) =>
+      {BADGE_CONFIG.map(({ key, labelKey, icon: Icon }) =>
         plugin[key] ? (
           <span
             key={key}
             className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
           >
             <Icon className="size-2.5" />
-            {label}
+            {t(labelKey)}
           </span>
         ) : null
       )}
@@ -815,6 +821,7 @@ function MarketplaceDetailView({
   canUpdateMarketplace: boolean
   allowProjectInstall: boolean
 }) {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [updating, setUpdating] = useState(false)
 
@@ -862,7 +869,7 @@ function MarketplaceDetailView({
                 disabled={updating}
               >
                 <RefreshCw className={cn('size-3.5', updating && 'animate-spin')} />
-                {updating ? 'Updating...' : 'Update'}
+                {updating ? t('resources.plugins.updating') : t('resources.plugins.update')}
               </Button>
             )}
           </div>
@@ -888,7 +895,7 @@ function MarketplaceDetailView({
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search plugins..."
+          placeholder={t('resources.plugins.searchPlaceholder')}
           className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:border-ring"
         />
       </div>
@@ -896,7 +903,7 @@ function MarketplaceDetailView({
       {filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">
-            {search ? 'No plugins match your search' : 'No plugins in this marketplace'}
+            {search ? t('resources.plugins.searchNoMatch') : t('resources.plugins.marketplaceEmpty')}
           </p>
         </div>
       ) : (
@@ -915,6 +922,7 @@ function MarketplaceDetailView({
 type PluginsTab = 'marketplace' | 'installed'
 
 export function PluginsPage() {
+  const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const {
@@ -1017,9 +1025,9 @@ export function PluginsPage() {
     <div className="mx-auto max-w-2xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Plugins</h2>
+          <h2 className="text-lg font-semibold">{t('resources.plugins.title')}</h2>
           <p className="text-sm text-muted-foreground">
-            {isCodex ? 'Browse and manage Codex plugins' : 'Browse and manage Claude Code plugins'}
+            {isCodex ? t('resources.plugins.subtitleCodex') : t('resources.plugins.subtitleClaude')}
           </p>
         </div>
         <ProjectSelector mode="switch" />
@@ -1028,20 +1036,20 @@ export function PluginsPage() {
       {/* Tabs */}
       <div className="mb-4 flex gap-1 rounded-lg bg-muted p-1">
         {([
-          { id: 'marketplace' as const, label: 'Marketplaces' },
-          { id: 'installed' as const, label: `Installed (${plugins.length})` },
-        ]).map((t) => (
+          { id: 'marketplace' as const, label: t('resources.plugins.tabMarketplace') },
+          { id: 'installed' as const, label: t('resources.plugins.tabInstalled', { count: plugins.length }) },
+        ]).map((tabEntry) => (
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
+            key={tabEntry.id}
+            onClick={() => setTab(tabEntry.id)}
             className={cn(
               'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              tab === t.id
+              tab === tabEntry.id
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >
-            {t.label}
+            {tabEntry.label}
           </button>
         ))}
       </div>
@@ -1050,9 +1058,9 @@ export function PluginsPage() {
       {tab === 'marketplace' && (
         marketplaceSummaries.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
-              <p className="text-sm text-muted-foreground">No marketplaces found</p>
+              <p className="text-sm text-muted-foreground">{t('resources.plugins.emptyMarketplace')}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {isCodex ? 'Install a marketplace with: codex marketplace add <source>' : 'Install a marketplace with: claude plugin marketplace add'}
+                {isCodex ? t('resources.plugins.emptyMarketplaceHintCodex') : t('resources.plugins.emptyMarketplaceHintClaude')}
               </p>
             </div>
           ) : (
@@ -1073,9 +1081,9 @@ export function PluginsPage() {
         <div>
           {plugins.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-8 text-center">
-              <p className="text-sm text-muted-foreground">No plugins installed</p>
+              <p className="text-sm text-muted-foreground">{t('resources.plugins.emptyInstalled')}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Browse the Marketplace to install {isCodex ? 'Codex' : 'Claude Code'} plugins
+                {isCodex ? t('resources.plugins.emptyInstalledHintCodex') : t('resources.plugins.emptyInstalledHintClaude')}
               </p>
             </div>
           ) : (
@@ -1083,7 +1091,7 @@ export function PluginsPage() {
               {!isCodex && updatablePlugins.length > 0 && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">
-                    {updatablePlugins.length} update{updatablePlugins.length !== 1 ? 's' : ''} available
+                    {t('resources.plugins.updateAvailable', { count: updatablePlugins.length })}
                   </span>
                   <Button
                     size="sm"
@@ -1093,12 +1101,12 @@ export function PluginsPage() {
                     className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10"
                   >
                     <ArrowUpCircle className="size-3.5" />
-                    {updatingAll ? 'Updating...' : 'Update All'}
+                    {updatingAll ? t('resources.plugins.updating') : t('resources.plugins.updateAll')}
                   </Button>
                 </div>
               )}
-              <PluginSection title="User" plugins={userPlugins} />
-              <PluginSection title="Project" plugins={projectPlugins} />
+              <PluginSection title={t('resources.sectionUser')} plugins={userPlugins} />
+              <PluginSection title={t('resources.sectionProject')} plugins={projectPlugins} />
             </div>
           )}
         </div>

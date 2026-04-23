@@ -41,6 +41,7 @@ describe('app-settings-service', () => {
   }
   const defaultSettings = {
     analyticsEnabled: true,
+    locale: '',
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
@@ -71,6 +72,7 @@ describe('app-settings-service', () => {
       }))
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
+        locale: '',
         agentPreference: {
           claude: {
             defaultModel: 'claude-sonnet-4-6',
@@ -127,6 +129,7 @@ describe('app-settings-service', () => {
       }))
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
+        locale: '',
         agentPreference: {
           claude: defaultClaude,
           codex: {

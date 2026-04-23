@@ -1,4 +1,5 @@
 import { Box, PackageOpen, ChevronDown } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useState } from 'react'
@@ -44,19 +45,21 @@ interface SandboxModeSelectorProps {
 }
 
 export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const sandboxInfo = useActiveSession((s) => s.sandboxInfo)
   const setSandboxMode = useChatStore((s) => s.setSandboxMode)
 
   const currentMode = getSandboxMode(sandboxInfo)
   const current = sandboxModes.find((m) => m.id === currentMode) ?? sandboxModes[1]
+  const currentLabel = t(`chat.sandboxModes.${current.id}.label`)
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${current.color} ${current.hoverBg}`}
-          title={current.label}
+          title={currentLabel}
         >
           {current.icon}
           {!compact && <span>{current.triggerLabel}</span>}
@@ -68,7 +71,7 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
         side="top"
         className="w-56 border-border bg-card p-1"
       >
-        <div className="px-2 py-1.5 text-xs text-muted-foreground">Sandbox Mode</div>
+        <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('chat.sandboxModeTitle')}</div>
         {sandboxModes.map((mode) => (
           <button
             key={mode.id}
@@ -84,9 +87,9 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
           >
             <div className={`flex items-center gap-1.5 font-medium ${mode.color}`}>
               {mode.icon}
-              {mode.label}
+              {t(`chat.sandboxModes.${mode.id}.label`)}
             </div>
-            <div className="mt-0.5 text-[10px] text-muted-foreground">{mode.description}</div>
+            <div className="mt-0.5 text-[10px] text-muted-foreground">{t(`chat.sandboxModes.${mode.id}.description`)}</div>
           </button>
         ))}
       </PopoverContent>

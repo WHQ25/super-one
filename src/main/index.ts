@@ -59,6 +59,7 @@ import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
+import { applyLocale, getSystemLocale, initMainI18n } from './i18n'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest } from '../shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
@@ -1277,7 +1278,14 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_GET, () => readAppSettings())
-  ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => saveAppSettings(patch))
+  ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, async (_e, patch) => {
+    const result = saveAppSettings(patch)
+    if (result.locale) {
+      await applyLocale(result.locale)
+    }
+    return result
+  })
+  ipcMain.handle(AgentIpcChannels.APP_SYSTEM_LOCALE, () => getSystemLocale())
 
   ipcMain.handle(AgentIpcChannels.SET_FAST_MODE, (_e, enabled: boolean) => {
     const settingsPath = join(homedir(), '.claude', 'settings.json')
@@ -1586,7 +1594,7 @@ function registerIpcHandlers(): void {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   log.info(
     '[startup] appVersion=%s electron=%s platform=%s arch=%s logPath=%s',
     app.getVersion(),
@@ -1595,6 +1603,7 @@ app.whenReady().then(() => {
     process.arch,
     log.transports.file.getFile().path,
   )
+  await initMainI18n()
   const LOCAL_FILE_MIME: Record<string, string> = {
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
     svg: 'image/svg+xml', webp: 'image/webp', ico: 'image/x-icon', bmp: 'image/bmp',

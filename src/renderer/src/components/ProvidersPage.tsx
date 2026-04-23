@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Check, Plus, Server } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,7 @@ import { ProviderLabel } from './ProviderLabel'
 
 
 function ConnectButton({ isActive, onClick, label }: { isActive: boolean; onClick: () => void; label?: string }) {
+  const { t } = useTranslation()
   return (
     <Button
       variant="outline"
@@ -17,7 +19,7 @@ function ConnectButton({ isActive, onClick, label }: { isActive: boolean; onClic
       onClick={(e) => { e.stopPropagation(); if (!isActive) onClick() }}
     >
       {label && <span className="mr-1 text-[10px] text-muted-foreground">{label}</span>}
-      {isActive ? 'Connected' : 'Connect'} {isActive && <Check className="size-3.5" />}
+      {isActive ? t('resources.providers.connected') : t('resources.providers.connect')} {isActive && <Check className="size-3.5" />}
     </Button>
   )
 }
@@ -51,6 +53,7 @@ function ProviderRow({
 }
 
 export function ProvidersPage() {
+  const { t } = useTranslation()
   const { providers, fetchProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } = useSettingsStore()
   const settingsProvider = useAppStore((s) => s.settingsProvider) as AgentType
 
@@ -99,25 +102,27 @@ export function ProvidersPage() {
     settingsProvider === 'claude' ? p.is_active_claude === 1 : p.is_active_codex === 1
   )
 
-  const defaultLabel = settingsProvider === 'codex' ? 'Codex (Default)' : 'Claude Code (Default)'
+  const defaultLabel = settingsProvider === 'codex'
+    ? t('resources.providers.defaultLabelCodex')
+    : t('resources.providers.defaultLabelClaude')
   const defaultDesc = settingsProvider === 'codex'
-    ? 'Uses Codex session auth (ChatGPT login or API key)'
-    : 'Uses system environment / Claude CLI auth'
+    ? t('resources.providers.defaultDescCodex')
+    : t('resources.providers.defaultDescClaude')
 
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Providers</h2>
+          <h2 className="text-lg font-semibold">{t('resources.providers.title')}</h2>
           <p className="text-sm text-muted-foreground">
             {settingsProvider === 'codex'
-              ? 'Configure third-party OpenAI-compatible API providers for Codex'
-              : 'Configure third-party Anthropic-compatible API providers'}
+              ? t('resources.providers.subtitleCodex')
+              : t('resources.providers.subtitleClaude')}
           </p>
         </div>
         <Button size="sm" onClick={handleAdd}>
           <Plus className="size-4" />
-          Add Provider
+          {t('resources.providers.add')}
         </Button>
       </div>
 
@@ -148,9 +153,9 @@ export function ProvidersPage() {
 
         {filteredProviders.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-6 text-center">
-            <p className="text-sm text-muted-foreground">No third-party providers configured</p>
+            <p className="text-sm text-muted-foreground">{t('resources.providers.empty')}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Click "Add Provider" to connect a third-party API
+              {t('resources.providers.emptyHint')}
             </p>
           </div>
         )}

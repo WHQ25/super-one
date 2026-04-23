@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
@@ -14,6 +15,7 @@ const streamdownControls = { table: false }
 const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
 
 export function PlanApprovalPrompt() {
+  const { t } = useTranslation()
   const pending = useActiveSession((s) => s.pendingPlanApproval)
   const respond = useChatStore((s) => s.respondToPlanApproval)
   const [feedback, setFeedback] = useState('')
@@ -119,7 +121,7 @@ export function PlanApprovalPrompt() {
       <div ref={containerRef} className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
           <PenLine className="size-4 text-blue-400" />
-          <span className="text-sm font-medium text-foreground">Review</span>
+          <span className="text-sm font-medium text-foreground">{t('chat.plan.review')}</span>
           {fileName && (
             <span className="text-sm text-muted-foreground">{fileName}</span>
           )}
@@ -144,7 +146,7 @@ export function PlanApprovalPrompt() {
           {allowedPrompts.length > 0 && (
             <div>
               <div className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
-                Requested permissions
+                {t('chat.plan.requestedPermissions')}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {allowedPrompts.map((p, i) => (
@@ -169,7 +171,7 @@ export function PlanApprovalPrompt() {
                 onClick={handleApprove}
               >
                 <FastForward className="size-3" />
-                Approve & Accept Edits
+                {t('chat.plan.approveAccept')}
                 {!isFeedbackFocused && (
                   <Kbd variant="inline" className="ml-1 text-purple-200/80">↵</Kbd>
                 )}
@@ -181,7 +183,7 @@ export function PlanApprovalPrompt() {
                 onClick={handleApprove}
               >
                 <Check className="size-3" />
-                Approve
+                {t('chat.plan.approve')}
                 {!isFeedbackFocused && (
                   <Kbd variant="inline" className="ml-1 text-green-200/80">↵</Kbd>
                 )}
@@ -193,7 +195,7 @@ export function PlanApprovalPrompt() {
               onClick={handleReject}
             >
               <X className="size-3" />
-              Reject
+              {t('chat.plan.reject')}
               <Kbd variant="inline" className="ml-1 text-red-200/80">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
             </Button>
             <div className="relative flex flex-1 items-center">
@@ -204,7 +206,7 @@ export function PlanApprovalPrompt() {
                 onChange={(e) => setFeedback(e.target.value)}
                 onFocus={() => setIsFeedbackFocused(true)}
                 onBlur={() => setIsFeedbackFocused(false)}
-                placeholder="Reject feedback (optional, Enter to submit)"
+                placeholder={t('chat.plan.feedbackPlaceholder')}
                 className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
@@ -221,7 +223,7 @@ export function PlanApprovalPrompt() {
                 onChange={(e) => setFeedback(e.target.value)}
                 onFocus={() => setIsFeedbackFocused(true)}
                 onBlur={() => setIsFeedbackFocused(false)}
-                placeholder="Reject feedback (optional, Enter to submit)"
+                placeholder={t('chat.plan.feedbackPlaceholder')}
                 className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
@@ -281,12 +283,12 @@ export function PlanApprovalPrompt() {
               : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
             }
             <span className="flex min-w-0 items-center gap-1">
-              <span>Switch to</span>
+              <span>{t('chat.plan.switchTo')}</span>
               <span className="inline-flex items-center gap-0.5 font-medium text-purple-400">
                 <FastForward className="size-3" />
-                Accept Edits
+                {t('chat.plan.acceptEdits')}
               </span>
-              <span>after approval</span>
+              <span>{t('chat.plan.afterApproval')}</span>
             </span>
             <Kbd variant="square" className="ml-auto">1</Kbd>
           </button>

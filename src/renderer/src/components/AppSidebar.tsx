@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
 import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, GitFork, Pin, Copy, Check, Smartphone } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -44,6 +45,7 @@ type SortMode = 'recent' | 'added'
 const MAX_SESSIONS = 10
 
 export const AppSidebar = memo(function AppSidebar() {
+  const { t } = useTranslation()
   const { navigateTo, selectAndOpenFolder, openFolder, removeRecentFolder, setSidebarTab } = useAppStore(useShallow((s) => ({ navigateTo: s.navigateTo, selectAndOpenFolder: s.selectAndOpenFolder, openFolder: s.openFolder, removeRecentFolder: s.removeRecentFolder, setSidebarTab: s.setSidebarTab })))
   const sidebarTab = useAppStore((s) => s.sidebarTab)
   const currentFolder = useAppStore((s) => s.currentFolder)
@@ -371,18 +373,18 @@ export const AppSidebar = memo(function AppSidebar() {
           className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <SquarePen className="size-3.5" />
-          New Session
+          {t('sidebar.newSession')}
         </Button>
       </div>
       <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as SidebarTab)} className="mx-2 mb-1 shrink-0">
         <TabsList variant="sidebar">
           <TabsTrigger value="sessions" className="py-1">
             <MessageSquare className="size-3.5" />
-            Sessions
+            {t('sidebar.tabs.sessions')}
           </TabsTrigger>
           <TabsTrigger value="files" className="py-1">
             <FolderClosed className="size-3.5" />
-            Files
+            {t('sidebar.tabs.files')}
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -391,7 +393,7 @@ export const AppSidebar = memo(function AppSidebar() {
 
       {pinnedSessions.length > 0 && sidebarTab === 'sessions' && (
         <div className="flex flex-col px-1.5 pb-1">
-          <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">Pinned</span>
+          <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">{t('sidebar.pinned')}</span>
           {pinnedSessions.map((s) => (
             <div
               key={s.sessionId}
@@ -437,7 +439,7 @@ export const AppSidebar = memo(function AppSidebar() {
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
       {/* Projects header */}
       <div className="flex items-center justify-between pl-4 pr-3 pt-1.5 pb-0.5">
-        <span className="text-sm font-medium text-sidebar-foreground/40">Projects</span>
+        <span className="text-sm font-medium text-sidebar-foreground/40">{t('sidebar.projects')}</span>
         <div className="flex items-center gap-0.5">
           <Button
             size="icon-xs"
@@ -455,10 +457,10 @@ export const AppSidebar = memo(function AppSidebar() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem onClick={() => setSortMode('recent')} className="text-xs">
-                {sortMode === 'recent' ? '✓ ' : '   '}Recent Activity
+                {sortMode === 'recent' ? '✓ ' : '   '}{t('sidebar.sort.recent')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setSortMode('added')} className="text-xs">
-                {sortMode === 'added' ? '✓ ' : '   '}Date Added
+                {sortMode === 'added' ? '✓ ' : '   '}{t('sidebar.sort.added')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -469,7 +471,7 @@ export const AppSidebar = memo(function AppSidebar() {
       <div className="min-h-0 flex-1">
         {sortedFolders.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
-            No projects yet
+            {t('sidebar.empty')}
           </div>
         ) : (
           <ScrollArea className="h-full">
@@ -513,7 +515,7 @@ export const AppSidebar = memo(function AppSidebar() {
                 <Settings className="size-3.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top"><span>Settings</span> <CommandShortcut>{isMac ? '⌘,' : 'Ctrl+,'}</CommandShortcut></TooltipContent>
+            <TooltipContent side="top"><span>{t('sidebar.settings')}</span> <CommandShortcut>{isMac ? '⌘,' : 'Ctrl+,'}</CommandShortcut></TooltipContent>
           </Tooltip>
         </TooltipProvider>
         <RemoteStatusIcon />
@@ -523,10 +525,10 @@ export const AppSidebar = memo(function AppSidebar() {
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setCopiedCmd(null) } }}>
         <DialogContent showCloseButton={false} className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete Session?</DialogTitle>
+            <DialogTitle>{t('sidebar.deleteSession.title')}</DialogTitle>
             <DialogDescription asChild>
               <div className="min-w-0">
-                <span className="font-medium text-foreground">{deleteTarget?.title}</span> will be removed from SuperOne. You can still access it via {deleteTargetCli.cliName}:
+                <span className="font-medium text-foreground">{deleteTarget?.title}</span> {t('sidebar.deleteSession.descriptionPrefix')} {deleteTargetCli.cliName}{t('sidebar.deleteSession.descriptionSuffix')}
                 <div className="mt-2 flex min-w-0 flex-col gap-1">
                   {([
                     ['cd', `cd ${deleteTarget?.folderPath}`],
@@ -555,10 +557,10 @@ export const AppSidebar = memo(function AppSidebar() {
           <DialogFooter className="flex-row items-center gap-2">
             <label className="mr-auto flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
               <Checkbox checked={skipConfirm} onCheckedChange={(v) => setSkipConfirm(v === true)} />
-              Don't ask again
+              {t('sidebar.deleteSession.dontAsk')}
             </label>
-            <Button variant="outline" onClick={() => { setDeleteTarget(null); setSkipConfirm(false) }}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDeleteSession}>Delete</Button>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setSkipConfirm(false) }}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={handleDeleteSession}>{t('sidebar.deleteSession.delete')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -567,19 +569,19 @@ export const AppSidebar = memo(function AppSidebar() {
       <Dialog open={!!removeTarget} onOpenChange={(open) => { if (!open) setRemoveTarget(null) }}>
         <DialogContent showCloseButton={false} className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Remove Project?</DialogTitle>
+            <DialogTitle>{t('sidebar.removeProject.title')}</DialogTitle>
             <DialogDescription>
-              <span className="font-medium text-foreground">{removeTarget?.name}</span> and all its chat sessions will be removed from SuperOne. Your project files will not be affected.
+              <span className="font-medium text-foreground">{removeTarget?.name}</span> {t('sidebar.removeProject.description')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRemoveTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setRemoveTarget(null)}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={() => {
               if (!removeTarget) return
               removeRecentFolder(removeTarget.path)
               setExpandedFolders((prev) => { const next = new Set(prev); next.delete(removeTarget.path); return next })
               setRemoveTarget(null)
-            }}>Remove</Button>
+            }}>{t('sidebar.removeProject.remove')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -588,7 +590,7 @@ export const AppSidebar = memo(function AppSidebar() {
       <Dialog open={!!renameTarget} onOpenChange={(open) => { if (!open) setRenameTarget(null) }}>
         <DialogContent showCloseButton={false} className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Rename Session</DialogTitle>
+            <DialogTitle>{t('sidebar.renameSession.title')}</DialogTitle>
           </DialogHeader>
           <input
             value={renameValue}
@@ -604,8 +606,8 @@ export const AppSidebar = memo(function AppSidebar() {
             className="w-full rounded-md border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameTarget(null)}>Cancel</Button>
-            <Button onClick={handleRenameSession} disabled={!renameValue.trim()}>Save</Button>
+            <Button variant="outline" onClick={() => setRenameTarget(null)}>{t('common.cancel')}</Button>
+            <Button onClick={handleRenameSession} disabled={!renameValue.trim()}>{t('common.save')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -614,6 +616,7 @@ export const AppSidebar = memo(function AppSidebar() {
 })
 
 function RemoteStatusIcon() {
+  const { t } = useTranslation()
   const remoteEnabled = useAppStore((s) => s.remoteConfig?.enabled ?? false)
   const { navigateTo, setSettingsTab } = useAppStore(useShallow((s) => ({ navigateTo: s.navigateTo, setSettingsTab: s.setSettingsTab })))
   const [relayConnected, setRelayConnected] = useState(false)
@@ -649,8 +652,8 @@ function RemoteStatusIcon() {
           </button>
         </TooltipTrigger>
         <TooltipContent side="top">
-          <span>Remote Control</span>
-          <span className={cn('ml-1.5', relayConnected ? 'text-green-500' : 'text-red-500')}>{relayConnected ? 'Connected' : 'Disconnected'}</span>
+          <span>{t('sidebar.remote.label')}</span>
+          <span className={cn('ml-1.5', relayConnected ? 'text-green-500' : 'text-red-500')}>{relayConnected ? t('sidebar.remote.connected') : t('sidebar.remote.disconnected')}</span>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

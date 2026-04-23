@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { CODEX_REJECT_PLAN_PLACEHOLDER, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
@@ -41,6 +42,7 @@ interface ChatInputProps {
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   function ChatInput({ compact }, ref) {
+    const { t } = useTranslation()
     const { activeProject, isOpen } = useChatStore(useShallow((s) => ({
       activeProject: s.activeProject,
       isOpen: s.isOpen,
@@ -556,16 +558,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const shouldShowCodexRejectHint = isCodexPlanMode && codexPlanRejectHintActive && text.trim().length === 0
     const placeholderText = mentions.length > 0
-      ? 'Add instructions...'
+      ? t('chat.placeholder.addInstructions')
       : shouldShowCodexRejectHint
         ? CODEX_REJECT_PLAN_PLACEHOLDER
       : isCodexPlanMode
-        ? "Let's make a plan! What's in your mind?"
+        ? t('chat.placeholder.codexPlan')
         : activeProviderForResources === 'codex'
-          ? 'Ask Codex anything, @ to mention, / for commands'
+          ? t('chat.placeholder.codexAsk')
         : permissionMode === 'plan'
-          ? "Let's make a plan! What's in your mind?"
-          : 'Ask Claude anything, @ to mention files & agents, / for commands'
+          ? t('chat.placeholder.claudePlan')
+          : t('chat.placeholder.claudeAsk')
     placeholderTextRef.current = placeholderText
 
     const editor = useEditor({
@@ -939,7 +941,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         {isDragging && (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-blue-500 bg-blue-500/10">
-            <span className="text-xs font-medium text-blue-400">Drop images or PDFs to attach</span>
+            <span className="text-xs font-medium text-blue-400">{t('chat.dropToAttach')}</span>
           </div>
         )}
       </div>

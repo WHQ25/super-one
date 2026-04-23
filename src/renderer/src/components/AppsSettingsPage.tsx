@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, ChevronRight, Link, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
@@ -11,6 +12,7 @@ import { cn } from '@/lib/utils'
 import type { MiniAppEntry } from '../../../shared/miniapp-types'
 
 function AppCard({ app, onClick }: { app: MiniAppEntry; onClick: () => void }) {
+  const { t } = useTranslation()
   const tools = app.manifest.tools ?? []
   const toolCount = tools.length
 
@@ -27,7 +29,7 @@ function AppCard({ app, onClick }: { app: MiniAppEntry; onClick: () => void }) {
           {app.manifest.type && <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground">{app.manifest.type}</span>}
         </div>
         <p className="text-xs text-muted-foreground truncate">
-          {toolCount > 0 ? `${toolCount} tool${toolCount !== 1 ? 's' : ''}` : 'No tools'}
+          {toolCount > 0 ? t('resources.apps.toolCount', { count: toolCount }) : t('resources.apps.noTools')}
           {app.manifest.version && ` · v${app.manifest.version}`}
         </p>
       </div>
@@ -51,6 +53,7 @@ function AppSection({ title, apps, onSelect }: { title: string; apps: MiniAppEnt
 }
 
 function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void }) {
+  const { t } = useTranslation()
   const uninstallApp = useMiniAppStore((s) => s.uninstallApp)
   const [preapproved, setPreapproved] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -76,9 +79,9 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
     try {
       await uninstallApp(app.id)
       onBack()
-      toast.success(`Uninstalled ${app.manifest.name}`)
+      toast.success(t('resources.apps.uninstalled', { name: app.manifest.name }))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Uninstall failed')
+      toast.error(err instanceof Error ? err.message : t('resources.apps.uninstallFailed'))
     }
   }
 
@@ -93,7 +96,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
         className="mb-4 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="size-3" />
-        Back
+        {t('common.back')}
       </button>
 
       {/* App header */}
@@ -110,7 +113,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
           )}
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
             {manifest.version && <span>v{manifest.version}</span>}
-            {manifest.author && <span>by {manifest.author.name}</span>}
+            {manifest.author && <span>{t('resources.apps.authorBy', { name: manifest.author.name })}</span>}
           </div>
           {manifest.author?.url && (
             <a href={manifest.author.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-blue-500 hover:underline">
@@ -125,14 +128,14 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
         {/* Tools section */}
         <div className="rounded-lg border border-border bg-card p-4">
           <h3 className="mb-1 text-sm font-medium">
-            Tool Pre-approval
+            {t('resources.apps.preapprovalTitle')}
           </h3>
           <p className="mb-3 text-xs text-muted-foreground">
-            Enabled tools skip permission prompts when the agent uses them.
+            {t('resources.apps.preapprovalDescription')}
           </p>
           {tools.length > 0 ? (
             loading ? (
-              <div className="text-xs text-muted-foreground">Loading...</div>
+              <div className="text-xs text-muted-foreground">{t('resources.apps.loading')}</div>
             ) : (
               <div className="space-y-2">
                 {tools.map((tool) => {
@@ -153,14 +156,14 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
               </div>
             )
           ) : (
-            <p className="text-sm text-muted-foreground">This app has no tools.</p>
+            <p className="text-sm text-muted-foreground">{t('resources.apps.noAppTools')}</p>
           )}
         </div>
 
         {/* Permissions section */}
         {hasPermissions && (
           <div className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-3 text-sm font-medium">Permissions</h3>
+            <h3 className="mb-3 text-sm font-medium">{t('resources.apps.permissions')}</h3>
             <div className="space-y-2">
               {manifest.permissions?.fs?.map((entry, i) => (
                 <div key={`fs-${i}`} className="rounded-md border border-border px-3 py-2">
@@ -168,7 +171,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
                     <span className="font-medium">{entry.scope}</span>
                     {entry.path && <span className="text-muted-foreground font-mono text-xs">{entry.path}</span>}
                     <span className={cn('inline-flex h-4 shrink-0 items-center rounded px-1 text-[10px] leading-none', entry.access === 'read' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400')}>
-                      {entry.scope === 'app' ? 'Read & Write' : entry.access === 'read' ? 'Read only' : 'Read & Write'}
+                      {entry.scope === 'app' ? t('resources.apps.readWrite') : entry.access === 'read' ? t('resources.apps.readOnly') : t('resources.apps.readWrite')}
                     </span>
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">{entry.reason}</p>
@@ -177,7 +180,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
               {manifest.permissions?.network?.map((entry) => (
                 <div key={`net-${entry.domain}`} className="rounded-md border border-border px-3 py-2">
                   <div className="flex items-center gap-1.5 text-sm">
-                    <span className="font-medium">Network</span>
+                    <span className="font-medium">{t('resources.apps.network')}</span>
                     <span className="text-muted-foreground font-mono text-xs">{entry.domain}</span>
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">{entry.reason}</p>
@@ -190,23 +193,23 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
         {/* Uninstall */}
         {!manifest.isDev && (
           <div className="rounded-lg border border-destructive/30 bg-card p-4">
-            <h3 className="mb-1 text-sm font-medium text-destructive">Uninstall</h3>
+            <h3 className="mb-1 text-sm font-medium text-destructive">{t('resources.apps.uninstallTitle')}</h3>
             <p className="mb-3 text-xs text-muted-foreground">
-              Remove this app and all its data. This cannot be undone.
+              {t('resources.apps.uninstallDescription')}
             </p>
             {confirmDelete ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Are you sure?</span>
+                <span className="text-xs text-muted-foreground">{t('resources.apps.confirmQuestion')}</span>
                 <Button size="sm" variant="destructive" onClick={handleUninstall}>
                   <Trash2 className="mr-1 size-3" />
-                  Confirm
+                  {t('resources.apps.confirm')}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
               </div>
             ) : (
               <Button size="sm" variant="destructive" onClick={() => setConfirmDelete(true)}>
                 <Trash2 className="mr-1 size-3" />
-                Uninstall App
+                {t('resources.apps.uninstall')}
               </Button>
             )}
           </div>
@@ -217,6 +220,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
 }
 
 export function AppsSettingsPage() {
+  const { t } = useTranslation()
   const apps = useMiniAppStore((s) => s.apps)
   const loaded = useMiniAppStore((s) => s.loaded)
   const refreshApps = useMiniAppStore((s) => s.refreshApps)
@@ -242,23 +246,23 @@ export function AppsSettingsPage() {
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Mini Apps</h2>
-          <p className="text-sm text-muted-foreground">Manage installed apps and tool preapproval settings</p>
+          <h2 className="text-lg font-semibold">{t('resources.apps.title')}</h2>
+          <p className="text-sm text-muted-foreground">{t('resources.apps.subtitle')}</p>
         </div>
         <ProjectSelector mode="switch" />
       </div>
 
       {!loaded ? (
-        <div className="text-sm text-muted-foreground">Loading...</div>
+        <div className="text-sm text-muted-foreground">{t('resources.apps.loading')}</div>
       ) : apps.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">No mini apps installed</p>
-          <p className="mt-1 text-xs text-muted-foreground">Drop .s1app files in the sidebar to install</p>
+          <p className="text-sm text-muted-foreground">{t('resources.apps.empty')}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('resources.apps.emptyHint')}</p>
         </div>
       ) : (
         <div className="space-y-6">
-          <AppSection title="Personal" apps={personalApps} onSelect={setSelectedApp} />
-          <AppSection title="Project" apps={projectApps} onSelect={setSelectedApp} />
+          <AppSection title={t('resources.apps.sections.personal')} apps={personalApps} onSelect={setSelectedApp} />
+          <AppSection title={t('resources.apps.sections.project')} apps={projectApps} onSelect={setSelectedApp} />
         </div>
       )}
     </div>

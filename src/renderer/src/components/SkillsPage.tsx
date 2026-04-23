@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState } from 'react'
 import { ChevronDown, ChevronRight, Folder, FolderOpen, PanelLeftClose, PanelLeftOpen, Code, BookOpen, Puzzle, Trash2 } from 'lucide-react'
 import { motion, LayoutGroup } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -125,6 +126,7 @@ function isMarkdown(filePath: string): boolean {
 }
 
 function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: string; readOnly?: boolean }) {
+  const { t } = useTranslation()
   const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail, deleteSkill } = useSettingsStore()
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const isExpanded = skillDetail?.name === skill.name
@@ -201,7 +203,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
               onClick={handleDeleteClick}
               disabled={deleting}
               className="ml-auto rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-              title={deleting ? 'Deleting...' : 'Delete skill'}
+              title={deleting ? t('resources.skills.deleting') : t('resources.skills.deleteTooltip')}
             >
               <Trash2 className="size-3.5" />
             </button>
@@ -251,7 +253,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
                     <button
                       onClick={() => setMdRawView(!mdRawView)}
                       className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
-                      title={mdRawView ? 'Preview' : 'Source'}
+                      title={mdRawView ? t('resources.skills.previewToggle') : t('resources.skills.sourceToggle')}
                     >
                       {mdRawView ? <BookOpen className="size-3.5" /> : <Code className="size-3.5" />}
                     </button>
@@ -269,7 +271,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
                     )
                 ) : (
                   <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    Select a file to preview
+                    {t('resources.skills.selectFile')}
                   </div>
                 )}
               </div>
@@ -282,15 +284,15 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent showCloseButton={false} className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete Skill?</DialogTitle>
+            <DialogTitle>{t('resources.skills.deleteTitle')}</DialogTitle>
             <DialogDescription>
-              <span className="font-medium text-foreground">{skill.displayName}</span> will be removed from your skills.
+              <span className="font-medium text-foreground">{skill.displayName}</span> {t('resources.skills.deleteDescSuffix')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleting}>
-              {deleting ? 'Deleting...' : 'Delete'}
+              {deleting ? t('resources.skills.deleting') : t('resources.skills.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -340,6 +342,7 @@ function SkillSection({ title, skills, readOnly }: { title: string; skills: Skil
 }
 
 export function SkillsPage() {
+  const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const { skills, fetchSkills, fetchCodexSkills, installSkill, clearSkillDetail } = useSettingsStore()
@@ -365,16 +368,16 @@ export function SkillsPage() {
   const projectSkills = skills.filter((s) => s.scope === 'project')
 
   const pathHints = isCodex
-    ? 'User: ~/.agents/skills/ | Project: .agents/skills/'
-    : 'User: ~/.claude/skills/ | Project: .claude/skills/'
+    ? t('resources.skills.emptyHintCodex')
+    : t('resources.skills.emptyHintClaude')
 
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Skills</h2>
+          <h2 className="text-lg font-semibold">{t('resources.skills.title')}</h2>
           <p className="text-sm text-muted-foreground">
-            {isCodex ? 'Manage Codex skills' : 'Manage Claude Code skills'}
+            {isCodex ? t('resources.skills.subtitleCodex') : t('resources.skills.subtitleClaude')}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -382,7 +385,7 @@ export function SkillsPage() {
           {!isCodex && (
             <Button size="sm" onClick={handleInstall}>
               <FolderOpen className="size-4" />
-              Install Skill
+              {t('resources.skills.install')}
             </Button>
           )}
         </div>
@@ -390,13 +393,13 @@ export function SkillsPage() {
 
       {skills.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">No skills found</p>
+          <p className="text-sm text-muted-foreground">{t('resources.skills.empty')}</p>
           <p className="mt-1 text-xs text-muted-foreground">{pathHints}</p>
         </div>
       ) : (
         <div className="space-y-6">
-          <SkillSection title="User" skills={userSkills} />
-          <SkillSection title="Project" skills={projectSkills} />
+          <SkillSection title={t('resources.sectionUser')} skills={userSkills} />
+          <SkillSection title={t('resources.sectionProject')} skills={projectSkills} />
         </div>
       )}
     </div>

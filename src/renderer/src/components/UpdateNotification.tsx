@@ -1,9 +1,11 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { CheckCircle, Download, Loader2, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
 
 export function UpdateNotification(): React.JSX.Element | null {
+  const { t } = useTranslation()
   const updateStatus = useAppStore((s) => s.updateStatus)
   const updateVersion = useAppStore((s) => s.updateVersion)
   const updateProgress = useAppStore((s) => s.updateProgress)
@@ -25,12 +27,12 @@ export function UpdateNotification(): React.JSX.Element | null {
           {updateStatus === 'checking' ? (
             <>
               <Loader2 className="size-4 animate-spin text-muted-foreground" />
-              <span className="text-sm">Checking for updates...</span>
+              <span className="text-sm">{t('shell.update.checking')}</span>
             </>
           ) : updateStatus === 'preparing' ? (
             <>
               <Loader2 className="size-4 animate-spin text-muted-foreground" />
-              <span className="text-sm">Preparing update{updateVersion ? ` v${updateVersion}` : ''}...</span>
+              <span className="text-sm">{t('shell.update.preparing', { version: updateVersion ? `v${updateVersion}` : '' })}</span>
               <button
                 onClick={dismissUpdate}
                 className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
@@ -41,13 +43,15 @@ export function UpdateNotification(): React.JSX.Element | null {
           ) : updateStatus === 'up-to-date' ? (
             <>
               <CheckCircle className="size-4 text-green-500" />
-              <span className="text-sm">You&apos;re up to date</span>
+              <span className="text-sm">{t('shell.update.upToDate')}</span>
             </>
           ) : updateStatus === 'downloading' ? (
             <>
               <Loader2 className="size-4 animate-spin text-primary" />
               <span className="text-sm">
-                Downloading {updateVersion ? `v${updateVersion}` : 'update'}...{updateProgress > 0 ? ` ${updateProgress}%` : ''}
+                {updateProgress > 0
+                  ? t('shell.update.downloadingWithProgress', { version: updateVersion ? `v${updateVersion}` : 'update', progress: updateProgress })
+                  : t('shell.update.downloading', { version: updateVersion ? `v${updateVersion}` : 'update' })}
               </span>
               <button
                 onClick={dismissUpdate}
@@ -60,10 +64,10 @@ export function UpdateNotification(): React.JSX.Element | null {
             <>
               <Download className="size-4 text-primary" />
               <span className="text-sm">
-                v{updateVersion} is ready
+                {t('shell.update.ready', { version: updateVersion })}
               </span>
               <Button size="sm" variant="default" onClick={import.meta.env.DEV ? dismissUpdate : installUpdate}>
-                Restart
+                {t('shell.update.restart')}
               </Button>
               <button
                 onClick={dismissUpdate}

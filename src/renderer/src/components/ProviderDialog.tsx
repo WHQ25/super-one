@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { ChevronLeft, Eye, EyeOff, Loader2, Plus, Trash2, X, Zap } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -47,6 +48,7 @@ function serializeEnvPairs(pairs: Array<{ key: string; value: string }>): string
 }
 
 function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { t } = useTranslation()
   const [pairs, setPairs] = useState(() => parseEnvPairs(value))
 
   useEffect(() => {
@@ -92,7 +94,7 @@ function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) =
         </div>
       ))}
       <button type="button" onClick={addRow} className="flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground">
-        <Plus className="size-3" /> Add variable
+        <Plus className="size-3" /> {t('resources.providerDialog.addVariable')}
       </button>
     </div>
   )
@@ -110,6 +112,7 @@ function AgentConfigForm({
   preset?: AgentPresetConfig
   isEdit: boolean
 }) {
+  const { t } = useTranslation()
   const [showDetails, setShowDetails] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
@@ -122,12 +125,12 @@ function AgentConfigForm({
         className="self-start text-xs text-muted-foreground underline"
         onClick={() => setShowDetails(!showDetails)}
       >
-        {showDetails ? 'Hide' : 'Show'} environment variables
+        {showDetails ? t('resources.providerDialog.envHide') : t('resources.providerDialog.envShow')}
       </button>
       {showDetails && (
         <>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">Base URL</span>
+            <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.baseUrl')}</span>
             <input
               className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
               value={form.base_url}
@@ -158,7 +161,7 @@ function AgentConfigForm({
             className="self-start text-xs text-muted-foreground underline"
             onClick={() => setShowAdvanced(!showAdvanced)}
           >
-            {showAdvanced ? 'Hide' : 'Show'} advanced options
+            {showAdvanced ? t('resources.providerDialog.advancedHide') : t('resources.providerDialog.advancedShow')}
           </button>
           {showAdvanced && (
             <EnvEditor value={form.extra_env} onChange={(v) => onChange({ ...form, extra_env: v })} />
@@ -216,6 +219,7 @@ export function ProviderDialog({
   onDelete?: (id: string) => void
   agentFilter?: AgentType
 }) {
+  const { t } = useTranslation()
   const [step, setStep] = useState<DialogStep>('select')
   const [selectedPreset, setSelectedPreset] = useState<QuickPreset | null>(null)
   const [templateVals, setTemplateVals] = useState<Record<string, string>>({})
@@ -300,7 +304,7 @@ export function ProviderDialog({
     setTestMessage('')
     try {
       const af = form.agentForms[activeAgentTab]
-      if (!af) { setTestStatus('error'); setTestMessage('No config for this agent'); return }
+      if (!af) { setTestStatus('error'); setTestMessage(t('resources.providerDialog.noAgentConfig')); return }
       const result = await window.app.testProvider({
         api_key: form.api_key,
         base_url: af.base_url || '',
@@ -308,14 +312,14 @@ export function ProviderDialog({
       })
       if (result.success) {
         setTestStatus('success')
-        setTestMessage('Connected ✓')
+        setTestMessage(t('resources.providerDialog.connected'))
       } else {
         setTestStatus('error')
-        setTestMessage(result.error || 'Connection failed')
+        setTestMessage(result.error || t('resources.providerDialog.connectionFailed'))
       }
     } catch (err) {
       setTestStatus('error')
-      setTestMessage(err instanceof Error ? err.message : 'Unknown error')
+      setTestMessage(err instanceof Error ? err.message : t('resources.providerDialog.unknownError'))
     }
   }
 
@@ -367,8 +371,8 @@ export function ProviderDialog({
         {step === 'select' ? (
           <>
             <DialogHeader>
-              <DialogTitle>Add Provider</DialogTitle>
-              <DialogDescription>Select a provider template to get started</DialogDescription>
+              <DialogTitle>{t('resources.providerDialog.addTitle')}</DialogTitle>
+              <DialogDescription>{t('resources.providerDialog.addDescription')}</DialogDescription>
             </DialogHeader>
             <div className="max-h-80 space-y-3 overflow-y-auto py-2">
               {Array.from(getPresetsByCategory(
@@ -405,31 +409,31 @@ export function ProviderDialog({
                   className="absolute top-4 left-4 z-10 flex items-center gap-0.5 text-xs text-muted-foreground opacity-70 transition-opacity hover:opacity-100"
                 >
                   <ChevronLeft className="size-3.5" />
-                  Back
+                  {t('common.back')}
                 </button>
               )}
               {editProvider
                 ? <ProviderLabel provider={editProvider} fallback={editProvider.name} size={28} />
                 : <ProviderLabel presetKey={selectedPreset?.key} fallback={selectedPreset?.name} size={28} />}
               <DialogDescription>
-                {editProvider ? 'Update provider configuration' : selectedPreset?.description}
+                {editProvider ? t('resources.providerDialog.editDescription') : selectedPreset?.description}
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-3 py-2">
               {showFields.includes('name') && (
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Name</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.name')}</span>
                   <input
                     className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
                     value={form.name}
                     onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="Provider name"
+                    placeholder={t('resources.providerDialog.namePlaceholder')}
                   />
                 </label>
               )}
               {showFields.includes('api_key') && (
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">API Key</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.apiKey')}</span>
                   <div className="relative">
                     <input
                       type={showApiKey ? 'text' : 'password'}
@@ -520,24 +524,24 @@ export function ProviderDialog({
             </div>
             {testStatus !== 'idle' && (
               <p className={`text-xs ${testStatus === 'success' ? 'text-green-600 dark:text-green-400' : testStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
-                {testStatus === 'testing' ? 'Testing connection...' : testMessage}
+                {testStatus === 'testing' ? t('resources.providerDialog.testing') : testMessage}
               </p>
             )}
             <DialogFooter className="flex-row justify-between sm:justify-between">
               <div className="flex gap-2">
                 {editProvider && onDelete && (
                   <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => { onDelete(editProvider.id); onOpenChange(false) }}>
-                    <Trash2 className="size-3.5" /> Delete
+                    <Trash2 className="size-3.5" /> {t('resources.providerDialog.delete')}
                   </Button>
                 )}
                 <Button variant="outline" size="sm" onClick={handleTest} disabled={testStatus === 'testing'}>
                   {testStatus === 'testing' ? <Loader2 className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}
-                  Test
+                  {t('resources.providerDialog.test')}
                 </Button>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-                <Button onClick={handleSubmit}>{editProvider ? 'Save' : 'Connect'}</Button>
+                <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+                <Button onClick={handleSubmit}>{editProvider ? t('resources.providerDialog.save') : t('resources.providers.connect')}</Button>
               </div>
             </DialogFooter>
           </>

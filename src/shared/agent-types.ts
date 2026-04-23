@@ -1291,6 +1291,8 @@ export const AgentIpcChannels = {
   SET_FAST_MODE: 'app:set-fast-mode',
   APP_SETTINGS_GET: 'app:settings-get',
   APP_SETTINGS_SAVE: 'app:settings-save',
+  APP_SYSTEM_LOCALE: 'app:system-locale',
+  APP_LOCALE_CHANGED: 'app:locale-changed',
 
   // Logging
   GET_LOG_PATH: 'app:get-log-path',
@@ -1448,8 +1450,11 @@ export interface RemoteDeviceConfig {
   relayUrl: string
 }
 
+export type Locale = 'en' | 'zh'
+
 export interface AppSettings {
   analyticsEnabled: boolean
+  locale: Locale | ''
   agentPreference: {
     claude: {
       defaultModel: string
@@ -1466,6 +1471,7 @@ export interface AppSettings {
 
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
+  locale?: Locale | ''
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>

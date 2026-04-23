@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Bot } from 'lucide-react'
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
@@ -110,6 +111,7 @@ function AgentSection({ title, agents }: { title: string; agents: AgentWithScope
 }
 
 export function AgentsPage() {
+  const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const { agents, fetchAgents, clearAgentDetail } = useSettingsStore()
 
@@ -125,23 +127,23 @@ export function AgentsPage() {
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Subagents</h2>
-          <p className="text-sm text-muted-foreground">Browse custom agent definitions</p>
+          <h2 className="text-lg font-semibold">{t('resources.agents.title')}</h2>
+          <p className="text-sm text-muted-foreground">{t('resources.agents.subtitle')}</p>
         </div>
         <ProjectSelector mode="switch" />
       </div>
 
       {agents.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">No agents found</p>
+          <p className="text-sm text-muted-foreground">{t('resources.agents.empty')}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            User: ~/.claude/agents/ | Project: .claude/agents/
+            {t('resources.agents.emptyHint')}
           </p>
         </div>
       ) : (
         <div className="space-y-6">
-          <AgentSection title="User" agents={userAgents} />
-          <AgentSection title="Project" agents={projectAgents} />
+          <AgentSection title={t('resources.sectionUser')} agents={userAgents} />
+          <AgentSection title={t('resources.sectionProject')} agents={projectAgents} />
         </div>
       )}
     </div>

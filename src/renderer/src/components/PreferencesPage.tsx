@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
 import { useAppStore } from '@/stores/app'
@@ -18,15 +19,15 @@ import { sandboxModes } from '@/components/chat/SandboxModeSelector'
 import { checkAutoModePlanEligibility } from '@/lib/auto-mode-eligibility'
 import type { CodexReasoningEffort, EffortLevel, ModelOption, PermissionMode, SandboxMode } from '../../../shared/agent-types'
 
-const CLAUDE_EFFORT_LABELS: Record<EffortLevel, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'Extra High',
-  max: 'Max',
-}
-
 function ClaudePreferencesPage() {
+  const { t } = useTranslation()
+  const CLAUDE_EFFORT_LABELS: Record<EffortLevel, string> = {
+    low: t('settings.preferences.effort.levels.low'),
+    medium: t('settings.preferences.effort.levels.medium'),
+    high: t('settings.preferences.effort.levels.high'),
+    xhigh: t('settings.preferences.effort.levels.xhigh'),
+    max: t('settings.preferences.effort.levels.max'),
+  }
   const currentFolder = useAppStore((s) => s.currentFolder)
   const availableOutputStyles = useChatStore((s) => s.availableOutputStyles)
   const availableModels = useChatStore((s) => s.availableModels)
@@ -98,7 +99,7 @@ function ClaudePreferencesPage() {
     try {
       const result = await window.app.saveProjectPreferences(currentFolder, { outputStyle: style })
       setOutputStyle(result.outputStyle)
-      toast.success('Output style updated')
+      toast.success(t('settings.preferences.outputStyle.updated'))
     } finally {
       setSaving(false)
     }
@@ -106,7 +107,7 @@ function ClaudePreferencesPage() {
 
   async function handlePermissionModeSelect(mode: PermissionMode) {
     try {
-      await saveClaudeDefaults({ defaultPermissionMode: mode }, 'Default permission mode updated')
+      await saveClaudeDefaults({ defaultPermissionMode: mode }, t('settings.preferences.permissionMode.updated'))
       invalidateDefaultPermissionModeCache()
     } finally {
       setPermOpen(false)
@@ -115,7 +116,7 @@ function ClaudePreferencesPage() {
 
   async function handleSandboxModeSelect(mode: SandboxMode) {
     try {
-      await saveClaudeDefaults({ defaultSandboxMode: mode }, 'Default sandbox mode updated')
+      await saveClaudeDefaults({ defaultSandboxMode: mode }, t('settings.preferences.sandbox.updated'))
     } finally {
       setSandboxOpen(false)
     }
@@ -134,14 +135,14 @@ function ClaudePreferencesPage() {
         : ''
     await saveClaudeDefaults(
       { defaultModel: modelId, defaultEffort: nextEffort },
-      modelId ? 'Default Claude model updated' : 'Default Claude model cleared',
+      modelId ? t('settings.preferences.defaultModel.claudeUpdated') : t('settings.preferences.defaultModel.claudeCleared'),
     )
   }
 
   async function handleEffortSelect(effort: EffortLevel | '') {
     await saveClaudeDefaults(
       { defaultEffort: effort },
-      effort ? 'Default thinking effort updated' : 'Default thinking effort cleared',
+      effort ? t('settings.preferences.effort.updated') : t('settings.preferences.effort.cleared'),
     )
   }
 
@@ -155,8 +156,8 @@ function ClaudePreferencesPage() {
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Preferences</h2>
-          <p className="text-sm text-muted-foreground">Configure Claude Code behavior</p>
+          <h2 className="text-lg font-semibold">{t('settings.preferences.title')}</h2>
+          <p className="text-sm text-muted-foreground">{t('settings.preferences.claudeSubtitle')}</p>
         </div>
         <ProjectSelector mode="switch" />
       </div>
@@ -164,13 +165,13 @@ function ClaudePreferencesPage() {
       <div className="space-y-4">
         <div className="rounded-lg border border-border">
           <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">Project Settings</p>
+            <p className="text-xs font-medium text-muted-foreground">{t('settings.preferences.sections.project')}</p>
           </div>
           <div className="flex items-center justify-between gap-4 p-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Output Style</p>
+              <p className="text-sm font-medium">{t('settings.preferences.outputStyle.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Controls how Claude formats responses - tone, structure, and level of detail.
+                {t('settings.preferences.outputStyle.description')}
               </p>
             </div>
             <DropdownMenu>
@@ -179,13 +180,13 @@ function ClaudePreferencesPage() {
                   disabled={disabled || !currentFolder}
                   className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <span className="truncate">{outputStyle || 'Default'}</span>
+                  <span className="truncate">{outputStyle || t('settings.preferences.outputStyle.defaultName')}</span>
                   <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onClick={() => handleOutputStyleSelect('')} className="flex items-center justify-between">
-                  <span>Default</span>
+                  <span>{t('settings.preferences.outputStyle.defaultName')}</span>
                   {!outputStyle && <Check className="size-4 text-muted-foreground" />}
                 </DropdownMenuItem>
                 {availableOutputStyles.filter((s) => s.toLowerCase() !== 'default').map((style) => (
@@ -201,13 +202,13 @@ function ClaudePreferencesPage() {
 
         <div className="rounded-lg border border-border">
           <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">User Settings</p>
+            <p className="text-xs font-medium text-muted-foreground">{t('settings.preferences.sections.user')}</p>
           </div>
           <div className="flex items-center justify-between gap-4 border-b border-border p-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Permission Mode</p>
+              <p className="text-sm font-medium">{t('settings.preferences.permissionMode.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Default permission mode when starting a new session.
+                {t('settings.preferences.permissionMode.description')}
               </p>
             </div>
             <Popover open={permOpen} onOpenChange={setPermOpen}>
@@ -217,7 +218,7 @@ function ClaudePreferencesPage() {
                   className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${currentPerm.color} ${currentPerm.hoverBg}`}
                 >
                   {currentPerm.icon}
-                  <span>{currentPerm.label}</span>
+                  <span>{t(`chat.permissionModes.${currentPerm.id}.label`)}</span>
                   <ChevronDown className={`size-3 transition-transform duration-200 ${permOpen ? 'rotate-180' : ''}`} />
                 </button>
               </PopoverTrigger>
@@ -232,9 +233,9 @@ function ClaudePreferencesPage() {
           </div>
           <div className="flex items-center justify-between gap-4 border-b border-border p-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Sandbox</p>
+              <p className="text-sm font-medium">{t('settings.preferences.sandbox.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Default sandbox mode when starting a new session.
+                {t('settings.preferences.sandbox.description')}
               </p>
             </div>
             <Popover open={sandboxOpen} onOpenChange={setSandboxOpen}>
@@ -244,12 +245,12 @@ function ClaudePreferencesPage() {
                   className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${currentSandbox.color} ${currentSandbox.hoverBg}`}
                 >
                   {currentSandbox.icon}
-                  <span>{currentSandbox.label}</span>
+                  <span>{t(`chat.sandboxModes.${currentSandbox.id}.label`)}</span>
                   <ChevronDown className={`size-3 transition-transform duration-200 ${sandboxOpen ? 'rotate-180' : ''}`} />
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" side="bottom" className="w-56 border-border bg-card p-1">
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">Sandbox Mode</div>
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('settings.preferences.sandbox.menuTitle')}</div>
                 {sandboxModes.map((mode) => (
                   <button
                     key={mode.id}
@@ -262,9 +263,9 @@ function ClaudePreferencesPage() {
                   >
                     <div className={`flex items-center gap-1.5 font-medium ${mode.color}`}>
                       {mode.icon}
-                      {mode.label}
+                      {t(`chat.sandboxModes.${mode.id}.label`)}
                     </div>
-                    <div className="mt-0.5 text-[10px] text-muted-foreground">{mode.description}</div>
+                    <div className="mt-0.5 text-[10px] text-muted-foreground">{t(`chat.sandboxModes.${mode.id}.description`)}</div>
                   </button>
                 ))}
               </PopoverContent>
@@ -273,9 +274,9 @@ function ClaudePreferencesPage() {
 
           <div className="flex items-center justify-between gap-4 border-b border-border p-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Default Model</p>
+              <p className="text-sm font-medium">{t('settings.preferences.defaultModel.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Applied to sessions that have not picked a model.
+                {t('settings.preferences.defaultModel.claudeDescription')}
               </p>
             </div>
             <DropdownMenu>
@@ -285,18 +286,18 @@ function ClaudePreferencesPage() {
                   className="flex min-w-48 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="truncate">
-                    {selectedDefaultModel?.name ?? (defaultModel || 'Not set')}
+                    {selectedDefaultModel?.name ?? (defaultModel || t('common.notSet'))}
                   </span>
                   <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuItem onClick={() => handleModelSelect('')} className="flex items-center justify-between">
-                  <span>Not set</span>
+                  <span>{t('common.notSet')}</span>
                   {!defaultModel && <Check className="size-4 text-muted-foreground" />}
                 </DropdownMenuItem>
                 {availableModels.length === 0 && (
-                  <DropdownMenuItem disabled>No models available</DropdownMenuItem>
+                  <DropdownMenuItem disabled>{t('settings.preferences.defaultModel.empty')}</DropdownMenuItem>
                 )}
                 {availableModels.map((model) => (
                   <DropdownMenuItem key={model.id} onClick={() => handleModelSelect(model.id)} className="flex items-center justify-between">
@@ -310,9 +311,9 @@ function ClaudePreferencesPage() {
 
           <div className="flex items-center justify-between gap-4 p-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Default Thinking Effort</p>
+              <p className="text-sm font-medium">{t('settings.preferences.effort.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Applied when the selected default model supports effort selection.
+                {t('settings.preferences.effort.description')}
               </p>
             </div>
             <DropdownMenu>
@@ -322,21 +323,21 @@ function ClaudePreferencesPage() {
                   className="flex min-w-40 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="truncate">
-                    {displayedEffort ? CLAUDE_EFFORT_LABELS[displayedEffort] : 'Not set'}
+                    {displayedEffort ? CLAUDE_EFFORT_LABELS[displayedEffort] : t('common.notSet')}
                   </span>
                   <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onClick={() => handleEffortSelect('')} className="flex items-center justify-between">
-                  <span>Not set</span>
+                  <span>{t('common.notSet')}</span>
                   {!displayedEffort && <Check className="size-4 text-muted-foreground" />}
                 </DropdownMenuItem>
                 {!selectedDefaultModel && (
-                  <DropdownMenuItem disabled>Choose a default model first</DropdownMenuItem>
+                  <DropdownMenuItem disabled>{t('settings.preferences.effort.chooseModel')}</DropdownMenuItem>
                 )}
                 {selectedDefaultModel && supportedEffortLevels.length === 0 && (
-                  <DropdownMenuItem disabled>This model does not expose effort options</DropdownMenuItem>
+                  <DropdownMenuItem disabled>{t('settings.preferences.effort.unsupported')}</DropdownMenuItem>
                 )}
                 {supportedEffortLevels.map((level) => (
                   <DropdownMenuItem key={level} onClick={() => handleEffortSelect(level)} className="flex items-center justify-between">
@@ -354,6 +355,7 @@ function ClaudePreferencesPage() {
 }
 
 function CodexPreferencesPage() {
+  const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const cachedCodexModels = useChatStore((s) => s.cachedCodexModels)
 
@@ -437,7 +439,7 @@ function CodexPreferencesPage() {
         defaultModel: modelId,
         defaultReasoningEffort: nextReasoningEffort,
       },
-      modelId ? 'Default Codex model updated' : 'Default Codex model cleared',
+      modelId ? t('settings.preferences.defaultModel.codexUpdated') : t('settings.preferences.defaultModel.codexCleared'),
     )
   }
 
@@ -447,7 +449,7 @@ function CodexPreferencesPage() {
       : ''
     await saveCodexDefaults(
       { defaultReasoningEffort: nextReasoningEffort },
-      nextReasoningEffort ? 'Default reasoning effort updated' : 'Default reasoning effort cleared',
+      nextReasoningEffort ? t('settings.preferences.reasoningEffort.updated') : t('settings.preferences.reasoningEffort.cleared'),
     )
   }
 
@@ -455,8 +457,8 @@ function CodexPreferencesPage() {
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Preferences</h2>
-          <p className="text-sm text-muted-foreground">Configure Codex defaults for new sessions</p>
+          <h2 className="text-lg font-semibold">{t('settings.preferences.title')}</h2>
+          <p className="text-sm text-muted-foreground">{t('settings.preferences.codexSubtitle')}</p>
         </div>
         <ProjectSelector mode="switch" />
       </div>
@@ -464,14 +466,14 @@ function CodexPreferencesPage() {
       <div className="space-y-4">
         <div className="rounded-lg border border-border">
           <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">User Settings</p>
+            <p className="text-xs font-medium text-muted-foreground">{t('settings.preferences.sections.user')}</p>
           </div>
 
           <div className="flex items-center justify-between gap-4 border-b border-border p-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Default Model</p>
+              <p className="text-sm font-medium">{t('settings.preferences.defaultModel.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Applied to new Codex sessions inside SuperOne. This does not modify local Codex settings.
+                {t('settings.preferences.defaultModel.codexDescription')}
               </p>
             </div>
             <DropdownMenu>
@@ -481,21 +483,21 @@ function CodexPreferencesPage() {
                   className="flex min-w-48 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="truncate">
-                    {defaultModel ? formatCodexModelLabel(defaultModel) : 'Not set'}
+                    {defaultModel ? formatCodexModelLabel(defaultModel) : t('common.notSet')}
                   </span>
                   <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuItem onClick={() => handleModelSelect('')} className="flex items-center justify-between">
-                  <span>Not set</span>
+                  <span>{t('common.notSet')}</span>
                   {!defaultModel && <Check className="size-4 text-muted-foreground" />}
                 </DropdownMenuItem>
                 {modelsLoading && codexModels.length === 0 && (
-                  <DropdownMenuItem disabled>Loading models...</DropdownMenuItem>
+                  <DropdownMenuItem disabled>{t('settings.preferences.defaultModel.loading')}</DropdownMenuItem>
                 )}
                 {!modelsLoading && codexModels.length === 0 && (
-                  <DropdownMenuItem disabled>{currentFolder ? 'No models available' : 'Open a project to load models'}</DropdownMenuItem>
+                  <DropdownMenuItem disabled>{currentFolder ? t('settings.preferences.defaultModel.empty') : t('settings.preferences.defaultModel.emptyNoProject')}</DropdownMenuItem>
                 )}
                 {codexModels.map((model) => (
                   <DropdownMenuItem key={model.id} onClick={() => handleModelSelect(model.id)} className="flex items-center justify-between">
@@ -509,9 +511,9 @@ function CodexPreferencesPage() {
 
           <div className="flex items-center justify-between gap-4 p-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Default Reasoning Effort</p>
+              <p className="text-sm font-medium">{t('settings.preferences.reasoningEffort.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Applied when the selected default model supports reasoning effort selection.
+                {t('settings.preferences.reasoningEffort.description')}
               </p>
             </div>
             <DropdownMenu>
@@ -521,21 +523,21 @@ function CodexPreferencesPage() {
                   className="flex min-w-40 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="truncate">
-                    {displayedReasoningEffort ? formatReasoningEffortLabel(displayedReasoningEffort) : 'Not set'}
+                    {displayedReasoningEffort ? formatReasoningEffortLabel(displayedReasoningEffort) : t('common.notSet')}
                   </span>
                   <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onClick={() => handleReasoningEffortSelect('')} className="flex items-center justify-between">
-                  <span>Not set</span>
+                  <span>{t('common.notSet')}</span>
                   {!displayedReasoningEffort && <Check className="size-4 text-muted-foreground" />}
                 </DropdownMenuItem>
                 {!selectedModel && (
-                  <DropdownMenuItem disabled>Choose a default model first</DropdownMenuItem>
+                  <DropdownMenuItem disabled>{t('settings.preferences.effort.chooseModel')}</DropdownMenuItem>
                 )}
                 {selectedModel && supportedReasoningEfforts.length === 0 && (
-                  <DropdownMenuItem disabled>This model does not expose effort options</DropdownMenuItem>
+                  <DropdownMenuItem disabled>{t('settings.preferences.effort.unsupported')}</DropdownMenuItem>
                 )}
                 {supportedReasoningEfforts.map((option) => (
                   <DropdownMenuItem key={option.value} onClick={() => handleReasoningEffortSelect(option.value)} className="flex items-center justify-between">

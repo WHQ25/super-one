@@ -1,4 +1,5 @@
 import { ArrowLeft, Blocks, Bot, Globe, LayoutGrid, Palette, Puzzle, Server, Settings, Smartphone } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
 import { AgentsPage } from './AgentsPage'
@@ -15,28 +16,29 @@ import { cn } from '@/lib/utils'
 import type { SettingsProvider } from '../../../shared/agent-types'
 
 const globalTabs = [
-  { id: 'app-settings' as const, label: 'General', icon: Settings },
-  { id: 'apps' as const, label: 'Mini Apps', icon: LayoutGrid },
-  { id: 'remote' as const, label: 'Remote Control', icon: Smartphone },
+  { id: 'app-settings' as const, labelKey: 'settings.layout.tabs.general', icon: Settings },
+  { id: 'apps' as const, labelKey: 'settings.layout.tabs.apps', icon: LayoutGrid },
+  { id: 'remote' as const, labelKey: 'settings.layout.tabs.remote', icon: Smartphone },
 ]
 
 const providerTabs = [
-  { id: 'providers' as const, label: 'Providers', icon: Globe },
-  { id: 'agents' as const, label: 'Subagents', icon: Bot },
-  { id: 'skills' as const, label: 'Skills', icon: Puzzle },
-  { id: 'mcp' as const, label: 'MCP Servers', icon: Server },
-  { id: 'plugins' as const, label: 'Plugins', icon: Blocks },
-  { id: 'preferences' as const, label: 'Preference', icon: Palette },
+  { id: 'providers' as const, labelKey: 'settings.layout.tabs.providers', icon: Globe },
+  { id: 'agents' as const, labelKey: 'settings.layout.tabs.agents', icon: Bot },
+  { id: 'skills' as const, labelKey: 'settings.layout.tabs.skills', icon: Puzzle },
+  { id: 'mcp' as const, labelKey: 'settings.layout.tabs.mcp', icon: Server },
+  { id: 'plugins' as const, labelKey: 'settings.layout.tabs.plugins', icon: Blocks },
+  { id: 'preferences' as const, labelKey: 'settings.layout.tabs.preferences', icon: Palette },
 ]
 
 const codexTabs = new Set<string>(['providers', 'skills', 'mcp', 'plugins', 'preferences'])
 
-const providers: { id: SettingsProvider; label: string }[] = [
-  { id: 'claude', label: 'Claude Code' },
-  { id: 'codex', label: 'Codex' },
+const providers: { id: SettingsProvider; labelKey: string }[] = [
+  { id: 'claude', labelKey: 'settings.layout.providers.claude' },
+  { id: 'codex', labelKey: 'settings.layout.providers.codex' },
 ]
 
 export function SettingsLayout() {
+  const { t } = useTranslation()
   const settingsTab = useAppStore((s) => s.settingsTab)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const settingsProvider = useAppStore((s) => s.settingsProvider)
@@ -58,7 +60,7 @@ export function SettingsLayout() {
           onClick={() => navigateTo('main')}
         >
           <ArrowLeft className="size-4" />
-          Back
+          {t('common.back')}
         </Button>
 
         <nav className="flex flex-col gap-1 mb-3">
@@ -74,7 +76,7 @@ export function SettingsLayout() {
               )}
             >
               <tab.icon className="size-4" />
-              {tab.label}
+              {t(tab.labelKey)}
             </button>
           ))}
         </nav>
@@ -84,7 +86,7 @@ export function SettingsLayout() {
             <TabsList className="border-0 bg-muted">
               {providers.map((p) => (
                 <TabsTrigger key={p.id} value={p.id} className="py-1">
-                  {p.label}
+                  {t(p.labelKey)}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -104,7 +106,7 @@ export function SettingsLayout() {
               )}
             >
               <tab.icon className="size-4" />
-              {tab.label}
+              {t(tab.labelKey)}
             </button>
           ))}
         </nav>

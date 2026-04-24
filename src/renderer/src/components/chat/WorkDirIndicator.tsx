@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { GitBranch, ChevronDown, Check, Circle, Plus, Monitor, GitFork } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -21,6 +22,7 @@ interface WorkDirIndicatorProps {
 }
 
 export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
+  const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const worktrees = useAppStore((s) => s._worktrees)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
@@ -78,27 +80,27 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
 
   if (isActive) {
     return (
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title="Worktree">
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={t('tooltips.worktree')}>
         <GitFork className="size-3" />
-        {!compact && <span>Worktree</span>}
+        {!compact && <span>{t('tooltips.worktree')}</span>}
       </div>
     )
   }
 
   if (worktreeBaseBranch && !isInWorktree) {
     return (
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title="Worktree">
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={t('tooltips.worktree')}>
         <GitFork className="size-3" />
-        {!compact && <span>Worktree</span>}
+        {!compact && <span>{t('tooltips.worktree')}</span>}
       </div>
     )
   }
 
   if (!isInWorktree && hasMessages) {
     return (
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title="Local">
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={t('tooltips.local')}>
         <Monitor className="size-3" />
-        {!compact && <span>Local</span>}
+        {!compact && <span>{t('tooltips.local')}</span>}
       </div>
     )
   }
@@ -113,18 +115,18 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
       <PopoverTrigger asChild>
         <button
           className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-          title={isPending ? `Create worktree from ${wtState?.pendingBaseBranch ?? ''}` : 'Local'}
+          title={isPending ? t('tooltips.createWorktreeFrom', { branch: wtState?.pendingBaseBranch ?? '' }) : t('tooltips.local')}
         >
           {isPending ? (
             <>
-              {!compact && <span className="text-muted-foreground">Create worktree from:</span>}
+              {!compact && <span className="text-muted-foreground">{t('chat.worktree.createFromLabel')}</span>}
               <GitBranch className="size-3" />
               {!compact && <span>{wtState?.pendingBaseBranch}</span>}
             </>
           ) : (
             <>
               <Monitor className="size-3" />
-              {!compact && <span>Local</span>}
+              {!compact && <span>{t('tooltips.local')}</span>}
             </>
           )}
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
@@ -133,7 +135,7 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
       <PopoverContent className="w-72 p-0" align="start">
         <Command shouldFilter={false}>
           <CommandInput
-            placeholder="Search branches…"
+            placeholder={t('chat.worktree.searchPlaceholder')}
             value={search}
             onValueChange={setSearch}
           />
@@ -145,7 +147,7 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
                 className="gap-2 text-xs"
               >
                 <Monitor className="size-3 shrink-0 text-muted-foreground" />
-                <span className="truncate">Local</span>
+                <span className="truncate">{t('tooltips.local')}</span>
                 {!isInWorktree && <Check className="size-3 shrink-0 text-foreground" />}
               </CommandItem>
             </CommandGroup>
@@ -153,7 +155,7 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
             {filteredBranches.length > 0 && (
               <>
                 <CommandSeparator />
-                <CommandGroup heading="Create Worktree from…">
+                <CommandGroup heading={t('chat.worktree.createFromHeading')}>
                   {filteredBranches.map((b) => (
                     <CommandItem
                       key={b}
@@ -171,7 +173,7 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
             )}
 
             {filteredBranches.length === 0 && search.trim().length > 0 && (
-              <CommandEmpty>No matches</CommandEmpty>
+              <CommandEmpty>{t('chat.worktree.noMatches')}</CommandEmpty>
             )}
           </CommandList>
 
@@ -186,9 +188,9 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
                   <div className={`flex size-3.5 items-center justify-center rounded-sm border ${wtState?.carryLocalChanges ? 'border-foreground bg-foreground' : 'border-muted-foreground'}`}>
                     {wtState?.carryLocalChanges && <Check className="size-2.5 text-background" />}
                   </div>
-                  <span>Carry local changes</span>
+                  <span>{t('chat.worktree.carryLocalChanges')}</span>
                   <span className="ml-auto text-[10px] text-muted-foreground">
-                    {fmt(dirty.files)} {dirty.files === 1 ? 'file' : 'files'}
+                    {t('chat.worktree.filesCount', { count: dirty.files })}
                     {dirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(dirty.insertions)}</span>}
                     {dirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(dirty.deletions)}</span>}
                   </span>

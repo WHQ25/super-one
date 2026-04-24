@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Bot, ChevronRight, Check, Wrench, ArrowUp, ArrowDown, MessageSquare, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
@@ -72,6 +73,7 @@ function buildToolResultMap(blocks: ContentBlock[]) {
 }
 
 export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming, defaultExpanded }: SubagentBlockProps) {
+  const { t } = useTranslation()
   const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
   const progress = useActiveSession((s) => s.taskProgress[taskBlock.toolUseId])
   const bashOutput = useBashOutput(taskBlock.toolUseId)
@@ -229,7 +231,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           <span className="min-w-0 truncate text-left text-muted-foreground">{taskInput.description}</span>
         )}
         {showSpawningPlaceholder && (
-          <span className="min-w-0 text-left text-muted-foreground">Spawning subagent...</span>
+          <span className="min-w-0 text-left text-muted-foreground">{t('chat.subagent.spawning')}</span>
         )}
         <ChevronRight
           className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')}
@@ -269,13 +271,13 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
       {expanded && (isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
         {isRunning ? (
           <>
-            <span>{isAsync ? 'Running in background' : 'Running'}</span>
+            <span>{isAsync ? t('chat.subagent.runningInBackground') : t('chat.subagent.running')}</span>
             {elapsed > 0 && <span className="tabular-nums">{formatElapsed(elapsed)}</span>}
           </>
         ) : (
           <>
             <Check className="size-3 shrink-0 text-green-400" />
-            <span>Done{elapsed > 0 ? ` ${formatElapsed(elapsed)}` : ''}</span>
+            <span>{t('chat.subagent.done')}{elapsed > 0 ? ` ${formatElapsed(elapsed)}` : ''}</span>
           </>
         )}
         <span className="ml-auto flex items-center gap-1.5">
@@ -399,6 +401,7 @@ function SubagentScrollArea({ children, isStreaming }: { children: React.ReactNo
 
 /** Collapsible output with scrollable content. */
 function OutputPreview({ text }: { text: string }) {
+  const { t } = useTranslation()
   const [showOutput, setShowOutput] = useState(false)
 
   return (
@@ -408,7 +411,7 @@ function OutputPreview({ text }: { text: string }) {
         className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
       >
         <ChevronRight className={cn('size-2.5 shrink-0 transition-transform duration-200', showOutput && 'rotate-90')} />
-        <span className="font-medium">Output</span>
+        <span className="font-medium">{t('chat.subagent.output')}</span>
       </button>
       {showOutput && (
         <div className="mt-1 max-h-[200px] overflow-y-auto text-xs">
@@ -430,6 +433,7 @@ function OutputPreview({ text }: { text: string }) {
 
 /** Collapsible prompt preview. */
 function PromptPreview({ prompt, model }: { prompt: string; model?: string }) {
+  const { t } = useTranslation()
   const [showPrompt, setShowPrompt] = useState(false)
 
   return (
@@ -439,7 +443,7 @@ function PromptPreview({ prompt, model }: { prompt: string; model?: string }) {
         className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
       >
         <ChevronRight className={cn('size-2.5 shrink-0 transition-transform duration-200', showPrompt && 'rotate-90')} />
-        <span>Prompt</span>
+        <span>{t('chat.subagent.prompt')}</span>
         {model && <span className="ml-1 rounded bg-muted px-1 py-px text-[10px]">{model}</span>}
       </button>
       {showPrompt && (

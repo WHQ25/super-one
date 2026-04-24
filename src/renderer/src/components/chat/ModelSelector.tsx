@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ChevronDown, Loader2, Zap } from 'lucide-react'
@@ -22,6 +23,7 @@ const EFFORT_LABELS: Record<EffortLevel, string> = {
 }
 
 export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
+  const { t } = useTranslation()
   const [modelOpen, setModelOpen] = useState(false)
   const [effortOpen, setEffortOpen] = useState(false)
 
@@ -76,7 +78,7 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
     return (
       <div className="flex items-center gap-1">
         {fastModeState && fastModeState !== 'off' && (
-          <span title={`Fast mode: ${fastModeState}`}>
+          <span title={t('tooltips.fastMode', { state: fastModeState })}>
             <Zap className={`size-3 ${fastModeState === 'on' ? 'text-yellow-500' : 'text-muted-foreground'}`} />
           </span>
         )}
@@ -93,7 +95,7 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
           </PopoverTrigger>
           <PopoverContent align="start" side="top" className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
             <ClaudeModelList
-              title="Select Model"
+              title={t('tooltips.selectModel')}
               models={availableModels}
               activeId={selectedModel ?? ''}
               onSelect={(id) => { setSelectedModel(id); setModelOpen(false) }}
@@ -111,7 +113,7 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
             </PopoverTrigger>
             <PopoverContent align="start" side="top" className="w-48 border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
               <EffortList
-                title="Thinking Effort"
+                title={t('tooltips.thinkingEffort')}
                 levels={effortLevels}
                 labels={EFFORT_LABELS}
                 activeLevel={selectedEffort ?? ''}
@@ -138,7 +140,7 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
             ) : codexModelsLoading ? (
               <Loader2 className="size-3 animate-spin" />
             ) : (
-              <span>Codex model</span>
+              <span>{t('chat.codex.modelFallback')}</span>
             )}
             <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
           </button>
@@ -166,7 +168,7 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
           </PopoverTrigger>
           <PopoverContent align="start" side="top" className="w-72 max-h-60 overflow-y-auto border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
             <CodexReasoningEffortList
-              title="Reasoning Effort"
+              title={t('tooltips.reasoningEffort')}
               options={codexReasoningEfforts}
               activeValue={currentCodexReasoningEffort ?? ''}
               onSelect={(value) => { setSelectedCodexReasoningEffort(value); setEffortOpen(false) }}

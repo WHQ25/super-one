@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Kbd } from '@/components/ui/kbd'
@@ -115,6 +116,7 @@ function PreviewQuestionPanel({
   onNoteBlur: () => void
   notesInputRef: React.RefObject<HTMLInputElement | null>
 }) {
+  const { t } = useTranslation()
   const key = questionKey(q)
 
   const previewContent = useMemo(() => {
@@ -139,7 +141,7 @@ function PreviewQuestionPanel({
             className="mt-1.5 w-full cursor-pointer rounded bg-muted px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition"
           >
             <Kbd variant="square" className="mr-1.5">{q.options.length + 1}</Kbd>
-            Other...
+            {t('chat.askUser.otherOption')}
           </button>
         </div>
         <div className="min-w-0 flex-1">
@@ -158,7 +160,7 @@ function PreviewQuestionPanel({
             </div>
           ) : (
             <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border/30 p-3 text-xs text-muted-foreground">
-              Select an option to preview
+              {t('chat.askUser.selectOptionPreview')}
             </div>
           )}
           {previewContent && selections[key] && (
@@ -167,7 +169,7 @@ function PreviewQuestionPanel({
               <input
                 ref={notesInputRef}
                 type="text"
-                placeholder="Add a note (optional)..."
+                placeholder={t('chat.askUser.noteOptionalPlaceholder')}
                 value={notesTexts[notesKey(q, selections[key])] ?? ''}
                 onChange={(e) => onNotes(q, e.target.value)}
                 onFocus={onNoteFocus}
@@ -197,6 +199,7 @@ function SimpleQuestionPanel({
   onOther: (q: UserQuestion, text: string) => void
   otherInputRef: React.RefObject<HTMLInputElement | null>
 }) {
+  const { t } = useTranslation()
   const key = questionKey(q)
 
   return (
@@ -231,7 +234,7 @@ function SimpleQuestionPanel({
         <input
           ref={otherInputRef}
           type="text"
-          placeholder="Other..."
+          placeholder={t('chat.askUser.otherOption')}
           value={otherTexts[key] ?? ''}
           onChange={(e) => onOther(q, e.target.value)}
           className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -252,6 +255,7 @@ function defaultSelections(questions: UserQuestion[]): Record<string, string> {
 }
 
 export function AskUserQuestionPrompt() {
+  const { t } = useTranslation()
   const pendingQuestion = useActiveSession((s) => s.pendingQuestion)
   const answerQuestion = useChatStore((s) => s.answerQuestion)
   const dismissQuestion = useChatStore((s) => s.dismissQuestion)
@@ -481,16 +485,16 @@ export function AskUserQuestionPrompt() {
           className="h-7 cursor-pointer bg-blue-600 px-4 text-xs text-white hover:bg-blue-500 disabled:opacity-50"
           onClick={handleSubmit}
         >
-          Submit
+          {t('chat.askUser.submit')}
           <Kbd variant="inline" className="ml-1 text-white/70">↵</Kbd>
         </Button>
         <span className="text-[10px] text-muted-foreground">
-          {!singleQuestion && <><Kbd>⇥</Kbd><span className="ml-0.5">switch</span><span className="mx-1 opacity-40">·</span></>}
-          {isPreview && selections[questionKey(activeQuestion)] && <><Kbd>n</Kbd><span className="ml-0.5">note</span><span className="mx-1 opacity-40">·</span></>}
+          {!singleQuestion && <><Kbd>⇥</Kbd><span className="ml-0.5">{t('chat.askUser.hintSwitch')}</span><span className="mx-1 opacity-40">·</span></>}
+          {isPreview && selections[questionKey(activeQuestion)] && <><Kbd>n</Kbd><span className="ml-0.5">{t('chat.askUser.hintNote')}</span><span className="mx-1 opacity-40">·</span></>}
           {otherFocused || noteFocused
-            ? <><Kbd>ctrl</Kbd>+<Kbd>num</Kbd><span className="ml-0.5">select</span><span className="mx-1 opacity-40">·</span></>
-            : <><Kbd>num</Kbd><span className="ml-0.5">select</span><span className="mx-1 opacity-40">·</span></>}
-          <Kbd>esc</Kbd><span className="ml-0.5">dismiss</span>
+            ? <><Kbd>ctrl</Kbd>+<Kbd>num</Kbd><span className="ml-0.5">{t('chat.askUser.hintSelect')}</span><span className="mx-1 opacity-40">·</span></>
+            : <><Kbd>num</Kbd><span className="ml-0.5">{t('chat.askUser.hintSelect')}</span><span className="mx-1 opacity-40">·</span></>}
+          <Kbd>esc</Kbd><span className="ml-0.5">{t('chat.askUser.hintDismiss')}</span>
         </span>
       </div>
     </div>

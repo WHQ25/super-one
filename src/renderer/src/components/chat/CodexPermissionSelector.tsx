@@ -1,39 +1,40 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ShieldCheck, ShieldOff, AlertTriangle, Check, ChevronDown } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { DEFAULT_CODEX_PERMISSION_PRESET, type CodexPermissionPreset } from '../../../../shared/agent-types'
-
-const options: Array<{
-  id: CodexPermissionPreset
-  label: string
-  icon: React.ReactNode
-  toneClass: string
-}> = [
-  {
-    id: 'default',
-    label: 'Default',
-    icon: <ShieldCheck className="size-3.5" />,
-    toneClass: 'text-foreground',
-  },
-  {
-    id: 'full-access',
-    label: 'Full Access',
-    icon: <AlertTriangle className="size-3.5" />,
-    toneClass: 'text-destructive',
-  },
-]
 
 interface CodexPermissionSelectorProps {
   compact?: boolean
 }
 
 export function CodexPermissionSelector({ compact = false }: CodexPermissionSelectorProps) {
+  const { t } = useTranslation()
+  const options: Array<{
+    id: CodexPermissionPreset
+    label: string
+    icon: React.ReactNode
+    toneClass: string
+  }> = [
+    {
+      id: 'default',
+      label: t('resources.automation.defaultValue'),
+      icon: <ShieldCheck className="size-3.5" />,
+      toneClass: 'text-foreground',
+    },
+    {
+      id: 'full-access',
+      label: t('resources.automation.fullAccess'),
+      icon: <AlertTriangle className="size-3.5" />,
+      toneClass: 'text-destructive',
+    },
+  ]
   const [open, setOpen] = useState(false)
   const selectedPreset = useActiveSession((s) => s.selectedCodexPermissionPreset)
   const setSelectedPreset = useChatStore((s) => s.setSelectedCodexPermissionPreset)
   const preset: CodexPermissionPreset = selectedPreset || DEFAULT_CODEX_PERMISSION_PRESET
-  const presetLabel = preset === 'full-access' ? 'Full Access' : 'Default'
+  const presetLabel = preset === 'full-access' ? t('resources.automation.fullAccess') : t('resources.automation.defaultValue')
 
   const modeIcon = preset === 'full-access'
     ? <ShieldOff className="size-3" />
@@ -57,7 +58,7 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-64 border-border bg-card p-2">
         <div className="space-y-1 text-xs">
-          <div className="px-2 py-1.5 text-muted-foreground">Permission Preset</div>
+          <div className="px-2 py-1.5 text-muted-foreground">{t('chat.codex.permissionPreset')}</div>
           {options.map((option) => (
             <button
               key={option.id}

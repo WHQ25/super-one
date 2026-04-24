@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
+import { Trans, useTranslation } from 'react-i18next'
 import { History, TriangleAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chat'
@@ -29,22 +30,23 @@ interface RewindButtonProps {
 
 interface RewindOption {
   key: RewindMode | 'cancel'
-  label: string
+  labelKey: 'codeAndChat' | 'conversation' | 'code' | 'cancel'
 }
 
 const codeOptions: RewindOption[] = [
-  { key: 'code_and_chat', label: 'Restore code and conversation' },
-  { key: 'conversation', label: 'Restore conversation' },
-  { key: 'code', label: 'Restore code' },
-  { key: 'cancel', label: 'Never mind' },
+  { key: 'code_and_chat', labelKey: 'codeAndChat' },
+  { key: 'conversation', labelKey: 'conversation' },
+  { key: 'code', labelKey: 'code' },
+  { key: 'cancel', labelKey: 'cancel' },
 ]
 
 const chatOnlyOptions: RewindOption[] = [
-  { key: 'conversation', label: 'Restore conversation' },
-  { key: 'cancel', label: 'Never mind' },
+  { key: 'conversation', labelKey: 'conversation' },
+  { key: 'cancel', labelKey: 'cancel' },
 ]
 
 export function RewindButton({ checkpointId, rewound, className }: RewindButtonProps) {
+  const { t } = useTranslation()
   const [preview, setPreview] = useState<RewindFilesResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -63,7 +65,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
       const result = await previewRewind(checkpointId)
       setPreview(result)
     } catch {
-      setPreview({ canRewind: false, error: 'Preview failed' })
+      setPreview({ canRewind: false, error: t('chat.rewind.previewFailed') })
     } finally {
       setLoading(false)
     }
@@ -81,13 +83,13 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
     try {
       if (mode === 'code_and_chat') {
         await rewindCodeAndChat(checkpointId)
-        toast.success('Code & conversation restored')
+        toast.success(t('chat.rewind.toast.codeAndChat'))
       } else if (mode === 'conversation') {
         await rewindConversation(checkpointId)
-        toast.success('Conversation restored')
+        toast.success(t('chat.rewind.toast.conversation'))
       } else {
         await rewindFiles(checkpointId)
-        toast.success('Code restored')
+        toast.success(t('chat.rewind.toast.code'))
       }
     } finally {
       setRewindingMode(null)
@@ -139,7 +141,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            <span>Rewind</span>
+            <span>{t('tooltips.rewind')}</span>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -147,20 +149,20 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="gap-4 sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><History className="size-4" /> Rewind</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><History className="size-4" /> {t('chat.rewind.title')}</DialogTitle>
           </DialogHeader>
 
           <p className="text-sm text-muted-foreground">
-            Confirm you want to restore to the point before you sent this message.
+            {t('chat.rewind.confirmDescription')}
           </p>
 
           {!rewound && !preview && loading && (
-            <p className="text-sm text-muted-foreground">Loading...</p>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
           )}
 
           {!rewound && preview && !preview.canRewind && (
             <p className="text-sm text-destructive">
-              {preview.error ?? 'Cannot restore to this checkpoint.'}
+              {preview.error ?? t('chat.rewind.cannotRestore')}
             </p>
           )}
 
@@ -168,17 +170,21 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
             <>
               {!rewound && hasCodeChanges && (
                 <p className="text-sm text-muted-foreground">
-                  Changes: <span className="text-green-500">+{ins}</span>
-                  {' '}
-                  <span className="text-red-500">-{del}</span>
-                  {' in '}
-                  <span className="text-foreground">{preview!.filesChanged![0].split('/').pop()}</span>
-                  {fileCount > 1 && ` and ${fileCount - 1} other file${fileCount - 1 !== 1 ? 's' : ''}`}
+                  <Trans
+                    i18nKey="chat.rewind.changes"
+                    values={{ ins, del, file: preview!.filesChanged![0].split('/').pop() }}
+                    components={{
+                      green: <span className="text-green-500" />,
+                      red: <span className="text-red-500" />,
+                      file: <span className="text-foreground" />,
+                    }}
+                  />
+                  {fileCount > 1 && t('chat.rewind.andOtherFiles', { count: fileCount - 1 })}
                 </p>
               )}
 
               {codeAlreadyRestored && (
-                <p className="text-sm text-green-500">Code already restored.</p>
+                <p className="text-sm text-green-500">{t('chat.rewind.codeAlreadyRestored')}</p>
               )}
 
               <div className="space-y-0.5">
@@ -190,7 +196,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
                     disabled={!!rewindingMode && opt.key !== 'cancel'}
                   >
                     <span className={rewindingMode === opt.key ? 'text-muted-foreground' : ''}>
-                      {rewindingMode === opt.key ? 'Restoring...' : opt.label}
+                      {rewindingMode === opt.key ? t('chat.rewind.restoring') : t(`chat.rewind.options.${opt.labelKey}`)}
                     </span>
                     <CommandShortcut>{i + 1}</CommandShortcut>
                   </button>
@@ -200,7 +206,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
               {!rewound && hasCodeChanges && (
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <TriangleAlert className="size-3 shrink-0" />
-                  Rewinding does not affect files edited manually or via bash.
+                  {t('chat.rewind.noEffectNote')}
                 </p>
               )}
             </>

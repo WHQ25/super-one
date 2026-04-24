@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Check, Code, Copy, Expand, Eye, Loader2 } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import mermaid from 'mermaid'
@@ -86,6 +87,7 @@ interface MermaidBlockProps {
 }
 
 export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps) {
+  const { t } = useTranslation()
   const isDark = useIsDark()
   const [svg, setSvg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -152,7 +154,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
           <button
             onClick={() => setShowSource((v) => !v)}
             className="rounded p-0.5 opacity-50 transition-opacity hover:opacity-100"
-            title={showSource ? 'Preview' : 'Source'}
+            title={showSource ? t('tooltips.mermaidPreview') : t('tooltips.mermaidSource')}
           >
             {showSource ? <Eye className="size-3.5" /> : <Code className="size-3.5" />}
           </button>
@@ -161,7 +163,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
           <button
             onClick={() => setFullscreenOpen(true)}
             className="rounded p-0.5 opacity-50 transition-opacity hover:opacity-100"
-            title="Expand"
+            title={t('tooltips.expand')}
           >
             <Expand className="size-3.5" />
           </button>

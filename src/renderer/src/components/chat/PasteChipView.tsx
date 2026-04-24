@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { FileText, UnfoldVertical, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { PasteChipPreview } from './PasteChipPreview'
 
 export function PasteChipView({ node, getPos, editor, selected }: NodeViewProps) {
+  const { t } = useTranslation()
   const { text, lineCount, preview } = node.attrs as { text: string; lineCount: number; preview: string }
   const [previewOpen, setPreviewOpen] = useState(false)
 
@@ -82,7 +84,7 @@ export function PasteChipView({ node, getPos, editor, selected }: NodeViewProps)
             </button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <span>Expand to plain text</span>
+            <span>{t('tooltips.expandToPlainText')}</span>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

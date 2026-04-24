@@ -1,4 +1,5 @@
 import { PanelLeft, PanelLeftDashed, PanelRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
 import { useAppStore } from '@/stores/app'
@@ -7,6 +8,7 @@ import { useActivityPanelStore } from '@/stores/activity-panel'
 const isMac = window.app.platform === 'darwin'
 
 export function LayoutToggle() {
+  const { t } = useTranslation()
   const showSidebar = useAppStore((s) => s.showSidebar)
   const showPanel = useActivityPanelStore((s) => s.showPanel)
   const side = useActivityPanelStore((s) => s.side)
@@ -27,7 +29,7 @@ export function LayoutToggle() {
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom" sideOffset={4}>
-            <span>Toggle Sidebar</span> <CommandShortcut>{isMac ? '⌘B' : 'Ctrl+B'}</CommandShortcut>
+            <span>{t('tooltips.toggleSidebar')}</span> <CommandShortcut>{isMac ? '⌘B' : 'Ctrl+B'}</CommandShortcut>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -44,7 +46,7 @@ export function LayoutToggle() {
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" sideOffset={4}>
-              Move Chat to {side === 'left' ? 'Left' : 'Right'}
+              {side === 'left' ? t('tooltips.moveChatLeft') : t('tooltips.moveChatRight')}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

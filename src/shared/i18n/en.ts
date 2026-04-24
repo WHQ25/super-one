@@ -45,6 +45,25 @@ export type Messages = {
     renameSession: {
       title: string
     }
+    contextMenu: {
+      sessionHistory: string
+      removeProject: string
+      automations: string
+      runNow: string
+      edit: string
+      delete: string
+      noSessions: string
+      rename: string
+      pin: string
+      unpin: string
+      hide: string
+      copySessionId: string
+      copyWorkingDirectory: string
+      openFolder: string
+      sessionIdCopiedToast: string
+      sessionIdNotReadyToast: string
+      workingDirCopiedToast: string
+    }
   }
   shell: {
     startup: {
@@ -204,6 +223,135 @@ export type Messages = {
       switchTo: string
       acceptEdits: string
       afterApproval: string
+      label: string
+      approved: string
+      rejected: string
+      planApproved: string
+      planRejected: string
+    }
+    rewind: {
+      title: string
+      confirmDescription: string
+      cannotRestore: string
+      previewFailed: string
+      codeAlreadyRestored: string
+      changes: string
+      andOtherFiles_one: string
+      andOtherFiles_other: string
+      noEffectNote: string
+      restoring: string
+      options: {
+        codeAndChat: string
+        conversation: string
+        code: string
+        cancel: string
+      }
+      toast: {
+        codeAndChat: string
+        conversation: string
+        code: string
+      }
+    }
+    pasteChip: {
+      title_one: string
+      title_other: string
+      unsaved: string
+    }
+    codex: {
+      statusRunning: string
+      statusReading: string
+      statusSearching: string
+      runningInline: string
+      waitingFor: string
+      waitingForWithElapsed: string
+      fallbackAgentName: string
+      codexError: string
+      startReview: string
+      reviewComplete: string
+      conversationCompacted: string
+      followUp: string
+      modelFallback: string
+      permissionPreset: string
+    }
+    worktree: {
+      searchPlaceholder: string
+      createFromHeading: string
+      createFromLabel: string
+      noMatches: string
+      carryLocalChanges: string
+      filesCount_one: string
+      filesCount_other: string
+    }
+    permission: {
+      sandboxNetwork: string
+      allowSandboxNetwork: string
+      sandboxOverride: string
+      networkAccess: string
+      blockedPath: string
+      inputHeading: string
+      suggestionsHeading: string
+      allow: string
+      allowForSession: string
+      decline: string
+      deny: string
+      denyReasonPlaceholder: string
+      alwaysAllow: string
+    }
+    askUser: {
+      otherOption: string
+      selectOptionPreview: string
+      noteOptionalPlaceholder: string
+      submit: string
+      hintSwitch: string
+      hintNote: string
+      hintSelect: string
+      hintDismiss: string
+    }
+    toolBlock: {
+      enteredPlanMode: string
+      readingWidgetGuidelines: string
+      readWidgetGuidelines: string
+      readingMiniAppGuide: string
+      readMiniAppGuide: string
+      settingUpMiniApp: string
+      setUpMiniApp: string
+      packing: string
+      miniAppPacked: string
+      generatingWidget: string
+      generateWidget: string
+      dismissed: string
+      denied: string
+      error: string
+      running: string
+      runningInline: string
+      timedOut: string
+      outputFileExpired: string
+      collapse: string
+      moreLines_one: string
+      moreLines_other: string
+    }
+    subagent: {
+      spawning: string
+      runningInBackground: string
+      running: string
+      done: string
+      output: string
+      prompt: string
+    }
+    codexCommands: {
+      helpDesc: string
+      resetDesc: string
+      authDesc: string
+      authAutoDesc: string
+      authChatgptDesc: string
+      authApiKeyDesc: string
+      authApiKeyArg: string
+      reviewDesc: string
+      compactDesc: string
+      planDesc: string
+    }
+    slashCommand: {
+      skillBadge: string
     }
   }
   resources: {
@@ -502,6 +650,37 @@ export type Messages = {
       network: string
     }
   }
+  tooltips: {
+    toggleSidebar: string
+    moveChatLeft: string
+    moveChatRight: string
+    expandToPlainText: string
+    save: string
+    newAutomation: string
+    newSession: string
+    folderNotFound: string
+    rewind: string
+    collapsePermission: string
+    worktree: string
+    local: string
+    createWorktreeFrom: string
+    mermaidPreview: string
+    mermaidSource: string
+    expand: string
+    fastMode: string
+    selectModel: string
+    thinkingEffort: string
+    reasoningEffort: string
+    exitPlanMode: string
+    reload: string
+    openDevTools: string
+    devTools: string
+    saveAsHtml: string
+    copyPlan: string
+    close: string
+    fullscreen: string
+    unsavedChanges: string
+  }
 }
 
 export const en: Messages = {
@@ -550,6 +729,25 @@ export const en: Messages = {
     },
     renameSession: {
       title: 'Rename Session',
+    },
+    contextMenu: {
+      sessionHistory: 'Session History',
+      removeProject: 'Remove Project',
+      automations: 'Automations',
+      runNow: 'Run Now',
+      edit: 'Edit',
+      delete: 'Delete',
+      noSessions: 'No sessions',
+      rename: 'Rename',
+      pin: 'Pin',
+      unpin: 'Unpin',
+      hide: 'Hide',
+      copySessionId: 'Copy Session ID',
+      copyWorkingDirectory: 'Copy Working Directory',
+      openFolder: 'Open Folder',
+      sessionIdCopiedToast: 'Session ID Copied',
+      sessionIdNotReadyToast: 'Session ID not ready — copied internal id',
+      workingDirCopiedToast: 'Working Directory Copied',
     },
   },
   shell: {
@@ -722,6 +920,135 @@ export const en: Messages = {
       switchTo: 'Switch to',
       acceptEdits: 'Accept Edits',
       afterApproval: 'after approval',
+      label: 'Plan',
+      approved: 'Approved',
+      rejected: 'Rejected',
+      planApproved: 'Plan Approved',
+      planRejected: 'Plan Rejected',
+    },
+    rewind: {
+      title: 'Rewind',
+      confirmDescription: 'Confirm you want to restore to the point before you sent this message.',
+      cannotRestore: 'Cannot restore to this checkpoint.',
+      previewFailed: 'Preview failed',
+      codeAlreadyRestored: 'Code already restored.',
+      changes: 'Changes: <green>+{{ins}}</green> <red>-{{del}}</red> in <file>{{file}}</file>',
+      andOtherFiles_one: ' and {{count}} other file',
+      andOtherFiles_other: ' and {{count}} other files',
+      noEffectNote: 'Rewinding does not affect files edited manually or via bash.',
+      restoring: 'Restoring...',
+      options: {
+        codeAndChat: 'Restore code and conversation',
+        conversation: 'Restore conversation',
+        code: 'Restore code',
+        cancel: 'Never mind',
+      },
+      toast: {
+        codeAndChat: 'Code & conversation restored',
+        conversation: 'Conversation restored',
+        code: 'Code restored',
+      },
+    },
+    pasteChip: {
+      title_one: 'Pasted text · {{count}} line',
+      title_other: 'Pasted text · {{count}} lines',
+      unsaved: '(unsaved)',
+    },
+    codex: {
+      statusRunning: 'Running',
+      statusReading: 'Reading',
+      statusSearching: 'Searching',
+      runningInline: 'Running…',
+      waitingFor: 'Waiting for {{name}}...',
+      waitingForWithElapsed: 'Waiting for {{name}} for {{elapsed}}s...',
+      fallbackAgentName: 'subagent',
+      codexError: 'Codex Error',
+      startReview: 'Start review',
+      reviewComplete: 'Review complete',
+      conversationCompacted: 'Conversation compacted',
+      followUp: 'Follow-up',
+      modelFallback: 'Codex model',
+      permissionPreset: 'Permission Preset',
+    },
+    worktree: {
+      searchPlaceholder: 'Search branches…',
+      createFromHeading: 'Create Worktree from…',
+      createFromLabel: 'Create worktree from:',
+      noMatches: 'No matches',
+      carryLocalChanges: 'Carry local changes',
+      filesCount_one: '{{count}} file',
+      filesCount_other: '{{count}} files',
+    },
+    permission: {
+      sandboxNetwork: 'Sandbox Network',
+      allowSandboxNetwork: 'Allow Sandbox Network Access',
+      sandboxOverride: 'Sandbox Override',
+      networkAccess: 'Network Access',
+      blockedPath: 'Blocked path: {{path}}',
+      inputHeading: 'Input',
+      suggestionsHeading: 'Suggestions',
+      allow: 'Allow',
+      allowForSession: 'Allow for this session',
+      decline: 'Decline',
+      deny: 'Deny',
+      denyReasonPlaceholder: 'Deny reason (optional, Enter to submit)',
+      alwaysAllow: 'Always Allow',
+    },
+    askUser: {
+      otherOption: 'Other...',
+      selectOptionPreview: 'Select an option to preview',
+      noteOptionalPlaceholder: 'Add a note (optional)...',
+      submit: 'Submit',
+      hintSwitch: 'switch',
+      hintNote: 'note',
+      hintSelect: 'select',
+      hintDismiss: 'dismiss',
+    },
+    toolBlock: {
+      enteredPlanMode: 'Entered plan mode',
+      readingWidgetGuidelines: 'Reading widget guidelines…',
+      readWidgetGuidelines: 'Read widget guidelines',
+      readingMiniAppGuide: 'Reading mini-app guide',
+      readMiniAppGuide: 'Read mini-app guide',
+      settingUpMiniApp: 'Setting up mini-app…',
+      setUpMiniApp: 'Set up mini-app',
+      packing: 'Packing…',
+      miniAppPacked: 'Mini-app packed',
+      generatingWidget: 'Generating widget…',
+      generateWidget: 'Generate widget',
+      dismissed: 'Dismissed',
+      denied: 'Denied',
+      error: 'Error',
+      running: 'Running…',
+      runningInline: 'Running…',
+      timedOut: 'Timed out',
+      outputFileExpired: 'Output file: {{path}} expired',
+      collapse: 'Collapse',
+      moreLines_one: '{{count}} more line',
+      moreLines_other: '{{count}} more lines',
+    },
+    subagent: {
+      spawning: 'Spawning subagent...',
+      runningInBackground: 'Running in background',
+      running: 'Running',
+      done: 'Done',
+      output: 'Output',
+      prompt: 'Prompt',
+    },
+    codexCommands: {
+      helpDesc: 'Show available commands',
+      resetDesc: 'Reset Codex thread',
+      authDesc: 'Show auth status',
+      authAutoDesc: 'Auto auth mode (prefer API key)',
+      authChatgptDesc: 'Use ChatGPT sign-in mode',
+      authApiKeyDesc: 'Use API key mode',
+      authApiKeyArg: '<CODEX_API_KEY>',
+      reviewDesc: 'Review code changes',
+      compactDesc: 'Compact thread context',
+      planDesc: 'Enter plan mode',
+    },
+    slashCommand: {
+      skillBadge: 'skill',
     },
   },
   resources: {
@@ -1019,5 +1346,36 @@ export const en: Messages = {
       readWrite: 'Read & Write',
       network: 'Network',
     },
+  },
+  tooltips: {
+    toggleSidebar: 'Toggle Sidebar',
+    moveChatLeft: 'Move Chat to Left',
+    moveChatRight: 'Move Chat to Right',
+    expandToPlainText: 'Expand to plain text',
+    save: 'Save ({{shortcut}})',
+    newAutomation: 'New Automation',
+    newSession: 'New Session',
+    folderNotFound: 'Folder not found: {{path}}',
+    rewind: 'Rewind',
+    collapsePermission: 'Collapse permission request (<kbd>space</kbd> to toggle)',
+    worktree: 'Worktree',
+    local: 'Local',
+    createWorktreeFrom: 'Create worktree from {{branch}}',
+    mermaidPreview: 'Preview',
+    mermaidSource: 'Source',
+    expand: 'Expand',
+    fastMode: 'Fast mode: {{state}}',
+    selectModel: 'Select Model',
+    thinkingEffort: 'Thinking Effort',
+    reasoningEffort: 'Reasoning Effort',
+    exitPlanMode: 'Exit plan mode',
+    reload: 'Reload',
+    openDevTools: 'Open DevTools',
+    devTools: 'DevTools',
+    saveAsHtml: 'Save as HTML',
+    copyPlan: 'Copy plan',
+    close: 'Close',
+    fullscreen: 'Fullscreen',
+    unsavedChanges: 'Unsaved changes',
   },
 }

@@ -1,4 +1,5 @@
 import { forwardRef, useRef, useImperativeHandle, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { RotateCw, Bug } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -19,6 +20,7 @@ interface MiniAppViewProps {
 
 export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
   function MiniAppView({ appId, className }, ref) {
+    const { t } = useTranslation()
     const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
     const isDev = app?.manifest.isDev
     const templates = app?.manifest.templates
@@ -45,14 +47,14 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
             <button
               onClick={reload}
               className="rounded p-1 text-white/70 hover:text-white"
-              title="Reload"
+              title={t('tooltips.reload')}
             >
               <RotateCw className="size-3.5" />
             </button>
             <button
               onClick={openDevTools}
               className="rounded p-1 text-white/70 hover:text-white"
-              title="DevTools"
+              title={t('tooltips.devTools')}
             >
               <Bug className="size-3.5" />
             </button>

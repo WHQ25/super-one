@@ -150,16 +150,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const showAgentMentions = activeProviderForResources === 'claude'
 
     const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
-      { name: 'help', description: 'Show available commands', argumentHint: '', isSkill: false },
-      { name: 'reset', description: 'Reset Codex thread', argumentHint: '', isSkill: false },
-      { name: 'auth', description: 'Show auth status', argumentHint: '', isSkill: false },
-      { name: 'auth auto', description: 'Auto auth mode (prefer API key)', argumentHint: '', isSkill: false },
-      { name: 'auth chatgpt', description: 'Use ChatGPT sign-in mode', argumentHint: '', isSkill: false },
-      { name: 'auth apikey', description: 'Use API key mode', argumentHint: '<CODEX_API_KEY>', isSkill: false },
-      { name: 'review', description: 'Review code changes', argumentHint: '', isSkill: false },
-      { name: 'compact', description: 'Compact thread context', argumentHint: '', isSkill: false },
-      { name: 'plan', description: 'Enter plan mode', argumentHint: '', isSkill: false },
-    ]), [])
+      { name: 'help', description: t('chat.codexCommands.helpDesc'), argumentHint: '', isSkill: false },
+      { name: 'reset', description: t('chat.codexCommands.resetDesc'), argumentHint: '', isSkill: false },
+      { name: 'auth', description: t('chat.codexCommands.authDesc'), argumentHint: '', isSkill: false },
+      { name: 'auth auto', description: t('chat.codexCommands.authAutoDesc'), argumentHint: '', isSkill: false },
+      { name: 'auth chatgpt', description: t('chat.codexCommands.authChatgptDesc'), argumentHint: '', isSkill: false },
+      { name: 'auth apikey', description: t('chat.codexCommands.authApiKeyDesc'), argumentHint: t('chat.codexCommands.authApiKeyArg'), isSkill: false },
+      { name: 'review', description: t('chat.codexCommands.reviewDesc'), argumentHint: '', isSkill: false },
+      { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
+      { name: 'plan', description: t('chat.codexCommands.planDesc'), argumentHint: '', isSkill: false },
+    ]), [t])
 
     const activeSlashCommands = activeProviderForResources === 'codex' ? codexSlashCommands : slashCommands
 
@@ -836,7 +836,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     )}
                     {cmd.isSkill && (
                       <span className="rounded bg-emerald-100 px-1 py-px text-[10px] font-normal text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400">
-                        skill
+                        {t('chat.slashCommand.skillBadge')}
                       </span>
                     )}
                   </span>

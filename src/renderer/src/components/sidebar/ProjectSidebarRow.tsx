@@ -1,5 +1,6 @@
 import { memo, useMemo, useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { Bot, CalendarClock, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, Pin, Play, Smartphone, SquareActivity, SquarePen, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -45,6 +46,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onOpenHistory,
   onNewSession,
 }: ProjectSidebarRowProps) {
+  const { t } = useTranslation()
   const projectSession = useChatStore((s) => s.projectSessions[folder.path])
   const remoteSessionId = useChatStore((s) => s.remoteSession?.projectPath === folder.path ? s.remoteSession.sessionId : null)
 
@@ -161,7 +163,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                   <span className={cn('ml-2 min-w-0 truncate text-md', folder.missing && 'text-muted-foreground line-through')}>{folder.name}</span>
                 </TooltipTrigger>
                 <TooltipContent side="top" sideOffset={8}>
-                  <span className="text-xs">{folder.missing ? `Folder not found: ${folder.path}` : derived.displayPath}</span>
+                  <span className="text-xs">{folder.missing ? t('tooltips.folderNotFound', { path: folder.path }) : derived.displayPath}</span>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -177,7 +179,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                         <CalendarClock className="size-4" />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={8}>New Automation</TooltipContent>
+                    <TooltipContent side="top" sideOffset={8}>{t('tooltips.newAutomation')}</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
                 <TooltipProvider delayDuration={300}>
@@ -193,7 +195,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                         <SquarePen className="size-4" />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={8}>New Session</TooltipContent>
+                    <TooltipContent side="top" sideOffset={8}>{t('tooltips.newSession')}</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               </div>
@@ -206,7 +208,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             className="text-xs"
           >
             <History className="size-3.5" />
-            Session History
+            {t('sidebar.contextMenu.sessionHistory')}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem
@@ -215,7 +217,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             className="text-xs"
           >
             <Trash2 className="size-3.5" />
-            Remove Project
+            {t('sidebar.contextMenu.removeProject')}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -231,7 +233,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               automationsExpanded && 'rotate-90',
             )} />
             <CalendarClock className="size-3.5 shrink-0 group-hover/auto:hidden" />
-            <span>Automations</span>
+            <span>{t('sidebar.contextMenu.automations')}</span>
             <span className="ml-auto text-[10px] text-sidebar-foreground/30">{projectAutomations.length}</span>
           </button>
           {automationsExpanded && (
@@ -258,11 +260,11 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                   <ContextMenuContent>
                     <ContextMenuItem onClick={() => { window.app.runAutomationNow(automation.id).catch(() => {}) }}>
                       <Play className="size-3.5" />
-                      Run Now
+                      {t('sidebar.contextMenu.runNow')}
                     </ContextMenuItem>
                     <ContextMenuItem onClick={() => openEditDialog(automation)}>
                       <Pencil className="size-3.5" />
-                      Edit
+                      {t('sidebar.contextMenu.edit')}
                     </ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem
@@ -270,7 +272,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                       onClick={() => { window.app.deleteAutomation(automation.id).then(refreshAutomations).catch(() => {}) }}
                     >
                       <Trash2 className="size-3.5" />
-                      Delete
+                      {t('sidebar.contextMenu.delete')}
                     </ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>
@@ -284,7 +286,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         <div className="overflow-hidden">
           <div className="flex flex-col py-0.5 pl-5">
             {derived.sessionsToShow.length === 0 ? (
-              <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">No sessions</div>
+              <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
             ) : (
               derived.sessionsToShow.map((session) => {
                 const sessionEntry = projectSession?._sessions?.[session.sessionId]
@@ -350,21 +352,21 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                           className="text-xs"
                         >
                           <Pencil className="size-3.5" />
-                          Rename
+                          {t('sidebar.contextMenu.rename')}
                         </ContextMenuItem>
                         <ContextMenuItem
                           onClick={() => onPinSession(session.sessionId, !session.isPinned, folder.path)}
                           className="text-xs"
                         >
                           <Pin className="size-3.5" />
-                          {session.isPinned ? 'Unpin' : 'Pin'}
+                          {session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin')}
                         </ContextMenuItem>
                         <ContextMenuItem
                           onClick={() => onHideSession(session.sessionId, true, folder.path)}
                           className="text-xs"
                         >
                           <EyeOff className="size-3.5" />
-                          Hide
+                          {t('sidebar.contextMenu.hide')}
                         </ContextMenuItem>
                         <ContextMenuSeparator />
                         <ContextMenuItem
@@ -372,30 +374,30 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                             const providerLabel = session.provider === 'codex' ? 'Codex' : 'Claude Code'
                             if (session.providerSessionId) {
                               navigator.clipboard.writeText(session.providerSessionId)
-                              toast.success(`${providerLabel} Session ID Copied`)
+                              toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdCopiedToast')}`)
                             } else {
                               navigator.clipboard.writeText(session.sessionId)
-                              toast.success(`${providerLabel} Session ID not ready — copied internal id`)
+                              toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdNotReadyToast')}`)
                             }
                           }}
                           className="text-xs"
                         >
                           <Copy className="size-3.5" />
-                          Copy Session ID
+                          {t('sidebar.contextMenu.copySessionId')}
                         </ContextMenuItem>
                         <ContextMenuItem
-                          onClick={() => { const dir = session.worktreePath ?? folder.path; navigator.clipboard.writeText(dir); toast.success('Working Directory Copied') }}
+                          onClick={() => { const dir = session.worktreePath ?? folder.path; navigator.clipboard.writeText(dir); toast.success(t('sidebar.contextMenu.workingDirCopiedToast')) }}
                           className="text-xs"
                         >
                           <Copy className="size-3.5" />
-                          Copy Working Directory
+                          {t('sidebar.contextMenu.copyWorkingDirectory')}
                         </ContextMenuItem>
                         <ContextMenuItem
                           onClick={() => window.app.showInFolder(session.worktreePath ?? folder.path, '')}
                           className="text-xs"
                         >
                           <FolderOpen className="size-3.5" />
-                          Open Folder
+                          {t('sidebar.contextMenu.openFolder')}
                         </ContextMenuItem>
                         <ContextMenuSeparator />
                         <ContextMenuItem
@@ -409,7 +411,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                           className="text-xs"
                         >
                           <Trash2 className="size-3.5" />
-                          Delete
+                          {t('sidebar.contextMenu.delete')}
                         </ContextMenuItem>
                       </ContextMenuContent>
                     </ContextMenu>

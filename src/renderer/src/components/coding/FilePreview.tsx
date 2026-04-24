@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { FileX2, ChevronRight } from 'lucide-react'
 import { defaultRehypePlugins } from 'streamdown'
 import { FileIcon } from '@/components/ui/FileIcon'
@@ -58,6 +59,7 @@ interface FilePreviewProps {
 }
 
 export function FilePreview({ filePath }: FilePreviewProps) {
+  const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const [isDirty, setIsDirty] = useState(false)
   const [liveContent, setLiveContent] = useState<string | null>(null)
@@ -156,7 +158,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
             </span>
           ))}
         </div>
-        {isDirty && <span className="size-1.5 rounded-full bg-orange-400" title="Unsaved changes" />}
+        {isDirty && <span className="size-1.5 rounded-full bg-orange-400" title={t('tooltips.unsavedChanges')} />}
         {tabs.length > 1 && (
           <Tabs value={effectiveTab} onValueChange={handleTabChange}>
             <TabsList>

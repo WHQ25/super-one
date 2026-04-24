@@ -236,7 +236,7 @@ export function PlanApprovalPrompt() {
                   onClick={handleApprove}
                 >
                   <FastForward className="size-3" />
-                  Approve & Accept Edits
+                  {t('chat.plan.approveAccept')}
                   {!isFeedbackFocused && (
                     <Kbd variant="inline" className="ml-1 text-purple-200/80">↵</Kbd>
                   )}
@@ -248,7 +248,7 @@ export function PlanApprovalPrompt() {
                   onClick={handleApprove}
                 >
                   <Check className="size-3" />
-                  Approve
+                  {t('chat.plan.approve')}
                   {!isFeedbackFocused && (
                     <Kbd variant="inline" className="ml-1 text-green-200/80">↵</Kbd>
                   )}
@@ -260,7 +260,7 @@ export function PlanApprovalPrompt() {
                 onClick={handleReject}
               >
                 <X className="size-3" />
-                Reject
+                {t('chat.plan.reject')}
                 {!isFeedbackFocused && (
                   <Kbd variant="inline" className="ml-1 text-red-200/80">esc</Kbd>
                 )}

@@ -1,4 +1,5 @@
 import { useRef, useState, useMemo, useLayoutEffect, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import morphdom from 'morphdom'
 import { SVG_STYLES } from '../../../../shared/generative-ui/svg-styles'
 import { rewriteCdnUrls } from '../../../../shared/generative-ui/cdn-allowlist'
@@ -229,6 +230,7 @@ function downloadWidget(srcdoc: string, title: string, e: { stopPropagation(): v
 }
 
 export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
+  const { t } = useTranslation()
   const displayCode = useThrottledValue(data.widget_code, streaming ? THROTTLE_MS : 0)
   const finalSrcdoc = useMemo(() => buildSrcdoc(data.widget_code, data.isSVG), [data.widget_code, data.isSVG])
   const [iframeReady, setIframeReady] = useState(false)
@@ -264,7 +266,7 @@ export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
           <button
             onClick={(e) => downloadWidget(finalSrcdoc, displayTitle, e)}
             className="text-muted-foreground/70 transition-colors hover:text-foreground"
-            title="Save as HTML"
+            title={t('tooltips.saveAsHtml')}
           >
             <Download className="size-3.5" />
           </button>

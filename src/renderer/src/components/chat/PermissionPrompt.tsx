@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -100,6 +100,7 @@ function SuggestionContent({ s }: { s: Record<string, unknown> }) {
 }
 
 export function PermissionPrompt() {
+  const { t } = useTranslation()
   const pendingPermission = useActiveSession((s) => s.pendingPermissions[0] ?? null)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const respondToPermission = useChatStore((s) => s.respondToPermission)
@@ -298,7 +299,7 @@ export function PermissionPrompt() {
     DEBUG_TOOL_NAMES.some((n) => (toolName ?? '').toLowerCase().includes(n))
 
   const collapsedSummary = isSandboxNetwork
-    ? (typeof input.host === 'string' ? input.host : 'Network Access')
+    ? (typeof input.host === 'string' ? input.host : t('chat.permission.networkAccess'))
     : (display.summary || '')
 
   let btnIdx = 0
@@ -319,7 +320,7 @@ export function PermissionPrompt() {
             <ToolIcon icon={display.icon} className="size-3.5 shrink-0 animate-pulse text-muted-foreground" />
           )}
           {isSandboxNetwork ? (
-            <span className="text-xs font-medium text-foreground">Sandbox Network</span>
+            <span className="text-xs font-medium text-foreground">{t('chat.permission.sandboxNetwork')}</span>
           ) : miniAppInfo ? (
             <MiniAppToolLabel info={miniAppInfo} />
           ) : (
@@ -333,7 +334,7 @@ export function PermissionPrompt() {
               <TooltipTrigger asChild>
                 <ChevronUp className="size-3.5 shrink-0 text-muted-foreground" />
               </TooltipTrigger>
-              <TooltipContent side="top">Collapse permission request (<Kbd variant="inline">space</Kbd> to toggle)</TooltipContent>
+              <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
             </Tooltip>
           </TooltipProvider>
         </button>
@@ -345,7 +346,7 @@ export function PermissionPrompt() {
                   <div className="mb-2 flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
                       <ShieldAlert className="size-3.5 shrink-0 text-amber-500" />
-                      <span className="font-medium text-amber-500">Allow Sandbox Network Access</span>
+                      <span className="font-medium text-amber-500">{t('chat.permission.allowSandboxNetwork')}</span>
                     </div>
                     <TooltipProvider>
                       <Tooltip>
@@ -354,7 +355,7 @@ export function PermissionPrompt() {
                             <ChevronDown className="size-3.5" />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent side="top">Collapse permission request (<Kbd variant="inline">space</Kbd> to toggle)</TooltipContent>
+                        <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
@@ -387,14 +388,14 @@ export function PermissionPrompt() {
                             <ChevronDown className="size-3.5" />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent side="top">Collapse permission request (<Kbd variant="inline">space</Kbd> to toggle)</TooltipContent>
+                        <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
                   {isBash && !!input.dangerouslyDisableSandbox && (
                     <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
                       <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-                      <span className="text-xs font-medium text-amber-500">Sandbox Override</span>
+                      <span className="text-xs font-medium text-amber-500">{t('chat.permission.sandboxOverride')}</span>
                     </div>
                   )}
                 </>
@@ -413,7 +414,7 @@ export function PermissionPrompt() {
                 </div>
               )}
               {blockedPath && (
-                <p className="mb-2 break-all text-xs text-amber-400">Blocked path: {blockedPath}</p>
+                <p className="mb-2 break-all text-xs text-amber-400">{t('chat.permission.blockedPath', { path: blockedPath })}</p>
               )}
               {decisionReason && (
                 <p className="mb-2 text-xs text-muted-foreground">{decisionReason}</p>
@@ -421,14 +422,14 @@ export function PermissionPrompt() {
               {isDebug && (
                 <div className="mb-2 space-y-1">
                   <div>
-                    <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">Input</div>
+                    <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">{t('chat.permission.inputHeading')}</div>
                     <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
                       {JSON.stringify(input, null, 2)}
                     </div>
                   </div>
                   {suggestions && suggestions.length > 0 && (
                     <div>
-                      <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">Suggestions</div>
+                      <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">{t('chat.permission.suggestionsHeading')}</div>
                       <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
                         {JSON.stringify(suggestions, null, 2)}
                       </div>
@@ -445,7 +446,7 @@ export function PermissionPrompt() {
                       className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
                       onClick={handleAllow}
                     >
-                      Allow
+                      {t('chat.permission.allow')}
                       <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
                     </Button>
                     <Button
@@ -454,7 +455,7 @@ export function PermissionPrompt() {
                       className="h-7 cursor-pointer bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
                       onClick={handleAlwaysAllow}
                     >
-                      Allow for this session
+                      {t('chat.permission.allowForSession')}
                       <Kbd variant="inline" className="ml-1 text-blue-200/80">⇧↵</Kbd>
                     </Button>
                     <Button
@@ -463,7 +464,7 @@ export function PermissionPrompt() {
                       className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
                       onClick={handleDeny}
                     >
-                      Decline
+                      {t('chat.permission.decline')}
                       <Kbd variant="inline" className="ml-1 text-red-200/80">esc</Kbd>
                     </Button>
                     <Button
@@ -472,7 +473,7 @@ export function PermissionPrompt() {
                       className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-slate-400 focus:outline-none"
                       onClick={handleCancel}
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </Button>
                   </div>
                 ) : (
@@ -483,7 +484,7 @@ export function PermissionPrompt() {
                       className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
                       onClick={handleAllow}
                     >
-                      Allow
+                      {t('chat.permission.allow')}
                       {selectedSuggestions.size > 0 && (
                         <span className="ml-1 text-[10px] text-green-200/80">+{selectedSuggestions.size}</span>
                       )}
@@ -497,7 +498,7 @@ export function PermissionPrompt() {
                       className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
                       onClick={handleDeny}
                     >
-                      Deny
+                      {t('chat.permission.deny')}
                       <Kbd variant="inline" className="ml-1 text-red-200/80">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
                     </Button>
                     <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
@@ -509,7 +510,7 @@ export function PermissionPrompt() {
                         onChange={(e) => setFeedback(e.target.value)}
                         onFocus={() => setIsFeedbackFocused(true)}
                         onBlur={() => setIsFeedbackFocused(false)}
-                        placeholder="Deny reason (optional, Enter to submit)"
+                        placeholder={t('chat.permission.denyReasonPlaceholder')}
                         className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                       <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
@@ -524,7 +525,7 @@ export function PermissionPrompt() {
                         className="h-7 w-full cursor-pointer bg-blue-600 px-3 text-xs text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
                         onClick={handleAlwaysAllow}
                       >
-                        Always Allow
+                        {t('chat.permission.alwaysAllow')}
                       </Button>
                     )}
                     {suggestions?.map((s, i) => {

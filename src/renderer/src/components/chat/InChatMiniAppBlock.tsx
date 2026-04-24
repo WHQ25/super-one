@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Bug, RotateCw } from 'lucide-react'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -114,6 +115,7 @@ function InChatWebview({ appId, data, onWebviewRef }: InChatMiniAppBlockProps & 
 }
 
 export function InChatMiniAppBlock({ appId, data }: InChatMiniAppBlockProps) {
+  const { t } = useTranslation()
   const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
   const isDev = app?.manifest.isDev
   const appName = app?.manifest.name ?? appId
@@ -129,14 +131,14 @@ export function InChatMiniAppBlock({ appId, data }: InChatMiniAppBlockProps) {
             <button
               onClick={() => wvRef.current?.reload()}
               className="text-muted-foreground/70 transition-colors hover:text-foreground"
-              title="Reload"
+              title={t('tooltips.reload')}
             >
               <RotateCw className="size-3" />
             </button>
             <button
               onClick={() => wvRef.current?.openDevTools()}
               className="text-muted-foreground/70 transition-colors hover:text-foreground"
-              title="Open DevTools"
+              title={t('tooltips.openDevTools')}
             >
               <Bug className="size-3.5" />
             </button>

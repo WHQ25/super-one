@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Check, Copy, Save, X } from 'lucide-react'
@@ -11,6 +12,7 @@ interface PasteChipPreviewProps {
 }
 
 export function PasteChipPreview({ open, onOpenChange, text, onSave }: PasteChipPreviewProps) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const [draft, setDraft] = useState(text)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -49,8 +51,8 @@ export function PasteChipPreview({ open, onOpenChange, text, onSave }: PasteChip
       <DialogContent showCloseButton={false} className="max-h-[90vh] max-w-4xl gap-0 overflow-hidden p-0">
         <div className="flex items-center justify-between border-b px-4 py-2.5">
           <DialogTitle className="text-sm font-medium">
-            Pasted text · {draftLineCount} {draftLineCount === 1 ? 'line' : 'lines'}
-            {dirty && <span className="ml-2 text-xs font-normal text-muted-foreground">(unsaved)</span>}
+            {t('chat.pasteChip.title', { count: draftLineCount })}
+            {dirty && <span className="ml-2 text-xs font-normal text-muted-foreground">{t('chat.pasteChip.unsaved')}</span>}
           </DialogTitle>
           <div className="flex items-center gap-1">
             {onSave && (
@@ -60,7 +62,7 @@ export function PasteChipPreview({ open, onOpenChange, text, onSave }: PasteChip
                 className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-40"
                 onClick={handleSave}
                 disabled={!dirty}
-                title="Save (⌘/Ctrl+Enter)"
+                title={t('tooltips.save', { shortcut: '⌘/Ctrl+Enter' })}
               >
                 <Save className="size-3.5" />
               </Button>

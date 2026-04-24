@@ -1,4 +1,5 @@
 import { Check, ClipboardList, Clock, Copy, Expand, MessageSquare, ScanSearch, TriangleAlert } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { CodexCommandExecutionItem, CodexPlanApprovalState, CodexPlanItem, CodexThreadItem } from '../../../../shared/agent-types'
 import { ToolBlock } from './ToolBlock'
 import { CopyableMarkdown } from './CopyableMarkdown'
@@ -103,6 +104,7 @@ export function getCommandDisplay(item: CodexCommandExecutionItem, cwd?: string,
 }
 
 export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExecutionItem; isStreaming: boolean }) {
+  const { t } = useTranslation()
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const display = getCommandDisplay(item, cwd, homedir)
@@ -128,7 +130,7 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" onClick={() => setExpanded((e) => !e)}>
         <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         <span className={cn('font-medium text-foreground', isRunning && 'animate-shimmer')}>
-          {isRunning ? <>{display.label === 'Bash' ? 'Running' : display.label === 'Read' ? 'Reading' : 'Searching'}…</> : display.label}
+          {isRunning ? <>{display.label === 'Bash' ? t('chat.codex.statusRunning') : display.label === 'Read' ? t('chat.codex.statusReading') : t('chat.codex.statusSearching')}…</> : display.label}
         </span>
         {action?.type === 'read' && action.path
           ? <FileChip name={action.path.split('/').pop() || ''} title={display.summary} filePath={action.path} />
@@ -146,7 +148,7 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
             {output ? (
               <div className="text-[#8b949e]"><AnsiText text={output} /></div>
             ) : isRunning ? (
-              <div className="text-[#8b949e]"><span className="animate-shimmer">Running…</span></div>
+              <div className="text-[#8b949e]"><span className="animate-shimmer">{t('chat.codex.runningInline')}</span></div>
             ) : null}
           </div>
         </div>
@@ -156,6 +158,7 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
 }
 
 function CollabWaitBlock({ item }: { item: CodexCollabToolCallItem }) {
+  const { t } = useTranslation()
   const agentName = Object.values(item.agentsStates).find((s) => s.nickname)?.nickname
   const isWaiting = item.status === 'in_progress'
   const [elapsed, setElapsed] = useState(0)
@@ -171,8 +174,8 @@ function CollabWaitBlock({ item }: { item: CodexCollabToolCallItem }) {
 
   if (!isWaiting) return null
 
-  const name = agentName ?? 'subagent'
-  const label = elapsed >= 1 ? `Waiting for ${name} for ${elapsed}s...` : `Waiting for ${name}...`
+  const name = agentName ?? t('chat.codex.fallbackAgentName')
+  const label = elapsed >= 1 ? t('chat.codex.waitingForWithElapsed', { name, elapsed }) : t('chat.codex.waitingFor', { name })
 
   return (
     <div className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -183,12 +186,13 @@ function CollabWaitBlock({ item }: { item: CodexCollabToolCallItem }) {
 }
 
 function CollabSendInputBlock({ item }: { item: CodexCollabToolCallItem }) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const prompt = item.prompt ?? ''
   const receiverId = item.receiverThreadIds?.[0]
   const agentName = (receiverId && item.agentsStates[receiverId]?.nickname)
     || Object.values(item.agentsStates).find((s) => s.nickname)?.nickname
-  const label = `Follow-up${agentName ? ` → ${agentName}` : ''}`
+  const label = `${t('chat.codex.followUp')}${agentName ? ` → ${agentName}` : ''}`
   return (
     <div className={cn('tool-node my-0.5 min-w-0 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" onClick={() => setExpanded((e) => !e)}>
@@ -215,6 +219,7 @@ function PlanActionButton({ icon: Icon, onClick, title }: { icon: React.ElementT
 }
 
 function PlanApprovalBadge({ planApproval }: { planApproval: CodexPlanApprovalState }) {
+  const { t } = useTranslation()
   return (
     <span
       className={cn(
@@ -224,17 +229,18 @@ function PlanApprovalBadge({ planApproval }: { planApproval: CodexPlanApprovalSt
           : 'bg-red-500/10 text-red-400',
       )}
     >
-      {planApproval.status === 'approved' ? 'Approved' : 'Rejected'}
+      {planApproval.status === 'approved' ? t('chat.plan.approved') : t('chat.plan.rejected')}
     </span>
   )
 }
 
 function PlanApprovalSummary({ planApproval }: { planApproval: CodexPlanApprovalState }) {
+  const { t } = useTranslation()
   if (planApproval.status === 'approved') {
     return (
       <div className="flex items-center gap-1.5 text-xs text-green-400">
         <Check className="size-3 shrink-0" />
-        <span className="font-medium">Plan Approved</span>
+        <span className="font-medium">{t('chat.plan.planApproved')}</span>
       </div>
     )
   }
@@ -243,7 +249,7 @@ function PlanApprovalSummary({ planApproval }: { planApproval: CodexPlanApproval
     <div className="rounded bg-red-500/10 px-2 py-1.5 text-xs text-red-400">
       <div className="flex items-center gap-1.5">
         <TriangleAlert className="size-3 shrink-0" />
-        <span className="font-medium">Plan Rejected</span>
+        <span className="font-medium">{t('chat.plan.planRejected')}</span>
       </div>
       {planApproval.feedback && (
         <div className="mt-1 text-red-400/75">{planApproval.feedback}</div>
@@ -267,6 +273,7 @@ function CodexPlanBlock({
   onRejectPlan?: (feedback?: string) => void
   planApproval?: CodexPlanApprovalState
 }) {
+  const { t } = useTranslation()
   const isItemStreaming = isStreaming && !nextItem
   const [expanded, setExpanded] = useState(isItemStreaming)
   const [copied, setCopied] = useState(false)
@@ -305,7 +312,7 @@ function CodexPlanBlock({
     )}>
       <div className="flex items-center gap-1.5 px-2 py-2 text-xs" onClick={() => setExpanded((e) => !e)}>
         <ClipboardList className="size-3.5 shrink-0 text-blue-400" />
-        <span className="font-medium text-foreground">Plan</span>
+        <span className="font-medium text-foreground">{t('chat.plan.label')}</span>
         {planApproval && <PlanApprovalBadge planApproval={planApproval} />}
         {!expanded && <span className="min-w-0 truncate text-muted-foreground">{item.text.split('\n')[0]}</span>}
         {!expanded && planApproval?.status === 'rejected' && planApproval.feedback && (
@@ -314,8 +321,8 @@ function CodexPlanBlock({
         <div className="ml-auto flex items-center gap-1">
           {expanded && (
             <div className="flex items-center gap-0.5">
-              <PlanActionButton icon={copied ? Check : Copy} onClick={handleCopy} title="Copy plan" />
-              <PlanActionButton icon={Expand} onClick={handleFullscreen} title="Fullscreen" />
+              <PlanActionButton icon={copied ? Check : Copy} onClick={handleCopy} title={t('tooltips.copyPlan')} />
+              <PlanActionButton icon={Expand} onClick={handleFullscreen} title={t('tooltips.fullscreen')} />
             </div>
           )}
         </div>
@@ -441,36 +448,13 @@ export function renderCodexItem(
       return null
 
     case 'error':
-      return (
-        <div key={`${item.id}-${index}`} className="my-0.5 rounded bg-red-500/10 px-2 py-1.5">
-          <div className="mb-1 flex items-center gap-1.5 text-xs text-red-300">
-            <TriangleAlert className="size-3.5" />
-            <span>Codex Error</span>
-          </div>
-          <div className="text-[11px] leading-relaxed text-red-200">{item.message}</div>
-        </div>
-      )
+      return <CodexErrorBlock key={`${item.id}-${index}`} message={item.message} />
 
     case 'review':
-      return item.phase === 'entered' ? (
-        <div key={`${item.id}-${index}`} className="my-1 flex items-center gap-2 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs text-blue-300">
-          <ScanSearch className="size-3.5 shrink-0" />
-          <span className="font-medium">Start review{item.text ? ` — ${item.text}` : ''}</span>
-        </div>
-      ) : (
-        <div key={`${item.id}-${index}`} className="my-1 flex items-center gap-2 rounded-md bg-green-500/10 px-2.5 py-1.5 text-xs text-green-300">
-          <Check className="size-3.5 shrink-0" />
-          <span className="font-medium">Review complete</span>
-        </div>
-      )
+      return <CodexReviewBlock key={`${item.id}-${index}`} phase={item.phase} text={item.text} />
 
     case 'compaction':
-      return (
-        <div key={`${item.id}-${index}`} className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Check className="size-3.5 text-green-400" />
-          <span>Conversation compacted</span>
-        </div>
-      )
+      return <CodexCompactionBlock key={`${item.id}-${index}`} />
 
     case 'collab_tool_call':
       if (item.tool === 'wait') {
@@ -481,4 +465,42 @@ export function renderCodexItem(
       }
       return null
   }
+}
+
+function CodexErrorBlock({ message }: { message: string }) {
+  const { t } = useTranslation()
+  return (
+    <div className="my-0.5 rounded bg-red-500/10 px-2 py-1.5">
+      <div className="mb-1 flex items-center gap-1.5 text-xs text-red-300">
+        <TriangleAlert className="size-3.5" />
+        <span>{t('chat.codex.codexError')}</span>
+      </div>
+      <div className="text-[11px] leading-relaxed text-red-200">{message}</div>
+    </div>
+  )
+}
+
+function CodexReviewBlock({ phase, text }: { phase: string; text?: string }) {
+  const { t } = useTranslation()
+  return phase === 'entered' ? (
+    <div className="my-1 flex items-center gap-2 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs text-blue-300">
+      <ScanSearch className="size-3.5 shrink-0" />
+      <span className="font-medium">{t('chat.codex.startReview')}{text ? ` — ${text}` : ''}</span>
+    </div>
+  ) : (
+    <div className="my-1 flex items-center gap-2 rounded-md bg-green-500/10 px-2.5 py-1.5 text-xs text-green-300">
+      <Check className="size-3.5 shrink-0" />
+      <span className="font-medium">{t('chat.codex.reviewComplete')}</span>
+    </div>
+  )
+}
+
+function CodexCompactionBlock() {
+  const { t } = useTranslation()
+  return (
+    <div className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Check className="size-3.5 text-green-400" />
+      <span>{t('chat.codex.conversationCompacted')}</span>
+    </div>
+  )
 }

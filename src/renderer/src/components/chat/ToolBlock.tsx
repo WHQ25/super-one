@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@/lib/utils'
@@ -168,6 +169,7 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand = true, backgroundActivity = false, grouped = false }: ToolBlockProps) {
+  const { t } = useTranslation()
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const streamingInputPreview = useActiveSession((s) => toolUseId ? s._streamingToolInputPreviews[toolUseId] : undefined)
@@ -232,7 +234,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     return (
       <div className="my-4 flex items-center gap-1.5 rounded bg-blue-500/10 px-2 py-1.5 text-sm">
         <PenLine className="size-3 shrink-0 text-blue-400" />
-        <span className="font-medium text-blue-400">Entered plan mode</span>
+        <span className="font-medium text-blue-400">{t('chat.toolBlock.enteredPlanMode')}</span>
       </div>
     )
   }
@@ -300,7 +302,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     return (
       <CompactToolRow icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}>
         <span className="font-medium text-foreground">
-          {isStreaming ? <>Reading widget guidelines…</> : 'Read widget guidelines'}
+          {isStreaming ? <>{t('chat.toolBlock.readingWidgetGuidelines')}</> : t('chat.toolBlock.readWidgetGuidelines')}
           {modules && <>: <span className="text-muted-foreground">{modules}</span></>}
         </span>
       </CompactToolRow>
@@ -309,8 +311,8 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
 
   if (mcpInfo?.serverName === SUPERONE_SERVER && !mcpInfo.mcpToolName.startsWith(INCHAT_TOOL_PREFIX)) {
     const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string }> = {
-      read_miniapp_guide: { icon: 'book-open', streaming: 'Reading mini-app guide', done: 'Read mini-app guide' },
-      setup_mini_app_dev: { icon: 'file-plus', streaming: 'Setting up mini-app…', done: 'Set up mini-app' },
+      read_miniapp_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide') },
+      setup_mini_app_dev: { icon: 'file-plus', streaming: t('chat.toolBlock.settingUpMiniApp'), done: t('chat.toolBlock.setUpMiniApp') },
     }
     if (mcpInfo.mcpToolName === 'pack_mini_app') {
       const appDir = String(params.appDir ?? '')
@@ -321,13 +323,13 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         <CompactToolRow icon={<ToolIcon icon="package" className="size-3 shrink-0 text-muted-foreground" />}>
           {isStreaming ? (
             <>
-              <span className="font-medium text-foreground">Packing…</span>
+              <span className="font-medium text-foreground">{t('chat.toolBlock.packing')}</span>
               {packApp && <MiniAppIcon appId={packApp.id} className="size-3.5 shrink-0" />}
               <span className="text-muted-foreground">{packApp?.manifest.name ?? appDir.split('/').pop()}</span>
             </>
           ) : (
             <>
-              <span className="font-medium text-foreground">Mini-app packed</span>
+              <span className="font-medium text-foreground">{t('chat.toolBlock.miniAppPacked')}</span>
               {s1appName && <>
                 <span className="text-muted-foreground">:</span>
                 <button className="min-w-0 truncate text-muted-foreground hover:text-foreground hover:underline" onClick={(e) => { e.stopPropagation(); window.app.showInFolder(outputDir, s1appName) }}>{s1appName}</button>
@@ -424,7 +426,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     return (
       <CompactToolRow icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}>
         <span className="font-medium text-foreground">
-          {isStreaming ? <>Generating widget…</> : 'Generate widget'}
+          {isStreaming ? <>{t('chat.toolBlock.generatingWidget')}</> : t('chat.toolBlock.generateWidget')}
         </span>
       </CompactToolRow>
     )
@@ -471,7 +473,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
           {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName === 'AskUserQuestion' ? `Asked${display.summary ? ` ${display.summary}` : ''}` : displayName}
         </span>
         {isQuestionDismissed ? (
-          <span className="shrink-0 rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">Dismissed</span>
+          <span className="shrink-0 rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{t('chat.toolBlock.dismissed')}</span>
         ) : isDenied ? (
           <>
             {fileToolName ? (
@@ -479,7 +481,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
             ) : summary ? (
               <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
             ) : null}
-            <span className="shrink-0 rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>
+            <span className="shrink-0 rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">{t('chat.toolBlock.denied')}</span>
             {deniedFeedback && !feedbackIsBlock && (
               <span ref={feedbackRef} className="min-w-0 truncate text-red-400/70">{deniedFeedback}</span>
             )}
@@ -491,7 +493,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
             ) : summary ? (
               <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
             ) : null}
-            <span className="shrink-0 rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-400">Error</span>
+            <span className="shrink-0 rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-400">{t('chat.toolBlock.error')}</span>
           </>
         ) : fileToolName ? (
           <>
@@ -620,6 +622,7 @@ function BashTerminalView({
   backgroundActivity?: boolean
 }) {
   const bashOutput = useBashOutput(toolUseId)
+  const { t } = useTranslation()
   const outputExpired = !!resultOutputPath && !bashOutput && !isStreaming
   const scrollRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -746,7 +749,7 @@ function BashTerminalView({
           <ToolIcon icon="terminal" className="size-3 shrink-0 text-muted-foreground" />
         )}
         <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground', isRunning && !isDenied && 'animate-shimmer')}>
-          {isRunning && !isDenied ? 'Running…' : 'Bash'}
+          {isRunning && !isDenied ? t('chat.toolBlock.running') : 'Bash'}
         </span>
         {isRunning && localElapsed >= 1 && <span className="text-muted-foreground tabular-nums">{localElapsed}s</span>}
         {description
@@ -755,12 +758,12 @@ function BashTerminalView({
         }
         {timeoutMs && <span className="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{Math.round(timeoutMs / 1000)}s</span>}
         {isDenied && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>}
-        {isTimedOut && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Timed out</span>}
+        {isTimedOut && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">{t('chat.toolBlock.timedOut')}</span>}
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
       {expanded && (fileExpired ? (
         <div className="px-3 py-1.5 text-xs text-muted-foreground/50 italic">
-          Output file: {resultOutputPath!.split('/').pop()} expired
+          {t('chat.toolBlock.outputFileExpired', { path: resultOutputPath!.split('/').pop() })}
         </div>
       ) : (
         <div className="bg-[#0d1117] font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
@@ -775,12 +778,12 @@ function BashTerminalView({
           >
             {!isLive && hasMore && outputPath && <div ref={sentinelRef} className="h-px" />}
             {outputExpired && restoredContent === null ? (
-              <div className="animate-shimmer text-[#6e7681]">Loading…</div>
+              <div className="animate-shimmer text-[#6e7681]">{t('common.loading')}</div>
             ) : content ? (
               <div className="text-[#8b949e]"><AnsiText text={content} /></div>
             ) : isStreaming ? (
               <div className="text-[#8b949e]">
-                <span className="animate-shimmer">Running…</span>{localElapsed >= 1 && <span className="text-[#6e7681]"> {localElapsed}s{timeoutMs && !isLive ? ` · timeout ${Math.round(timeoutMs / 1000)}s` : ''}</span>}
+                <span className="animate-shimmer">{t('chat.toolBlock.runningInline')}</span>{localElapsed >= 1 && <span className="text-[#6e7681]"> {localElapsed}s{timeoutMs && !isLive ? ` · timeout ${Math.round(timeoutMs / 1000)}s` : ''}</span>}
               </div>
             ) : null}
           </div>
@@ -794,6 +797,7 @@ const RESULT_PREVIEW_LINES = 10
 
 /** Truncated tool output with secondary expand for long results. */
 function ToolResult({ text }: { text: string }) {
+  const { t } = useTranslation()
   const lines = text.split('\n')
   const isLong = lines.length > RESULT_PREVIEW_LINES
   const [showAll, setShowAll] = useState(false)
@@ -812,7 +816,7 @@ function ToolResult({ text }: { text: string }) {
           className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', showAll && 'rotate-90')} />
-          {showAll ? 'Collapse' : `${hiddenCount} more line${hiddenCount > 1 ? 's' : ''}`}
+          {showAll ? t('chat.toolBlock.collapse') : t('chat.toolBlock.moreLines', { count: hiddenCount })}
         </button>
       )}
     </div>
@@ -821,6 +825,7 @@ function ToolResult({ text }: { text: string }) {
 
 /** Prettified JSON code block with syntax highlighting and truncation. */
 function PrettyJSONCodeBlock({ text }: { text: string }) {
+  const { t } = useTranslation()
   const jsonResult = useMemo(() => tryPrettifyJson(text), [text])
   const prettified = jsonResult ?? text
   const language = jsonResult ? 'json' : 'text'
@@ -840,7 +845,7 @@ function PrettyJSONCodeBlock({ text }: { text: string }) {
           className="mt-0.5 ml-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', showAll && 'rotate-90')} />
-          {showAll ? 'Collapse' : `${hiddenCount} more line${hiddenCount > 1 ? 's' : ''}`}
+          {showAll ? t('chat.toolBlock.collapse') : t('chat.toolBlock.moreLines', { count: hiddenCount })}
         </button>
       )}
     </div>

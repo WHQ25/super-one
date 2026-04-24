@@ -210,7 +210,7 @@ export function AutomationDialog({
 
   const effortOptions = [
     { id: '' as EffortLevel | '', label: t('settings.automation.defaultValue') },
-    ...EFFORT_LEVELS.map((l) => ({ id: l as EffortLevel | '', label: EFFORT_LABELS[l] })),
+    ...EFFORT_LEVELS.map((l) => ({ id: l as EffortLevel | '', label: t(`settings.preferences.effort.levels.${l}`) })),
   ]
 
   const codexReasoningOptions = [

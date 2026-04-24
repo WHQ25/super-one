@@ -80,9 +80,10 @@ export class AgentService {
   }
 
   private isRemoteLockedSession(projectPath: string): boolean {
-    if (!this.remoteSession || this.remoteSession.projectPath !== projectPath) return false
+    const sub = this.remoteControlService?.getSubscribedSession()
+    if (!sub || sub.projectPath !== projectPath) return false
     const activeSession = this.sessionManager?.getActiveSession(projectPath)
-    return activeSession?.id === this.remoteSession.sessionId
+    return activeSession?.id === sub.sessionId
   }
 
   private canAccessSession(projectPath: string, sessionId: string): boolean {

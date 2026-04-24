@@ -319,6 +319,35 @@ describe('AgentService.handleRemoteCommand', () => {
     ).resolves.toBeUndefined()
   })
 
+  it('remote lock follows mobile subscribed state — releases when mobile unsubscribes without disconnecting', async () => {
+    const service = new AgentService()
+    const activeSession = { id: 'sid-1', projectPath: '/p' }
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+      getSession: vi.fn(() => activeSession),
+    }
+
+    let subscribed: { projectPath: string; sessionId: string } | null = null
+    const fakeRemote = {
+      subscribeSession: (p: string, s: string) => { subscribed = { projectPath: p, sessionId: s } },
+      unsubscribeSession: () => { subscribed = null },
+      getSubscribedSession: () => subscribed,
+      setRemoteSessionFilter: vi.fn(),
+      clearRemoteSessionFilter: vi.fn(),
+    }
+    service.setRemoteControlService(fakeRemote as never)
+
+    const isLocked = () => (service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')
+
+    expect(isLocked()).toBe(false)
+
+    await service.handleRemoteCommand({ type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1' } as never)
+    expect(isLocked()).toBe(true)
+
+    await service.handleRemoteCommand({ type: 'unsubscribe_session', projectPath: '/p', sessionId: 'sid-1' } as never)
+    expect(isLocked()).toBe(false)
+  })
+
   it.skip('send_message creates remote agent when sessionId differs from desktop agent', async () => {
     vi.mocked(dbSessions.loadSessionState).mockReturnValue(null)
     const service = new AgentService()

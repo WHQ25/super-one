@@ -1,3 +1,5 @@
+import type { ProviderModelEnv } from '../../../shared/agent-types'
+
 export type ProviderCategory = 'model_provider' | 'cloud_platform' | 'aggregator' | 'proxy_service' | 'custom'
 export type AgentType = 'claude' | 'codex'
 
@@ -10,7 +12,7 @@ export interface TemplateValueConfig {
 export interface AgentPresetConfig {
   base_url: string
   extra_env: string
-  model_env?: Record<string, string>
+  model_env?: ProviderModelEnv
   api_format?: string
 }
 
@@ -54,7 +56,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://open.bigmodel.cn/api/anthropic',
         extra_env: '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'glm-4.7', ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-4.7', ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-4.5-air' },
+        model_env: {
+          default: { id: 'glm-4.7', name: 'GLM-4.7' },
+          opus: { id: 'glm-5', name: 'GLM-5' },
+          sonnet: { id: 'glm-4.7', name: 'GLM-4.7' },
+          haiku: { id: 'glm-4.5-air', name: 'GLM-4.5 Air' },
+        },
       },
     },
     fields: ['api_key'],
@@ -70,7 +77,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://api.z.ai/api/anthropic',
         extra_env: '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'glm-4.7', ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-4.7', ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-4.5-air' },
+        model_env: {
+          default: { id: 'glm-4.7', name: 'GLM-4.7' },
+          opus: { id: 'glm-5', name: 'GLM-5' },
+          sonnet: { id: 'glm-4.7', name: 'GLM-4.7' },
+          haiku: { id: 'glm-4.5-air', name: 'GLM-4.5 Air' },
+        },
       },
     },
     fields: ['api_key'],
@@ -86,7 +98,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://api.kimi.com/coding/',
         extra_env: '{}',
-        model_env: { ANTHROPIC_MODEL: 'kimi-k2', ANTHROPIC_DEFAULT_SONNET_MODEL: 'kimi-k2', ANTHROPIC_DEFAULT_OPUS_MODEL: 'kimi-k2', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'kimi-k2' },
+        model_env: {
+          default: { id: 'kimi-k2.6', name: 'Kimi K2.6' },
+          opus: { id: 'kimi-k2.6', name: 'Kimi K2.6' },
+          sonnet: { id: 'kimi-k2.6', name: 'Kimi K2.6' },
+          haiku: { id: 'kimi-k2.6', name: 'Kimi K2.6' },
+        },
       },
     },
     fields: ['api_key'],
@@ -102,7 +119,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://api.minimaxi.com/anthropic',
         extra_env: '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'MiniMax-M2.5', ANTHROPIC_DEFAULT_SONNET_MODEL: 'MiniMax-M2.5', ANTHROPIC_DEFAULT_OPUS_MODEL: 'MiniMax-M2.5', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'MiniMax-M2.5' },
+        model_env: {
+          default: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
+          opus: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
+          sonnet: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
+          haiku: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
+        },
       },
     },
     fields: ['api_key'],
@@ -118,7 +140,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://api.minimax.io/anthropic',
         extra_env: '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'MiniMax-M2.5', ANTHROPIC_DEFAULT_SONNET_MODEL: 'MiniMax-M2.5', ANTHROPIC_DEFAULT_OPUS_MODEL: 'MiniMax-M2.5', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'MiniMax-M2.5' },
+        model_env: {
+          default: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
+          opus: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
+          sonnet: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
+          haiku: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
+        },
       },
     },
     fields: ['api_key'],
@@ -134,7 +161,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://api.deepseek.com/anthropic',
         extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'DeepSeek-V3.2', ANTHROPIC_DEFAULT_SONNET_MODEL: 'DeepSeek-V3.2', ANTHROPIC_DEFAULT_OPUS_MODEL: 'DeepSeek-V3.2', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'DeepSeek-V3.2' },
+        model_env: {
+          default: { id: 'DeepSeek-V3.2', name: 'DeepSeek V3.2' },
+          opus: { id: 'DeepSeek-V3.2', name: 'DeepSeek V3.2' },
+          sonnet: { id: 'DeepSeek-V3.2', name: 'DeepSeek V3.2' },
+          haiku: { id: 'DeepSeek-V3.2', name: 'DeepSeek V3.2' },
+        },
       },
     },
     fields: ['api_key'],
@@ -150,7 +182,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://ark.cn-beijing.volces.com/api/coding',
         extra_env: '{"API_TIMEOUT_MS":"3000000","ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'doubao-seed-2-0-code-preview-latest', ANTHROPIC_DEFAULT_SONNET_MODEL: 'doubao-seed-2-0-code-preview-latest', ANTHROPIC_DEFAULT_OPUS_MODEL: 'doubao-seed-2-0-code-preview-latest', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'doubao-seed-2-0-code-preview-latest' },
+        model_env: {
+          default: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
+          opus: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
+          sonnet: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
+          haiku: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
+        },
       },
     },
     fields: ['api_key'],
@@ -166,7 +203,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://api.xiaomimimo.com/anthropic',
         extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'mimo-v2-flash', ANTHROPIC_DEFAULT_SONNET_MODEL: 'mimo-v2-flash', ANTHROPIC_DEFAULT_OPUS_MODEL: 'mimo-v2-flash', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'mimo-v2-flash' },
+        model_env: {
+          default: { id: 'mimo-v2-pro', name: 'MiMo V2 Pro' },
+          opus: { id: 'mimo-v2-pro', name: 'MiMo V2 Pro' },
+          sonnet: { id: 'mimo-v2-pro', name: 'MiMo V2 Pro' },
+          haiku: { id: 'mimo-v2-pro', name: 'MiMo V2 Pro' },
+        },
       },
     },
     fields: ['api_key'],
@@ -182,7 +224,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://api.longcat.chat/anthropic',
         extra_env: '{"ANTHROPIC_AUTH_TOKEN":"","CLAUDE_CODE_MAX_OUTPUT_TOKENS":"6000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1"}',
-        model_env: { ANTHROPIC_MODEL: 'LongCat-Flash-Chat', ANTHROPIC_DEFAULT_SONNET_MODEL: 'LongCat-Flash-Chat', ANTHROPIC_DEFAULT_OPUS_MODEL: 'LongCat-Flash-Chat', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'LongCat-Flash-Chat' },
+        model_env: {
+          default: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
+          opus: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
+          sonnet: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
+          haiku: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
+        },
       },
     },
     fields: ['api_key'],
@@ -198,7 +245,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://vanchin.streamlake.ai/api/gateway/v1/endpoints/${ENDPOINT_ID}/claude-code-proxy',
         extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'KAT-Coder-Pro V1', ANTHROPIC_DEFAULT_SONNET_MODEL: 'KAT-Coder-Pro V1', ANTHROPIC_DEFAULT_OPUS_MODEL: 'KAT-Coder-Pro V1', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'KAT-Coder-Air V1' },
+        model_env: {
+          default: { id: 'KAT-Coder-Pro V1', name: 'KAT-Coder Pro V1' },
+          opus: { id: 'KAT-Coder-Pro V1', name: 'KAT-Coder Pro V1' },
+          sonnet: { id: 'KAT-Coder-Pro V1', name: 'KAT-Coder Pro V1' },
+          haiku: { id: 'KAT-Coder-Air V1', name: 'KAT-Coder Air V1' },
+        },
       },
     },
     fields: ['api_key'],
@@ -251,7 +303,7 @@ export const PRESETS: QuickPreset[] = [
     agent_configs: {
       claude: {
         base_url: 'https://openrouter.ai/api',
-        extra_env: '{"ANTHROPIC_API_KEY":""}',
+        extra_env: '{}',
       },
       codex: {
         base_url: 'https://openrouter.ai/api/v1',
@@ -272,7 +324,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://ark.cn-beijing.volces.com/api/coding',
         extra_env: '{"API_TIMEOUT_MS":"3000000","ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'ark-code-latest', ANTHROPIC_DEFAULT_SONNET_MODEL: 'ark-code-latest', ANTHROPIC_DEFAULT_OPUS_MODEL: 'ark-code-latest', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'ark-code-latest' },
+        model_env: {
+          default: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+          opus: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+          sonnet: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+          haiku: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+        },
       },
     },
     fields: ['api_key'],
@@ -288,7 +345,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
         extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'qwen3.5-plus', ANTHROPIC_DEFAULT_SONNET_MODEL: 'qwen3.5-plus', ANTHROPIC_DEFAULT_OPUS_MODEL: 'qwen3.5-plus', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'qwen3-coder-next' },
+        model_env: {
+          default: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
+          opus: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
+          sonnet: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
+          haiku: { id: 'qwen3-coder-next', name: 'Qwen 3 Coder Next' },
+        },
       },
     },
     fields: ['api_key'],
@@ -304,7 +366,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://api-inference.modelscope.cn',
         extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'ZhipuAI/GLM-5', ANTHROPIC_DEFAULT_SONNET_MODEL: 'ZhipuAI/GLM-5', ANTHROPIC_DEFAULT_OPUS_MODEL: 'ZhipuAI/GLM-5', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'ZhipuAI/GLM-5' },
+        model_env: {
+          default: { id: 'ZhipuAI/GLM-5', name: 'GLM-5' },
+          opus: { id: 'ZhipuAI/GLM-5', name: 'GLM-5' },
+          sonnet: { id: 'ZhipuAI/GLM-5', name: 'GLM-5' },
+          haiku: { id: 'ZhipuAI/GLM-5', name: 'GLM-5' },
+        },
       },
     },
     fields: ['api_key'],
@@ -320,7 +387,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://api.siliconflow.cn',
         extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'Pro/MiniMaxAI/MiniMax-M2.5', ANTHROPIC_DEFAULT_SONNET_MODEL: 'Pro/MiniMaxAI/MiniMax-M2.5', ANTHROPIC_DEFAULT_OPUS_MODEL: 'Pro/MiniMaxAI/MiniMax-M2.5', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'Pro/MiniMaxAI/MiniMax-M2.5' },
+        model_env: {
+          default: { id: 'Pro/MiniMaxAI/MiniMax-M2.7', name: 'MiniMax M2.7' },
+          opus: { id: 'Pro/MiniMaxAI/MiniMax-M2.7', name: 'MiniMax M2.7' },
+          sonnet: { id: 'Pro/MiniMaxAI/MiniMax-M2.7', name: 'MiniMax M2.7' },
+          haiku: { id: 'Pro/MiniMaxAI/MiniMax-M2.7', name: 'MiniMax M2.7' },
+        },
       },
     },
     fields: ['api_key'],
@@ -336,7 +408,12 @@ export const PRESETS: QuickPreset[] = [
       claude: {
         base_url: 'https://integrate.api.nvidia.com',
         extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: { ANTHROPIC_MODEL: 'moonshotai/kimi-k2.5', ANTHROPIC_DEFAULT_SONNET_MODEL: 'moonshotai/kimi-k2.5', ANTHROPIC_DEFAULT_OPUS_MODEL: 'moonshotai/kimi-k2.5', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'moonshotai/kimi-k2.5' },
+        model_env: {
+          default: { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' },
+          opus: { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' },
+          sonnet: { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' },
+          haiku: { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' },
+        },
         api_format: 'openai_chat',
       },
     },

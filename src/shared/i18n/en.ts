@@ -407,6 +407,14 @@ export type Messages = {
       advancedHide: string
       baseUrl: string
       addVariable: string
+      pasteEnv: string
+      applyPaste: string
+      environmentVariables: string
+      modelMapping: string
+      modelIdPlaceholder: string
+      modelNamePlaceholder: string
+      bucketDefault: string
+      bucketSubagent: string
       testing: string
       connected: string
       connectionFailed: string
@@ -670,6 +678,7 @@ export type Messages = {
     fastMode: string
     selectModel: string
     thinkingEffort: string
+    effortFromEnv: string
     reasoningEffort: string
     exitPlanMode: string
     reload: string
@@ -1104,6 +1113,14 @@ export const en: Messages = {
       advancedHide: 'Hide advanced options',
       baseUrl: 'Base URL',
       addVariable: 'Add variable',
+      pasteEnv: 'Paste .env',
+      applyPaste: 'Apply',
+      environmentVariables: 'Environment variables',
+      modelMapping: 'Model mapping',
+      modelIdPlaceholder: 'model id',
+      modelNamePlaceholder: 'display name',
+      bucketDefault: 'Default',
+      bucketSubagent: 'Subagent',
       testing: 'Testing connection...',
       connected: 'Connected ✓',
       connectionFailed: 'Connection failed',
@@ -1367,6 +1384,7 @@ export const en: Messages = {
     fastMode: 'Fast mode: {{state}}',
     selectModel: 'Select Model',
     thinkingEffort: 'Thinking Effort',
+    effortFromEnv: 'Effort level is set by provider environment (CLAUDE_CODE_EFFORT_LEVEL)',
     reasoningEffort: 'Reasoning Effort',
     exitPlanMode: 'Exit plan mode',
     reload: 'Reload',

@@ -1,6 +1,15 @@
 import { Check, Loader2 } from 'lucide-react'
-import type { CodexReasoningEffort, EffortLevel, ModelOption, ReasoningEffortOption } from '../../../../shared/agent-types'
+import type { ApiProvider, CodexReasoningEffort, EffortLevel, ModelBucket, ModelOption, ProviderModelEnv, ReasoningEffortOption } from '../../../../shared/agent-types'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from './chat-input-utils'
+import { ProviderLabel } from '../ProviderLabel'
+
+function claudeIdToBucket(id: string): ModelBucket {
+  const lower = id.toLowerCase()
+  if (lower.includes('opus')) return 'opus'
+  if (lower.includes('sonnet')) return 'sonnet'
+  if (lower.includes('haiku')) return 'haiku'
+  return 'default'
+}
 
 interface ClearOption {
   label: string
@@ -43,6 +52,39 @@ interface ClaudeModelListProps {
   clearOption?: ClearOption
   loadingMessage?: string
   emptyMessage?: string
+  modelEnv?: ProviderModelEnv | null
+  provider?: ApiProvider | null
+}
+
+interface ResolvedEntry {
+  model: ModelOption
+  displayName: string
+  description?: string
+}
+
+function resolveClaudeEntries(models: ModelOption[], modelEnv: ProviderModelEnv | null | undefined): ResolvedEntry[] {
+  const entries: ResolvedEntry[] = []
+  const seenSlotIds = new Set<string>()
+  for (const model of models) {
+    if (!modelEnv) {
+      entries.push({ model, displayName: model.name, description: model.description })
+      continue
+    }
+    const bucket = claudeIdToBucket(model.id)
+    const slot = modelEnv[bucket]
+    if (!slot?.id) {
+      entries.push({ model, displayName: model.name, description: undefined })
+      continue
+    }
+    if (seenSlotIds.has(slot.id)) continue
+    seenSlotIds.add(slot.id)
+    entries.push({
+      model,
+      displayName: slot.name ?? slot.id,
+      description: slot.description,
+    })
+  }
+  return entries
 }
 
 export function ClaudeModelList({
@@ -53,11 +95,14 @@ export function ClaudeModelList({
   clearOption,
   loadingMessage = 'Loading models...',
   emptyMessage,
+  modelEnv,
+  provider,
 }: ClaudeModelListProps) {
+  const entries = resolveClaudeEntries(models, modelEnv)
   return (
     <>
       <ListHeader title={title} clearOption={clearOption} />
-      {models.map((model) => {
+      {entries.map(({ model, displayName, description }) => {
         const active = model.id === activeId
         return (
           <button
@@ -67,21 +112,35 @@ export function ClaudeModelList({
               active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
             }`}
           >
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-medium">{model.name}</div>
-              {model.description && (
-                <div className="mt-0.5 text-[10px] text-muted-foreground">{model.description}</div>
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              {provider && modelEnv && (
+                <span className="shrink-0">
+                  <ProviderLabel provider={provider} size={14} iconOnly />
+                </span>
               )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">{displayName}</div>
+                {description && (
+                  <div className="mt-0.5 text-[10px] text-muted-foreground">{description}</div>
+                )}
+              </div>
             </div>
             {active && <Check className="mt-0.5 size-3.5 shrink-0" />}
           </button>
         )
       })}
-      {models.length === 0 && (
+      {entries.length === 0 && (
         <div className="px-2 py-1.5 text-xs text-muted-foreground">{emptyMessage ?? loadingMessage}</div>
       )}
     </>
   )
+}
+
+export function resolveClaudeDisplayName(model: ModelOption | undefined, modelEnv: ProviderModelEnv | null | undefined): string | null {
+  if (!model) return null
+  if (!modelEnv) return model.name ?? model.id
+  const slot = modelEnv[claudeIdToBucket(model.id)]
+  return slot?.name ?? slot?.id ?? model.name ?? model.id
 }
 
 interface EffortListProps {

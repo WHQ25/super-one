@@ -1062,6 +1062,67 @@ export interface BashOutputEvent {
 
 export type ProviderCategory = 'model_provider' | 'cloud_platform' | 'aggregator' | 'proxy_service' | 'custom'
 
+export type ModelBucket = 'default' | 'opus' | 'sonnet' | 'haiku' | 'subagent'
+
+export const MODEL_BUCKETS: ModelBucket[] = ['default', 'opus', 'sonnet', 'haiku', 'subagent']
+
+export interface ProviderModelSlot {
+  id: string
+  name?: string
+  description?: string
+}
+
+export type ProviderModelEnv = Partial<Record<ModelBucket, ProviderModelSlot>>
+
+export const BUCKET_ENV_KEYS: Record<ModelBucket, { id: string; name?: string; desc?: string }> = {
+  default: { id: 'ANTHROPIC_MODEL' },
+  opus: {
+    id: 'ANTHROPIC_DEFAULT_OPUS_MODEL',
+    name: 'ANTHROPIC_DEFAULT_OPUS_MODEL_NAME',
+    desc: 'ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION',
+  },
+  sonnet: {
+    id: 'ANTHROPIC_DEFAULT_SONNET_MODEL',
+    name: 'ANTHROPIC_DEFAULT_SONNET_MODEL_NAME',
+    desc: 'ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION',
+  },
+  haiku: {
+    id: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    name: 'ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME',
+    desc: 'ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION',
+  },
+  subagent: { id: 'CLAUDE_CODE_SUBAGENT_MODEL' },
+}
+
+export function parseProviderModelEnv(raw: string | undefined): ProviderModelEnv {
+  try {
+    const obj = JSON.parse(raw || '{}') as Record<string, unknown>
+    const result: ProviderModelEnv = {}
+    for (const bucket of MODEL_BUCKETS) {
+      const slot = obj[bucket]
+      if (slot && typeof slot === 'object' && 'id' in slot && typeof (slot as { id: unknown }).id === 'string') {
+        result[bucket] = slot as ProviderModelSlot
+      }
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+export function expandProviderModelEnv(modelEnv: ProviderModelEnv): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const bucket of MODEL_BUCKETS) {
+    const slot = modelEnv[bucket]
+    if (!slot?.id) continue
+    const keys = BUCKET_ENV_KEYS[bucket]
+    env[keys.id] = slot.id
+    if (keys.name && slot.name) env[keys.name] = slot.name
+    if (keys.desc && slot.description) env[keys.desc] = slot.description
+  }
+  return env
+}
+
 export interface AgentProviderConfig {
   base_url: string
   model_env: string

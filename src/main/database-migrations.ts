@@ -147,6 +147,7 @@ export function runDatabaseMigrations(db: Database.Database): void {
   }
 
   migrateProvidersToUnified(db)
+  migrateModelEnvToStructured(db)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS global_resource_cache (
@@ -349,6 +350,80 @@ function seedBaseSessionProviders(db: Database.Database): void {
   `)
   stmt.run('claude-base', 'claude', 'Claude (Base)', now, now)
   stmt.run('codex-base', 'codex', 'Codex (Base)', now, now)
+}
+
+const FLAT_TO_BUCKET: Record<string, 'default' | 'opus' | 'sonnet' | 'haiku' | 'subagent'> = {
+  ANTHROPIC_MODEL: 'default',
+  ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus',
+  ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet',
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku',
+  CLAUDE_CODE_SUBAGENT_MODEL: 'subagent',
+}
+
+function hasStructuredShape(obj: Record<string, unknown>): boolean {
+  for (const bucket of ['default', 'opus', 'sonnet', 'haiku', 'subagent']) {
+    const v = obj[bucket]
+    if (v && typeof v === 'object' && 'id' in (v as object)) return true
+  }
+  return false
+}
+
+function migrateModelEnvToStructured(db: Database.Database): void {
+  const rows = db.prepare('SELECT id, agent_configs FROM api_providers').all() as Array<{ id: string; agent_configs: string }>
+  if (rows.length === 0) return
+  const stmt = db.prepare('UPDATE api_providers SET agent_configs = ? WHERE id = ?')
+  for (const row of rows) {
+    let configs: Record<string, { base_url: string; model_env: string; extra_env: string; api_format: string }>
+    try {
+      configs = JSON.parse(row.agent_configs || '{}')
+    } catch {
+      continue
+    }
+    let changed = false
+    for (const [agent, ac] of Object.entries(configs)) {
+      if (!ac || typeof ac !== 'object') continue
+      let modelEnvObj: Record<string, unknown> = {}
+      try {
+        modelEnvObj = JSON.parse(ac.model_env || '{}')
+      } catch {
+        modelEnvObj = {}
+      }
+      let extraEnvObj: Record<string, string> = {}
+      try {
+        extraEnvObj = JSON.parse(ac.extra_env || '{}')
+      } catch {
+        extraEnvObj = {}
+      }
+
+      if (hasStructuredShape(modelEnvObj)) continue
+
+      const structured: Record<string, { id: string; name?: string }> = {}
+      for (const [flatKey, bucket] of Object.entries(FLAT_TO_BUCKET)) {
+        const fromModel = typeof modelEnvObj[flatKey] === 'string' ? (modelEnvObj[flatKey] as string) : ''
+        const fromExtra = typeof extraEnvObj[flatKey] === 'string' ? extraEnvObj[flatKey] : ''
+        const id = fromModel || fromExtra
+        if (id) {
+          structured[bucket] = { id }
+        }
+        if (flatKey in extraEnvObj) {
+          delete extraEnvObj[flatKey]
+          changed = true
+        }
+      }
+
+      if (Object.keys(structured).length > 0 || Object.keys(modelEnvObj).length > 0) {
+        configs[agent] = {
+          ...ac,
+          model_env: JSON.stringify(structured),
+          extra_env: JSON.stringify(extraEnvObj),
+        }
+        changed = true
+      }
+    }
+    if (changed) {
+      stmt.run(JSON.stringify(configs), row.id)
+    }
+  }
 }
 
 function migrateProvidersToUnified(db: Database.Database): void {

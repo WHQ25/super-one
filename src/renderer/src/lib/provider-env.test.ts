@@ -1,123 +1,69 @@
 import { describe, expect, it } from 'vitest'
-import { splitEnv, mergeEnv, MODEL_ENV_KEY_SET, INTERNAL_ENV_KEYS } from './provider-env'
+import { parseEnvString, RESERVED_ENV_KEYS } from './provider-env'
 
-describe('splitEnv', () => {
-  it('separates model, internal, and rest env vars', () => {
-    const input = JSON.stringify({
-      ANTHROPIC_MODEL: 'glm-4.7',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-4.7',
-      ANTHROPIC_AUTH_TOKEN: '',
-      API_TIMEOUT_MS: '3000000',
-      CUSTOM_VAR: 'hello',
-    })
-    const { modelEnv, internalEnv, restEnv } = splitEnv(input)
-    expect(modelEnv).toEqual({
-      ANTHROPIC_MODEL: 'glm-4.7',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-4.7',
-    })
-    expect(internalEnv).toEqual({ ANTHROPIC_AUTH_TOKEN: '' })
-    expect(JSON.parse(restEnv)).toEqual({ API_TIMEOUT_MS: '3000000', CUSTOM_VAR: 'hello' })
+describe('parseEnvString', () => {
+  it('parses simple key=value pairs', () => {
+    expect(parseEnvString('FOO=bar\nBAZ=qux')).toEqual([
+      { key: 'FOO', value: 'bar' },
+      { key: 'BAZ', value: 'qux' },
+    ])
   })
 
-  it('returns empty categories when no matching keys', () => {
-    const input = JSON.stringify({ FOO: 'bar' })
-    const { modelEnv, internalEnv, restEnv } = splitEnv(input)
-    expect(modelEnv).toEqual({})
-    expect(internalEnv).toEqual({})
-    expect(JSON.parse(restEnv)).toEqual({ FOO: 'bar' })
+  it('ignores empty lines and comments', () => {
+    expect(parseEnvString('FOO=bar\n\n# comment\nBAZ=qux')).toEqual([
+      { key: 'FOO', value: 'bar' },
+      { key: 'BAZ', value: 'qux' },
+    ])
   })
 
-  it('handles empty JSON object', () => {
-    const { modelEnv, internalEnv, restEnv } = splitEnv('{}')
-    expect(modelEnv).toEqual({})
-    expect(internalEnv).toEqual({})
-    expect(restEnv).toBe('{}')
+  it('handles export prefix', () => {
+    expect(parseEnvString('export FOO=bar\nexport BAZ=qux')).toEqual([
+      { key: 'FOO', value: 'bar' },
+      { key: 'BAZ', value: 'qux' },
+    ])
   })
 
-  it('returns original string on invalid JSON', () => {
-    const { modelEnv, internalEnv, restEnv } = splitEnv('not-json')
-    expect(modelEnv).toEqual({})
-    expect(internalEnv).toEqual({})
-    expect(restEnv).toBe('not-json')
+  it('handles values containing equals sign', () => {
+    expect(parseEnvString('FOO=bar=baz')).toEqual([{ key: 'FOO', value: 'bar=baz' }])
   })
 
-  it('coerces non-string values to strings', () => {
-    const input = JSON.stringify({ ANTHROPIC_MODEL: 123 })
-    const { modelEnv } = splitEnv(input)
-    expect(modelEnv).toEqual({ ANTHROPIC_MODEL: '123' })
+  it('strips surrounding quotes from values', () => {
+    expect(parseEnvString('FOO="bar"\nBAZ=\'qux\'')).toEqual([
+      { key: 'FOO', value: 'bar' },
+      { key: 'BAZ', value: 'qux' },
+    ])
   })
 
-  it('splits ANTHROPIC_API_KEY into internalEnv', () => {
-    const input = JSON.stringify({ ANTHROPIC_API_KEY: 'sk-test', FOO: 'bar' })
-    const { internalEnv, restEnv } = splitEnv(input)
-    expect(internalEnv).toEqual({ ANTHROPIC_API_KEY: 'sk-test' })
-    expect(JSON.parse(restEnv)).toEqual({ FOO: 'bar' })
+  it('skips lines without equals sign', () => {
+    expect(parseEnvString('INVALID_LINE\nFOO=bar')).toEqual([{ key: 'FOO', value: 'bar' }])
   })
 
-  it('handles all 5 model env keys', () => {
-    const input: Record<string, string> = {}
-    for (const key of MODEL_ENV_KEY_SET) input[key] = 'model-x'
-    const { modelEnv, restEnv } = splitEnv(JSON.stringify(input))
-    expect(Object.keys(modelEnv)).toHaveLength(5)
-    expect(JSON.parse(restEnv)).toEqual({})
+  it('deduplicates by key, keeping first occurrence', () => {
+    expect(parseEnvString('FOO=first\nFOO=second')).toEqual([{ key: 'FOO', value: 'first' }])
+  })
+
+  it('trims whitespace around keys and values', () => {
+    expect(parseEnvString('  FOO  =  bar  ')).toEqual([{ key: 'FOO', value: 'bar' }])
   })
 })
 
-describe('mergeEnv', () => {
-  it('merges model and internal env into rest', () => {
-    const restEnv = JSON.stringify({ API_TIMEOUT_MS: '3000000' })
-    const modelEnv = { ANTHROPIC_MODEL: 'glm-4.7' }
-    const internalEnv = { ANTHROPIC_AUTH_TOKEN: '' }
-    const result = JSON.parse(mergeEnv(restEnv, modelEnv, internalEnv))
-    expect(result).toEqual({
-      API_TIMEOUT_MS: '3000000',
-      ANTHROPIC_MODEL: 'glm-4.7',
-      ANTHROPIC_AUTH_TOKEN: '',
-    })
+describe('RESERVED_ENV_KEYS', () => {
+  it('covers all bucket id/name/description env vars', () => {
+    expect(RESERVED_ENV_KEYS.has('ANTHROPIC_MODEL')).toBe(true)
+    expect(RESERVED_ENV_KEYS.has('ANTHROPIC_DEFAULT_OPUS_MODEL')).toBe(true)
+    expect(RESERVED_ENV_KEYS.has('ANTHROPIC_DEFAULT_SONNET_MODEL_NAME')).toBe(true)
+    expect(RESERVED_ENV_KEYS.has('ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION')).toBe(true)
+    expect(RESERVED_ENV_KEYS.has('CLAUDE_CODE_SUBAGENT_MODEL')).toBe(true)
   })
 
-  it('removes model keys with empty values', () => {
-    const restEnv = JSON.stringify({ ANTHROPIC_MODEL: 'old-value' })
-    const result = JSON.parse(mergeEnv(restEnv, {}, {}))
-    expect(result).not.toHaveProperty('ANTHROPIC_MODEL')
+  it('covers auth and base url keys', () => {
+    expect(RESERVED_ENV_KEYS.has('ANTHROPIC_API_KEY')).toBe(true)
+    expect(RESERVED_ENV_KEYS.has('ANTHROPIC_AUTH_TOKEN')).toBe(true)
+    expect(RESERVED_ENV_KEYS.has('ANTHROPIC_BASE_URL')).toBe(true)
   })
 
-  it('returns original string on invalid rest JSON', () => {
-    expect(mergeEnv('bad-json', { ANTHROPIC_MODEL: 'x' }, {})).toBe('bad-json')
-  })
-
-  it('roundtrips with splitEnv', () => {
-    const original = JSON.stringify({
-      ANTHROPIC_MODEL: 'kimi-k2',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'kimi-k2',
-      ANTHROPIC_AUTH_TOKEN: '',
-      API_TIMEOUT_MS: '3000000',
-    })
-    const { modelEnv, internalEnv, restEnv } = splitEnv(original)
-    const merged = mergeEnv(restEnv, modelEnv, internalEnv)
-    expect(JSON.parse(merged)).toEqual(JSON.parse(original))
-  })
-
-  it('overwrites existing model keys in rest', () => {
-    const restEnv = JSON.stringify({ ANTHROPIC_MODEL: 'old' })
-    const result = JSON.parse(mergeEnv(restEnv, { ANTHROPIC_MODEL: 'new' }, {}))
-    expect(result.ANTHROPIC_MODEL).toBe('new')
-  })
-})
-
-describe('constant sets', () => {
-  it('MODEL_ENV_KEY_SET contains expected keys', () => {
-    expect(MODEL_ENV_KEY_SET.has('ANTHROPIC_MODEL')).toBe(true)
-    expect(MODEL_ENV_KEY_SET.has('ANTHROPIC_DEFAULT_SONNET_MODEL')).toBe(true)
-    expect(MODEL_ENV_KEY_SET.has('ANTHROPIC_DEFAULT_OPUS_MODEL')).toBe(true)
-    expect(MODEL_ENV_KEY_SET.has('ANTHROPIC_DEFAULT_HAIKU_MODEL')).toBe(true)
-    expect(MODEL_ENV_KEY_SET.has('CLAUDE_CODE_SUBAGENT_MODEL')).toBe(true)
-    expect(MODEL_ENV_KEY_SET.size).toBe(5)
-  })
-
-  it('INTERNAL_ENV_KEYS contains auth keys only', () => {
-    expect(INTERNAL_ENV_KEYS.has('ANTHROPIC_AUTH_TOKEN')).toBe(true)
-    expect(INTERNAL_ENV_KEYS.has('ANTHROPIC_API_KEY')).toBe(true)
-    expect(INTERNAL_ENV_KEYS.size).toBe(2)
+  it('does not include unrelated keys', () => {
+    expect(RESERVED_ENV_KEYS.has('API_TIMEOUT_MS')).toBe(false)
+    expect(RESERVED_ENV_KEYS.has('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC')).toBe(false)
   })
 })

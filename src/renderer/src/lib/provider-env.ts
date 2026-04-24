@@ -1,41 +1,39 @@
-export const MODEL_ENV_KEYS = [
-  { key: 'ANTHROPIC_MODEL', label: 'Default Model' },
-  { key: 'ANTHROPIC_DEFAULT_SONNET_MODEL', label: 'Sonnet' },
-  { key: 'ANTHROPIC_DEFAULT_OPUS_MODEL', label: 'Opus' },
-  { key: 'ANTHROPIC_DEFAULT_HAIKU_MODEL', label: 'Haiku' },
-  { key: 'CLAUDE_CODE_SUBAGENT_MODEL', label: 'Subagent' },
-] as const
+export const RESERVED_ENV_KEYS: Set<string> = new Set([
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL_NAME',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL_NAME',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION',
+  'CLAUDE_CODE_SUBAGENT_MODEL',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+])
 
-export const MODEL_ENV_KEY_SET: Set<string> = new Set(MODEL_ENV_KEYS.map((m) => m.key))
-export const INTERNAL_ENV_KEYS: Set<string> = new Set(['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY'])
-
-export function splitEnv(envJson: string): { modelEnv: Record<string, string>; internalEnv: Record<string, string>; restEnv: string } {
-  try {
-    const obj = JSON.parse(envJson)
-    const modelEnv: Record<string, string> = {}
-    const internalEnv: Record<string, string> = {}
-    const rest: Record<string, string> = {}
-    for (const [k, v] of Object.entries(obj)) {
-      if (MODEL_ENV_KEY_SET.has(k)) modelEnv[k] = String(v)
-      else if (INTERNAL_ENV_KEYS.has(k)) internalEnv[k] = String(v)
-      else rest[k] = String(v)
+export function parseEnvString(text: string): Array<{ key: string; value: string }> {
+  const result: Array<{ key: string; value: string }> = []
+  const seen = new Set<string>()
+  const lines = text.split('\n')
+  for (const line of lines) {
+    let trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    if (trimmed.startsWith('export ')) trimmed = trimmed.slice(7).trim()
+    const eqIdx = trimmed.indexOf('=')
+    if (eqIdx === -1) continue
+    const key = trimmed.slice(0, eqIdx).trim()
+    let value = trimmed.slice(eqIdx + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
     }
-    return { modelEnv, internalEnv, restEnv: JSON.stringify(rest) }
-  } catch {
-    return { modelEnv: {}, internalEnv: {}, restEnv: envJson }
-  }
-}
-
-export function mergeEnv(restEnv: string, modelEnv: Record<string, string>, internalEnv: Record<string, string>): string {
-  try {
-    const obj = JSON.parse(restEnv)
-    for (const { key } of MODEL_ENV_KEYS) {
-      if (modelEnv[key]) obj[key] = modelEnv[key]
-      else delete obj[key]
+    if (key && !seen.has(key)) {
+      seen.add(key)
+      result.push({ key, value })
     }
-    Object.assign(obj, internalEnv)
-    return JSON.stringify(obj)
-  } catch {
-    return restEnv
   }
+  return result
 }

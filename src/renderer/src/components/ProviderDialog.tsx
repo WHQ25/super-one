@@ -11,15 +11,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { PRESETS, getPresetsByCategory, resolveTemplateValues, CATEGORY_LABELS, type QuickPreset, type AgentType, type AgentPresetConfig } from '@/lib/provider-presets'
-import { MODEL_ENV_KEYS, splitEnv, mergeEnv } from '@/lib/provider-env'
+import { parseEnvString, RESERVED_ENV_KEYS } from '@/lib/provider-env'
 import { ProviderLabel } from './ProviderLabel'
-import type { ApiProvider, CreateProviderRequest, UpdateProviderRequest, AgentProviderConfig } from '../../../shared/agent-types'
+import type { ApiProvider, CreateProviderRequest, UpdateProviderRequest, AgentProviderConfig, ProviderModelEnv, ModelBucket, ProviderModelSlot } from '../../../shared/agent-types'
+import { MODEL_BUCKETS, expandProviderModelEnv, parseProviderModelEnv } from '../../../shared/agent-types'
 
 interface AgentFormState {
   base_url: string
   extra_env: string
-  model_env: Record<string, string>
-  internal_env: Record<string, string>
+  model_env: ProviderModelEnv
 }
 
 interface FormState {
@@ -33,7 +33,9 @@ type DialogStep = 'select' | 'form'
 function parseEnvPairs(json: string): Array<{ key: string; value: string }> {
   try {
     const obj = JSON.parse(json)
-    return Object.entries(obj).map(([key, value]) => ({ key, value: String(value) }))
+    return Object.entries(obj)
+      .filter(([key]) => !RESERVED_ENV_KEYS.has(key))
+      .map(([key, value]) => ({ key, value: String(value) }))
   } catch {
     return []
   }
@@ -42,7 +44,8 @@ function parseEnvPairs(json: string): Array<{ key: string; value: string }> {
 function serializeEnvPairs(pairs: Array<{ key: string; value: string }>): string {
   const obj: Record<string, string> = {}
   for (const p of pairs) {
-    if (p.key.trim()) obj[p.key.trim()] = p.value
+    const k = p.key.trim()
+    if (k && !RESERVED_ENV_KEYS.has(k)) obj[k] = p.value
   }
   return JSON.stringify(obj)
 }
@@ -50,6 +53,8 @@ function serializeEnvPairs(pairs: Array<{ key: string; value: string }>): string
 function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { t } = useTranslation()
   const [pairs, setPairs] = useState(() => parseEnvPairs(value))
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
 
   useEffect(() => {
     setPairs(parseEnvPairs(value))
@@ -70,6 +75,20 @@ function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) =
 
   const removeRow = (index: number) => {
     sync(pairs.filter((_, i) => i !== index))
+  }
+
+  const handlePaste = () => {
+    const parsed = parseEnvString(pasteText).filter((p) => !RESERVED_ENV_KEYS.has(p.key))
+    if (parsed.length === 0) {
+      setPasteText('')
+      setPasteOpen(false)
+      return
+    }
+    const existingKeys = new Set(pairs.map((p) => p.key).filter(Boolean))
+    const newPairs = parsed.filter((p) => !existingKeys.has(p.key))
+    sync([...pairs, ...newPairs])
+    setPasteText('')
+    setPasteOpen(false)
   }
 
   return (
@@ -93,9 +112,76 @@ function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) =
           </button>
         </div>
       ))}
-      <button type="button" onClick={addRow} className="flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground">
-        <Plus className="size-3" /> {t('resources.providerDialog.addVariable')}
-      </button>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={addRow} className="flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground">
+          <Plus className="size-3" /> {t('resources.providerDialog.addVariable')}
+        </button>
+        <button type="button" onClick={() => setPasteOpen((v) => !v)} className="flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground">
+          <Plus className="size-3" /> {t('resources.providerDialog.pasteEnv')}
+        </button>
+      </div>
+      {pasteOpen && (
+        <div className="flex flex-col gap-1.5 rounded-md border border-border p-2">
+          <textarea
+            className="min-h-[80px] rounded-md border border-border bg-background px-2 py-1 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            placeholder="KEY1=value1&#10;export KEY2=value2&#10;# comment line"
+          />
+          <div className="flex justify-end gap-1.5">
+            <button type="button" onClick={() => { setPasteOpen(false); setPasteText('') }} className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground">
+              {t('common.cancel')}
+            </button>
+            <button type="button" onClick={handlePaste} className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground hover:bg-primary/90">
+              {t('resources.providerDialog.applyPaste')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ModelEnvEditor({ value, onChange }: { value: ProviderModelEnv; onChange: (v: ProviderModelEnv) => void }) {
+  const { t } = useTranslation()
+  const bucketLabel: Record<ModelBucket, string> = {
+    default: t('resources.providerDialog.bucketDefault'),
+    opus: 'Opus',
+    sonnet: 'Sonnet',
+    haiku: 'Haiku',
+    subagent: t('resources.providerDialog.bucketSubagent'),
+  }
+
+  const update = (bucket: ModelBucket, field: 'id' | 'name', v: string) => {
+    const existing: ProviderModelSlot = value[bucket] ?? { id: '' }
+    const nextSlot: ProviderModelSlot = { ...existing, [field]: v }
+    const next: ProviderModelEnv = { ...value, [bucket]: nextSlot }
+    if (!nextSlot.id && !nextSlot.name) delete next[bucket]
+    onChange(next)
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {MODEL_BUCKETS.map((bucket) => {
+        const slot = value[bucket]
+        return (
+          <div key={bucket} className="flex items-center gap-1.5">
+            <span className="w-16 shrink-0 text-xs text-muted-foreground">{bucketLabel[bucket]}</span>
+            <input
+              className="w-[40%] rounded-md border border-border bg-background px-2 py-1 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
+              value={slot?.id ?? ''}
+              onChange={(e) => update(bucket, 'id', e.target.value)}
+              placeholder={t('resources.providerDialog.modelIdPlaceholder')}
+            />
+            <input
+              className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+              value={slot?.name ?? ''}
+              onChange={(e) => update(bucket, 'name', e.target.value)}
+              placeholder={t('resources.providerDialog.modelNamePlaceholder')}
+            />
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -140,20 +226,8 @@ function AgentConfigForm({
           </label>
           {hasModelEnv && (
             <div className="flex flex-col gap-1.5">
-              {MODEL_ENV_KEYS.map(({ key, label }) => {
-                if (!(key in form.model_env) && !preset?.model_env?.[key] && !isEdit) return null
-                return (
-                  <div key={key} className="flex items-center gap-2">
-                    <span className="w-24 shrink-0 text-right text-xs text-muted-foreground">{label}</span>
-                    <input
-                      className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
-                      value={form.model_env[key] ?? ''}
-                      onChange={(e) => onChange({ ...form, model_env: { ...form.model_env, [key]: e.target.value } })}
-                      placeholder={key}
-                    />
-                  </div>
-                )
-              })}
+              <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>
+              <ModelEnvEditor value={form.model_env} onChange={(m) => onChange({ ...form, model_env: m })} />
             </div>
           )}
           <button
@@ -164,7 +238,10 @@ function AgentConfigForm({
             {showAdvanced ? t('resources.providerDialog.advancedHide') : t('resources.providerDialog.advancedShow')}
           </button>
           {showAdvanced && (
-            <EnvEditor value={form.extra_env} onChange={(v) => onChange({ ...form, extra_env: v })} />
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.environmentVariables')}</span>
+              <EnvEditor value={form.extra_env} onChange={(v) => onChange({ ...form, extra_env: v })} />
+            </div>
           )}
         </>
       )}
@@ -178,7 +255,7 @@ function buildAgentConfigs(agentForms: Record<string, AgentFormState>): string {
     configs[agent] = {
       base_url: form.base_url,
       model_env: JSON.stringify(form.model_env),
-      extra_env: mergeEnv(form.extra_env, form.model_env, form.internal_env),
+      extra_env: form.extra_env,
       api_format: 'anthropic',
     }
   }
@@ -189,18 +266,14 @@ function parseAgentForm(config: AgentProviderConfig | undefined, presetConfig?: 
   if (!config) {
     return {
       base_url: presetConfig?.base_url ?? '',
-      extra_env: '{}',
+      extra_env: presetConfig?.extra_env ?? '{}',
       model_env: presetConfig?.model_env ? { ...presetConfig.model_env } : {},
-      internal_env: {},
     }
   }
-  const fullEnv = config.extra_env || '{}'
-  const { modelEnv, internalEnv, restEnv } = splitEnv(fullEnv)
   return {
     base_url: config.base_url,
-    extra_env: restEnv,
-    model_env: modelEnv,
-    internal_env: internalEnv,
+    extra_env: config.extra_env || '{}',
+    model_env: parseProviderModelEnv(config.model_env),
   }
 }
 
@@ -296,7 +369,7 @@ export function ProviderDialog({
       : ['claude', 'codex']
 
   const showFields = matchedPreset?.fields ?? ['name', 'api_key'] as const
-  const currentAgentForm = form.agentForms[activeAgentTab] || { base_url: '', extra_env: '{}', model_env: {}, internal_env: {} }
+  const currentAgentForm = form.agentForms[activeAgentTab] || { base_url: '', extra_env: '{}', model_env: {} }
   const currentPresetConfig = matchedPreset?.agent_configs[activeAgentTab]
 
   const handleTest = async () => {
@@ -305,10 +378,14 @@ export function ProviderDialog({
     try {
       const af = form.agentForms[activeAgentTab]
       if (!af) { setTestStatus('error'); setTestMessage(t('resources.providerDialog.noAgentConfig')); return }
+      const mergedExtra = JSON.stringify({
+        ...JSON.parse(af.extra_env || '{}'),
+        ...expandProviderModelEnv(af.model_env),
+      })
       const result = await window.app.testProvider({
         api_key: form.api_key,
         base_url: af.base_url || '',
-        extra_env: mergeEnv(af.extra_env, af.model_env, af.internal_env),
+        extra_env: mergedExtra,
       })
       if (result.success) {
         setTestStatus('success')
@@ -331,9 +408,8 @@ export function ProviderDialog({
         resolvedAgentForms[agent] = {
           ...af,
           base_url: resolveTemplateValues(af.base_url, templateVals),
-          extra_env: resolveTemplateValues(mergeEnv(af.extra_env, af.model_env, af.internal_env), templateVals),
+          extra_env: resolveTemplateValues(af.extra_env, templateVals),
           model_env: af.model_env,
-          internal_env: af.internal_env,
         }
       }
     }

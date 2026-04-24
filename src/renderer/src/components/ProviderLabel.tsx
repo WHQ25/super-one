@@ -85,17 +85,23 @@ export function resolveProviderKey(provider: ApiProvider): string | null {
   return null
 }
 
-export function ProviderLabel({ presetKey, provider, fallback, size = 44 }: { presetKey?: string; provider?: ApiProvider; fallback?: string; size?: number }): ReactNode {
+export function ProviderLabel({ presetKey, provider, fallback, size = 44, iconOnly = false }: { presetKey?: string; provider?: ApiProvider; fallback?: string; size?: number; iconOnly?: boolean }): ReactNode {
   const key = presetKey ? PRESET_PROVIDER_KEY[presetKey] : provider ? resolveProviderKey(provider) : null
   const brand = key ? BRANDS[key] : null
   if (brand) {
     const IconComp = brand.Color ?? brand.Mono
+    if (iconOnly) {
+      return <IconComp size={size} />
+    }
     return (
       <span className="inline-flex items-center gap-1.5">
         <IconComp size={size} />
         <brand.Text size={size * 0.75} />
       </span>
     )
+  }
+  if (iconOnly) {
+    return <Globe className="text-muted-foreground" style={{ width: size, height: size }} />
   }
   return <span className="flex items-center gap-2 text-sm font-medium"><Globe className="size-5 text-muted-foreground" />{fallback}</span>
 }

@@ -118,18 +118,34 @@ describe('buildProviderEnv', () => {
     expect(env.CLAUDE_CODE_USE_BEDROCK).toBe('1')
   })
 
-  it('uses model_env and merges with extra_env', () => {
+  it('expands structured model_env into CLI env vars', () => {
     const env = buildProviderEnv(makeProvider({
       api_key: 'sk-test',
       agent_configs: makeClaudeConfig(
         'https://example.com',
         '{"API_TIMEOUT_MS":"3000000"}',
-        '{"ANTHROPIC_MODEL":"test-model"}',
+        '{"default":{"id":"test-model"},"opus":{"id":"pro","name":"Pro","description":"Flagship"},"sonnet":{"id":"mid","name":"Mid"},"haiku":{"id":"fast","name":"Fast"},"subagent":{"id":"tiny"}}',
       ),
     }))
     expect(env.ANTHROPIC_MODEL).toBe('test-model')
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('pro')
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME).toBe('Pro')
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION).toBe('Flagship')
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('mid')
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME).toBe('Mid')
+    expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('fast')
+    expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME).toBe('Fast')
+    expect(env.CLAUDE_CODE_SUBAGENT_MODEL).toBe('tiny')
     expect(env.API_TIMEOUT_MS).toBe('3000000')
     expect(env.ANTHROPIC_BASE_URL).toBe('https://example.com')
+  })
+
+  it('ignores malformed model_env slots without id', () => {
+    const env = buildProviderEnv(makeProvider({
+      agent_configs: makeClaudeConfig('', '{}', '{"opus":"just-a-string","sonnet":{"name":"no-id"}}'),
+    }))
+    expect(env).not.toHaveProperty('ANTHROPIC_DEFAULT_OPUS_MODEL')
+    expect(env).not.toHaveProperty('ANTHROPIC_DEFAULT_SONNET_MODEL')
   })
 
   it('builds env for codex agentType', () => {

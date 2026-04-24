@@ -260,15 +260,15 @@ describe('getLatestCodexThreadId', () => {
 
   it('should return thread id from latest codex assistant message', () => {
     const messages: ChatMessage[] = [
-      makeMessage({ id: 'm1', metadata: { codex: { threadId: 'thread-1' } } }),
-      makeMessage({ id: 'm2', metadata: { codex: { threadId: 'thread-2' } } }),
+      makeMessage({ id: 'm1', metadata: { codex: { threadId: 'thread-1', usage: null, items: [] } } }),
+      makeMessage({ id: 'm2', metadata: { codex: { threadId: 'thread-2', usage: null, items: [] } } }),
     ]
     expect(getLatestCodexThreadId(messages)).toBe('thread-2')
   })
 
   it('should skip messages without threadId', () => {
     const messages: ChatMessage[] = [
-      makeMessage({ id: 'm1', metadata: { codex: { threadId: 'thread-1' } } }),
+      makeMessage({ id: 'm1', metadata: { codex: { threadId: 'thread-1', usage: null, items: [] } } }),
       makeMessage({ id: 'm2', metadata: {} }),
     ]
     expect(getLatestCodexThreadId(messages)).toBe('thread-1')
@@ -301,7 +301,7 @@ describe('applyDelta', () => {
     const content: ContentBlock[] = [
       { type: 'tool_use', toolUseId: 't1', toolName: 'Read', input: {}, startedAt: 1000 } as ContentBlock,
     ]
-    const delta = { type: 'tool_use', toolUseId: 't1', toolName: 'Read', input: { path: '/a' }, status: 'running' } as ContentBlock
+    const delta = { type: 'tool_use', toolUseId: 't1', toolName: 'Read', input: { path: '/a' }, status: 'running' } as unknown as ContentBlock
     const result = applyDelta(content, delta)
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({ toolUseId: 't1', input: { path: '/a' }, startedAt: 1000 })
@@ -337,9 +337,9 @@ describe('applyDelta', () => {
 
   it('should preserve existing status on tool_use update when delta has no status', () => {
     const content: ContentBlock[] = [
-      { type: 'tool_use', toolUseId: 't1', toolName: 'Read', input: {}, status: 'running', startedAt: 1000 } as ContentBlock,
+      { type: 'tool_use', toolUseId: 't1', toolName: 'Read', input: {}, status: 'running', startedAt: 1000 } as unknown as ContentBlock,
     ]
-    const delta = { type: 'tool_use', toolUseId: 't1', toolName: 'Read', input: { path: '/b' } } as ContentBlock
+    const delta = { type: 'tool_use', toolUseId: 't1', toolName: 'Read', input: { path: '/b' } } as unknown as ContentBlock
     const result = applyDelta(content, delta)
     expect((result[0] as Record<string, unknown>).status).toBe('running')
   })
@@ -442,8 +442,8 @@ describe('findLatestCodexUsage', () => {
     const usage1 = makeUsage({ totalInputTokens: 100 })
     const usage2 = makeUsage({ totalInputTokens: 200 })
     const messages: ChatMessage[] = [
-      makeMessage({ id: 'm1', metadata: { codex: { usage: usage1 } } }),
-      makeMessage({ id: 'm2', metadata: { codex: { usage: usage2 } } }),
+      makeMessage({ id: 'm1', metadata: { codex: { threadId: null, usage: usage1, items: [] } } }),
+      makeMessage({ id: 'm2', metadata: { codex: { threadId: null, usage: usage2, items: [] } } }),
     ]
     expect(findLatestCodexUsage(messages)).toBe(usage2)
   })
@@ -451,8 +451,8 @@ describe('findLatestCodexUsage', () => {
   it('should skip messages with invalid usage', () => {
     const validUsage = makeUsage()
     const messages: ChatMessage[] = [
-      makeMessage({ id: 'm1', metadata: { codex: { usage: validUsage } } }),
-      makeMessage({ id: 'm2', metadata: { codex: { usage: makeUsage({ totalInputTokens: NaN }) } } }),
+      makeMessage({ id: 'm1', metadata: { codex: { threadId: null, usage: validUsage, items: [] } } }),
+      makeMessage({ id: 'm2', metadata: { codex: { threadId: null, usage: makeUsage({ totalInputTokens: NaN }), items: [] } } }),
     ]
     expect(findLatestCodexUsage(messages)).toBe(validUsage)
   })

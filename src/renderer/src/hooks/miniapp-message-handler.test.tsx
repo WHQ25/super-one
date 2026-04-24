@@ -6,8 +6,8 @@ import * as clipboardLib from '@/lib/miniapp-clipboard'
 
 const mockMiniapp = {
   toolResult: vi.fn(),
-  fsRequest: vi.fn(() => Promise.resolve('ok')),
-  gitRequest: vi.fn(() => Promise.resolve('ok')),
+  fsRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(() => Promise.resolve('ok')),
+  gitRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(() => Promise.resolve('ok')),
   fsWatch: vi.fn(() => Promise.resolve(42)),
   fsUnwatch: vi.fn(),
 }

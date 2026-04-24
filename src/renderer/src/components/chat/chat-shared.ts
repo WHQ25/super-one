@@ -1,6 +1,7 @@
 import { createElement, type ComponentProps } from 'react'
-import type { LinkSafetyConfig } from 'streamdown'
+import type { Components, LinkSafetyConfig } from 'streamdown'
 import { defaultRehypePlugins } from 'streamdown'
+import type { PluggableList } from 'unified'
 import { defaultSchema } from 'hast-util-sanitize'
 import rehypeSanitize from 'rehype-sanitize'
 import { createCodePlugin } from '@streamdown/code'
@@ -72,12 +73,12 @@ function MediaImage(props: ComponentProps<'img'>) {
 }
 
 /** Shared Streamdown code component. */
-export const streamdownComponents: Record<string, unknown> = {
+export const streamdownComponents = {
   code: createStreamdownCodeComponent(codePlugin),
   img: MediaImage,
   video: MediaVideo,
   audio: MediaAudio,
-}
+} as unknown as Components
 
 const localFileSanitizeSchema = {
   ...defaultSchema,
@@ -94,10 +95,10 @@ const localFileSanitizeSchema = {
   },
 }
 
-export const streamdownRehypePlugins = Object.values({
+export const streamdownRehypePlugins: PluggableList = Object.values({
   ...defaultRehypePlugins,
   sanitize: [rehypeSanitize, localFileSanitizeSchema],
-}) as unknown[]
+}) as PluggableList
 
 const MEDIA_EXTS = new Set([...VIDEO_EXTS, ...AUDIO_EXTS, ...IMAGE_EXTS])
 const MD_IMAGE_RE = /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g

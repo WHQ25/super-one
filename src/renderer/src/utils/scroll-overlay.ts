@@ -1,8 +1,8 @@
 const timers = new WeakMap<Element, ReturnType<typeof setTimeout>>()
 
 document.addEventListener('scroll', (e) => {
-  const target = e.target as Element
-  if (target === document) return
+  if (!(e.target instanceof Element)) return
+  const target = e.target
 
   target.classList.add('is-scrolling')
 

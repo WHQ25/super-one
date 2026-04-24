@@ -20,7 +20,7 @@ describe('getPendingReason', () => {
   it('should return question reason when ask_user_question is pending', () => {
     const question: AskUserQuestionRequest = {
       requestId: '1',
-      questions: [{ question: 'Which file?', options: [], allowFreeText: true }],
+      questions: [{ question: 'Which file?', header: '', options: [], multiSelect: false }],
     }
     expect(getPendingReason(undefined, question, null)).toBe('Which file?')
   })
@@ -28,7 +28,7 @@ describe('getPendingReason', () => {
   it('should return fallback when question has no text', () => {
     const question: AskUserQuestionRequest = {
       requestId: '1',
-      questions: [{ options: [], allowFreeText: true } as any],
+      questions: [{ header: '', options: [], multiSelect: false } as any],
     }
     expect(getPendingReason(undefined, question, null)).toBe('Waiting for input')
   })
@@ -49,7 +49,7 @@ describe('getPendingReason', () => {
     ]
     const question: AskUserQuestionRequest = {
       requestId: '2',
-      questions: [{ question: 'What?', options: [], allowFreeText: true }],
+      questions: [{ question: 'What?', header: '', options: [], multiSelect: false }],
     }
     const plan: PlanApprovalRequest = {
       requestId: '3',
@@ -91,7 +91,7 @@ describe('isLiveSession', () => {
     const session = {
       pendingQuestion: {
         requestId: '1',
-        questions: [{ question: 'Q?', options: [], allowFreeText: true }],
+        questions: [{ question: 'Q?', header: '', options: [], multiSelect: false }],
       } as AskUserQuestionRequest,
     }
     expect(isLiveSession(session, false)).toBe(true)

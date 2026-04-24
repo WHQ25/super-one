@@ -3612,7 +3612,7 @@ describe('slash_command_output for compact', () => {
     setupProject('/test')
 
     const proj = useChatStore.getState().projectSessions['/test']
-    const session = proj._sessions[proj._activeSessionId]
+    const session = proj._sessions[proj._activeSessionId!]
     session._pendingSlashCommand = 'compact'
     session.messages = [
       { id: 'prev-msg', role: 'assistant', content: [{ type: 'text', text: 'hello' }], status: 'complete', createdAt: '', providerId: 'claude' },
@@ -3628,7 +3628,7 @@ describe('slash_command_output for compact', () => {
     } as never))
 
     const after = useChatStore.getState().projectSessions['/test']
-    const afterSession = after._sessions[after._activeSessionId]
+    const afterSession = after._sessions[after._activeSessionId!]
     expect(afterSession.slashCommandOutput).toBeNull()
     expect(afterSession._pendingSlashCommand).toBe('')
     expect(afterSession.messages.find((m: { id: string }) => m.id === 'compact-user')).toBeUndefined()
@@ -3782,14 +3782,14 @@ describe('handleAgentEvent supplemental', () => {
       useChatStore.getState().handleAgentEvent(makeEvent({
         type: 'content_delta',
         messageId: 'msg-t1',
-        delta: { type: 'thinking', text: 'Let me think...' },
+        delta: { type: 'thinking', thinking: 'Let me think...' },
       }))
 
       const session = getActiveDraftSession('/test')!
       const msg = session.messages.find((m) => m.id === 'msg-t1')
       const thinkingBlock = msg?.content.find((b) => b.type === 'thinking')
       expect(thinkingBlock).toBeDefined()
-      expect((thinkingBlock as { text: string }).text).toBe('Let me think...')
+      expect((thinkingBlock as { thinking: string }).thinking).toBe('Let me think...')
     })
   })
 
@@ -4147,7 +4147,7 @@ describe('cost/token via message_complete', () => {
       metadata: {
         costUsd: 0,
         usage: { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
-        modelUsage: { 'claude-sonnet-4-6': { contextWindow: 200000 } },
+        modelUsage: { 'claude-sonnet-4-6': { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: 0, contextWindow: 200000 } },
       },
     }))
 

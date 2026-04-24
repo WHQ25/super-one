@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.22.0-alpha] - 2026-04-24
+
+### Added
+
+- **Host locale exposed to mini-apps via `superone.locale` API** — mini-apps can now call `superone.locale.get()` and subscribe to changes via `superone.locale.onChange()` to follow the user's UI language (en/zh). Initial value is baked into the bridge at load time (iframe: inlined at script generation; webview: read from `_locale` query param in preload) so there's no race window between app start and the first locale read. Listeners only fire on actual diffs.
+- **Expanded zh/en coverage across chat UI** — tooltips, permission/plan/ask-user prompts, sidebar context menus, tool block and subagent status text, rewind and worktree popovers, Codex slash commands, and model/permission selectors are now fully translated.
+
+### Fixed
+
+- **Advanced env editor preserves reserved provider keys** — `parseEnvPairs` / `serializeEnvPairs` previously dropped `RESERVED_ENV_KEYS` (auth token, model buckets, base_url) both on read and write, so any preset with an `ANTHROPIC_AUTH_TOKEN` sentinel (Z.ai, DeepSeek, DMXAPI, …) lost the sentinel after you edited and saved advanced env vars, which broke auth because `buildProviderEnv` then couldn't copy `api_key` into `ANTHROPIC_AUTH_TOKEN`. The editor now splits state into visible + hidden pairs so reserved keys stay in the data layer but out of the UI, and serialize guards against user-typed collisions.
+- **Automation/schedule dialog no longer shows raw i18n keys** — automation/schedule translation keys live under `resources.*` but the dialog was calling them with a `settings.*` prefix, so strings like `"settings.automation.createTitle"` rendered verbatim. Fixed by correcting the namespace.
+
+### Changed
+
+- **Structured `model_env` with bucket slots and display names** — provider model configuration moves from flat `ANTHROPIC_DEFAULT_*_MODEL` env strings to typed `ProviderModelEnv` keyed by stable buckets (`default` / `opus` / `sonnet` / `haiku` / `subagent`), each slot carrying `{id, name, description}`. ProviderDialog gains a dedicated Model Env editor for the 5 bucket slots. ModelSelector now shows the provider icon plus the bucket-derived display name, with dedup by `slot.id`, and hides the effort selector for non-official providers unless `CLAUDE_CODE_EFFORT_LEVEL` is set (then rendered as a read-only label). An idempotent DB migration hoists legacy flat env into the new structure on first launch.
+- **Preset model versions bumped** — `kimi-k2` → `kimi-k2.6`, `MiniMax-M2.5` → `MiniMax-M2.7` (CN / Global / SiliconFlow), `mimo-v2-flash` → `mimo-v2-pro`.
+- **`@openai/codex-sdk` updated to 0.124.0**.
+
 ## [0.21.11-alpha] - 2026-04-24
 
 ### Added

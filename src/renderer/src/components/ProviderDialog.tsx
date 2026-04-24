@@ -30,20 +30,31 @@ interface FormState {
 
 type DialogStep = 'select' | 'form'
 
-function parseEnvPairs(json: string): Array<{ key: string; value: string }> {
+interface EnvPairs {
+  visible: Array<{ key: string; value: string }>
+  hidden: Array<{ key: string; value: string }>
+}
+
+function parseEnvPairs(json: string): EnvPairs {
   try {
     const obj = JSON.parse(json)
-    return Object.entries(obj)
-      .filter(([key]) => !RESERVED_ENV_KEYS.has(key))
-      .map(([key, value]) => ({ key, value: String(value) }))
+    const visible: Array<{ key: string; value: string }> = []
+    const hidden: Array<{ key: string; value: string }> = []
+    for (const [key, rawValue] of Object.entries(obj)) {
+      const pair = { key, value: String(rawValue) }
+      if (RESERVED_ENV_KEYS.has(key)) hidden.push(pair)
+      else visible.push(pair)
+    }
+    return { visible, hidden }
   } catch {
-    return []
+    return { visible: [], hidden: [] }
   }
 }
 
-function serializeEnvPairs(pairs: Array<{ key: string; value: string }>): string {
+function serializeEnvPairs(pairs: EnvPairs): string {
   const obj: Record<string, string> = {}
-  for (const p of pairs) {
+  for (const p of pairs.hidden) obj[p.key] = p.value
+  for (const p of pairs.visible) {
     const k = p.key.trim()
     if (k && !RESERVED_ENV_KEYS.has(k)) obj[k] = p.value
   }
@@ -52,7 +63,7 @@ function serializeEnvPairs(pairs: Array<{ key: string; value: string }>): string
 
 function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { t } = useTranslation()
-  const [pairs, setPairs] = useState(() => parseEnvPairs(value))
+  const [pairs, setPairs] = useState<EnvPairs>(() => parseEnvPairs(value))
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
 
@@ -60,21 +71,24 @@ function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) =
     setPairs(parseEnvPairs(value))
   }, [value])
 
-  const sync = (next: Array<{ key: string; value: string }>) => {
+  const sync = (next: EnvPairs) => {
     setPairs(next)
     onChange(serializeEnvPairs(next))
   }
 
   const update = (index: number, field: 'key' | 'value', val: string) => {
-    sync(pairs.map((p, i) => (i === index ? { ...p, [field]: val } : p)))
+    sync({
+      ...pairs,
+      visible: pairs.visible.map((p, i) => (i === index ? { ...p, [field]: val } : p)),
+    })
   }
 
   const addRow = () => {
-    setPairs((prev) => [...prev, { key: '', value: '' }])
+    setPairs((prev) => ({ ...prev, visible: [...prev.visible, { key: '', value: '' }] }))
   }
 
   const removeRow = (index: number) => {
-    sync(pairs.filter((_, i) => i !== index))
+    sync({ ...pairs, visible: pairs.visible.filter((_, i) => i !== index) })
   }
 
   const handlePaste = () => {
@@ -84,16 +98,16 @@ function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) =
       setPasteOpen(false)
       return
     }
-    const existingKeys = new Set(pairs.map((p) => p.key).filter(Boolean))
+    const existingKeys = new Set(pairs.visible.map((p) => p.key).filter(Boolean))
     const newPairs = parsed.filter((p) => !existingKeys.has(p.key))
-    sync([...pairs, ...newPairs])
+    sync({ ...pairs, visible: [...pairs.visible, ...newPairs] })
     setPasteText('')
     setPasteOpen(false)
   }
 
   return (
     <div className="flex flex-col gap-1.5">
-      {pairs.map((pair, i) => (
+      {pairs.visible.map((pair, i) => (
         <div key={i} className="flex items-center gap-1.5">
           <input
             className="w-[40%] rounded-md border border-border bg-background px-2 py-1 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"

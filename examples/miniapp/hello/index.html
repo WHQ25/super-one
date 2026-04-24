@@ -47,6 +47,11 @@
     </div>
     <div id="ui-result" style="margin-top:8px;font-size:13px;color:#78716c"></div>
   </div>
+  <div id="locale-api" style="margin-top:20px">
+    <h2 style="font-size:16px;margin-bottom:8px">Locale</h2>
+    <div id="locale-greeting" style="font-size:14px">—</div>
+    <div id="locale-current" style="margin-top:4px;font-size:13px;color:#78716c"></div>
+  </div>
   <div id="context-api" style="margin-top:20px">
     <h2 style="font-size:16px;margin-bottom:8px">Context APIs</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -163,6 +168,19 @@
         uiResult.textContent = 'Popover closed';
       });
     };
+
+    var L10N = {
+      en: { greeting: 'Hello from SuperOne!', current: 'Current locale:' },
+      zh: { greeting: '你好，SuperOne！', current: '当前语言：' }
+    };
+    function renderLocale() {
+      var lang = superone.locale.get();
+      var dict = L10N[lang] || L10N.en;
+      document.getElementById('locale-greeting').textContent = dict.greeting;
+      document.getElementById('locale-current').textContent = dict.current + ' ' + lang;
+    }
+    renderLocale();
+    superone.locale.onChange(renderLocale);
 
     var ctxResult = document.getElementById('ctx-result');
     document.getElementById('btn-ctx-inject').onclick = function() {

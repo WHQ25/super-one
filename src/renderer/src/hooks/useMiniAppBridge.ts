@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, type RefObject } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { readThemeVars } from '@/components/miniapp/miniapp-theme'
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
@@ -18,6 +19,8 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
   const isDark = useIsDark()
   const isDarkRef = useRef(isDark)
   isDarkRef.current = isDark
+  const { i18n } = useTranslation()
+  const locale = i18n.language
   const readyRef = useRef(false)
 
   const sendToFrame = useCallback((msg: unknown) => {
@@ -58,6 +61,11 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
     if (!readyRef.current) return
     sendToFrame({ type: 'miniapp-theme', vars: readThemeVars(), isDark })
   }, [isDark, sendToFrame])
+
+  useEffect(() => {
+    if (!readyRef.current) return
+    sendToFrame({ type: 'miniapp-locale', locale })
+  }, [locale, sendToFrame])
 
   useEffect(() => {
     if (inChatMode) return

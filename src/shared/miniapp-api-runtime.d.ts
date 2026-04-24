@@ -1,3 +1,5 @@
+export type MiniAppLocale = 'en' | 'zh'
+
 export interface MiniAppTransport {
   send(type: string, data: Record<string, unknown>): void
   request(reqType: string, resType: string, data: Record<string, unknown>, resultKey?: string): Promise<unknown>
@@ -83,6 +85,10 @@ export interface SuperoneApi {
     logFile(path: string, opts?: { limit?: number }): Promise<unknown>
     onHeadChange(cb: () => void): () => void
   }
+  locale: {
+    get(): MiniAppLocale
+    onChange(cb: (locale: MiniAppLocale) => void): () => void
+  }
   theme: {
     getVars(): Record<string, string>
     onChange(cb: (vars: Record<string, string>) => void): () => void
@@ -108,5 +114,5 @@ export interface SuperoneApi {
   onDarkModeChange(cb: (isDark: boolean) => void): () => void
 }
 
-export function createSuperoneApi(transport: MiniAppTransport, version: string): SuperoneApi
+export function createSuperoneApi(transport: MiniAppTransport, version: string, opts?: { initialLocale?: MiniAppLocale }): SuperoneApi
 export function startSuperoneResize(transport: MiniAppTransport): void

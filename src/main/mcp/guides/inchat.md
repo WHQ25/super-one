@@ -92,5 +92,6 @@ The callback fires once after the iframe is ready and data is injected. Late-sub
 
 - `permissions` — network access for loading external resources
 - `api-theme` — match host theme colors
+- `api-locale` — follow the user's UI language
 - `packaging` — distribute as .s1app
 - `icon` — visual assets

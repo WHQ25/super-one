@@ -43,7 +43,7 @@ Start with the scaffold from `setup_mini_app_dev`, then edit `manifest.json` to 
 
 - `tools` — tool declaration, handlers, display customization, grouping
 - `permissions` — file system and network access
-- `api-fs`, `api-git`, `api-theme`, `api-agent` — bridge APIs
+- `api-fs`, `api-git`, `api-theme`, `api-locale`, `api-agent` — bridge APIs
 - `api-system` — open folders, external links, clipboard
 - `api-ui` — toast, tooltip, context menu overlays
 - `packaging` — distribute as .s1app

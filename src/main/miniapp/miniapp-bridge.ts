@@ -57,13 +57,13 @@ function generateReadyBlock(appId: string): string {
   }`
 }
 
-export function generatePopoverBridgeScript(appId: string, version: string, initialData: unknown): string {
+export function generatePopoverBridgeScript(appId: string, version: string, locale: string, initialData: unknown): string {
   const dataJson = JSON.stringify(initialData ?? null)
   return `<script>
 (function() {
   ${generateTransportBlock(appId)}
 
-  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)});
+  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)}, { initialLocale: ${JSON.stringify(locale)} });
   delete window.superone.ui.showPopover;
 
   var popoverMsgListeners = [];
@@ -81,23 +81,23 @@ ${generateReadyBlock(appId)}
 </script>`
 }
 
-export function generateBridgeScript(appId: string, version: string): string {
+export function generateBridgeScript(appId: string, version: string, locale: string): string {
   return `<script>
 (function() {
   ${generateTransportBlock(appId)}
 
-  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)});
+  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)}, { initialLocale: ${JSON.stringify(locale)} });
 ${generateReadyBlock(appId)}
 })();
 </script>`
 }
 
-function wrapToolBridgeScript(appId: string, version: string, toolObjectBody: string): string {
+function wrapToolBridgeScript(appId: string, version: string, locale: string, toolObjectBody: string): string {
   return `<script>
 (function() {
   ${generateTransportBlock(appId)}
 
-  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)});
+  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)}, { initialLocale: ${JSON.stringify(locale)} });
   delete window.superone.ui.showPopover;
 
   window.superone.tool = ${toolObjectBody};
@@ -109,6 +109,7 @@ ${generateReadyBlock(appId)}
 export function generateToolInterceptBridgeScript(
   appId: string,
   version: string,
+  locale: string,
   ctx: { callId: string; toolName: string; initialData: unknown },
 ): string {
   const callIdJson = JSON.stringify(ctx.callId)
@@ -133,12 +134,13 @@ export function generateToolInterceptBridgeScript(
       },
     };
   })()`
-  return wrapToolBridgeScript(appId, version, body)
+  return wrapToolBridgeScript(appId, version, locale, body)
 }
 
 export function generateToolResultBridgeScript(
   appId: string,
   version: string,
+  locale: string,
   ctx: { callId: string; toolName: string; result: unknown },
 ): string {
   const callIdJson = JSON.stringify(ctx.callId)
@@ -153,5 +155,5 @@ export function generateToolResultBridgeScript(
       transport.send('miniapp-tool-result-close', { callId: ${callIdJson} });
     },
   }`
-  return wrapToolBridgeScript(appId, version, body)
+  return wrapToolBridgeScript(appId, version, locale, body)
 }

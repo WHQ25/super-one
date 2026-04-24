@@ -227,6 +227,7 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-fs-watch-ack'
   | 'miniapp-fs-watch-event'
   | 'miniapp-theme'
+  | 'miniapp-locale'
   | 'miniapp-git-request'
   | 'miniapp-git-response'
   | 'miniapp-git-head-change'

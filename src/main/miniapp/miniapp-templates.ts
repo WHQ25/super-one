@@ -342,6 +342,8 @@ interface SuperOneThemeVars {
   [key: string]: string
 }
 
+type SuperOneLocale = 'en' | 'zh'
+
 interface SuperOneContextMenuItem {
   id: string
   label: string
@@ -433,6 +435,10 @@ interface SuperOne {
     stashList(): Promise<SuperOneGitStashEntry[]>
     logFile(path: string, opts?: { limit?: number }): Promise<SuperOneGitLogEntry[]>
     onHeadChange(callback: () => void): () => void
+  }
+  locale: {
+    get(): SuperOneLocale
+    onChange(callback: (locale: SuperOneLocale) => void): () => void
   }
   theme: {
     getVars(): SuperOneThemeVars

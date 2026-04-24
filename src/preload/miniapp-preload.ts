@@ -47,6 +47,7 @@ const eventChannels = [
   'miniapp-fs-watch-event',
   'miniapp-git-head-change',
   'miniapp-theme',
+  'miniapp-locale',
   'miniapp-inchat-init',
 ] as const
 
@@ -59,7 +60,8 @@ for (const ch of eventChannels) {
 
 declare const __APP_VERSION__: string
 declare const location: { search: string }
-const api = createSuperoneApi(transport, __APP_VERSION__)
+const initialLocale = (new URLSearchParams(location.search).get('_locale') as 'en' | 'zh' | null) || 'en'
+const api = createSuperoneApi(transport, __APP_VERSION__, { initialLocale })
 
 const popoverParam = new URLSearchParams(location.search).get('_popover')
 if (popoverParam) {

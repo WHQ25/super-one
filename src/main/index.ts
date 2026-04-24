@@ -59,7 +59,7 @@ import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
-import { applyLocale, getSystemLocale, initMainI18n } from './i18n'
+import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n } from './i18n'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest } from '../shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
@@ -1696,21 +1696,22 @@ app.whenReady().then(async () => {
         const popoverName = url.searchParams.get('_popover')
         const toolIntercept = url.searchParams.get('_toolIntercept')
         const toolResult = url.searchParams.get('_toolResult')
+        const locale = getCurrentLocale()
         const bridgeScript = toolIntercept
-          ? generateToolInterceptBridgeScript(appId, app.getVersion(), {
+          ? generateToolInterceptBridgeScript(appId, app.getVersion(), locale, {
               callId: url.searchParams.get('_toolCallId') || '',
               toolName: url.searchParams.get('_toolName') || '',
               initialData: JSON.parse(url.searchParams.get('_toolData') || 'null'),
             })
           : toolResult
-            ? generateToolResultBridgeScript(appId, app.getVersion(), {
+            ? generateToolResultBridgeScript(appId, app.getVersion(), locale, {
                 callId: url.searchParams.get('_toolCallId') || '',
                 toolName: url.searchParams.get('_toolName') || '',
                 result: JSON.parse(url.searchParams.get('_toolData') || 'null'),
               })
             : popoverName
-              ? generatePopoverBridgeScript(appId, app.getVersion(), JSON.parse(url.searchParams.get('_popoverData') || 'null'))
-              : generateBridgeScript(appId, app.getVersion())
+              ? generatePopoverBridgeScript(appId, app.getVersion(), locale, JSON.parse(url.searchParams.get('_popoverData') || 'null'))
+              : generateBridgeScript(appId, app.getVersion(), locale)
         const injected = html.includes('<head>')
           ? html.replace('<head>', `<head>${bridgeScript}`)
           : html.includes('<html>')

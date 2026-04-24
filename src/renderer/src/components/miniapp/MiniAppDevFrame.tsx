@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
+import { useEffect, useRef, useState, useCallback, useImperativeHandle, useMemo, forwardRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { readThemeVars } from './miniapp-theme'
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
@@ -21,8 +22,15 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
     const isDark = useIsDark()
     const isDarkRef = useRef(isDark)
     isDarkRef.current = isDark
+    const { i18n } = useTranslation()
+    const locale = i18n.language
+    const initialLocaleRef = useRef(locale)
     const readyRef = useRef(false)
     const [preloadPath, setPreloadPath] = useState<string | null>(null)
+    const src = useMemo(
+      () => `superone-app://${appId}/index.html?_locale=${encodeURIComponent(initialLocaleRef.current)}`,
+      [appId],
+    )
 
     useEffect(() => {
       window.miniapp.getPreloadPath().then(setPreloadPath)
@@ -80,6 +88,11 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
     }, [isDark])
 
     useEffect(() => {
+      if (!readyRef.current) return
+      webviewRef.current?.send('miniapp-locale', { locale })
+    }, [locale])
+
+    useEffect(() => {
       const cleanup = window.miniapp.onGitHeadChangeEvent((event) => {
         if (event.appId !== appId) return
         webviewRef.current?.send('miniapp-git-head-change', {})
@@ -119,7 +132,7 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
       <div className={className} style={{ position: 'relative', minWidth: 0 }}>
         <webview
           ref={webviewRef}
-          src={`superone-app://${appId}/index.html`}
+          src={src}
           preload={`file://${preloadPath}`}
           style={{ position: 'absolute', inset: 0, border: 'none', width: '100%', height: '100%' }}
         />

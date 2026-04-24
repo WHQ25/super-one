@@ -9,19 +9,24 @@
  * No external imports allowed.
  *
  * @param {object} transport - { send, request, on }
+ * @param {string} version
+ * @param {object} [opts]
+ * @param {string} [opts.initialLocale]
  * @returns {object} The window.superone API object
  */
 
 // eslint-disable-next-line no-unused-vars
-function createSuperoneApi(transport, version) {
+function createSuperoneApi(transport, version, opts) {
   const toolHandlers = new Map()
   const watchCallbacks = new Map()
   const gitHeadListeners = []
   const contextConsumedListeners = []
   const darkModeListeners = []
   const themeListeners = []
+  const localeListeners = []
   const initCallbacks = []
   let initData = null
+  let currentLocale = (opts && opts.initialLocale) || 'en'
 
   transport.on('miniapp-tool-call', (data) => {
     const handler = toolHandlers.get(data.toolName)
@@ -70,6 +75,13 @@ function createSuperoneApi(transport, version) {
     initData = data.data
     initCallbacks.forEach((cb) => cb(initData))
     initCallbacks.length = 0
+  })
+
+  transport.on('miniapp-locale', (data) => {
+    if (!data || typeof data.locale !== 'string') return
+    if (data.locale === currentLocale) return
+    currentLocale = data.locale
+    localeListeners.forEach((cb) => cb(currentLocale))
   })
 
   function makeSub(arr) {
@@ -159,6 +171,10 @@ function createSuperoneApi(transport, version) {
       stashList() { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'stashList', args: {} }) },
       logFile(path, opts) { return transport.request('miniapp-git-request', 'miniapp-git-response', { op: 'logFile', args: { path, ...(opts || {}) } }) },
       onHeadChange: makeSub(gitHeadListeners),
+    },
+    locale: {
+      get() { return currentLocale },
+      onChange: makeSub(localeListeners),
     },
     theme: {
       getVars() {

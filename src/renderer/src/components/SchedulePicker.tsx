@@ -174,7 +174,7 @@ export function SchedulePicker({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">{t('settings.schedule.label')}</span>
+        <span className="text-xs font-medium text-muted-foreground">{t('resources.schedule.label')}</span>
         <button
           type="button"
           className="text-[11px] text-muted-foreground underline"
@@ -189,7 +189,7 @@ export function SchedulePicker({
             }
           }}
         >
-          {advanced ? t('settings.schedule.simple') : t('settings.schedule.advanced')}
+          {advanced ? t('resources.schedule.simple') : t('resources.schedule.advanced')}
         </button>
       </div>
 
@@ -207,7 +207,7 @@ export function SchedulePicker({
                     : 'border-border text-muted-foreground hover:border-primary/50'
                 }`}
               >
-                {t(`settings.schedule.preset.${p}`)}
+                {t(`resources.schedule.preset.${p}`)}
               </button>
             ))}
           </div>
@@ -218,7 +218,7 @@ export function SchedulePicker({
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1.5 text-xs font-normal">
                     <CalendarIcon className="size-3.5 text-muted-foreground" />
-                    {selectedDate ? format(selectedDate, 'MMM d, yyyy') : t('settings.schedule.pickDate')}
+                    {selectedDate ? format(selectedDate, 'MMM d, yyyy') : t('resources.schedule.pickDate')}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-auto border-border p-0">
@@ -236,7 +236,7 @@ export function SchedulePicker({
 
           {preset === 'hourly' && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">{t('settings.schedule.atMinute')}</span>
+              <span className="text-xs text-muted-foreground">{t('resources.schedule.atMinute')}</span>
               <input
                 type="number"
                 min={0}
@@ -245,13 +245,13 @@ export function SchedulePicker({
                 value={value.minuteOfHour ?? 0}
                 onChange={(e) => updateMinute(parseInt(e.target.value) || 0)}
               />
-              <span className="text-xs text-muted-foreground">{t('settings.schedule.pastHour')}</span>
+              <span className="text-xs text-muted-foreground">{t('resources.schedule.pastHour')}</span>
             </div>
           )}
 
           {preset === 'daily' && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">{t('settings.schedule.time')}</span>
+              <span className="text-xs text-muted-foreground">{t('resources.schedule.time')}</span>
               <TimePicker value={value.timeOfDay ?? '09:00'} onChange={updateTime} />
             </div>
           )}
@@ -273,13 +273,13 @@ export function SchedulePicker({
                           : 'border-border text-muted-foreground hover:border-primary/50'
                       }`}
                     >
-                      {t(`settings.schedule.days.${dayKey}`)}
+                      {t(`resources.schedule.days.${dayKey}`)}
                     </button>
                   )
                 })}
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t('settings.schedule.time')}</span>
+                <span className="text-xs text-muted-foreground">{t('resources.schedule.time')}</span>
                 <TimePicker value={value.timeOfDay ?? '09:00'} onChange={updateTime} />
               </div>
             </div>
@@ -290,7 +290,7 @@ export function SchedulePicker({
       {advanced && (
         <div className="flex flex-col gap-2">
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-muted-foreground">{t('settings.schedule.cronExpression')}</span>
+            <span className="text-[11px] text-muted-foreground">{t('resources.schedule.cronExpression')}</span>
             <input
               type="text"
               className="rounded-md border border-border bg-background px-2 py-1 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
@@ -304,7 +304,7 @@ export function SchedulePicker({
 
       {nextRuns.length > 0 && (
         <div className="text-[11px] text-muted-foreground">
-          {t('settings.schedule.nextRuns', { runs: nextRuns.map(formatNextRun).join(', ') })}
+          {t('resources.schedule.nextRuns', { runs: nextRuns.map(formatNextRun).join(', ') })}
         </div>
       )}
     </div>

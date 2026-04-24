@@ -1501,6 +1501,14 @@ export interface PairedDevice {
   pairedAt: string
   lastSeenAt: string | null
   online: boolean
+  transport?: 'lan' | 'relay'
+}
+
+export interface RemoteDeviceStatus {
+  id: string
+  online: boolean
+  name?: string
+  transport?: 'lan' | 'relay'
 }
 
 export interface RemoteDeviceConfig {

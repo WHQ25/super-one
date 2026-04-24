@@ -156,9 +156,9 @@ const remoteCallbacks: RemoteControlCallbacks = {
       safeSend(AgentIpcChannels.RECENT_FOLDERS_CHANGED, folders)
     }
   },
-  onClientRegistered: ({ deviceName, deviceId }) => {
+  onClientRegistered: ({ deviceName, deviceId, transport }) => {
     upsertPairedDevice(deviceId, deviceName)
-    safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true })
+    safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true, name: deviceName, transport })
   },
   onClientDisconnected: ({ deviceId }) => {
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
@@ -1319,13 +1319,14 @@ function registerIpcHandlers(): void {
     remoteControlService.start(config)
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_LIST_PAIRED, (): PairedDevice[] => {
-    const onlineIds = remoteControlService.getOnlineDeviceIds()
+    const online = remoteControlService.getOnlineDevices()
     return listPairedDevices().map((row) => ({
       id: row.id,
       name: row.name,
       pairedAt: row.paired_at,
       lastSeenAt: row.last_seen_at,
-      online: onlineIds.has(row.id),
+      online: online.has(row.id),
+      transport: online.get(row.id)?.transport,
     }))
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_REMOVE_PAIRED, (_, id: string) => {

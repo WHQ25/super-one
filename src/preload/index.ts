@@ -722,8 +722,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_LIST_PAIRED),
   removePairedDevice: (id: string) =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_REMOVE_PAIRED, id),
-  onDeviceStatusChanged: (callback: (device: { id: string; online: boolean }) => void) => {
-    const handler = (_ipcEvent: Electron.IpcRendererEvent, device: { id: string; online: boolean }): void => {
+  onDeviceStatusChanged: (callback: (device: import('../shared/agent-types').RemoteDeviceStatus) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, device: import('../shared/agent-types').RemoteDeviceStatus): void => {
       callback(device)
     }
     ipcRenderer.on(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, handler)

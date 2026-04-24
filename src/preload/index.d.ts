@@ -225,7 +225,7 @@ interface AppAPI {
   onClientRegistered(callback: (info: { deviceName: string }) => void): () => void
   listPairedDevices(): Promise<import('../shared/agent-types').PairedDevice[]>
   removePairedDevice(id: string): Promise<void>
-  onDeviceStatusChanged(callback: (device: { id: string; online: boolean }) => void): () => void
+  onDeviceStatusChanged(callback: (device: import('../shared/agent-types').RemoteDeviceStatus) => void): () => void
   startPairing(): Promise<{ channelId: string; tempKeyHex: string; relayUrl: string }>
   confirmPairing(code: string): Promise<void>
   cancelPairing(): Promise<void>

@@ -459,7 +459,7 @@ export type RemoteResponder = (requestId: string, data: unknown) => Promise<void
 
 export interface RemoteControlCallbacks {
   onCommand: (cmd: RemoteCommand, respond: RemoteResponder) => void
-  onClientRegistered?: (info: { deviceName: string; deviceId: string }) => void
+  onClientRegistered?: (info: { deviceName: string; deviceId: string; transport: 'lan' | 'relay' }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
   onSessionUnsubscribed?: (session: { projectPath: string; sessionId: string }) => void
   onRemoteFilterCleared?: (filter: { projectPath: string; sessionId: string }) => void
@@ -474,8 +474,7 @@ export interface RemoteControlCallbacks {
 export class RemoteControlService {
   private relayWs: WebSocket | null = null
   private keys: { channelKeyHex: string; aesKey: webcrypto.CryptoKey } | null = null
-  private relayDeviceIds = new Set<string>()
-  private lanDeviceIds = new Set<string>()
+  private connectedDevices = new Map<string, { name: string; transport: 'lan' | 'relay' }>()
   private lanServer: LanServer | null = null
   private lanAdvertiser: LanAdvertiser | null = null
   private currentConfig: RemoteDeviceConfig | null = null
@@ -513,11 +512,8 @@ export class RemoteControlService {
     if (this.currentConfig) this.start(this.currentConfig)
   }
 
-  getOnlineDeviceIds(): Set<string> {
-    const union = new Set<string>()
-    for (const id of this.relayDeviceIds) union.add(id)
-    for (const id of this.lanDeviceIds) union.add(id)
-    return union
+  getOnlineDevices(): Map<string, { name: string; transport: 'lan' | 'relay' }> {
+    return new Map(this.connectedDevices)
   }
 
   getLanPort(): number | null {
@@ -525,15 +521,16 @@ export class RemoteControlService {
   }
 
   private markDeviceOnline(deviceName: string, deviceId: string, via: 'relay' | 'lan'): void {
-    const wasOnline = this.relayDeviceIds.has(deviceId) || this.lanDeviceIds.has(deviceId)
-    ;(via === 'relay' ? this.relayDeviceIds : this.lanDeviceIds).add(deviceId)
-    if (!wasOnline) this.callbacks.onClientRegistered?.({ deviceName, deviceId })
+    const wasOnline = this.connectedDevices.has(deviceId)
+    this.connectedDevices.set(deviceId, { name: deviceName, transport: via })
+    if (!wasOnline) this.callbacks.onClientRegistered?.({ deviceName, deviceId, transport: via })
   }
 
   private markDeviceOffline(deviceId: string, via: 'relay' | 'lan'): void {
-    ;(via === 'relay' ? this.relayDeviceIds : this.lanDeviceIds).delete(deviceId)
-    const stillOnline = this.relayDeviceIds.has(deviceId) || this.lanDeviceIds.has(deviceId)
-    if (!stillOnline) this.callbacks.onClientDisconnected?.({ deviceId })
+    const current = this.connectedDevices.get(deviceId)
+    if (!current || current.transport !== via) return
+    this.connectedDevices.delete(deviceId)
+    this.callbacks.onClientDisconnected?.({ deviceId })
   }
 
   private acquirePowerLock(): void {
@@ -636,8 +633,8 @@ export class RemoteControlService {
     const server = this.lanServer
     this.lanServer = null
     if (!server) return
-    for (const id of Array.from(this.lanDeviceIds)) {
-      this.markDeviceOffline(id, 'lan')
+    for (const [id, info] of Array.from(this.connectedDevices)) {
+      if (info.transport === 'lan') this.markDeviceOffline(id, 'lan')
     }
     await server.stop()
     log.info('[RemoteControl] LAN server stopped')
@@ -753,8 +750,8 @@ export class RemoteControlService {
           this.remoteSessionFilter = null
           this.callbacks.onRemoteFilterCleared?.(filter)
         }
-        for (const id of Array.from(this.relayDeviceIds)) {
-          this.markDeviceOffline(id, 'relay')
+        for (const [id, info] of Array.from(this.connectedDevices)) {
+          if (info.transport === 'relay') this.markDeviceOffline(id, 'relay')
         }
         break
       }

@@ -25,14 +25,14 @@ export function RemotePage() {
   useEffect(() => {
     window.app.listPairedDevices().then(setPairedDevices)
 
-    const unsubStatus = window.app.onDeviceStatusChanged(({ id, online }) => {
+    const unsubStatus = window.app.onDeviceStatusChanged(({ id, online, transport }) => {
       setPairedDevices((prev) => {
         const exists = prev.some((d) => d.id === id)
         if (online && !exists) {
           window.app.listPairedDevices().then(setPairedDevices)
           return prev
         }
-        return prev.map((d) => d.id === id ? { ...d, online } : d)
+        return prev.map((d) => d.id === id ? { ...d, online, transport: online ? transport : undefined } : d)
       })
     })
 

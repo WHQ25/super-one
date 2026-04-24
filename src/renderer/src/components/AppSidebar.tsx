@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
-import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, GitFork, Pin, Copy, Check, Smartphone } from 'lucide-react'
+import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, GitFork, Pin, Copy, Check, Smartphone, Wifi, Cloud } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -620,20 +620,30 @@ function RemoteStatusIcon() {
   const remoteEnabled = useAppStore((s) => s.remoteConfig?.enabled ?? false)
   const { navigateTo, setSettingsTab } = useAppStore(useShallow((s) => ({ navigateTo: s.navigateTo, setSettingsTab: s.setSettingsTab })))
   const [relayConnected, setRelayConnected] = useState(false)
+  const [onlineDevices, setOnlineDevices] = useState<Array<{ id: string; name: string; transport?: 'lan' | 'relay' }>>([])
 
   useEffect(() => {
     if (!remoteEnabled) {
       setRelayConnected(false)
+      setOnlineDevices([])
       return
     }
     let cancelled = false
+    const refreshDevices = async (): Promise<void> => {
+      const devices = await window.app.listPairedDevices()
+      if (cancelled) return
+      setOnlineDevices(devices.filter((d) => d.online).map((d) => ({ id: d.id, name: d.name, transport: d.transport })))
+    }
     window.app.getRelayStatus().then((connected) => {
       if (!cancelled) setRelayConnected(connected)
     })
-    const unsub = window.app.onRelayStatusChanged(setRelayConnected)
+    void refreshDevices()
+    const unsubRelay = window.app.onRelayStatusChanged(setRelayConnected)
+    const unsubDevice = window.app.onDeviceStatusChanged(() => { void refreshDevices() })
     return () => {
       cancelled = true
-      unsub()
+      unsubRelay()
+      unsubDevice()
     }
   }, [remoteEnabled])
 
@@ -652,8 +662,22 @@ function RemoteStatusIcon() {
           </button>
         </TooltipTrigger>
         <TooltipContent side="top">
-          <span>{t('sidebar.remote.label')}</span>
-          <span className={cn('ml-1.5', relayConnected ? 'text-green-500' : 'text-red-500')}>{relayConnected ? t('sidebar.remote.connected') : t('sidebar.remote.disconnected')}</span>
+          <div className="flex flex-col gap-1">
+            <div>
+              <span>{t('sidebar.remote.label')}</span>
+              <span className={cn('ml-1.5', relayConnected ? 'text-green-500' : 'text-red-500')}>{relayConnected ? t('sidebar.remote.connected') : t('sidebar.remote.disconnected')}</span>
+            </div>
+            {onlineDevices.length > 0 && (
+              <div className="mt-1 flex flex-col gap-0.5">
+                {onlineDevices.map((d) => (
+                  <div key={d.id} className="flex items-center justify-between gap-3 text-xs">
+                    <span>{d.name}</span>
+                    {d.transport === 'lan' ? <Wifi className="size-3 text-green-500" /> : <Cloud className="size-3 text-sky-500" />}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

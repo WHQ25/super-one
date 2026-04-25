@@ -64,12 +64,12 @@ vi.mock('../mcp-oauth', () => ({
 }))
 
 vi.mock('../skills-service', () => ({
-  listSkills: vi.fn(),
+  listSkills: vi.fn(() => []),
   readSkillContent: vi.fn(),
   readSkillFile: vi.fn(),
   installSkill: vi.fn(),
   deleteSkill: vi.fn(),
-  listCodexSkills: vi.fn(),
+  listCodexSkills: vi.fn(() => []),
   readCodexSkillContent: vi.fn(),
   readCodexSkillFile: vi.fn(),
   deleteCodexSkill: vi.fn(),
@@ -80,7 +80,8 @@ vi.mock('../codex-config-service', () => ({
 }))
 
 vi.mock('./discover-resources', () => ({
-  discoverAllAgents: vi.fn(),
+  discoverAllAgents: vi.fn(() => []),
+  discoverProjectCommands: vi.fn(() => []),
   readAgentFile: vi.fn(),
 }))
 
@@ -108,6 +109,30 @@ vi.mock('../database', () => ({
   deleteProvider: vi.fn(),
   activateProvider: vi.fn(),
   deactivateAllProviders: vi.fn(),
+  getCachedResources: vi.fn(() => null),
+  getActiveProviderRaw: vi.fn(() => null),
+  getDb: vi.fn(),
+}))
+
+vi.mock('./claude-models', () => ({
+  fetchModels: vi.fn(async () => []),
+}))
+
+vi.mock('../app-settings-service', () => ({
+  readAppSettings: vi.fn(() => ({
+    analyticsEnabled: true,
+    locale: '',
+    agentPreference: {
+      claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
+      codex: { defaultModel: '', defaultReasoningEffort: '' },
+    },
+  })),
+}))
+
+vi.mock('../../shared/provider-utils', () => ({
+  buildRemoteActiveProvider: vi.fn(() => null),
+  resolveProviderKey: vi.fn(() => null),
+  PRESET_PROVIDER_KEY: {},
 }))
 
 vi.mock('../logger', () => ({
@@ -149,6 +174,8 @@ vi.mock('./resolve-cli', () => ({
 
 const { AgentService } = await import('./agent-service')
 const dbSessions = await import('../db-sessions')
+const appSettings = await import('../app-settings-service')
+const claudeModels = await import('./claude-models')
 
 beforeEach(() => {
   createdAgents.length = 0
@@ -1013,5 +1040,88 @@ describe('AgentService.handleRemoteCommand', () => {
     await service.handleRemoteCommand({ type: 'add_project', requestId: 'r8', path: '/projects/new' }, respond)
     expect(addRecentFolder).toHaveBeenCalledWith('/projects/new')
     expect(respond).toHaveBeenCalledWith('r8', { success: true })
+  })
+
+  it('get_system_info returns user agent defaults for claude', async () => {
+    vi.mocked(appSettings.readAppSettings).mockReturnValue({
+      analyticsEnabled: true,
+      locale: '',
+      agentPreference: {
+        claude: {
+          defaultModel: 'claude-opus-4-7',
+          defaultEffort: 'high',
+          defaultPermissionMode: 'acceptEdits',
+          defaultSandboxMode: '',
+        },
+        codex: { defaultModel: '', defaultReasoningEffort: '' },
+      },
+    })
+    vi.mocked(claudeModels.fetchModels).mockResolvedValue([
+      { id: 'claude-opus-4-7', name: 'Opus 4.7' },
+      { id: 'claude-sonnet-4-5', name: 'Sonnet 4.5' },
+    ] as never)
+
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand(
+      { type: 'get_system_info', requestId: 'sys-1', projectPath: '/p', provider: 'claude' } as never,
+      respond,
+    )
+
+    expect(respond).toHaveBeenCalledTimes(1)
+    const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
+    expect(payload.defaults).toEqual({
+      model: 'claude-opus-4-7',
+      effort: 'high',
+      permissionMode: 'acceptEdits',
+    })
+    expect(payload.permissionModes).toEqual([
+      'default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions', 'dontAsk',
+    ])
+  })
+
+  it('get_system_info returns null defaults when user has no preferences set', async () => {
+    vi.mocked(appSettings.readAppSettings).mockReturnValue({
+      analyticsEnabled: true,
+      locale: '',
+      agentPreference: {
+        claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
+        codex: { defaultModel: '', defaultReasoningEffort: '' },
+      },
+    })
+    vi.mocked(claudeModels.fetchModels).mockResolvedValue([])
+
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand(
+      { type: 'get_system_info', requestId: 'sys-2', projectPath: '/p', provider: 'claude' } as never,
+      respond,
+    )
+
+    const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
+    expect(payload.defaults).toEqual({ model: null, effort: null, permissionMode: null })
+  })
+
+  it('get_system_info returns codex-flavored defaults for codex provider', async () => {
+    vi.mocked(appSettings.readAppSettings).mockReturnValue({
+      analyticsEnabled: true,
+      locale: '',
+      agentPreference: {
+        claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
+        codex: { defaultModel: 'gpt-5-codex', defaultReasoningEffort: 'high' },
+      },
+    })
+
+    const respond = vi.fn()
+    const service = new AgentService()
+    ;(service as unknown as { codexListModels: () => Promise<unknown[]> }).codexListModels = async () => []
+    await service.handleRemoteCommand(
+      { type: 'get_system_info', requestId: 'sys-3', projectPath: '/p', provider: 'codex' } as never,
+      respond,
+    )
+
+    const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
+    expect(payload.defaults).toEqual({ model: 'gpt-5-codex', reasoningEffort: 'high' })
+    expect(payload.permissionPresets).toEqual(['default', 'full-access'])
   })
 })

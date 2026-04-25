@@ -60,7 +60,7 @@ interface ResolvedEntry {
   description?: string
 }
 
-function resolveClaudeEntries(models: ModelOption[], modelEnv: ProviderModelEnv | null | undefined): ResolvedEntry[] {
+export function resolveClaudeEntries(models: ModelOption[], modelEnv: ProviderModelEnv | null | undefined): ResolvedEntry[] {
   const entries: ResolvedEntry[] = []
   const seenSlotIds = new Set<string>()
   for (const model of models) {

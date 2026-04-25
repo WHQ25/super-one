@@ -471,12 +471,15 @@ interface PairingSession {
 
 export type RemoteResponder = (requestId: string, data: unknown) => Promise<void>
 
+export interface RemoteCommandSource {
+  deviceId: string
+  transport: 'relay' | 'lan'
+}
+
 export interface RemoteControlCallbacks {
-  onCommand: (cmd: RemoteCommand, respond: RemoteResponder) => void
+  onCommand: (cmd: RemoteCommand, respond: RemoteResponder, source: RemoteCommandSource) => void
   onClientRegistered?: (info: { deviceName: string; deviceId: string; transport: 'lan' | 'relay' }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
-  onSessionUnsubscribed?: (session: { projectPath: string; sessionId: string }) => void
-  onRemoteFilterCleared?: (filter: { projectPath: string; sessionId: string }) => void
   onPairingCodeReceived?: (info: { code: string; deviceName: string }) => void
   onPairingExpired?: () => void
   onPairingConfirmed?: (info: { mobileDeviceId: string; deviceName: string }) => void
@@ -513,8 +516,6 @@ export class RemoteControlService {
   private pendingText: { messageId: string; text: string; parentToolUseId: string | null } | null = null
   private pendingTextFlushedLen = 0
   private pendingThinking: { messageId: string; text: string; parentToolUseId: string | null } | null = null
-  private subscribedSession: { projectPath: string; sessionId: string } | null = null
-  private remoteSessionFilter: { projectPath: string; sessionId: string } | null = null
 
   private relayUrl = ''
 
@@ -630,7 +631,7 @@ export class RemoteControlService {
     const server = new LanServer({
       getAesKey: () => this.keys?.aesKey ?? null,
       isPairedDevice: (id) => this.callbacks.isPairedDevice?.(id) ?? false,
-      onCommand: (cmd, respond) => this.callbacks.onCommand(cmd, respond),
+      onCommand: (cmd, respond, source) => this.callbacks.onCommand(cmd, respond, { deviceId: source.deviceId, transport: 'lan' }),
       hostName: hostname(),
       onClientRegistered: ({ deviceName, deviceId }) => this.markDeviceOnline(deviceName, deviceId, 'lan'),
       onClientDisconnected: ({ deviceId }) => this.markDeviceOffline(deviceId, 'lan'),
@@ -763,7 +764,12 @@ export class RemoteControlService {
         if (!this.keys) return
         const command = (await decryptPayload(this.keys.aesKey, frame.data as string)) as RemoteCommand
         trace('remote.in', command.type, command)
-        this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data))
+        const deviceId = (frame.mobileDeviceId as string | undefined) ?? null
+        if (!deviceId) {
+          log.warn('[RemoteControl] relay command missing mobileDeviceId, dropping')
+          return
+        }
+        this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data), { deviceId, transport: 'relay' })
         break
       }
       case 'register': {
@@ -780,22 +786,19 @@ export class RemoteControlService {
         break
       }
       case 'peer_connected':
-        log.info('[RemoteControl] Mobile peer connected')
+        log.info('[RemoteControl] Mobile peer connected: %s', frame.mobileDeviceId ?? '(unknown)')
         this.relayWs?.send(this.buildHandshakeFrame())
         break
       case 'peer_disconnected': {
-        log.info('[RemoteControl] Mobile peer disconnected')
-        if (this.subscribedSession) {
-          this.callbacks.onSessionUnsubscribed?.(this.subscribedSession)
-          this.subscribedSession = null
-        }
-        if (this.remoteSessionFilter) {
-          const filter = this.remoteSessionFilter
-          this.remoteSessionFilter = null
-          this.callbacks.onRemoteFilterCleared?.(filter)
-        }
-        for (const [id, info] of Array.from(this.connectedDevices)) {
-          if (info.transports.has('relay')) this.markDeviceOffline(id, 'relay')
+        const deviceId = frame.mobileDeviceId as string | undefined
+        if (deviceId) {
+          log.info('[RemoteControl] Mobile peer disconnected: %s', deviceId)
+          this.markDeviceOffline(deviceId, 'relay')
+        } else {
+          log.info('[RemoteControl] Mobile peer disconnected (no deviceId)')
+          for (const [id, info] of Array.from(this.connectedDevices)) {
+            if (info.transports.has('relay')) this.markDeviceOffline(id, 'relay')
+          }
         }
         break
       }
@@ -890,34 +893,6 @@ export class RemoteControlService {
     this.pairingSession = null
   }
 
-  getSubscribedSession(): { projectPath: string; sessionId: string } | null {
-    return this.subscribedSession
-  }
-
-  subscribeSession(projectPath: string, sessionId: string, broadcastToRenderer?: (event: AgentEvent) => void): void {
-    this.subscribedSession = { projectPath, sessionId }
-    broadcastToRenderer?.({ type: 'remote_session_start', remoteProjectPath: projectPath, remoteSessionId: sessionId, isSubscribe: true })
-    log.info(`[RemoteControl] Subscribed to session: ${sessionId} in ${projectPath}`)
-  }
-
-  unsubscribeSession(broadcastToRenderer?: (event: AgentEvent) => void): void {
-    if (this.subscribedSession) {
-      broadcastToRenderer?.({ type: 'remote_session_end', remoteProjectPath: this.subscribedSession.projectPath, remoteSessionId: this.subscribedSession.sessionId })
-    }
-    this.subscribedSession = null
-    log.info('[RemoteControl] Unsubscribed from session')
-  }
-
-  setRemoteSessionFilter(projectPath: string, sessionId: string): void {
-    this.remoteSessionFilter = { projectPath, sessionId }
-    log.info(`[RemoteControl] Remote session filter set: ${sessionId} in ${projectPath}`)
-  }
-
-  clearRemoteSessionFilter(): void {
-    this.remoteSessionFilter = null
-    log.info('[RemoteControl] Remote session filter cleared')
-  }
-
   async sendEventToMobile(event: Record<string, unknown>): Promise<void> {
     if (!this.keys) return
     if (!this.hasAnyMobileTransport()) return
@@ -949,15 +924,7 @@ export class RemoteControlService {
       this.queueSend([event])
       return
     }
-
-    const filter = this.subscribedSession ?? this.remoteSessionFilter
-    if (!filter) return
-    const { projectPath, sessionId } = filter
-    if (event.projectPath !== projectPath || (event.sessionId && event.sessionId !== sessionId)) {
-      trace('remote.debug', 'broadcastAgentEvent:filtered', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, filterProject: projectPath, filterSession: sessionId })
-      return
-    }
-    trace('remote.debug', 'broadcastAgentEvent:pass', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, hasFilter: !!filter, filterType: this.subscribedSession ? 'subscribed' : this.remoteSessionFilter ? 'remoteFilter' : 'none' })
+    trace('remote.debug', 'broadcastAgentEvent:pass', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId })
 
     if (event.type === 'tool_input_delta' && 'toolUseId' in event) {
       const entry = this.todoToolInputs.get(event.toolUseId as string)

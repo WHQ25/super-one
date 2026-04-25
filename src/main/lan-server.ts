@@ -31,7 +31,7 @@ export type LanRemoteResponder = (requestId: string, data: unknown) => Promise<v
 export interface LanServerCallbacks {
   getAesKey: () => webcrypto.CryptoKey | null
   isPairedDevice: (deviceId: string) => boolean
-  onCommand: (cmd: RemoteCommand, respond: LanRemoteResponder) => void
+  onCommand: (cmd: RemoteCommand, respond: LanRemoteResponder, source: { deviceId: string }) => void
   hostName: string
   onClientRegistered?: (info: { deviceName: string; deviceId: string }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
@@ -256,9 +256,15 @@ export class LanServer {
       return
     }
 
+    const client = this.clients.get(ws)
+    const deviceId = client?.deviceId
+    if (!deviceId) {
+      log.warn('[LanServer] command from unregistered client, dropping')
+      return
+    }
     trace('remote.in', (command as { type?: string }).type ?? 'unknown', command)
     const respond: LanRemoteResponder = (requestId, payload) => this.sendResponse(ws, requestId, payload)
-    this.callbacks.onCommand(command, respond)
+    this.callbacks.onCommand(command, respond, { deviceId })
   }
 
   private async sendResponse(ws: WebSocket, requestId: string, data: unknown): Promise<void> {

@@ -103,6 +103,35 @@ export type BackendCommand =
 
 export type BackendEvent = AgentEvent
 
+export type SessionOwner =
+  | { kind: 'local' }
+  | { kind: 'remote'; deviceId: string }
+
+export const LOCAL_OWNER: SessionOwner = { kind: 'local' }
+
+export type SessionLockReason = 'remote-owned' | 'remote-subscribed'
+
+export class SessionLockedError extends Error {
+  readonly sessionId: string
+  readonly reason: SessionLockReason
+  readonly ownerDeviceId?: string
+  constructor(sessionId: string, reason: SessionLockReason, ownerDeviceId?: string) {
+    super(reason === 'remote-owned'
+      ? `Session ${sessionId} is controlled by remote device${ownerDeviceId ? ` ${ownerDeviceId}` : ''}`
+      : `Session ${sessionId} is being viewed by a remote device`)
+    this.name = 'SessionLockedError'
+    this.sessionId = sessionId
+    this.reason = reason
+    this.ownerDeviceId = ownerDeviceId
+  }
+}
+
+export type SessionLifecycleEvent =
+  | { type: 'owner_changed'; sessionId: string; previous: SessionOwner; current: SessionOwner }
+  | { type: 'subscriber_added'; sessionId: string; deviceId: string }
+  | { type: 'subscriber_removed'; sessionId: string; deviceId: string }
+  | { type: 'closed'; sessionId: string }
+
 export interface SessionBackend {
   readonly kind: HarnessId
   start(opts: BackendStartOptions): Promise<void>
@@ -148,6 +177,13 @@ export interface Session {
   readonly projectPath: string
   readonly cwd: string
   readonly snapshot: SessionSnapshot
+  readonly owner: SessionOwner
+  readonly subscribers: ReadonlySet<string>
+  claim(owner: SessionOwner): void
+  release(deviceId: string): void
+  subscribe(deviceId: string): void
+  unsubscribe(deviceId: string): void
+  onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void
   send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void>
   interrupt(): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
@@ -213,6 +249,7 @@ export interface SessionManager {
   resumeSession(sessionId: string, opts?: { permissionMode?: PermissionMode; sandboxMode?: SandboxMode }): Session
   getSession(sessionId: string): Session | null
   disposeSession(sessionId: string): Promise<void>
+  forEachSession(fn: (session: Session) => void): void
 
   on(sessionId: string, handler: (event: AgentEvent) => void): () => void
   onAny(handler: (sessionId: string, event: AgentEvent) => void): () => void

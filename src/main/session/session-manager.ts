@@ -85,6 +85,10 @@ export class SessionManagerImpl implements SessionManagerContract {
     for (const cwd of cwds) this.projectResources.invalidate(cwd)
   }
 
+  forEachSession(fn: (session: SessionContract) => void): void {
+    for (const session of this.sessions.values()) fn(session)
+  }
+
   listProjectSessions(projectPath: string): SessionSnapshot[] {
     const out: SessionSnapshot[] = []
     for (const [sid, pp] of this.sessionProjects) {

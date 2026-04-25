@@ -28,17 +28,21 @@ import {
   type CodexSessionRuntime,
 } from '../agent/codex-session-runtime'
 import { nextEventSeq } from './event-seq'
-import type {
-  BackendCommand,
-  BackendStartOptions,
-  HarnessId,
-  PrewarmHint,
-  ProjectResources,
-  Session as SessionContract,
-  SessionBackend,
-  SessionSnapshot,
-  SessionStateChange,
-  SessionStatus,
+import {
+  LOCAL_OWNER,
+  SessionLockedError,
+  type BackendCommand,
+  type BackendStartOptions,
+  type HarnessId,
+  type PrewarmHint,
+  type ProjectResources,
+  type Session as SessionContract,
+  type SessionBackend,
+  type SessionLifecycleEvent,
+  type SessionOwner,
+  type SessionSnapshot,
+  type SessionStateChange,
+  type SessionStatus,
 } from './types'
 
 export interface SessionConstructorOptions {
@@ -134,6 +138,65 @@ export class Session implements SessionContract {
   private _cachedWorktreeMissing: AgentEvent | null = null
   private _pendingQueuedRequests = new Map<string, { request: SendMessageRequest; providerOrigin: 'local' | 'remote' }>()
 
+  private _owner: SessionOwner = LOCAL_OWNER
+  private _subscribers = new Set<string>()
+  private _lifecycleListeners = new Set<(event: SessionLifecycleEvent) => void>()
+  get owner(): SessionOwner { return this._owner }
+  get subscribers(): ReadonlySet<string> { return this._subscribers }
+
+  onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void {
+    this._lifecycleListeners.add(handler)
+    return () => { this._lifecycleListeners.delete(handler) }
+  }
+
+  private emitLifecycle(event: SessionLifecycleEvent): void {
+    for (const cb of this._lifecycleListeners) {
+      try { cb(event) } catch (err) { log.warn('[Session] lifecycle handler error:', err) }
+    }
+  }
+
+  claim(owner: SessionOwner): void {
+    if (this._status === 'disposed') return
+    if (owner.kind === 'remote' && this._owner.kind === 'remote' && this._owner.deviceId !== owner.deviceId) {
+      log.warn('[Session] claim conflict sid=%s prev=%s next=%s', this.id, this._owner.deviceId, owner.deviceId)
+    }
+    if (this._owner.kind === owner.kind && (owner.kind === 'local' || (this._owner.kind === 'remote' && owner.kind === 'remote' && this._owner.deviceId === owner.deviceId))) {
+      return
+    }
+    const previous = this._owner
+    this._owner = owner
+    this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: owner })
+  }
+
+  release(deviceId: string): void {
+    if (this._owner.kind !== 'remote' || this._owner.deviceId !== deviceId) return
+    const previous = this._owner
+    this._owner = LOCAL_OWNER
+    this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: LOCAL_OWNER })
+  }
+
+  subscribe(deviceId: string): void {
+    if (this._status === 'disposed') return
+    if (this._subscribers.has(deviceId)) return
+    this._subscribers.add(deviceId)
+    this.emitLifecycle({ type: 'subscriber_added', sessionId: this.id, deviceId })
+  }
+
+  unsubscribe(deviceId: string): void {
+    if (!this._subscribers.delete(deviceId)) return
+    this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId })
+  }
+
+  private assertCanSend(providerOrigin: 'local' | 'remote'): void {
+    if (providerOrigin === 'remote') return
+    if (this._owner.kind === 'remote') {
+      throw new SessionLockedError(this.id, 'remote-owned', this._owner.deviceId)
+    }
+    if (this._subscribers.size > 0) {
+      throw new SessionLockedError(this.id, 'remote-subscribed')
+    }
+  }
+
   constructor(opts: SessionConstructorOptions) {
     this.id = opts.id
     this.projectPath = opts.projectPath
@@ -211,6 +274,7 @@ export class Session implements SessionContract {
 
   async send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void> {
     const providerOrigin = opts?.providerOrigin ?? 'local'
+    this.assertCanSend(providerOrigin)
     const isQueued = request.priority === 'next' && this.isStreaming()
     if (isQueued) {
       this.assertNotDisposed()
@@ -532,6 +596,12 @@ export class Session implements SessionContract {
     if (this._status === 'disposed') return
     this._status = 'disposed'
     this._pendingQueuedRequests.clear()
+    if (this._subscribers.size > 0 || this._owner.kind === 'remote') {
+      this._subscribers.clear()
+      this._owner = LOCAL_OWNER
+    }
+    this.emitLifecycle({ type: 'closed', sessionId: this.id })
+    this._lifecycleListeners.clear()
     for (const unsub of this.unsubs) {
       try { unsub() } catch { /* ignore */ }
     }

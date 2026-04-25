@@ -19,6 +19,8 @@ import { resolveSdkClaudeBinary } from './agent/claude-binary'
 import { fixPath } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
+import { DeviceRegistry } from './remote/device-registry'
+import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { loadSessionStateBySid, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { buildProviderEnv } from './agent/provider-env'
 import type { SessionProvider } from './session/types'
@@ -149,9 +151,10 @@ sessionManager.onAny((_sid, event) => {
   agentService.notifyEventSubscribers(event)
   safeSend(AgentIpcChannels.EVENT, event)
 })
+const deviceRegistry = new DeviceRegistry(sessionManager)
 const remoteCallbacks: RemoteControlCallbacks = {
-  onCommand: async (command, respond) => {
-    await agentService.handleRemoteCommand(command, respond)
+  onCommand: async (command, respond, source) => {
+    await agentService.handleRemoteCommand(command, respond, source)
     safeSend(AgentIpcChannels.REMOTE_COMMAND, command)
     if (command.type === 'add_project') {
       const folders = getRecentFolders()
@@ -164,12 +167,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
   },
   onClientDisconnected: ({ deviceId }) => {
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
-  },
-  onSessionUnsubscribed: (session) => {
-    safeSend(AgentIpcChannels.EVENT, { type: 'remote_session_end', remoteProjectPath: session.projectPath, remoteSessionId: session.sessionId })
-  },
-  onRemoteFilterCleared: (filter) => {
-    agentService.transferRemoteToLocal(filter.projectPath, filter.sessionId)
+    deviceRegistry.handleDeviceDisconnected(deviceId)
   },
   onPairingCodeReceived: ({ code, deviceName }) => {
     safeSend(AgentIpcChannels.REMOTE_PAIRING_CODE_RECEIVED, { code, deviceName })
@@ -1349,8 +1347,10 @@ function registerIpcHandlers(): void {
   })
 
   agentService.setRemoteControlService(remoteControlService)
+  agentService.setDeviceRegistry(deviceRegistry)
+  const mobileBroadcaster = new MobileBroadcaster(sessionManager, remoteControlService)
   agentService.addEventSubscriber((event) => {
-    remoteControlService.broadcastAgentEvent(event)
+    void mobileBroadcaster.broadcast(event)
   })
 
   const savedRemoteConfig = readRemoteConfig()

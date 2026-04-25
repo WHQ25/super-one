@@ -22,6 +22,7 @@ import { sanitizeGitRef } from '../path-security'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
 import { clearAllPendingCalls as clearAllPendingMiniAppCalls } from '../mcp/superone-mcp-server'
+import { SessionLockedError } from '../session/types'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -54,8 +55,7 @@ export class AgentService {
   private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
   private codexGetAuthStatus?: (projectPath: string) => unknown
   private remoteControlService?: RemoteControlService
-  private remoteSession: { projectPath: string; sessionId: string } | null = null
-  private remoteOwnedSids = new Set<string>()
+  private deviceRegistry?: import('../remote/device-registry').DeviceRegistry
   private warmupManager = new WarmupManager()
 
   setCodexListModels(fn: (projectPath: string) => Promise<ModelOption[]>): void {
@@ -70,6 +70,10 @@ export class AgentService {
     this.remoteControlService = svc
   }
 
+  setDeviceRegistry(reg: import('../remote/device-registry').DeviceRegistry): void {
+    this.deviceRegistry = reg
+  }
+
   private broadcastEventToRenderer(event: AgentEvent): void {
     trace('remote.debug', 'broadcastEventToRenderer', { type: event.type, projectPath: event.projectPath, sessionId: event.sessionId, messageId: 'messageId' in event ? event.messageId : undefined })
     if (event.type === 'permission_request') {
@@ -82,17 +86,27 @@ export class AgentService {
 
   private isRemoteLockedSession(projectPath: string): boolean {
     const activeSession = this.sessionManager?.getActiveSession(projectPath)
-    const sub = this.remoteControlService?.getSubscribedSession()
-    if (sub?.projectPath === projectPath && activeSession?.id === sub.sessionId) return true
-    if (this.remoteSession?.projectPath === projectPath && activeSession?.id === this.remoteSession.sessionId) return true
+    if (!activeSession) return false
+    if (activeSession.owner.kind === 'remote') return true
+    if (activeSession.subscribers.size > 0) return true
     return false
+  }
+
+  private throwIfRemoteLocked(projectPath: string): void {
+    const activeSession = this.sessionManager?.getActiveSession(projectPath)
+    if (!activeSession) return
+    if (activeSession.owner.kind === 'remote') {
+      throw new SessionLockedError(activeSession.id, 'remote-owned', activeSession.owner.deviceId)
+    }
+    if (activeSession.subscribers.size > 0) {
+      throw new SessionLockedError(activeSession.id, 'remote-subscribed')
+    }
   }
 
   private resolveRemoteProjectPath(commandPath: string | undefined, sessionId: string): string | null {
     if (commandPath) return commandPath
-    const sub = this.remoteControlService?.getSubscribedSession()
-    if (sub && sub.sessionId === sessionId) return sub.projectPath
-    return null
+    const session = this.sessionManager?.getSession(sessionId)
+    return session?.projectPath ?? null
   }
 
   private canAccessSession(projectPath: string, sessionId: string): boolean {
@@ -199,35 +213,44 @@ export class AgentService {
     this.broadcastEventToRenderer(event)
   }
 
-  private async runCodexRemoteTurn(projectPath: string, sessionId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }, isNewSession?: boolean): Promise<void> {
-    const userMessageId = `user_${Date.now()}`
-    const assistantMessageId = `remote-${Date.now()}`
-    this.remoteSession = { projectPath, sessionId }
-    this.remoteOwnedSids.add(sessionId)
-    this.remoteControlService?.setRemoteSessionFilter(projectPath, sessionId)
-    if (isNewSession) {
-      this.remoteControlService?.broadcastAgentEvent({
-        type: 'session_init', projectPath, sessionId,
-        session: { sessionId, permissionMode: command.permissionPreset ?? 'default' },
-      } as AgentEvent)
-    }
+  private async withRemoteOwnership<T>(
+    projectPath: string,
+    sessionId: string,
+    deviceId: string,
+    session: import('../session/types').Session,
+    fn: () => Promise<T>,
+    opts?: { onStart?: () => void },
+  ): Promise<T> {
+    session.claim({ kind: 'remote', deviceId })
+    opts?.onStart?.()
     this.broadcastEventToRenderer({ type: 'remote_session_start', remoteProjectPath: projectPath, remoteSessionId: sessionId })
     try {
-      const mgr = this.requireSessionManager()
-      let session = mgr.getSession(sessionId)
-      if (!session) {
-        try { session = mgr.resumeSession(sessionId) } catch {
-          session = mgr.createSession({
-            projectPath,
-            providerId: 'codex-base',
-            id: sessionId,
-          })
-        }
+      return await fn()
+    } finally {
+      session.release(deviceId)
+      this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId })
+    }
+  }
+
+  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }, isNewSession?: boolean): Promise<void> {
+    const userMessageId = `user_${Date.now()}`
+    const assistantMessageId = `remote-${Date.now()}`
+    const mgr = this.requireSessionManager()
+    let session = mgr.getSession(sessionId)
+    if (!session) {
+      try { session = mgr.resumeSession(sessionId) } catch {
+        session = mgr.createSession({
+          projectPath,
+          providerId: 'codex-base',
+          id: sessionId,
+        })
       }
-      if (session.snapshot.harnessId !== 'codex') {
-        throw new Error(`Session ${sessionId} has harness=${session.snapshot.harnessId}, expected codex`)
-      }
-      await session.send({
+    }
+    if (session.snapshot.harnessId !== 'codex') {
+      throw new Error(`Session ${sessionId} has harness=${session.snapshot.harnessId}, expected codex`)
+    }
+    await this.withRemoteOwnership(projectPath, sessionId, deviceId, session, async () => {
+      await session!.send({
         content: command.content,
         clientMessageId: userMessageId,
         assistantMessageId,
@@ -241,17 +264,20 @@ export class AgentService {
           reasoningEffort: command.effort as CodexReasoningEffort | undefined,
         },
       }, { providerOrigin: 'remote' })
-    } finally {
-      this.remoteControlService?.clearRemoteSessionFilter()
-      if (this.remoteSession?.projectPath === projectPath && this.remoteSession.sessionId === sessionId) {
-        this.remoteOwnedSids.delete(sessionId)
-        this.remoteSession = null
-      }
-      this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId })
-    }
+    }, {
+      onStart: isNewSession
+        ? () => {
+            this.remoteControlService?.broadcastAgentEvent({
+              type: 'session_init', projectPath, sessionId,
+              session: { sessionId, permissionMode: command.permissionPreset ?? 'default' },
+            } as AgentEvent)
+          }
+        : undefined,
+    })
   }
 
-  async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder): Promise<void> {
+  async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void> {
+    const deviceId = source?.deviceId ?? 'unknown-device'
     trace('remote.cmd', command.type, command)
     switch (command.type) {
       case 'send_message': {
@@ -260,7 +286,7 @@ export class AgentService {
 
         if (command.provider === 'codex') {
           const sessionId = command.sessionId ?? `codex-remote-${Date.now()}`
-          await this.runCodexRemoteTurn(projectPath, sessionId, command, !command.sessionId)
+          await this.runCodexRemoteTurn(projectPath, sessionId, deviceId, command, !command.sessionId)
           break
         }
 
@@ -276,7 +302,7 @@ export class AgentService {
           }
           const saved = loadSessionState(targetSid)
           if (saved?.provider === 'codex') {
-            await this.runCodexRemoteTurn(projectPath, targetSid, command)
+            await this.runCodexRemoteTurn(projectPath, targetSid, deviceId, command)
             break
           }
           const existing = mgr.getSession(targetSid)
@@ -329,19 +355,16 @@ export class AgentService {
           })
         }
 
-        this.remoteSession = { projectPath, sessionId: sid }
-        this.remoteOwnedSids.add(sid)
-        this.remoteControlService?.setRemoteSessionFilter(projectPath, sid)
-        this.broadcastEventToRenderer({ type: 'remote_session_start', remoteProjectPath: projectPath, remoteSessionId: sid })
-
-        trace('remote.debug', 'send_message:dispatch', { sid, targetSid, projectPath })
-        await session.send({
-          content: command.content,
-          model: command.model,
-          effort: command.effort as SendMessageRequest['effort'] | undefined,
-          images: command.images,
-          priority: command.priority,
-          clientMessageId: command.clientMessageId,
+        trace('remote.debug', 'send_message:dispatch', { sid, targetSid, projectPath, deviceId })
+        await this.withRemoteOwnership(projectPath, sid, deviceId, session, async () => {
+          await session.send({
+            content: command.content,
+            model: command.model,
+            effort: command.effort as SendMessageRequest['effort'] | undefined,
+            images: command.images,
+            priority: command.priority,
+            clientMessageId: command.clientMessageId,
+          }, { providerOrigin: 'remote' })
         })
         break
       }
@@ -475,11 +498,31 @@ export class AgentService {
           log.warn('[AgentService] %s', this.buildSessionAccessError(command.projectPath, command.sessionId))
           break
         }
-        this.remoteControlService?.subscribeSession(command.projectPath, command.sessionId, (e) => this.broadcastEventToRenderer(e))
+        const subSession = this.sessionManager?.getSession(command.sessionId)
+        if (subSession) {
+          subSession.subscribe(deviceId)
+          this.broadcastEventToRenderer({ type: 'remote_session_start', remoteProjectPath: command.projectPath, remoteSessionId: command.sessionId, isSubscribe: true })
+        }
         break
       }
       case 'unsubscribe_session': {
-        this.remoteControlService?.unsubscribeSession((e) => this.broadcastEventToRenderer(e))
+        const targetSessionId = command.sessionId
+        const ended: Array<{ projectPath: string; sessionId: string }> = []
+        if (targetSessionId) {
+          const s = this.sessionManager?.getSession(targetSessionId)
+          if (s && s.subscribers.has(deviceId)) {
+            s.unsubscribe(deviceId)
+            ended.push({ projectPath: s.projectPath, sessionId: s.id })
+          }
+        } else {
+          this.sessionManager?.forEachSession((s) => {
+            if (s.subscribers.has(deviceId)) ended.push({ projectPath: s.projectPath, sessionId: s.id })
+          })
+          this.deviceRegistry?.unsubscribeAll(deviceId)
+        }
+        for (const e of ended) {
+          this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: e.projectPath, remoteSessionId: e.sessionId })
+        }
         break
       }
       case 'load_session_messages': {
@@ -931,7 +974,7 @@ export class AgentService {
     // --- Session-scoped handlers (projectPath as first arg) ---
 
     ipcMain.handle(AgentIpcChannels.SEND_MESSAGE, async (_event, projectPath: string, request: SendMessageRequest) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      this.throwIfRemoteLocked(projectPath)
       const session = this.getOrCreateActiveSession(projectPath, request.sessionId, {
         worktreePath: request.worktreePath,
         gitBranch: request.gitBranch,
@@ -966,14 +1009,16 @@ export class AgentService {
       clearAllGates()
       clearAllPendingMiniAppCalls()
       await session.interrupt()
-      if (this.isRemoteLockedSession(projectPath)) {
-        this.remoteControlService?.unsubscribeSession((e) => this.broadcastEventToRenderer(e))
+      const subs = Array.from(session.subscribers)
+      if (subs.length > 0) {
+        for (const d of subs) session.unsubscribe(d)
+        this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: session.projectPath, remoteSessionId: session.id })
       }
       return true
     })
 
     ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      this.throwIfRemoteLocked(projectPath)
       trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
       trace('permission.flow', 'ipc_response', { projectPath, sessionId: sessionId ?? null, allow, alwaysAllow, reason }, requestId)
       const session = this.resolveInteractionSession(projectPath, sessionId)
@@ -982,14 +1027,14 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      this.throwIfRemoteLocked(projectPath)
       const session = this.getOrCreateActiveSession(projectPath)
       trace('permission.flow', 'ipc_setMode', { projectPath, mode, sid: session.id, status: session.snapshot.status })
       await session.setPermissionMode(mode)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      this.throwIfRemoteLocked(projectPath)
       return this.getOrCreateActiveSession(projectPath).setSandboxMode(mode)
     })
 
@@ -1001,19 +1046,19 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations, sessionId?: string) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      this.throwIfRemoteLocked(projectPath)
       trace('agent.emit', 'question_answered', { requestId, answers, sessionId })
       this.resolveInteractionSession(projectPath, sessionId)?.respondToQuestion(requestId, answers, annotations)
     })
 
     ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string, sessionId?: string) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      this.throwIfRemoteLocked(projectPath)
       trace('agent.emit', 'question_dismissed', { requestId, sessionId })
       this.resolveInteractionSession(projectPath, sessionId)?.dismissQuestion(requestId)
     })
 
     ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string, sessionId?: string) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      this.throwIfRemoteLocked(projectPath)
       trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback, sessionId })
       this.resolveInteractionSession(projectPath, sessionId)?.respondToPlanApproval(requestId, approved, feedback)
     })
@@ -1136,21 +1181,21 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, async () => {
-      const sub = this.remoteControlService?.getSubscribedSession()
-      if (sub) {
-        await this.remoteControlService?.sendEventToMobile({ type: 'session_disconnected', sessionId: sub.sessionId })
-      }
-      this.remoteControlService?.unsubscribeSession((e) => this.broadcastEventToRenderer(e))
-      if (this.remoteSession) {
-        const sid = this.remoteSession.sessionId
-        if (!sub || sub.sessionId !== sid) {
-          await this.remoteControlService?.sendEventToMobile({ type: 'session_disconnected', sessionId: sid })
+      const affected: Array<{ projectPath: string; sessionId: string }> = []
+      this.sessionManager?.forEachSession((s) => {
+        if (s.owner.kind === 'remote' || s.subscribers.size > 0) {
+          affected.push({ projectPath: s.projectPath, sessionId: s.id })
         }
-        this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: this.remoteSession.projectPath, remoteSessionId: sid })
-        this.remoteOwnedSids.delete(sid)
-        this.remoteSession = null
+        if (s.owner.kind === 'remote') s.release(s.owner.deviceId)
+        for (const d of Array.from(s.subscribers)) s.unsubscribe(d)
+      })
+      const announced = new Set<string>()
+      for (const { projectPath, sessionId } of affected) {
+        if (announced.has(sessionId)) continue
+        announced.add(sessionId)
+        await this.remoteControlService?.sendEventToMobile({ type: 'session_disconnected', sessionId })
+        this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId })
       }
-      this.remoteControlService?.clearRemoteSessionFilter()
     })
 
     // --- Additional directories ---
@@ -1468,7 +1513,7 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
-      if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
+      this.throwIfRemoteLocked(projectPath)
       const mgr = this.requireSessionManager()
       mgr.clearActiveSession(projectPath)
       const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
@@ -1543,22 +1588,6 @@ export class AgentService {
 
   async closeProject(cwd: string): Promise<void> {
     await this.sessionManager?.closeProject(cwd)
-
-    if (this.remoteSession?.projectPath === cwd) {
-      const sid = this.remoteSession.sessionId
-      this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: cwd, remoteSessionId: sid })
-      this.remoteOwnedSids.delete(sid)
-      this.remoteSession = null
-      this.remoteControlService?.clearRemoteSessionFilter()
-    }
-  }
-
-  async transferRemoteToLocal(projectPath: string, sessionId: string): Promise<void> {
-    if (!this.remoteSession || this.remoteSession.projectPath !== projectPath) return
-    this.remoteSession = null
-    this.remoteOwnedSids.delete(sessionId)
-    this.remoteControlService?.clearRemoteSessionFilter()
-    this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId })
   }
 
   hasRunningSessions(): boolean {
@@ -1567,13 +1596,6 @@ export class AgentService {
 
   async dispose(): Promise<void> {
     this.warmupManager.dispose()
-    if (this.remoteSession) {
-      const sid = this.remoteSession.sessionId
-      this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: this.remoteSession.projectPath, remoteSessionId: sid })
-      this.remoteOwnedSids.delete(sid)
-      this.remoteSession = null
-      this.remoteControlService?.clearRemoteSessionFilter()
-    }
 
     ipcMain.removeHandler(AgentIpcChannels.SEND_MESSAGE)
     ipcMain.removeHandler(AgentIpcChannels.DEQUEUE_MESSAGE)

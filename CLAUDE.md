@@ -74,6 +74,33 @@ Two namespaces exposed via preload:
 
 All IPC channels are defined as constants in `AgentIpcChannels` (`src/shared/agent-types.ts`), grouped by namespace prefix (`app:`, `agent:`, `codex:`, `plugins:`, `skills:`, `mcp:`, `miniapp:`, `sessions:`, `updater:`).
 
+### Remote Control (Mobile) Architecture
+
+Session ownership is a **first-class property of the `Session` class itself**, not global service state. Each session carries:
+
+- `owner: { kind: 'local' } | { kind: 'remote'; deviceId }` — who is currently driving turns
+- `subscribers: Set<deviceId>` — which mobile devices are viewing
+- `claim/release/subscribe/unsubscribe` API + `onLifecycle` event channel emitting `owner_changed` / `subscriber_added` / `subscriber_removed` / `closed`
+
+`Session.send()` self-guards: when `providerOrigin === 'local'` and the session is owned remotely or has remote subscribers, it throws `SessionLockedError`. Lock checks live inside the session, not in IPC handler `if`-walls.
+
+Modules under `src/main/remote/`:
+
+| Module | Responsibility |
+|---|---|
+| `device-registry.ts` | Single device-disconnect entry: `handleDeviceDisconnected(deviceId)` walks `sessionManager.forEachSession` and calls `release(deviceId) + unsubscribe(deviceId)`. Also `unsubscribeAll` / `releaseAll` for partial cleanups |
+| `mobile-broadcaster.ts` | Routes agent events to mobile transport based on `session.subscribers` / `session.owner`. Filter decision lives here, not in transport |
+
+`RemoteControlService` is a pure transport (relay + LAN, frame encoding, encryption). It no longer holds session-control state — `subscribedSession` and `remoteSessionFilter` were deleted; `subscribeSession/unsubscribeSession/setRemoteSessionFilter/clearRemoteSessionFilter/getSubscribedSession` were removed.
+
+Codex and Claude remote turns share a single `withRemoteOwnership(projectPath, sessionId, deviceId, session, fn)` helper inside `AgentService` — claim → run → release symmetry. Provider backends (Claude, Codex) have zero awareness of ownership.
+
+**Sender deviceId propagation**: `RemoteControlCallbacks.onCommand` carries `source: { deviceId, transport: 'lan' | 'relay' }`. `LanServer` reads it from the per-socket `ClientState`. **Relay** reads it from `frame.mobileDeviceId` injected by `RelaySession` Durable Object (relay protocol now supports `1 desktop : N mobile` per channel — sockets tagged `mobile:<deviceId>`). `AgentService.handleRemoteCommand(cmd, respond, source)` passes the real `source.deviceId` into `session.claim/release/subscribe/unsubscribe` — no placeholder strings, no inference.
+
+**Multi-mobile per channel** (`super-one-relay`): one desktop's channel can host multiple mobile peers concurrently. Each mobile WS is tagged with its `mobileDeviceId` (passed via `?deviceId=` query). Mobile→desktop frames have `mobileDeviceId` injected by relay; desktop→mobile frames are broadcast to all mobile peers (except `kicked` which targets a specific deviceId). `peer_connected`/`peer_disconnected` carry `mobileDeviceId` so desktop only marks that specific device offline.
+
+**`unsubscribe_session` protocol**: optional `sessionId` field. With sessionId → unsubscribe only that session. Without sessionId → unsubscribe all sessions the device is viewing (back-compat). Mobile (`remote_client.dart#unsubscribeSession`) passes the current sessionId from `chat_page.dart#_exitSessionMode`.
+
 ### Component Structure
 
 ```

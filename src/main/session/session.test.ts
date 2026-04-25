@@ -1327,3 +1327,90 @@ describe('Session persist hook', () => {
     expect(calls).toHaveLength(0)
   })
 })
+
+describe('Session ownership', () => {
+  it('starts with local owner and empty subscribers', () => {
+    const { session } = makeSession()
+    expect(session.owner.kind).toBe('local')
+    expect(session.subscribers.size).toBe(0)
+  })
+
+  it('claim emits owner_changed only when owner actually changes', () => {
+    const { session } = makeSession()
+    const events: import('./types').SessionLifecycleEvent[] = []
+    session.onLifecycle((e) => events.push(e))
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'owner_changed', current: { kind: 'remote', deviceId: 'dev-A' } })
+  })
+
+  it('release returns owner to local and emits owner_changed', () => {
+    const { session } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    const events: import('./types').SessionLifecycleEvent[] = []
+    session.onLifecycle((e) => events.push(e))
+    session.release('dev-A')
+    expect(session.owner.kind).toBe('local')
+    expect(events).toContainEqual(expect.objectContaining({ type: 'owner_changed', current: { kind: 'local' } }))
+  })
+
+  it('release by non-owner deviceId is no-op', () => {
+    const { session } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    const events: import('./types').SessionLifecycleEvent[] = []
+    session.onLifecycle((e) => events.push(e))
+    session.release('dev-B')
+    expect(session.owner).toEqual({ kind: 'remote', deviceId: 'dev-A' })
+    expect(events).toHaveLength(0)
+  })
+
+  it('subscribe/unsubscribe emits subscriber_added/removed and dedupes', () => {
+    const { session } = makeSession()
+    const events: import('./types').SessionLifecycleEvent[] = []
+    session.onLifecycle((e) => events.push(e))
+    session.subscribe('dev-A')
+    session.subscribe('dev-A')
+    session.subscribe('dev-B')
+    session.unsubscribe('dev-A')
+    session.unsubscribe('dev-A')
+    expect(events.map((e) => e.type)).toEqual(['subscriber_added', 'subscriber_added', 'subscriber_removed'])
+    expect(session.subscribers.has('dev-B')).toBe(true)
+    expect(session.subscribers.has('dev-A')).toBe(false)
+  })
+
+  it('local-origin send is rejected with SessionLockedError when owner is remote', async () => {
+    const { session } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    await expect(session.send({ content: 'hi' }, { providerOrigin: 'local' })).rejects.toThrow(/controlled by remote/)
+  })
+
+  it('local-origin send is rejected when remote subscribers exist', async () => {
+    const { session } = makeSession()
+    session.subscribe('dev-A')
+    await expect(session.send({ content: 'hi' }, { providerOrigin: 'local' })).rejects.toThrow(/being viewed/)
+  })
+
+  it('remote-origin send bypasses both locks (so the device that owns/subscribes can act)', async () => {
+    const { session, backend } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    session.subscribe('dev-A')
+    const sendPromise = session.send({ content: 'hi' }, { providerOrigin: 'remote' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await sendPromise
+    expect(backend.sendCalls).toHaveLength(1)
+  })
+
+  it('dispose clears subscribers, releases owner, emits closed event', async () => {
+    const { session } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    session.subscribe('dev-A')
+    const events: import('./types').SessionLifecycleEvent[] = []
+    session.onLifecycle((e) => events.push(e))
+    await session.dispose()
+    expect(session.owner.kind).toBe('local')
+    expect(session.subscribers.size).toBe(0)
+    expect(events.map((e) => e.type)).toContain('closed')
+  })
+})

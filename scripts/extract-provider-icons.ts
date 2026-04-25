@@ -42,29 +42,27 @@ interface BrandEntry {
   color?: IconComp
   text?: IconComp
   brand?: IconComp
-  textMultiple: number
-  spaceMultiple: number
 }
 
 const ICONS: BrandEntry[] = [
-  { key: 'anthropic', mono: Anthropic as IconComp, text: pickText(Anthropic), textMultiple: 0.75, spaceMultiple: 0.1 },
-  { key: 'openrouter', mono: OpenRouter as IconComp, text: pickText(OpenRouter), textMultiple: 1.0, spaceMultiple: 0.4 },
-  { key: 'zhipu', mono: Zhipu as IconComp, color: pickColor(Zhipu), text: pickText(Zhipu), textMultiple: 0.65, spaceMultiple: 0.2 },
-  { key: 'kimi', mono: Kimi as IconComp, color: pickColor(Kimi), text: pickText(Kimi), textMultiple: 0.7, spaceMultiple: 0.25 },
-  { key: 'minimax', mono: Minimax as IconComp, color: pickColor(Minimax), text: pickText(Minimax), textMultiple: 0.45, spaceMultiple: 0.15 },
-  { key: 'volcengine', mono: Volcengine as IconComp, color: pickColor(Volcengine), text: pickText(Volcengine), textMultiple: 0.8, spaceMultiple: 0.2 },
-  { key: 'bailian', mono: Bailian as IconComp, color: pickColor(Bailian), text: pickText(Bailian), textMultiple: 0.8, spaceMultiple: 0.2 },
-  { key: 'bedrock', mono: Bedrock as IconComp, color: pickColor(Bedrock), text: pickText(Bedrock), textMultiple: 0.6, spaceMultiple: 0.1 },
-  { key: 'google', mono: Google as IconComp, color: pickColor(Google), brand: (Google as { Brand?: unknown }).Brand as IconComp | undefined, textMultiple: 1.0, spaceMultiple: 0 },
-  { key: 'deepseek', mono: DeepSeek as IconComp, color: pickColor(DeepSeek), text: pickText(DeepSeek), textMultiple: 0.65, spaceMultiple: 0.2 },
-  { key: 'doubao', mono: Doubao as IconComp, color: pickColor(Doubao), text: pickText(Doubao), textMultiple: 0.8, spaceMultiple: 0.15 },
-  { key: 'kwaikat', mono: KwaiKAT as IconComp, text: pickText(KwaiKAT), textMultiple: 0.9, spaceMultiple: 0.2 },
-  { key: 'longcat', mono: LongCat as IconComp, color: pickColor(LongCat), text: pickText(LongCat), textMultiple: 0.8, spaceMultiple: 0.3 },
-  { key: 'modelscope', mono: ModelScope as IconComp, color: pickColor(ModelScope), text: pickText(ModelScope), textMultiple: 0.6, spaceMultiple: 0.2 },
-  { key: 'nvidia', mono: Nvidia as IconComp, color: pickColor(Nvidia), text: pickText(Nvidia), textMultiple: 0.5, spaceMultiple: 0.15 },
-  { key: 'siliconcloud', mono: SiliconCloud as IconComp, color: pickColor(SiliconCloud), text: pickText(SiliconCloud), textMultiple: 0.7, spaceMultiple: 0.2 },
-  { key: 'xiaomimimo', mono: XiaomiMiMo as IconComp, text: pickText(XiaomiMiMo), textMultiple: 1.0, spaceMultiple: 0.2 },
-  { key: 'openai', mono: OpenAI as IconComp, text: pickText(OpenAI), textMultiple: 0.75, spaceMultiple: 0.1 },
+  { key: 'anthropic', mono: Anthropic as IconComp, text: pickText(Anthropic) },
+  { key: 'openrouter', mono: OpenRouter as IconComp, text: pickText(OpenRouter) },
+  { key: 'zhipu', mono: Zhipu as IconComp, color: pickColor(Zhipu), text: pickText(Zhipu) },
+  { key: 'kimi', mono: Kimi as IconComp, color: pickColor(Kimi), text: pickText(Kimi) },
+  { key: 'minimax', mono: Minimax as IconComp, color: pickColor(Minimax), text: pickText(Minimax) },
+  { key: 'volcengine', mono: Volcengine as IconComp, color: pickColor(Volcengine), text: pickText(Volcengine) },
+  { key: 'bailian', mono: Bailian as IconComp, color: pickColor(Bailian), text: pickText(Bailian) },
+  { key: 'bedrock', mono: Bedrock as IconComp, color: pickColor(Bedrock), text: pickText(Bedrock) },
+  { key: 'google', mono: Google as IconComp, color: pickColor(Google), brand: (Google as { Brand?: unknown }).Brand as IconComp | undefined },
+  { key: 'deepseek', mono: DeepSeek as IconComp, color: pickColor(DeepSeek), text: pickText(DeepSeek) },
+  { key: 'doubao', mono: Doubao as IconComp, color: pickColor(Doubao), text: pickText(Doubao) },
+  { key: 'kwaikat', mono: KwaiKAT as IconComp, text: pickText(KwaiKAT) },
+  { key: 'longcat', mono: LongCat as IconComp, color: pickColor(LongCat), text: pickText(LongCat) },
+  { key: 'modelscope', mono: ModelScope as IconComp, color: pickColor(ModelScope), text: pickText(ModelScope) },
+  { key: 'nvidia', mono: Nvidia as IconComp, color: pickColor(Nvidia), text: pickText(Nvidia) },
+  { key: 'siliconcloud', mono: SiliconCloud as IconComp, color: pickColor(SiliconCloud), text: pickText(SiliconCloud) },
+  { key: 'xiaomimimo', mono: XiaomiMiMo as IconComp, text: pickText(XiaomiMiMo) },
+  { key: 'openai', mono: OpenAI as IconComp, text: pickText(OpenAI) },
 ]
 
 rmSync(OUT_DIR, { recursive: true, force: true })
@@ -85,14 +83,17 @@ function innerSvg(svg: string): string {
   return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')
 }
 
-function buildCombined(markSvg: string, textSvg: string, textMultiple: number, spaceMultiple: number): string {
+const DESKTOP_TEXT_MULTIPLE = 0.75
+const DESKTOP_SPACE_MULTIPLE = 0.5
+
+function buildCombined(markSvg: string, textSvg: string): string {
   const mark = extractViewBox(markSvg)
   const text = extractViewBox(textSvg)
   const markH = 24
   const markW = markH * (mark.w / mark.h)
-  const textH = markH * textMultiple
+  const textH = markH * DESKTOP_TEXT_MULTIPLE
   const textW = textH * (text.w / text.h)
-  const space = markH * spaceMultiple
+  const space = markH * DESKTOP_SPACE_MULTIPLE
   const totalW = markW + space + textW
   const totalH = markH
   const markScale = markH / mark.h
@@ -119,7 +120,7 @@ for (const entry of ICONS) {
     aspect = vb.w / vb.h
   } else if (entry.text) {
     const markSvg = entry.color ? renderSvg(entry.color) : monoSvg
-    combined = buildCombined(markSvg, renderSvg(entry.text), entry.textMultiple, entry.spaceMultiple)
+    combined = buildCombined(markSvg, renderSvg(entry.text))
     const vb = extractViewBox(combined)
     aspect = vb.w / vb.h
   }

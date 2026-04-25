@@ -1,7 +1,8 @@
 import { randomUUID } from 'crypto'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
-import type { AgentEvent, ChatMessage } from '../../shared/agent-types'
+import type { AgentEvent, ChatMessage, RemoteActiveProvider } from '../../shared/agent-types'
+import type { HarnessId } from './types'
 import log from '../logger'
 import { discoverProjectAgents, discoverProjectCommands, discoverSkills } from '../agent/discover-resources'
 import { readProjectAdditionalDirs } from '../agent/project-additional-dirs'
@@ -38,6 +39,7 @@ export interface SessionManagerPersistence {
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
   loadSession?: (sessionId: string) => LoadedSessionData | null
   resolveProviderConfig?: (provider: SessionProvider) => unknown
+  getActiveProvider?: (harnessId: HarnessId) => RemoteActiveProvider | null
 }
 
 function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorktreePath: string | null } {
@@ -162,6 +164,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       onProviderSessionIdChange: this.persistence.onProviderSessionIdChange
         ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
         : undefined,
+      getActiveProvider: this.persistence.getActiveProvider
+        ? (h) => this.persistence.getActiveProvider!(h)
+        : undefined,
     })
 
     this.registerSession(session, opts.projectPath)
@@ -242,6 +247,9 @@ export class SessionManagerImpl implements SessionManagerContract {
         : undefined,
       onProviderSessionIdChange: this.persistence.onProviderSessionIdChange
         ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
+        : undefined,
+      getActiveProvider: this.persistence.getActiveProvider
+        ? (h) => this.persistence.getActiveProvider!(h)
         : undefined,
     })
 

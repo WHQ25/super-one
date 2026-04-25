@@ -16,7 +16,8 @@ import { getRecentFolders, addRecentFolder } from '../recent-folders'
 import { readdir, mkdir } from 'fs/promises'
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
-import { getDb, getCachedResources } from '../database'
+import { getDb, getCachedResources, getActiveProviderRaw } from '../database'
+import { buildRemoteActiveProvider } from '../../shared/provider-utils'
 import { sanitizeGitRef } from '../path-security'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
@@ -84,6 +85,13 @@ export class AgentService {
     if (!sub || sub.projectPath !== projectPath) return false
     const activeSession = this.sessionManager?.getActiveSession(projectPath)
     return activeSession?.id === sub.sessionId
+  }
+
+  private resolveRemoteProjectPath(commandPath: string | undefined, sessionId: string): string | null {
+    if (commandPath) return commandPath
+    const sub = this.remoteControlService?.getSubscribedSession()
+    if (sub && sub.sessionId === sessionId) return sub.projectPath
+    return null
   }
 
   private canAccessSession(projectPath: string, sessionId: string): boolean {
@@ -181,6 +189,13 @@ export class AgentService {
 
   notifyEventSubscribers(event: AgentEvent): void {
     this.eventSubscribers.forEach((cb) => cb(event))
+  }
+
+  private broadcastProviderChanged(harnessId: 'claude' | 'codex'): void {
+    const provider = buildRemoteActiveProvider(getActiveProviderRaw(harnessId), harnessId)
+    const event: AgentEvent = { type: 'provider_changed', harnessId, provider }
+    this.notifyEventSubscribers(event)
+    this.broadcastEventToRenderer(event)
   }
 
   private async runCodexRemoteTurn(projectPath: string, sessionId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }, isNewSession?: boolean): Promise<void> {
@@ -342,8 +357,11 @@ export class AgentService {
         break
       }
       case 'respond_permission': {
-        const projectPath = command.projectPath
-        if (!projectPath) break
+        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
+        if (!projectPath) {
+          log.warn('[AgentService] respond_permission: missing projectPath and no subscribed session for sid=%s requestId=%s', command.sessionId, command.requestId)
+          break
+        }
         if (!this.canAccessSession(projectPath, command.sessionId)) {
           log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
           break
@@ -362,8 +380,11 @@ export class AgentService {
         break
       }
       case 'answer_question': {
-        const projectPath = command.projectPath
-        if (!projectPath) break
+        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
+        if (!projectPath) {
+          log.warn('[AgentService] answer_question: missing projectPath and no subscribed session for sid=%s requestId=%s', command.sessionId, command.requestId)
+          break
+        }
         if (!this.canAccessSession(projectPath, command.sessionId)) {
           log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
           break
@@ -378,8 +399,11 @@ export class AgentService {
         break
       }
       case 'dismiss_question': {
-        const projectPath = command.projectPath
-        if (!projectPath) break
+        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
+        if (!projectPath) {
+          log.warn('[AgentService] dismiss_question: missing projectPath and no subscribed session for sid=%s requestId=%s', command.sessionId, command.requestId)
+          break
+        }
         if (!this.canAccessSession(projectPath, command.sessionId)) {
           log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
           break
@@ -394,8 +418,11 @@ export class AgentService {
         break
       }
       case 'respond_plan_approval': {
-        const projectPath = command.projectPath
-        if (!projectPath) break
+        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
+        if (!projectPath) {
+          log.warn('[AgentService] respond_plan_approval: missing projectPath and no subscribed session for sid=%s requestId=%s', command.sessionId, command.requestId)
+          break
+        }
         if (!this.canAccessSession(projectPath, command.sessionId)) {
           log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
           break
@@ -609,6 +636,7 @@ export class AgentService {
             const skills = listSkills(command.projectPath)
             const agents = discoverAllAgents(command.projectPath)
             const projectSlashCommands = discoverProjectCommands(command.projectPath)
+            const activeProvider = buildRemoteActiveProvider(getActiveProviderRaw('claude'), 'claude')
             await respond?.(command.requestId, {
               models,
               skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
@@ -616,12 +644,14 @@ export class AgentService {
               userSlashCommands: cached?.slashCommands ?? [],
               projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '', argumentHint: c.argumentHint ?? '' })),
               account: cached?.account ?? null,
-              permissionModes: ['default', 'acceptEdits', 'plan', 'bypassPermissions'],
+              permissionModes: ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions', 'dontAsk'],
               sandboxModes: ['off', 'on', 'auto'],
+              activeProvider,
             })
           } else {
             const models = this.codexListModels ? await this.codexListModels(command.projectPath) : []
             const skills = listCodexSkills(command.projectPath)
+            const activeProvider = buildRemoteActiveProvider(getActiveProviderRaw('codex'), 'codex')
             await respond?.(command.requestId, {
               models,
               skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
@@ -634,6 +664,7 @@ export class AgentService {
               ],
               account: this.codexGetAuthStatus?.(command.projectPath) ?? null,
               permissionPresets: ['default', 'full-access'],
+              activeProvider,
             })
           }
         } catch (err) {
@@ -944,6 +975,13 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode) => {
       if (this.isRemoteLockedSession(projectPath)) throw new Error('Session is controlled remotely')
       return this.getOrCreateActiveSession(projectPath).setSandboxMode(mode)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null }) => {
+      if (this.isRemoteLockedSession(projectPath)) return
+      const session = this.sessionManager?.getActiveSession(projectPath)
+      if (!session) return
+      session.setSelectedSettings(settings)
     })
 
     ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations, sessionId?: string) => {
@@ -1268,6 +1306,7 @@ export class AgentService {
       log.info('[providers] activate id=%s agentType=%s', id, agentType)
       const result = activateProvider(id, agentType)
       this.markAllNeedsRebuild()
+      this.broadcastProviderChanged(agentType === 'codex' ? 'codex' : 'claude')
       return result
     })
 
@@ -1275,6 +1314,7 @@ export class AgentService {
       log.info('[providers] deactivate all, agentType=%s', agentType)
       deactivateAllProviders(agentType)
       this.markAllNeedsRebuild()
+      this.broadcastProviderChanged(agentType === 'codex' ? 'codex' : 'claude')
     })
 
     ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST, async (_event, data: { api_key: string; base_url: string; extra_env: string }) => {
@@ -1525,6 +1565,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
     ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)
+    ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_SETTINGS)
     ipcMain.removeHandler(AgentIpcChannels.SET_SANDBOX_MODE)
     ipcMain.removeHandler(AgentIpcChannels.ANSWER_QUESTION)
     ipcMain.removeHandler(AgentIpcChannels.DISMISS_QUESTION)

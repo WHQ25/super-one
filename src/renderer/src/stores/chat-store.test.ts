@@ -42,6 +42,7 @@ const mockWindowAgent = {
   dismissQuestion: vi.fn().mockResolvedValue(undefined),
   respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
   setPermissionMode: vi.fn().mockResolvedValue(undefined),
+  setSessionSettings: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
 }
 

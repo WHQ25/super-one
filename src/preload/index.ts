@@ -24,6 +24,9 @@ const agentAPI = {
   setSandboxMode: (projectPath: string, mode: SandboxMode) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SANDBOX_MODE, projectPath, mode),
 
+  setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null }) =>
+    ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_SETTINGS, projectPath, settings),
+
   answerQuestion: (projectPath: string, requestId: string, answers: Record<string, string>, annotations?: Record<string, { preview?: string; notes?: string }>, sessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, projectPath, requestId, answers, annotations, sessionId),
 

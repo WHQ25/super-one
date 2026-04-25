@@ -61,6 +61,7 @@ import { readProjectPreferences, saveProjectPreferences } from './claude-prefere
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n } from './i18n'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest } from '../shared/agent-types'
+import { buildRemoteActiveProvider } from '../shared/provider-utils'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
 
@@ -137,6 +138,7 @@ const sessionManager = new SessionManagerImpl({
       gitBranch: loaded.record.gitBranch,
     }
   },
+  getActiveProvider: (harnessId) => buildRemoteActiveProvider(getActiveProviderRaw(harnessId), harnessId),
 })
 sessionManager.onAny((_sid, event) => {
   if (event.type === 'permission_request') {

@@ -20,7 +20,9 @@ import {
   computeToolMeta,
   truncateBashOutput,
   stripMessagesForRemote,
+  stripEventForRemote,
 } from './remote-control-service'
+import type { AgentEvent, PermissionRequest } from '../shared/agent-types'
 
 function toolUseBlock(toolName: string, input: Record<string, unknown>, toolUseId = 'tu-1'): ContentBlock & { type: 'tool_use' } {
   return { type: 'tool_use', toolName, toolUseId, input: JSON.stringify(input) }
@@ -179,7 +181,7 @@ describe('computeToolMeta', () => {
       })
       const result = computeToolMeta(block, '/proj')
       expect(result.toolFilePath).toBe('file.ts')
-      expect(result.toolLineDelta).toEqual({ added: 3, removed: 2 })
+      expect(result.toolLineDelta).toEqual({ added: 2, removed: 1 })
       expect(result.toolDiff).toBeDefined()
     })
 
@@ -191,6 +193,16 @@ describe('computeToolMeta', () => {
       })
       const result = computeToolMeta(block, '/proj')
       expect(result.toolLineDelta).toEqual({ added: 1, removed: 0 })
+    })
+
+    it('should report only changed lines when replacing single line in middle', () => {
+      const block = toolUseBlock('Edit', {
+        file_path: '/proj/file.ts',
+        old_string: 'a\nb\nc',
+        new_string: 'a\nB\nc',
+      })
+      const result = computeToolMeta(block, '/proj')
+      expect(result.toolLineDelta).toEqual({ added: 1, removed: 1 })
     })
   })
 
@@ -289,6 +301,33 @@ describe('truncateBashOutput', () => {
     const result = truncateBashOutput(lines.join('\n'))
     expect(result.split('\n').length).toBeLessThanOrEqual(101)
     expect(result.length).toBeLessThanOrEqual(5001)
+  })
+})
+
+describe('stripEventForRemote permission_request', () => {
+  function makePermissionEvent(toolName: string, input: Record<string, unknown>): AgentEvent {
+    const request: PermissionRequest = { requestId: 'req-1', toolName, input, allowAlwaysAllow: false }
+    return { type: 'permission_request', request }
+  }
+
+  it('should attach toolLineDelta when enriching Edit permission request', () => {
+    const event = makePermissionEvent('Edit', {
+      file_path: '/proj/file.ts',
+      old_string: 'a\nb\nc',
+      new_string: 'a\nB\nc',
+    })
+    const result = stripEventForRemote(event, '/proj') as AgentEvent & { type: 'permission_request' }
+    expect(result.request.toolLineDelta).toEqual({ added: 1, removed: 1 })
+    expect(result.request.toolDiff).toBeDefined()
+  })
+
+  it('should attach toolLineDelta when enriching Write permission request', () => {
+    const event = makePermissionEvent('Write', {
+      file_path: '/proj/new.ts',
+      content: 'a\nb\nc',
+    })
+    const result = stripEventForRemote(event, '/proj') as AgentEvent & { type: 'permission_request' }
+    expect(result.request.toolLineDelta).toEqual({ added: 3, removed: 0 })
   })
 })
 

@@ -155,6 +155,9 @@ export interface Session {
   getCurrentPermissionMode(): PermissionMode
   getCurrentSandboxInfo(): SandboxInfo
   setModel(model: string): Promise<void>
+  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null }): void
+  getSelectedModel(): string | undefined
+  getSelectedEffort(): SendMessageRequest['effort']
   respondToPermission(
     requestId: string,
     allow: boolean,

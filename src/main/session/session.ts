@@ -6,6 +6,7 @@ import type {
   McpServerInfo,
   PermissionMode,
   QuestionAnnotations,
+  RemoteActiveProvider,
   RewindFilesResult,
   SandboxInfo,
   SandboxMode,
@@ -66,6 +67,7 @@ export interface SessionConstructorOptions {
   invalidateProjectResources?: (cwd: string) => void
   onStateChange?: (snapshot: SessionStateChange) => void
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
+  getActiveProvider?: (harnessId: HarnessId) => RemoteActiveProvider | null
 }
 
 const DEFAULT_SANDBOX: SandboxInfo = { enabled: true, autoAllowBash: false }
@@ -122,6 +124,7 @@ export class Session implements SessionContract {
   private invalidateProjectResources?: (cwd: string) => void
   private onStateChange?: (snapshot: SessionStateChange) => void
   private onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
+  private getActiveProvider?: (harnessId: HarnessId) => RemoteActiveProvider | null
 
   private abortController: AbortController | null = null
   private backendStarted = false
@@ -156,6 +159,7 @@ export class Session implements SessionContract {
     this.invalidateProjectResources = opts.invalidateProjectResources
     this.onStateChange = opts.onStateChange
     this.onProviderSessionIdChange = opts.onProviderSessionIdChange
+    this.getActiveProvider = opts.getActiveProvider
 
     this.unsubs.push(this.backend.onEvent((e) => this.forwardEvent(e)))
     this.unsubs.push(this.backend.onProviderSessionId((id) => {
@@ -278,6 +282,7 @@ export class Session implements SessionContract {
       return
     }
     this.permissionMode = mode
+    this.forwardEvent({ type: 'permission_mode_change', mode })
     if (!this.backendStarted) {
       trace('permission.flow', 'session_setMode_skip_backend', { sid: this.id, reason: 'backend_not_started' })
       return
@@ -333,6 +338,28 @@ export class Session implements SessionContract {
     this.model = model
     if (this.backendStarted) await this.backend.setModel(model)
   }
+
+  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null }): void {
+    this.assertNotDisposed()
+    let changed = false
+    if (opts.model !== undefined) {
+      const next = opts.model ?? undefined
+      if (this.model !== next) { this.model = next; changed = true }
+    }
+    if (opts.effort !== undefined) {
+      const next = (opts.effort ?? undefined) as SendMessageRequest['effort']
+      if (this.effort !== next) { this.effort = next; changed = true }
+    }
+    if (!changed) return
+    this.forwardEvent({
+      type: 'agent_setting_change',
+      selectedModel: this.model ?? null,
+      selectedEffort: this.effort ?? null,
+    })
+  }
+
+  getSelectedModel(): string | undefined { return this.model }
+  getSelectedEffort(): SendMessageRequest['effort'] { return this.effort }
 
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel'): boolean {
     this.assertNotDisposed()
@@ -532,6 +559,7 @@ export class Session implements SessionContract {
     if (this.harnessId !== 'claude') return
     if (!this.getProjectResources) return
     const resources = this.getProjectResources(this._cwd)
+    const activeProvider = this.getActiveProvider?.(this.harnessId) ?? null
     const event: AgentEvent = {
       type: 'init_ready',
       skills: resources.skills,
@@ -542,6 +570,9 @@ export class Session implements SessionContract {
       homedir: this.homedir,
       sandboxInfo: this.sandboxInfo,
       permissionMode: this.permissionMode,
+      selectedModel: this.model ?? null,
+      selectedEffort: this.effort ?? null,
+      activeProvider,
     }
     this._cachedInitReady = this.forwardEvent(event)
   }

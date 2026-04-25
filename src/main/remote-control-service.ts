@@ -76,6 +76,16 @@ export function countLines(s: string): number {
   return s.split('\n').length
 }
 
+export function countEditDelta(oldStr: string, newStr: string): { added: number; removed: number } {
+  let added = 0
+  let removed = 0
+  for (const change of diffLines(oldStr, newStr)) {
+    if (change.added) added += change.count ?? 0
+    else if (change.removed) removed += change.count ?? 0
+  }
+  return { added, removed }
+}
+
 export function stripProjectPath(value: string, projectPath?: string): string {
   if (!projectPath) return value
   const prefix = projectPath.endsWith('/') ? projectPath : projectPath + '/'
@@ -112,7 +122,8 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         const oldStr = String(p.old_string ?? '')
         const newStr = String(p.new_string ?? '')
         if (oldStr || newStr) {
-          toolLineDelta = { added: countLines(newStr), removed: countLines(oldStr) }
+          const delta = countEditDelta(oldStr, newStr)
+          if (delta.added > 0 || delta.removed > 0) toolLineDelta = delta
           const changes = diffLines(oldStr, newStr)
           const parts: string[] = []
           for (const change of changes) {
@@ -275,18 +286,21 @@ function enrichPermissionRequest(event: AgentEvent & { type: 'permission_request
         for (const l of lines) parts.push(`${prefix}${l}`)
       }
       const toolDiff = parts.join('\n')
+      const delta = countEditDelta(oldStr, newStr)
+      const toolLineDelta = (delta.added > 0 || delta.removed > 0) ? delta : undefined
       const addedTokens = newStr && filePath ? highlightCodeSync(newStr, filePath) : undefined
       const removedTokens = oldStr && filePath ? highlightCodeSync(oldStr, filePath) : undefined
       const toolDiffTokens = (addedTokens || removedTokens) ? { added: addedTokens ?? undefined, removed: removedTokens ?? undefined } : undefined
-      return { ...event, request: { ...event.request, toolDiff, toolDiffTokens } }
+      return { ...event, request: { ...event.request, toolDiff, toolDiffTokens, toolLineDelta } }
     }
     if (toolName === 'Write') {
       const content = String(input.content ?? '')
       if (!content) return event
       const toolDiff = content.split('\n').map((l: string) => `+${l}`).join('\n')
+      const toolLineDelta = { added: countLines(content), removed: 0 }
       const addedTokens = filePath ? highlightCodeSync(content, filePath) : undefined
       const toolDiffTokens = addedTokens ? { added: addedTokens } : undefined
-      return { ...event, request: { ...event.request, toolDiff, toolDiffTokens } }
+      return { ...event, request: { ...event.request, toolDiff, toolDiffTokens, toolLineDelta } }
     }
   } catch { /* ignore highlight errors */ }
   return event
@@ -899,6 +913,12 @@ export class RemoteControlService {
 
   async broadcastAgentEvent(event: AgentEvent): Promise<void> {
     if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
+
+    if (event.type === 'provider_changed') {
+      trace('remote.out', event.type, event)
+      this.queueSend([event])
+      return
+    }
 
     const filter = this.subscribedSession ?? this.remoteSessionFilter
     if (!filter) return

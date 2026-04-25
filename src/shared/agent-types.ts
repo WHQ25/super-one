@@ -338,6 +338,7 @@ export interface PermissionRequest {
   suggestions?: Array<Record<string, unknown>>
   toolDiff?: string
   toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
+  toolLineDelta?: { added: number; removed: number }
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'
@@ -542,6 +543,8 @@ export type AgentEventBase =
   | { type: 'status_change'; status: AgentStatus }
   | { type: 'permission_request'; request: PermissionRequest }
   | { type: 'permission_mode_change'; mode: PermissionMode }
+  | { type: 'agent_setting_change'; selectedModel?: string | null; selectedEffort?: EffortLevel | null }
+  | { type: 'provider_changed'; harnessId: 'claude' | 'codex'; provider: RemoteActiveProvider | null }
   | { type: 'session_init'; session: SessionInfo }
   | { type: 'ask_user_question'; request: AskUserQuestionRequest }
   | { type: 'plan_approval'; request: PlanApprovalRequest }
@@ -559,7 +562,7 @@ export type AgentEventBase =
   | { type: 'codex_thread_started'; messageId: string; threadId: string }
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
-  | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode }
+  | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode; selectedModel?: string | null; selectedEffort?: EffortLevel | null; activeProvider?: RemoteActiveProvider | null }
   | { type: 'prompt_suggestion'; suggestion: string }
   | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; overageStatus?: string; overageResetsAt?: number; overageDisabledReason?: string; isUsingOverage?: boolean; surpassedThreshold?: number }
   | { type: 'assistant_error'; messageId: string; error: string }
@@ -1074,6 +1077,14 @@ export interface ProviderModelSlot {
 
 export type ProviderModelEnv = Partial<Record<ModelBucket, ProviderModelSlot>>
 
+export interface RemoteActiveProvider {
+  id: string
+  name: string
+  presetKey: string | null
+  modelEnv: ProviderModelEnv
+  forcedEffort: EffortLevel | 'auto' | null
+}
+
 export const BUCKET_ENV_KEYS: Record<ModelBucket, { id: string; name?: string; desc?: string }> = {
   default: { id: 'ANTHROPIC_MODEL' },
   opus: {
@@ -1213,6 +1224,7 @@ export const AgentIpcChannels = {
   PERMISSION_RESPONSE: 'agent:permission-response',
   SET_PERMISSION_MODE: 'agent:set-permission-mode',
   SET_SANDBOX_MODE: 'agent:set-sandbox-mode',
+  SET_SESSION_SETTINGS: 'agent:set-session-settings',
   ANSWER_QUESTION: 'agent:answer-question',
   DISMISS_QUESTION: 'agent:dismiss-question',
   RESPOND_PLAN_APPROVAL: 'agent:respond-plan-approval',

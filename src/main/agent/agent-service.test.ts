@@ -348,6 +348,33 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(isLocked()).toBe(false)
   })
 
+  it('respond_permission falls back to subscribed session when projectPath is missing', async () => {
+    const respondToPermission = vi.fn(() => true)
+    const activeSession = { id: 'sid-1', projectPath: '/p', respondToPermission }
+    const broadcasts: unknown[] = []
+
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+      getSession: vi.fn(() => activeSession),
+    }
+    ;(service as unknown as { broadcastEventToRenderer: (e: unknown) => void }).broadcastEventToRenderer = (e) => { broadcasts.push(e) }
+
+    const fakeRemote = {
+      getSubscribedSession: () => ({ projectPath: '/p', sessionId: 'sid-1' }),
+      setRemoteSessionFilter: vi.fn(),
+      clearRemoteSessionFilter: vi.fn(),
+    }
+    service.setRemoteControlService(fakeRemote as never)
+
+    await service.handleRemoteCommand({ type: 'respond_permission', requestId: 'req-1', decision: true, sessionId: 'sid-1' } as never)
+
+    expect(respondToPermission).toHaveBeenCalledWith('req-1', true, undefined, undefined, undefined)
+    expect(broadcasts).toContainEqual({
+      type: 'interaction_resolved', interactionType: 'permission', requestId: 'req-1', projectPath: '/p', sessionId: 'sid-1',
+    })
+  })
+
   it.skip('send_message creates remote agent when sessionId differs from desktop agent', async () => {
     vi.mocked(dbSessions.loadSessionState).mockReturnValue(null)
     const service = new AgentService()

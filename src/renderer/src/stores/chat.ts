@@ -3473,6 +3473,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (shouldDowngrade) patch.permissionMode = 'default'
     set((s) => updateActivePerSession(s, () => patch))
     if (shouldDowngrade) void window.agent.setPermissionMode(activeProject, 'default')
+    void window.agent.setSessionSettings(activeProject, { model, effort: defaultEffort ?? null })
     if (getActivePerSession(get(), activeProject).draftText.length > 0) {
       triggerPrewarm(get(), activeProject)
     }
@@ -3482,6 +3483,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     set((s) => updateActivePerSession(s,() => ({ selectedEffort: effort, effortUserChosen: true })))
+    void window.agent.setSessionSettings(activeProject, { effort: effort ?? null })
     if (getActivePerSession(get(), activeProject).draftText.length > 0) {
       triggerPrewarm(get(), activeProject)
     }

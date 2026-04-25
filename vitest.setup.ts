@@ -1,4 +1,19 @@
 import '@testing-library/jest-dom/vitest'
+import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
+import { resources } from './src/shared/i18n'
+
+if (!i18n.isInitialized) {
+  await i18n
+    .use(initReactI18next)
+    .init({
+      resources,
+      lng: 'en',
+      fallbackLng: 'en',
+      interpolation: { escapeValue: false },
+      returnNull: false,
+    })
+}
 
 if (typeof globalThis.window !== 'undefined' && !(globalThis.window as unknown as Record<string, unknown>).app) {
   const noop = () => Promise.resolve(undefined)

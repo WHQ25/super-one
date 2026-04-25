@@ -4,6 +4,31 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.22.1-alpha] - 2026-04-25
+
+### Added
+
+- **Sidebar tooltip lists online mobile devices with their transport** — hovering the remote indicator shows each connected device and whether it's joined via LAN or relay.
+- **Permission mode, thinking effort, model, and active provider sync to mobile** — desktop now pushes the full session control surface so the mobile chat picker reflects the desktop state.
+- **`get_system_info` returns user agent defaults** — mobile clients receive Claude/Codex default model and effort from desktop preferences on first connect.
+
+### Fixed
+
+- **Effort change mid-session now takes effect on next send** — switching thinking effort via `setSelectedSettings` previously updated the field but did not flag the backend for rebuild, so the next message reused the stale effort. The session now marks itself for rebuild and the new effort is applied on the very next send.
+- **Remote-controlled turns broadcast session start and clean up ownership** — when a mobile client started a remote turn, the desktop UI did not receive a `remote_session_start` event and the remote-owned flag stayed set after the turn ended. Both are now emitted/cleared correctly, and the remote lock also covers the active remote-owned session even without an active subscription.
+- **Device stays online while any transport is connected** — closing one of LAN/relay no longer flips a device offline when the other connection is still live; transport tracking is now per-connection rather than overwriting on each new join.
+- **Session lock releases when mobile unsubscribes without disconnecting** — switching projects on the mobile side previously left the desktop session locked even though the subscription was gone.
+- **Table and `★ Insight` blocks survive mid-stream flush** — chat content reducer no longer drops these block types when streaming events flush partial text.
+
+### Changed
+
+- **Model picker drops provider icon prefix** — both the model selector trigger and the picker list show the model name only, matching the cleaner mobile layout.
+
+### Tests
+
+- **i18next initialized in vitest setup** — tests pulling in modules that touch shared i18n resources no longer warn about uninitialized i18next.
+- **Coverage for `provider-utils`, `get_system_info` defaults, and model lists** — locks down the desktop→mobile metadata surface.
+
 ## [0.22.0-alpha] - 2026-04-24
 
 ### Added

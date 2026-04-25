@@ -24,6 +24,7 @@ const chatState = {
   removeSessionFromMemory: vi.fn(),
   switchSession: vi.fn(async () => {}),
   projectSessions: {} as Record<string, unknown>,
+  remoteSessions: {} as Record<string, string[]>,
 }
 
 const mockWindowApp = {

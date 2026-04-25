@@ -294,7 +294,7 @@ export interface ToolRendererState {
 interface ChatStore {
   projectSessions: Record<string, ProjectState>
   activeProject: string | null
-  remoteSession: { projectPath: string; sessionId: string } | null
+  remoteSessions: Record<string, string[]>
 
   // Bash output live content (not persisted)
   _bashOutputs: Record<string, { content: string; finished: boolean; outputPath?: string }>
@@ -680,6 +680,14 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         ...(event.message.role === 'assistant'
           ? { lastAssistantMessageId: event.message.id, streamingTokens: { input: 0, output: 0 } }
           : {}),
+      }
+    }
+
+    case 'user_message_appended': {
+      if (session.messages.some((m) => m.id === event.message.id)) return {}
+      return {
+        messages: [...session.messages, event.message],
+        lastEventAt: Date.now(),
       }
     }
 
@@ -2226,10 +2234,33 @@ async function runCodexCommand(
 
 // --- Store implementation ---
 
+function isRemoteSession(state: ChatStore, projectPath: string, sessionId: string | null | undefined): boolean {
+  if (!sessionId) return false
+  const ids = state.remoteSessions[projectPath]
+  return !!ids && ids.includes(sessionId)
+}
+
+function addRemoteSession(map: Record<string, string[]>, projectPath: string, sessionId: string): Record<string, string[]> {
+  const existing = map[projectPath] ?? []
+  if (existing.includes(sessionId)) return map
+  return { ...map, [projectPath]: [...existing, sessionId] }
+}
+
+function removeRemoteSession(map: Record<string, string[]>, projectPath: string, sessionId: string): Record<string, string[]> {
+  const existing = map[projectPath]
+  if (!existing || !existing.includes(sessionId)) return map
+  const next = existing.filter((id) => id !== sessionId)
+  if (next.length === 0) {
+    const { [projectPath]: _omit, ...rest } = map
+    return rest
+  }
+  return { ...map, [projectPath]: next }
+}
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   projectSessions: {},
   activeProject: null,
-  remoteSession: null,
+  remoteSessions: {},
   _bashOutputs: {},
   toolRenderers: {},
 
@@ -2352,7 +2383,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           _historyHydrated: !event.isSubscribe,
         }
         return {
-          remoteSession: { projectPath, sessionId },
+          remoteSessions: addRemoteSession(s.remoteSessions, projectPath, sessionId),
           projectSessions: {
             ...s.projectSessions,
             [projectPath]: {
@@ -2368,12 +2399,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return
     }
     if (event.type === 'remote_session_end') {
-      set((s) => {
-        if (s.remoteSession?.projectPath === event.remoteProjectPath && s.remoteSession?.sessionId === event.remoteSessionId) {
-          return { remoteSession: null }
-        }
-        return {}
-      })
+      set((s) => ({
+        remoteSessions: removeRemoteSession(s.remoteSessions, event.remoteProjectPath, event.remoteSessionId),
+      }))
       return
     }
 
@@ -2603,7 +2631,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Non-active session went idle → save, mark unseen, and evict from _sessions after save completes
       if (event.type === 'status_change' && event.status === 'idle' && targetSid !== updatedProject._activeSessionId) {
         if (!_isLiveSession(updatedSession)) {
-          const isRemoteSubscribed = s.remoteSession?.projectPath === projectPath && s.remoteSession?.sessionId === targetSid
+          const isRemoteSubscribed = isRemoteSession(s, projectPath, targetSid)
           if (!isRemoteSubscribed && effectiveSid) {
             updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
             if (updatedSession.sessionProvider === 'codex') {
@@ -2746,8 +2774,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const project = get().projectSessions[currentProject]
       if (project) {
         const activeSession = project._activeSessionId ? project._sessions[project._activeSessionId] : null
-        const rs = get().remoteSession
-        const isRemote = rs && rs.projectPath === currentProject && project._activeSessionId === rs.sessionId
+        const isRemote = isRemoteSession(get(), currentProject, project._activeSessionId)
         if ((activeSession && (_isBusyStatus(activeSession.status) || activeSession.awaitingAssistantReply)) && !isRemote) {
           await _parkActiveSession(currentProject, project._activeSessionId)
         }
@@ -2819,13 +2846,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   sendMessage: async (content: string, segments?: Array<{ text: string; isPaste: boolean }>) => {
-    const { activeProject, remoteSession } = get()
+    const { activeProject } = get()
     if (!activeProject) return
     perfEvent('message_send', { project: activeProject, len: content.length })
-    if (remoteSession && remoteSession.projectPath === activeProject) {
-      const project = get().projectSessions[activeProject]
-      if (project?._activeSessionId === remoteSession.sessionId) return
-    }
+    if (isRemoteSession(get(), activeProject, get().projectSessions[activeProject]?._activeSessionId)) return
 
     {
       const project = getProject(get())
@@ -3068,12 +3092,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   approveCodexPlan: async () => {
-    const { activeProject, remoteSession } = get()
+    const { activeProject } = get()
     if (!activeProject) return
-    if (remoteSession && remoteSession.projectPath === activeProject) {
-      const project = get().projectSessions[activeProject]
-      if (project?._activeSessionId === remoteSession.sessionId) return
-    }
+    if (isRemoteSession(get(), activeProject, get().projectSessions[activeProject]?._activeSessionId)) return
 
     const context = getCodexPlanActionContext(get, activeProject)
     if (!context) return
@@ -3113,12 +3134,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   rejectCodexPlan: async (feedback) => {
-    const { activeProject, remoteSession } = get()
+    const { activeProject } = get()
     if (!activeProject) return
-    if (remoteSession && remoteSession.projectPath === activeProject) {
-      const project = get().projectSessions[activeProject]
-      if (project?._activeSessionId === remoteSession.sessionId) return
-    }
+    if (isRemoteSession(get(), activeProject, get().projectSessions[activeProject]?._activeSessionId)) return
 
     const context = getCodexPlanActionContext(get, activeProject)
     if (!context) return
@@ -3175,7 +3193,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   disconnectRemoteSession: () => {
     void window.agent.disconnectRemoteSession()
-    set({ remoteSession: null })
+    set({ remoteSessions: {} })
   },
 
   interrupt: async () => {
@@ -4279,11 +4297,9 @@ export function useActiveSession<T>(selector: (s: ActiveSessionView) => T): T {
 
 export function useIsRemoteLocked(): boolean {
   return useChatStore((store) => {
-    const rs = store.remoteSession
-    if (!rs || !store.activeProject) return false
-    if (rs.projectPath !== store.activeProject) return false
+    if (!store.activeProject) return false
     const project = store.projectSessions[store.activeProject]
-    return project?._activeSessionId === rs.sessionId
+    return isRemoteSession(store, store.activeProject, project?._activeSessionId)
   })
 }
 

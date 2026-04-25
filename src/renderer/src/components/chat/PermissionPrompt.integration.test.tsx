@@ -149,7 +149,7 @@ function firePermissionRequest(sessionId: string | undefined, requestId = 'r1') 
 }
 
 beforeEach(() => {
-  useChatStore.setState({ projectSessions: {}, activeProject: null, remoteSession: null })
+  useChatStore.setState({ projectSessions: {}, activeProject: null, remoteSessions: {} })
   vi.clearAllMocks()
 })
 

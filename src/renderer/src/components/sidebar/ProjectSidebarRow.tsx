@@ -11,6 +11,8 @@ import type { Automation, RecentFolder, SessionHistoryEntry } from '../../../../
 import { getPendingReason, getSessionTitle, isLiveSession } from './session-state-utils'
 import { AutomationDialog } from '../AutomationDialog'
 
+const EMPTY_REMOTE_SESSION_IDS: string[] = []
+
 interface ProjectSidebarRowProps {
   folder: RecentFolder
   currentFolder: string | null
@@ -48,7 +50,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 }: ProjectSidebarRowProps) {
   const { t } = useTranslation()
   const projectSession = useChatStore((s) => s.projectSessions[folder.path])
-  const remoteSessionId = useChatStore((s) => s.remoteSession?.projectPath === folder.path ? s.remoteSession.sessionId : null)
+  const remoteSessionIds = useChatStore((s) => s.remoteSessions[folder.path] ?? EMPTY_REMOTE_SESSION_IDS)
 
   const derived = useMemo(() => {
     const isActive = hasRealProject && folder.path === currentFolder
@@ -328,7 +330,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                                       ? <CalendarClock className="size-3 text-sidebar-foreground/70" />
                                       : session.isWorktree
                                         ? <GitFork className="size-3 text-sidebar-foreground/70" />
-                                        : remoteSessionId === session.sessionId
+                                        : remoteSessionIds.includes(session.sessionId)
                                           ? <Smartphone className="size-3 text-sidebar-foreground/70" />
                                           : <MessageSquare className="size-3 text-sidebar-foreground/70" />
                               }

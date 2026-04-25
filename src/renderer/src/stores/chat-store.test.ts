@@ -131,6 +131,7 @@ function resetStore() {
   useChatStore.setState({
     projectSessions: {},
     activeProject: null,
+    remoteSessions: {},
     availableModels: [],
     account: {},
     globalSlashCommands: [],
@@ -5024,5 +5025,88 @@ describe('session id drift regression (permission prompt stuck)', () => {
     const proj = useChatStore.getState().projectSessions['/test']
     expect(proj._sessions['alpha'].pendingPermissions).toHaveLength(1)
     expect(proj._sessions['beta'].pendingPermissions).toHaveLength(1)
+  })
+})
+
+describe('multi-mobile remoteSessions tracking', () => {
+  beforeEach(() => {
+    resetStore()
+    vi.clearAllMocks()
+  })
+
+  it('tracks two concurrent remote sessions independently (no overwrite)', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+    } as AgentEvent)
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-B',
+    } as AgentEvent)
+
+    const ids = useChatStore.getState().remoteSessions['/test'] ?? []
+    expect(new Set(ids)).toEqual(new Set(['sess-A', 'sess-B']))
+  })
+
+  it('remote_session_end for one session does not clear the other', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+    } as AgentEvent)
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-B',
+    } as AgentEvent)
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+    } as AgentEvent)
+
+    expect(useChatStore.getState().remoteSessions['/test']).toEqual(['sess-B'])
+  })
+
+  it('removes the project key from remoteSessions when its last remote session ends', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+    } as AgentEvent)
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+    } as AgentEvent)
+
+    expect(useChatStore.getState().remoteSessions['/test']).toBeUndefined()
+  })
+
+  it('user_message_appended event echoes a remote-origin user message into the routed session', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+    } as AgentEvent)
+
+    const userMsg = makeMessage('user-1', 'user' as never)
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'user_message_appended',
+      sessionId: 'sess-A',
+      message: userMsg as never,
+    }))
+
+    const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-A']
+    expect(sess.messages.map((m) => m.id)).toContain('user-1')
+  })
+
+  it('user_message_appended is idempotent (duplicate id is not appended twice)', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+    } as AgentEvent)
+
+    const userMsg = makeMessage('user-1', 'user' as never)
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'user_message_appended', sessionId: 'sess-A', message: userMsg as never,
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'user_message_appended', sessionId: 'sess-A', message: userMsg as never,
+    }))
+
+    const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-A']
+    expect(sess.messages.filter((m) => m.id === 'user-1')).toHaveLength(1)
   })
 })

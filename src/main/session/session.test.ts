@@ -1402,6 +1402,33 @@ describe('Session ownership', () => {
     expect(backend.sendCalls).toHaveLength(1)
   })
 
+  it('remote-origin send forwards user_message_appended so desktop UI can echo the message', async () => {
+    const { session, backend } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    const events: import('../../shared/agent-types').AgentEvent[] = []
+    session.on((e) => events.push(e))
+    const sendPromise = session.send({ content: 'hello from mobile' }, { providerOrigin: 'remote' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await sendPromise
+    const userEvent = events.find((e) => e.type === 'user_message_appended')
+    expect(userEvent).toBeDefined()
+    if (userEvent && userEvent.type === 'user_message_appended') {
+      expect(userEvent.message.role).toBe('user')
+    }
+  })
+
+  it('local-origin send does NOT forward user_message_appended (renderer already has optimistic insert)', async () => {
+    const { session, backend } = makeSession()
+    const events: import('../../shared/agent-types').AgentEvent[] = []
+    session.on((e) => events.push(e))
+    const sendPromise = session.send({ content: 'local' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await sendPromise
+    expect(events.find((e) => e.type === 'user_message_appended')).toBeUndefined()
+  })
+
   it('dispose clears subscribers, releases owner, emits closed event', async () => {
     const { session } = makeSession()
     session.claim({ kind: 'remote', deviceId: 'dev-A' })

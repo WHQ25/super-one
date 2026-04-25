@@ -856,11 +856,15 @@ export class Session implements SessionContract {
 
   private appendUserMessage(request: SendMessageRequest, providerOrigin: 'local' | 'remote'): void {
     const userMsg = buildClaudeUserMessage(request, providerOrigin)
-    if (!this._messages.some((m) => m.id === userMsg.id)) {
+    const wasNew = !this._messages.some((m) => m.id === userMsg.id)
+    if (wasNew) {
       this._messages = [...this._messages, userMsg]
     }
     this._lastUserMessageAt = Date.now()
     this.notifyStateChange()
+    if (wasNew && providerOrigin === 'remote') {
+      this.forwardEvent({ type: 'user_message_appended', message: userMsg } as AgentEvent)
+    }
   }
 
   private notifyStateChange(): void {

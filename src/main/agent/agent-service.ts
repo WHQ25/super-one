@@ -628,6 +628,7 @@ export class AgentService {
         try {
           const isClaude = command.provider !== 'codex'
           const cached = getCachedResources()
+          const { agentPreference } = readAppSettings()
           log.info('[get_system_info] provider=%s hasCached=%s cachedModels=%d projectPath=%s', command.provider, !!cached, cached?.models?.length ?? 0, command.projectPath)
           if (isClaude) {
             const cachedModels = cached?.models as ModelOption[] | undefined
@@ -647,6 +648,11 @@ export class AgentService {
               permissionModes: ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions', 'dontAsk'],
               sandboxModes: ['off', 'on', 'auto'],
               activeProvider,
+              defaults: {
+                model: agentPreference.claude.defaultModel || null,
+                effort: agentPreference.claude.defaultEffort || null,
+                permissionMode: agentPreference.claude.defaultPermissionMode || null,
+              },
             })
           } else {
             const models = this.codexListModels ? await this.codexListModels(command.projectPath) : []
@@ -665,6 +671,10 @@ export class AgentService {
               account: this.codexGetAuthStatus?.(command.projectPath) ?? null,
               permissionPresets: ['default', 'full-access'],
               activeProvider,
+              defaults: {
+                model: agentPreference.codex.defaultModel || null,
+                reasoningEffort: agentPreference.codex.defaultReasoningEffort || null,
+              },
             })
           }
         } catch (err) {

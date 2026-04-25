@@ -375,6 +375,100 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(isLocked()).toBe(false)
   })
 
+  it('remote lock covers active remote-owned sessions without subscription', async () => {
+    const service = new AgentService()
+    const activeSession = { id: 'sid-1', projectPath: '/p' }
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+    }
+    ;(service as unknown as { remoteSession: { projectPath: string; sessionId: string } | null }).remoteSession = {
+      projectPath: '/p',
+      sessionId: 'sid-1',
+    }
+
+    const isLocked = () => (service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')
+
+    expect(isLocked()).toBe(true)
+  })
+
+  it('send_message broadcasts remote_session_start for claude remote-owned sessions', async () => {
+    const service = new AgentService()
+    const send = vi.fn().mockResolvedValue(undefined)
+    const activeSession = { id: 'sid-1', projectPath: '/p', send }
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+      getSession: vi.fn(() => activeSession),
+    }
+    const events: unknown[] = []
+    ;(service as unknown as { broadcastEventToRenderer: (event: unknown) => void }).broadcastEventToRenderer = (event) => {
+      events.push(event)
+    }
+    const setRemoteSessionFilter = vi.fn()
+    service.setRemoteControlService({
+      setRemoteSessionFilter,
+      getSubscribedSession: () => null,
+    } as never)
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      content: 'hello',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+    } as never)
+
+    expect(setRemoteSessionFilter).toHaveBeenCalledWith('/p', 'sid-1')
+    expect(send).toHaveBeenCalledWith({
+      content: 'hello',
+      model: undefined,
+      effort: undefined,
+      images: undefined,
+      priority: undefined,
+      clientMessageId: undefined,
+    })
+    expect(events).toContainEqual({
+      type: 'remote_session_start',
+      remoteProjectPath: '/p',
+      remoteSessionId: 'sid-1',
+    })
+  })
+
+  it('codex remote turn clears remote-owned state after broadcasting end', async () => {
+    const service = new AgentService()
+    const send = vi.fn().mockResolvedValue(undefined)
+    const activeSession = { id: 'sid-1', projectPath: '/p', snapshot: { harnessId: 'codex' }, send }
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+      getSession: vi.fn(() => activeSession),
+    }
+    const events: unknown[] = []
+    ;(service as unknown as { broadcastEventToRenderer: (event: unknown) => void }).broadcastEventToRenderer = (event) => {
+      events.push(event)
+    }
+    const clearRemoteSessionFilter = vi.fn()
+    service.setRemoteControlService({
+      setRemoteSessionFilter: vi.fn(),
+      clearRemoteSessionFilter,
+      getSubscribedSession: () => null,
+    } as never)
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      content: 'hello',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+      provider: 'codex',
+    } as never)
+
+    expect(clearRemoteSessionFilter).toHaveBeenCalled()
+    expect((service as unknown as { remoteSession: unknown }).remoteSession).toBeNull()
+    expect((service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')).toBe(false)
+    expect(events).toContainEqual({
+      type: 'remote_session_end',
+      remoteProjectPath: '/p',
+      remoteSessionId: 'sid-1',
+    })
+  })
+
   it('respond_permission falls back to subscribed session when projectPath is missing', async () => {
     const respondToPermission = vi.fn(() => true)
     const activeSession = { id: 'sid-1', projectPath: '/p', respondToPermission }

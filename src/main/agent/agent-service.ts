@@ -81,10 +81,11 @@ export class AgentService {
   }
 
   private isRemoteLockedSession(projectPath: string): boolean {
-    const sub = this.remoteControlService?.getSubscribedSession()
-    if (!sub || sub.projectPath !== projectPath) return false
     const activeSession = this.sessionManager?.getActiveSession(projectPath)
-    return activeSession?.id === sub.sessionId
+    const sub = this.remoteControlService?.getSubscribedSession()
+    if (sub?.projectPath === projectPath && activeSession?.id === sub.sessionId) return true
+    if (this.remoteSession?.projectPath === projectPath && activeSession?.id === this.remoteSession.sessionId) return true
+    return false
   }
 
   private resolveRemoteProjectPath(commandPath: string | undefined, sessionId: string): string | null {
@@ -242,6 +243,10 @@ export class AgentService {
       }, { providerOrigin: 'remote' })
     } finally {
       this.remoteControlService?.clearRemoteSessionFilter()
+      if (this.remoteSession?.projectPath === projectPath && this.remoteSession.sessionId === sessionId) {
+        this.remoteOwnedSids.delete(sessionId)
+        this.remoteSession = null
+      }
       this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId })
     }
   }
@@ -327,6 +332,7 @@ export class AgentService {
         this.remoteSession = { projectPath, sessionId: sid }
         this.remoteOwnedSids.add(sid)
         this.remoteControlService?.setRemoteSessionFilter(projectPath, sid)
+        this.broadcastEventToRenderer({ type: 'remote_session_start', remoteProjectPath: projectPath, remoteSessionId: sid })
 
         trace('remote.debug', 'send_message:dispatch', { sid, targetSid, projectPath })
         await session.send({

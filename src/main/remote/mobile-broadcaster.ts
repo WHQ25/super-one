@@ -2,7 +2,7 @@ import type { AgentEvent } from '../../shared/agent-types'
 import type { SessionManager } from '../session/types'
 
 export interface MobileTransport {
-  broadcastAgentEvent(event: AgentEvent): Promise<void>
+  sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void>
 }
 
 export class MobileBroadcaster {
@@ -12,14 +12,15 @@ export class MobileBroadcaster {
   ) {}
 
   async broadcast(event: AgentEvent): Promise<void> {
-    if (!this.shouldBroadcast(event)) return
-    await this.transport.broadcastAgentEvent(event)
-  }
-
-  private shouldBroadcast(event: AgentEvent): boolean {
-    if (!event.sessionId) return true
+    if (!event.sessionId) {
+      await this.transport.sendAgentEvent(event)
+      return
+    }
     const session = this.sessionManager.getSession(event.sessionId)
-    if (!session) return false
-    return session.owner.kind === 'remote' || session.subscribers.size > 0
+    if (!session) return
+    const targets = new Set<string>(session.subscribers)
+    if (session.owner.kind === 'remote') targets.add(session.owner.deviceId)
+    if (targets.size === 0) return
+    await this.transport.sendAgentEvent(event, [...targets])
   }
 }

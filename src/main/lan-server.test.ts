@@ -176,6 +176,50 @@ describe('LanServer', () => {
     c2.close()
   })
 
+  it('broadcastFrame routes to specified target deviceIds only when filter is given', async () => {
+    const { aesKey } = await makeKeys()
+    server = new LanServer({
+      getAesKey: () => aesKey,
+      isPairedDevice: () => true,
+      onCommand: vi.fn(),
+      hostName: 'test-host',
+    })
+    const { port } = await server.start({ host: '127.0.0.1' })
+
+    const c1 = new WebSocket(`ws://127.0.0.1:${port}/ws?role=mobile`)
+    const c2 = new WebSocket(`ws://127.0.0.1:${port}/ws?role=mobile`)
+    await Promise.all([
+      new Promise<void>((r) => c1.once('open', () => r())),
+      new Promise<void>((r) => c2.once('open', () => r())),
+    ])
+    c1.send(JSON.stringify({ type: 'register', deviceName: 'A', mobileDeviceId: 'dev-1' }))
+    c2.send(JSON.stringify({ type: 'register', deviceName: 'B', mobileDeviceId: 'dev-2' }))
+    await Promise.all([
+      nextFrame(c1, (f) => f.type === 'handshake'),
+      nextFrame(c2, (f) => f.type === 'handshake'),
+    ])
+
+    server.broadcastFrame(JSON.stringify({ type: 'event', data: 'only-for-1' }), ['dev-1'])
+
+    const f1 = await nextFrame(c1, (f) => f.type === 'event')
+    expect(f1.data).toBe('only-for-1')
+
+    let c2Received = false
+    const onC2Msg = (raw: WebSocket.RawData) => {
+      try {
+        const f = JSON.parse(raw.toString())
+        if (f.type === 'event') c2Received = true
+      } catch {}
+    }
+    c2.on('message', onC2Msg)
+    await new Promise((r) => setTimeout(r, 100))
+    c2.off('message', onC2Msg)
+    expect(c2Received).toBe(false)
+
+    c1.close()
+    c2.close()
+  })
+
   it('reports isEmpty() correctly as clients come and go', async () => {
     const { aesKey } = await makeKeys()
     server = new LanServer({

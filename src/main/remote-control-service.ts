@@ -513,9 +513,9 @@ export class RemoteControlService {
   private widgetToolIds = new Set<string>()
   private agentToolIds = new Set<string>()
   private agentOutputFiles = new Map<string, string>()
-  private pendingText: { messageId: string; text: string; parentToolUseId: string | null } | null = null
+  private pendingText: { messageId: string; text: string; parentToolUseId: string | null; targets?: string[] } | null = null
   private pendingTextFlushedLen = 0
-  private pendingThinking: { messageId: string; text: string; parentToolUseId: string | null } | null = null
+  private pendingThinking: { messageId: string; text: string; parentToolUseId: string | null; targets?: string[] } | null = null
 
   private relayUrl = ''
 
@@ -898,7 +898,7 @@ export class RemoteControlService {
     if (!this.hasAnyMobileTransport()) return
     try {
       const data = await encryptPayload(this.keys.aesKey, event)
-      this.broadcastEventFrame(data)
+      this.sendEventFrame(data)
     } catch (err) {
       log.error('[RemoteControl] Failed to send event to mobile:', err)
     }
@@ -910,21 +910,24 @@ export class RemoteControlService {
     return relayOpen || lanActive
   }
 
-  private broadcastEventFrame(encryptedData: string): void {
-    const frame = JSON.stringify({ type: 'event', data: encryptedData })
+  private sendEventFrame(encryptedData: string, targetDeviceIds?: string[]): void {
+    const framePayload: Record<string, unknown> = { type: 'event', data: encryptedData }
+    if (targetDeviceIds && targetDeviceIds.length > 0) framePayload.targets = targetDeviceIds
+    const frame = JSON.stringify(framePayload)
     if (this.relayWs?.readyState === WebSocket.OPEN) this.relayWs.send(frame)
-    this.lanServer?.broadcastFrame(frame)
+    this.lanServer?.broadcastFrame(frame, targetDeviceIds)
   }
 
-  async broadcastAgentEvent(event: AgentEvent): Promise<void> {
-    if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
+  async sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void> {
+    if (!this.keys) return
+    if (!this.hasAnyMobileTransport()) return
 
     if (event.type === 'provider_changed') {
       trace('remote.out', event.type, event)
-      this.queueSend([event])
+      this.queueSend([event], targetDeviceIds)
       return
     }
-    trace('remote.debug', 'broadcastAgentEvent:pass', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId })
+    trace('remote.debug', 'sendAgentEvent:pass', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, targets: targetDeviceIds })
 
     if (event.type === 'tool_input_delta' && 'toolUseId' in event) {
       const entry = this.todoToolInputs.get(event.toolUseId as string)
@@ -946,7 +949,7 @@ export class RemoteControlService {
       this.widgetToolIds.clear()
       this.agentToolIds.clear()
       this.agentOutputFiles.clear()
-      this.queueSend(this.drainPending(true))
+      this.drainPending(true)
     }
 
     if (event.type === 'content_delta') {
@@ -954,14 +957,14 @@ export class RemoteControlService {
         const parentId = event.delta.parentToolUseId ?? null
         const msgId = event.messageId
         if (this.pendingText && (this.pendingText.messageId !== msgId || this.pendingText.parentToolUseId !== parentId)) {
-          this.queueSend(this.collectPendingText(true))
+          this.flushPendingText(true)
         }
-        if (!this.pendingText) this.pendingText = { messageId: msgId, text: '', parentToolUseId: parentId }
+        if (!this.pendingText) this.pendingText = { messageId: msgId, text: '', parentToolUseId: parentId, targets: targetDeviceIds }
         this.pendingText.text += event.delta.text
         const pending = this.pendingText.text
         const newLen = pending.length - this.pendingTextFlushedLen
         if (newLen > 0 && (pending.lastIndexOf('\n\n') > this.pendingTextFlushedLen || newLen >= 1000)) {
-          this.queueSend(this.collectPendingText())
+          this.flushPendingText()
         }
         return
       }
@@ -969,9 +972,9 @@ export class RemoteControlService {
         const parentId = event.delta.parentToolUseId ?? null
         const msgId = event.messageId
         if (this.pendingThinking && (this.pendingThinking.messageId !== msgId || this.pendingThinking.parentToolUseId !== parentId)) {
-          this.queueSend(this.collectPendingThinking())
+          this.flushPendingThinking()
         }
-        if (!this.pendingThinking) this.pendingThinking = { messageId: msgId, text: '', parentToolUseId: parentId }
+        if (!this.pendingThinking) this.pendingThinking = { messageId: msgId, text: '', parentToolUseId: parentId, targets: targetDeviceIds }
         this.pendingThinking.text += event.delta.thinking
         const pending = this.pendingThinking.text
         const breakIdx = pending.lastIndexOf('\n\n')
@@ -982,14 +985,14 @@ export class RemoteControlService {
             const delta = { type: 'thinking' as const, thinking: flushed, parentToolUseId: parentId }
             const ev = { type: 'content_delta' as const, messageId: msgId, delta } as unknown as AgentEvent
             trace('remote.out', ev.type, ev, msgId)
-            this.queueSend([ev])
+            this.queueSend([ev], targetDeviceIds)
           }
         } else if (pending.length >= 1000) {
-          this.queueSend(this.collectPendingThinking())
+          this.flushPendingThinking()
         }
         return
       }
-      const flushed = this.drainPending(true)
+      this.drainPending(true)
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
         try { const p = JSON.parse(event.delta.input); this.bashToolCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
       }
@@ -1001,7 +1004,6 @@ export class RemoteControlService {
       }
       if (event.delta.type === 'tool_use' && TODO_TOOLS.has(event.delta.toolName)) {
         this.todoToolInputs.set(event.delta.toolUseId, { toolName: event.delta.toolName, input: event.delta.input })
-        this.queueSend(flushed)
         return
       }
       let stripped: AgentEvent
@@ -1024,12 +1026,11 @@ export class RemoteControlService {
         stripped = stripEventForRemote(event, event.projectPath)
       }
       trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
-      flushed.push(stripped)
-      this.queueSend(flushed)
+      this.queueSend([stripped], targetDeviceIds)
       return
     }
 
-    const flushed = DRAIN_BEFORE_EVENTS.has(event.type) ? this.drainPending(true) : []
+    if (DRAIN_BEFORE_EVENTS.has(event.type)) this.drainPending(true)
     let enriched = event
     if (event.type === 'task_progress' && event.toolUseId) {
       const outputFile = this.agentOutputFiles.get(event.toolUseId)
@@ -1043,8 +1044,7 @@ export class RemoteControlService {
     }
     const stripped = stripEventForRemote(enriched, event.projectPath)
     trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
-    flushed.push(stripped)
-    this.queueSend(flushed)
+    this.queueSend([stripped], targetDeviceIds)
   }
 
   private async sendResponse(requestId: string, data: unknown): Promise<void> {
@@ -1067,29 +1067,29 @@ export class RemoteControlService {
     }
   }
 
-  private collectPendingThinking(): AgentEvent[] {
+  private collectPendingThinking(): { events: AgentEvent[]; targets?: string[] } {
     if (!this.pendingThinking || !this.pendingThinking.text.trim()) {
       this.pendingThinking = null
-      return []
+      return { events: [] }
     }
-    const { messageId, text, parentToolUseId } = this.pendingThinking
+    const { messageId, text, parentToolUseId, targets } = this.pendingThinking
     this.pendingThinking = null
     const delta = { type: 'thinking' as const, thinking: text, parentToolUseId }
     const event = { type: 'content_delta' as const, messageId, delta } as unknown as AgentEvent
     trace('remote.out', event.type, event, messageId)
-    return [event]
+    return { events: [event], targets }
   }
 
-  private collectPendingText(final = false): AgentEvent[] {
+  private collectPendingText(final = false): { events: AgentEvent[]; targets?: string[] } {
     if (!this.pendingText || !this.pendingText.text.trim()) {
       this.pendingText = null
       this.pendingTextFlushedLen = 0
-      return []
+      return { events: [] }
     }
-    const { messageId, text, parentToolUseId } = this.pendingText
+    const { messageId, text, parentToolUseId, targets } = this.pendingText
     const { segments, remainder } = splitTextIntoBlocks(text, !final)
     if (remainder) {
-      this.pendingText = { messageId, text: remainder, parentToolUseId }
+      this.pendingText = { messageId, text: remainder, parentToolUseId, targets }
       this.pendingTextFlushedLen = remainder.length
     } else {
       this.pendingText = null
@@ -1104,20 +1104,31 @@ export class RemoteControlService {
       trace('remote.out', event.type, event, messageId)
       events.push(event)
     }
-    return events
+    return { events, targets }
   }
 
-  private drainPending(final = false): AgentEvent[] {
-    return [...this.collectPendingText(final), ...this.collectPendingThinking()]
+  private flushPendingText(final = false): void {
+    const r = this.collectPendingText(final)
+    if (r.events.length > 0) this.queueSend(r.events, r.targets)
   }
 
-  private queueSend(events: AgentEvent[]): void {
+  private flushPendingThinking(): void {
+    const r = this.collectPendingThinking()
+    if (r.events.length > 0) this.queueSend(r.events, r.targets)
+  }
+
+  private drainPending(final = false): void {
+    this.flushPendingText(final)
+    this.flushPendingThinking()
+  }
+
+  private queueSend(events: AgentEvent[], targetDeviceIds?: string[]): void {
     if (events.length === 0) return
     this.sendQueue = this.sendQueue.then(async () => {
       if (!this.keys) return
       if (!this.hasAnyMobileTransport()) return
       const data = await encryptPayload(this.keys.aesKey, events)
-      this.broadcastEventFrame(data)
+      this.sendEventFrame(data, targetDeviceIds)
     }).catch(err => log.error('[RemoteControl] Failed to send events:', err))
   }
 }

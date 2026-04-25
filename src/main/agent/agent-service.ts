@@ -267,10 +267,10 @@ export class AgentService {
     }, {
       onStart: isNewSession
         ? () => {
-            this.remoteControlService?.broadcastAgentEvent({
+            this.remoteControlService?.sendAgentEvent({
               type: 'session_init', projectPath, sessionId,
               session: { sessionId, permissionMode: command.permissionPreset ?? 'default' },
-            } as AgentEvent)
+            } as AgentEvent, [deviceId])
           }
         : undefined,
     })

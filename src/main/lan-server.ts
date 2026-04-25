@@ -124,16 +124,19 @@ export class LanServer {
     }
   }
 
-  broadcastFrame(frameJson: string): void {
-    for (const ws of this.registeredTargets()) {
+  broadcastFrame(frameJson: string, targetDeviceIds?: string[]): void {
+    const filter = targetDeviceIds ? new Set(targetDeviceIds) : null
+    for (const ws of this.registeredTargets(filter)) {
       try { ws.send(frameJson) } catch { /* ignore */ }
     }
   }
 
-  private registeredTargets(): WebSocket[] {
+  private registeredTargets(filter?: Set<string> | null): WebSocket[] {
     const targets: WebSocket[] = []
     for (const [ws, state] of this.clients) {
-      if (state.deviceId && ws.readyState === WebSocket.OPEN) targets.push(ws)
+      if (!state.deviceId || ws.readyState !== WebSocket.OPEN) continue
+      if (filter && !filter.has(state.deviceId)) continue
+      targets.push(ws)
     }
     return targets
   }

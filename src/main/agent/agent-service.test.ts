@@ -551,7 +551,7 @@ describe('AgentService.handleRemoteCommand', () => {
       events.push(event)
     }
     service.setRemoteControlService({
-      broadcastAgentEvent: vi.fn(),
+      sendAgentEvent: vi.fn(),
     } as never)
 
     await service.handleRemoteCommand({

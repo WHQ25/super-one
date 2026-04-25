@@ -348,7 +348,11 @@ export class Session implements SessionContract {
     }
     if (opts.effort !== undefined) {
       const next = (opts.effort ?? undefined) as SendMessageRequest['effort']
-      if (this.effort !== next) { this.effort = next; changed = true }
+      if (this.effort !== next) {
+        this.effort = next
+        changed = true
+        if (this.backendStarted) this._needsRebuild = true
+      }
     }
     if (!changed) return
     this.forwardEvent({

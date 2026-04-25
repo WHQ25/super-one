@@ -323,6 +323,22 @@ describe('Session state machine', () => {
     await p2
   })
 
+  it('setSelectedSettings effort triggers backend.rebuild on next send', async () => {
+    const p1 = session.send({ content: 'first', effort: 'low' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p1
+
+    session.setSelectedSettings({ effort: 'xhigh' })
+
+    const p2 = session.send({ content: 'second', effort: 'xhigh' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    expect(backend.rebuildCalls[0]).toMatchObject({ effort: 'xhigh' })
+    backend.resolveSend?.()
+    await p2
+  })
+
   it('send() with changed additionalDirs triggers backend.rebuild', async () => {
     const p1 = session.send({ content: 'first', additionalDirs: ['/a'] })
     await new Promise((r) => setTimeout(r, 0))

@@ -95,10 +95,12 @@ function buildCombined(markSvg: string, textSvg: string, textMultiple: number, s
   const space = markH * spaceMultiple
   const totalW = markW + space + textW
   const totalH = markH
+  const markScale = markH / mark.h
+  const textScale = textH / text.h
   const textY = (totalH - textH) / 2
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalW.toFixed(3)} ${totalH}" fill="currentColor">` +
-    `<svg x="0" y="0" width="${markW}" height="${markH}" viewBox="0 0 ${mark.w} ${mark.h}">${innerSvg(markSvg)}</svg>` +
-    `<svg x="${(markW + space).toFixed(3)}" y="${textY.toFixed(3)}" width="${textW.toFixed(3)}" height="${textH}" viewBox="0 0 ${text.w} ${text.h}" fill="currentColor">${innerSvg(textSvg)}</svg>` +
+    `<g transform="scale(${markScale.toFixed(6)})">${innerSvg(markSvg)}</g>` +
+    `<g transform="translate(${(markW + space).toFixed(3)} ${textY.toFixed(3)}) scale(${textScale.toFixed(6)})" fill="currentColor">${innerSvg(textSvg)}</g>` +
     `</svg>`
 }
 

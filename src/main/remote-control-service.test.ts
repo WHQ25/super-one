@@ -21,6 +21,7 @@ import {
   truncateBashOutput,
   stripMessagesForRemote,
   stripEventForRemote,
+  RemoteControlService,
 } from './remote-control-service'
 import type { AgentEvent, PermissionRequest } from '../shared/agent-types'
 
@@ -301,6 +302,41 @@ describe('truncateBashOutput', () => {
     const result = truncateBashOutput(lines.join('\n'))
     expect(result.split('\n').length).toBeLessThanOrEqual(101)
     expect(result.length).toBeLessThanOrEqual(5001)
+  })
+})
+
+describe('RemoteControlService connected devices', () => {
+  it('keeps device online while any transport is still connected', () => {
+    const registered: unknown[] = []
+    const disconnected: unknown[] = []
+    const service = new RemoteControlService('wss://relay.example', {
+      onCommand: vi.fn(),
+      onClientRegistered: (info) => registered.push(info),
+      onClientDisconnected: (info) => disconnected.push(info),
+    })
+    const internals = service as unknown as {
+      markDeviceOnline: (name: string, id: string, via: 'lan' | 'relay') => void
+      markDeviceOffline: (id: string, via: 'lan' | 'relay') => void
+    }
+
+    internals.markDeviceOnline('Phone', 'dev-1', 'relay')
+    expect(service.getOnlineDevices().get('dev-1')).toEqual({ name: 'Phone', transport: 'relay' })
+
+    internals.markDeviceOnline('Phone', 'dev-1', 'lan')
+    expect(service.getOnlineDevices().get('dev-1')).toEqual({ name: 'Phone', transport: 'lan' })
+
+    internals.markDeviceOffline('dev-1', 'lan')
+    expect(service.getOnlineDevices().get('dev-1')).toEqual({ name: 'Phone', transport: 'relay' })
+    expect(disconnected).toEqual([])
+
+    internals.markDeviceOffline('dev-1', 'relay')
+    expect(service.getOnlineDevices().has('dev-1')).toBe(false)
+    expect(disconnected).toEqual([{ deviceId: 'dev-1' }])
+    expect(registered).toEqual([
+      { deviceName: 'Phone', deviceId: 'dev-1', transport: 'relay' },
+      { deviceName: 'Phone', deviceId: 'dev-1', transport: 'lan' },
+      { deviceName: 'Phone', deviceId: 'dev-1', transport: 'relay' },
+    ])
   })
 })
 

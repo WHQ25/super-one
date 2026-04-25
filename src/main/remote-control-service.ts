@@ -485,10 +485,13 @@ export interface RemoteControlCallbacks {
   isPairedDevice?: (deviceId: string) => boolean
 }
 
+type DeviceTransport = 'lan' | 'relay'
+type ConnectedDevice = { name: string; transports: Set<DeviceTransport> }
+
 export class RemoteControlService {
   private relayWs: WebSocket | null = null
   private keys: { channelKeyHex: string; aesKey: webcrypto.CryptoKey } | null = null
-  private connectedDevices = new Map<string, { name: string; transport: 'lan' | 'relay' }>()
+  private connectedDevices = new Map<string, ConnectedDevice>()
   private lanServer: LanServer | null = null
   private lanAdvertiser: LanAdvertiser | null = null
   private currentConfig: RemoteDeviceConfig | null = null
@@ -526,25 +529,52 @@ export class RemoteControlService {
     if (this.currentConfig) this.start(this.currentConfig)
   }
 
-  getOnlineDevices(): Map<string, { name: string; transport: 'lan' | 'relay' }> {
-    return new Map(this.connectedDevices)
+  getOnlineDevices(): Map<string, { name: string; transport: DeviceTransport }> {
+    const online = new Map<string, { name: string; transport: DeviceTransport }>()
+    for (const [id, info] of this.connectedDevices) {
+      online.set(id, { name: info.name, transport: this.primaryTransport(info) })
+    }
+    return online
   }
 
   getLanPort(): number | null {
     return this.lanServer?.getPort() ?? null
   }
 
-  private markDeviceOnline(deviceName: string, deviceId: string, via: 'relay' | 'lan'): void {
-    const wasOnline = this.connectedDevices.has(deviceId)
-    this.connectedDevices.set(deviceId, { name: deviceName, transport: via })
-    if (!wasOnline) this.callbacks.onClientRegistered?.({ deviceName, deviceId, transport: via })
+  private primaryTransport(info: ConnectedDevice): DeviceTransport {
+    return info.transports.has('lan') ? 'lan' : 'relay'
   }
 
-  private markDeviceOffline(deviceId: string, via: 'relay' | 'lan'): void {
+  private markDeviceOnline(deviceName: string, deviceId: string, via: DeviceTransport): void {
     const current = this.connectedDevices.get(deviceId)
-    if (!current || current.transport !== via) return
-    this.connectedDevices.delete(deviceId)
-    this.callbacks.onClientDisconnected?.({ deviceId })
+    if (!current) {
+      this.connectedDevices.set(deviceId, { name: deviceName, transports: new Set([via]) })
+      this.callbacks.onClientRegistered?.({ deviceName, deviceId, transport: via })
+      return
+    }
+    const previousTransport = this.primaryTransport(current)
+    current.name = deviceName
+    current.transports.add(via)
+    const nextTransport = this.primaryTransport(current)
+    if (nextTransport !== previousTransport) {
+      this.callbacks.onClientRegistered?.({ deviceName, deviceId, transport: nextTransport })
+    }
+  }
+
+  private markDeviceOffline(deviceId: string, via: DeviceTransport): void {
+    const current = this.connectedDevices.get(deviceId)
+    if (!current || !current.transports.has(via)) return
+    const previousTransport = this.primaryTransport(current)
+    current.transports.delete(via)
+    if (current.transports.size === 0) {
+      this.connectedDevices.delete(deviceId)
+      this.callbacks.onClientDisconnected?.({ deviceId })
+      return
+    }
+    const nextTransport = this.primaryTransport(current)
+    if (nextTransport !== previousTransport) {
+      this.callbacks.onClientRegistered?.({ deviceName: current.name, deviceId, transport: nextTransport })
+    }
   }
 
   private acquirePowerLock(): void {
@@ -648,7 +678,7 @@ export class RemoteControlService {
     this.lanServer = null
     if (!server) return
     for (const [id, info] of Array.from(this.connectedDevices)) {
-      if (info.transport === 'lan') this.markDeviceOffline(id, 'lan')
+      if (info.transports.has('lan')) this.markDeviceOffline(id, 'lan')
     }
     await server.stop()
     log.info('[RemoteControl] LAN server stopped')
@@ -765,7 +795,7 @@ export class RemoteControlService {
           this.callbacks.onRemoteFilterCleared?.(filter)
         }
         for (const [id, info] of Array.from(this.connectedDevices)) {
-          if (info.transport === 'relay') this.markDeviceOffline(id, 'relay')
+          if (info.transports.has('relay')) this.markDeviceOffline(id, 'relay')
         }
         break
       }

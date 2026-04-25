@@ -1,7 +1,6 @@
 import { Check, Loader2 } from 'lucide-react'
-import type { ApiProvider, CodexReasoningEffort, EffortLevel, ModelBucket, ModelOption, ProviderModelEnv, ReasoningEffortOption } from '../../../../shared/agent-types'
+import type { CodexReasoningEffort, EffortLevel, ModelBucket, ModelOption, ProviderModelEnv, ReasoningEffortOption } from '../../../../shared/agent-types'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from './chat-input-utils'
-import { ProviderLabel } from '../ProviderLabel'
 
 function claudeIdToBucket(id: string): ModelBucket {
   const lower = id.toLowerCase()
@@ -53,7 +52,6 @@ interface ClaudeModelListProps {
   loadingMessage?: string
   emptyMessage?: string
   modelEnv?: ProviderModelEnv | null
-  provider?: ApiProvider | null
 }
 
 interface ResolvedEntry {
@@ -96,7 +94,6 @@ export function ClaudeModelList({
   loadingMessage = 'Loading models...',
   emptyMessage,
   modelEnv,
-  provider,
 }: ClaudeModelListProps) {
   const entries = resolveClaudeEntries(models, modelEnv)
   return (
@@ -112,18 +109,11 @@ export function ClaudeModelList({
               active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
             }`}
           >
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              {provider && modelEnv && (
-                <span className="shrink-0">
-                  <ProviderLabel provider={provider} size={14} iconOnly />
-                </span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{displayName}</div>
+              {description && (
+                <div className="mt-0.5 text-[10px] text-muted-foreground">{description}</div>
               )}
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{displayName}</div>
-                {description && (
-                  <div className="mt-0.5 text-[10px] text-muted-foreground">{description}</div>
-                )}
-              </div>
             </div>
             {active && <Check className="mt-0.5 size-3.5 shrink-0" />}
           </button>

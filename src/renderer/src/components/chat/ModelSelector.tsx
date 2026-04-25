@@ -142,7 +142,6 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
               activeId={selectedModel ?? ''}
               onSelect={(id) => { setSelectedModel(id); setModelOpen(false) }}
               modelEnv={activeModelEnv}
-              provider={activeApiProvider}
             />
           </PopoverContent>
         </Popover>

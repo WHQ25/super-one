@@ -7,7 +7,6 @@ import { ChevronDown, Loader2, Zap } from 'lucide-react'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from './chat-input-utils'
 import { CodexModeSelector } from './CodexModeSelector'
 import { FireText } from './FireText'
-import { ProviderLabel } from '../ProviderLabel'
 import {
   ClaudeModelList,
   CodexModelList,
@@ -129,12 +128,7 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
           <PopoverTrigger asChild>
             <button className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
               {currentModelName ? (
-                <>
-                  {activeApiProvider && activeModelEnv && (
-                    <ProviderLabel provider={activeApiProvider} size={12} iconOnly />
-                  )}
-                  <span className="max-w-[140px] truncate">{currentModelName}</span>
-                </>
+                <span className="max-w-[140px] truncate">{currentModelName}</span>
               ) : (
                 <Loader2 className="size-3 animate-spin" />
               )}

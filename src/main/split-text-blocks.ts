@@ -108,7 +108,11 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
       const remainder = `${fenceTicks}${codeLang}\n${codeLines.join('\n')}`
       return { segments, remainder }
     }
-    if (inTable) flushTable()
+    if (inTable) {
+      flushCurrent()
+      const remainder = tableLines.join('\n')
+      return { segments, remainder }
+    }
     const tail = current.join('\n')
     const breakIdx = tail.lastIndexOf('\n\n')
     if (breakIdx >= 0) {
@@ -121,8 +125,10 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
   }
 
   if (insightTitle !== null) {
-    current.push(`\`★ ${insightTitle} ${'─'.repeat(37)}\``)
-    current.push(...insightLines)
+    if (inTable) flushTable()
+    flushCurrent()
+    segments.push({ type: 'insight', text: '', title: insightTitle, content: insightLines.join('\n') })
+    return { segments, remainder: '' }
   }
   if (inCodeFence) {
     current.push(`${fenceTicks}${codeLang}`)

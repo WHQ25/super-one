@@ -1,4 +1,4 @@
-import { splitTextIntoBlocks } from './split-text-blocks'
+import { splitTextIntoBlocks, type TextSegment } from './split-text-blocks'
 
 describe('splitTextIntoBlocks', () => {
   describe('final mode (streaming=false)', () => {
@@ -203,6 +203,70 @@ describe('splitTextIntoBlocks', () => {
     it('should handle text with no paragraph breaks', () => {
       const emitted = simulateStreaming(['Hello ', 'world ', 'foo'])
       expect(emitted).toEqual(['Hello world foo'])
+    })
+  })
+
+  describe('streaming accumulation full segments', () => {
+    function simulateStreamingFull(deltas: string[]) {
+      let pendingText = ''
+      let flushedLen = 0
+      const emitted: TextSegment[] = []
+
+      function flush(final: boolean) {
+        if (pendingText.trim().length === 0) { pendingText = ''; flushedLen = 0; return }
+        const { segments, remainder } = splitTextIntoBlocks(pendingText, !final)
+        if (remainder) { pendingText = remainder; flushedLen = remainder.length }
+        else { pendingText = ''; flushedLen = 0 }
+        for (const seg of segments) emitted.push(seg)
+      }
+
+      for (const d of deltas) {
+        pendingText += d
+        const newLen = pendingText.length - flushedLen
+        if (newLen > 0 && (pendingText.lastIndexOf('\n\n') > flushedLen || newLen >= 1000)) {
+          flush(false)
+        }
+      }
+      flush(true)
+      return emitted
+    }
+
+    it('should keep table intact when paragraph break and partial table are in same flush', () => {
+      const emitted = simulateStreamingFull([
+        'Header.\n\n| a | b |\n| 1 | 2 |',
+        '\n| 3 | 4 |\n\nAfter.',
+      ])
+      expect(emitted.map((s) => s.text)).toEqual([
+        'Header.',
+        '| a | b |\n| 1 | 2 |\n| 3 | 4 |',
+        'After.',
+      ])
+    })
+
+    it('should keep insight intact when force-finalized mid-stream', () => {
+      const segments = simulateStreamingFull([
+        'Pre.\n\n',
+        '`★ Title ─────────────────────────────────────`\n',
+        'Foo bar.',
+      ])
+      expect(segments).toHaveLength(2)
+      expect(segments[0]).toMatchObject({ type: 'text', text: 'Pre.' })
+      expect(segments[1]).toMatchObject({ type: 'insight', title: 'Title', content: 'Foo bar.' })
+    })
+
+    it('should not split insight across paragraph breaks in content', () => {
+      const segments = simulateStreamingFull([
+        '`★ Title ─────────────────────────────────────`\n',
+        'Line A.\n\n',
+        'Line B.\n',
+        '`─────────────────────────────────────────────────`\n',
+        'After.',
+      ])
+      expect(segments).toHaveLength(2)
+      expect(segments[0]).toMatchObject({ type: 'insight', title: 'Title' })
+      expect(segments[0].content).toContain('Line A.')
+      expect(segments[0].content).toContain('Line B.')
+      expect(segments[1]).toMatchObject({ type: 'text', text: 'After.' })
     })
   })
 })

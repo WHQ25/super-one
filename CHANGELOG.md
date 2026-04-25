@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.22.2-alpha] - 2026-04-25
+
+### Fixed
+
+- **Desktop sending no longer hangs after a mobile leaves a Claude session it created** — a mobile-initiated Claude turn left the desktop locked in a "controlled remotely" state after the turn finished (the Codex path had finally-cleanup; the Claude path did not). When the mobile later unsubscribed, desktop messages were rejected. Both paths now share a single ownership-lifecycle helper, and the lock releases the moment the remote turn ends.
+
+### Changed
+
+- **Session ownership is a first-class property of each Session** — `owner` (local / remote+deviceId), `subscribers` set, and lifecycle events live inside the Session itself; ownership locking is enforced inside `Session.send()` rather than by scattered IPC-handler guards. Transport (`RemoteControlService`) is reduced to a pure relay+LAN frame layer with no session-control state.
+- **Multiple mobile devices can share one desktop** — paired with the upgraded relay, a single desktop channel now hosts an arbitrary number of mobile peers, each tagged with its own deviceId. Sessions are independently owned and viewed; one device disconnecting only affects the sessions it owned or subscribed to.
+- **`unsubscribe_session` accepts an optional `sessionId`** — mobile targets a specific session instead of clearing every subscription this device holds; cleaner semantics for multi-session viewing.
+
 ## [0.22.1-alpha] - 2026-04-25
 
 ### Added

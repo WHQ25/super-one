@@ -39,6 +39,7 @@ import {
   type ProjectResources,
   type Session as SessionContract,
   type SessionBackend,
+  type SessionLeaveReason,
   type SessionLifecycleEvent,
   type SessionOwner,
   type SessionSnapshot,
@@ -176,11 +177,11 @@ export class Session implements SessionContract {
     this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: owner })
   }
 
-  release(deviceId: string): void {
+  release(deviceId: string, reason?: SessionLeaveReason): void {
     if (this._owner.kind !== 'remote' || this._owner.deviceId !== deviceId) return
     const previous = this._owner
     this._owner = LOCAL_OWNER
-    this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: LOCAL_OWNER })
+    this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: LOCAL_OWNER, reason })
   }
 
   subscribe(deviceId: string): void {
@@ -198,9 +199,9 @@ export class Session implements SessionContract {
     this.emitLifecycle({ type: 'subscriber_added', sessionId: this.id, deviceId })
   }
 
-  unsubscribe(deviceId: string): void {
+  unsubscribe(deviceId: string, reason?: SessionLeaveReason): void {
     if (!this._subscribers.delete(deviceId)) return
-    this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId })
+    this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId, reason })
   }
 
   private assertCanSend(providerOrigin: 'local' | 'remote'): void {
@@ -615,11 +616,11 @@ export class Session implements SessionContract {
     if (this._owner.kind === 'remote') {
       const previous = this._owner
       this._owner = LOCAL_OWNER
-      this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: LOCAL_OWNER })
+      this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: LOCAL_OWNER, reason: 'session_closed' })
     }
     for (const deviceId of Array.from(this._subscribers)) {
       this._subscribers.delete(deviceId)
-      this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId })
+      this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId, reason: 'session_closed' })
     }
     this.emitLifecycle({ type: 'closed', sessionId: this.id })
     this._lifecycleListeners.clear()

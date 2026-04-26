@@ -34,11 +34,10 @@ class FakeSession {
   }
 }
 
-function makeSource(): PresenceSessionSource & { add: (s: FakeSession) => void; sessions: FakeSession[] } {
+function makeSource(): PresenceSessionSource & { add: (s: FakeSession) => void } {
   const sessions: FakeSession[] = []
   let handler: ((session: Session) => void) | null = null
   return {
-    sessions,
     onSession(h) {
       handler = h
       for (const s of sessions) h(s as unknown as Session)
@@ -47,9 +46,6 @@ function makeSource(): PresenceSessionSource & { add: (s: FakeSession) => void; 
     add(s) {
       sessions.push(s)
       if (handler) handler(s as unknown as Session)
-    },
-    forEachSession(fn) {
-      for (const s of sessions) fn(s as unknown as Session)
     },
   }
 }
@@ -83,7 +79,7 @@ describe('PresenceCoordinator', () => {
     ])
   })
 
-  it('emits remote_session_end + session_disconnected to previous owner when owner switches remote → local', () => {
+  it('owner_changed remote→local with reason desktop_kick sends session_kicked to previous owner', () => {
     const source = makeSource()
     const transport = makeTransport()
     new PresenceCoordinator(source, transport)
@@ -93,13 +89,76 @@ describe('PresenceCoordinator', () => {
       type: 'owner_changed', sessionId: 's1',
       previous: { kind: 'remote', deviceId: 'dev-A' },
       current: { kind: 'local' },
+      reason: 'desktop_kick',
     })
     expect(transport.sent).toEqual([
       { type: 'remote_session_end', remoteProjectPath: '/proj/A', remoteSessionId: 's1' },
     ])
     expect(transport.mobile).toEqual([
-      { event: { type: 'session_disconnected', sessionId: 's1' }, targets: ['dev-A'] },
+      { event: { type: 'session_kicked', sessionId: 's1' }, targets: ['dev-A'] },
     ])
+  })
+
+  it('owner_changed remote→local with reason self_leave is silent on mobile', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({
+      type: 'owner_changed', sessionId: 's1',
+      previous: { kind: 'remote', deviceId: 'dev-A' },
+      current: { kind: 'local' },
+      reason: 'self_leave',
+    })
+    expect(transport.mobile).toEqual([])
+  })
+
+  it('owner_changed remote→local with reason self_switch is silent on mobile', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({
+      type: 'owner_changed', sessionId: 's1',
+      previous: { kind: 'remote', deviceId: 'dev-A' },
+      current: { kind: 'local' },
+      reason: 'self_switch',
+    })
+    expect(transport.mobile).toEqual([])
+  })
+
+  it('owner_changed remote→local with reason session_closed sends session_closed to mobile', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({
+      type: 'owner_changed', sessionId: 's1',
+      previous: { kind: 'remote', deviceId: 'dev-A' },
+      current: { kind: 'local' },
+      reason: 'session_closed',
+    })
+    expect(transport.mobile).toEqual([
+      { event: { type: 'session_closed', sessionId: 's1' }, targets: ['dev-A'] },
+    ])
+  })
+
+  it('owner_changed remote→local with reason transport_disconnect is silent on mobile', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({
+      type: 'owner_changed', sessionId: 's1',
+      previous: { kind: 'remote', deviceId: 'dev-A' },
+      current: { kind: 'local' },
+      reason: 'transport_disconnect',
+    })
+    expect(transport.mobile).toEqual([])
   })
 
   it('emits remote_session_start with isSubscribe on subscriber_added', () => {
@@ -114,19 +173,39 @@ describe('PresenceCoordinator', () => {
     ])
   })
 
-  it('emits remote_session_end + session_disconnected to that device on subscriber_removed', () => {
+  it('subscriber_removed with desktop_kick reason sends session_kicked', () => {
     const source = makeSource()
     const transport = makeTransport()
     new PresenceCoordinator(source, transport)
     const s = new FakeSession('s1', '/proj/A')
     source.add(s)
-    s.emit({ type: 'subscriber_removed', sessionId: 's1', deviceId: 'dev-B' })
+    s.emit({ type: 'subscriber_removed', sessionId: 's1', deviceId: 'dev-B', reason: 'desktop_kick' })
     expect(transport.sent).toEqual([
       { type: 'remote_session_end', remoteProjectPath: '/proj/A', remoteSessionId: 's1', isSubscribe: true },
     ])
     expect(transport.mobile).toEqual([
-      { event: { type: 'session_disconnected', sessionId: 's1' }, targets: ['dev-B'] },
+      { event: { type: 'session_kicked', sessionId: 's1' }, targets: ['dev-B'] },
     ])
+  })
+
+  it('subscriber_removed with self_leave reason is silent on mobile', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({ type: 'subscriber_removed', sessionId: 's1', deviceId: 'dev-B', reason: 'self_leave' })
+    expect(transport.mobile).toEqual([])
+  })
+
+  it('subscriber_removed with self_switch reason is silent on mobile', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({ type: 'subscriber_removed', sessionId: 's1', deviceId: 'dev-B', reason: 'self_switch' })
+    expect(transport.mobile).toEqual([])
   })
 
   it('attaches to sessions added later', () => {
@@ -165,7 +244,7 @@ describe('PresenceCoordinator', () => {
     expect(transport.sent).toHaveLength(1)
   })
 
-  it('treats remote → remote (different device) as a fresh start and notifies previous owner', () => {
+  it('treats remote → remote (different device) as a fresh start; previous owner gets session_kicked when reason is desktop_kick', () => {
     const source = makeSource()
     const transport = makeTransport()
     new PresenceCoordinator(source, transport)
@@ -175,50 +254,14 @@ describe('PresenceCoordinator', () => {
       type: 'owner_changed', sessionId: 's1',
       previous: { kind: 'remote', deviceId: 'dev-A' },
       current: { kind: 'remote', deviceId: 'dev-B' },
+      reason: 'desktop_kick',
     })
     expect(transport.sent).toEqual([
       { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1' },
     ])
     expect(transport.mobile).toEqual([
-      { event: { type: 'session_disconnected', sessionId: 's1' }, targets: ['dev-A'] },
+      { event: { type: 'session_kicked', sessionId: 's1' }, targets: ['dev-A'] },
     ])
-  })
-
-  it('does NOT send session_disconnected when the device is still active in another session', () => {
-    const source = makeSource()
-    const transport = makeTransport()
-    new PresenceCoordinator(source, transport)
-    const sessionA = new FakeSession('s-A', '/proj')
-    const sessionB = new FakeSession('s-B', '/proj')
-    source.add(sessionA)
-    source.add(sessionB)
-    sessionB.subscribers.add('dev-1')
-    sessionA.subscribers.add('dev-1')
-    sessionA.subscribers.delete('dev-1')
-    sessionA.emit({ type: 'subscriber_removed', sessionId: 's-A', deviceId: 'dev-1' })
-
-    expect(transport.sent).toEqual([
-      { type: 'remote_session_end', remoteProjectPath: '/proj', remoteSessionId: 's-A', isSubscribe: true },
-    ])
-    expect(transport.mobile).toHaveLength(0)
-  })
-
-  it('does NOT send session_disconnected on owner_changed → local when device still owns another session', () => {
-    const source = makeSource()
-    const transport = makeTransport()
-    new PresenceCoordinator(source, transport)
-    const sessionA = new FakeSession('s-A', '/proj')
-    const sessionB = new FakeSession('s-B', '/proj')
-    source.add(sessionA)
-    source.add(sessionB)
-    sessionB.owner = { kind: 'remote', deviceId: 'dev-1' }
-    sessionA.emit({
-      type: 'owner_changed', sessionId: 's-A',
-      previous: { kind: 'remote', deviceId: 'dev-1' },
-      current: { kind: 'local' },
-    })
-
-    expect(transport.mobile).toHaveLength(0)
   })
 
   it('dispose stops receiving from new sessions', () => {

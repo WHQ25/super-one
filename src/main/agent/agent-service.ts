@@ -234,8 +234,8 @@ export class AgentService {
   private releaseDeviceFromOtherSessions(deviceId: string, exceptSessionId: string): void {
     this.sessionManager?.forEachSession((s) => {
       if (s.id === exceptSessionId) return
-      if (s.owner.kind === 'remote' && s.owner.deviceId === deviceId) s.release(deviceId)
-      if (s.subscribers.has(deviceId)) s.unsubscribe(deviceId)
+      if (s.owner.kind === 'remote' && s.owner.deviceId === deviceId) s.release(deviceId, 'self_switch')
+      if (s.subscribers.has(deviceId)) s.unsubscribe(deviceId, 'self_switch')
     })
   }
 
@@ -569,9 +569,9 @@ export class AgentService {
         const session = this.sessionManager?.getSession(command.sessionId)
         if (!session) break
         if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {
-          session.release(deviceId)
+          session.release(deviceId, 'self_leave')
         }
-        if (session.subscribers.has(deviceId)) session.unsubscribe(deviceId)
+        if (session.subscribers.has(deviceId)) session.unsubscribe(deviceId, 'self_leave')
         break
       }
       case 'load_session_messages': {
@@ -1058,7 +1058,7 @@ export class AgentService {
       clearAllGates()
       clearAllPendingMiniAppCalls()
       await session.interrupt()
-      for (const d of Array.from(session.subscribers)) session.unsubscribe(d)
+      for (const d of Array.from(session.subscribers)) session.unsubscribe(d, 'desktop_kick')
       return true
     })
 
@@ -1236,8 +1236,8 @@ export class AgentService {
         })
       }
       for (const session of targets) {
-        if (session.owner.kind === 'remote') session.release(session.owner.deviceId)
-        for (const d of Array.from(session.subscribers)) session.unsubscribe(d)
+        if (session.owner.kind === 'remote') session.release(session.owner.deviceId, 'desktop_kick')
+        for (const d of Array.from(session.subscribers)) session.unsubscribe(d, 'desktop_kick')
       }
     })
 

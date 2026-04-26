@@ -139,10 +139,17 @@ export class SessionClaimConflictError extends Error {
   }
 }
 
+export type SessionLeaveReason =
+  | 'self_leave'
+  | 'self_switch'
+  | 'desktop_kick'
+  | 'transport_disconnect'
+  | 'session_closed'
+
 export type SessionLifecycleEvent =
-  | { type: 'owner_changed'; sessionId: string; previous: SessionOwner; current: SessionOwner }
+  | { type: 'owner_changed'; sessionId: string; previous: SessionOwner; current: SessionOwner; reason?: SessionLeaveReason }
   | { type: 'subscriber_added'; sessionId: string; deviceId: string }
-  | { type: 'subscriber_removed'; sessionId: string; deviceId: string }
+  | { type: 'subscriber_removed'; sessionId: string; deviceId: string; reason?: SessionLeaveReason }
   | { type: 'closed'; sessionId: string }
 
 export interface SessionBackend {
@@ -193,9 +200,9 @@ export interface Session {
   readonly owner: SessionOwner
   readonly subscribers: ReadonlySet<string>
   claim(owner: SessionOwner): void
-  release(deviceId: string): void
+  release(deviceId: string, reason?: SessionLeaveReason): void
   subscribe(deviceId: string): void
-  unsubscribe(deviceId: string): void
+  unsubscribe(deviceId: string, reason?: SessionLeaveReason): void
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void
   send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void>
   interrupt(): Promise<void>

@@ -9,11 +9,11 @@ export class DeviceRegistry {
     let unsubscribedCount = 0
     this.sessionManager.forEachSession((session) => {
       if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {
-        session.release(deviceId)
+        session.release(deviceId, 'transport_disconnect')
         releasedCount++
       }
       if (session.subscribers.has(deviceId)) {
-        session.unsubscribe(deviceId)
+        session.unsubscribe(deviceId, 'transport_disconnect')
         unsubscribedCount++
       }
     })
@@ -26,7 +26,7 @@ export class DeviceRegistry {
     let count = 0
     this.sessionManager.forEachSession((session) => {
       if (session.subscribers.has(deviceId)) {
-        session.unsubscribe(deviceId)
+        session.unsubscribe(deviceId, 'self_leave')
         count++
       }
     })
@@ -37,7 +37,7 @@ export class DeviceRegistry {
     let count = 0
     this.sessionManager.forEachSession((session) => {
       if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {
-        session.release(deviceId)
+        session.release(deviceId, 'self_leave')
         count++
       }
     })

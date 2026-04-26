@@ -1,5 +1,5 @@
 import type { AgentEvent } from '../../shared/agent-types'
-import type { Session, SessionLifecycleEvent } from '../session/types'
+import type { Session, SessionLeaveReason, SessionLifecycleEvent } from '../session/types'
 import log from '../logger'
 
 export interface PresenceTransport {
@@ -9,25 +9,22 @@ export interface PresenceTransport {
 
 export interface PresenceSessionSource {
   onSession(handler: (session: Session) => void): () => void
-  forEachSession(fn: (session: Session) => void): void
 }
 
 export class PresenceCoordinator {
   private unsubBySession = new Map<string, () => void>()
   private detachSource: () => void
 
-  constructor(private readonly source: PresenceSessionSource, private readonly transport: PresenceTransport) {
+  constructor(source: PresenceSessionSource, private readonly transport: PresenceTransport) {
     this.detachSource = source.onSession((session) => this.attach(session))
   }
 
-  private isDeviceActiveElsewhere(deviceId: string, exceptSessionId: string): boolean {
-    let active = false
-    this.source.forEachSession((s) => {
-      if (s.id === exceptSessionId) return
-      if (s.subscribers.has(deviceId)) active = true
-      else if (s.owner.kind === 'remote' && s.owner.deviceId === deviceId) active = true
-    })
-    return active
+  private notifyMobileLeave(sessionId: string, deviceId: string, reason: SessionLeaveReason | undefined): void {
+    if (reason === 'desktop_kick') {
+      void this.transport.sendToMobile({ type: 'session_kicked', sessionId }, [deviceId])
+    } else if (reason === 'session_closed') {
+      void this.transport.sendToMobile({ type: 'session_closed', sessionId }, [deviceId])
+    }
   }
 
   dispose(): void {
@@ -61,12 +58,7 @@ export class PresenceCoordinator {
             remoteProjectPath: projectPath,
             remoteSessionId: sessionId,
           })
-          if (!this.isDeviceActiveElsewhere(evt.previous.deviceId, sessionId)) {
-            void this.transport.sendToMobile(
-              { type: 'session_disconnected', sessionId },
-              [evt.previous.deviceId],
-            )
-          }
+          this.notifyMobileLeave(sessionId, evt.previous.deviceId, evt.reason)
         } else if (
           evt.previous.kind === 'remote' && evt.current.kind === 'remote' &&
           evt.previous.deviceId !== evt.current.deviceId
@@ -76,12 +68,7 @@ export class PresenceCoordinator {
             remoteProjectPath: projectPath,
             remoteSessionId: sessionId,
           })
-          if (!this.isDeviceActiveElsewhere(evt.previous.deviceId, sessionId)) {
-            void this.transport.sendToMobile(
-              { type: 'session_disconnected', sessionId },
-              [evt.previous.deviceId],
-            )
-          }
+          this.notifyMobileLeave(sessionId, evt.previous.deviceId, evt.reason)
         }
         return
       }
@@ -100,12 +87,7 @@ export class PresenceCoordinator {
           remoteSessionId: sessionId,
           isSubscribe: true,
         })
-        if (!this.isDeviceActiveElsewhere(evt.deviceId, sessionId)) {
-          void this.transport.sendToMobile(
-            { type: 'session_disconnected', sessionId },
-            [evt.deviceId],
-          )
-        }
+        this.notifyMobileLeave(sessionId, evt.deviceId, evt.reason)
         return
       case 'closed': {
         const unsub = this.unsubBySession.get(sessionId)

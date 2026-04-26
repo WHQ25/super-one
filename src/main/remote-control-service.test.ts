@@ -340,6 +340,66 @@ describe('RemoteControlService connected devices', () => {
   })
 })
 
+describe('RemoteControlService content_delta ordering', () => {
+  function makeService(): { service: RemoteControlService; captured: AgentEvent[] } {
+    const captured: AgentEvent[] = []
+    const service = new RemoteControlService('wss://relay.example', { onCommand: vi.fn() })
+    const internals = service as unknown as {
+      keys: unknown
+      hasAnyMobileTransport: () => boolean
+      queueSend: (events: AgentEvent[], targets?: string[]) => void
+    }
+    internals.keys = { aesKey: {} }
+    internals.hasAnyMobileTransport = () => true
+    internals.queueSend = (events) => { captured.push(...events) }
+    return { service, captured }
+  }
+
+  function deltaSig(e: AgentEvent): string {
+    if (e.type !== 'content_delta') return e.type
+    const d = (e as Extract<AgentEvent, { type: 'content_delta' }>).delta
+    return `content_delta:${d.type}`
+  }
+
+  it('preserves thinking-before-text ordering when a short thinking is followed by text that flushes early on \\n\\n', async () => {
+    const { service, captured } = makeService()
+
+    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'thinking', thinking: 'short reasoning', parentToolUseId: null } } as AgentEvent)
+    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'visible answer\n\n', parentToolUseId: null } } as AgentEvent)
+    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'tail', parentToolUseId: null } } as AgentEvent)
+    await service.sendAgentEvent({ type: 'message_complete', messageId: 'm1', metadata: {} } as AgentEvent)
+
+    const order = captured.map(deltaSig)
+    const thinkingIdx = order.indexOf('content_delta:thinking')
+    const firstTextIdx = order.indexOf('content_delta:text')
+    expect(thinkingIdx).toBeGreaterThanOrEqual(0)
+    expect(firstTextIdx).toBeGreaterThanOrEqual(0)
+    expect(thinkingIdx).toBeLessThan(firstTextIdx)
+  })
+
+  it('flushes pending thinking before starting to accumulate text on the same message so output reflects emit-time order', async () => {
+    const { service, captured } = makeService()
+
+    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'thinking', thinking: 'reasoning A', parentToolUseId: null } } as AgentEvent)
+    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'answer A', parentToolUseId: null } } as AgentEvent)
+    await service.sendAgentEvent({ type: 'message_complete', messageId: 'm1', metadata: {} } as AgentEvent)
+
+    const order = captured.map(deltaSig)
+    expect(order.filter((t) => t.startsWith('content_delta:'))).toEqual(['content_delta:thinking', 'content_delta:text'])
+  })
+
+  it('flushes pending text before starting to accumulate thinking when text precedes thinking on the same message', async () => {
+    const { service, captured } = makeService()
+
+    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'preamble', parentToolUseId: null } } as AgentEvent)
+    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'thinking', thinking: 'mid-stream reasoning', parentToolUseId: null } } as AgentEvent)
+    await service.sendAgentEvent({ type: 'message_complete', messageId: 'm1', metadata: {} } as AgentEvent)
+
+    const order = captured.map(deltaSig)
+    expect(order.filter((t) => t.startsWith('content_delta:'))).toEqual(['content_delta:text', 'content_delta:thinking'])
+  })
+})
+
 describe('stripEventForRemote permission_request', () => {
   function makePermissionEvent(toolName: string, input: Record<string, unknown>): AgentEvent {
     const request: PermissionRequest = { requestId: 'req-1', toolName, input, allowAlwaysAllow: false }

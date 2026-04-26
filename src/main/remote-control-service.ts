@@ -959,6 +959,7 @@ export class RemoteControlService {
         if (this.pendingText && (this.pendingText.messageId !== msgId || this.pendingText.parentToolUseId !== parentId)) {
           this.flushPendingText(true)
         }
+        if (this.pendingThinking) this.flushPendingThinking()
         if (!this.pendingText) this.pendingText = { messageId: msgId, text: '', parentToolUseId: parentId, targets: targetDeviceIds }
         this.pendingText.text += event.delta.text
         const pending = this.pendingText.text
@@ -974,6 +975,7 @@ export class RemoteControlService {
         if (this.pendingThinking && (this.pendingThinking.messageId !== msgId || this.pendingThinking.parentToolUseId !== parentId)) {
           this.flushPendingThinking()
         }
+        if (this.pendingText) this.flushPendingText(true)
         if (!this.pendingThinking) this.pendingThinking = { messageId: msgId, text: '', parentToolUseId: parentId, targets: targetDeviceIds }
         this.pendingThinking.text += event.delta.thinking
         const pending = this.pendingThinking.text

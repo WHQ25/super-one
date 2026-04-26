@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-import { Bot, CalendarClock, ChevronRight, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, Pin, Play, Smartphone, SquareActivity, SquarePen, Trash2 } from 'lucide-react'
+import { Bot, CalendarClock, ChevronDown, ChevronRight, ChevronUp, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, Pin, Play, Smartphone, SquareActivity, SquarePen, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useChatStore } from '@/stores/chat'
@@ -52,6 +52,13 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   const projectSession = useChatStore((s) => s.projectSessions[folder.path])
   const remoteSessionIds = useChatStore((s) => s.remoteSessions[folder.path] ?? EMPTY_REMOTE_SESSION_IDS)
 
+  const INITIAL_EXPAND_LEVEL = 5
+  const [expandLevel, setExpandLevel] = useState<number>(INITIAL_EXPAND_LEVEL)
+
+  useEffect(() => {
+    if (!isExpanded) setExpandLevel(INITIAL_EXPAND_LEVEL)
+  }, [isExpanded])
+
   const derived = useMemo(() => {
     const isActive = hasRealProject && folder.path === currentFolder
     const dbVisibleSessions = allSessions.filter((session) => !session.isHidden)
@@ -91,14 +98,18 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       return isLiveSession(entry, isUnseen)
     })
 
+    const displayLimit = Math.min(expandLevel, maxSessions)
     return {
       isActive,
       displayPath: homePath(folder.path),
-      sessionsToShow: isExpanded ? sessions.slice(0, maxSessions) : liveSessions,
+      sessionsToShow: isExpanded ? sessions.slice(0, displayLimit) : liveSessions,
       showSessions: isExpanded || liveSessions.length > 0,
       activeSid: projectSession?._activeSessionId ?? null,
+      totalCount: sessions.length,
+      hasMoreThanInitial: sessions.length > expandLevel,
+      hasOverflow: sessions.length > maxSessions,
     }
-  }, [allSessions, currentFolder, folder.path, hasRealProject, isExpanded, maxSessions, projectSession])
+  }, [allSessions, currentFolder, folder.path, hasRealProject, isExpanded, maxSessions, projectSession, expandLevel])
 
   const [projectAutomations, setProjectAutomations] = useState<Automation[]>([])
   const [automationsExpanded, setAutomationsExpanded] = useState(false)
@@ -429,6 +440,43 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                   </div>
                 )
               })
+            )}
+            {isExpanded && expandLevel < maxSessions && derived.hasMoreThanInitial && (
+              <button
+                onClick={() => setExpandLevel(maxSessions)}
+                className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
+              >
+                <ChevronDown className="size-3.5 shrink-0" />
+                <span>{t('sidebar.contextMenu.showMore')}</span>
+              </button>
+            )}
+            {isExpanded && expandLevel >= maxSessions && derived.totalCount > INITIAL_EXPAND_LEVEL && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setExpandLevel(INITIAL_EXPAND_LEVEL)}
+                  className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
+                >
+                  <ChevronUp className="size-3.5 shrink-0" />
+                  <span>{t('sidebar.contextMenu.showLess')}</span>
+                </button>
+                {derived.hasOverflow && (
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => onOpenHistory(folder.path)}
+                          className="flex h-7 items-center justify-center rounded-md px-1.5 text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
+                        >
+                          <History className="size-3.5 shrink-0" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" sideOffset={6}>
+                        <span className="text-xs">{t('sidebar.contextMenu.sessionHistory')}</span>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+              </div>
             )}
           </div>
         </div>

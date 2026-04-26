@@ -42,7 +42,8 @@ const isMac = window.app.platform === 'darwin'
 
 type SortMode = 'recent' | 'added'
 
-const MAX_SESSIONS = 10
+const MAX_DISPLAY_SESSIONS = 10
+const SESSIONS_FETCH_LIMIT = MAX_DISPLAY_SESSIONS + 1
 
 export const AppSidebar = memo(function AppSidebar() {
   const { t } = useTranslation()
@@ -128,10 +129,10 @@ export const AppSidebar = memo(function AppSidebar() {
       let offset = 0
       let visibleCount = 0
       const startedAt = performance.now()
-      traceSidebar('sessions_load:start', { folderPath, reason, pageSize: MAX_SESSIONS }, folderPath)
+      traceSidebar('sessions_load:start', { folderPath, reason, pageSize: SESSIONS_FETCH_LIMIT }, folderPath)
       try {
-        while (sessions.filter((session) => !session.isHidden).length < MAX_SESSIONS) {
-          const page = await window.app.listSessionsForFolderPage(folderPath, MAX_SESSIONS, offset)
+        while (sessions.filter((session) => !session.isHidden).length < SESSIONS_FETCH_LIMIT) {
+          const page = await window.app.listSessionsForFolderPage(folderPath, SESSIONS_FETCH_LIMIT, offset)
           visibleCount += page.filter((session) => !session.isHidden).length
           traceSidebar('sessions_load:page', {
             folderPath,
@@ -143,7 +144,7 @@ export const AppSidebar = memo(function AppSidebar() {
           }, folderPath)
           if (page.length === 0) break
           sessions.push(...page)
-          if (page.length < MAX_SESSIONS) break
+          if (page.length < SESSIONS_FETCH_LIMIT) break
           offset += page.length
         }
         setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
@@ -485,7 +486,7 @@ export const AppSidebar = memo(function AppSidebar() {
                     hasRealProject={hasRealProject}
                     isExpanded={expandedFolders.has(folder.path)}
                     sessions={folderSessions[folder.path] ?? []}
-                    maxSessions={MAX_SESSIONS}
+                    maxSessions={MAX_DISPLAY_SESSIONS}
                     onToggleExpand={toggleExpand}
                     onSwitchSession={handleSwitchSession}
                     onPinSession={handlePinSession}

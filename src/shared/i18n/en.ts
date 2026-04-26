@@ -54,6 +54,8 @@ export type Messages = {
       edit: string
       delete: string
       noSessions: string
+      showMore: string
+      showLess: string
       rename: string
       pin: string
       unpin: string
@@ -749,6 +751,8 @@ export const en: Messages = {
       edit: 'Edit',
       delete: 'Delete',
       noSessions: 'No sessions',
+      showMore: 'Show more',
+      showLess: 'Show less',
       rename: 'Rename',
       pin: 'Pin',
       unpin: 'Unpin',

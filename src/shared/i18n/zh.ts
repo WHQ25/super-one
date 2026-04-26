@@ -56,6 +56,8 @@ export const zh: Messages = {
       edit: '编辑',
       delete: '删除',
       noSessions: '无会话',
+      showMore: '显示更多',
+      showLess: '收起',
       rename: '重命名',
       pin: '置顶',
       unpin: '取消置顶',

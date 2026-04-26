@@ -11,6 +11,8 @@ import type { Session, SessionLifecycleEvent } from '../session/types'
 class FakeSession {
   readonly id: string
   readonly projectPath: string
+  owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } = { kind: 'local' }
+  subscribers = new Set<string>()
   private listeners = new Set<(e: SessionLifecycleEvent) => void>()
 
   constructor(id: string, projectPath: string) {
@@ -32,19 +34,22 @@ class FakeSession {
   }
 }
 
-function makeSource(): PresenceSessionSource & { add: (s: FakeSession) => void } {
-  let pending: FakeSession[] = []
+function makeSource(): PresenceSessionSource & { add: (s: FakeSession) => void; sessions: FakeSession[] } {
+  const sessions: FakeSession[] = []
   let handler: ((session: Session) => void) | null = null
   return {
+    sessions,
     onSession(h) {
       handler = h
-      for (const s of pending) h(s as unknown as Session)
-      pending = []
+      for (const s of sessions) h(s as unknown as Session)
       return () => { handler = null }
     },
     add(s) {
+      sessions.push(s)
       if (handler) handler(s as unknown as Session)
-      else pending.push(s)
+    },
+    forEachSession(fn) {
+      for (const s of sessions) fn(s as unknown as Session)
     },
   }
 }
@@ -177,6 +182,43 @@ describe('PresenceCoordinator', () => {
     expect(transport.mobile).toEqual([
       { event: { type: 'session_disconnected', sessionId: 's1' }, targets: ['dev-A'] },
     ])
+  })
+
+  it('does NOT send session_disconnected when the device is still active in another session', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const sessionA = new FakeSession('s-A', '/proj')
+    const sessionB = new FakeSession('s-B', '/proj')
+    source.add(sessionA)
+    source.add(sessionB)
+    sessionB.subscribers.add('dev-1')
+    sessionA.subscribers.add('dev-1')
+    sessionA.subscribers.delete('dev-1')
+    sessionA.emit({ type: 'subscriber_removed', sessionId: 's-A', deviceId: 'dev-1' })
+
+    expect(transport.sent).toEqual([
+      { type: 'remote_session_end', remoteProjectPath: '/proj', remoteSessionId: 's-A', isSubscribe: true },
+    ])
+    expect(transport.mobile).toHaveLength(0)
+  })
+
+  it('does NOT send session_disconnected on owner_changed → local when device still owns another session', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const sessionA = new FakeSession('s-A', '/proj')
+    const sessionB = new FakeSession('s-B', '/proj')
+    source.add(sessionA)
+    source.add(sessionB)
+    sessionB.owner = { kind: 'remote', deviceId: 'dev-1' }
+    sessionA.emit({
+      type: 'owner_changed', sessionId: 's-A',
+      previous: { kind: 'remote', deviceId: 'dev-1' },
+      current: { kind: 'local' },
+    })
+
+    expect(transport.mobile).toHaveLength(0)
   })
 
   it('dispose stops receiving from new sessions', () => {

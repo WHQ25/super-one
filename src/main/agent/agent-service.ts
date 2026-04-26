@@ -1058,7 +1058,6 @@ export class AgentService {
       clearAllGates()
       clearAllPendingMiniAppCalls()
       await session.interrupt()
-      for (const d of Array.from(session.subscribers)) session.unsubscribe(d, 'desktop_kick')
       return true
     })
 

@@ -199,7 +199,7 @@ export interface Session {
   readonly snapshot: SessionSnapshot
   readonly owner: SessionOwner
   readonly subscribers: ReadonlySet<string>
-  claim(owner: SessionOwner): void
+  claim(owner: Extract<SessionOwner, { kind: 'remote' }>): void
   release(deviceId: string, reason?: SessionLeaveReason): void
   subscribe(deviceId: string): void
   unsubscribe(deviceId: string, reason?: SessionLeaveReason): void
@@ -266,7 +266,7 @@ export interface SessionManager {
   invalidateProjectResources(cwd: string): void
 
   createSession(opts: SessionCreateOptions): Session
-  resumeSession(sessionId: string, opts?: { permissionMode?: PermissionMode; sandboxMode?: SandboxMode }): Session
+  resumeSession(sessionId: string, opts?: { permissionMode?: PermissionMode; sandboxMode?: SandboxMode; passive?: boolean }): Session
   getSession(sessionId: string): Session | null
   disposeSession(sessionId: string): Promise<void>
   forEachSession(fn: (session: Session) => void): void

@@ -207,7 +207,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     this.activeByProject.delete(projectPath)
   }
 
-  resumeSession(sessionId: string, opts?: { permissionMode?: import('../../shared/agent-types').PermissionMode; sandboxMode?: import('../../shared/agent-types').SandboxMode }): SessionContract {
+  resumeSession(sessionId: string, opts?: { permissionMode?: import('../../shared/agent-types').PermissionMode; sandboxMode?: import('../../shared/agent-types').SandboxMode; passive?: boolean }): SessionContract {
     const existing = this.sessions.get(sessionId)
     if (existing) return existing
     if (!this.persistence.loadSession) {
@@ -259,7 +259,9 @@ export class SessionManagerImpl implements SessionManagerContract {
     })
 
     this.registerSession(session, data.projectPath)
-    this.activeByProject.set(data.projectPath, sessionId)
+    if (!opts?.passive) {
+      this.activeByProject.set(data.projectPath, sessionId)
+    }
     return session
   }
 

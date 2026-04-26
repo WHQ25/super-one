@@ -780,7 +780,7 @@ describe('AgentService.handleRemoteCommand', () => {
       { deviceId: 'mobile-A', transport: 'lan' },
     )
 
-    expect(resumeSession).toHaveBeenCalledWith('sid-1')
+    expect(resumeSession).toHaveBeenCalledWith('sid-1', { passive: true })
     expect(respond).toHaveBeenCalledWith('req-3', { ok: true })
     expect(resumed.subscribers.has('mobile-A')).toBe(true)
   })
@@ -802,6 +802,29 @@ describe('AgentService.handleRemoteCommand', () => {
     )
 
     expect(respond).toHaveBeenCalledWith('req-4', { error: 'session_not_found' })
+  })
+
+  it('remote interrupt command does not unsubscribe mobile subscribers', async () => {
+    const service = new AgentService()
+    const interrupt = vi.fn().mockResolvedValue(undefined)
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', interrupt })
+    session.subscribe('mobile-A')
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      forEachSession: (fn: (s: unknown) => void) => [session].forEach(fn),
+    }
+    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(true)
+    ;(service as unknown as { findSessionBySid: (p: string, s: string) => unknown }).findSessionBySid = () => session
+
+    await service.handleRemoteCommand(
+      { type: 'interrupt', projectPath: '/p', sessionId: 'sid-1' } as never,
+      undefined,
+      { deviceId: 'mobile-A', transport: 'lan' },
+    )
+
+    expect(interrupt).toHaveBeenCalledTimes(1)
+    expect(session.subscribers.has('mobile-A')).toBe(true)
   })
 
   it('leave_session releases ownership held by that device', async () => {

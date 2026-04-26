@@ -93,7 +93,7 @@ Modules under `src/main/remote/`:
 
 `RemoteControlService` is a pure transport (relay + LAN, frame encoding, encryption). It no longer holds session-control state — `subscribedSession` and `remoteSessionFilter` were deleted; `subscribeSession/unsubscribeSession/setRemoteSessionFilter/clearRemoteSessionFilter/getSubscribedSession` were removed.
 
-Codex and Claude remote turns share a single `withRemoteOwnership(projectPath, sessionId, deviceId, session, fn)` helper inside `AgentService` — claim → run → release symmetry. Provider backends (Claude, Codex) have zero awareness of ownership.
+Codex and Claude remote turns share a single `ensureRemoteOwnership(deviceId, session, fn, opts?)` helper inside `AgentService`. The helper claims ownership and runs the turn but **does not auto-release** afterwards (mobile claim is persistent; release happens on `leave_session`, `unsubscribe_session`, device disconnect, or desktop kick). Provider backends (Claude, Codex) have zero awareness of ownership.
 
 **Sender deviceId propagation**: `RemoteControlCallbacks.onCommand` carries `source: { deviceId, transport: 'lan' | 'relay' }`. `LanServer` reads it from the per-socket `ClientState`. **Relay** reads it from `frame.mobileDeviceId` injected by `RelaySession` Durable Object (relay protocol now supports `1 desktop : N mobile` per channel — sockets tagged `mobile:<deviceId>`). `AgentService.handleRemoteCommand(cmd, respond, source)` passes the real `source.deviceId` into `session.claim/release/subscribe/unsubscribe` — no placeholder strings, no inference.
 

@@ -769,7 +769,7 @@ export class RemoteControlService {
           log.warn('[RemoteControl] relay command missing mobileDeviceId, dropping')
           return
         }
-        this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data), { deviceId, transport: 'relay' })
+        this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data, deviceId), { deviceId, transport: 'relay' })
         break
       }
       case 'register': {
@@ -1047,19 +1047,19 @@ export class RemoteControlService {
     this.queueSend([stripped], targetDeviceIds)
   }
 
-  private async sendResponse(requestId: string, data: unknown): Promise<void> {
+  private async sendResponse(requestId: string, data: unknown, mobileDeviceId?: string): Promise<void> {
     if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
     try {
       trace('remote.resp', requestId, data)
       const encrypted = await encryptPayload(this.keys.aesKey, data)
       if (encrypted.length <= WS_CHUNK_SIZE) {
-        this.relayWs.send(JSON.stringify({ type: 'response', requestId, data: encrypted }))
+        this.relayWs.send(JSON.stringify({ type: 'response', requestId, data: encrypted, ...(mobileDeviceId ? { mobileDeviceId } : {}) }))
       } else {
         const totalChunks = Math.ceil(encrypted.length / WS_CHUNK_SIZE)
         log.info(`[RemoteControl] Chunking response ${requestId}: ${encrypted.length} bytes → ${totalChunks} chunks`)
         for (let i = 0; i < totalChunks; i++) {
           const chunk = encrypted.slice(i * WS_CHUNK_SIZE, (i + 1) * WS_CHUNK_SIZE)
-          this.relayWs.send(JSON.stringify({ type: 'response_chunk', requestId, index: i, total: totalChunks, data: chunk }))
+          this.relayWs.send(JSON.stringify({ type: 'response_chunk', requestId, index: i, total: totalChunks, data: chunk, ...(mobileDeviceId ? { mobileDeviceId } : {}) }))
         }
       }
     } catch (err) {

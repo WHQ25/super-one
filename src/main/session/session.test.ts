@@ -1477,4 +1477,17 @@ describe('Session ownership', () => {
     expect(session.subscribers.size).toBe(0)
     expect(events.map((e) => e.type)).toContain('closed')
   })
+
+  it('dispose tags owner_changed and subscriber_removed with reason=session_closed', async () => {
+    const { session } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    session.subscribe('dev-A')
+    const events: import('./types').SessionLifecycleEvent[] = []
+    session.onLifecycle((e) => events.push(e))
+    await session.dispose()
+    const ownerChanged = events.find((e) => e.type === 'owner_changed')
+    const subscriberRemoved = events.find((e) => e.type === 'subscriber_removed')
+    expect(ownerChanged && 'reason' in ownerChanged && ownerChanged.reason).toBe('session_closed')
+    expect(subscriberRemoved && 'reason' in subscriberRemoved && subscriberRemoved.reason).toBe('session_closed')
+  })
 })

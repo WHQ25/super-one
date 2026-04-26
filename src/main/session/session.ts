@@ -157,21 +157,17 @@ export class Session implements SessionContract {
     }
   }
 
-  claim(owner: SessionOwner): void {
+  claim(owner: Extract<SessionOwner, { kind: 'remote' }>): void {
     if (this._status === 'disposed') return
-    if (owner.kind === 'remote') {
-      if (this._owner.kind === 'remote' && this._owner.deviceId !== owner.deviceId) {
-        throw new SessionClaimConflictError(this.id, this._owner.deviceId, owner.deviceId)
-      }
-      for (const sub of this._subscribers) {
-        if (sub !== owner.deviceId) {
-          throw new SessionClaimConflictError(this.id, sub, owner.deviceId)
-        }
+    if (this._owner.kind === 'remote' && this._owner.deviceId !== owner.deviceId) {
+      throw new SessionClaimConflictError(this.id, this._owner.deviceId, owner.deviceId)
+    }
+    for (const sub of this._subscribers) {
+      if (sub !== owner.deviceId) {
+        throw new SessionClaimConflictError(this.id, sub, owner.deviceId)
       }
     }
-    if (this._owner.kind === owner.kind && (owner.kind === 'local' || (this._owner.kind === 'remote' && owner.kind === 'remote' && this._owner.deviceId === owner.deviceId))) {
-      return
-    }
+    if (this._owner.kind === 'remote' && this._owner.deviceId === owner.deviceId) return
     const previous = this._owner
     this._owner = owner
     this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: owner })
@@ -613,6 +609,9 @@ export class Session implements SessionContract {
     if (this._status === 'disposed') return
     this._status = 'disposed'
     this._pendingQueuedRequests.clear()
+    if (this.backendStarted) {
+      try { await this.backend.close() } catch (err) { log.debug('[Session] backend.close error:', err) }
+    }
     if (this._owner.kind === 'remote') {
       const previous = this._owner
       this._owner = LOCAL_OWNER
@@ -629,9 +628,6 @@ export class Session implements SessionContract {
     }
     this.unsubs = []
     this.eventListeners.clear()
-    if (this.backendStarted) {
-      try { await this.backend.close() } catch (err) { log.debug('[Session] backend.close error:', err) }
-    }
     this.abortController?.abort()
     this.abortController = null
   }

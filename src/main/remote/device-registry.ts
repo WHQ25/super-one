@@ -1,5 +1,5 @@
 import log from '../logger'
-import type { SessionManager } from '../session/types'
+import type { SessionLeaveReason, SessionManager } from '../session/types'
 
 export class DeviceRegistry {
   constructor(private readonly sessionManager: SessionManager) {}
@@ -22,25 +22,25 @@ export class DeviceRegistry {
     }
   }
 
-  unsubscribeAll(deviceId: string): void {
+  unsubscribeAll(deviceId: string, reason: SessionLeaveReason = 'self_leave'): void {
     let count = 0
     this.sessionManager.forEachSession((session) => {
       if (session.subscribers.has(deviceId)) {
-        session.unsubscribe(deviceId, 'self_leave')
+        session.unsubscribe(deviceId, reason)
         count++
       }
     })
-    if (count) log.info('[DeviceRegistry] device=%s unsubscribe-all count=%d', deviceId, count)
+    if (count) log.info('[DeviceRegistry] device=%s unsubscribe-all reason=%s count=%d', deviceId, reason, count)
   }
 
-  releaseAll(deviceId: string): void {
+  releaseAll(deviceId: string, reason: SessionLeaveReason = 'self_leave'): void {
     let count = 0
     this.sessionManager.forEachSession((session) => {
       if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {
-        session.release(deviceId, 'self_leave')
+        session.release(deviceId, reason)
         count++
       }
     })
-    if (count) log.info('[DeviceRegistry] device=%s release-all count=%d', deviceId, count)
+    if (count) log.info('[DeviceRegistry] device=%s release-all reason=%s count=%d', deviceId, reason, count)
   }
 }

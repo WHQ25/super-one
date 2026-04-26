@@ -292,6 +292,9 @@ export class AgentService {
   }
 
   async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void> {
+    if (!source?.deviceId) {
+      log.warn('[AgentService] handleRemoteCommand without source.deviceId for command=%s; using "unknown-device" fallback', command.type)
+    }
     const deviceId = source?.deviceId ?? 'unknown-device'
     trace('remote.cmd', command.type, command)
     switch (command.type) {
@@ -531,7 +534,7 @@ export class AgentService {
         let subSession = mgr.getSession(command.sessionId)
         if (!subSession) {
           try {
-            subSession = mgr.resumeSession(command.sessionId)
+            subSession = mgr.resumeSession(command.sessionId, { passive: true })
           } catch (err) {
             log.warn('[AgentService] subscribe_session: session %s not found: %s', command.sessionId, err instanceof Error ? err.message : String(err))
             if (reqId) await respond?.(reqId, { error: 'session_not_found' })
@@ -559,9 +562,9 @@ export class AgentService {
         const targetSessionId = command.sessionId
         if (targetSessionId) {
           const s = this.sessionManager?.getSession(targetSessionId)
-          if (s && s.subscribers.has(deviceId)) s.unsubscribe(deviceId)
+          if (s && s.subscribers.has(deviceId)) s.unsubscribe(deviceId, 'self_leave')
         } else {
-          this.deviceRegistry?.unsubscribeAll(deviceId)
+          this.deviceRegistry?.unsubscribeAll(deviceId, 'self_leave')
         }
         break
       }

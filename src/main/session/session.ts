@@ -170,6 +170,7 @@ export class Session implements SessionContract {
     if (this._owner.kind === 'remote' && this._owner.deviceId === owner.deviceId) return
     const previous = this._owner
     this._owner = owner
+    trace('session.lifecycle', 'claim', { sid: this.id, deviceId: owner.deviceId, prevOwner: previous.kind === 'remote' ? previous.deviceId : 'local' })
     this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: owner })
   }
 
@@ -177,6 +178,7 @@ export class Session implements SessionContract {
     if (this._owner.kind !== 'remote' || this._owner.deviceId !== deviceId) return
     const previous = this._owner
     this._owner = LOCAL_OWNER
+    trace('session.lifecycle', 'release', { sid: this.id, deviceId, reason: reason ?? null })
     this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: LOCAL_OWNER, reason })
   }
 
@@ -192,11 +194,13 @@ export class Session implements SessionContract {
       }
     }
     this._subscribers.add(deviceId)
+    trace('session.lifecycle', 'subscribe', { sid: this.id, deviceId, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local' })
     this.emitLifecycle({ type: 'subscriber_added', sessionId: this.id, deviceId })
   }
 
   unsubscribe(deviceId: string, reason?: SessionLeaveReason): void {
     if (!this._subscribers.delete(deviceId)) return
+    trace('session.lifecycle', 'unsubscribe', { sid: this.id, deviceId, reason: reason ?? null, remainingSubs: [...this._subscribers] })
     this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId, reason })
   }
 
@@ -607,6 +611,7 @@ export class Session implements SessionContract {
 
   async dispose(): Promise<void> {
     if (this._status === 'disposed') return
+    trace('session.lifecycle', 'dispose', { sid: this.id, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local', subscribers: [...this._subscribers] })
     this._status = 'disposed'
     this._pendingQueuedRequests.clear()
     if (this.backendStarted) {

@@ -515,10 +515,20 @@ export class AgentService {
           if (reqId) await respond?.(reqId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
           break
         }
-        const subSession = this.sessionManager?.getSession(command.sessionId)
-        if (!subSession) {
-          if (reqId) await respond?.(reqId, { error: 'session_not_found' })
+        const mgr = this.sessionManager
+        if (!mgr) {
+          if (reqId) await respond?.(reqId, { error: 'session_manager_not_ready' })
           break
+        }
+        let subSession = mgr.getSession(command.sessionId)
+        if (!subSession) {
+          try {
+            subSession = mgr.resumeSession(command.sessionId)
+          } catch (err) {
+            log.warn('[AgentService] subscribe_session: session %s not found: %s', command.sessionId, err instanceof Error ? err.message : String(err))
+            if (reqId) await respond?.(reqId, { error: 'session_not_found' })
+            break
+          }
         }
         try {
           subSession.subscribe(deviceId)

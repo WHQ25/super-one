@@ -694,6 +694,48 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(session.subscribers.has('mobile-A')).toBe(true)
   })
 
+  it('subscribe_session resumes a cold session that is not active in memory', async () => {
+    const service = new AgentService()
+    const resumed = makeMockSession({ id: 'sid-1', projectPath: '/p' })
+    const resumeSession = vi.fn(() => resumed)
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => null),
+      getSession: vi.fn(() => null),
+      resumeSession,
+      forEachSession: vi.fn(),
+    }
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand(
+      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-3' } as never,
+      respond,
+      { deviceId: 'mobile-A', transport: 'lan' },
+    )
+
+    expect(resumeSession).toHaveBeenCalledWith('sid-1')
+    expect(respond).toHaveBeenCalledWith('req-3', { ok: true })
+    expect(resumed.subscribers.has('mobile-A')).toBe(true)
+  })
+
+  it('subscribe_session responds with session_not_found when resume fails', async () => {
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => null),
+      getSession: vi.fn(() => null),
+      resumeSession: vi.fn(() => { throw new Error('not in DB') }),
+      forEachSession: vi.fn(),
+    }
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand(
+      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-ghost', requestId: 'req-4' } as never,
+      respond,
+      { deviceId: 'mobile-A', transport: 'lan' },
+    )
+
+    expect(respond).toHaveBeenCalledWith('req-4', { error: 'session_not_found' })
+  })
+
   it('leave_session releases ownership held by that device', async () => {
     const service = new AgentService()
     const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })

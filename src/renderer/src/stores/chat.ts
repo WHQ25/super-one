@@ -3353,7 +3353,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (activeSession.status !== 'streaming' && currentSid) {
           await window.app.codexReset(currentSid).catch(() => {})
         }
-      } else if (_isBusyStatus(activeSession.status) || activeSession.awaitingAssistantReply) {
+      } else if (
+        isRemoteSession(get(), activeProject, currentSid) ||
+        _isBusyStatus(activeSession.status) ||
+        activeSession.awaitingAssistantReply
+      ) {
         agentConfig = await _parkActiveSession(activeProject, project._activeSessionId, newSessionId)
       } else {
         agentConfig = await window.agent.resetSession(activeProject, newSessionId)

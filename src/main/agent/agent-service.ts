@@ -1555,7 +1555,6 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
-      this.throwIfRemoteLocked(projectPath)
       const mgr = this.requireSessionManager()
       mgr.clearActiveSession(projectPath)
       const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()

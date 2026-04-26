@@ -521,7 +521,7 @@ export class AgentService {
           this.deviceRegistry?.unsubscribeAll(deviceId)
         }
         for (const e of ended) {
-          this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: e.projectPath, remoteSessionId: e.sessionId })
+          this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: e.projectPath, remoteSessionId: e.sessionId, isSubscribe: true })
         }
         break
       }
@@ -1012,7 +1012,7 @@ export class AgentService {
       const subs = Array.from(session.subscribers)
       if (subs.length > 0) {
         for (const d of subs) session.unsubscribe(d)
-        this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: session.projectPath, remoteSessionId: session.id })
+        this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: session.projectPath, remoteSessionId: session.id, isSubscribe: true })
       }
       return true
     })
@@ -1194,7 +1194,7 @@ export class AgentService {
         if (announced.has(sessionId)) continue
         announced.add(sessionId)
         await this.remoteControlService?.sendEventToMobile({ type: 'session_disconnected', sessionId })
-        this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId })
+        this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId, isSubscribe: true })
       }
     })
 

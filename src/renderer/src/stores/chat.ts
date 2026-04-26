@@ -2383,7 +2383,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           _historyHydrated: !event.isSubscribe,
         }
         return {
-          remoteSessions: addRemoteSession(s.remoteSessions, projectPath, sessionId),
+          remoteSessions: event.isSubscribe
+            ? addRemoteSession(s.remoteSessions, projectPath, sessionId)
+            : s.remoteSessions,
           projectSessions: {
             ...s.projectSessions,
             [projectPath]: {
@@ -2399,6 +2401,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return
     }
     if (event.type === 'remote_session_end') {
+      if (!event.isSubscribe) return
       set((s) => ({
         remoteSessions: removeRemoteSession(s.remoteSessions, event.remoteProjectPath, event.remoteSessionId),
       }))

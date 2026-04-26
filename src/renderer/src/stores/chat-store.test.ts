@@ -5037,10 +5037,10 @@ describe('multi-mobile remoteSessions tracking', () => {
   it('tracks two concurrent remote sessions independently (no overwrite)', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
     } as AgentEvent)
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-B',
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-B', isSubscribe: true,
     } as AgentEvent)
 
     const ids = useChatStore.getState().remoteSessions['/test'] ?? []
@@ -5050,14 +5050,14 @@ describe('multi-mobile remoteSessions tracking', () => {
   it('remote_session_end for one session does not clear the other', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
     } as AgentEvent)
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-B',
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-B', isSubscribe: true,
     } as AgentEvent)
 
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
     } as AgentEvent)
 
     expect(useChatStore.getState().remoteSessions['/test']).toEqual(['sess-B'])
@@ -5066,10 +5066,10 @@ describe('multi-mobile remoteSessions tracking', () => {
   it('removes the project key from remoteSessions when its last remote session ends', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
     } as AgentEvent)
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
     } as AgentEvent)
 
     expect(useChatStore.getState().remoteSessions['/test']).toBeUndefined()
@@ -5078,7 +5078,7 @@ describe('multi-mobile remoteSessions tracking', () => {
   it('user_message_appended event echoes a remote-origin user message into the routed session', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
     } as AgentEvent)
 
     const userMsg = makeMessage('user-1', 'user' as never)
@@ -5092,10 +5092,40 @@ describe('multi-mobile remoteSessions tracking', () => {
     expect(sess.messages.map((m) => m.id)).toContain('user-1')
   })
 
-  it('user_message_appended is idempotent (duplicate id is not appended twice)', () => {
+  it('ownership-only remote_session_start (no isSubscribe) does NOT add to remoteSessions', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
       type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+    } as AgentEvent)
+    expect(useChatStore.getState().remoteSessions['/test']).toBeUndefined()
+  })
+
+  it('ownership-only remote_session_end (no isSubscribe) does NOT remove a subscribed session', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
+    } as AgentEvent)
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
+    } as AgentEvent)
+    expect(useChatStore.getState().remoteSessions['/test']).toEqual(['sess-A'])
+  })
+
+  it('subscribe-tagged remote_session_end removes the session', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
+    } as AgentEvent)
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
+    } as AgentEvent)
+    expect(useChatStore.getState().remoteSessions['/test']).toBeUndefined()
+  })
+
+  it('user_message_appended is idempotent (duplicate id is not appended twice)', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
     } as AgentEvent)
 
     const userMsg = makeMessage('user-1', 'user' as never)

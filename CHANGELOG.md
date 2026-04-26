@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.22.4-alpha] - 2026-04-27
+
+### Added
+
+- **Right-click selection to quote into prompt** — select any text in chat (markdown, user messages, tool blocks) and right-click to copy or "add to chat". Quoted selections accumulate as a chip in the input bar and are wrapped in `<quote>...</quote>` XML on send. Codex shares the same path via a unified `buildUserMessage`. Mini-app context chips also moved below the user bubble and adapt to dark mode.
+- **Pasted-text chip rendering survives reloads** — `ContentBlock.text` gains an `isPaste` flag, so historical messages always render long pastes as `LongTextChip` regardless of length heuristics.
+- **Recent folder list keeps a stable order** — sidebar's recent projects no longer reshuffle on every activity update; new entries prepend, existing ones hold position until the user toggles sort mode.
+- **Project rows expand sessions incrementally** — initial render shows 5 sessions per project with a "Show more" / "Show less" toggle for the rest (up to 10), plus a shortcut to full history.
+- **Mobile-connect toast** — desktop shows a top-center toast only on a mobile device's first connect, not on transport switches (LAN ↔ relay).
+- **Diagnostic traces for mobile routing** — `remote.broadcast` and `session.lifecycle` are now recorded in `event-trace.db`, making it possible to query a single timeline of emit → route/drop → reached-transport alongside ownership/subscription churn.
+
+### Fixed
+
+- **Mobile reasoning no longer renders after the answer** — short thinking deltas were getting flushed after text on `message_complete`, displaying reasoning below the visible response on mobile. The broadcaster now flushes the opposing buffer when content type switches, preserving emit-time order.
+- **Mobile gets session metadata on cold-subscribe** — `subscribe_session` against a freshly-constructed session was missing the synchronous `init_ready` event (skills, agents, permission mode, etc.) because it fired before subscribers were attached. Cached replay events are now forwarded to the new subscriber.
+
 ## [0.22.3-alpha] - 2026-04-26
 
 ### Fixed

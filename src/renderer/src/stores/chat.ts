@@ -3195,8 +3195,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   disconnectRemoteSession: () => {
-    void window.agent.disconnectRemoteSession()
-    set({ remoteSessions: {} })
+    const state = get()
+    const projectPath = state.activeProject
+    const sid = projectPath ? state.projectSessions[projectPath]?._activeSessionId ?? undefined : undefined
+    void window.agent.disconnectRemoteSession(sid)
+    if (sid && projectPath) {
+      set((s) => ({ remoteSessions: removeRemoteSession(s.remoteSessions, projectPath, sid) }))
+    } else {
+      set({ remoteSessions: {} })
+    }
   },
 
   interrupt: async () => {

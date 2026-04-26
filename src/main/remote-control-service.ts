@@ -893,12 +893,12 @@ export class RemoteControlService {
     this.pairingSession = null
   }
 
-  async sendEventToMobile(event: Record<string, unknown>): Promise<void> {
+  async sendEventToMobile(event: Record<string, unknown>, targetDeviceIds?: string[]): Promise<void> {
     if (!this.keys) return
     if (!this.hasAnyMobileTransport()) return
     try {
       const data = await encryptPayload(this.keys.aesKey, event)
-      this.sendEventFrame(data)
+      this.sendEventFrame(data, targetDeviceIds)
     } catch (err) {
       log.error('[RemoteControl] Failed to send event to mobile:', err)
     }

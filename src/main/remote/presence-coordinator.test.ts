@@ -49,11 +49,15 @@ function makeSource(): PresenceSessionSource & { add: (s: FakeSession) => void }
   }
 }
 
-function makeTransport(): PresenceTransport & { sent: AgentEvent[] } {
+interface MobileSent { event: Record<string, unknown>; targets?: string[] }
+function makeTransport(): PresenceTransport & { sent: AgentEvent[]; mobile: MobileSent[] } {
   const sent: AgentEvent[] = []
+  const mobile: MobileSent[] = []
   return {
     sent,
+    mobile,
     broadcastToRenderer(event) { sent.push(event) },
+    sendToMobile(event, targets) { mobile.push({ event, targets }) },
   }
 }
 
@@ -74,7 +78,7 @@ describe('PresenceCoordinator', () => {
     ])
   })
 
-  it('emits remote_session_end when owner switches remote → local', () => {
+  it('emits remote_session_end + session_disconnected to previous owner when owner switches remote → local', () => {
     const source = makeSource()
     const transport = makeTransport()
     new PresenceCoordinator(source, transport)
@@ -87,6 +91,9 @@ describe('PresenceCoordinator', () => {
     })
     expect(transport.sent).toEqual([
       { type: 'remote_session_end', remoteProjectPath: '/proj/A', remoteSessionId: 's1' },
+    ])
+    expect(transport.mobile).toEqual([
+      { event: { type: 'session_disconnected', sessionId: 's1' }, targets: ['dev-A'] },
     ])
   })
 
@@ -102,7 +109,7 @@ describe('PresenceCoordinator', () => {
     ])
   })
 
-  it('emits remote_session_end with isSubscribe on subscriber_removed', () => {
+  it('emits remote_session_end + session_disconnected to that device on subscriber_removed', () => {
     const source = makeSource()
     const transport = makeTransport()
     new PresenceCoordinator(source, transport)
@@ -111,6 +118,9 @@ describe('PresenceCoordinator', () => {
     s.emit({ type: 'subscriber_removed', sessionId: 's1', deviceId: 'dev-B' })
     expect(transport.sent).toEqual([
       { type: 'remote_session_end', remoteProjectPath: '/proj/A', remoteSessionId: 's1', isSubscribe: true },
+    ])
+    expect(transport.mobile).toEqual([
+      { event: { type: 'session_disconnected', sessionId: 's1' }, targets: ['dev-B'] },
     ])
   })
 
@@ -150,7 +160,7 @@ describe('PresenceCoordinator', () => {
     expect(transport.sent).toHaveLength(1)
   })
 
-  it('treats remote → remote (different device) as a fresh start', () => {
+  it('treats remote → remote (different device) as a fresh start and notifies previous owner', () => {
     const source = makeSource()
     const transport = makeTransport()
     new PresenceCoordinator(source, transport)
@@ -163,6 +173,9 @@ describe('PresenceCoordinator', () => {
     })
     expect(transport.sent).toEqual([
       { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1' },
+    ])
+    expect(transport.mobile).toEqual([
+      { event: { type: 'session_disconnected', sessionId: 's1' }, targets: ['dev-A'] },
     ])
   })
 

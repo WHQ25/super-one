@@ -1161,16 +1161,19 @@ export class AgentService {
       return searchMentions(roots, query, agents, 20, scopeDir)
     })
 
-    ipcMain.handle(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, async () => {
-      const affectedSessionIds: string[] = []
-      this.sessionManager?.forEachSession((s) => {
-        if (s.owner.kind !== 'remote' && s.subscribers.size === 0) return
-        affectedSessionIds.push(s.id)
-        if (s.owner.kind === 'remote') s.release(s.owner.deviceId)
-        for (const d of Array.from(s.subscribers)) s.unsubscribe(d)
-      })
-      for (const sessionId of affectedSessionIds) {
-        await this.remoteControlService?.sendEventToMobile({ type: 'session_disconnected', sessionId })
+    ipcMain.handle(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, async (_event, sessionId?: string) => {
+      const targets: import('../session/types').Session[] = []
+      if (sessionId) {
+        const s = this.sessionManager?.getSession(sessionId)
+        if (s) targets.push(s)
+      } else {
+        this.sessionManager?.forEachSession((s) => {
+          if (s.owner.kind === 'remote' || s.subscribers.size > 0) targets.push(s)
+        })
+      }
+      for (const session of targets) {
+        if (session.owner.kind === 'remote') session.release(session.owner.deviceId)
+        for (const d of Array.from(session.subscribers)) session.unsubscribe(d)
       }
     })
 

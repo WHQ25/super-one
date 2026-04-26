@@ -4,6 +4,7 @@ import log from '../logger'
 
 export interface PresenceTransport {
   broadcastToRenderer(event: AgentEvent): void
+  sendToMobile(event: Record<string, unknown>, targetDeviceIds?: string[]): void | Promise<void>
 }
 
 export interface PresenceSessionSource {
@@ -37,29 +38,35 @@ export class PresenceCoordinator {
     const projectPath = session.projectPath
     switch (evt.type) {
       case 'owner_changed': {
-        const wentRemote = evt.previous.kind === 'local' && evt.current.kind === 'remote'
-        const wentLocal = evt.previous.kind === 'remote' && evt.current.kind === 'local'
-        const swappedRemote =
-          evt.previous.kind === 'remote' && evt.current.kind === 'remote' &&
-          evt.previous.deviceId !== evt.current.deviceId
-        if (wentRemote) {
+        if (evt.previous.kind === 'local' && evt.current.kind === 'remote') {
           this.transport.broadcastToRenderer({
             type: 'remote_session_start',
             remoteProjectPath: projectPath,
             remoteSessionId: sessionId,
           })
-        } else if (wentLocal) {
+        } else if (evt.previous.kind === 'remote' && evt.current.kind === 'local') {
           this.transport.broadcastToRenderer({
             type: 'remote_session_end',
             remoteProjectPath: projectPath,
             remoteSessionId: sessionId,
           })
-        } else if (swappedRemote) {
+          void this.transport.sendToMobile(
+            { type: 'session_disconnected', sessionId },
+            [evt.previous.deviceId],
+          )
+        } else if (
+          evt.previous.kind === 'remote' && evt.current.kind === 'remote' &&
+          evt.previous.deviceId !== evt.current.deviceId
+        ) {
           this.transport.broadcastToRenderer({
             type: 'remote_session_start',
             remoteProjectPath: projectPath,
             remoteSessionId: sessionId,
           })
+          void this.transport.sendToMobile(
+            { type: 'session_disconnected', sessionId },
+            [evt.previous.deviceId],
+          )
         }
         return
       }
@@ -78,6 +85,10 @@ export class PresenceCoordinator {
           remoteSessionId: sessionId,
           isSubscribe: true,
         })
+        void this.transport.sendToMobile(
+          { type: 'session_disconnected', sessionId },
+          [evt.deviceId],
+        )
         return
       case 'closed': {
         const unsub = this.unsubBySession.get(sessionId)

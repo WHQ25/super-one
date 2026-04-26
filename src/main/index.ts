@@ -203,6 +203,7 @@ function safeSend(channel: string, ...args: unknown[]): void {
 
 new PresenceCoordinator(sessionManager, {
   broadcastToRenderer: (event) => safeSend(AgentIpcChannels.EVENT, event),
+  sendToMobile: (event, targetDeviceIds) => remoteControlService.sendEventToMobile(event, targetDeviceIds),
 })
 
 function createWindow(): void {

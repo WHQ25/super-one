@@ -42,7 +42,7 @@ interface ToolUseBase {
 }
 
 export type ContentBlock =
-  | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }> }
+  | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean }
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null }
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData

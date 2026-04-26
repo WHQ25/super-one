@@ -3018,7 +3018,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           : { type: 'image' as const, name: att.name }
       ),
       ...(segments && segments.length > 0
-        ? segments.map((s) => ({ type: 'text' as const, text: s.text }))
+        ? segments.map((s) => ({ type: 'text' as const, text: s.text, isPaste: s.isPaste }))
         : rawContent ? [{ type: 'text' as const, text: rawContent }] : []),
     ]
 

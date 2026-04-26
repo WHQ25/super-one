@@ -311,7 +311,8 @@ function LongTextChip({ text }: { text: string }) {
   )
 }
 
-function RestContent({ rest }: { rest: string }) {
+function RestContent({ rest, forcePlain }: { rest: string; forcePlain?: boolean }) {
+  if (forcePlain) return <span className="whitespace-pre-wrap">{rest}</span>
   const lineCount = rest.split('\n').length
   if (lineCount >= PASTE_CHIP_LINE_THRESHOLD || rest.length >= PASTE_CHIP_CHAR_THRESHOLD) return <LongTextChip text={rest} />
   return <span className="whitespace-pre-wrap">{rest}</span>
@@ -345,7 +346,8 @@ function MentionInlineChip({ kind, value }: { kind: UserMentionKind; value: stri
   )
 }
 
-export function UserTextBlock({ text }: { text: string }) {
+export function UserTextBlock({ text, isPaste }: { text: string; isPaste?: boolean }) {
+  if (isPaste === true) return <LongTextChip text={text} />
   const segments = parseUserMentions(text)
   if (segments.length === 0) return null
   return (
@@ -353,7 +355,7 @@ export function UserTextBlock({ text }: { text: string }) {
       {segments.map((seg, i) =>
         seg.type === 'mention'
           ? <MentionInlineChip key={i} kind={seg.kind} value={seg.value} />
-          : <RestContent key={i} rest={seg.text} />
+          : <RestContent key={i} rest={seg.text} forcePlain={isPaste === false} />
       )}
     </span>
   )
@@ -596,7 +598,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                 )}
                 {message.content.map((block, i) => {
                   if (message.attachments?.length && (block.type === 'image' || block.type === 'document')) return null
-                  return block.type === 'text' ? <UserTextBlock key={i} text={block.text} /> : renderBlock(block, i, false)
+                  return block.type === 'text' ? <UserTextBlock key={i} text={block.text} isPaste={block.isPaste} /> : renderBlock(block, i, false)
                 })}
               </>
           : isCodexMessage

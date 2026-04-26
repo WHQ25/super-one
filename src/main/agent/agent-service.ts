@@ -555,6 +555,13 @@ export class AgentService {
           throw err
         }
         this.releaseDeviceFromOtherSessions(deviceId, command.sessionId)
+        for (const event of subSession.getReplayEvents()) {
+          try {
+            await this.remoteControlService?.sendAgentEvent(event, [deviceId])
+          } catch (err) {
+            log.warn('[AgentService] subscribe_session: replay event failed sid=%s type=%s: %s', command.sessionId, event.type, err instanceof Error ? err.message : String(err))
+          }
+        }
         if (reqId) await respond?.(reqId, { ok: true })
         break
       }

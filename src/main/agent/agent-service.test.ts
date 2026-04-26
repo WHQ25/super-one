@@ -190,6 +190,7 @@ function makeMockSession<T extends Record<string, unknown>>(props: T): T & MockS
   const subscribers = new Set<string>()
   const lifecycleListeners = new Set<(event: unknown) => void>()
   const s = {
+    getReplayEvents: () => [] as unknown[],
     ...props,
     owner: { kind: 'local' as const },
     subscribers,
@@ -783,6 +784,117 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(resumeSession).toHaveBeenCalledWith('sid-1', { passive: true })
     expect(respond).toHaveBeenCalledWith('req-3', { ok: true })
     expect(resumed.subscribers.has('mobile-A')).toBe(true)
+  })
+
+  it('subscribe_session replays cached init events to the new subscriber so first-time mobile sees session metadata', async () => {
+    const service = new AgentService()
+    const initReady = { type: 'init_ready', sessionId: 'sid-1', projectPath: '/p', cwd: '/p' }
+    const worktreeMissing = { type: 'worktree_missing', sessionId: 'sid-1', projectPath: '/p', worktreePath: '/wt', fallbackCwd: '/p' }
+    const session = makeMockSession({
+      id: 'sid-1',
+      projectPath: '/p',
+      getReplayEvents: vi.fn(() => [initReady, worktreeMissing]),
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      forEachSession: vi.fn(),
+    }
+    const sendAgentEvent = vi.fn().mockResolvedValue(undefined)
+    service.setRemoteControlService({ sendEventToMobile: vi.fn(), sendAgentEvent } as never)
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand(
+      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-replay-1' } as never,
+      respond,
+      { deviceId: 'mobile-A', transport: 'lan' },
+    )
+
+    expect(respond).toHaveBeenCalledWith('req-replay-1', { ok: true })
+    expect(session.subscribers.has('mobile-A')).toBe(true)
+    expect(sendAgentEvent).toHaveBeenCalledWith(initReady, ['mobile-A'])
+    expect(sendAgentEvent).toHaveBeenCalledWith(worktreeMissing, ['mobile-A'])
+  })
+
+  it('subscribe_session on a cold session replays init_ready that was cached during resume', async () => {
+    const service = new AgentService()
+    const initReady = { type: 'init_ready', sessionId: 'sid-1', projectPath: '/p', cwd: '/p' }
+    const resumed = makeMockSession({
+      id: 'sid-1',
+      projectPath: '/p',
+      getReplayEvents: vi.fn(() => [initReady]),
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => null),
+      getSession: vi.fn(() => null),
+      resumeSession: vi.fn(() => resumed),
+      forEachSession: vi.fn(),
+    }
+    const sendAgentEvent = vi.fn().mockResolvedValue(undefined)
+    service.setRemoteControlService({ sendEventToMobile: vi.fn(), sendAgentEvent } as never)
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand(
+      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-replay-cold' } as never,
+      respond,
+      { deviceId: 'mobile-A', transport: 'lan' },
+    )
+
+    expect(respond).toHaveBeenCalledWith('req-replay-cold', { ok: true })
+    expect(sendAgentEvent).toHaveBeenCalledWith(initReady, ['mobile-A'])
+  })
+
+  it('subscribe_session does not call sendAgentEvent when there are no cached events to replay', async () => {
+    const service = new AgentService()
+    const session = makeMockSession({
+      id: 'sid-1',
+      projectPath: '/p',
+      getReplayEvents: vi.fn(() => []),
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      forEachSession: vi.fn(),
+    }
+    const sendAgentEvent = vi.fn().mockResolvedValue(undefined)
+    service.setRemoteControlService({ sendEventToMobile: vi.fn(), sendAgentEvent } as never)
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand(
+      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-replay-empty' } as never,
+      respond,
+      { deviceId: 'mobile-A', transport: 'lan' },
+    )
+
+    expect(respond).toHaveBeenCalledWith('req-replay-empty', { ok: true })
+    expect(sendAgentEvent).not.toHaveBeenCalled()
+  })
+
+  it('subscribe_session does not replay cached events when the subscribe call is rejected with session_locked', async () => {
+    const service = new AgentService()
+    const session = makeMockSession({
+      id: 'sid-1',
+      projectPath: '/p',
+      getReplayEvents: vi.fn(() => [{ type: 'init_ready', sessionId: 'sid-1' }]),
+    })
+    session.claim({ kind: 'remote', deviceId: 'mobile-A' })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      forEachSession: vi.fn(),
+    }
+    const sendAgentEvent = vi.fn().mockResolvedValue(undefined)
+    service.setRemoteControlService({ sendEventToMobile: vi.fn(), sendAgentEvent } as never)
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand(
+      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-locked' } as never,
+      respond,
+      { deviceId: 'mobile-B', transport: 'lan' },
+    )
+
+    expect(respond).toHaveBeenCalledWith('req-locked', { error: 'session_locked', ownerDeviceId: 'mobile-A' })
+    expect(sendAgentEvent).not.toHaveBeenCalled()
   })
 
   it('subscribe_session responds with session_not_found when resume fails', async () => {

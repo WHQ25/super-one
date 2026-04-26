@@ -173,6 +173,7 @@ vi.mock('./resolve-cli', () => ({
 }))
 
 const { AgentService } = await import('./agent-service')
+const { SessionClaimConflictError } = await import('../session/types')
 const dbSessions = await import('../db-sessions')
 const appSettings = await import('../app-settings-service')
 const claudeModels = await import('./claude-models')
@@ -192,7 +193,13 @@ function makeMockSession<T extends Record<string, unknown>>(props: T): T & MockS
     ...props,
     owner: { kind: 'local' as const },
     subscribers,
-    claim(o: { kind: 'local' } | { kind: 'remote'; deviceId: string }) { (s as { owner: unknown }).owner = o },
+    claim(o: { kind: 'local' } | { kind: 'remote'; deviceId: string }) {
+      const cur = (s as { owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } }).owner
+      if (o.kind === 'remote' && cur.kind === 'remote' && cur.deviceId !== o.deviceId) {
+        throw new SessionClaimConflictError(String((s as { id: unknown }).id), cur.deviceId, o.deviceId)
+      }
+      (s as { owner: unknown }).owner = o
+    },
     release(deviceId: string) {
       const o = (s as { owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } }).owner
       if (o.kind === 'remote' && o.deviceId === deviceId) (s as { owner: unknown }).owner = { kind: 'local' }
@@ -455,7 +462,7 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(sessionB.subscribers.has('device-1')).toBe(false)
   })
 
-  it('after claude remote turn completes and mobile unsubscribes, desktop send is not blocked (regression: mobile-exit hangs desktop)', async () => {
+  it('after claude remote turn, mobile leave_session releases ownership and desktop is no longer locked', async () => {
     const service = new AgentService()
     const send = vi.fn().mockResolvedValue(undefined)
     const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send, snapshot: { harnessId: 'claude' } })
@@ -477,13 +484,18 @@ describe('AgentService.handleRemoteCommand', () => {
       content: 'hello',
       projectPath: '/p',
       sessionId: 'sid-1',
-    } as never)
+    } as never, undefined, { deviceId: 'mobile-A', transport: 'lan' })
 
-    await service.handleRemoteCommand({ type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1' } as never)
-    await service.handleRemoteCommand({ type: 'unsubscribe_session', projectPath: '/p', sessionId: 'sid-1' } as never)
+    expect((service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')).toBe(true)
 
-    const isLocked = (service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')
-    expect(isLocked).toBe(false)
+    await service.handleRemoteCommand(
+      { type: 'leave_session', sessionId: 'sid-1' } as never,
+      undefined,
+      { deviceId: 'mobile-A', transport: 'lan' },
+    )
+
+    expect(activeSession.owner.kind).toBe('local')
+    expect((service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')).toBe(false)
   })
 
   it('remote lock covers active remote-owned sessions without subscription', async () => {
@@ -500,7 +512,7 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(isLocked()).toBe(true)
   })
 
-  it('send_message claims and releases ownership for claude remote-owned sessions', async () => {
+  it('send_message claims ownership and holds it past the send for claude remote-owned sessions', async () => {
     const service = new AgentService()
     const send = vi.fn().mockResolvedValue(undefined)
     const ownerSequence: string[] = []
@@ -522,8 +534,8 @@ describe('AgentService.handleRemoteCommand', () => {
       sessionId: 'sid-1',
     } as never)
 
-    expect(activeSession.owner.kind).toBe('local')
-    expect(ownerSequence).toEqual(['remote', 'local'])
+    expect(activeSession.owner.kind).toBe('remote')
+    expect(ownerSequence).toEqual(['remote'])
     expect(send).toHaveBeenCalledWith({
       content: 'hello',
       model: undefined,
@@ -534,7 +546,7 @@ describe('AgentService.handleRemoteCommand', () => {
     }, { providerOrigin: 'remote' })
   })
 
-  it('codex remote turn claims and releases ownership after turn completes', async () => {
+  it('codex remote turn claims ownership and holds it past the turn', async () => {
     const service = new AgentService()
     const send = vi.fn().mockResolvedValue(undefined)
     const ownerSequence: string[] = []
@@ -560,9 +572,78 @@ describe('AgentService.handleRemoteCommand', () => {
       provider: 'codex',
     } as never)
 
-    expect(activeSession.owner.kind).toBe('local')
-    expect((service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')).toBe(false)
-    expect(ownerSequence).toEqual(['remote', 'local'])
+    expect(activeSession.owner.kind).toBe('remote')
+    expect((service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')).toBe(true)
+    expect(ownerSequence).toEqual(['remote'])
+  })
+
+  it('send_message rejects a second mobile and notifies it with session_locked_by_other_device', async () => {
+    const service = new AgentService()
+    const send = vi.fn().mockResolvedValue(undefined)
+    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send })
+    activeSession.claim({ kind: 'remote', deviceId: 'mobile-A' })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+      getSession: vi.fn(() => activeSession),
+      forEachSession: vi.fn(),
+    }
+    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
+    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      content: 'hi',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+    } as never, undefined, { deviceId: 'mobile-B', transport: 'lan' })
+
+    expect(send).not.toHaveBeenCalled()
+    expect(activeSession.owner).toEqual({ kind: 'remote', deviceId: 'mobile-A' })
+    expect(sendEventToMobile).toHaveBeenCalledWith(
+      { type: 'session_locked_by_other_device', sessionId: 'sid-1', ownerDeviceId: 'mobile-A' },
+      ['mobile-B'],
+    )
+    expect(SessionClaimConflictError).toBeDefined()
+  })
+
+  it('leave_session releases ownership held by that device', async () => {
+    const service = new AgentService()
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
+    session.claim({ kind: 'remote', deviceId: 'mobile-A' })
+    session.subscribe('mobile-A')
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      forEachSession: vi.fn(),
+    }
+
+    await service.handleRemoteCommand(
+      { type: 'leave_session', sessionId: 'sid-1' } as never,
+      undefined,
+      { deviceId: 'mobile-A', transport: 'lan' },
+    )
+
+    expect(session.owner.kind).toBe('local')
+    expect(session.subscribers.size).toBe(0)
+  })
+
+  it('leave_session is a no-op for a different device', async () => {
+    const service = new AgentService()
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
+    session.claim({ kind: 'remote', deviceId: 'mobile-A' })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      forEachSession: vi.fn(),
+    }
+
+    await service.handleRemoteCommand(
+      { type: 'leave_session', sessionId: 'sid-1' } as never,
+      undefined,
+      { deviceId: 'mobile-B', transport: 'lan' },
+    )
+
+    expect(session.owner).toEqual({ kind: 'remote', deviceId: 'mobile-A' })
   })
 
   it('respond_permission falls back to subscribed session when projectPath is missing', async () => {

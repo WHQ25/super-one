@@ -126,6 +126,19 @@ export class SessionLockedError extends Error {
   }
 }
 
+export class SessionClaimConflictError extends Error {
+  readonly sessionId: string
+  readonly currentOwnerDeviceId: string
+  readonly attemptedDeviceId: string
+  constructor(sessionId: string, currentOwnerDeviceId: string, attemptedDeviceId: string) {
+    super(`Session ${sessionId} already claimed by device ${currentOwnerDeviceId}; ${attemptedDeviceId} cannot take over`)
+    this.name = 'SessionClaimConflictError'
+    this.sessionId = sessionId
+    this.currentOwnerDeviceId = currentOwnerDeviceId
+    this.attemptedDeviceId = attemptedDeviceId
+  }
+}
+
 export type SessionLifecycleEvent =
   | { type: 'owner_changed'; sessionId: string; previous: SessionOwner; current: SessionOwner }
   | { type: 'subscriber_added'; sessionId: string; deviceId: string }

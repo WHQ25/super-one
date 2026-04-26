@@ -1345,6 +1345,14 @@ describe('Session ownership', () => {
     expect(events[0]).toMatchObject({ type: 'owner_changed', current: { kind: 'remote', deviceId: 'dev-A' } })
   })
 
+  it('claim throws SessionClaimConflictError when another remote device already holds ownership', async () => {
+    const { SessionClaimConflictError } = await import('./types')
+    const { session } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    expect(() => session.claim({ kind: 'remote', deviceId: 'dev-B' })).toThrow(SessionClaimConflictError)
+    expect(session.owner).toEqual({ kind: 'remote', deviceId: 'dev-A' })
+  })
+
   it('release returns owner to local and emits owner_changed', () => {
     const { session } = makeSession()
     session.claim({ kind: 'remote', deviceId: 'dev-A' })

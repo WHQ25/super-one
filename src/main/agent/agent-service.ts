@@ -22,7 +22,7 @@ import { sanitizeGitRef } from '../path-security'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
 import { clearAllPendingCalls as clearAllPendingMiniAppCalls } from '../mcp/superone-mcp-server'
-import { SessionLockedError } from '../session/types'
+import { SessionClaimConflictError, SessionLockedError } from '../session/types'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -213,21 +213,22 @@ export class AgentService {
     this.broadcastEventToRenderer(event)
   }
 
-  private async withRemoteOwnership<T>(
-    _projectPath: string,
-    _sessionId: string,
+  private async ensureRemoteOwnership<T>(
     deviceId: string,
     session: import('../session/types').Session,
     fn: () => Promise<T>,
-    opts?: { onStart?: () => void },
+    opts?: { onClaim?: () => void },
   ): Promise<T> {
     session.claim({ kind: 'remote', deviceId })
-    opts?.onStart?.()
-    try {
-      return await fn()
-    } finally {
-      session.release(deviceId)
-    }
+    opts?.onClaim?.()
+    return fn()
+  }
+
+  private async notifySessionLocked(deviceId: string, sessionId: string, currentOwnerDeviceId: string): Promise<void> {
+    await this.remoteControlService?.sendEventToMobile(
+      { type: 'session_locked_by_other_device', sessionId, ownerDeviceId: currentOwnerDeviceId },
+      [deviceId],
+    )
   }
 
   private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }, isNewSession?: boolean): Promise<void> {
@@ -247,31 +248,39 @@ export class AgentService {
     if (session.snapshot.harnessId !== 'codex') {
       throw new Error(`Session ${sessionId} has harness=${session.snapshot.harnessId}, expected codex`)
     }
-    await this.withRemoteOwnership(projectPath, sessionId, deviceId, session, async () => {
-      await session!.send({
-        content: command.content,
-        clientMessageId: userMessageId,
-        assistantMessageId,
-        images: command.images,
-        model: command.model,
-        effort: command.effort as SendMessageRequest['effort'] | undefined,
-        codex: {
-          permissionPreset: command.permissionPreset as CodexPermissionPreset | undefined,
-          collaborationMode: command.collaborationMode as CodexCollaborationMode | undefined,
-          threadId: command.threadId,
-          reasoningEffort: command.effort as CodexReasoningEffort | undefined,
-        },
-      }, { providerOrigin: 'remote' })
-    }, {
-      onStart: isNewSession
-        ? () => {
-            this.remoteControlService?.sendAgentEvent({
-              type: 'session_init', projectPath, sessionId,
-              session: { sessionId, permissionMode: command.permissionPreset ?? 'default' },
-            } as AgentEvent, [deviceId])
-          }
-        : undefined,
-    })
+    try {
+      await this.ensureRemoteOwnership(deviceId, session, async () => {
+        await session!.send({
+          content: command.content,
+          clientMessageId: userMessageId,
+          assistantMessageId,
+          images: command.images,
+          model: command.model,
+          effort: command.effort as SendMessageRequest['effort'] | undefined,
+          codex: {
+            permissionPreset: command.permissionPreset as CodexPermissionPreset | undefined,
+            collaborationMode: command.collaborationMode as CodexCollaborationMode | undefined,
+            threadId: command.threadId,
+            reasoningEffort: command.effort as CodexReasoningEffort | undefined,
+          },
+        }, { providerOrigin: 'remote' })
+      }, {
+        onClaim: isNewSession
+          ? () => {
+              this.remoteControlService?.sendAgentEvent({
+                type: 'session_init', projectPath, sessionId,
+                session: { sessionId, permissionMode: command.permissionPreset ?? 'default' },
+              } as AgentEvent, [deviceId])
+            }
+          : undefined,
+      })
+    } catch (err) {
+      if (err instanceof SessionClaimConflictError) {
+        await this.notifySessionLocked(deviceId, sessionId, err.currentOwnerDeviceId)
+        return
+      }
+      throw err
+    }
   }
 
   async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void> {
@@ -354,16 +363,24 @@ export class AgentService {
         }
 
         trace('remote.debug', 'send_message:dispatch', { sid, targetSid, projectPath, deviceId })
-        await this.withRemoteOwnership(projectPath, sid, deviceId, session, async () => {
-          await session.send({
-            content: command.content,
-            model: command.model,
-            effort: command.effort as SendMessageRequest['effort'] | undefined,
-            images: command.images,
-            priority: command.priority,
-            clientMessageId: command.clientMessageId,
-          }, { providerOrigin: 'remote' })
-        })
+        try {
+          await this.ensureRemoteOwnership(deviceId, session, async () => {
+            await session.send({
+              content: command.content,
+              model: command.model,
+              effort: command.effort as SendMessageRequest['effort'] | undefined,
+              images: command.images,
+              priority: command.priority,
+              clientMessageId: command.clientMessageId,
+            }, { providerOrigin: 'remote' })
+          })
+        } catch (err) {
+          if (err instanceof SessionClaimConflictError) {
+            await this.notifySessionLocked(deviceId, sid, err.currentOwnerDeviceId)
+            break
+          }
+          throw err
+        }
         break
       }
       case 'dequeue_message': {
@@ -508,6 +525,15 @@ export class AgentService {
         } else {
           this.deviceRegistry?.unsubscribeAll(deviceId)
         }
+        break
+      }
+      case 'leave_session': {
+        const session = this.sessionManager?.getSession(command.sessionId)
+        if (!session) break
+        if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {
+          session.release(deviceId)
+        }
+        if (session.subscribers.has(deviceId)) session.unsubscribe(deviceId)
         break
       }
       case 'load_session_messages': {

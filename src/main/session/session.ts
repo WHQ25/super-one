@@ -30,6 +30,7 @@ import {
 import { nextEventSeq } from './event-seq'
 import {
   LOCAL_OWNER,
+  SessionClaimConflictError,
   SessionLockedError,
   type BackendCommand,
   type BackendStartOptions,
@@ -158,7 +159,7 @@ export class Session implements SessionContract {
   claim(owner: SessionOwner): void {
     if (this._status === 'disposed') return
     if (owner.kind === 'remote' && this._owner.kind === 'remote' && this._owner.deviceId !== owner.deviceId) {
-      log.warn('[Session] claim conflict sid=%s prev=%s next=%s', this.id, this._owner.deviceId, owner.deviceId)
+      throw new SessionClaimConflictError(this.id, this._owner.deviceId, owner.deviceId)
     }
     if (this._owner.kind === owner.kind && (owner.kind === 'local' || (this._owner.kind === 'remote' && owner.kind === 'remote' && this._owner.deviceId === owner.deviceId))) {
       return

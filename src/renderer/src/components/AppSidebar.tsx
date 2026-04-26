@@ -97,6 +97,8 @@ export const AppSidebar = memo(function AppSidebar() {
   }, [isMac, setSidebarTab])
 
   const [sortMode, setSortMode] = useState<SortMode>('recent')
+  const [frozenRecentOrder, setFrozenRecentOrder] = useState<string[] | null>(null)
+  const prevSortModeRef = useRef<SortMode>('recent')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
@@ -297,13 +299,44 @@ export const AppSidebar = memo(function AppSidebar() {
     setRenameTarget(null)
   }, [renameTarget, renameValue, refreshFolderSessions, refreshPinned])
 
-  const sortedFolders = useMemo(() => {
-    const folders = [...recentFolders]
-    if (sortMode === 'added') {
-      folders.sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
+  useEffect(() => {
+    if (frozenRecentOrder === null && recentFolders.length > 0) {
+      setFrozenRecentOrder(recentFolders.map((f) => f.path))
     }
-    return folders
-  }, [recentFolders, sortMode])
+  }, [recentFolders, frozenRecentOrder])
+
+  useEffect(() => {
+    if (!frozenRecentOrder) return
+    const known = new Set(frozenRecentOrder)
+    const current = new Set(recentFolders.map((f) => f.path))
+    const added = recentFolders.map((f) => f.path).filter((p) => !known.has(p))
+    const kept = frozenRecentOrder.filter((p) => current.has(p))
+    if (added.length === 0 && kept.length === frozenRecentOrder.length) return
+    setFrozenRecentOrder([...added, ...kept])
+  }, [recentFolders, frozenRecentOrder])
+
+  useEffect(() => {
+    if (prevSortModeRef.current !== 'recent' && sortMode === 'recent') {
+      setFrozenRecentOrder(recentFolders.map((f) => f.path))
+    }
+    prevSortModeRef.current = sortMode
+  }, [sortMode])
+
+  const sortedFolders = useMemo(() => {
+    if (sortMode === 'added') {
+      return [...recentFolders].sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
+    }
+    if (!frozenRecentOrder) return recentFolders
+    const indexMap = new Map(frozenRecentOrder.map((p, i) => [p, i]))
+    return [...recentFolders].sort((a, b) => {
+      const ai = indexMap.get(a.path) ?? -1
+      const bi = indexMap.get(b.path) ?? -1
+      if (ai === -1 && bi === -1) return 0
+      if (ai === -1) return -1
+      if (bi === -1) return 1
+      return ai - bi
+    })
+  }, [recentFolders, sortMode, frozenRecentOrder])
 
   const expandedTraceState = useMemo(() => Array.from(expandedFolders).sort().map((folderPath) => {
     const cached = folderSessions[folderPath] ?? []

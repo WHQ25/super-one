@@ -436,4 +436,59 @@ describe('AppSidebar interactions', () => {
       expect(mockWindowApp.renameSession).toHaveBeenCalledWith('sid-1', '新标题')
     })
   })
+
+  it('keeps project order stable when the store re-sorts after recent activity', async () => {
+    appState.recentFolders = [
+      { name: 'project-a', path: '/project-a', addedAt: '2026-03-01T00:00:00.000Z' },
+      { name: 'project-b', path: '/project-b', addedAt: '2026-03-02T00:00:00.000Z' },
+      { name: 'project-c', path: '/project-c', addedAt: '2026-03-03T00:00:00.000Z' },
+    ]
+    sessionsByFolder = { '/project-a': [], '/project-b': [], '/project-c': [] }
+    chatState.projectSessions = {}
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    appState.recentFolders = [
+      { name: 'project-c', path: '/project-c', addedAt: '2026-03-03T00:00:00.000Z' },
+      { name: 'project-a', path: '/project-a', addedAt: '2026-03-01T00:00:00.000Z' },
+      { name: 'project-b', path: '/project-b', addedAt: '2026-03-02T00:00:00.000Z' },
+    ]
+    fireEvent.click(screen.getByText('project-a'))
+
+    await waitFor(() => {
+      const a = screen.getByText('project-a')
+      const b = screen.getByText('project-b')
+      const c = screen.getByText('project-c')
+      expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+      expect(b.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    })
+  })
+
+  it('puts a newly added project at the top of the frozen recent order', async () => {
+    appState.recentFolders = [
+      { name: 'project-a', path: '/project-a', addedAt: '2026-03-01T00:00:00.000Z' },
+      { name: 'project-b', path: '/project-b', addedAt: '2026-03-02T00:00:00.000Z' },
+    ]
+    sessionsByFolder = { '/project-a': [], '/project-b': [] }
+    chatState.projectSessions = {}
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    appState.recentFolders = [
+      { name: 'project-c', path: '/project-c', addedAt: '2026-03-03T00:00:00.000Z' },
+      { name: 'project-a', path: '/project-a', addedAt: '2026-03-01T00:00:00.000Z' },
+      { name: 'project-b', path: '/project-b', addedAt: '2026-03-02T00:00:00.000Z' },
+    ]
+    fireEvent.click(screen.getByText('project-a'))
+
+    await screen.findByText('project-c')
+
+    const c = screen.getByText('project-c')
+    const a = screen.getByText('project-a')
+    const b = screen.getByText('project-b')
+    expect(c.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  })
 })

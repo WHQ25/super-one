@@ -231,6 +231,14 @@ export class AgentService {
     )
   }
 
+  private releaseDeviceFromOtherSessions(deviceId: string, exceptSessionId: string): void {
+    this.sessionManager?.forEachSession((s) => {
+      if (s.id === exceptSessionId) return
+      if (s.owner.kind === 'remote' && s.owner.deviceId === deviceId) s.release(deviceId)
+      if (s.subscribers.has(deviceId)) s.unsubscribe(deviceId)
+    })
+  }
+
   private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }, isNewSession?: boolean): Promise<void> {
     const userMessageId = `user_${Date.now()}`
     const assistantMessageId = `remote-${Date.now()}`
@@ -532,7 +540,6 @@ export class AgentService {
         }
         try {
           subSession.subscribe(deviceId)
-          if (reqId) await respond?.(reqId, { ok: true })
         } catch (err) {
           if (err instanceof SessionClaimConflictError) {
             if (reqId) {
@@ -544,6 +551,8 @@ export class AgentService {
           }
           throw err
         }
+        this.releaseDeviceFromOtherSessions(deviceId, command.sessionId)
+        if (reqId) await respond?.(reqId, { ok: true })
         break
       }
       case 'unsubscribe_session': {

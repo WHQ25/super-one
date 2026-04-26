@@ -509,17 +509,27 @@ export class AgentService {
         break
       }
       case 'subscribe_session': {
+        const reqId = command.requestId
         if (!this.canAccessSession(command.projectPath, command.sessionId)) {
           log.warn('[AgentService] %s', this.buildSessionAccessError(command.projectPath, command.sessionId))
+          if (reqId) await respond?.(reqId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
           break
         }
         const subSession = this.sessionManager?.getSession(command.sessionId)
-        if (!subSession) break
+        if (!subSession) {
+          if (reqId) await respond?.(reqId, { error: 'session_not_found' })
+          break
+        }
         try {
           subSession.subscribe(deviceId)
+          if (reqId) await respond?.(reqId, { ok: true })
         } catch (err) {
           if (err instanceof SessionClaimConflictError) {
-            await this.notifySessionLocked(deviceId, command.sessionId, err.currentOwnerDeviceId)
+            if (reqId) {
+              await respond?.(reqId, { error: 'session_locked', ownerDeviceId: err.currentOwnerDeviceId })
+            } else {
+              await this.notifySessionLocked(deviceId, command.sessionId, err.currentOwnerDeviceId)
+            }
             break
           }
           throw err

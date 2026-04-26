@@ -625,7 +625,7 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(SessionClaimConflictError).toBeDefined()
   })
 
-  it('subscribe_session rejects a second mobile and notifies it with session_locked_by_other_device', async () => {
+  it('subscribe_session (legacy fire-and-forget) notifies via session_locked_by_other_device on conflict', async () => {
     const service = new AgentService()
     const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
     session.claim({ kind: 'remote', deviceId: 'mobile-A' })
@@ -648,6 +648,50 @@ describe('AgentService.handleRemoteCommand', () => {
       { type: 'session_locked_by_other_device', sessionId: 'sid-1', ownerDeviceId: 'mobile-A' },
       ['mobile-B'],
     )
+  })
+
+  it('subscribe_session (with requestId) responds with session_locked error synchronously', async () => {
+    const service = new AgentService()
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
+    session.claim({ kind: 'remote', deviceId: 'mobile-A' })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      forEachSession: vi.fn(),
+    }
+    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
+    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand(
+      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-1' } as never,
+      respond,
+      { deviceId: 'mobile-B', transport: 'lan' },
+    )
+
+    expect(respond).toHaveBeenCalledWith('req-1', { error: 'session_locked', ownerDeviceId: 'mobile-A' })
+    expect(sendEventToMobile).not.toHaveBeenCalled()
+    expect(session.subscribers.has('mobile-B')).toBe(false)
+  })
+
+  it('subscribe_session (with requestId) responds ok on success', async () => {
+    const service = new AgentService()
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      forEachSession: vi.fn(),
+    }
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand(
+      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-2' } as never,
+      respond,
+      { deviceId: 'mobile-A', transport: 'lan' },
+    )
+
+    expect(respond).toHaveBeenCalledWith('req-2', { ok: true })
+    expect(session.subscribers.has('mobile-A')).toBe(true)
   })
 
   it('leave_session releases ownership held by that device', async () => {

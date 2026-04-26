@@ -1487,7 +1487,7 @@ export type RemoteCommand =
   | { type: 'dismiss_question'; requestId: string; projectPath?: string; sessionId: string }
   | { type: 'respond_plan_approval'; requestId: string; approved: boolean; feedback?: string; projectPath?: string; sessionId: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string; projectPath?: string; sessionId: string }
-  | { type: 'subscribe_session'; projectPath: string; sessionId: string }
+  | { type: 'subscribe_session'; projectPath: string; sessionId: string; requestId?: string }
   | { type: 'unsubscribe_session'; sessionId?: string }
   | { type: 'leave_session'; sessionId: string }
   | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number }

@@ -158,8 +158,15 @@ export class Session implements SessionContract {
 
   claim(owner: SessionOwner): void {
     if (this._status === 'disposed') return
-    if (owner.kind === 'remote' && this._owner.kind === 'remote' && this._owner.deviceId !== owner.deviceId) {
-      throw new SessionClaimConflictError(this.id, this._owner.deviceId, owner.deviceId)
+    if (owner.kind === 'remote') {
+      if (this._owner.kind === 'remote' && this._owner.deviceId !== owner.deviceId) {
+        throw new SessionClaimConflictError(this.id, this._owner.deviceId, owner.deviceId)
+      }
+      for (const sub of this._subscribers) {
+        if (sub !== owner.deviceId) {
+          throw new SessionClaimConflictError(this.id, sub, owner.deviceId)
+        }
+      }
     }
     if (this._owner.kind === owner.kind && (owner.kind === 'local' || (this._owner.kind === 'remote' && owner.kind === 'remote' && this._owner.deviceId === owner.deviceId))) {
       return
@@ -179,6 +186,14 @@ export class Session implements SessionContract {
   subscribe(deviceId: string): void {
     if (this._status === 'disposed') return
     if (this._subscribers.has(deviceId)) return
+    if (this._owner.kind === 'remote' && this._owner.deviceId !== deviceId) {
+      throw new SessionClaimConflictError(this.id, this._owner.deviceId, deviceId)
+    }
+    for (const sub of this._subscribers) {
+      if (sub !== deviceId) {
+        throw new SessionClaimConflictError(this.id, sub, deviceId)
+      }
+    }
     this._subscribers.add(deviceId)
     this.emitLifecycle({ type: 'subscriber_added', sessionId: this.id, deviceId })
   }

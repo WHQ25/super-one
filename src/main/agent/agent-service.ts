@@ -514,7 +514,16 @@ export class AgentService {
           break
         }
         const subSession = this.sessionManager?.getSession(command.sessionId)
-        if (subSession) subSession.subscribe(deviceId)
+        if (!subSession) break
+        try {
+          subSession.subscribe(deviceId)
+        } catch (err) {
+          if (err instanceof SessionClaimConflictError) {
+            await this.notifySessionLocked(deviceId, command.sessionId, err.currentOwnerDeviceId)
+            break
+          }
+          throw err
+        }
         break
       }
       case 'unsubscribe_session': {

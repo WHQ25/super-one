@@ -1353,6 +1353,37 @@ describe('Session ownership', () => {
     expect(session.owner).toEqual({ kind: 'remote', deviceId: 'dev-A' })
   })
 
+  it('claim throws SessionClaimConflictError when another remote device is already subscribed', async () => {
+    const { SessionClaimConflictError } = await import('./types')
+    const { session } = makeSession()
+    session.subscribe('dev-A')
+    expect(() => session.claim({ kind: 'remote', deviceId: 'dev-B' })).toThrow(SessionClaimConflictError)
+  })
+
+  it('subscribe throws SessionClaimConflictError when another remote device owns the session', async () => {
+    const { SessionClaimConflictError } = await import('./types')
+    const { session } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    expect(() => session.subscribe('dev-B')).toThrow(SessionClaimConflictError)
+    expect(session.subscribers.has('dev-B')).toBe(false)
+  })
+
+  it('subscribe throws SessionClaimConflictError when another remote device is already subscribed', async () => {
+    const { SessionClaimConflictError } = await import('./types')
+    const { session } = makeSession()
+    session.subscribe('dev-A')
+    expect(() => session.subscribe('dev-B')).toThrow(SessionClaimConflictError)
+    expect(session.subscribers.has('dev-B')).toBe(false)
+  })
+
+  it('subscribe is idempotent for same device that already owns', () => {
+    const { session } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    session.subscribe('dev-A')
+    expect(session.subscribers.has('dev-A')).toBe(true)
+    expect(session.owner).toEqual({ kind: 'remote', deviceId: 'dev-A' })
+  })
+
   it('release returns owner to local and emits owner_changed', () => {
     const { session } = makeSession()
     session.claim({ kind: 'remote', deviceId: 'dev-A' })
@@ -1373,17 +1404,15 @@ describe('Session ownership', () => {
     expect(events).toHaveLength(0)
   })
 
-  it('subscribe/unsubscribe emits subscriber_added/removed and dedupes', () => {
+  it('subscribe/unsubscribe emits subscriber_added/removed and dedupes the same device', () => {
     const { session } = makeSession()
     const events: import('./types').SessionLifecycleEvent[] = []
     session.onLifecycle((e) => events.push(e))
     session.subscribe('dev-A')
     session.subscribe('dev-A')
-    session.subscribe('dev-B')
     session.unsubscribe('dev-A')
     session.unsubscribe('dev-A')
-    expect(events.map((e) => e.type)).toEqual(['subscriber_added', 'subscriber_added', 'subscriber_removed'])
-    expect(session.subscribers.has('dev-B')).toBe(true)
+    expect(events.map((e) => e.type)).toEqual(['subscriber_added', 'subscriber_removed'])
     expect(session.subscribers.has('dev-A')).toBe(false)
   })
 

@@ -195,8 +195,15 @@ function makeMockSession<T extends Record<string, unknown>>(props: T): T & MockS
     subscribers,
     claim(o: { kind: 'local' } | { kind: 'remote'; deviceId: string }) {
       const cur = (s as { owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } }).owner
-      if (o.kind === 'remote' && cur.kind === 'remote' && cur.deviceId !== o.deviceId) {
-        throw new SessionClaimConflictError(String((s as { id: unknown }).id), cur.deviceId, o.deviceId)
+      if (o.kind === 'remote') {
+        if (cur.kind === 'remote' && cur.deviceId !== o.deviceId) {
+          throw new SessionClaimConflictError(String((s as { id: unknown }).id), cur.deviceId, o.deviceId)
+        }
+        for (const sub of subscribers) {
+          if (sub !== o.deviceId) {
+            throw new SessionClaimConflictError(String((s as { id: unknown }).id), sub, o.deviceId)
+          }
+        }
       }
       (s as { owner: unknown }).owner = o
     },
@@ -204,7 +211,19 @@ function makeMockSession<T extends Record<string, unknown>>(props: T): T & MockS
       const o = (s as { owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } }).owner
       if (o.kind === 'remote' && o.deviceId === deviceId) (s as { owner: unknown }).owner = { kind: 'local' }
     },
-    subscribe(deviceId: string) { subscribers.add(deviceId) },
+    subscribe(deviceId: string) {
+      if (subscribers.has(deviceId)) return
+      const cur = (s as { owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } }).owner
+      if (cur.kind === 'remote' && cur.deviceId !== deviceId) {
+        throw new SessionClaimConflictError(String((s as { id: unknown }).id), cur.deviceId, deviceId)
+      }
+      for (const sub of subscribers) {
+        if (sub !== deviceId) {
+          throw new SessionClaimConflictError(String((s as { id: unknown }).id), sub, deviceId)
+        }
+      }
+      subscribers.add(deviceId)
+    },
     unsubscribe(deviceId: string) { subscribers.delete(deviceId) },
     onLifecycle(handler: (event: unknown) => void) {
       lifecycleListeners.add(handler)
@@ -604,6 +623,31 @@ describe('AgentService.handleRemoteCommand', () => {
       ['mobile-B'],
     )
     expect(SessionClaimConflictError).toBeDefined()
+  })
+
+  it('subscribe_session rejects a second mobile and notifies it with session_locked_by_other_device', async () => {
+    const service = new AgentService()
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
+    session.claim({ kind: 'remote', deviceId: 'mobile-A' })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      forEachSession: vi.fn(),
+    }
+    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
+    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
+
+    await service.handleRemoteCommand(
+      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1' } as never,
+      undefined,
+      { deviceId: 'mobile-B', transport: 'lan' },
+    )
+
+    expect(session.subscribers.has('mobile-B')).toBe(false)
+    expect(sendEventToMobile).toHaveBeenCalledWith(
+      { type: 'session_locked_by_other_device', sessionId: 'sid-1', ownerDeviceId: 'mobile-A' },
+      ['mobile-B'],
+    )
   })
 
   it('leave_session releases ownership held by that device', async () => {

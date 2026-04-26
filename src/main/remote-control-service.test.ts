@@ -333,9 +333,9 @@ describe('RemoteControlService connected devices', () => {
     expect(service.getOnlineDevices().has('dev-1')).toBe(false)
     expect(disconnected).toEqual([{ deviceId: 'dev-1' }])
     expect(registered).toEqual([
-      { deviceName: 'Phone', deviceId: 'dev-1', transport: 'relay' },
-      { deviceName: 'Phone', deviceId: 'dev-1', transport: 'lan' },
-      { deviceName: 'Phone', deviceId: 'dev-1', transport: 'relay' },
+      { deviceName: 'Phone', deviceId: 'dev-1', transport: 'relay', firstConnect: true },
+      { deviceName: 'Phone', deviceId: 'dev-1', transport: 'lan', firstConnect: false },
+      { deviceName: 'Phone', deviceId: 'dev-1', transport: 'relay', firstConnect: false },
     ])
   })
 })

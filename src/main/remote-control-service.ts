@@ -478,7 +478,7 @@ export interface RemoteCommandSource {
 
 export interface RemoteControlCallbacks {
   onCommand: (cmd: RemoteCommand, respond: RemoteResponder, source: RemoteCommandSource) => void
-  onClientRegistered?: (info: { deviceName: string; deviceId: string; transport: 'lan' | 'relay' }) => void
+  onClientRegistered?: (info: { deviceName: string; deviceId: string; transport: 'lan' | 'relay'; firstConnect: boolean }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
   onPairingCodeReceived?: (info: { code: string; deviceName: string }) => void
   onPairingExpired?: () => void
@@ -550,7 +550,7 @@ export class RemoteControlService {
     const current = this.connectedDevices.get(deviceId)
     if (!current) {
       this.connectedDevices.set(deviceId, { name: deviceName, transports: new Set([via]) })
-      this.callbacks.onClientRegistered?.({ deviceName, deviceId, transport: via })
+      this.callbacks.onClientRegistered?.({ deviceName, deviceId, transport: via, firstConnect: true })
       return
     }
     const previousTransport = this.primaryTransport(current)
@@ -558,7 +558,7 @@ export class RemoteControlService {
     current.transports.add(via)
     const nextTransport = this.primaryTransport(current)
     if (nextTransport !== previousTransport) {
-      this.callbacks.onClientRegistered?.({ deviceName, deviceId, transport: nextTransport })
+      this.callbacks.onClientRegistered?.({ deviceName, deviceId, transport: nextTransport, firstConnect: false })
     }
   }
 
@@ -574,7 +574,7 @@ export class RemoteControlService {
     }
     const nextTransport = this.primaryTransport(current)
     if (nextTransport !== previousTransport) {
-      this.callbacks.onClientRegistered?.({ deviceName: current.name, deviceId, transport: nextTransport })
+      this.callbacks.onClientRegistered?.({ deviceName: current.name, deviceId, transport: nextTransport, firstConnect: false })
     }
   }
 

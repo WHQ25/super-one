@@ -29,6 +29,7 @@ export type Messages = {
       label: string
       connected: string
       disconnected: string
+      deviceConnectedToast: string
     }
     deleteSession: {
       title: string
@@ -723,6 +724,7 @@ export const en: Messages = {
       label: 'Remote Control',
       connected: 'Connected',
       disconnected: 'Disconnected',
+      deviceConnectedToast: '{{name}} connected',
     },
     deleteSession: {
       title: 'Delete Session?',

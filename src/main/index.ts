@@ -162,9 +162,9 @@ const remoteCallbacks: RemoteControlCallbacks = {
       safeSend(AgentIpcChannels.RECENT_FOLDERS_CHANGED, folders)
     }
   },
-  onClientRegistered: ({ deviceName, deviceId, transport }) => {
+  onClientRegistered: ({ deviceName, deviceId, transport, firstConnect }) => {
     upsertPairedDevice(deviceId, deviceName)
-    safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true, name: deviceName, transport })
+    safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true, name: deviceName, transport, firstConnect })
   },
   onClientDisconnected: ({ deviceId }) => {
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })

@@ -31,6 +31,7 @@ export const zh: Messages = {
       label: '远程控制',
       connected: '已连接',
       disconnected: '未连接',
+      deviceConnectedToast: '{{name}} 已连接',
     },
     deleteSession: {
       title: '删除会话？',

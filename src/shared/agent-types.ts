@@ -1523,6 +1523,7 @@ export interface RemoteDeviceStatus {
   online: boolean
   name?: string
   transport?: 'lan' | 'relay'
+  firstConnect?: boolean
 }
 
 export interface RemoteDeviceConfig {

@@ -1,6 +1,8 @@
 import { useEffect, useCallback, useRef } from 'react'
-import { Sun, Moon, Code, Paintbrush } from 'lucide-react'
+import { Sun, Moon, Code, Paintbrush, Smartphone } from 'lucide-react'
 import { motion } from 'motion/react'
+import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { CodingLayout } from '@/components/coding/CodingLayout'
@@ -42,6 +44,7 @@ function App(): React.JSX.Element {
   useRemoteControl()
   usePerfSampler()
   const theme = useTheme()
+  const { t } = useTranslation()
   const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode, setLayoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode, setLayoutMode: s.setLayoutMode })))
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
@@ -70,6 +73,16 @@ function App(): React.JSX.Element {
       useAppStore.getState().handleUpdateEvent(event)
     })
   }, [])
+
+  useEffect(() => {
+    return window.app.onDeviceStatusChanged(({ online, firstConnect, name }) => {
+      if (!online || !firstConnect) return
+      toast.success(t('sidebar.remote.deviceConnectedToast', { name: name ?? '' }), {
+        position: 'top-center',
+        icon: <Smartphone className="size-4" />,
+      })
+    })
+  }, [t])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

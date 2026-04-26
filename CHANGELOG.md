@@ -4,6 +4,35 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.22.3-alpha] - 2026-04-26
+
+### Fixed
+
+- **Mobile viewers no longer get kicked when desktop hits Stop or +** — INTERRUPT and the "+" new-session button used to clear `subscribers`, ejecting any phone watching the session. Both now respect that mobile subscription is an independent viewer mode that should outlive a single streaming run; the mobile-subscribed session is parked instead of disposed when the user starts a new session.
+- **Multiple mobiles no longer cross-talk** — agent events for session A used to fan out to every connected mobile regardless of which session each had subscribed. Events now route by per-subscriber/owner deviceId so phone B watching session Y never receives session X's stream.
+- **Cross-mobile response leak** — when N mobiles shared a desktop, a `list_directory` (or any request) response broadcast to every mobile, exposing one device's command results to another. Desktop now tags responses with `mobileDeviceId` and the relay routes by it.
+- **`subscribe_session` no longer hijacks desktop's active session** — when a mobile subscribed to a cold session in a project where desktop had a different active session, the resume path overwrote `activeByProject` and swapped desktop's view out from under the user. The subscription path now resumes passively without touching the active pointer.
+- **`session_disconnected` no longer flashes when the user just switches sessions on mobile** — the previous heuristic ("device is elsewhere") fired during normal navigation and showed mobile a misleading "disconnected" state. Replaced with explicit reason-tagged lifecycle events (`self_leave` / `self_switch` / `desktop_kick` / `transport_disconnect` / `session_closed`) so each scenario gets the correct mobile UX.
+- **Mobile re-subscribe to a cold session works** — `subscribe_session` was failing with `session_not_found` for sessions saved to DB but not in memory. The handler now resumes them on demand.
+- **Desktop is read-only while mobile is subscribed, not just owning** — locking previously triggered only when a remote `owner` existed; mid-streaming of a mobile-viewing session, the desktop's input stayed enabled and would clobber the remote turn. Lock now also fires when `subscribers.size > 0`.
+- **Empty subscribers during dispose no longer drops shutdown events** — `Session.dispose()` cleared subscribers before `backend.close()`, so any event the backend emitted during shutdown couldn't reach mobile viewers. Reordered: backend closes first, then subscribers/owner reset.
+
+### Added
+
+- **Persistent mobile claim** — once a mobile takes ownership of a session (by sending a message), the claim survives until that mobile explicitly leaves, unsubscribes, disconnects, or the desktop kicks it. Claim no longer auto-releases at the end of each turn; Codex and Claude paths share this contract.
+- **Second-mobile attempts rejected at subscribe time** — previously a second phone could enter the session view and only fail when it tried to send. The subscribe handshake is now request/response so the second phone gets `session_locked` synchronously and never enters the session UI.
+- **`subscribe_session` auto-releases the device from any other session** — switching a mobile to a different session no longer leaves its old subscription / ownership lingering.
+- **`leave_session` protocol** — explicit mobile→desktop frame for "I'm leaving this specific session" without disconnecting the device, used when mobile navigates out of a session view.
+
+### Changed
+
+- **Session ownership API tightened** — `Session.claim()` is type-narrowed to remote ownership only; `LOCAL_OWNER` is the initial state and `release()` is the only path back. The previous "claim local" bypass that skipped conflict checks is gone.
+- **Mobile lifecycle dispatch centralized in `PresenceCoordinator`** — owner_changed / subscriber_added/removed / closed events are mapped to the right mobile-facing frame (`session_kicked` / `session_closed` / `session_locked_by_other_device`) by reason, replacing scattered heuristics in the IPC handler walls.
+
+### Tests
+
+- **Regression coverage**: INTERRUPT does not unsubscribe subscribers; `subscribe_session` resume uses `{ passive: true }` so desktop's active session pointer isn't disturbed; `Session.dispose()` lifecycle events tagged with `reason: 'session_closed'`; multi-session ownership isolation; second-mobile rejection at subscribe time.
+
 ## [0.22.2-alpha] - 2026-04-25
 
 ### Fixed

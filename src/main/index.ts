@@ -21,6 +21,7 @@ import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
+import { PresenceCoordinator } from './remote/presence-coordinator'
 import { loadSessionStateBySid, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { buildProviderEnv } from './agent/provider-env'
 import type { SessionProvider } from './session/types'
@@ -199,6 +200,10 @@ function getMainWindow(): BrowserWindow {
 function safeSend(channel: string, ...args: unknown[]): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args)
 }
+
+new PresenceCoordinator(sessionManager, {
+  broadcastToRenderer: (event) => safeSend(AgentIpcChannels.EVENT, event),
+})
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({

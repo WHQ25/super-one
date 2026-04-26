@@ -55,6 +55,7 @@ export class SessionManagerImpl implements SessionManagerContract {
   private projectResources: ProjectResourceCache
   private scopedListeners = new Map<string, Set<(e: AgentEvent) => void>>()
   private anyListeners = new Set<(sessionId: string, e: AgentEvent) => void>()
+  private sessionListeners = new Set<(session: SessionContract) => void>()
   private perSessionUnsub = new Map<string, () => void>()
   private persistence: SessionManagerPersistence
 
@@ -340,11 +341,22 @@ export class SessionManagerImpl implements SessionManagerContract {
     return () => { this.anyListeners.delete(handler) }
   }
 
+  onSession(handler: (session: SessionContract) => void): () => void {
+    this.sessionListeners.add(handler)
+    for (const session of this.sessions.values()) {
+      try { handler(session) } catch (err) { log.warn('[SessionManager] onSession replay error:', err) }
+    }
+    return () => { this.sessionListeners.delete(handler) }
+  }
+
   private registerSession(session: Session, projectPath: string): void {
     this.sessions.set(session.id, session)
     this.sessionProjects.set(session.id, projectPath)
     const unsub = session.on((event) => this.dispatch(session.id, event))
     this.perSessionUnsub.set(session.id, unsub)
+    for (const cb of this.sessionListeners) {
+      try { cb(session) } catch (err) { log.warn('[SessionManager] sessionCreated handler error:', err) }
+    }
   }
 
   private dispatch(sessionId: string, event: AgentEvent): void {

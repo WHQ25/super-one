@@ -596,9 +596,14 @@ export class Session implements SessionContract {
     if (this._status === 'disposed') return
     this._status = 'disposed'
     this._pendingQueuedRequests.clear()
-    if (this._subscribers.size > 0 || this._owner.kind === 'remote') {
-      this._subscribers.clear()
+    if (this._owner.kind === 'remote') {
+      const previous = this._owner
       this._owner = LOCAL_OWNER
+      this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: LOCAL_OWNER })
+    }
+    for (const deviceId of Array.from(this._subscribers)) {
+      this._subscribers.delete(deviceId)
+      this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId })
     }
     this.emitLifecycle({ type: 'closed', sessionId: this.id })
     this._lifecycleListeners.clear()

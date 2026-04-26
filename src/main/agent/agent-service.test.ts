@@ -500,18 +500,19 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(isLocked()).toBe(true)
   })
 
-  it('send_message broadcasts remote_session_start for claude remote-owned sessions', async () => {
+  it('send_message claims and releases ownership for claude remote-owned sessions', async () => {
     const service = new AgentService()
     const send = vi.fn().mockResolvedValue(undefined)
+    const ownerSequence: string[] = []
     const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send })
+    const realClaim = activeSession.claim
+    const realRelease = activeSession.release
+    activeSession.claim = (o) => { realClaim(o); ownerSequence.push(activeSession.owner.kind) }
+    activeSession.release = (d) => { realRelease(d); ownerSequence.push(activeSession.owner.kind) }
     ;(service as { sessionManager: unknown }).sessionManager = {
       getActiveSession: vi.fn(() => activeSession),
       getSession: vi.fn(() => activeSession),
       forEachSession: vi.fn(),
-    }
-    const events: unknown[] = []
-    ;(service as unknown as { broadcastEventToRenderer: (event: unknown) => void }).broadcastEventToRenderer = (event) => {
-      events.push(event)
     }
 
     await service.handleRemoteCommand({
@@ -522,6 +523,7 @@ describe('AgentService.handleRemoteCommand', () => {
     } as never)
 
     expect(activeSession.owner.kind).toBe('local')
+    expect(ownerSequence).toEqual(['remote', 'local'])
     expect(send).toHaveBeenCalledWith({
       content: 'hello',
       model: undefined,
@@ -530,25 +532,21 @@ describe('AgentService.handleRemoteCommand', () => {
       priority: undefined,
       clientMessageId: undefined,
     }, { providerOrigin: 'remote' })
-    expect(events).toContainEqual({
-      type: 'remote_session_start',
-      remoteProjectPath: '/p',
-      remoteSessionId: 'sid-1',
-    })
   })
 
-  it('codex remote turn releases session ownership and broadcasts end after turn completes', async () => {
+  it('codex remote turn claims and releases ownership after turn completes', async () => {
     const service = new AgentService()
     const send = vi.fn().mockResolvedValue(undefined)
+    const ownerSequence: string[] = []
     const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', snapshot: { harnessId: 'codex' }, send })
+    const realClaim = activeSession.claim
+    const realRelease = activeSession.release
+    activeSession.claim = (o) => { realClaim(o); ownerSequence.push(activeSession.owner.kind) }
+    activeSession.release = (d) => { realRelease(d); ownerSequence.push(activeSession.owner.kind) }
     ;(service as { sessionManager: unknown }).sessionManager = {
       getActiveSession: vi.fn(() => activeSession),
       getSession: vi.fn(() => activeSession),
       forEachSession: vi.fn(),
-    }
-    const events: unknown[] = []
-    ;(service as unknown as { broadcastEventToRenderer: (event: unknown) => void }).broadcastEventToRenderer = (event) => {
-      events.push(event)
     }
     service.setRemoteControlService({
       sendAgentEvent: vi.fn(),
@@ -564,11 +562,7 @@ describe('AgentService.handleRemoteCommand', () => {
 
     expect(activeSession.owner.kind).toBe('local')
     expect((service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')).toBe(false)
-    expect(events).toContainEqual({
-      type: 'remote_session_end',
-      remoteProjectPath: '/p',
-      remoteSessionId: 'sid-1',
-    })
+    expect(ownerSequence).toEqual(['remote', 'local'])
   })
 
   it('respond_permission falls back to subscribed session when projectPath is missing', async () => {

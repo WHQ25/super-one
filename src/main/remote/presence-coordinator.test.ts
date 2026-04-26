@@ -1,0 +1,179 @@
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('../logger', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
+}))
+
+import { PresenceCoordinator, type PresenceTransport, type PresenceSessionSource } from './presence-coordinator'
+import type { AgentEvent } from '../../shared/agent-types'
+import type { Session, SessionLifecycleEvent } from '../session/types'
+
+class FakeSession {
+  readonly id: string
+  readonly projectPath: string
+  private listeners = new Set<(e: SessionLifecycleEvent) => void>()
+
+  constructor(id: string, projectPath: string) {
+    this.id = id
+    this.projectPath = projectPath
+  }
+
+  onLifecycle(handler: (e: SessionLifecycleEvent) => void): () => void {
+    this.listeners.add(handler)
+    return () => { this.listeners.delete(handler) }
+  }
+
+  emit(evt: SessionLifecycleEvent): void {
+    for (const cb of this.listeners) cb(evt)
+  }
+
+  hasListeners(): boolean {
+    return this.listeners.size > 0
+  }
+}
+
+function makeSource(): PresenceSessionSource & { add: (s: FakeSession) => void } {
+  let pending: FakeSession[] = []
+  let handler: ((session: Session) => void) | null = null
+  return {
+    onSession(h) {
+      handler = h
+      for (const s of pending) h(s as unknown as Session)
+      pending = []
+      return () => { handler = null }
+    },
+    add(s) {
+      if (handler) handler(s as unknown as Session)
+      else pending.push(s)
+    },
+  }
+}
+
+function makeTransport(): PresenceTransport & { sent: AgentEvent[] } {
+  const sent: AgentEvent[] = []
+  return {
+    sent,
+    broadcastToRenderer(event) { sent.push(event) },
+  }
+}
+
+describe('PresenceCoordinator', () => {
+  it('emits remote_session_start when owner switches local → remote', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({
+      type: 'owner_changed', sessionId: 's1',
+      previous: { kind: 'local' },
+      current: { kind: 'remote', deviceId: 'dev-A' },
+    })
+    expect(transport.sent).toEqual([
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1' },
+    ])
+  })
+
+  it('emits remote_session_end when owner switches remote → local', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({
+      type: 'owner_changed', sessionId: 's1',
+      previous: { kind: 'remote', deviceId: 'dev-A' },
+      current: { kind: 'local' },
+    })
+    expect(transport.sent).toEqual([
+      { type: 'remote_session_end', remoteProjectPath: '/proj/A', remoteSessionId: 's1' },
+    ])
+  })
+
+  it('emits remote_session_start with isSubscribe on subscriber_added', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({ type: 'subscriber_added', sessionId: 's1', deviceId: 'dev-B' })
+    expect(transport.sent).toEqual([
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', isSubscribe: true },
+    ])
+  })
+
+  it('emits remote_session_end with isSubscribe on subscriber_removed', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({ type: 'subscriber_removed', sessionId: 's1', deviceId: 'dev-B' })
+    expect(transport.sent).toEqual([
+      { type: 'remote_session_end', remoteProjectPath: '/proj/A', remoteSessionId: 's1', isSubscribe: true },
+    ])
+  })
+
+  it('attaches to sessions added later', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s1 = new FakeSession('s1', '/proj/A')
+    const s2 = new FakeSession('s2', '/proj/B')
+    source.add(s1)
+    source.add(s2)
+    s2.emit({ type: 'subscriber_added', sessionId: 's2', deviceId: 'dev-C' })
+    expect(transport.sent).toEqual([
+      { type: 'remote_session_start', remoteProjectPath: '/proj/B', remoteSessionId: 's2', isSubscribe: true },
+    ])
+  })
+
+  it('detaches lifecycle listener when session closes', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    expect(s.hasListeners()).toBe(true)
+    s.emit({ type: 'closed', sessionId: 's1' })
+    expect(s.hasListeners()).toBe(false)
+  })
+
+  it('does not duplicate attach when same session is registered twice', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    source.add(s)
+    s.emit({ type: 'subscriber_added', sessionId: 's1', deviceId: 'dev-X' })
+    expect(transport.sent).toHaveLength(1)
+  })
+
+  it('treats remote → remote (different device) as a fresh start', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({
+      type: 'owner_changed', sessionId: 's1',
+      previous: { kind: 'remote', deviceId: 'dev-A' },
+      current: { kind: 'remote', deviceId: 'dev-B' },
+    })
+    expect(transport.sent).toEqual([
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1' },
+    ])
+  })
+
+  it('dispose stops receiving from new sessions', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    const coord = new PresenceCoordinator(source, transport)
+    coord.dispose()
+    const s = new FakeSession('s1', '/proj/A')
+    source.add(s)
+    s.emit({ type: 'subscriber_added', sessionId: 's1', deviceId: 'dev-A' })
+    expect(transport.sent).toHaveLength(0)
+  })
+})

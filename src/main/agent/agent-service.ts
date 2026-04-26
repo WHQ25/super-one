@@ -214,8 +214,8 @@ export class AgentService {
   }
 
   private async withRemoteOwnership<T>(
-    projectPath: string,
-    sessionId: string,
+    _projectPath: string,
+    _sessionId: string,
     deviceId: string,
     session: import('../session/types').Session,
     fn: () => Promise<T>,
@@ -223,12 +223,10 @@ export class AgentService {
   ): Promise<T> {
     session.claim({ kind: 'remote', deviceId })
     opts?.onStart?.()
-    this.broadcastEventToRenderer({ type: 'remote_session_start', remoteProjectPath: projectPath, remoteSessionId: sessionId })
     try {
       return await fn()
     } finally {
       session.release(deviceId)
-      this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId })
     }
   }
 
@@ -499,29 +497,16 @@ export class AgentService {
           break
         }
         const subSession = this.sessionManager?.getSession(command.sessionId)
-        if (subSession) {
-          subSession.subscribe(deviceId)
-          this.broadcastEventToRenderer({ type: 'remote_session_start', remoteProjectPath: command.projectPath, remoteSessionId: command.sessionId, isSubscribe: true })
-        }
+        if (subSession) subSession.subscribe(deviceId)
         break
       }
       case 'unsubscribe_session': {
         const targetSessionId = command.sessionId
-        const ended: Array<{ projectPath: string; sessionId: string }> = []
         if (targetSessionId) {
           const s = this.sessionManager?.getSession(targetSessionId)
-          if (s && s.subscribers.has(deviceId)) {
-            s.unsubscribe(deviceId)
-            ended.push({ projectPath: s.projectPath, sessionId: s.id })
-          }
+          if (s && s.subscribers.has(deviceId)) s.unsubscribe(deviceId)
         } else {
-          this.sessionManager?.forEachSession((s) => {
-            if (s.subscribers.has(deviceId)) ended.push({ projectPath: s.projectPath, sessionId: s.id })
-          })
           this.deviceRegistry?.unsubscribeAll(deviceId)
-        }
-        for (const e of ended) {
-          this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: e.projectPath, remoteSessionId: e.sessionId, isSubscribe: true })
         }
         break
       }
@@ -1009,11 +994,7 @@ export class AgentService {
       clearAllGates()
       clearAllPendingMiniAppCalls()
       await session.interrupt()
-      const subs = Array.from(session.subscribers)
-      if (subs.length > 0) {
-        for (const d of subs) session.unsubscribe(d)
-        this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: session.projectPath, remoteSessionId: session.id, isSubscribe: true })
-      }
+      for (const d of Array.from(session.subscribers)) session.unsubscribe(d)
       return true
     })
 
@@ -1181,20 +1162,15 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, async () => {
-      const affected: Array<{ projectPath: string; sessionId: string }> = []
+      const affectedSessionIds: string[] = []
       this.sessionManager?.forEachSession((s) => {
-        if (s.owner.kind === 'remote' || s.subscribers.size > 0) {
-          affected.push({ projectPath: s.projectPath, sessionId: s.id })
-        }
+        if (s.owner.kind !== 'remote' && s.subscribers.size === 0) return
+        affectedSessionIds.push(s.id)
         if (s.owner.kind === 'remote') s.release(s.owner.deviceId)
         for (const d of Array.from(s.subscribers)) s.unsubscribe(d)
       })
-      const announced = new Set<string>()
-      for (const { projectPath, sessionId } of affected) {
-        if (announced.has(sessionId)) continue
-        announced.add(sessionId)
+      for (const sessionId of affectedSessionIds) {
         await this.remoteControlService?.sendEventToMobile({ type: 'session_disconnected', sessionId })
-        this.broadcastEventToRenderer({ type: 'remote_session_end', remoteProjectPath: projectPath, remoteSessionId: sessionId, isSubscribe: true })
       }
     })
 

@@ -63,7 +63,7 @@ import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n } from './i18n'
-import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest } from '../shared/agent-types'
+import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock } from '../shared/agent-types'
 import { buildRemoteActiveProvider } from '../shared/provider-utils'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
@@ -430,6 +430,7 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const persistedUserMessageId = userMessageId ?? `user_${Date.now()}`
@@ -442,6 +443,9 @@ function registerIpcHandlers(): void {
         assistantMessageId,
         gitBranch,
         worktreePath,
+        ...(extras?.userMessageContent ? { userMessageContent: extras.userMessageContent } : {}),
+        ...(extras?.contexts ? { contexts: extras.contexts } : {}),
+        ...(extras?.userSelections ? { userSelections: extras.userSelections } : {}),
         codex: {
           mode: 'run',
           prompt,
@@ -597,6 +601,7 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch)
@@ -607,6 +612,9 @@ function registerIpcHandlers(): void {
         assistantMessageId,
         gitBranch,
         worktreePath,
+        ...(extras?.userMessageContent ? { userMessageContent: extras.userMessageContent } : {}),
+        ...(extras?.contexts ? { contexts: extras.contexts } : {}),
+        ...(extras?.userSelections ? { userSelections: extras.userSelections } : {}),
         codex: {
           mode: 'review',
           reviewTarget: target,
@@ -634,6 +642,7 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch)
@@ -644,6 +653,9 @@ function registerIpcHandlers(): void {
         assistantMessageId,
         gitBranch,
         worktreePath,
+        ...(extras?.userMessageContent ? { userMessageContent: extras.userMessageContent } : {}),
+        ...(extras?.contexts ? { contexts: extras.contexts } : {}),
+        ...(extras?.userSelections ? { userSelections: extras.userSelections } : {}),
         codex: {
           mode: 'compact',
           permissionPreset,

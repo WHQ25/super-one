@@ -1,5 +1,6 @@
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
+import { serializeMessageContent, parseMessageContent } from './session/session-repo'
 import type { ChatMessage, SessionHistoryEntry, PinnedSessionEntry } from '../shared/agent-types'
 
 interface DbSession {
@@ -146,7 +147,7 @@ export function saveSessionState(
         i,
         msg.role,
         msg.status === 'streaming' ? 'interrupted' : msg.status,
-        JSON.stringify(msg.content),
+        serializeMessageContent(msg),
         msg.createdAt,
         msg.providerId,
         msg.metadata ? JSON.stringify(msg.metadata) : null,
@@ -187,17 +188,23 @@ export function loadSessionState(
 
   if (rows.length === 0) return null
 
-  const messages: ChatMessage[] = rows.map((r) => ({
-    id: r.id,
-    role: r.role as ChatMessage['role'],
-    status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
-    content: JSON.parse(r.content_json),
-    createdAt: r.created_at,
-    providerId: r.provider_id,
-    ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
-    ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
-    ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
-  }))
+  const messages: ChatMessage[] = rows.map((r) => {
+    const parsed = parseMessageContent(r.content_json)
+    return {
+      id: r.id,
+      role: r.role as ChatMessage['role'],
+      status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
+      content: parsed.content,
+      ...(parsed.attachments ? { attachments: parsed.attachments } : {}),
+      ...(parsed.contexts ? { contexts: parsed.contexts } : {}),
+      ...(parsed.userSelections ? { userSelections: parsed.userSelections } : {}),
+      createdAt: r.created_at,
+      providerId: r.provider_id,
+      ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
+      ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
+      ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
+    }
+  })
 
   return {
     messages,
@@ -241,17 +248,23 @@ export function loadSessionMessagesPaginated(
   const slice = rows.slice(startIndex, endIndex)
   const hasMore = startIndex > 0
 
-  const messages: ChatMessage[] = slice.map((r) => ({
-    id: r.id,
-    role: r.role as ChatMessage['role'],
-    status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
-    content: JSON.parse(r.content_json),
-    createdAt: r.created_at,
-    providerId: r.provider_id,
-    ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
-    ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
-    ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
-  }))
+  const messages: ChatMessage[] = slice.map((r) => {
+    const parsed = parseMessageContent(r.content_json)
+    return {
+      id: r.id,
+      role: r.role as ChatMessage['role'],
+      status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
+      content: parsed.content,
+      ...(parsed.attachments ? { attachments: parsed.attachments } : {}),
+      ...(parsed.contexts ? { contexts: parsed.contexts } : {}),
+      ...(parsed.userSelections ? { userSelections: parsed.userSelections } : {}),
+      createdAt: r.created_at,
+      providerId: r.provider_id,
+      ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
+      ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
+      ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
+    }
+  })
 
   return { messages, cursor: hasMore ? startIndex : null, hasMore }
 }

@@ -52,6 +52,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       interrupt, toggleOpen, addAttachment, removeAttachment, clearAttachments,
       addMention, removeMention, dismissCommandPopup, setShowDirManager, setShowReviewPanel,
       toggleMiniAppContext, clearMiniAppContext,
+      removeUserSelectionAt, clearUserSelections,
     } = useChatStore(useShallow((s) => ({
       setText: s.setDraftText,
       sendMessage: s.sendMessage,
@@ -68,8 +69,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       setShowReviewPanel: s.setShowReviewPanel,
       toggleMiniAppContext: s.toggleMiniAppContext,
       clearMiniAppContext: s.clearMiniAppContext,
+      removeUserSelectionAt: s.removeUserSelectionAt,
+      clearUserSelections: s.clearUserSelections,
     })))
-    const { text, status, attachments, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts } =
+    const { text, status, attachments, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
         status: s.status,
@@ -79,6 +82,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         hasPendingInteraction: s.hasPendingInteraction,
         queuedMessages: s.queuedMessages,
         miniAppContexts: s.miniAppContexts,
+        userSelections: s.userSelections,
       })))
     const {
       slashCommands, preferredProvider, sessionProvider, agents,
@@ -893,6 +897,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           contexts={miniAppContexts}
           onToggle={toggleMiniAppContext}
           onDismiss={clearMiniAppContext}
+          userSelections={userSelections}
+          onRemoveUserSelectionAt={removeUserSelectionAt}
+          onClearUserSelections={clearUserSelections}
         />
 
         <EditorContent editor={editor} />

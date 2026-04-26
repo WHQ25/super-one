@@ -430,6 +430,7 @@ function createEmptySession() {
     activeCodexMessageId: null,
     lastAssistantMessageId: null,
     miniAppContexts: {},
+    userSelections: [],
     _historyHydrated: true,
   }
 }

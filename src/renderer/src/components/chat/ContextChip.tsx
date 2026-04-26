@@ -1,6 +1,7 @@
 import { X, Check, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { useIsDark } from '@/hooks/use-is-dark'
 import type { MiniAppContextSlot } from '@/stores/chat'
 
 function hexToHsl(hex: string): [number, number, number] {
@@ -41,10 +42,18 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
 }
 
-export function deriveColors(baseColor?: string) {
+export function deriveColors(baseColor?: string, isDark = false) {
   const fallback = '#c4873a'
   const hex = baseColor && /^#[0-9a-fA-F]{6}$/.test(baseColor) ? baseColor : fallback
   const [h, s] = hexToHsl(hex)
+  if (isDark) {
+    return {
+      bg: hslToHex(h, Math.min(s, 0.30), 0.22),
+      color: hslToHex(h, Math.min(s, 0.55), 0.80),
+      labelColor: hslToHex(h, Math.min(s, 0.40), 0.62),
+      border: hslToHex(h, Math.min(s, 0.30), 0.32),
+    }
+  }
   return {
     bg: hslToHex(h, Math.min(s, 0.35), 0.93),
     color: hslToHex(h, Math.min(s, 0.5), 0.35),
@@ -61,7 +70,8 @@ interface ContextChipProps {
 }
 
 export function ContextChip({ slot, onToggle, onDismiss, onClick }: ContextChipProps) {
-  const colors = deriveColors(slot.color)
+  const isDark = useIsDark()
+  const colors = deriveColors(slot.color, isDark)
   const isSuggest = slot.mode === 'suggest'
   const isActive = isSuggest ? slot.checked : true
 

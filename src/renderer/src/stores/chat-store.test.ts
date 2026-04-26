@@ -4826,6 +4826,80 @@ describe('mini-app context injection', () => {
   })
 })
 
+describe('user selection (right-click → "添加到聊天" quote chips)', () => {
+  beforeEach(() => {
+    setupProject('/test')
+  })
+
+  it('addUserSelection appends a quote to the active session', () => {
+    useChatStore.getState().addUserSelection('quote A')
+    useChatStore.getState().addUserSelection('quote B')
+    expect(getActiveDraftSession('/test')!.userSelections).toEqual(['quote A', 'quote B'])
+  })
+
+  it('addUserSelection trims whitespace and ignores empty input', () => {
+    useChatStore.getState().addUserSelection('   ')
+    useChatStore.getState().addUserSelection('  hi  ')
+    expect(getActiveDraftSession('/test')!.userSelections).toEqual(['hi'])
+  })
+
+  it('removeUserSelectionAt deletes the entry at the given index', () => {
+    useChatStore.getState().addUserSelection('a')
+    useChatStore.getState().addUserSelection('b')
+    useChatStore.getState().addUserSelection('c')
+    useChatStore.getState().removeUserSelectionAt(1)
+    expect(getActiveDraftSession('/test')!.userSelections).toEqual(['a', 'c'])
+  })
+
+  it('clearUserSelections empties the array', () => {
+    useChatStore.getState().addUserSelection('x')
+    useChatStore.getState().clearUserSelections()
+    expect(getActiveDraftSession('/test')!.userSelections).toEqual([])
+  })
+
+  it('sendMessage wraps a single selection in <quote>...</quote> at the prompt tail', async () => {
+    useChatStore.getState().addUserSelection('only one')
+    await useChatStore.getState().sendMessage('hello')
+    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
+    expect(payload.content).toContain('hello')
+    expect(payload.content).toContain('<quote>\nonly one\n</quote>')
+    expect(payload.content).not.toContain('<quote1>')
+  })
+
+  it('sendMessage wraps multiple selections with <quoteN>...</quoteN> grouped under <quote>', async () => {
+    useChatStore.getState().addUserSelection('first')
+    useChatStore.getState().addUserSelection('second')
+    useChatStore.getState().addUserSelection('third')
+    await useChatStore.getState().sendMessage('q')
+    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
+    expect(payload.content).toMatch(/<quote>[\s\S]*<quote1>[\s\S]*first[\s\S]*<\/quote1>[\s\S]*<quote2>[\s\S]*second[\s\S]*<\/quote2>[\s\S]*<quote3>[\s\S]*third[\s\S]*<\/quote3>[\s\S]*<\/quote>/)
+  })
+
+  it('sendMessage attaches userSelections to the user message and to the IPC payload', async () => {
+    useChatStore.getState().addUserSelection('alpha')
+    useChatStore.getState().addUserSelection('beta')
+    await useChatStore.getState().sendMessage('msg')
+    const sess = getActiveDraftSession('/test')!
+    const userMsg = sess.messages.find((m) => m.role === 'user')
+    expect(userMsg?.userSelections).toEqual(['alpha', 'beta'])
+    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
+    expect(payload.userSelections).toEqual(['alpha', 'beta'])
+  })
+
+  it('sendMessage clears userSelections after sending', async () => {
+    useChatStore.getState().addUserSelection('to-be-cleared')
+    await useChatStore.getState().sendMessage('hi')
+    expect(getActiveDraftSession('/test')!.userSelections).toEqual([])
+  })
+
+  it('sendMessage with no selections produces no quote suffix and no userSelections field', async () => {
+    await useChatStore.getState().sendMessage('plain hello')
+    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
+    expect(payload.content).not.toContain('<quote')
+    expect(payload.userSelections).toBeUndefined()
+  })
+})
+
 describe('streamingTokens lifecycle around turn boundaries', () => {
   it('clears streamingTokens and freezes consumedTokens on message_interrupted', () => {
     setupProject('/test')

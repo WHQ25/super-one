@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { applyClaudeEventToRuntime, createClaudeRuntime, extractResultText } from './claude-session-runtime'
-import type { AgentEvent, ChatMessage } from '../../shared/agent-types'
+import { applyClaudeEventToRuntime, createClaudeRuntime, extractResultText, buildUserMessage } from './claude-session-runtime'
+import type { AgentEvent, ChatMessage, SendMessageRequest } from '../../shared/agent-types'
 
 function makeRuntime(messages: ChatMessage[]) {
   return createClaudeRuntime('/test', 'sess-1', { messages })
@@ -293,5 +293,71 @@ describe('checkpoint_captured', () => {
     } as AgentEvent)
     expect(updated.messages[0].checkpointId).toBe('cp1')
     expect(updated.messages[2].checkpointId).toBe('cp2')
+  })
+})
+
+describe('buildUserMessage (agent-agnostic constructor)', () => {
+  function req(overrides?: Partial<SendMessageRequest>): SendMessageRequest {
+    return { content: 'hello', clientMessageId: 'u-1', ...overrides }
+  }
+
+  it('builds a single text-block content from request.content when userMessageContent is omitted', () => {
+    const msg = buildUserMessage(req(), 'local')
+    expect(msg.content).toEqual([{ type: 'text', text: 'hello' }])
+    expect(msg.role).toBe('user')
+    expect(msg.id).toBe('u-1')
+  })
+
+  it('uses request.userMessageContent verbatim when provided (preserves segments + isPaste)', () => {
+    const msg = buildUserMessage(req({
+      userMessageContent: [
+        { type: 'text', text: 'before paste' },
+        { type: 'text', text: 'pasted block', isPaste: true },
+        { type: 'text', text: 'after paste' },
+      ],
+    }), 'local')
+    expect(msg.content).toEqual([
+      { type: 'text', text: 'before paste' },
+      { type: 'text', text: 'pasted block', isPaste: true },
+      { type: 'text', text: 'after paste' },
+    ])
+  })
+
+  it('attaches contexts to the message when present and non-empty', () => {
+    const msg = buildUserMessage(req({
+      contexts: [{ appId: 'hello', appName: 'Hello', summary: '3 files', content: 'src/a.ts' }],
+    }), 'local')
+    expect(msg.contexts).toEqual([
+      { appId: 'hello', appName: 'Hello', summary: '3 files', content: 'src/a.ts' },
+    ])
+  })
+
+  it('attaches userSelections to the message when present and non-empty', () => {
+    const msg = buildUserMessage(req({ userSelections: ['quote A', 'quote B'] }), 'local')
+    expect(msg.userSelections).toEqual(['quote A', 'quote B'])
+  })
+
+  it('omits contexts / userSelections when empty arrays', () => {
+    const msg = buildUserMessage(req({ contexts: [], userSelections: [] }), 'local')
+    expect(msg.contexts).toBeUndefined()
+    expect(msg.userSelections).toBeUndefined()
+  })
+
+  it('builds image / document blocks from request.images when userMessageContent is omitted', () => {
+    const msg = buildUserMessage(req({
+      images: [
+        { name: 'pic.png', base64: 'data', mimeType: 'image/png' },
+        { name: 'spec.pdf', base64: 'data', mimeType: 'application/pdf' },
+      ],
+    }), 'local')
+    expect(msg.content).toEqual([
+      { type: 'image', name: 'pic.png' },
+      { type: 'document', name: 'spec.pdf' },
+      { type: 'text', text: 'hello' },
+    ])
+    expect(msg.attachments).toEqual([
+      { name: 'pic.png', base64: 'data', mimeType: 'image/png' },
+      { name: 'spec.pdf', base64: 'data', mimeType: 'application/pdf' },
+    ])
   })
 })

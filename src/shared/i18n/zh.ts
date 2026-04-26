@@ -274,6 +274,16 @@ export const zh: Messages = {
       title_other: '已粘贴文本 · {{count}} 行',
       unsaved: '（未保存）',
     },
+    userSelectionChip: {
+      title_one: '{{count}} 条引用',
+      title_other: '{{count}} 条引用',
+      popoverTitle_one: '已引用片段',
+      popoverTitle_other: '{{count}} 条引用片段',
+    },
+    selectionMenu: {
+      copy: '复制',
+      addToChat: '添加到聊天',
+    },
     codex: {
       statusRunning: '执行中',
       statusReading: '读取中',

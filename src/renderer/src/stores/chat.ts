@@ -4,7 +4,7 @@ import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, g
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '../../../shared/event-seq-utils'
 import { perfEvent } from '@/lib/perf-trace'
 
@@ -128,6 +128,7 @@ export interface PerSessionState {
   activeCodexMessageId: string | null
   lastAssistantMessageId: string | null
   miniAppContexts: Record<string, MiniAppContextSlot>
+  userSelections: string[]
   _historyHydrated: boolean
 }
 
@@ -214,6 +215,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     activeCodexMessageId: null,
     lastAssistantMessageId: null,
     miniAppContexts: {},
+    userSelections: [],
     _historyHydrated: true,
   }
 }
@@ -418,6 +420,11 @@ interface ChatStore {
   setMiniAppContext: (appId: string, data: { appName: string; summary: string; content: string; mode: 'inject' | 'suggest'; color?: string }) => void
   clearMiniAppContext: (appId: string) => void
   toggleMiniAppContext: (appId: string) => void
+
+  // User selection chip (from right-click "添加到聊天")
+  addUserSelection: (text: string) => void
+  removeUserSelectionAt: (index: number) => void
+  clearUserSelections: () => void
 
   // Additional directories
   addDir: (path: string, scope: 'session' | 'project') => void
@@ -1991,6 +1998,9 @@ async function runCodexCommand(
     collaborationMode,
     resolvedCodexModel,
     resolvedCodexReasoningEffort,
+    userMessageContent,
+    contexts,
+    userSelections,
   }: {
     activeProject: string
     codexSessionId: string
@@ -2003,8 +2013,14 @@ async function runCodexCommand(
     collaborationMode: CodexCollaborationMode
     resolvedCodexModel?: string
     resolvedCodexReasoningEffort?: CodexReasoningEffort
+    userMessageContent?: ContentBlock[]
+    contexts?: ChatMessageContext[]
+    userSelections?: string[]
   },
 ): Promise<void> {
+  const userMessageExtras = userMessageContent || contexts || (userSelections && userSelections.length > 0)
+    ? { userMessageContent, contexts, userSelections }
+    : undefined
   set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
 
   const assistantId = `codex_${Date.now()}`
@@ -2119,6 +2135,7 @@ async function runCodexCommand(
         finalContent,
         session._worktreeBaseBranch ?? undefined,
         session._worktreePath ?? undefined,
+        userMessageExtras,
       )
     } else if (codexCommand.kind === 'compact') {
       result = await window.app.codexCompact(
@@ -2133,6 +2150,7 @@ async function runCodexCommand(
         finalContent,
         session._worktreeBaseBranch ?? undefined,
         session._worktreePath ?? undefined,
+        userMessageExtras,
       )
     } else {
       result = await window.app.codexRun(
@@ -2151,6 +2169,7 @@ async function runCodexCommand(
         finalContent,
         session._worktreeBaseBranch ?? undefined,
         session._worktreePath ?? undefined,
+        userMessageExtras,
       )
     }
 
@@ -2915,7 +2934,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const contextSuffix = activeContexts.length > 0
       ? '\n\n' + activeContexts.map((ctx) => `<app-context app="${ctx.appName}" summary="${ctx.summary}">\n${ctx.content}\n</app-context>`).join('\n\n')
       : ''
-    const finalContent = rawContent + contextSuffix
+    const userSelections = session.userSelections
+    let quoteSuffix = ''
+    if (userSelections.length === 1) {
+      quoteSuffix = `\n\n<quote>\n${userSelections[0]}\n</quote>`
+    } else if (userSelections.length > 1) {
+      const inner = userSelections
+        .map((s, i) => `<quote${i + 1}>\n${s}\n</quote${i + 1}>`)
+        .join('\n')
+      quoteSuffix = `\n\n<quote>\n${inner}\n</quote>`
+    }
+    const finalContent = rawContent + contextSuffix + quoteSuffix
     const codexCommand = parseCodexCommand(rawContent)
     const requestedProvider: ChatProvider = preferredProvider === 'codex' ? 'codex' : 'claude'
     const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
@@ -3031,6 +3060,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       content: userContent,
       attachments: attachments.length > 0 ? attachments : undefined,
       contexts: messageContexts,
+      userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
     }
     set((s) => ({
       ...updateActivePerSession(s, (sess) => ({
@@ -3039,6 +3069,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         attachments: [],
         mentions: [],
         miniAppContexts: {},
+        userSelections: [],
         codexPlanRejectHintActive: false,
         ...(effectiveProvider === 'claude' && !isQueuedSend ? { awaitingAssistantReply: true } : {}),
       })),
@@ -3064,6 +3095,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         collaborationMode: selectedCodexCollaborationMode,
         resolvedCodexModel,
         resolvedCodexReasoningEffort,
+        userMessageContent: userContent,
+        contexts: messageContexts,
+        userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
       })
       return
     }
@@ -3084,6 +3118,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         sessionId: project._activeSessionId ?? undefined,
         gitBranch: session._worktreeBaseBranch ?? undefined,
         worktreePath: session._worktreePath ?? undefined,
+        userMessageContent: userContent,
+        contexts: messageContexts,
+        userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
         ...(isQueuedSend ? { priority: 'next' as const } : {}),
       })
     } catch (err) {
@@ -3972,6 +4009,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }
     }))
+  },
+
+  addUserSelection: (text) => {
+    if (!get().activeProject) return
+    const trimmed = text.trim()
+    if (!trimmed) return
+    set((s) => updateActivePerSession(s, (sess) => ({
+      userSelections: [...sess.userSelections, trimmed],
+    })))
+  },
+
+  removeUserSelectionAt: (index) => {
+    if (!get().activeProject) return
+    set((s) => updateActivePerSession(s, (sess) => ({
+      userSelections: sess.userSelections.filter((_, i) => i !== index),
+    })))
+  },
+
+  clearUserSelections: () => {
+    if (!get().activeProject) return
+    set((s) => updateActivePerSession(s, () => ({ userSelections: [] })))
   },
 
   fetchSessions: async () => {

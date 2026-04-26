@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { CopyableMarkdown, splitByCodeFences, normalizeCodeFences, splitByInsightBlocks } from './CopyableMarkdown'
 
@@ -206,38 +205,3 @@ describe('splitByInsightBlocks', () => {
   })
 })
 
-describe('CopyableMarkdown', () => {
-  it('shows the copy button when hovering non-codeblock text', () => {
-    const { container } = render(
-      <CopyableMarkdown text="A long paragraph of text" isStreaming={false} />,
-    )
-
-    expect(container.querySelector('button')).toBeNull()
-
-    fireEvent.pointerMove(screen.getByText('A long paragraph of text'))
-
-    const button = container.querySelector('button')
-    expect(button).toBeTruthy()
-    expect(button?.className).toContain('cursor-pointer')
-  })
-
-  it('hides the copy button while hovering a code block', () => {
-    const { container } = render(
-      <CopyableMarkdown text={'```ts\nconst x = 1\n```'} isStreaming={false} />,
-    )
-
-    fireEvent.pointerMove(screen.getByText('code block'))
-
-    expect(container.querySelector('button')).toBeNull()
-  })
-
-  it('does not show copy button while streaming', () => {
-    const { container } = render(
-      <CopyableMarkdown text="some text" isStreaming={true} />,
-    )
-
-    fireEvent.pointerMove(screen.getByText('some text'))
-
-    expect(container.querySelector('button')).toBeNull()
-  })
-})

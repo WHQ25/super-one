@@ -260,6 +260,16 @@ export type Messages = {
       title_other: string
       unsaved: string
     }
+    userSelectionChip: {
+      title_one: string
+      title_other: string
+      popoverTitle_one: string
+      popoverTitle_other: string
+    }
+    selectionMenu: {
+      copy: string
+      addToChat: string
+    }
     codex: {
       statusRunning: string
       statusReading: string
@@ -968,6 +978,16 @@ export const en: Messages = {
       title_one: 'Pasted text · {{count}} line',
       title_other: 'Pasted text · {{count}} lines',
       unsaved: '(unsaved)',
+    },
+    userSelectionChip: {
+      title_one: '{{count}} quote',
+      title_other: '{{count}} quotes',
+      popoverTitle_one: 'Quoted selection',
+      popoverTitle_other: '{{count}} quoted selections',
+    },
+    selectionMenu: {
+      copy: 'Copy',
+      addToChat: 'Add to chat',
     },
     codex: {
       statusRunning: 'Running',

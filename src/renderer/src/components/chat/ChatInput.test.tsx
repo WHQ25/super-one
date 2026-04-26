@@ -13,6 +13,7 @@ const { chatActions, activeSessionState, editorState, useChatStore } = vi.hoiste
     hasPendingInteraction: false,
     queuedMessages: [] as Array<{ id: string }>,
     miniAppContexts: {} as Record<string, never>,
+    userSelections: [] as string[],
     slashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
     preferredProvider: 'claude' as 'claude' | 'codex',
     sessionProvider: null as 'claude' | 'codex' | null,
@@ -49,6 +50,8 @@ const { chatActions, activeSessionState, editorState, useChatStore } = vi.hoiste
     }),
     toggleMiniAppContext: vi.fn(),
     clearMiniAppContext: vi.fn(),
+    removeUserSelectionAt: vi.fn(),
+    clearUserSelections: vi.fn(),
     activeProject: '/project',
     isOpen: true,
   }

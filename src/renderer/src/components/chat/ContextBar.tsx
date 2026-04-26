@@ -1,21 +1,40 @@
 import { useState } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ContextChip, ContextPreviewContent } from './ContextChip'
+import { UserSelectionChip } from './UserSelectionChip'
 import type { MiniAppContextSlot } from '@/stores/chat'
 
 interface ContextBarProps {
   contexts: Record<string, MiniAppContextSlot>
   onToggle: (appId: string) => void
   onDismiss: (appId: string) => void
+  userSelections?: string[]
+  onRemoveUserSelectionAt?: (index: number) => void
+  onClearUserSelections?: () => void
 }
 
-export function ContextBar({ contexts, onToggle, onDismiss }: ContextBarProps) {
+export function ContextBar({
+  contexts,
+  onToggle,
+  onDismiss,
+  userSelections = [],
+  onRemoveUserSelectionAt,
+  onClearUserSelections,
+}: ContextBarProps) {
   const [previewId, setPreviewId] = useState<string | null>(null)
   const slots = Object.values(contexts)
-  if (slots.length === 0) return null
+  const hasSelections = userSelections.length > 0
+  if (slots.length === 0 && !hasSelections) return null
 
   return (
     <div className="mb-1.5 flex flex-wrap gap-1.5">
+      {hasSelections && onRemoveUserSelectionAt && onClearUserSelections && (
+        <UserSelectionChip
+          selections={userSelections}
+          onRemoveAt={onRemoveUserSelectionAt}
+          onClear={onClearUserSelections}
+        />
+      )}
       {slots.map((slot) => (
         <Popover
           key={slot.appId}

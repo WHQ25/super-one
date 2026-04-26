@@ -10,6 +10,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { SubagentBlock } from './SubagentBlock'
 import { CodexTurnView } from './CodexTurnView'
 import { AttachmentBar } from './AttachmentBar'
+import { UserSelectionChip } from './UserSelectionChip'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { FileText } from 'lucide-react'
 import { PasteChipPreview } from './PasteChipPreview'
@@ -28,6 +29,7 @@ import { parseUserMentions, type UserMentionKind } from './user-mention-parser'
 import { deriveColors, ContextPreviewContent } from './ContextChip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { useIsDark } from '@/hooks/use-is-dark'
 import type { ChatMessageContext } from '../../../../shared/agent-types'
 
 interface ChatMessageProps {
@@ -363,7 +365,8 @@ export function UserTextBlock({ text, isPaste }: { text: string; isPaste?: boole
 
 function MessageContextChipItem({ ctx }: { ctx: ChatMessageContext }) {
   const [open, setOpen] = useState(false)
-  const colors = deriveColors(ctx.color)
+  const isDark = useIsDark()
+  const colors = deriveColors(ctx.color, isDark)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -590,8 +593,10 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
         >
           {isUser
             ? <>
-                {message.contexts && message.contexts.length > 0 && (
-                  <MessageContextChips contexts={message.contexts} />
+                {message.userSelections && message.userSelections.length > 0 && (
+                  <div className="mb-1.5 flex flex-wrap gap-1">
+                    <UserSelectionChip selections={message.userSelections} readOnly />
+                  </div>
                 )}
                 {message.attachments && message.attachments.length > 0 && (
                   <AttachmentBar attachments={message.attachments} />
@@ -659,6 +664,11 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
         )}
         {!isUser && <DurationFooter message={message} copyText={assistantCopyText} parentIsStreaming={isStreaming} />}
       </div>
+      {isUser && message.contexts && message.contexts.length > 0 && (
+        <div className="mt-1.5">
+          <MessageContextChips contexts={message.contexts} />
+        </div>
+      )}
       {isUser && !hideUserActions && (
         <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
           {message.checkpointId && <RewindButton checkpointId={message.checkpointId} rewound={message.rewound} className="opacity-100" />}

@@ -315,6 +315,7 @@ export interface ChatMessage {
   content: ContentBlock[]
   attachments?: ImageAttachment[]
   contexts?: ChatMessageContext[]
+  userSelections?: string[]
   createdAt: string
   providerId: string
   metadata?: MessageMetadata
@@ -603,6 +604,12 @@ export interface SendMessageRequest {
   priority?: 'now' | 'next' | 'later'
   taskBudget?: number
   codex?: CodexSendExtras
+  /** Body of the user message as it should appear in the bubble (overrides content blocks built from `content`). */
+  userMessageContent?: ContentBlock[]
+  /** Mini-app context chips attached to this user message, displayed in the bubble and persisted. */
+  contexts?: ChatMessageContext[]
+  /** User-selected quote chips attached to this user message, displayed in the bubble and persisted. */
+  userSelections?: string[]
 }
 
 export interface CodexSendExtras {

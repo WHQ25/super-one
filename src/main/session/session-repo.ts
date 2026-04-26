@@ -1,7 +1,32 @@
 import { getDb } from '../database'
 import { getProjectId } from '../recent-folders'
-import type { ChatMessage } from '../../shared/agent-types'
+import type { ChatMessage, ContentBlock, ImageAttachment, ChatMessageContext } from '../../shared/agent-types'
 import type { HarnessId } from './types'
+
+export function serializeMessageContent(msg: ChatMessage): string {
+  return JSON.stringify({
+    content: msg.content,
+    ...(msg.attachments ? { attachments: msg.attachments } : {}),
+    ...(msg.contexts ? { contexts: msg.contexts } : {}),
+    ...(msg.userSelections ? { userSelections: msg.userSelections } : {}),
+  })
+}
+
+export function parseMessageContent(json: string): {
+  content: ContentBlock[]
+  attachments?: ImageAttachment[]
+  contexts?: ChatMessageContext[]
+  userSelections?: string[]
+} {
+  const parsed = JSON.parse(json)
+  if (Array.isArray(parsed)) return { content: parsed }
+  return {
+    content: parsed.content ?? [],
+    attachments: parsed.attachments,
+    contexts: parsed.contexts,
+    userSelections: parsed.userSelections,
+  }
+}
 
 export interface SessionRecord {
   id: string
@@ -237,7 +262,7 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
         i,
         msg.role,
         msg.status === 'streaming' ? 'interrupted' : msg.status,
-        JSON.stringify(msg.content),
+        serializeMessageContent(msg),
         msg.createdAt,
         msg.providerId,
         msg.metadata ? JSON.stringify(msg.metadata) : null,
@@ -271,17 +296,23 @@ export function loadSessionStateBySid(sid: string): LoadedSessionState | null {
     ORDER BY sort_order ASC
   `).all(sid) as MessageRow[]
 
-  const messages: ChatMessage[] = rows.map((r) => ({
-    id: r.id,
-    role: r.role as ChatMessage['role'],
-    status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
-    content: JSON.parse(r.content_json),
-    createdAt: r.created_at,
-    providerId: r.provider_id,
-    ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
-    ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
-    ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
-  }))
+  const messages: ChatMessage[] = rows.map((r) => {
+    const parsed = parseMessageContent(r.content_json)
+    return {
+      id: r.id,
+      role: r.role as ChatMessage['role'],
+      status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
+      content: parsed.content,
+      ...(parsed.attachments ? { attachments: parsed.attachments } : {}),
+      ...(parsed.contexts ? { contexts: parsed.contexts } : {}),
+      ...(parsed.userSelections ? { userSelections: parsed.userSelections } : {}),
+      createdAt: r.created_at,
+      providerId: r.provider_id,
+      ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
+      ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
+      ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
+    }
+  })
 
   return { record, messages }
 }

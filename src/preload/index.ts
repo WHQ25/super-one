@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest } from '../shared/agent-types'
+import { AgentIpcChannels, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext } from '../shared/agent-types'
+
+type UserMessageExtras = {
+  contexts?: ChatMessageContext[]
+  userSelections?: string[]
+  userMessageContent?: ContentBlock[]
+}
 
 const agentAPI = {
   sendMessage: (projectPath: string, request: SendMessageRequest) =>
@@ -163,6 +169,7 @@ const appAPI = {
     userMessageText?: string,
     gitBranch?: string,
     worktreePath?: string,
+    extras?: UserMessageExtras,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_RUN,
@@ -181,6 +188,7 @@ const appAPI = {
       userMessageText,
       gitBranch,
       worktreePath,
+      extras,
     ),
 
   codexListModels: (projectPath: string) =>
@@ -232,8 +240,8 @@ const appAPI = {
       requestId,
     ),
 
-  codexSteer: (sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, sessionId, input, messageId, userMessageId, userMessageText, gitBranch, worktreePath),
+  codexSteer: (sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: UserMessageExtras) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, sessionId, input, messageId, userMessageId, userMessageText, gitBranch, worktreePath, extras),
 
   codexReview: (
     sessionId: string,
@@ -249,6 +257,7 @@ const appAPI = {
     userMessageText?: string,
     gitBranch?: string,
     worktreePath?: string,
+    extras?: UserMessageExtras,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_REVIEW,
@@ -265,6 +274,7 @@ const appAPI = {
       userMessageText,
       gitBranch,
       worktreePath,
+      extras,
     ),
 
   codexCompact: (
@@ -279,6 +289,7 @@ const appAPI = {
     userMessageText?: string,
     gitBranch?: string,
     worktreePath?: string,
+    extras?: UserMessageExtras,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.CODEX_COMPACT,
@@ -293,6 +304,7 @@ const appAPI = {
       userMessageText,
       gitBranch,
       worktreePath,
+      extras,
     ),
 
   codexPlanApproval: (projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) =>

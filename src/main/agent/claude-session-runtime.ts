@@ -419,11 +419,16 @@ export function applyClaudeEventToRuntime(
   }
 }
 
-export function buildClaudeUserMessage(
+/**
+ * Construct a ChatMessage for a user-submitted turn from the IPC SendMessageRequest.
+ * Agent-agnostic: used by both Claude and Codex paths. Adding a new agent should
+ * NOT require a separate user-message builder — extend SendMessageRequest instead.
+ */
+export function buildUserMessage(
   request: SendMessageRequest,
   providerId: 'local' | 'remote',
 ): ChatMessage {
-  const content: ContentBlock[] = [
+  const content: ContentBlock[] = request.userMessageContent ?? [
     ...(request.images ?? []).map((attachment) =>
       attachment.mimeType === 'application/pdf'
         ? { type: 'document' as const, name: attachment.name }
@@ -438,10 +443,15 @@ export function buildClaudeUserMessage(
     status: 'complete',
     content,
     attachments: request.images?.length ? request.images : undefined,
+    contexts: request.contexts && request.contexts.length > 0 ? request.contexts : undefined,
+    userSelections: request.userSelections && request.userSelections.length > 0 ? request.userSelections : undefined,
     createdAt: new Date().toISOString(),
     providerId,
   }
 }
+
+/** @deprecated Use buildUserMessage. Kept as alias for compatibility. */
+export const buildClaudeUserMessage = buildUserMessage
 
 export function extractClaudeTitle(messages: ChatMessage[]): string | undefined {
   return messages.find((message) => message.role === 'user')?.content

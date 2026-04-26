@@ -16,6 +16,7 @@ import { PlanApprovalPrompt } from './PlanApprovalPrompt'
 import { SessionHistory } from './SessionHistory'
 import { PlanFullscreenContext } from './codex-item-renderer'
 import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
+import { SelectionContextMenuZone } from './SelectionContextMenu'
 import type { CodexPlanApprovalState } from '../../../../shared/agent-types'
 import { cn } from '@/lib/utils'
 
@@ -181,7 +182,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               <ChatSuggestions />
             ) : (
               <ScrollArea key={historySessionId ?? 'default'} className="h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
-                <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
+                <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
                   {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
                   {renderedMessages.map((msg) => {
                     const compactInfo = parseCompactMarker(msg)
@@ -233,7 +234,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                       }}
                     />
                   )}
-                </div>
+                </SelectionContextMenuZone>
               </ScrollArea>
             )}
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />

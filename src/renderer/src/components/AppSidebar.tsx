@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
-import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, GitFork, Pin, Copy, Check, Smartphone, Wifi, Cloud } from 'lucide-react'
+import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Pin, Copy, Check, Smartphone, Wifi, Cloud } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -434,15 +434,9 @@ export const AppSidebar = memo(function AppSidebar() {
               onClick={() => handleSwitchSession(s.folderPath, s.sessionId)}
               className="group/pin flex cursor-pointer items-center justify-between overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
             >
-              <div className="flex min-w-0 items-center gap-2">
-                {s.isWorktree
-                  ? <GitFork className="size-3 shrink-0 text-sidebar-foreground/70" />
-                  : <MessageSquare className="size-3 shrink-0 text-sidebar-foreground/70" />
-                }
-                <div className="flex min-w-0 flex-col">
-                  <span className="min-w-0 truncate text-[13px]">{s.title}</span>
-                  <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
-                </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="min-w-0 truncate text-[13px]">{s.title}</span>
+                <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
               </div>
               <button
                 onClick={(e) => {

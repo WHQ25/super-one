@@ -26,11 +26,50 @@ vi.mock('../agent/resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({})),
 }))
 
+const { createHandleMock } = vi.hoisted(() => ({
+  createHandleMock: vi.fn(),
+}))
+
+vi.mock('./app-server-connection', async () => {
+  const actual = await vi.importActual<typeof import('./app-server-connection')>('./app-server-connection')
+  return {
+    ...actual,
+    createAppServerConnection: (...args: unknown[]) => createHandleMock(...args),
+  }
+})
+
 const { CodexExperimentService } = await import('./codex-experiment-service')
+
+function makeModelHandle() {
+  return {
+    connection: {
+      request: vi.fn(async (method: string) => {
+        if (method === 'model/list') {
+          return {
+            data: [{
+              id: 'gpt-test',
+              model: 'gpt-test',
+              displayName: 'GPT Test',
+              supportedReasoningEfforts: [],
+            }],
+          }
+        }
+        return {}
+      }),
+      respond: vi.fn(),
+      notify: vi.fn(),
+      nextNotification: vi.fn(),
+    },
+    close: vi.fn(async () => {}),
+    getStderr: () => '',
+    onClosed: vi.fn(() => () => {}),
+  }
+}
 
 describe('CodexExperimentService auth state', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    createHandleMock.mockReset()
   })
 
   it('setAuth emits onAuthChanged event for listeners on the same project', () => {
@@ -71,5 +110,62 @@ describe('CodexExperimentService auth state', () => {
 
     service.setAuth('/project', { mode: 'chatgpt' })
     expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it('reuses one metadata app-server connection for repeated model lists on a project', async () => {
+    const handle = makeModelHandle()
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+
+    await service.listModels('/project')
+    await service.listModels('/project')
+
+    expect(createHandleMock).toHaveBeenCalledTimes(1)
+    expect(handle.connection.request).toHaveBeenCalledTimes(2)
+    expect(handle.close).not.toHaveBeenCalled()
+
+    service.dispose()
+    await new Promise((r) => setImmediate(r))
+    expect(handle.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes the cached metadata connection when auth changes', async () => {
+    const handleA = makeModelHandle()
+    const handleB = makeModelHandle()
+    createHandleMock.mockResolvedValueOnce(handleA).mockResolvedValueOnce(handleB)
+    const service = new CodexExperimentService()
+
+    await service.listModels('/project')
+    service.setAuth('/project', { mode: 'chatgpt' })
+    await new Promise((r) => setImmediate(r))
+    await service.listModels('/project')
+
+    expect(handleA.close).toHaveBeenCalledTimes(1)
+    expect(createHandleMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('allows a prewarmed project app-server to be claimed by a Codex backend', async () => {
+    const handle = makeModelHandle()
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+
+    service.prewarmAppServerConnection('/project')
+    const claimed = await service.takeAppServerConnection('/project', { mode: 'auto' })
+
+    expect(claimed).toBe(handle)
+    expect(createHandleMock).toHaveBeenCalledTimes(1)
+    expect(handle.close).not.toHaveBeenCalled()
+  })
+
+  it('accepts a released idle app-server handle for the next project claim', async () => {
+    const handle = makeModelHandle()
+    const service = new CodexExperimentService()
+
+    service.releaseAppServerConnection('/project', { mode: 'auto' }, handle)
+    const claimed = await service.takeAppServerConnection('/project', { mode: 'auto' })
+
+    expect(claimed).toBe(handle)
+    expect(createHandleMock).not.toHaveBeenCalled()
+    expect(handle.close).not.toHaveBeenCalled()
   })
 })

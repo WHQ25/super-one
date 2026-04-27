@@ -8,6 +8,7 @@ import {
   resolveApiKey,
   resolveMode,
   type AppServerConnection,
+  type AppServerConnectionHandle,
   type CodexAppServerModel,
   type CodexProjectAuth,
 } from './app-server-connection'
@@ -18,6 +19,8 @@ import type {
   ModelOption,
   ReasoningEffortOption,
 } from '../../shared/agent-types'
+
+const APP_SERVER_METADATA_IDLE_MS = 5 * 60_000
 
 export {
   createCodexSession,
@@ -86,9 +89,23 @@ function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
   }
 }
 
+function authsEqual(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
+  return a.mode === b.mode && normalizeApiKey(a.apiKey) === normalizeApiKey(b.apiKey)
+}
+
+interface CachedAppServerConnection {
+  auth: CodexProjectAuth
+  handlePromise: Promise<AppServerConnectionHandle>
+  handle: AppServerConnectionHandle | null
+  inFlight: number
+  idleTimer: ReturnType<typeof setTimeout> | null
+  claimed: boolean
+}
+
 export class CodexExperimentService {
   private projectAuth = new Map<string, CodexProjectAuth>()
   private authChangedListeners = new Map<string, Set<() => void>>()
+  private appServerConnections = new Map<string, CachedAppServerConnection>()
 
   getProjectAuth(projectPath: string): CodexProjectAuth {
     let auth = this.projectAuth.get(projectPath)
@@ -117,31 +134,169 @@ export class CodexExperimentService {
     }
   }
 
+  private async closeAppServerConnection(projectPath: string): Promise<void> {
+    const cached = this.appServerConnections.get(projectPath)
+    if (!cached) return
+    this.appServerConnections.delete(projectPath)
+    if (cached.idleTimer) clearTimeout(cached.idleTimer)
+    try {
+      const handle = cached.handle ?? await cached.handlePromise
+      await handle.close()
+    } catch (err) {
+      log.debug('[codex] metadata app-server close failed: %s', err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  private getCachedAppServerConnection(
+    projectPath: string,
+    auth: CodexProjectAuth,
+    signal: AbortSignal | undefined,
+  ): CachedAppServerConnection {
+    const existing = this.appServerConnections.get(projectPath)
+    if (existing && authsEqual(existing.auth, auth)) {
+      if (existing.idleTimer) {
+        clearTimeout(existing.idleTimer)
+        existing.idleTimer = null
+      }
+      return existing
+    }
+    if (existing) void this.closeAppServerConnection(projectPath)
+
+    const cached: CachedAppServerConnection = {
+      auth: { mode: auth.mode, apiKey: normalizeApiKey(auth.apiKey) },
+      handlePromise: Promise.resolve(null as never),
+      handle: null,
+      inFlight: 0,
+      idleTimer: null,
+      claimed: false,
+    }
+    const startedAt = Date.now()
+    cached.handlePromise = createAppServerConnection(auth, signal)
+      .then((handle) => {
+        if (this.appServerConnections.get(projectPath) !== cached && !cached.claimed) {
+          void handle.close().catch(() => {})
+          return handle
+        }
+        cached.handle = handle
+        log.info('[codex] metadata app-server ready project=%s durMs=%d', projectPath, Date.now() - startedAt)
+        handle.onClosed((info) => {
+          if (this.appServerConnections.get(projectPath) === cached) {
+            this.appServerConnections.delete(projectPath)
+            if (cached.idleTimer) clearTimeout(cached.idleTimer)
+            log.info('[codex] metadata app-server exited code=%s signal=%s', info.code, info.signal)
+          }
+        })
+        return handle
+      })
+      .catch((err) => {
+        if (this.appServerConnections.get(projectPath) === cached) {
+          this.appServerConnections.delete(projectPath)
+        }
+        throw err
+      })
+    this.appServerConnections.set(projectPath, cached)
+    return cached
+  }
+
+  prewarmAppServerConnection(projectPath: string): void {
+    const auth = this.getProjectAuth(projectPath)
+    const cached = this.getCachedAppServerConnection(projectPath, auth, undefined)
+    void cached.handlePromise.catch((err) => {
+      log.warn('[codex] metadata app-server prewarm failed: %s', err instanceof Error ? err.message : String(err))
+    })
+  }
+
+  async takeAppServerConnection(
+    projectPath: string,
+    auth: CodexProjectAuth,
+  ): Promise<AppServerConnectionHandle | null> {
+    const cached = this.appServerConnections.get(projectPath)
+    if (!cached || !authsEqual(cached.auth, auth) || cached.inFlight > 0) return null
+    this.appServerConnections.delete(projectPath)
+    cached.claimed = true
+    if (cached.idleTimer) {
+      clearTimeout(cached.idleTimer)
+      cached.idleTimer = null
+    }
+    try {
+      return await cached.handlePromise
+    } catch (err) {
+      log.debug('[codex] take metadata app-server failed: %s', err instanceof Error ? err.message : String(err))
+      return null
+    }
+  }
+
+  releaseAppServerConnection(
+    projectPath: string,
+    auth: CodexProjectAuth,
+    handle: AppServerConnectionHandle,
+  ): void {
+    if (this.appServerConnections.has(projectPath)) {
+      void handle.close().catch(() => {})
+      return
+    }
+    const cached: CachedAppServerConnection = {
+      auth: { mode: auth.mode, apiKey: normalizeApiKey(auth.apiKey) },
+      handlePromise: Promise.resolve(handle),
+      handle,
+      inFlight: 0,
+      idleTimer: null,
+      claimed: false,
+    }
+    handle.onClosed((info) => {
+      if (this.appServerConnections.get(projectPath) === cached) {
+        this.appServerConnections.delete(projectPath)
+        if (cached.idleTimer) clearTimeout(cached.idleTimer)
+        log.info('[codex] metadata app-server exited code=%s signal=%s', info.code, info.signal)
+      }
+    })
+    this.appServerConnections.set(projectPath, cached)
+    this.scheduleAppServerConnectionClose(projectPath, cached)
+  }
+
+  private scheduleAppServerConnectionClose(projectPath: string, cached: CachedAppServerConnection): void {
+    if (cached.inFlight > 0 || this.appServerConnections.get(projectPath) !== cached) return
+    if (cached.idleTimer) clearTimeout(cached.idleTimer)
+    cached.idleTimer = setTimeout(() => {
+      void this.closeAppServerConnection(projectPath)
+    }, APP_SERVER_METADATA_IDLE_MS)
+  }
+
   private async withAppServerConnection<T>(
+    projectPath: string,
     auth: CodexProjectAuth,
     signal: AbortSignal | undefined,
     fn: (connection: AppServerConnection) => Promise<T>,
   ): Promise<T> {
-    const handle = await createAppServerConnection(auth, signal)
+    const cached = this.getCachedAppServerConnection(projectPath, auth, signal)
+    cached.inFlight += 1
+    if (cached.idleTimer) {
+      clearTimeout(cached.idleTimer)
+      cached.idleTimer = null
+    }
+    let handle: AppServerConnectionHandle | null = null
     try {
+      handle = await cached.handlePromise
       return await fn(handle.connection)
     } catch (error) {
-      const stderr = handle.getStderr().trim()
+      const stderr = handle?.getStderr().trim() ?? ''
       if (stderr) {
         log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
         log.error('[codex] app-server stderr:', stderr)
+        await this.closeAppServerConnection(projectPath)
         const message = error instanceof Error ? error.message : String(error)
         const debugLogPath = String(log.transports.file.getFile().path)
         throw new Error(`${message}\n${stderr}\nDebug log: ${debugLogPath}`)
       }
       throw error
     } finally {
-      await handle.close()
+      cached.inFlight = Math.max(0, cached.inFlight - 1)
+      this.scheduleAppServerConnectionClose(projectPath, cached)
     }
   }
 
-  private async fetchModelsFromAppServer(auth: CodexProjectAuth): Promise<ModelOption[]> {
-    return this.withAppServerConnection(auth, undefined, async (connection) => {
+  private async fetchModelsFromAppServer(projectPath: string, auth: CodexProjectAuth): Promise<ModelOption[]> {
+    return this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
       const models: CodexAppServerModel[] = []
       let cursor: string | null = null
 
@@ -174,7 +329,7 @@ export class CodexExperimentService {
   async listModels(projectPath: string): Promise<ModelOption[]> {
     const auth = this.getProjectAuth(projectPath)
     log.info('[codex] listModels: mode=%s, hasApiKey=%s', auth.mode, Boolean(auth.apiKey || process.env.CODEX_API_KEY))
-    const models = await this.fetchModelsFromAppServer(auth)
+    const models = await this.fetchModelsFromAppServer(projectPath, auth)
     log.info('[codex] listModels: fetched %d models', models.length)
     return models
   }
@@ -184,7 +339,7 @@ export class CodexExperimentService {
     fn: (request: AppServerConnection['request']) => Promise<T>,
   ): Promise<T> {
     const auth = this.getProjectAuth(projectPath)
-    return this.withAppServerConnection(auth, undefined, async (connection) => fn(connection.request))
+    return this.withAppServerConnection(projectPath, auth, undefined, async (connection) => fn(connection.request))
   }
 
   setAuth(projectPath: string, request: CodexSetAuthRequest): CodexAuthStatus {
@@ -199,6 +354,7 @@ export class CodexExperimentService {
     }
 
     this.projectAuth.set(projectPath, { mode, apiKey: normalizeApiKey(apiKey) })
+    void this.closeAppServerConnection(projectPath)
     this.emitAuthChanged(projectPath)
     return this.getAuthStatus(projectPath)
   }
@@ -216,11 +372,15 @@ export class CodexExperimentService {
 
   closeProject(projectPath: string): void {
     this.projectAuth.delete(projectPath)
+    void this.closeAppServerConnection(projectPath)
     this.emitAuthChanged(projectPath)
     this.authChangedListeners.delete(projectPath)
   }
 
   dispose(): void {
+    for (const projectPath of this.appServerConnections.keys()) {
+      void this.closeAppServerConnection(projectPath)
+    }
     this.projectAuth.clear()
     this.authChangedListeners.clear()
   }

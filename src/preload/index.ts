@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext } from '../shared/agent-types'
+import { AgentIpcChannels, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext } from '../shared/agent-types'
 
 type UserMessageExtras = {
   contexts?: ChatMessageContext[]
@@ -15,7 +15,7 @@ const agentAPI = {
   dequeueMessage: (projectPath: string, clientMessageId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DEQUEUE_MESSAGE, projectPath, clientMessageId) as Promise<boolean>,
 
-  prewarm: (projectPath: string, hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[]; sessionId?: string }) =>
+  prewarm: (projectPath: string, hint?: AgentPrewarmHint) =>
     ipcRenderer.invoke(AgentIpcChannels.PREWARM, projectPath, hint),
 
   interrupt: (projectPath: string) =>

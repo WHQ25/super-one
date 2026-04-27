@@ -60,6 +60,7 @@ describe('resolveThread fallback', () => {
 
     expect(result).toBe('new-thread-1')
     expect(session.threadId).toBe('new-thread-1')
+    expect(session.threadReady).toBe(true)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).toHaveBeenCalledTimes(2)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/resume')
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[1][0]).toBe('thread/start')
@@ -74,6 +75,7 @@ describe('resolveThread fallback', () => {
     const result = await resolveThread(mockConnection, session, '/project', permissionProfile as never)
 
     expect(result).toBe('valid-thread')
+    expect(session.threadReady).toBe(true)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).toHaveBeenCalledTimes(1)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/resume')
   })
@@ -87,8 +89,22 @@ describe('resolveThread fallback', () => {
     const result = await resolveThread(mockConnection, session, '/project', permissionProfile as never)
 
     expect(result).toBe('fresh-thread')
+    expect(session.threadReady).toBe(true)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).toHaveBeenCalledTimes(1)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/start')
+  })
+
+  it('reuses a ready thread on the current app-server connection', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'ready-thread' })
+    session.threadReady = true
+    const mockConnection = {
+      request: vi.fn(),
+    } as never
+
+    const result = await resolveThread(mockConnection, session, '/project', permissionProfile as never)
+
+    expect(result).toBe('ready-thread')
+    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).not.toHaveBeenCalled()
   })
 })
 

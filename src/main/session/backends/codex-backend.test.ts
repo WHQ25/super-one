@@ -53,6 +53,11 @@ const turnMocks = vi.hoisted(() => {
     respondToCodexQuestion: vi.fn(() => true),
     dismissCodexQuestion: vi.fn(() => true),
     prewarmCodexConnection: vi.fn(async () => null),
+    prewarmCodexSession: vi.fn(async (_handle: unknown, session: { threadId: string | null; threadReady: boolean }) => {
+      session.threadId = 'thread-prewarmed'
+      session.threadReady = true
+      return 'thread-prewarmed'
+    }),
   }
 })
 
@@ -67,6 +72,7 @@ vi.mock('../../codex/codex-turn', () => ({
   respondToCodexQuestion: turnMocks.respondToCodexQuestion,
   dismissCodexQuestion: turnMocks.dismissCodexQuestion,
   prewarmCodexConnection: turnMocks.prewarmCodexConnection,
+  prewarmCodexSession: turnMocks.prewarmCodexSession,
 }))
 
 vi.mock('../../codex/codex-session', () => ({
@@ -82,6 +88,7 @@ vi.mock('../../codex/codex-session', () => ({
     modelReasoningEffort,
     permissionPreset: permissionPreset ?? 'default',
     threadId: threadId ?? null,
+    threadReady: false,
     effectiveCwd: null,
     runningController: null,
     pendingApprovals: new Map(),
@@ -152,6 +159,8 @@ function makeFakeService(): CodexServiceDeps & {
   turnMocks.respondToCodexPermission.mockClear()
   turnMocks.respondToCodexQuestion.mockClear()
   turnMocks.dismissCodexQuestion.mockClear()
+  turnMocks.prewarmCodexConnection.mockClear()
+  turnMocks.prewarmCodexSession.mockClear()
 
   const authChangedListeners = new Set<() => void>()
   return {
@@ -212,6 +221,95 @@ describe('CodexBackend lifecycle', () => {
   it('providerSessionId is preset from start opts', async () => {
     await backend.start({ ...makeStartOpts(), providerSessionId: 'thread-123' })
     expect(backend.getCurrentProviderSessionId()).toBe('thread-123')
+  })
+
+  it('adopts a prewarmed connection and keeps it when the first send sets Codex options', async () => {
+    const close = vi.fn(async () => {})
+    const handle = {
+      connection: {},
+      close,
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    turnMocks.prewarmCodexConnection.mockResolvedValueOnce(handle as never)
+
+    backend.prewarm(makeStartOpts())
+    await backend.start(makeStartOpts())
+
+    const pending = backend.send({
+      content: 'x',
+      model: 'gpt-5-max',
+      codex: {
+        reasoningEffort: 'high',
+        permissionPreset: 'full-access',
+      },
+    })
+    service.resolveRun(makeResult())
+    await pending
+
+    expect(service.resetMock).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+    const [session] = service.runMock.mock.calls[0]! as [{ connectionHandle: unknown; model?: string; modelReasoningEffort?: string; permissionPreset?: string }]
+    expect(session.connectionHandle).toBe(handle)
+    expect(session.threadId).toBe('thread-prewarmed')
+    expect(session.model).toBe('gpt-5-max')
+    expect(session.modelReasoningEffort).toBe('high')
+    expect(session.permissionPreset).toBe('full-access')
+  })
+
+  it('uses the shared project app-server pool for prewarm adoption when available', async () => {
+    const close = vi.fn(async () => {})
+    const handle = {
+      connection: {},
+      close,
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    const pooledService = {
+      ...service,
+      prewarmAppServerConnection: vi.fn(),
+      takeAppServerConnection: vi.fn(async () => handle as never),
+    }
+    backend = new CodexBackend(pooledService)
+
+    backend.prewarm(makeStartOpts())
+    await backend.start(makeStartOpts())
+
+    expect(pooledService.prewarmAppServerConnection).toHaveBeenCalledWith('/tmp/proj')
+    expect(pooledService.takeAppServerConnection).toHaveBeenCalledWith('/tmp/proj', { mode: 'auto' })
+    expect(turnMocks.prewarmCodexSession).toHaveBeenCalledWith(handle, expect.objectContaining({
+      model: 'gpt-5.4',
+      permissionPreset: 'default',
+    }), '/tmp/proj')
+    const session = (backend as unknown as { session: { connectionHandle: unknown; threadId: string | null } }).session
+    expect(session.connectionHandle).toBe(handle)
+    expect(session.threadId).toBe('thread-prewarmed')
+    expect(close).not.toHaveBeenCalled()
+  })
+
+  it('returns an idle app-server connection to the shared project pool on close', async () => {
+    const close = vi.fn(async () => {})
+    const handle = {
+      connection: {},
+      close,
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    const releaseAppServerConnection = vi.fn()
+    const pooledService = {
+      ...service,
+      releaseAppServerConnection,
+    }
+    backend = new CodexBackend(pooledService)
+    await backend.start(makeStartOpts())
+    const session = (backend as unknown as { session: { connectionHandle: unknown; connectionAuth: unknown } }).session
+    session.connectionHandle = handle
+    session.connectionAuth = { mode: 'auto' }
+
+    await backend.close()
+
+    expect(releaseAppServerConnection).toHaveBeenCalledWith('/tmp/proj', { mode: 'auto' }, handle)
+    expect(close).not.toHaveBeenCalled()
   })
 
   it('rebuild() closes the stale codex connection so new auth takes effect next send', async () => {

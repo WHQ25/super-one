@@ -36,6 +36,7 @@ export interface CodexSession {
   modelReasoningEffort?: CodexReasoningEffort
   permissionPreset: CodexPermissionPreset
   threadId: string | null
+  threadReady: boolean
   effectiveCwd: string | null
   runningController: AbortController | null
   pendingApprovals: Map<string, PendingCodexApproval>
@@ -64,6 +65,7 @@ export function createCodexSession(
     modelReasoningEffort,
     permissionPreset: resolvePermissionPreset(permissionPreset),
     threadId: threadId ?? null,
+    threadReady: false,
     effectiveCwd: null,
     runningController: null,
     pendingApprovals: new Map<string, PendingCodexApproval>(),
@@ -76,14 +78,11 @@ export function createCodexSession(
 
 export function codexSessionNeedsRebuild(
   existing: CodexSession,
-  requestedModel?: string,
+  _requestedModel?: string,
   requestedThreadId?: string,
-  requestedReasoningEffort?: CodexReasoningEffort,
-  requestedPermissionPreset?: CodexPermissionPreset,
+  _requestedReasoningEffort?: CodexReasoningEffort,
+  _requestedPermissionPreset?: CodexPermissionPreset,
 ): boolean {
   if (requestedThreadId && requestedThreadId !== existing.threadId) return true
-  if (requestedModel && requestedModel !== existing.model) return true
-  if (requestedReasoningEffort && requestedReasoningEffort !== existing.modelReasoningEffort) return true
-  if (requestedPermissionPreset && requestedPermissionPreset !== existing.permissionPreset) return true
   return false
 }

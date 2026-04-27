@@ -623,6 +623,14 @@ export interface CodexSendExtras {
   prompt?: string
 }
 
+export interface AgentPrewarmHint {
+  effort?: SendMessageRequest['effort']
+  model?: string
+  additionalDirs?: string[]
+  sessionId?: string
+  provider?: 'claude' | 'codex'
+}
+
 // --- Model selection ---
 
 export interface ModelOption {

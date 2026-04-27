@@ -4,7 +4,7 @@ import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, g
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '../../../shared/event-seq-utils'
 import { perfEvent } from '@/lib/perf-trace'
 
@@ -457,16 +457,17 @@ function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
   if (!key) return
   const session = getActivePerSession(state, key)
   const provider = session.sessionProvider ?? session.preferredProvider
-  if (provider !== 'claude') return
   if (typeof window.agent?.prewarm !== 'function') return
   const dirs = mergeProjectAndSessionDirs(getProject(state, key), session)
   const project = getProject(state, key)
-  void window.agent.prewarm(key, {
-    model: session.selectedModel || undefined,
-    effort: session.selectedEffort,
+  const hint: AgentPrewarmHint = {
+    provider,
+    model: provider === 'codex' ? session.selectedCodexModel || undefined : session.selectedModel || undefined,
+    effort: provider === 'claude' ? session.selectedEffort : undefined,
     additionalDirs: dirs.length > 0 ? dirs : undefined,
     sessionId: project._activeSessionId ?? undefined,
-  }).catch(() => {})
+  }
+  void window.agent.prewarm(key, hint).catch(() => {})
 }
 
 function updateProjectState(
@@ -3346,8 +3347,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const project = getProject(get())
     const activeSession = getActivePerSession(get())
     const currentSid = resolveActiveSessionId(project)
+    const nextProvider = activeSession.sessionProvider ?? activeSession.preferredProvider
 
-    const newSessionId = createSessionId()
+    const newSessionId = nextProvider === 'codex' ? _createLocalCodexSessionId() : createSessionId()
     window.app.trace?.('session.lifecycle', 'resetSession', {
       activeProject,
       oldSid: currentSid,
@@ -3362,6 +3364,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const proj = getProject(s, activeProject)
       const newSession = createDefaultPerSessionState()
       newSession.cwd = activeProject
+      newSession.preferredProvider = nextProvider
+      newSession.sessionProvider = nextProvider
       applyDefaultModel(newSession, s.availableModels)
       const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
       newSession.selectedCodexModel = codexSelection.modelId
@@ -3695,7 +3699,37 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     const session = getActivePerSession(get())
     if (session.sessionProvider && session.messages.length > 0) return
-    set((s) => updateActivePerSession(s, () => ({ preferredProvider: provider, slashCommandOutput: null })))
+    if (session.sessionProvider === provider || (provider === 'claude' && !session.sessionProvider && session.preferredProvider === 'claude')) {
+      triggerPrewarm(get(), activeProject)
+      return
+    }
+    set((s) => {
+      const proj = getProject(s, activeProject)
+      const currentSid = proj._activeSessionId
+      const currentSess = currentSid ? proj._sessions[currentSid] : null
+      if (currentSess && currentSess.messages.length === 0) {
+        const nextSid = provider === 'codex' ? _createLocalCodexSessionId() : createSessionId()
+        const nextSessions = { ...proj._sessions }
+        if (currentSid) delete nextSessions[currentSid]
+        nextSessions[nextSid] = {
+          ...currentSess,
+          preferredProvider: provider,
+          sessionProvider: provider,
+          slashCommandOutput: null,
+        }
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [activeProject]: {
+              ...proj,
+              _activeSessionId: nextSid,
+              _sessions: nextSessions,
+            },
+          },
+        }
+      }
+      return updateActivePerSession(s, () => ({ preferredProvider: provider, sessionProvider: provider, slashCommandOutput: null }))
+    })
     if (provider === 'codex') {
       const project = getProject(get(), activeProject)
       const session = getActivePerSession(get())
@@ -3715,6 +3749,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       void get().refreshCodexModels()
     }
+    triggerPrewarm(get(), activeProject)
   },
 
 
@@ -4274,6 +4309,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       } catch (err) {
         console.warn('[chat] resumeSession failed:', err)
       }
+    } else {
+      triggerPrewarm(get(), activeProject)
     }
   },
 

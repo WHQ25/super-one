@@ -614,9 +614,7 @@ export class Session implements SessionContract {
     trace('session.lifecycle', 'dispose', { sid: this.id, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local', subscribers: [...this._subscribers] })
     this._status = 'disposed'
     this._pendingQueuedRequests.clear()
-    if (this.backendStarted) {
-      try { await this.backend.close() } catch (err) { log.debug('[Session] backend.close error:', err) }
-    }
+    try { await this.backend.close() } catch (err) { log.debug('[Session] backend.close error:', err) }
     if (this._owner.kind === 'remote') {
       const previous = this._owner
       this._owner = LOCAL_OWNER

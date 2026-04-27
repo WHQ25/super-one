@@ -395,6 +395,7 @@ function registerIpcHandlers(): void {
     }
     addRecentFolder(folderPath)
     await agentService.openFolder(folderPath)
+    codexService.prewarmAppServerConnection(folderPath)
     return true
   })
 
@@ -402,6 +403,7 @@ function registerIpcHandlers(): void {
     const tmpPath = join(app.getPath('userData'), 'tmp')
     if (!existsSync(tmpPath)) mkdirSync(tmpPath, { recursive: true })
     await agentService.openFolder(tmpPath) // Additive
+    codexService.prewarmAppServerConnection(tmpPath)
     return tmpPath
   })
 

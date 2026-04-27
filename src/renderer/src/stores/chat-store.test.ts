@@ -262,6 +262,36 @@ describe('ensureSession', () => {
     useChatStore.getState().ensureSession('/prewarm-existing')
     expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
+
+  it('triggers Codex prewarm with provider and Codex model when switching an empty draft to Codex', () => {
+    useChatStore.getState().setGlobalResources(
+      [],
+      {},
+      [],
+      [],
+      [],
+      [],
+      [{ id: 'gpt-5.4', name: 'GPT-5.4', supportedReasoningEfforts: [{ value: 'high', description: 'high' }] } as never],
+    )
+    setupProject('/prewarm-codex')
+    const beforeSid = useChatStore.getState().projectSessions['/prewarm-codex']._activeSessionId
+    mockWindowAgent.prewarm.mockClear()
+
+    useChatStore.getState().setPreferredProvider('codex')
+
+    const project = useChatStore.getState().projectSessions['/prewarm-codex']
+    const afterSid = project._activeSessionId
+    expect(afterSid).not.toBe(beforeSid)
+    expect(project._sessions[afterSid!].sessionProvider).toBe('codex')
+    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
+      '/prewarm-codex',
+      expect.objectContaining({
+        provider: 'codex',
+        model: 'gpt-5.4',
+        sessionId: afterSid,
+      }),
+    )
+  })
 })
 
 describe('no data loss on session switch', () => {

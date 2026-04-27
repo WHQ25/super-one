@@ -44,6 +44,7 @@ export interface AppServerConnection {
   respond(requestId: JsonRpcRequestId, result?: Record<string, unknown>): Promise<void>
   notify(method: string, params?: Record<string, unknown>): Promise<void>
   nextNotification(): Promise<AppServerNotification>
+  pollNotification?(timeoutMs: number): Promise<AppServerNotification | null>
 }
 
 export interface AppServerExitInfo {
@@ -439,6 +440,31 @@ export async function createAppServerConnection(
           else if (notif) resolve(notif)
           else reject(new Error('Codex app-server connection closed'))
         })
+      })
+    },
+
+    pollNotification: async (timeoutMs) => {
+      const queued = notificationQueue.shift()
+      if (queued) return queued
+      if (readerError) throw readerError
+      return new Promise<AppServerNotification | null>((resolve, reject) => {
+        let settled = false
+        let waiter: (n: AppServerNotification | null, err?: Error) => void
+        const timer = setTimeout(() => {
+          if (settled) return
+          settled = true
+          const idx = notificationWaiters.indexOf(waiter)
+          if (idx >= 0) notificationWaiters.splice(idx, 1)
+          resolve(null)
+        }, Math.max(0, timeoutMs))
+        waiter = (notif, err) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          if (err) reject(err)
+          else resolve(notif)
+        }
+        notificationWaiters.push(waiter)
       })
     },
   }

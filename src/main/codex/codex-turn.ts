@@ -756,6 +756,7 @@ export async function closeSessionConnection(session: CodexSession): Promise<voi
   session.connectionHandle = null
   session.connectionAuth = null
   session.threadId = null
+  session.threadReady = false
   if (handle) {
     try { await handle.close() } catch (err) {
       log.warn('[codex] close connection error:', err instanceof Error ? err.message : String(err))
@@ -784,6 +785,7 @@ export async function withSessionConnection<T>(
         session.connectionHandle = null
         session.connectionAuth = null
         session.threadId = null
+        session.threadReady = false
         log.info('[codex] app-server exited code=%s signal=%s', info.code, info.signal)
       }
     })
@@ -815,6 +817,7 @@ export function resolveCwd(session: CodexSession, projectPath: string, requested
   const cwd = requestedCwd || session.effectiveCwd || projectPath
   if (session.effectiveCwd && session.effectiveCwd !== cwd) {
     session.threadId = null
+    session.threadReady = false
   }
   session.effectiveCwd = cwd
   return cwd
@@ -869,9 +872,19 @@ export async function resolveThread(
   permissionProfile: ReturnType<typeof resolvePermissionProfile>,
 ): Promise<string> {
   const threadConfig = buildThreadConfig(permissionProfile)
+  if (session.threadId && session.threadReady) {
+    trace('codex.thread', 'reuse_ready', {
+      threadId: session.threadId,
+      cwd,
+      model: session.model,
+      permissionPreset: permissionProfile.permissionPreset,
+    }, session.threadId)
+    return session.threadId
+  }
 
-  const startNewThread = () =>
-    connection.request(
+  const startNewThread = async () => {
+    const startedAt = Date.now()
+    const result = await connection.request(
       'thread/start',
       compactRecord({
         model: session.model,
@@ -883,6 +896,14 @@ export async function resolveThread(
         persistExtendedHistory: true,
       }),
     )
+    trace('codex.thread', 'start_response', {
+      cwd,
+      model: session.model,
+      permissionPreset: permissionProfile.permissionPreset,
+      durMs: Date.now() - startedAt,
+    }, session.threadId ?? undefined)
+    return result
+  }
 
   const threadResult = session.threadId
     ? await connection.request(
@@ -896,8 +917,19 @@ export async function resolveThread(
           config: threadConfig,
           persistExtendedHistory: true,
         }),
-      ).catch(() => {
+      ).catch((err) => {
+        const failedThreadId = session.threadId
+        const message = err instanceof Error ? err.message : String(err)
+        log.info('[codex] thread/resume failed thread=%s: %s', failedThreadId ?? 'unknown', message)
+        trace('codex.thread', 'resume_failed', {
+          threadId: failedThreadId,
+          cwd,
+          model: session.model,
+          permissionPreset: permissionProfile.permissionPreset,
+          error: message,
+        }, failedThreadId ?? undefined)
         session.threadId = null
+        session.threadReady = false
         return startNewThread()
       })
     : await startNewThread()
@@ -909,7 +941,84 @@ export async function resolveThread(
   }
 
   session.threadId = resolvedThreadId
+  session.threadReady = true
   return resolvedThreadId
+}
+
+async function respondToPrewarmRequest(connection: AppServerConnection, notification: AppServerNotification): Promise<void> {
+  if (notification.requestIdRaw === undefined) return
+  const parsed = mapApprovalRequest(notification)
+  if (parsed?.responseKind === 'user_input') {
+    await connection.respond(notification.requestIdRaw, buildUserInputApprovalResponse(parsed.questions, false))
+    return
+  }
+  if (parsed?.responseKind === 'decision') {
+    await connection.respond(notification.requestIdRaw, { decision: 'decline' })
+    return
+  }
+  await connection.respond(notification.requestIdRaw, {})
+}
+
+async function drainPrewarmNotifications(
+  connection: AppServerConnection,
+  session: CodexSession,
+  deadlineMs = 12_000,
+  idleMs = 750,
+): Promise<void> {
+  if (!connection.pollNotification) return
+  const deadline = Date.now() + deadlineMs
+  const pendingMcpServers = new Set<string>()
+  while (Date.now() < deadline) {
+    const timeoutMs = Math.max(1, Math.min(pendingMcpServers.size > 0 ? 1_000 : idleMs, deadline - Date.now()))
+    const notification = await connection.pollNotification(timeoutMs)
+    if (!notification) {
+      if (pendingMcpServers.size === 0) return
+      continue
+    }
+
+    const { method, params } = notification
+    if (process.env.NODE_ENV === 'development') {
+      trace('codex.prewarm.raw', method, {
+        params,
+        itemId: readItemId(params),
+        itemType: readString(asRecord(params.item)?.type),
+        deltaText: readDeltaText(params),
+      }, session.threadId ?? undefined)
+    }
+
+    if (notification.requestIdRaw !== undefined) {
+      await respondToPrewarmRequest(connection, notification)
+      continue
+    }
+
+    if (method === 'thread/started') {
+      const startedThreadId = readString(asRecord(params.thread)?.id)
+      if (startedThreadId) {
+        session.threadId = startedThreadId
+        session.threadReady = true
+      }
+      continue
+    }
+
+    if (method === 'mcpServer/startupStatus/updated') {
+      const name = readString(params.name)
+      const status = readString(params.status)
+      if (!name) continue
+      if (status === 'starting') pendingMcpServers.add(name)
+      else pendingMcpServers.delete(name)
+    }
+  }
+}
+
+export async function prewarmCodexSession(
+  handle: AppServerConnectionHandle,
+  session: CodexSession,
+  cwd: string,
+): Promise<string> {
+  const permissionProfile = resolvePermissionProfile(session.permissionPreset)
+  const threadId = await resolveThread(handle.connection, session, cwd, permissionProfile)
+  await drainPrewarmNotifications(handle.connection, session)
+  return threadId
 }
 
 export async function streamTurnEvents(
@@ -1088,6 +1197,7 @@ export async function streamTurnEvents(
       const startedThreadId = readString(asRecord(params.thread)?.id)
       if (startedThreadId && !subscribedChildThreads.has(startedThreadId)) {
         session.threadId = startedThreadId
+        session.threadReady = true
         emitThreadStarted(startedThreadId)
       }
       continue
@@ -1681,6 +1791,7 @@ export function resetCodexSession(session: CodexSession): void {
   rejectPendingApprovals(session, 'Codex run interrupted')
   if (session.runningController) session.runningController.abort()
   session.threadId = null
+  session.threadReady = false
   session.effectiveCwd = null
   session.runningController = null
   void closeSessionConnection(session)

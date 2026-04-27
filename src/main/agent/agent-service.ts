@@ -8,7 +8,7 @@ import { readProjectAdditionalDirs, writeProjectAdditionalDirs } from './project
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
 import { resolveSdkClaudeBinary } from './claude-binary'
-import { AgentIpcChannels, type AgentEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '../../shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
@@ -1020,6 +1020,46 @@ export class AgentService {
     return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', gitBranch, permissionMode, sandboxMode })
   }
 
+  private async getOrCreatePrewarmSession(
+    projectPath: string,
+    hint?: AgentPrewarmHint,
+  ): Promise<import('../session/types').Session | null> {
+    const mgr = this.requireSessionManager()
+    const providerId = hint?.provider === 'codex' ? 'codex-base' : 'claude-base'
+    const harnessId = hint?.provider === 'codex' ? 'codex' : 'claude'
+    const activeCwd = mgr.getActiveSession(projectPath)?.cwd
+    const cwd = activeCwd
+    const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
+    const createOpts = {
+      projectPath,
+      cwd,
+      providerId,
+      permissionMode,
+      sandboxMode,
+      effort: hint?.effort,
+      model: hint?.model,
+      additionalDirectories: hint?.additionalDirs,
+    }
+    if (hint?.sessionId) {
+      const existing = mgr.getSession(hint.sessionId)
+      if (existing) {
+        if (existing.snapshot.harnessId === harnessId) {
+          mgr.setActiveSession(projectPath, hint.sessionId)
+          return existing
+        }
+        if (existing.snapshot.messages.length > 0 || existing.isStreaming()) {
+          log.debug('[agent-service] prewarm skipped sid=%s harness=%s expected=%s', hint.sessionId, existing.snapshot.harnessId, harnessId)
+          return null
+        }
+        await mgr.disposeSession(hint.sessionId)
+      }
+      return mgr.createSession({ ...createOpts, id: hint.sessionId })
+    }
+    const active = mgr.getActiveSession(projectPath)
+    if (active?.snapshot.harnessId === harnessId) return active
+    return mgr.createSession(createOpts)
+  }
+
   private readDefaultSessionPrefs(): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
     const { agentPreference } = readAppSettings()
     return {
@@ -1053,11 +1093,11 @@ export class AgentService {
       return session.dequeueMessage(clientMessageId)
     })
 
-    ipcMain.handle(AgentIpcChannels.PREWARM, (_event, projectPath: string, hint?: { effort?: SendMessageRequest['effort']; model?: string; additionalDirs?: string[]; sessionId?: string }) => {
+    ipcMain.handle(AgentIpcChannels.PREWARM, async (_event, projectPath: string, hint?: AgentPrewarmHint) => {
       if (!this.sessionManager) return
       if (this.isRemoteLockedSession(projectPath)) return
-      const session = this.getOrCreateActiveSession(projectPath, hint?.sessionId)
-      if (session.snapshot.harnessId !== 'claude') return
+      const session = await this.getOrCreatePrewarmSession(projectPath, hint)
+      if (!session) return
       log.debug('[agent-service] prewarm sid=%s harness=%s', session.id, session.snapshot.harnessId)
       try { session.prewarm(hint) } catch (err) { log.debug('[agent-service] prewarm failed: %s', err instanceof Error ? err.message : String(err)) }
     })

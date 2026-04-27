@@ -174,6 +174,8 @@ vi.mock('./resolve-cli', () => ({
 
 const { AgentService } = await import('./agent-service')
 const { SessionClaimConflictError } = await import('../session/types')
+const { AgentIpcChannels } = await import('../../shared/agent-types')
+const { ipcMain } = await import('electron')
 const dbSessions = await import('../db-sessions')
 const appSettings = await import('../app-settings-service')
 const claudeModels = await import('./claude-models')
@@ -238,6 +240,59 @@ beforeEach(() => {
   createdAgents.length = 0
   vi.clearAllMocks()
   vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(true)
+})
+
+function getRegisteredIpcHandler(channel: string) {
+  const handleMock = ipcMain.handle as unknown as ReturnType<typeof vi.fn>
+  const call = handleMock.mock.calls.find(([registered]) => registered === channel)
+  return call?.[1] as ((event: unknown, ...args: unknown[]) => unknown) | undefined
+}
+
+describe('AgentService prewarm', () => {
+  it('creates a Codex session for Codex prewarm hints instead of reusing an empty Claude draft', async () => {
+    const service = new AgentService()
+    const claudeSession = makeMockSession({
+      id: 'sid-1',
+      cwd: '/p',
+      snapshot: { harnessId: 'claude', messages: [] },
+      isStreaming: vi.fn(() => false),
+      prewarm: vi.fn(),
+    })
+    const codexSession = makeMockSession({
+      id: 'sid-1',
+      cwd: '/p',
+      snapshot: { harnessId: 'codex', messages: [] },
+      isStreaming: vi.fn(() => false),
+      prewarm: vi.fn(),
+    })
+    const disposeSession = vi.fn().mockResolvedValue(undefined)
+    const createSession = vi.fn(() => codexSession)
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => claudeSession),
+      getSession: vi.fn(() => claudeSession),
+      setActiveSession: vi.fn(),
+      disposeSession,
+      createSession,
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.PREWARM)!
+
+    await handler(null, '/p', { provider: 'codex', sessionId: 'sid-1', model: 'gpt-5.4' })
+
+    expect(disposeSession).toHaveBeenCalledWith('sid-1')
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+      projectPath: '/p',
+      providerId: 'codex-base',
+      id: 'sid-1',
+      model: 'gpt-5.4',
+    }))
+    expect(codexSession.prewarm).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'codex',
+      sessionId: 'sid-1',
+      model: 'gpt-5.4',
+    }))
+    expect(claudeSession.prewarm).not.toHaveBeenCalled()
+  })
 })
 
 describe('AgentService.resumeSession', () => {

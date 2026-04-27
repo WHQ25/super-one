@@ -154,7 +154,7 @@ describe('SessionManager', () => {
       expect(ids).toEqual([s1.snapshot.id, s2.snapshot.id].sort())
     })
 
-    it('disposeSession removes the session (closes backend only if started)', async () => {
+    it('disposeSession removes the session and closes the backend', async () => {
       const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
       const backend = hoisted.backendsCreated[0] as FakeBackend
       await s.send({ content: 'x' })
@@ -163,11 +163,11 @@ describe('SessionManager', () => {
       expect(backend.disposed).toBe(true)
     })
 
-    it('disposeSession on unstarted session is safe and does not call backend.close', async () => {
+    it('disposeSession on unstarted session still closes the backend', async () => {
       const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
       const backend = hoisted.backendsCreated[0] as FakeBackend
       await mgr.disposeSession(s.snapshot.id)
-      expect(backend.disposed).toBe(false)
+      expect(backend.disposed).toBe(true)
     })
 
     it('disposeSession is a no-op for unknown id', async () => {

@@ -22,7 +22,6 @@ import log from '../../logger'
 import { trace } from '../../agent/event-trace'
 import type { CodexSession } from '../../codex/codex-session'
 import {
-  codexSessionNeedsRebuild,
   createCodexSession,
 } from '../../codex/codex-session'
 import type { AppServerConnectionHandle, CodexProjectAuth } from '../../codex/app-server-connection'
@@ -31,6 +30,7 @@ import {
   dismissCodexQuestion,
   interruptCodex,
   prewarmCodexConnection,
+  prewarmCodexSession,
   resetCodexSession,
   respondToCodexPermission,
   respondToCodexQuestion,
@@ -52,6 +52,9 @@ export interface CodexRunStreamCallbacksDeps {
 export interface CodexServiceDeps {
   getProjectAuth(projectPath: string): CodexProjectAuth
   onAuthChanged(projectPath: string, cb: () => void): () => void
+  prewarmAppServerConnection?(projectPath: string): void
+  takeAppServerConnection?(projectPath: string, auth: CodexProjectAuth): Promise<AppServerConnectionHandle | null>
+  releaseAppServerConnection?(projectPath: string, auth: CodexProjectAuth, handle: AppServerConnectionHandle): void
 }
 
 interface CodexBackendConfig {
@@ -61,6 +64,17 @@ interface CodexBackendConfig {
   extraEnv?: Record<string, string>
   permissionPreset?: CodexPermissionPreset
   reasoningEffort?: CodexReasoningEffort
+}
+
+interface WarmCodexHandle {
+  handle: AppServerConnectionHandle
+  auth: CodexProjectAuth
+  threadId: string | null
+  threadReady: boolean
+  effectiveCwd: string
+  model?: string
+  reasoningEffort?: CodexReasoningEffort
+  permissionPreset?: CodexPermissionPreset
 }
 
 function mapPermissionMode(mode: PermissionMode | undefined): CodexPermissionPreset {
@@ -125,8 +139,7 @@ export class CodexBackend implements SessionBackend {
   private session: CodexSession | null = null
   private authChangedUnsub: (() => void) | null = null
 
-  private warmHandlePromise: Promise<AppServerConnectionHandle | null> | null = null
-  private warmAuth: CodexProjectAuth | null = null
+  private warmHandlePromise: Promise<WarmCodexHandle | null> | null = null
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
@@ -164,43 +177,145 @@ export class CodexBackend implements SessionBackend {
     if (this.started || this.disposed) return
     if (this.warmHandlePromise) return
     const auth = this.service.getProjectAuth(opts.projectPath)
-    this.warmAuth = { mode: auth.mode, apiKey: auth.apiKey }
-    const promise = prewarmCodexConnection(auth).catch((err) => {
+    const promise = this.prepareWarmHandle(opts, auth).catch((err) => {
       log.warn('[CodexBackend] prewarm failed: %s', err instanceof Error ? err.message : String(err))
       if (this.warmHandlePromise === promise) {
         this.warmHandlePromise = null
-        this.warmAuth = null
       }
       return null
     })
     this.warmHandlePromise = promise
   }
 
+  private resolveWarmSessionOptions(opts: BackendStartOptions): {
+    model?: string
+    reasoningEffort?: CodexReasoningEffort
+    permissionPreset: CodexPermissionPreset
+    cwd: string
+  } {
+    const config = readConfig(opts.config)
+    return {
+      model: opts.model ?? config.model,
+      reasoningEffort: mapEffort(opts.effort) ?? config.reasoningEffort,
+      permissionPreset: config.permissionPreset ?? mapPermissionMode(opts.permissionMode),
+      cwd: opts.cwd || opts.projectPath,
+    }
+  }
+
+  private async createWarmHandle(projectPath: string, auth: CodexProjectAuth): Promise<AppServerConnectionHandle> {
+    if (this.service.prewarmAppServerConnection) {
+      this.service.prewarmAppServerConnection(projectPath)
+    }
+    const pooled = this.service.takeAppServerConnection
+      ? await this.service.takeAppServerConnection(projectPath, auth).catch(() => null)
+      : null
+    return pooled ?? prewarmCodexConnection(auth)
+  }
+
+  private async prepareWarmHandle(opts: BackendStartOptions, auth: CodexProjectAuth): Promise<WarmCodexHandle | null> {
+    const startedAt = Date.now()
+    const warm = this.resolveWarmSessionOptions(opts)
+    const handle = await this.createWarmHandle(opts.projectPath, auth)
+    const warmSession = createCodexSession(
+      opts.projectPath,
+      warm.model,
+      opts.providerSessionId ?? undefined,
+      warm.reasoningEffort,
+      warm.permissionPreset,
+    )
+    try {
+      const threadId = await prewarmCodexSession(handle, warmSession, warm.cwd)
+      log.info('[CodexBackend] prewarm ready project=%s thread=%s durMs=%d', opts.projectPath, threadId, Date.now() - startedAt)
+      trace('codex.prewarm', 'ready', {
+        projectPath: opts.projectPath,
+        threadId,
+        cwd: warm.cwd,
+        model: warm.model,
+        reasoningEffort: warm.reasoningEffort,
+        permissionPreset: warm.permissionPreset,
+        durMs: Date.now() - startedAt,
+      }, opts.sessionId)
+      return {
+        handle,
+        auth: { mode: auth.mode, apiKey: auth.apiKey },
+        threadId,
+        threadReady: true,
+        effectiveCwd: warm.cwd,
+        model: warm.model,
+        reasoningEffort: warm.reasoningEffort,
+        permissionPreset: warm.permissionPreset,
+      }
+    } catch (err) {
+      try { await handle.close() } catch {}
+      throw err
+    }
+  }
+
   private async adoptWarmHandle(): Promise<void> {
-    if (!this.warmHandlePromise || !this.session) return
+    if (!this.session) return
     const session = this.session
     const startOpts = this.startOpts
     if (!startOpts) return
-    const warmAuth = this.warmAuth
-    const warmHandle = await this.warmHandlePromise.catch(() => null)
-    this.warmHandlePromise = null
-    this.warmAuth = null
-    if (!warmHandle) return
     const currentAuth = this.service.getProjectAuth(startOpts.projectPath)
-    if (!warmAuth || !authsEqual(warmAuth, currentAuth)) {
-      try { await warmHandle.close() } catch { /* ignore */ }
+    let warm: WarmCodexHandle | null = null
+    if (this.warmHandlePromise) {
+      warm = await this.warmHandlePromise.catch(() => null)
+    } else if (this.service.takeAppServerConnection) {
+      const handle = await this.service.takeAppServerConnection(startOpts.projectPath, currentAuth).catch(() => null)
+      if (handle) {
+        warm = {
+          handle,
+          auth: { mode: currentAuth.mode, apiKey: currentAuth.apiKey },
+          threadId: null,
+          threadReady: false,
+          effectiveCwd: startOpts.cwd || startOpts.projectPath,
+        }
+      }
+    }
+    this.warmHandlePromise = null
+    if (!warm) return
+    if (!authsEqual(warm.auth, currentAuth)) {
+      try { await warm.handle.close() } catch { /* ignore */ }
       return
     }
-    warmHandle.onClosed((info) => {
-      if (session.connectionHandle === warmHandle) {
+    warm.handle.onClosed((info) => {
+      if (session.connectionHandle === warm.handle) {
         session.connectionHandle = null
         session.connectionAuth = null
         session.threadId = null
+        session.threadReady = false
         log.info('[codex] app-server exited code=%s signal=%s', info.code, info.signal)
       }
     })
-    session.connectionHandle = warmHandle
+    session.connectionHandle = warm.handle
     session.connectionAuth = { mode: currentAuth.mode, apiKey: currentAuth.apiKey }
+    session.threadId = warm.threadId
+    session.threadReady = warm.threadReady && Boolean(warm.threadId)
+    session.effectiveCwd = warm.effectiveCwd
+    if (warm.model !== undefined) session.model = warm.model
+    if (warm.reasoningEffort !== undefined) session.modelReasoningEffort = warm.reasoningEffort
+    if (warm.permissionPreset !== undefined) session.permissionPreset = warm.permissionPreset
+    trace('codex.prewarm', 'adopted', {
+      projectPath: startOpts.projectPath,
+      threadId: warm.threadId,
+      cwd: warm.effectiveCwd,
+    }, startOpts.sessionId)
+  }
+
+  private releaseIdleConnectionToProjectPool(): boolean {
+    const session = this.session
+    const startOpts = this.startOpts
+    if (!session || !startOpts || session.runningController) return false
+    const handle = session.connectionHandle
+    const auth = session.connectionAuth
+    if (!handle || !auth || !this.service.releaseAppServerConnection) return false
+    session.connectionHandle = null
+    session.connectionAuth = null
+    session.threadId = null
+    session.threadReady = false
+    session.effectiveCwd = null
+    this.service.releaseAppServerConnection(startOpts.projectPath, auth, handle)
+    return true
   }
 
   async rebuild(opts: BackendStartOptions): Promise<void> {
@@ -223,6 +338,7 @@ export class CodexBackend implements SessionBackend {
     session.connectionHandle = null
     session.connectionAuth = null
     session.threadId = null
+    session.threadReady = false
     if (handle) {
       void handle.close().catch((err) => {
         log.warn('[CodexBackend] close connection during %s failed: %s', reason, err instanceof Error ? err.message : String(err))
@@ -251,18 +367,14 @@ export class CodexBackend implements SessionBackend {
       return created
     }
 
-    if (codexSessionNeedsRebuild(existing, requestedModel, requestedThreadId, requestedReasoningEffort, requestedPermissionPreset)) {
-      resetCodexSession(existing)
-      const recreated = createCodexSession(
-        startOpts.projectPath,
-        requestedModel ?? existing.model,
-        requestedThreadId ?? existing.threadId ?? undefined,
-        requestedReasoningEffort ?? existing.modelReasoningEffort,
-        requestedPermissionPreset ?? existing.permissionPreset,
-      )
-      this.session = recreated
-      return recreated
+    if (requestedThreadId && requestedThreadId !== existing.threadId) {
+      existing.threadId = requestedThreadId
+      existing.threadReady = false
+      existing.effectiveCwd = null
     }
+    if (requestedModel !== undefined) existing.model = requestedModel
+    if (requestedReasoningEffort !== undefined) existing.modelReasoningEffort = requestedReasoningEffort
+    if (requestedPermissionPreset !== undefined) existing.permissionPreset = requestedPermissionPreset
 
     return existing
   }
@@ -415,14 +527,15 @@ export class CodexBackend implements SessionBackend {
   async close(): Promise<void> {
     if (this.disposed) return
     const session = this.session
-    try { if (session) resetCodexSession(session) } catch { /* ignore */ }
+    try {
+      if (session && !this.releaseIdleConnectionToProjectPool()) resetCodexSession(session)
+    } catch { /* ignore */ }
     if (this.warmHandlePromise) {
       const warmPromise = this.warmHandlePromise
       this.warmHandlePromise = null
-      this.warmAuth = null
       try {
-        const handle = await warmPromise
-        if (handle) await handle.close()
+        const warm = await warmPromise
+        if (warm) await warm.handle.close()
       } catch { /* ignore */ }
     }
     if (this.activeRun) { try { await this.activeRun } catch { /* ignore */ } }

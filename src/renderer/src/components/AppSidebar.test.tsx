@@ -82,6 +82,10 @@ vi.mock('@/components/sidebar/FileTree', () => ({
   FileTree: () => <div>FileTree</div>,
 }))
 
+vi.mock('@/components/sidebar/BrandColorPopover', () => ({
+  BrandColorPopover: () => null,
+}))
+
 vi.mock('@/components/ui/button', () => ({
   Button: ({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
 }))

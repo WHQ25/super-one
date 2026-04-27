@@ -35,6 +35,7 @@ import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppView } from '@/components/miniapp/MiniAppView'
 import { AppDrawer } from '@/components/sidebar/AppDrawer'
+import { BrandColorPopover } from '@/components/sidebar/BrandColorPopover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CommandShortcut } from '@/components/ui/command'
 
@@ -546,6 +547,7 @@ export const AppSidebar = memo(function AppSidebar() {
             <TooltipContent side="top"><span>{t('sidebar.settings')}</span> <CommandShortcut>{isMac ? '⌘,' : 'Ctrl+,'}</CommandShortcut></TooltipContent>
           </Tooltip>
         </TooltipProvider>
+        <BrandColorPopover />
         <RemoteStatusIcon />
       </div>
 

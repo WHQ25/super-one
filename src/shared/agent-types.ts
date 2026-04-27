@@ -1571,10 +1571,12 @@ export interface AppSettings {
       defaultEffort: EffortLevel | ''
       defaultPermissionMode: PermissionMode | ''
       defaultSandboxMode: SandboxMode | ''
+      brandHue: number | null
     }
     codex: {
       defaultModel: string
       defaultReasoningEffort: CodexReasoningEffort | ''
+      brandHue: number | null
     }
   }
 }

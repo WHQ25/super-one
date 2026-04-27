@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import type { RecentFolder, RemoteDeviceConfig, SetupEvent, SettingsProvider, UpdateEvent, WorktreeMode } from '../../../shared/agent-types'
+import type { HarnessId } from '../../../shared/session-types'
+import { clampBrandHue } from '../../../shared/harness-brand'
 import { useFileTreeStore } from './file-tree'
 import { perfEvent } from '@/lib/perf-trace'
 import { disposeHighlightCache } from '@/lib/highlight-cache'
@@ -98,6 +100,11 @@ interface AppState {
   remoteConfig: RemoteDeviceConfig | null
   loadRemoteConfig: () => Promise<void>
   setRemoteConfig: (config: RemoteDeviceConfig) => void
+
+  // Brand hue (per-harness, light mode only)
+  brandHues: Record<HarnessId, number | null>
+  loadBrandHues: () => Promise<void>
+  setBrandHue: (harness: HarnessId, hue: number | null) => Promise<void>
 
   // Worktree management
   setPendingWorktree: (projectPath: string, baseBranch: string) => void
@@ -504,6 +511,34 @@ export const useAppStore = create<AppState>((set, get) => ({
   setRemoteConfig: (config) => {
     set({ remoteConfig: config })
     window.app.saveRemoteConfig(config)
+  },
+
+  brandHues: { claude: null, codex: null },
+
+  loadBrandHues: async () => {
+    try {
+      const settings = await window.app.getAppSettings()
+      set({
+        brandHues: {
+          claude: settings.agentPreference.claude.brandHue,
+          codex: settings.agentPreference.codex.brandHue,
+        },
+      })
+    } catch (err) {
+      console.error('[brand-hue] loadBrandHues failed:', err)
+    }
+  },
+
+  setBrandHue: async (harness, hue) => {
+    const normalized = hue === null ? null : clampBrandHue(hue)
+    set({ brandHues: { ...get().brandHues, [harness]: normalized } })
+    try {
+      await window.app.saveAppSettings({
+        agentPreference: { [harness]: { brandHue: normalized } },
+      })
+    } catch (err) {
+      console.error('[brand-hue] setBrandHue failed:', err)
+    }
   },
 }))
 

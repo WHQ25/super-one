@@ -23,6 +23,7 @@ import { useFullscreen } from '@/hooks/useFullscreen'
 import { usePerfSampler } from '@/hooks/usePerfSampler'
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
+import { useHarnessTheme } from '@/hooks/useHarnessTheme'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
@@ -43,6 +44,7 @@ function App(): React.JSX.Element {
   useAgentEvents()
   useRemoteControl()
   usePerfSampler()
+  useHarnessTheme()
   const theme = useTheme()
   const { t } = useTranslation()
   const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode, setLayoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode, setLayoutMode: s.setLayoutMode })))
@@ -54,6 +56,7 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     useAppStore.getState().loadRemoteConfig()
+    useAppStore.getState().loadBrandHues()
     window.app.getAppSettings()
       .then((s) => { if (s.analyticsEnabled) initAnalytics() })
       .catch((err) => console.error('[analytics] failed to load app settings', err))

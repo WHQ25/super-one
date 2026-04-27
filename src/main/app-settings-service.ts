@@ -17,12 +17,21 @@ const defaults: AppSettings = {
       defaultEffort: '',
       defaultPermissionMode: '',
       defaultSandboxMode: '',
+      brandHue: null,
     },
     codex: {
       defaultModel: '',
       defaultReasoningEffort: '',
+      brandHue: null,
     },
   },
+}
+
+function readBrandHue(value: unknown): number | null {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const wrapped = ((value % 360) + 360) % 360
+  return Math.round(wrapped)
 }
 
 function isLocale(value: unknown): value is Locale {
@@ -66,6 +75,7 @@ function readClaudePreference(data: Record<string, unknown>): ClaudePref {
     defaultSandboxMode: claudePreference?.defaultSandboxMode === '' || isSandboxMode(claudePreference?.defaultSandboxMode)
       ? (claudePreference.defaultSandboxMode as SandboxMode | '')
       : defaults.agentPreference.claude.defaultSandboxMode,
+    brandHue: readBrandHue(claudePreference?.brandHue),
   }
 }
 
@@ -89,6 +99,7 @@ function readCodexPreference(data: Record<string, unknown>): CodexPref {
     defaultReasoningEffort: isCodexReasoningEffort(codexPreference?.defaultReasoningEffort)
       ? codexPreference.defaultReasoningEffort
       : (legacyDefaultReasoningEffort ?? defaults.agentPreference.codex.defaultReasoningEffort),
+    brandHue: readBrandHue(codexPreference?.brandHue),
   }
 }
 

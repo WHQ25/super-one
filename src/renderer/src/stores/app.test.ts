@@ -204,7 +204,13 @@ describe('clearWorktree', () => {
   it('switches runtime back to project root even when activePath is already empty', async () => {
     useAppStore.setState({
       _worktrees: {
-        '/proj': { pendingBaseBranch: null, activePath: null, carryLocalChanges: false },
+        '/proj': {
+          pendingBaseBranch: null,
+          pendingMode: 'branch',
+          pendingBranchName: '',
+          pendingCarryLocalChanges: false,
+          activePath: null,
+        },
       },
     })
 

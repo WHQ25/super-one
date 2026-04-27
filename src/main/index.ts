@@ -63,7 +63,7 @@ import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n } from './i18n'
-import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock } from '../shared/agent-types'
+import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '../shared/agent-types'
 import { buildRemoteActiveProvider } from '../shared/provider-utils'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
@@ -806,36 +806,72 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, async (_event, folderPath: string, baseBranch: string | null, carryLocalChanges?: boolean) => {
+  ipcMain.handle(AgentIpcChannels.GIT_SWITCH_WORKTREE, async (_event, folderPath: string, wtPath: string, gitBranch: string | null) => {
     try {
-      if (baseBranch === null) {
+      if (!existsSync(wtPath)) return { ok: false as const, error: 'Worktree path not found' }
+      await agentService.switchCwd(folderPath, wtPath, gitBranch)
+      return { ok: true as const }
+    } catch (err) {
+      return { ok: false as const, error: gitErrorMessage(err) }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_CHECKED_OUT_BRANCHES, async (_event, folderPath: string) => {
+    try {
+      const raw = await gitRun(folderPath, ['worktree', 'list', '--porcelain'])
+      const branches: string[] = []
+      for (const block of raw.split('\n\n').filter(Boolean)) {
+        const lines = block.split('\n')
+        const branchLine = lines.find((l) => l.startsWith('branch '))
+        if (branchLine) branches.push(branchLine.slice('branch refs/heads/'.length))
+      }
+      return branches
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, async (_event, folderPath: string, request: WorktreeActivateRequest | null) => {
+    try {
+      if (request === null) {
         await agentService.switchCwd(folderPath, folderPath, null)
         return { ok: true as const, path: folderPath }
       }
+      const { baseBranch, mode, branchName, carryLocalChanges } = request
       const repoRoot = resolve(folderPath, await gitRun(folderPath, ['rev-parse', '--git-common-dir']))
       const mainDir = repoRoot.endsWith(`${sep}.git`) ? dirname(repoRoot) : repoRoot
       const repoName = basename(mainDir)
-      const safeRef = sanitizeGitRef(baseBranch)
-      const commitHash = (await gitRun(folderPath, ['rev-parse', safeRef])).trim()
+      const safeBase = sanitizeGitRef(baseBranch)
+      const commitHash = (await gitRun(folderPath, ['rev-parse', safeBase])).trim()
       const shortHash = commitHash.slice(0, 7)
+      const epoch = Math.floor(Date.now() / 1000).toString(36)
       const wtDir = join(homedir(), '.worktrees', repoName)
-      const wtPath = join(wtDir, shortHash)
+      const wtPath = join(wtDir, `${epoch}-${shortHash}`)
 
       let stashSha: string | undefined
       if (carryLocalChanges) {
         stashSha = (await gitRun(folderPath, ['stash', 'create'])).trim() || undefined
       }
 
-      if (!existsSync(wtPath)) {
-        if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
-        await gitRun(folderPath, ['worktree', 'add', '--detach', wtPath, safeRef])
+      if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
+      if (mode === 'branch') {
+        if (!branchName || !branchName.trim()) {
+          return { ok: false as const, error: 'Branch name is required for branch mode' }
+        }
+        const safeNewBranch = sanitizeGitRef(branchName.trim())
+        await gitRun(folderPath, ['worktree', 'add', '-b', safeNewBranch, wtPath, safeBase])
+      } else if (mode === 'attach') {
+        await gitRun(folderPath, ['worktree', 'add', wtPath, safeBase])
+      } else {
+        await gitRun(folderPath, ['worktree', 'add', '--detach', wtPath, safeBase])
       }
 
       if (stashSha) {
         await gitRun(wtPath, ['stash', 'apply', stashSha])
       }
 
-      await agentService.switchCwd(folderPath, wtPath, baseBranch)
+      const recordedBranch = mode === 'branch' ? branchName!.trim() : baseBranch
+      await agentService.switchCwd(folderPath, wtPath, recordedBranch)
       return { ok: true as const, path: wtPath }
     } catch (err) {
       return { ok: false as const, error: gitErrorMessage(err) }

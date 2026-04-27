@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { RecentFolder, RemoteDeviceConfig, SetupEvent, SettingsProvider, UpdateEvent } from '../../../shared/agent-types'
+import type { RecentFolder, RemoteDeviceConfig, SetupEvent, SettingsProvider, UpdateEvent, WorktreeMode } from '../../../shared/agent-types'
 import { useFileTreeStore } from './file-tree'
 import { perfEvent } from '@/lib/perf-trace'
 import { disposeHighlightCache } from '@/lib/highlight-cache'
@@ -15,8 +15,10 @@ export type SidebarTab = 'sessions' | 'files' | `miniapp:${string}`
 
 interface WorktreeState {
   pendingBaseBranch: string | null
+  pendingMode: WorktreeMode
+  pendingBranchName: string
+  pendingCarryLocalChanges: boolean
   activePath: string | null
-  carryLocalChanges: boolean
 }
 
 function createRemoteDeviceConfig(): RemoteDeviceConfig {
@@ -99,8 +101,11 @@ interface AppState {
 
   // Worktree management
   setPendingWorktree: (projectPath: string, baseBranch: string) => void
-  setCarryLocalChanges: (projectPath: string, carry: boolean) => void
+  setPendingMode: (projectPath: string, mode: WorktreeMode) => void
+  setPendingBranchName: (projectPath: string, name: string) => void
+  setPendingCarryLocalChanges: (projectPath: string, carry: boolean) => void
   setActiveWorktree: (projectPath: string, path: string | null) => void
+  switchToExistingWorktree: (projectPath: string, wtPath: string, gitBranch: string | null) => Promise<{ ok: true } | { ok: false; error: string }>
   clearWorktree: (projectPath: string) => Promise<void>
   getWorktreeState: (projectPath: string) => WorktreeState
 }
@@ -138,7 +143,13 @@ async function refreshResourcesInBackground(): Promise<void> {
   }
 }
 
-const defaultWorktreeState: WorktreeState = { pendingBaseBranch: null, activePath: null, carryLocalChanges: false }
+const defaultWorktreeState: WorktreeState = {
+  pendingBaseBranch: null,
+  pendingMode: 'branch',
+  pendingBranchName: '',
+  pendingCarryLocalChanges: false,
+  activePath: null,
+}
 
 export const useAppStore = create<AppState>((set, get) => ({
   view: 'loading',
@@ -368,24 +379,51 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Worktree management
   setPendingWorktree: (projectPath, baseBranch) => {
-    set((s) => {
-      const prev = s._worktrees[projectPath]
-      return {
-        _worktrees: {
-          ...s._worktrees,
-          [projectPath]: { pendingBaseBranch: baseBranch, activePath: prev?.activePath ?? null, carryLocalChanges: prev?.carryLocalChanges ?? false },
+    set((s) => ({
+      _worktrees: {
+        ...s._worktrees,
+        [projectPath]: {
+          pendingBaseBranch: baseBranch,
+          pendingMode: 'branch',
+          pendingBranchName: '',
+          pendingCarryLocalChanges: false,
+          activePath: null,
         },
-      }
-    })
+      },
+    }))
   },
 
-  setCarryLocalChanges: (projectPath, carry) => {
+  setPendingMode: (projectPath, mode) => {
     set((s) => {
       const prev = s._worktrees[projectPath] ?? defaultWorktreeState
       return {
         _worktrees: {
           ...s._worktrees,
-          [projectPath]: { ...prev, carryLocalChanges: carry },
+          [projectPath]: { ...prev, pendingMode: mode },
+        },
+      }
+    })
+  },
+
+  setPendingBranchName: (projectPath, name) => {
+    set((s) => {
+      const prev = s._worktrees[projectPath] ?? defaultWorktreeState
+      return {
+        _worktrees: {
+          ...s._worktrees,
+          [projectPath]: { ...prev, pendingBranchName: name },
+        },
+      }
+    })
+  },
+
+  setPendingCarryLocalChanges: (projectPath, carry) => {
+    set((s) => {
+      const prev = s._worktrees[projectPath] ?? defaultWorktreeState
+      return {
+        _worktrees: {
+          ...s._worktrees,
+          [projectPath]: { ...prev, pendingCarryLocalChanges: carry },
         },
       }
     })
@@ -395,9 +433,35 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
-        [projectPath]: { pendingBaseBranch: null, activePath: path, carryLocalChanges: false },
+        [projectPath]: {
+          pendingBaseBranch: null,
+          pendingMode: 'branch',
+          pendingBranchName: '',
+          pendingCarryLocalChanges: false,
+          activePath: path,
+        },
       },
     }))
+  },
+
+  switchToExistingWorktree: async (projectPath, wtPath, gitBranch) => {
+    const result = await window.app.switchToExistingWorktree(projectPath, wtPath, gitBranch)
+    if (!result.ok) return result
+    const { useChatStore } = await import('./chat')
+    useChatStore.getState().resetSessionForWorktreeSwitch(projectPath, { wtPath, gitBranch })
+    set((s) => ({
+      _worktrees: {
+        ...s._worktrees,
+        [projectPath]: {
+          pendingBaseBranch: null,
+          pendingMode: 'branch',
+          pendingBranchName: '',
+          pendingCarryLocalChanges: false,
+          activePath: wtPath,
+        },
+      },
+    }))
+    return { ok: true as const }
   },
 
   clearWorktree: async (projectPath) => {
@@ -407,7 +471,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
-        [projectPath]: { pendingBaseBranch: null, activePath: null, carryLocalChanges: false },
+        [projectPath]: {
+          pendingBaseBranch: null,
+          pendingMode: 'branch',
+          pendingBranchName: '',
+          pendingCarryLocalChanges: false,
+          activePath: null,
+        },
       },
     }))
   },

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext } from '../shared/agent-types'
+import { AgentIpcChannels, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest } from '../shared/agent-types'
 
 type UserMessageExtras = {
   contexts?: ChatMessageContext[]
@@ -639,8 +639,12 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.PATH_EXISTS, p),
   getWorktreeInfo: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_WORKTREE_INFO, folderPath),
-  activateWorktree: (folderPath: string, baseBranch: string | null, carryLocalChanges?: boolean) =>
-    ipcRenderer.invoke(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, folderPath, baseBranch, carryLocalChanges),
+  getCheckedOutBranches: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_CHECKED_OUT_BRANCHES, folderPath) as Promise<string[]>,
+  activateWorktree: (folderPath: string, request: WorktreeActivateRequest | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, folderPath, request),
+  switchToExistingWorktree: (folderPath: string, wtPath: string, gitBranch: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_SWITCH_WORKTREE, folderPath, wtPath, gitBranch) as Promise<{ ok: true } | { ok: false; error: string }>,
   getGitStatusFiles: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_STATUS_FILES, folderPath),
   getGitLog: (folderPath: string, query?: string) =>

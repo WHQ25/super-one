@@ -531,6 +531,15 @@ export interface WorktreeInfo {
   entries: WorktreeEntry[]
 }
 
+export type WorktreeMode = 'branch' | 'attach' | 'detach'
+
+export interface WorktreeActivateRequest {
+  baseBranch: string
+  mode: WorktreeMode
+  branchName?: string
+  carryLocalChanges?: boolean
+}
+
 // --- Main → Renderer push events ---
 
 export type AgentEventBase =
@@ -1326,6 +1335,8 @@ export const AgentIpcChannels = {
   PATH_EXISTS: 'app:path-exists',
   GIT_WORKTREE_INFO: 'app:git-worktree-info',
   GIT_ACTIVATE_WORKTREE: 'app:git-activate-worktree',
+  GIT_SWITCH_WORKTREE: 'app:git-switch-worktree',
+  GIT_CHECKED_OUT_BRANCHES: 'app:git-checked-out-branches',
   GIT_STATUS_FILES: 'app:git-status-files',
   GIT_LOG: 'app:git-log',
   GIT_FILE_TREE: 'app:git-file-tree',

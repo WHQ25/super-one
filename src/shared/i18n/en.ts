@@ -288,12 +288,36 @@ export type Messages = {
     }
     worktree: {
       searchPlaceholder: string
+      existingHeading: string
       createFromHeading: string
-      createFromLabel: string
-      noMatches: string
-      carryLocalChanges: string
+      attachToHeading: string
+      detachAtHeading: string
+      modeBranch: string
+      modeAttach: string
+      modeDetach: string
+      branchNameLabel: string
+      branchNamePlaceholder: string
+      branchExists: string
+      switchToAttach: string
+      attachUnavailableMain: string
+      attachUnavailableOther: string
+      attachInfo: string
+      detachInfo: string
+      lazyHint: string
+      detachedLabel: string
+      attachedLabel: string
+      fromLabel: string
+      cleanLabel: string
       filesCount_one: string
       filesCount_other: string
+      carryLocalChanges: string
+      noMatches: string
+      createFromLabel: string
+      triggerCreateFrom: string
+      triggerAttachTo: string
+      triggerCreateBranch: string
+      triggerActiveBranch: string
+      triggerActiveDetached: string
     }
     permission: {
       sandboxNetwork: string
@@ -1006,13 +1030,37 @@ export const en: Messages = {
       permissionPreset: 'Permission Preset',
     },
     worktree: {
-      searchPlaceholder: 'Search branches…',
-      createFromHeading: 'Create Worktree from…',
-      createFromLabel: 'Create worktree from:',
-      noMatches: 'No matches',
-      carryLocalChanges: 'Carry local changes',
+      searchPlaceholder: 'Search worktrees and branches…',
+      existingHeading: 'Existing worktrees',
+      createFromHeading: 'Create new worktree from',
+      attachToHeading: 'Attach to',
+      detachAtHeading: 'Detach at',
+      modeBranch: 'New branch',
+      modeAttach: 'Attach',
+      modeDetach: 'Detach',
+      branchNameLabel: 'New branch name',
+      branchNamePlaceholder: 'e.g. fix/login-bug',
+      branchExists: 'Branch {{name}} already exists',
+      switchToAttach: 'Switch to Attach',
+      attachUnavailableMain: 'Already checked out in main repo',
+      attachUnavailableOther: 'Already checked out in another worktree',
+      attachInfo: 'Worktree will check out {{branch}}. Continue work on this existing branch in an isolated directory.',
+      detachInfo: 'Worktree will detach at {{branch}} ({{hash}}). No branch is created.',
+      lazyHint: 'Worktree will be created on next message',
+      detachedLabel: 'Detached',
+      attachedLabel: 'attached',
+      fromLabel: 'from {{branch}}',
+      cleanLabel: 'clean',
       filesCount_one: '{{count}} file',
       filesCount_other: '{{count}} files',
+      carryLocalChanges: 'Carry local changes',
+      noMatches: 'No matches',
+      createFromLabel: 'Create worktree from:',
+      triggerCreateFrom: 'Create worktree from <branch></branch> {{base}}',
+      triggerAttachTo: 'Attach worktree to <branch></branch> {{base}}',
+      triggerCreateBranch: 'Create worktree branch <branch></branch> {{name}}',
+      triggerActiveBranch: 'Worktree <branch></branch> {{name}}',
+      triggerActiveDetached: 'Worktree @<commit></commit>{{hash}}',
     },
     permission: {
       sandboxNetwork: 'Sandbox Network',

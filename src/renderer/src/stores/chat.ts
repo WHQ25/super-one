@@ -352,7 +352,7 @@ interface ChatStore {
   setCorner: (corner: Corner) => void
   clearMessages: () => void
   resetSession: () => Promise<void>
-  resetSessionForWorktreeSwitch: (projectPath: string) => void
+  resetSessionForWorktreeSwitch: (projectPath: string, opts?: { wtPath?: string; gitBranch?: string | null }) => void
   removeSessionFromMemory: (projectPath: string, sessionId: string) => void
   rewindFiles: (userMessageId: string) => Promise<RewindFilesResult>
   rewindCodeAndChat: (userMessageId: string) => Promise<RewindFilesResult>
@@ -2890,12 +2890,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const wtState = useAppStore.getState().getWorktreeState(activeProject)
     if (wtState.pendingBaseBranch) {
       const baseBranch = wtState.pendingBaseBranch
-      const result = await window.app.activateWorktree(activeProject, baseBranch, wtState.carryLocalChanges)
+      const mode = wtState.pendingMode
+      const branchName = wtState.pendingBranchName.trim()
+      if (mode === 'branch' && !branchName) {
+        console.error('[sendMessage] Branch mode requires a branch name')
+        return
+      }
+      const result = await window.app.activateWorktree(activeProject, {
+        baseBranch,
+        mode,
+        branchName: mode === 'branch' ? branchName : undefined,
+        carryLocalChanges: wtState.pendingCarryLocalChanges,
+      })
       if (!result.ok) {
         console.error('[sendMessage] Failed to activate worktree:', result.error)
         return
       }
       useAppStore.getState().setActiveWorktree(activeProject, result.path)
+      const recordedBranch = mode === 'branch' ? branchName : baseBranch
       set((s) => updateActivePerSession(s, () => ({
         cwd: result.path,
         messages: [],
@@ -2903,7 +2915,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         contextTokens: 0,
         session: null,
         sessionProvider: null,
-        _worktreeBaseBranch: baseBranch,
+        _worktreeBaseBranch: recordedBranch,
         _worktreePath: result.path,
         todos: {},
         _nextTodoId: 1,
@@ -3314,11 +3326,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })
   },
 
-  resetSessionForWorktreeSwitch: (projectPath: string) => {
+  resetSessionForWorktreeSwitch: (projectPath: string, opts?: { wtPath?: string; gitBranch?: string | null }) => {
     set((s) => {
       const proj = getProject(s, projectPath)
       const newSession = createDefaultPerSessionState()
-      newSession.cwd = projectPath
+      newSession.cwd = opts?.wtPath ?? projectPath
+      newSession._worktreePath = opts?.wtPath ?? null
+      newSession._worktreeBaseBranch = opts?.gitBranch ?? null
       if (_cachedDefaultPermissionMode) newSession.permissionMode = _cachedDefaultPermissionMode
       applyDefaultModel(newSession, s.availableModels)
       const codexSelection = resolveDefaultCodexSelection(proj.codexModels)

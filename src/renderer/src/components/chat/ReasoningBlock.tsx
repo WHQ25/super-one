@@ -7,11 +7,13 @@ export function ReasoningBlock({
   blockDone,
   showContent = true,
   collapseOnDone = true,
+  isFirst = false,
 }: {
   text: string
   blockDone: boolean
   showContent?: boolean
   collapseOnDone?: boolean
+  isFirst?: boolean
 }) {
   const [elapsed, setElapsed] = useState(0)
   const startRef = useRef(!blockDone ? Date.now() : 0)
@@ -58,7 +60,7 @@ export function ReasoningBlock({
     : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')
 
   return (
-    <div className="thinking-node mt-2 mb-2">
+    <div className={cn('thinking-node mb-2', isFirst ? 'mt-0' : 'mt-2')}>
       <div
         className={cn(
           'flex items-center gap-1.5 text-xs text-muted-foreground',

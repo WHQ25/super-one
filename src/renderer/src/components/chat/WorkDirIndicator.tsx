@@ -24,7 +24,9 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const worktrees = useAppStore((s) => s._worktrees)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
-  const hasMessages = useActiveSession((s) => s.messages.length > 0)
+  const sdkSession = useActiveSession((s) => s.session)
+  const historyHydrated = useActiveSession((s) => s._historyHydrated)
+  const isOldSession = sdkSession !== null || historyHydrated
   const activeBaseBranch = useActiveSession((s) => s._worktreeBaseBranch)
 
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
@@ -259,6 +261,18 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
       : pendingMode === 'detach'
         ? t('chat.worktree.detachAtHeading')
         : t('chat.worktree.createFromHeading')
+
+  if (isOldSession) {
+    return (
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={titleText}>
+        {compact ? (
+          <CompactIcon className="size-3" />
+        ) : (
+          <span className="flex max-w-72 items-center gap-0.5 truncate">{renderFullLabel()}</span>
+        )}
+      </div>
+    )
+  }
 
   return (
     <Popover open={popoverOpen} onOpenChange={openPopover}>

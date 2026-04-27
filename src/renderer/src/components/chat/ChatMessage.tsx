@@ -277,6 +277,7 @@ function renderBlock(
           text={block.thinking}
           blockDone={!isStreaming || !!nextBlockType}
           showContent={block.thinking.trim().length > 0}
+          isFirst={prevBlockType === undefined}
         />
       )
     case 'tool_result':

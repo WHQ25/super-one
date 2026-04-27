@@ -1505,7 +1505,7 @@ export type MentionSearchItem =
   | { kind: 'agent'; name: string; model: string; matchIndices: number[]; score: number }
 
 export type RemoteCommand =
-  | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[]; provider?: 'claude' | 'codex'; permissionMode?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; gitBranch?: string; worktreeBranch?: string; worktreeCarryLocalChanges?: boolean; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
+  | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[]; provider?: 'claude' | 'codex'; permissionMode?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; gitBranch?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
   | { type: 'respond_permission'; requestId: string; decision: boolean; reason?: string; selectedSuggestions?: number[]; projectPath?: string; sessionId: string }
@@ -1531,7 +1531,9 @@ export type RemoteCommand =
   | { type: 'switch_git_branch'; requestId: string; projectPath: string; branch: string }
   | { type: 'create_git_branch'; requestId: string; projectPath: string; branch: string }
   | { type: 'get_worktree_info'; requestId: string; projectPath: string }
-  | { type: 'activate_worktree'; requestId: string; projectPath: string; baseBranch: string | null; carryLocalChanges?: boolean }
+  | { type: 'get_checked_out_branches'; requestId: string; projectPath: string }
+  | { type: 'activate_worktree'; requestId: string; projectPath: string; baseBranch: string | null; mode?: WorktreeMode; branchName?: string; carryLocalChanges?: boolean }
+  | { type: 'switch_worktree'; requestId: string; projectPath: string; worktreePath: string; gitBranch: string | null }
   | { type: 'search_mentions'; requestId: string; projectPath: string; query: string }
   | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
 

@@ -6,6 +6,7 @@ import { homedir } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { execFileSync, spawn } from 'child_process'
 import { gitRun } from './git-run'
+import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
@@ -734,12 +735,6 @@ function registerIpcHandlers(): void {
     }
   })
 
-  const gitErrorMessage = (err: unknown): string => {
-    const stderr = (err as { stderr?: string })?.stderr?.trim()
-    if (stderr) return stderr
-    return (err as Error)?.message ?? 'Unknown git error'
-  }
-
   ipcMain.handle(AgentIpcChannels.GIT_SWITCH_BRANCH, async (_event, folderPath: string, branch: string) => {
     try {
       await gitRun(folderPath, ['checkout', sanitizeGitRef(branch)])
@@ -770,40 +765,7 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_WORKTREE_INFO, async (_event, folderPath: string) => {
-    try {
-      const raw = await gitRun(folderPath, ['worktree', 'list', '--porcelain'])
-      const entries: { path: string; branch: string; head: string; isMain: boolean; isCurrent: boolean }[] = []
-      let first = true
-      for (const block of raw.split('\n\n').filter(Boolean)) {
-        const lines = block.split('\n')
-        const pathLine = lines.find((l) => l.startsWith('worktree '))
-        const branchLine = lines.find((l) => l.startsWith('branch '))
-        const headLine = lines.find((l) => l.startsWith('HEAD '))
-        if (!pathLine) continue
-        const wtPath = pathLine.slice('worktree '.length)
-        const head = headLine ? headLine.slice('HEAD '.length) : ''
-        const branch = branchLine ? branchLine.slice('branch refs/heads/'.length) : ''
-        entries.push({ path: wtPath, branch, head, isMain: first, isCurrent: wtPath === folderPath })
-        first = false
-      }
-      const mainEntry = entries.find((e) => e.isMain)
-      const isWorktree = mainEntry ? mainEntry.path !== folderPath : false
-      const current = entries.find((e) => e.isCurrent)
-      const currentBranch = current?.branch || (current?.head ? current.head.slice(0, 7) : '')
-      return { isWorktree, currentBranch, entries }
-    } catch {
-      try {
-        const ref = await gitRun(folderPath, ['symbolic-ref', 'HEAD'])
-        const branch = ref.replace('refs/heads/', '')
-        return {
-          isWorktree: false,
-          currentBranch: branch,
-          entries: [{ path: folderPath, branch, head: '', isMain: true, isCurrent: true }],
-        }
-      } catch {
-        return null
-      }
-    }
+    return getWorktreeInfo(folderPath)
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_SWITCH_WORKTREE, async (_event, folderPath: string, wtPath: string, gitBranch: string | null) => {
@@ -817,18 +779,7 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_CHECKED_OUT_BRANCHES, async (_event, folderPath: string) => {
-    try {
-      const raw = await gitRun(folderPath, ['worktree', 'list', '--porcelain'])
-      const branches: string[] = []
-      for (const block of raw.split('\n\n').filter(Boolean)) {
-        const lines = block.split('\n')
-        const branchLine = lines.find((l) => l.startsWith('branch '))
-        if (branchLine) branches.push(branchLine.slice('branch refs/heads/'.length))
-      }
-      return branches
-    } catch {
-      return []
-    }
+    return getCheckedOutBranches(folderPath)
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, async (_event, folderPath: string, request: WorktreeActivateRequest | null) => {
@@ -837,42 +788,9 @@ function registerIpcHandlers(): void {
         await agentService.switchCwd(folderPath, folderPath, null)
         return { ok: true as const, path: folderPath }
       }
-      const { baseBranch, mode, branchName, carryLocalChanges } = request
-      const repoRoot = resolve(folderPath, await gitRun(folderPath, ['rev-parse', '--git-common-dir']))
-      const mainDir = repoRoot.endsWith(`${sep}.git`) ? dirname(repoRoot) : repoRoot
-      const repoName = basename(mainDir)
-      const safeBase = sanitizeGitRef(baseBranch)
-      const commitHash = (await gitRun(folderPath, ['rev-parse', safeBase])).trim()
-      const shortHash = commitHash.slice(0, 7)
-      const epoch = Math.floor(Date.now() / 1000).toString(36)
-      const wtDir = join(homedir(), '.worktrees', repoName)
-      const wtPath = join(wtDir, `${epoch}-${shortHash}`)
-
-      let stashSha: string | undefined
-      if (carryLocalChanges) {
-        stashSha = (await gitRun(folderPath, ['stash', 'create'])).trim() || undefined
-      }
-
-      if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
-      if (mode === 'branch') {
-        if (!branchName || !branchName.trim()) {
-          return { ok: false as const, error: 'Branch name is required for branch mode' }
-        }
-        const safeNewBranch = sanitizeGitRef(branchName.trim())
-        await gitRun(folderPath, ['worktree', 'add', '-b', safeNewBranch, wtPath, safeBase])
-      } else if (mode === 'attach') {
-        await gitRun(folderPath, ['worktree', 'add', wtPath, safeBase])
-      } else {
-        await gitRun(folderPath, ['worktree', 'add', '--detach', wtPath, safeBase])
-      }
-
-      if (stashSha) {
-        await gitRun(wtPath, ['stash', 'apply', stashSha])
-      }
-
-      const recordedBranch = mode === 'branch' ? branchName!.trim() : baseBranch
-      await agentService.switchCwd(folderPath, wtPath, recordedBranch)
-      return { ok: true as const, path: wtPath }
+      const result = await activateWorktree(folderPath, request)
+      await agentService.switchCwd(folderPath, result.path, result.recordedBranch)
+      return { ok: true as const, path: result.path }
     } catch (err) {
       return { ok: false as const, error: gitErrorMessage(err) }
     }

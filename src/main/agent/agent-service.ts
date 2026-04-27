@@ -19,6 +19,7 @@ import { homedir } from 'os'
 import { getDb, getCachedResources, getActiveProviderRaw } from '../database'
 import { buildRemoteActiveProvider } from '../../shared/provider-utils'
 import { sanitizeGitRef } from '../path-security'
+import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from '../git/worktree-ops'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { clearAllGates } from '../generative-ui/widget-gate'
 import { clearAllPendingCalls as clearAllPendingMiniAppCalls } from '../mcp/superone-mcp-server'
@@ -335,24 +336,18 @@ export class AgentService {
           sid = targetSid
         } else {
           let cwd = projectPath
+          let recordedGitBranch: string | null | undefined = undefined
           if (command.worktreeBranch) {
-            const repoRoot = resolve(projectPath, await this.gitRun(projectPath, ['rev-parse', '--git-common-dir']))
-            const mainDir = repoRoot.endsWith(`${sep}.git`) ? dirname(repoRoot) : repoRoot
-            const repoName = basename(mainDir)
-            const safeRef = sanitizeGitRef(command.worktreeBranch)
-            const commitHash = (await this.gitRun(projectPath, ['rev-parse', safeRef])).trim()
-            const shortHash = commitHash.slice(0, 7)
-            const wtDir = join(homedir(), '.worktrees', repoName)
-            const wtPath = join(wtDir, shortHash)
-            if (!existsSync(wtPath)) {
-              if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
-              await this.gitRun(projectPath, ['worktree', 'add', '--detach', wtPath, safeRef])
-            }
-            if (command.worktreeCarryLocalChanges) {
-              const stashSha = (await this.gitRun(projectPath, ['stash', 'create'])).trim() || undefined
-              if (stashSha) await this.gitRun(wtPath, ['stash', 'apply', stashSha])
-            }
-            cwd = wtPath
+            const wtMode = command.worktreeMode ?? 'branch'
+            const wtBranchName = command.worktreeBranchName ?? (wtMode === 'branch' ? command.worktreeBranch : undefined)
+            const result = await activateWorktree(projectPath, {
+              baseBranch: command.worktreeBranch,
+              mode: wtMode,
+              branchName: wtBranchName,
+              carryLocalChanges: command.worktreeCarryLocalChanges,
+            })
+            cwd = result.path
+            recordedGitBranch = result.recordedBranch
           } else if (command.gitBranch) {
             try {
               const currentBranch = (await this.gitRun(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
@@ -368,6 +363,7 @@ export class AgentService {
             cwd,
             providerId: 'claude-base',
             id: sid,
+            ...(recordedGitBranch !== undefined ? { gitBranch: recordedGitBranch } : {}),
             permissionMode: command.permissionMode as PermissionMode | undefined,
             effort: command.effort as SendMessageRequest['effort'] | undefined,
           })
@@ -643,6 +639,7 @@ export class AgentService {
             : []
           const status = session?.isStreaming() ? 'streaming' : 'idle'
           const permissionMode = session?.getCurrentPermissionMode()
+          const snapshot = session?.snapshot
           trace('remote.cmd', 'get_session_state', {
             projectPath: command.projectPath,
             sessionId: command.sessionId,
@@ -655,6 +652,9 @@ export class AgentService {
             pendingInteractions,
             status,
             permissionMode,
+            isWorktree: snapshot?.isWorktree ?? false,
+            worktreePath: snapshot?.worktreePath ?? null,
+            gitBranch: snapshot?.gitBranch ?? null,
           })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
@@ -876,30 +876,13 @@ export class AgentService {
         break
       }
       case 'get_worktree_info': {
-        try {
-          const raw = await this.gitRun(command.projectPath, ['worktree', 'list', '--porcelain'])
-          const entries: { path: string; branch: string; head: string; isMain: boolean; isCurrent: boolean }[] = []
-          let first = true
-          for (const block of raw.split('\n\n').filter(Boolean)) {
-            const lines = block.split('\n')
-            const pathLine = lines.find((l) => l.startsWith('worktree '))
-            const branchLine = lines.find((l) => l.startsWith('branch '))
-            const headLine = lines.find((l) => l.startsWith('HEAD '))
-            if (!pathLine) continue
-            const wtPath = pathLine.slice('worktree '.length)
-            const head = headLine ? headLine.slice('HEAD '.length) : ''
-            const branch = branchLine ? branchLine.slice('branch refs/heads/'.length) : ''
-            entries.push({ path: wtPath, branch, head, isMain: first, isCurrent: wtPath === command.projectPath })
-            first = false
-          }
-          const mainEntry = entries.find((e) => e.isMain)
-          const isWorktree = mainEntry ? mainEntry.path !== command.projectPath : false
-          const current = entries.find((e) => e.isCurrent)
-          const currentBranch = current?.branch || (current?.head ? current.head.slice(0, 7) : '')
-          await respond?.(command.requestId, { isWorktree, currentBranch, entries })
-        } catch {
-          await respond?.(command.requestId, { isWorktree: false, currentBranch: '', entries: [] })
-        }
+        const info = await getWorktreeInfo(command.projectPath)
+        await respond?.(command.requestId, info ?? { isWorktree: false, currentBranch: '', entries: [] })
+        break
+      }
+      case 'get_checked_out_branches': {
+        const branches = await getCheckedOutBranches(command.projectPath)
+        await respond?.(command.requestId, { branches })
         break
       }
       case 'activate_worktree': {
@@ -909,33 +892,31 @@ export class AgentService {
             await respond?.(command.requestId, { ok: true, path: command.projectPath })
             break
           }
-          const repoRoot = resolve(command.projectPath, await this.gitRun(command.projectPath, ['rev-parse', '--git-common-dir']))
-          const mainDir = repoRoot.endsWith(`${sep}.git`) ? dirname(repoRoot) : repoRoot
-          const repoName = basename(mainDir)
-          const safeRef = sanitizeGitRef(command.baseBranch)
-          const commitHash = (await this.gitRun(command.projectPath, ['rev-parse', safeRef])).trim()
-          const shortHash = commitHash.slice(0, 7)
-          const wtDir = join(homedir(), '.worktrees', repoName)
-          const wtPath = join(wtDir, shortHash)
-
-          let stashSha: string | undefined
-          if (command.carryLocalChanges) {
-            stashSha = (await this.gitRun(command.projectPath, ['stash', 'create'])).trim() || undefined
-          }
-
-          if (!existsSync(wtPath)) {
-            if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
-            await this.gitRun(command.projectPath, ['worktree', 'add', '--detach', wtPath, safeRef])
-          }
-
-          if (stashSha) {
-            await this.gitRun(wtPath, ['stash', 'apply', stashSha])
-          }
-
-          await this.switchCwd(command.projectPath, wtPath, command.baseBranch)
-          await respond?.(command.requestId, { ok: true, path: wtPath })
+          const mode = command.mode ?? 'branch'
+          const branchName = command.branchName ?? (mode === 'branch' ? command.baseBranch : undefined)
+          const result = await activateWorktree(command.projectPath, {
+            baseBranch: command.baseBranch,
+            mode,
+            branchName,
+            carryLocalChanges: command.carryLocalChanges,
+          })
+          await this.switchCwd(command.projectPath, result.path, result.recordedBranch)
+          await respond?.(command.requestId, { ok: true, path: result.path })
         } catch (err) {
-          await respond?.(command.requestId, { ok: false, error: (err as Error).message })
+          await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
+        }
+        break
+      }
+      case 'switch_worktree': {
+        try {
+          if (!existsSync(command.worktreePath)) {
+            await respond?.(command.requestId, { ok: false, error: 'Worktree path not found' })
+            break
+          }
+          await this.switchCwd(command.projectPath, command.worktreePath, command.gitBranch)
+          await respond?.(command.requestId, { ok: true, path: command.worktreePath })
+        } catch (err) {
+          await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
         }
         break
       }

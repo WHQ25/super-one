@@ -219,6 +219,26 @@ gh release edit v0.1.0-alpha.3 --draft=false --prerelease  # alpha/beta must use
 - **Chat markdown**: Scoped to `.chat-md` class, uses Streamdown's `data-streamdown` attributes
 - **Responsive**: `@container` queries for chat panel width breakpoints (512px, 672px)
 
+### Per-Harness Brand Theming
+
+Light-mode brand hue is user-customizable per harness (Claude default 42° / Codex default 165°) via the palette icon in `AppSidebar.tsx`. The whole app's color temperature shifts with the slider.
+
+**Architecture**:
+
+- **Single writer**: `src/renderer/src/hooks/useHarnessTheme.ts` is the **only** place that writes brand CSS variables. Mounted once at `App.tsx` top level. Watches `<html>.classList` via MutationObserver (not `useTheme()`, to avoid duplicate listener mount when both call the hook).
+- **Constants**: `src/shared/harness-brand.ts` exports `HARNESS_DEFAULT_BRAND_HUE`, `clampBrandHue` (0-360 wrap, doubles as CSS-injection防御), `brandHueToOklch`. Always go through these — never hardcode an `oklch(...)` string with a user-supplied hue.
+- **Persistence**: `agentPreference.{claude,codex}.brandHue: number | null` in `app-settings.json`. `null` = use harness default. Reflected in `useAppStore.brandHues` (loaded once at app boot via `loadBrandHues`).
+- **Token override scope**: 4 accent tokens (`--primary`, `--ring`, `--sidebar-primary`, `--sidebar-ring`) at high C (0.20), plus 11 surface tokens (`--background`, `--card`, `--popover`, `--secondary`, `--muted`, `--accent`, `--border`, `--input`, `--sidebar`, `--sidebar-accent`, `--sidebar-border`) at the L/C values from `index.css`. The hook also sets `<html data-harness="claude|codex">` for future scoped CSS hooks.
+- **Dark-mode contract**: Dark mode **never** reads the user's `brandHue`. `useHarnessTheme` calls `removeProperty()` for every override token in dark mode, letting `:root.dark` defaults win. The palette icon also hides itself (`BrandColorPopover` returns `null` when `.dark`).
+
+**Rules for adapting an element to brand color** (when extending coverage):
+
+- **Dye existing elements, don't add new visual decorations**. Don't introduce `border-l-2`, color stripes, status badges, or extra DOM "to show brand". If a row uses `bg-sidebar-accent`, it's already following brand via surface tokens — extra decoration breaks super-one's克制 design language.
+- **Color swap only, not interaction change**. Brand adaptation is a token swap. Don't promote `opacity-0` (hover-only) to `opacity-100` (always-on) under the guise of branding — that's an interaction change disguised as a color change.
+- **Hardcoded colors → semantic tokens**: replace `text-purple-400`, `text-blue-400`, etc. with `text-primary` / `text-foreground` / `text-sidebar-foreground`. Sidebar elements stay in the `sidebar-*` namespace.
+- **Semantic colors stay hardcoded**: red/green/yellow for error/success/warning, git status colors in `TreeRow.tsx`, `text-destructive` and any `variant="destructive"` — never replace these with brand color, they communicate state, not identity.
+- **Trust existing token mappings**: don't add `style={{ color: 'var(--primary)' }}` to a component that already uses `text-primary` — it's redundant and harder to override.
+
 ## Debugging
 
 To show raw input/output for specific tool calls in the chat UI, set the `RENDERER_VITE_DEBUG_TOOL_NAMES` environment variable before running dev:

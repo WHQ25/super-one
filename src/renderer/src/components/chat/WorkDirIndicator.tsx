@@ -25,8 +25,8 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
   const worktrees = useAppStore((s) => s._worktrees)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
   const sdkSession = useActiveSession((s) => s.session)
-  const historyHydrated = useActiveSession((s) => s._historyHydrated)
-  const isOldSession = sdkSession !== null || historyHydrated
+  const messageCount = useActiveSession((s) => s.messages.length)
+  const isOldSession = sdkSession !== null || messageCount > 0
   const activeBaseBranch = useActiveSession((s) => s._worktreeBaseBranch)
 
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)

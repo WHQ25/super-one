@@ -39,3 +39,19 @@ export function readThemeVars(): ThemeVars {
   }
   return vars
 }
+
+export function onThemeChange(callback: () => void): () => void {
+  let raf: number | null = null
+  const observer = new MutationObserver(() => {
+    if (raf !== null) return
+    raf = requestAnimationFrame(() => {
+      raf = null
+      callback()
+    })
+  })
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
+  return () => {
+    observer.disconnect()
+    if (raf !== null) cancelAnimationFrame(raf)
+  }
+}

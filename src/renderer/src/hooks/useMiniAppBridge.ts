@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useIsDark } from '@/hooks/use-is-dark'
-import { readThemeVars } from '@/components/miniapp/miniapp-theme'
+import { onThemeChange, readThemeVars } from '@/components/miniapp/miniapp-theme'
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 import { useContextConsumedEvent } from '@/hooks/useContextConsumedEvent'
 import type { MiniAppToolCallRequest } from '../../../shared/miniapp-types'
@@ -61,6 +61,13 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
     if (!readyRef.current) return
     sendToFrame({ type: 'miniapp-theme', vars: readThemeVars(), isDark })
   }, [isDark, sendToFrame])
+
+  useEffect(() => {
+    return onThemeChange(() => {
+      if (!readyRef.current) return
+      sendToFrame({ type: 'miniapp-theme', vars: readThemeVars(), isDark: isDarkRef.current })
+    })
+  }, [sendToFrame])
 
   useEffect(() => {
     if (!readyRef.current) return

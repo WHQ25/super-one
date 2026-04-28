@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, useMemo, forwardRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useIsDark } from '@/hooks/use-is-dark'
-import { readThemeVars } from './miniapp-theme'
+import { onThemeChange, readThemeVars } from './miniapp-theme'
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 import { useContextConsumedEvent } from '@/hooks/useContextConsumedEvent'
 
@@ -86,6 +86,13 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
       if (!readyRef.current) return
       webviewRef.current?.send('miniapp-theme', { vars: readThemeVars(), isDark })
     }, [isDark])
+
+    useEffect(() => {
+      return onThemeChange(() => {
+        if (!readyRef.current) return
+        webviewRef.current?.send('miniapp-theme', { vars: readThemeVars(), isDark: isDarkRef.current })
+      })
+    }, [])
 
     useEffect(() => {
       if (!readyRef.current) return

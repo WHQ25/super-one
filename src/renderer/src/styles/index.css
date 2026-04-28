@@ -177,10 +177,12 @@
   animation: fire-glow 0.8s ease-in-out infinite;
 }
 
-*,
-::before,
-::after {
-  border-color: var(--color-border);
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-border);
+  }
 }
 
 body {

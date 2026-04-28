@@ -405,7 +405,7 @@ export const AppSidebar = memo(function AppSidebar() {
           variant="outline"
           size="sm"
           onClick={() => resetSession()}
-          className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:border-border"
         >
           <SquarePen className="size-3.5" />
           {t('sidebar.newSession')}

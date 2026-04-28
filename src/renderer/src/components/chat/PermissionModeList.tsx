@@ -31,7 +31,7 @@ export const modes: PermissionModeDescriptor[] = [
     label: 'Accept Edits',
     description: 'Auto-accept file edit operations',
     icon: <FastForward className="size-3" />,
-    color: 'text-purple-400',
+    color: 'text-purple-600 dark:text-purple-400',
     hoverBg: 'hover:bg-purple-500/10',
   },
   {
@@ -39,7 +39,7 @@ export const modes: PermissionModeDescriptor[] = [
     label: 'Auto',
     description: 'Model classifier decides each permission',
     icon: <Zap className="size-3" />,
-    color: 'text-amber-400',
+    color: 'text-amber-600 dark:text-amber-400',
     hoverBg: 'hover:bg-amber-500/10',
   },
   {
@@ -47,7 +47,7 @@ export const modes: PermissionModeDescriptor[] = [
     label: 'Plan Mode',
     description: 'Planning only, no actual execution',
     icon: <PenLine className="size-3" />,
-    color: 'text-blue-400',
+    color: 'text-blue-600 dark:text-blue-400',
     hoverBg: 'hover:bg-blue-500/10',
   },
   {
@@ -55,7 +55,7 @@ export const modes: PermissionModeDescriptor[] = [
     label: "Don't Ask",
     description: 'Deny anything not pre-approved',
     icon: <Lock className="size-3" />,
-    color: 'text-orange-400',
+    color: 'text-orange-600 dark:text-orange-400',
     hoverBg: 'hover:bg-orange-500/10',
   },
   {

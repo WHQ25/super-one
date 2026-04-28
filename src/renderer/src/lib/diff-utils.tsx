@@ -448,13 +448,13 @@ export function gutterWidth(maxLine: number): number {
 }
 
 export const LINE_STYLE: Record<DiffLine['kind'], { bg: string; marker: string; markerColor: string }> = {
-  removed: { bg: 'bg-red-500/15', marker: '-', markerColor: 'text-red-400/60' },
-  added: { bg: 'bg-green-500/15', marker: '+', markerColor: 'text-green-400/60' },
+  removed: { bg: 'bg-red-500/15', marker: '-', markerColor: 'text-red-600/60 dark:text-red-400/60' },
+  added: { bg: 'bg-green-500/15', marker: '+', markerColor: 'text-green-600/60 dark:text-green-400/60' },
   unchanged: { bg: '', marker: ' ', markerColor: 'text-transparent' },
 }
 
 const ROW_BASE = 'absolute left-0 right-0 whitespace-pre pr-2'
-const ROW_HIGHLIGHT = `${ROW_BASE} bg-yellow-400/25`
+const ROW_HIGHLIGHT = `${ROW_BASE} bg-yellow-600/25 dark:bg-yellow-400/25`
 const ROW_CLASS: Record<DiffLine['kind'], string> = {
   removed: `${ROW_BASE} bg-red-500/15`,
   added: `${ROW_BASE} bg-green-500/15`,
@@ -466,8 +466,8 @@ const ROW_CLASS_FADE: Record<DiffLine['kind'], string> = {
   unchanged: `${ROW_BASE} transition-colors duration-1000`,
 }
 const MARKER_CLASS: Record<DiffLine['kind'], string> = {
-  removed: 'inline-block w-[1ch] select-none text-center mr-1 text-red-400/60',
-  added: 'inline-block w-[1ch] select-none text-center mr-1 text-green-400/60',
+  removed: 'inline-block w-[1ch] select-none text-center mr-1 text-red-600/60 dark:text-red-400/60',
+  added: 'inline-block w-[1ch] select-none text-center mr-1 text-green-600/60 dark:text-green-400/60',
   unchanged: 'inline-block w-[1ch] select-none text-center mr-1 text-transparent',
 }
 

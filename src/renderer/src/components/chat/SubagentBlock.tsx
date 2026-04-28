@@ -221,7 +221,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"
       >
-        <Bot className={cn('size-3.5 shrink-0 text-purple-400', isRunning && !expanded && 'animate-pulse')} />
+        <Bot className={cn('size-3.5 shrink-0 text-purple-600 dark:text-purple-400', isRunning && !expanded && 'animate-pulse')} />
         {taskInput.subagentType && (
           <span className="shrink-0 rounded bg-purple-500/15 px-1 py-px text-[10px] text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
             {taskInput.subagentType}
@@ -276,7 +276,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           </>
         ) : (
           <>
-            <Check className="size-3 shrink-0 text-green-400" />
+            <Check className="size-3 shrink-0 text-green-600 dark:text-green-400" />
             <span>{t('chat.subagent.done')}{elapsed > 0 ? ` ${formatElapsed(elapsed)}` : ''}</span>
           </>
         )}
@@ -333,13 +333,13 @@ function AgentActivity({ entries, fallbackTools, activeTool, isRunning, summary 
     <div className="border-t border-border/30">
       {summary && (
         <div className="mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs leading-relaxed text-foreground dark:bg-blue-900/20">
-          <Sparkles className="mt-0.5 size-3 shrink-0 text-blue-400" />
+          <Sparkles className="mt-0.5 size-3 shrink-0 text-blue-600 dark:text-blue-400" />
           <span className="whitespace-pre-wrap">{summary}</span>
         </div>
       )}
       {isRunning && latestActivity && (
         <div className="mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md bg-purple-500/10 px-2.5 py-1.5 text-xs leading-relaxed text-foreground dark:bg-purple-900/20">
-          <MessageSquare className="mt-0.5 size-3 shrink-0 animate-pulse text-purple-400" />
+          <MessageSquare className="mt-0.5 size-3 shrink-0 animate-pulse text-purple-600 dark:text-purple-400" />
           <span className="whitespace-pre-wrap">{latestActivity.text.trim()}</span>
         </div>
       )}

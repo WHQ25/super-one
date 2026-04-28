@@ -178,7 +178,7 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
         className="flex w-full items-start gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"
       >
         <ChevronRight className={cn('mt-0.5 size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
-        <Bot className="mt-0.5 size-3.5 shrink-0 text-purple-400" />
+        <Bot className="mt-0.5 size-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
         <span className="font-medium text-foreground">{name}</span>
         {role && (
           <span className="mt-px shrink-0 rounded bg-purple-500/15 px-1 py-px text-[10px] text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
@@ -231,12 +231,12 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
             </>
           ) : status === 'errored' ? (
             <>
-              <span className="size-2 rounded-full bg-red-400" />
+              <span className="size-2 rounded-full bg-red-600 dark:bg-red-400" />
               <span>Errored</span>
             </>
           ) : (
             <>
-              <Check className="size-3 shrink-0 text-green-400" />
+              <Check className="size-3 shrink-0 text-green-600 dark:text-green-400" />
               <span>Done</span>
             </>
           )}

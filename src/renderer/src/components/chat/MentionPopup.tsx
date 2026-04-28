@@ -206,8 +206,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                       : 'text-foreground hover:bg-muted/50'
                   )}
                 >
-                  <Bot className="size-3.5 shrink-0 text-purple-400" />
-                  <span className="shrink-0 font-medium text-purple-400">
+                  <Bot className="size-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
+                  <span className="shrink-0 font-medium text-purple-600 dark:text-purple-400">
                     <HighlightedPath path={item.name} indices={item.matchIndices} />
                   </span>
                   <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">

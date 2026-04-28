@@ -414,7 +414,7 @@ export function PermissionPrompt() {
                 </div>
               )}
               {blockedPath && (
-                <p className="mb-2 break-all text-xs text-amber-400">{t('chat.permission.blockedPath', { path: blockedPath })}</p>
+                <p className="mb-2 break-all text-xs text-amber-600 dark:text-amber-400">{t('chat.permission.blockedPath', { path: blockedPath })}</p>
               )}
               {decisionReason && (
                 <p className="mb-2 text-xs text-muted-foreground">{decisionReason}</p>
@@ -443,7 +443,7 @@ export function PermissionPrompt() {
                     <Button
                       ref={(el) => { btnRefs.current[btnIdx++] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
+                      className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-600 dark:focus:ring-green-400 focus:outline-none"
                       onClick={handleAllow}
                     >
                       {t('chat.permission.allow')}
@@ -452,7 +452,7 @@ export function PermissionPrompt() {
                     <Button
                       ref={(el) => { btnRefs.current[btnIdx++] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                      className="h-7 cursor-pointer bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-400 focus:outline-none"
                       onClick={handleAlwaysAllow}
                     >
                       {t('chat.permission.allowForSession')}
@@ -461,7 +461,7 @@ export function PermissionPrompt() {
                     <Button
                       ref={(el) => { btnRefs.current[btnIdx++] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
+                      className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400 focus:outline-none"
                       onClick={handleDeny}
                     >
                       {t('chat.permission.decline')}
@@ -481,7 +481,7 @@ export function PermissionPrompt() {
                     <Button
                       ref={(el) => { btnRefs.current[btnIdx++] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-400 focus:outline-none"
+                      className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-600 dark:focus:ring-green-400 focus:outline-none"
                       onClick={handleAllow}
                     >
                       {t('chat.permission.allow')}
@@ -495,7 +495,7 @@ export function PermissionPrompt() {
                     <Button
                       ref={(el) => { btnRefs.current[btnIdx++] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none"
+                      className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400 focus:outline-none"
                       onClick={handleDeny}
                     >
                       {t('chat.permission.deny')}
@@ -522,7 +522,7 @@ export function PermissionPrompt() {
                     {allowAlwaysAllow && !isEditTool && (!suggestions || suggestions.length === 0) && (
                       <Button
                         size="sm"
-                        className="h-7 w-full cursor-pointer bg-blue-600 px-3 text-xs text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                        className="h-7 w-full cursor-pointer bg-blue-600 px-3 text-xs text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-400 focus:outline-none"
                         onClick={handleAlwaysAllow}
                       >
                         {t('chat.permission.alwaysAllow')}
@@ -542,7 +542,7 @@ export function PermissionPrompt() {
                           onClick={() => toggleSuggestion(i)}
                         >
                           {isSelected
-                            ? <CheckCircle2 className="size-3.5 shrink-0 text-green-400" />
+                            ? <CheckCircle2 className="size-3.5 shrink-0 text-green-600 dark:text-green-400" />
                             : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
                           }
                           <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>

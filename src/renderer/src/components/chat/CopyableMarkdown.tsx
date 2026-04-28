@@ -156,16 +156,15 @@ function InsightBlock({ title, content, isStreaming, components }: { title: stri
   }, [content])
 
   return (
-    <div className="group/insight my-3 border-l-[3px] pt-2.5 pb-1 pl-3 pr-2" style={{ borderColor: 'oklch(0.65 0.15 280)', background: 'oklch(0.65 0.1 280 / 0.13)' }}>
-      <div className="mb-1 flex items-center text-[13px] font-semibold" style={{ color: 'oklch(0.7 0.15 280)' }}>
+    <div className="group/insight my-3 border-l-[3px] border-insight-border bg-insight-bg pt-2.5 pb-1 pl-3 pr-2">
+      <div className="mb-1 flex items-center text-[13px] font-semibold text-insight-fg">
         <span className="flex items-center gap-1.5">
           <span>★</span>
           <span>{title}</span>
         </span>
         <button
           onClick={handleCopy}
-          className="ml-auto cursor-pointer rounded p-0.5 opacity-0 transition-opacity group-hover/insight:opacity-100"
-          style={{ color: 'oklch(0.7 0.15 280)' }}
+          className="ml-auto cursor-pointer rounded p-0.5 text-insight-fg opacity-0 transition-opacity group-hover/insight:opacity-100"
         >
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
         </button>

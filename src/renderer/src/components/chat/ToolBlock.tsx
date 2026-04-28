@@ -233,8 +233,8 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   if (toolName === 'EnterPlanMode') {
     return (
       <div className="my-4 flex items-center gap-1.5 rounded bg-blue-500/10 px-2 py-1.5 text-sm">
-        <PenLine className="size-3 shrink-0 text-blue-400" />
-        <span className="font-medium text-blue-400">{t('chat.toolBlock.enteredPlanMode')}</span>
+        <PenLine className="size-3 shrink-0 text-blue-600 dark:text-blue-400" />
+        <span className="font-medium text-blue-600 dark:text-blue-400">{t('chat.toolBlock.enteredPlanMode')}</span>
       </div>
     )
   }
@@ -461,15 +461,15 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         onClick={expandable ? () => setExpanded((e) => !e) : undefined}
       >
         {isDenied ? (
-          <Ban className="size-3 shrink-0 text-red-400" />
+          <Ban className="size-3 shrink-0 text-red-600 dark:text-red-400" />
         ) : isError ? (
-          <TriangleAlert className="size-3 shrink-0 text-amber-400" />
+          <TriangleAlert className="size-3 shrink-0 text-amber-600 dark:text-amber-400" />
         ) : isMcp && mcpIconSrc ? (
           <img src={mcpIconSrc} alt={mcpInfo.serverName} className="size-3.5 shrink-0 rounded-sm object-cover" />
         ) : (
           <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className={cn('font-medium', isDenied && toolName !== 'AskUserQuestion' ? 'text-red-400' : isError ? 'text-amber-400' : 'text-foreground')}>
+        <span className={cn('font-medium', isDenied && toolName !== 'AskUserQuestion' ? 'text-red-600 dark:text-red-400' : isError ? 'text-amber-600 dark:text-amber-400' : 'text-foreground')}>
           {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName === 'AskUserQuestion' ? `Asked${display.summary ? ` ${display.summary}` : ''}` : displayName}
         </span>
         {isQuestionDismissed ? (
@@ -481,9 +481,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
             ) : summary ? (
               <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
             ) : null}
-            <span className="shrink-0 rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">{t('chat.toolBlock.denied')}</span>
+            <span className="shrink-0 rounded bg-red-500/20 px-1 py-px text-[10px] text-red-600 dark:text-red-400">{t('chat.toolBlock.denied')}</span>
             {deniedFeedback && !feedbackIsBlock && (
-              <span ref={feedbackRef} className="min-w-0 truncate text-red-400/70">{deniedFeedback}</span>
+              <span ref={feedbackRef} className="min-w-0 truncate text-red-600/70 dark:text-red-400/70">{deniedFeedback}</span>
             )}
           </>
         ) : isError ? (
@@ -493,7 +493,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
             ) : summary ? (
               <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
             ) : null}
-            <span className="shrink-0 rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-400">{t('chat.toolBlock.error')}</span>
+            <span className="shrink-0 rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-600 dark:text-amber-400">{t('chat.toolBlock.error')}</span>
           </>
         ) : fileToolName ? (
           <>
@@ -510,9 +510,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         ) : null}
         {lineDelta && (
           <span className="shrink-0 font-mono text-[11px]">
-            {lineDelta.added > 0 && <span className="text-green-400">+{lineDelta.added}</span>}
+            {lineDelta.added > 0 && <span className="text-green-600 dark:text-green-400">+{lineDelta.added}</span>}
             {lineDelta.added > 0 && lineDelta.removed > 0 && <span className="text-muted-foreground/50"> </span>}
-            {lineDelta.removed > 0 && <span className="text-red-400">-{lineDelta.removed}</span>}
+            {lineDelta.removed > 0 && <span className="text-red-600 dark:text-red-400">-{lineDelta.removed}</span>}
           </span>
         )}
         {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
@@ -526,7 +526,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
       </div>
 
       {deniedFeedback && feedbackIsBlock && (
-        <div className="px-2 pb-1.5 text-xs text-red-400/70">{deniedFeedback}</div>
+        <div className="px-2 pb-1.5 text-xs text-red-600/70 dark:text-red-400/70">{deniedFeedback}</div>
       )}
 
       {expandable && (
@@ -546,7 +546,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
                   {toolName === 'Write' && <WriteDiff params={params} isStreaming={isStreaming} />}
                   {toolName === 'FileChange' && <FileChangeDiff params={params} isStreaming={isStreaming} />}
                   {isError && cleanResult && (
-                    <div className="text-xs text-amber-400/90">{extractToolError(cleanResult)}</div>
+                    <div className="text-xs text-amber-600/90 dark:text-amber-400/90">{extractToolError(cleanResult)}</div>
                   )}
                   {hasResult && !isError && (!hasDiff || toolName === 'FileChange') && (
                     <div>
@@ -744,11 +744,11 @@ function BashTerminalView({
         onClick={() => setExpanded((e) => !e)}
       >
         {isDenied ? (
-          <Ban className="size-3 shrink-0 text-red-400" />
+          <Ban className="size-3 shrink-0 text-red-600 dark:text-red-400" />
         ) : (
           <ToolIcon icon="terminal" className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className={cn('font-medium', isDenied ? 'text-red-400' : 'text-foreground', isRunning && !isDenied && 'animate-shimmer')}>
+        <span className={cn('font-medium', isDenied ? 'text-red-600 dark:text-red-400' : 'text-foreground', isRunning && !isDenied && 'animate-shimmer')}>
           {isRunning && !isDenied ? t('chat.toolBlock.running') : 'Bash'}
         </span>
         {isRunning && localElapsed >= 1 && <span className="text-muted-foreground tabular-nums">{localElapsed}s</span>}
@@ -757,8 +757,8 @@ function BashTerminalView({
           : (!expanded || fileExpired) && <span className="min-w-0 truncate text-muted-foreground">{command}</span>
         }
         {timeoutMs && <span className="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{Math.round(timeoutMs / 1000)}s</span>}
-        {isDenied && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">Denied</span>}
-        {isTimedOut && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-400">{t('chat.toolBlock.timedOut')}</span>}
+        {isDenied && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-600 dark:text-red-400">Denied</span>}
+        {isTimedOut && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-600 dark:text-red-400">{t('chat.toolBlock.timedOut')}</span>}
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
       {expanded && (fileExpired ? (
@@ -862,7 +862,7 @@ function QAResult({ text }: { text: string }) {
       {pairs.map((pair, i) => (
         <div key={i} className="rounded bg-background/70 px-2 py-1.5 text-[11px] leading-relaxed">
           <div className="text-muted-foreground">{pair.question}</div>
-          <div className="text-green-400">{pair.answer}</div>
+          <div className="text-green-600 dark:text-green-400">{pair.answer}</div>
         </div>
       ))}
     </div>
@@ -1104,9 +1104,9 @@ function ExitPlanModeBlock({ result }: { result?: string }) {
   if (outcome.approved) {
     return (
       <div className="my-4 flex items-center gap-1.5 rounded bg-green-500/10 px-2 py-1.5 text-sm">
-        <PenLine className="size-3 shrink-0 text-green-400" />
-        <span className="font-medium text-green-400">Plan Approved</span>
-        <Check className="ml-auto size-3 shrink-0 text-green-400" />
+        <PenLine className="size-3 shrink-0 text-green-600 dark:text-green-400" />
+        <span className="font-medium text-green-600 dark:text-green-400">Plan Approved</span>
+        <Check className="ml-auto size-3 shrink-0 text-green-600 dark:text-green-400" />
       </div>
     )
   }
@@ -1114,12 +1114,12 @@ function ExitPlanModeBlock({ result }: { result?: string }) {
   return (
     <div className="my-4 rounded bg-red-500/10 px-2 py-1.5 text-sm">
       <div className="flex items-center gap-1.5">
-        <PenLine className="size-3 shrink-0 text-red-400" />
-        <span className="font-medium text-red-400">Plan Rejected</span>
-        <X className="ml-auto size-3 shrink-0 text-red-400" />
+        <PenLine className="size-3 shrink-0 text-red-600 dark:text-red-400" />
+        <span className="font-medium text-red-600 dark:text-red-400">Plan Rejected</span>
+        <X className="ml-auto size-3 shrink-0 text-red-600 dark:text-red-400" />
       </div>
       {outcome.feedback && outcome.feedback !== 'User rejected the plan' && (
-        <div className="mt-1 text-xs text-red-400/70">{outcome.feedback}</div>
+        <div className="mt-1 text-xs text-red-600/70 dark:text-red-400/70">{outcome.feedback}</div>
       )}
     </div>
   )
@@ -1145,11 +1145,11 @@ function DebugToolBlock({
   return (
     <div className="my-0.5 rounded border border-amber-500/30 bg-muted/50">
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
-        <span className="size-3 shrink-0 text-center text-amber-400">&#9881;</span>
-        <span className="font-medium text-amber-400">
+        <span className="size-3 shrink-0 text-center text-amber-600 dark:text-amber-400">&#9881;</span>
+        <span className="font-medium text-amber-600 dark:text-amber-400">
           {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName}
         </span>
-        <span className="rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-400">debug</span>
+        <span className="rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-600 dark:text-amber-400">debug</span>
         {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
           <span className="ml-auto shrink-0 text-muted-foreground">{Math.round(elapsedSeconds)}s</span>
         )}

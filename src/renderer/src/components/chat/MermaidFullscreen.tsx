@@ -90,7 +90,7 @@ function Minimap({ svg, svgSize, containerSize, effectiveScale, pan, onNavigate 
         />
       </div>
       <div
-        className="pointer-events-none absolute border-2 border-blue-400/60 bg-blue-400/15 transition-all duration-75"
+        className="pointer-events-none absolute border-2 border-blue-600/60 dark:border-blue-400/60 bg-blue-600/15 dark:bg-blue-400/15 transition-all duration-75"
         style={{ left: vpX, top: vpY, width: vpW, height: vpH }}
       />
     </div>

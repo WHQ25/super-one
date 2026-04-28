@@ -188,7 +188,7 @@ export function AppsPanel() {
           isDragOver && 'pointer-events-none',
         )}>
           {isDragOver && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-orange-400/60 bg-orange-50/50 dark:bg-orange-950/20">
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-orange-600/60 dark:border-orange-400/60 bg-orange-50/50 dark:bg-orange-950/20">
               <PackagePlus className="mb-2 size-8 text-orange-500/70" />
               <span className="text-xs font-medium text-orange-600 dark:text-orange-400">Drop .s1app to install</span>
             </div>

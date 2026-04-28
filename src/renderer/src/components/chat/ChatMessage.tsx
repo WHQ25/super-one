@@ -193,7 +193,7 @@ function CopyButton({ copied, onClick, className }: { copied: boolean; onClick: 
       className={cn('cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/copy:opacity-100', className ?? 'absolute right-0 top-0')}
     >
       {copied
-        ? <Check className="size-3 text-green-400" />
+        ? <Check className="size-3 text-green-600 dark:text-green-400" />
         : <Copy className="size-3" />
       }
     </button>
@@ -303,11 +303,11 @@ function LongTextChip({ text }: { text: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-1 flex w-full items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-left text-xs text-white/80 transition-colors hover:bg-white/10"
+        className="mt-1 flex w-full items-center gap-2 rounded-lg border border-foreground/15 bg-foreground/5 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:bg-foreground/10"
       >
         <FileText className="size-3.5 shrink-0" />
         <span className="min-w-0 truncate">{preview}</span>
-        <span className="ml-auto shrink-0 text-white/50">{lineCount} lines</span>
+        <span className="ml-auto shrink-0 text-foreground/50">{lineCount} lines</span>
       </button>
       <PasteChipPreview open={open} onOpenChange={setOpen} text={text} />
     </>
@@ -328,15 +328,15 @@ function MentionInlineChip({ kind, value }: { kind: UserMentionKind; value: stri
       className={cn(
         'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs align-middle whitespace-nowrap',
         kind === 'agent'
-          ? 'border-purple-400/40 bg-purple-400/15 text-purple-300'
-          : 'border-white/15 bg-white/10 text-white/90'
+          ? 'border-purple-600/40 dark:border-purple-400/40 bg-purple-600/15 dark:bg-purple-400/15 text-purple-700 dark:text-purple-300'
+          : 'border-foreground/15 bg-foreground/10 text-foreground/90'
       )}
     >
       {kind === 'agent' ? (
         <span className="font-medium">@{display}</span>
       ) : kind === 'directory' ? (
         <>
-          <Folder className="size-3.5 shrink-0 text-blue-400" />
+          <Folder className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
           <span>{display}</span>
         </>
       ) : (
@@ -438,12 +438,12 @@ export function CompactIndicator({
 }) {
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-violet-500/10 px-2 py-1.5 text-xs">
-      <Minimize2 className="size-3 shrink-0 text-violet-400" />
-      <span className="font-medium text-violet-400">Conversation compacted</span>
-      <span className="text-violet-400/60">{trigger === 'auto' ? 'auto' : 'manual'}</span>
-      {preTokens > 0 && <span className="text-violet-400/60">· {formatCompactTokens(preTokens)} tokens</span>}
+      <Minimize2 className="size-3 shrink-0 text-violet-600 dark:text-violet-400" />
+      <span className="font-medium text-violet-600 dark:text-violet-400">Conversation compacted</span>
+      <span className="text-violet-600/60 dark:text-violet-400/60">{trigger === 'auto' ? 'auto' : 'manual'}</span>
+      {preTokens > 0 && <span className="text-violet-600/60 dark:text-violet-400/60">· {formatCompactTokens(preTokens)} tokens</span>}
       {onToggle && (
-        <button onClick={onToggle} className="ml-auto flex items-center gap-0.5 text-violet-400/60 transition-colors hover:text-violet-400">
+        <button onClick={onToggle} className="ml-auto flex items-center gap-0.5 text-violet-600/60 dark:text-violet-400/60 transition-colors hover:text-violet-600 dark:hover:text-violet-400">
           {expanded ? <ChevronRight className="size-3 -rotate-90" /> : <ChevronRight className="size-3 rotate-90" />}
           <span>{expanded ? 'Hide history' : 'Show history'}</span>
         </button>
@@ -455,8 +455,8 @@ export function CompactIndicator({
 export function CompactingIndicator() {
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-xs">
-      <Loader2 className="size-3 shrink-0 animate-spin text-amber-400" />
-      <span className="font-medium text-amber-400">Compacting conversation…</span>
+      <Loader2 className="size-3 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
+      <span className="font-medium text-amber-600 dark:text-amber-400">Compacting conversation…</span>
     </div>
   )
 }
@@ -481,8 +481,8 @@ export function ApiRetryIndicator({ info }: { info: { attempt: number; maxRetrie
 
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-xs">
-      <Loader2 className="size-3 shrink-0 animate-spin text-amber-400" />
-      <span className="font-medium text-amber-400">
+      <Loader2 className="size-3 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
+      <span className="font-medium text-amber-600 dark:text-amber-400">
         Retrying API request ({info.attempt}/{info.maxRetries})… {secs > 0 && <>{secs}s</>}
       </span>
     </div>
@@ -520,17 +520,17 @@ export function RateLimitIndicator({
       isRejected ? 'bg-red-500/10' : 'bg-amber-500/10',
     )}>
       {isRejected
-        ? <OctagonX className="size-3 shrink-0 text-red-400" />
-        : <AlertTriangle className="size-3 shrink-0 text-amber-400" />
+        ? <OctagonX className="size-3 shrink-0 text-red-600 dark:text-red-400" />
+        : <AlertTriangle className="size-3 shrink-0 text-amber-600 dark:text-amber-400" />
       }
-      <span className={cn('font-medium', isRejected ? 'text-red-400' : 'text-amber-400')}>
+      <span className={cn('font-medium', isRejected ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400')}>
         {isRejected ? 'Rate limited' : 'Approaching rate limit'}
       </span>
       {pct != null && !isRejected && (
-        <span className="text-amber-400/60">{pct}% used</span>
+        <span className="text-amber-600/60 dark:text-amber-400/60">{pct}% used</span>
       )}
       {resetLabel && (
-        <span className={isRejected ? 'text-red-400/60' : 'text-amber-400/60'}>· resets at {resetLabel}</span>
+        <span className={isRejected ? 'text-red-600/60 dark:text-red-400/60' : 'text-amber-600/60 dark:text-amber-400/60'}>· resets at {resetLabel}</span>
       )}
       {onDismiss && (
         <button
@@ -538,7 +538,7 @@ export function RateLimitIndicator({
           aria-label="Dismiss rate limit notice"
           className={cn(
             'ml-auto cursor-pointer rounded p-0.5 transition-colors',
-            isRejected ? 'text-red-400/60 hover:text-red-400' : 'text-amber-400/60 hover:text-amber-400',
+            isRejected ? 'text-red-600/60 dark:text-red-400/60 hover:text-red-600 dark:hover:text-red-400' : 'text-amber-600/60 dark:text-amber-400/60 hover:text-amber-600 dark:hover:text-amber-400',
           )}
         >
           <X className="size-3" />
@@ -700,7 +700,7 @@ function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 
   if (value <= 0) return null
 
   const isUp = direction === 'up'
-  const flashColor = isUp ? 'text-blue-400' : 'text-emerald-400'
+  const flashColor = isUp ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-400'
 
   return (
     <span className={cn('inline-flex items-center gap-0.5 tabular-nums transition-colors duration-500', flash && flashColor)}>
@@ -819,7 +819,7 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
           className="cursor-pointer transition-colors hover:text-foreground"
         >
           {copied
-            ? <Check className="size-3 text-green-400" />
+            ? <Check className="size-3 text-green-600 dark:text-green-400" />
             : <Copy className="size-3" />
           }
         </button>
@@ -843,8 +843,8 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
       {showTerminalReason && (
         <>
           {(showDuration || hasTokens) && <span>·</span>}
-          <AlertTriangle className="size-3 text-amber-400" />
-          <span className="text-amber-400">{formatTerminalReason(terminalReason!)}</span>
+          <AlertTriangle className="size-3 text-amber-600 dark:text-amber-400" />
+          <span className="text-amber-600 dark:text-amber-400">{formatTerminalReason(terminalReason!)}</span>
         </>
       )}
     </div>

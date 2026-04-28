@@ -225,8 +225,8 @@ function PlanApprovalBadge({ planApproval }: { planApproval: CodexPlanApprovalSt
       className={cn(
         'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium',
         planApproval.status === 'approved'
-          ? 'bg-green-500/10 text-green-400'
-          : 'bg-red-500/10 text-red-400',
+          ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+          : 'bg-red-500/10 text-red-600 dark:text-red-400',
       )}
     >
       {planApproval.status === 'approved' ? t('chat.plan.approved') : t('chat.plan.rejected')}
@@ -238,7 +238,7 @@ function PlanApprovalSummary({ planApproval }: { planApproval: CodexPlanApproval
   const { t } = useTranslation()
   if (planApproval.status === 'approved') {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-green-400">
+      <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
         <Check className="size-3 shrink-0" />
         <span className="font-medium">{t('chat.plan.planApproved')}</span>
       </div>
@@ -246,13 +246,13 @@ function PlanApprovalSummary({ planApproval }: { planApproval: CodexPlanApproval
   }
 
   return (
-    <div className="rounded bg-red-500/10 px-2 py-1.5 text-xs text-red-400">
+    <div className="rounded bg-red-500/10 px-2 py-1.5 text-xs text-red-600 dark:text-red-400">
       <div className="flex items-center gap-1.5">
         <TriangleAlert className="size-3 shrink-0" />
         <span className="font-medium">{t('chat.plan.planRejected')}</span>
       </div>
       {planApproval.feedback && (
-        <div className="mt-1 text-red-400/75">{planApproval.feedback}</div>
+        <div className="mt-1 text-red-600/75 dark:text-red-400/75">{planApproval.feedback}</div>
       )}
     </div>
   )
@@ -311,12 +311,12 @@ function CodexPlanBlock({
       expanded && 'overflow-hidden',
     )}>
       <div className="flex items-center gap-1.5 px-2 py-2 text-xs" onClick={() => setExpanded((e) => !e)}>
-        <ClipboardList className="size-3.5 shrink-0 text-blue-400" />
+        <ClipboardList className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
         <span className="font-medium text-foreground">{t('chat.plan.label')}</span>
         {planApproval && <PlanApprovalBadge planApproval={planApproval} />}
         {!expanded && <span className="min-w-0 truncate text-muted-foreground">{item.text.split('\n')[0]}</span>}
         {!expanded && planApproval?.status === 'rejected' && planApproval.feedback && (
-          <span className="min-w-0 truncate text-red-400/75">{planApproval.feedback}</span>
+          <span className="min-w-0 truncate text-red-600/75 dark:text-red-400/75">{planApproval.feedback}</span>
         )}
         <div className="ml-auto flex items-center gap-1">
           {expanded && (
@@ -471,7 +471,7 @@ function CodexErrorBlock({ message }: { message: string }) {
   const { t } = useTranslation()
   return (
     <div className="my-0.5 rounded bg-red-500/10 px-2 py-1.5">
-      <div className="mb-1 flex items-center gap-1.5 text-xs text-red-300">
+      <div className="mb-1 flex items-center gap-1.5 text-xs text-red-700 dark:text-red-300">
         <TriangleAlert className="size-3.5" />
         <span>{t('chat.codex.codexError')}</span>
       </div>
@@ -483,12 +483,12 @@ function CodexErrorBlock({ message }: { message: string }) {
 function CodexReviewBlock({ phase, text }: { phase: string; text?: string }) {
   const { t } = useTranslation()
   return phase === 'entered' ? (
-    <div className="my-1 flex items-center gap-2 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs text-blue-300">
+    <div className="my-1 flex items-center gap-2 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs text-blue-700 dark:text-blue-300">
       <ScanSearch className="size-3.5 shrink-0" />
       <span className="font-medium">{t('chat.codex.startReview')}{text ? ` — ${text}` : ''}</span>
     </div>
   ) : (
-    <div className="my-1 flex items-center gap-2 rounded-md bg-green-500/10 px-2.5 py-1.5 text-xs text-green-300">
+    <div className="my-1 flex items-center gap-2 rounded-md bg-green-500/10 px-2.5 py-1.5 text-xs text-green-700 dark:text-green-300">
       <Check className="size-3.5 shrink-0" />
       <span className="font-medium">{t('chat.codex.reviewComplete')}</span>
     </div>
@@ -499,7 +499,7 @@ function CodexCompactionBlock() {
   const { t } = useTranslation()
   return (
     <div className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-      <Check className="size-3.5 text-green-400" />
+      <Check className="size-3.5 text-green-600 dark:text-green-400" />
       <span>{t('chat.codex.conversationCompacted')}</span>
     </div>
   )

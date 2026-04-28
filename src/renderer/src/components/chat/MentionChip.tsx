@@ -24,9 +24,9 @@ export function MentionChip({ node, getPos, editor }: NodeViewProps) {
       className="inline-flex items-center gap-1 rounded bg-muted mx-0.5 px-1.5 py-0.5 text-xs text-foreground select-none whitespace-nowrap align-baseline"
     >
       {kind === 'agent' ? (
-        <Bot className="size-3 shrink-0 text-purple-400" />
+        <Bot className="size-3 shrink-0 text-purple-600 dark:text-purple-400" />
       ) : kind === 'directory' ? (
-        <Folder className="size-3 shrink-0 text-blue-400" />
+        <Folder className="size-3 shrink-0 text-blue-600 dark:text-blue-400" />
       ) : (
         <FileIcon name={displayName} size={12} />
       )}

@@ -63,9 +63,9 @@ function InlineMarkdown({ text }: { text: string }) {
           case 'bold':
             return <strong key={i} className="font-semibold text-foreground">{p.text}</strong>
           case 'code':
-            return <code key={i} className="rounded bg-muted px-1 py-0.5 text-[11px] text-blue-300">{p.text}</code>
+            return <code key={i} className="rounded bg-muted px-1 py-0.5 text-[11px] text-blue-700 dark:text-blue-300">{p.text}</code>
           case 'link':
-            return <span key={i} className="text-blue-400 underline">{p.text}</span>
+            return <span key={i} className="text-blue-600 dark:text-blue-400 underline">{p.text}</span>
           default:
             return <span key={i}>{p.text}</span>
         }

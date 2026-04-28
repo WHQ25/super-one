@@ -120,7 +120,7 @@ export function PlanApprovalPrompt() {
     <>
       <div ref={containerRef} className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-          <PenLine className="size-4 text-blue-400" />
+          <PenLine className="size-4 text-blue-600 dark:text-blue-400" />
           <span className="text-sm font-medium text-foreground">{t('chat.plan.review')}</span>
           {fileName && (
             <span className="text-sm text-muted-foreground">{fileName}</span>
@@ -279,12 +279,12 @@ export function PlanApprovalPrompt() {
             onClick={() => setAcceptEdits((prev) => !prev)}
           >
             {acceptEdits
-              ? <CheckCircle2 className="size-3.5 shrink-0 text-purple-400" />
+              ? <CheckCircle2 className="size-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
               : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
             }
             <span className="flex min-w-0 items-center gap-1">
               <span>{t('chat.plan.switchTo')}</span>
-              <span className="inline-flex items-center gap-0.5 font-medium text-purple-400">
+              <span className="inline-flex items-center gap-0.5 font-medium text-purple-600 dark:text-purple-400">
                 <FastForward className="size-3" />
                 {t('chat.plan.acceptEdits')}
               </span>

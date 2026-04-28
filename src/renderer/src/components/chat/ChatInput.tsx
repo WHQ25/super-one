@@ -834,7 +834,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   }`}
                 >
                   <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                    <span className="text-blue-400"><HighlightedText text={`/${cmd.name}`} indices={[0, ...cmd.matchIndices.map(i => i + 1)]} highlightClassName="text-orange-400 font-medium" /></span>
+                    <span className="text-blue-600 dark:text-blue-400"><HighlightedText text={`/${cmd.name}`} indices={[0, ...cmd.matchIndices.map(i => i + 1)]} highlightClassName="text-orange-600 dark:text-orange-400 font-medium" /></span>
                     {cmd.argumentHint && (
                       <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
                     )}
@@ -948,7 +948,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         {isDragging && (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-blue-500 bg-blue-500/10">
-            <span className="text-xs font-medium text-blue-400">{t('chat.dropToAttach')}</span>
+            <span className="text-xs font-medium text-blue-600 dark:text-blue-400">{t('chat.dropToAttach')}</span>
           </div>
         )}
       </div>

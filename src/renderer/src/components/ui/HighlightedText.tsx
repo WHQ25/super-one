@@ -2,7 +2,7 @@ export function HighlightedText({
   text,
   indices,
   className,
-  highlightClassName = 'text-orange-400 font-medium',
+  highlightClassName = 'text-orange-600 dark:text-orange-400 font-medium',
 }: {
   text: string
   indices: number[]

@@ -336,7 +336,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                                 : isBackground
                                   ? <SquareActivity className="size-3 animate-pulse text-sidebar-foreground/70" />
                                   : isUnseen
-                                    ? <CircleCheck className="size-3 text-green-400" />
+                                    ? <CircleCheck className="size-3 text-green-600 dark:text-green-400" />
                                     : session.isAutomation
                                       ? <CalendarClock className="size-3 text-sidebar-foreground/70" />
                                       : session.isWorktree
@@ -433,8 +433,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                         onClick={() => onSwitchSession(folder.path, session.sessionId)}
                         className="ml-5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1"
                       >
-                        <Bot className="size-3 shrink-0 text-green-400" />
-                        <span className="min-w-0 truncate text-[11px] text-green-400">{pendingReason}</span>
+                        <Bot className="size-3 shrink-0 text-green-600 dark:text-green-400" />
+                        <span className="min-w-0 truncate text-[11px] text-green-600 dark:text-green-400">{pendingReason}</span>
                       </div>
                     )}
                   </div>

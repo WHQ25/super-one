@@ -16,13 +16,13 @@ import { openFileTab, openNewFileTab } from '@/components/activity/activity-pane
 import type { GitFileStatus } from '../../../../shared/agent-types'
 
 const STATUS_COLOR: Record<string, string> = {
-  M: 'text-yellow-400',
-  A: 'text-green-400',
-  D: 'text-red-400',
-  R: 'text-blue-400',
-  C: 'text-blue-400',
+  M: 'text-yellow-600 dark:text-yellow-400',
+  A: 'text-green-600 dark:text-green-400',
+  D: 'text-red-600 dark:text-red-400',
+  R: 'text-blue-600 dark:text-blue-400',
+  C: 'text-blue-600 dark:text-blue-400',
   '?': 'text-sidebar-foreground/50',
-  U: 'text-orange-400',
+  U: 'text-orange-600 dark:text-orange-400',
   '!': 'text-sidebar-foreground/30',
 }
 

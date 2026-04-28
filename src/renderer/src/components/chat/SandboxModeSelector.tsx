@@ -30,7 +30,7 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
     triggerLabel: 'Auto',
     description: 'Sandbox with auto-allow Bash',
     icon: <Box className="size-3" />,
-    color: 'text-amber-400',
+    color: 'text-amber-600 dark:text-amber-400',
     hoverBg: 'hover:bg-amber-500/10',
   },
 ]

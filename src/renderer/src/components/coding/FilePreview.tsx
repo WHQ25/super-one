@@ -158,7 +158,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
             </span>
           ))}
         </div>
-        {isDirty && <span className="size-1.5 rounded-full bg-orange-400" title={t('tooltips.unsavedChanges')} />}
+        {isDirty && <span className="size-1.5 rounded-full bg-orange-600 dark:bg-orange-400" title={t('tooltips.unsavedChanges')} />}
         {tabs.length > 1 && (
           <Tabs value={effectiveTab} onValueChange={handleTabChange}>
             <TabsList>

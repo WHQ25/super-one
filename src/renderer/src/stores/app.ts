@@ -1,7 +1,16 @@
 import { create } from 'zustand'
 import type { RecentFolder, RemoteDeviceConfig, SetupEvent, SettingsProvider, UpdateEvent, WorktreeMode } from '../../../shared/agent-types'
 import type { HarnessId } from '../../../shared/session-types'
-import { clampBrandHue } from '../../../shared/harness-brand'
+import {
+  clampA,
+  clampBrandHue,
+  clampC,
+  clampHue,
+  clampL,
+  type DesignToken,
+  type LCHPartial,
+  type TokenOverrides,
+} from '../../../shared/harness-brand'
 import { useFileTreeStore } from './file-tree'
 import { perfEvent } from '@/lib/perf-trace'
 import { disposeHighlightCache } from '@/lib/highlight-cache'
@@ -105,6 +114,12 @@ interface AppState {
   brandHues: Record<HarnessId, number | null>
   loadBrandHues: () => Promise<void>
   setBrandHue: (harness: HarnessId, hue: number | null) => Promise<void>
+
+  // Per-token LCH overrides (per-harness, light mode only)
+  tokenOverrides: Record<HarnessId, TokenOverrides>
+  setTokenOverride: (harness: HarnessId, token: DesignToken, partial: LCHPartial) => Promise<void>
+  resetTokenOverride: (harness: HarnessId, token: DesignToken) => Promise<void>
+  resetAllTokenOverrides: (harness: HarnessId) => Promise<void>
 
   // Worktree management
   setPendingWorktree: (projectPath: string, baseBranch: string) => void
@@ -514,6 +529,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   brandHues: { claude: null, codex: null },
+  tokenOverrides: { claude: {}, codex: {} },
 
   loadBrandHues: async () => {
     try {
@@ -522,6 +538,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         brandHues: {
           claude: settings.agentPreference.claude.brandHue,
           codex: settings.agentPreference.codex.brandHue,
+        },
+        tokenOverrides: {
+          claude: settings.agentPreference.claude.tokenOverrides ?? {},
+          codex: settings.agentPreference.codex.tokenOverrides ?? {},
         },
       })
     } catch (err) {
@@ -532,15 +552,59 @@ export const useAppStore = create<AppState>((set, get) => ({
   setBrandHue: async (harness, hue) => {
     const normalized = hue === null ? null : clampBrandHue(hue)
     set({ brandHues: { ...get().brandHues, [harness]: normalized } })
-    try {
-      await window.app.saveAppSettings({
-        agentPreference: { [harness]: { brandHue: normalized } },
-      })
-    } catch (err) {
-      console.error('[brand-hue] setBrandHue failed:', err)
-    }
+    schedulePersist(harness, get)
+  },
+
+  setTokenOverride: async (harness, token, partial) => {
+    const current = get().tokenOverrides[harness]
+    const prev = current[token] ?? {}
+    const merged: LCHPartial = { ...prev }
+    if (partial.l !== undefined) merged.l = clampL(partial.l)
+    if (partial.c !== undefined) merged.c = clampC(partial.c)
+    if (partial.h !== undefined) merged.h = clampHue(partial.h)
+    if (partial.a !== undefined) merged.a = clampA(partial.a)
+    const nextHarness: TokenOverrides = { ...current, [token]: merged }
+    const nextAll: Record<HarnessId, TokenOverrides> = { ...get().tokenOverrides, [harness]: nextHarness }
+    set({ tokenOverrides: nextAll })
+    schedulePersist(harness, get)
+  },
+
+  resetTokenOverride: async (harness, token) => {
+    const current = get().tokenOverrides[harness]
+    if (!(token in current)) return
+    const nextHarness: TokenOverrides = { ...current }
+    delete nextHarness[token]
+    const nextAll: Record<HarnessId, TokenOverrides> = { ...get().tokenOverrides, [harness]: nextHarness }
+    set({ tokenOverrides: nextAll })
+    schedulePersist(harness, get)
+  },
+
+  resetAllTokenOverrides: async (harness) => {
+    const nextAll: Record<HarnessId, TokenOverrides> = { ...get().tokenOverrides, [harness]: {} }
+    set({ tokenOverrides: nextAll })
+    schedulePersist(harness, get)
   },
 }))
+
+const PERSIST_DELAY_MS = 150
+const persistTimers: { claude?: ReturnType<typeof setTimeout>; codex?: ReturnType<typeof setTimeout> } = {}
+
+function schedulePersist(harness: HarnessId, getState: () => AppState): void {
+  const existing = persistTimers[harness]
+  if (existing) clearTimeout(existing)
+  persistTimers[harness] = setTimeout(() => {
+    delete persistTimers[harness]
+    const state = getState()
+    void window.app.saveAppSettings({
+      agentPreference: {
+        [harness]: {
+          brandHue: state.brandHues[harness],
+          tokenOverrides: state.tokenOverrides[harness],
+        },
+      },
+    }).catch((err) => console.error('[brand-theme] persist failed:', err))
+  }, PERSIST_DELAY_MS)
+}
 
 /** Whether a real project (not tmp) is open */
 export function useHasRealProject(): boolean {

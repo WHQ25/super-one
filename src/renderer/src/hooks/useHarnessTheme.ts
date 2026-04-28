@@ -1,8 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/stores/app'
 import { useActiveSession } from '@/stores/chat'
 import type { HarnessId } from '../../../shared/session-types'
-import { brandHueToOklch, HARNESS_DEFAULT_BRAND_HUE } from '../../../shared/harness-brand'
+import {
+  DESIGN_TOKENS,
+  HARNESS_DEFAULT_BRAND_HUE,
+  LCH_CHANNELS,
+  type LCHChannel,
+  type LCHPartial,
+  type TokenOverrides,
+} from '../../../shared/harness-brand'
 
 function readDarkClass(): boolean {
   return document.documentElement.classList.contains('dark')
@@ -25,47 +32,82 @@ export function useActiveHarness(): HarnessId {
   })
 }
 
-const SURFACE_RECIPE: Array<{ token: string; l: number; c: number }> = [
-  { token: '--background', l: 0.99, c: 0.005 },
-  { token: '--card', l: 1, c: 0.003 },
-  { token: '--popover', l: 1, c: 0.003 },
-  { token: '--secondary', l: 0.96, c: 0.012 },
-  { token: '--muted', l: 0.96, c: 0.01 },
-  { token: '--accent', l: 0.93, c: 0.03 },
-  { token: '--border', l: 0.91, c: 0.012 },
-  { token: '--input', l: 0.91, c: 0.012 },
-  { token: '--sidebar', l: 0.97, c: 0.01 },
-  { token: '--sidebar-accent', l: 0.93, c: 0.02 },
-  { token: '--sidebar-border', l: 0.89, c: 0.015 },
-]
-
-const ACCENT_TOKENS = ['--primary', '--ring', '--sidebar-primary', '--sidebar-ring'] as const
+interface AppliedSnapshot {
+  brandHue: number | null
+  overrides: TokenOverrides
+  dark: boolean
+}
 
 export function useHarnessTheme(): void {
   const dark = useDarkClass()
   const harness = useActiveHarness()
   const claudeHue = useAppStore((s) => s.brandHues.claude)
   const codexHue = useAppStore((s) => s.brandHues.codex)
+  const claudeOverrides = useAppStore((s) => s.tokenOverrides.claude)
+  const codexOverrides = useAppStore((s) => s.tokenOverrides.codex)
+
+  const appliedRef = useRef<AppliedSnapshot>({ brandHue: null, overrides: {}, dark: false })
 
   useEffect(() => {
-    const defaultHue = HARNESS_DEFAULT_BRAND_HUE[harness]
     const userHue = harness === 'codex' ? codexHue : claudeHue
-    const effective = dark ? defaultHue : (userHue ?? defaultHue)
-    const accentOklch = brandHueToOklch(effective)
-
+    const overrides = harness === 'codex' ? codexOverrides : claudeOverrides
     const root = document.documentElement
-    root.style.setProperty('--harness-primary', accentOklch)
     root.dataset.harness = harness
 
-    if (dark) {
-      for (const token of ACCENT_TOKENS) root.style.removeProperty(token)
-      for (const { token } of SURFACE_RECIPE) root.style.removeProperty(token)
-      return
-    }
+    let raf: number | null = requestAnimationFrame(() => {
+      raf = null
+      const prev = appliedRef.current
 
-    for (const token of ACCENT_TOKENS) root.style.setProperty(token, accentOklch)
-    for (const { token, l, c } of SURFACE_RECIPE) {
-      root.style.setProperty(token, `oklch(${l} ${c} ${effective})`)
+      if (dark) {
+        if (!prev.dark) {
+          root.style.removeProperty('--brand-hue')
+          for (const token of DESIGN_TOKENS) {
+            for (const ch of LCH_CHANNELS) {
+              root.style.removeProperty(`${token}-${ch}`)
+            }
+          }
+        }
+        appliedRef.current = { brandHue: null, overrides: {}, dark: true }
+        return
+      }
+
+      if (prev.dark) {
+        appliedRef.current = { brandHue: null, overrides: {}, dark: false }
+      }
+
+      if (userHue !== prev.brandHue) {
+        if (userHue !== null) {
+          root.style.setProperty('--brand-hue', String(userHue))
+        } else {
+          root.style.removeProperty('--brand-hue')
+        }
+      }
+
+      const prevOv = appliedRef.current.overrides
+      const allTokens = new Set([
+        ...Object.keys(prevOv),
+        ...Object.keys(overrides),
+      ])
+
+      for (const tokenKey of allTokens) {
+        const cur = overrides[tokenKey as keyof TokenOverrides] as LCHPartial | undefined
+        const prv = prevOv[tokenKey as keyof TokenOverrides] as LCHPartial | undefined
+        for (const ch of LCH_CHANNELS) {
+          const newVal = cur?.[ch]
+          const oldVal = prv?.[ch]
+          if (newVal === oldVal) continue
+          if (newVal !== undefined) {
+            root.style.setProperty(`${tokenKey}-${ch}`, String(newVal))
+          } else {
+            root.style.removeProperty(`${tokenKey}-${ch}`)
+          }
+        }
+      }
+
+      appliedRef.current = { brandHue: userHue, overrides, dark: false }
+    })
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf)
     }
-  }, [harness, dark, claudeHue, codexHue])
+  }, [harness, dark, claudeHue, codexHue, claudeOverrides, codexOverrides])
 }

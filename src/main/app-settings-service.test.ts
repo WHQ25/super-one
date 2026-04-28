@@ -35,11 +35,13 @@ describe('app-settings-service', () => {
     defaultPermissionMode: '',
     defaultSandboxMode: '',
     brandHue: null,
+    tokenOverrides: {},
   }
   const defaultCodex = {
     defaultModel: '',
     defaultReasoningEffort: '',
     brandHue: null,
+    tokenOverrides: {},
   }
   const defaultSettings = {
     analyticsEnabled: true,
@@ -82,11 +84,13 @@ describe('app-settings-service', () => {
             defaultPermissionMode: 'acceptEdits',
             defaultSandboxMode: 'off',
             brandHue: null,
+            tokenOverrides: {},
           },
           codex: {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'high',
             brandHue: null,
+            tokenOverrides: {},
           },
         },
       })
@@ -140,6 +144,7 @@ describe('app-settings-service', () => {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'low',
             brandHue: null,
+            tokenOverrides: {},
           },
         },
       })

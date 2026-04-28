@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
 import type { AppSettings, AppSettingsPatch, EffortLevel, Locale, PermissionMode, SandboxMode } from '../shared/agent-types'
+import { sanitizeOverrides } from '../shared/harness-brand'
 
 export type { AppSettings, AppSettingsPatch }
 
@@ -18,11 +19,13 @@ const defaults: AppSettings = {
       defaultPermissionMode: '',
       defaultSandboxMode: '',
       brandHue: null,
+      tokenOverrides: {},
     },
     codex: {
       defaultModel: '',
       defaultReasoningEffort: '',
       brandHue: null,
+      tokenOverrides: {},
     },
   },
 }
@@ -76,6 +79,7 @@ function readClaudePreference(data: Record<string, unknown>): ClaudePref {
       ? (claudePreference.defaultSandboxMode as SandboxMode | '')
       : defaults.agentPreference.claude.defaultSandboxMode,
     brandHue: readBrandHue(claudePreference?.brandHue),
+    tokenOverrides: sanitizeOverrides(claudePreference?.tokenOverrides),
   }
 }
 
@@ -100,6 +104,7 @@ function readCodexPreference(data: Record<string, unknown>): CodexPref {
       ? codexPreference.defaultReasoningEffort
       : (legacyDefaultReasoningEffort ?? defaults.agentPreference.codex.defaultReasoningEffort),
     brandHue: readBrandHue(codexPreference?.brandHue),
+    tokenOverrides: sanitizeOverrides(codexPreference?.tokenOverrides),
   }
 }
 

@@ -1,5 +1,7 @@
 // Unified message format used across IPC. Zero SDK imports.
 
+import type { TokenOverrides } from './harness-brand'
+
 // --- Image attachments ---
 
 export interface ImageAttachment {
@@ -1574,11 +1576,13 @@ export interface AppSettings {
       defaultPermissionMode: PermissionMode | ''
       defaultSandboxMode: SandboxMode | ''
       brandHue: number | null
+      tokenOverrides: TokenOverrides
     }
     codex: {
       defaultModel: string
       defaultReasoningEffort: CodexReasoningEffort | ''
       brandHue: number | null
+      tokenOverrides: TokenOverrides
     }
   }
 }

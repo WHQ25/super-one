@@ -1062,7 +1062,7 @@ export const en: Messages = {
       triggerAttachTo: 'Attach worktree to <branch></branch> {{base}}',
       triggerCreateBranch: 'Create worktree branch <branch></branch> {{name}}',
       triggerActiveBranch: 'Worktree <branch></branch> {{name}}',
-      triggerActiveDetached: 'Worktree @<commit></commit>{{hash}}',
+      triggerActiveDetached: 'Worktree <commit></commit>{{hash}}',
     },
     permission: {
       sandboxNetwork: 'Sandbox Network',

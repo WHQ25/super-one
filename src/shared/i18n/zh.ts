@@ -332,7 +332,7 @@ export const zh: Messages = {
       triggerAttachTo: '附加 worktree 到 <branch></branch> {{base}}',
       triggerCreateBranch: '新建 worktree 分支 <branch></branch> {{name}}',
       triggerActiveBranch: 'Worktree <branch></branch> {{name}}',
-      triggerActiveDetached: 'Worktree @<commit></commit>{{hash}}',
+      triggerActiveDetached: 'Worktree <commit></commit>{{hash}}',
     },
     permission: {
       sandboxNetwork: '沙盒网络',

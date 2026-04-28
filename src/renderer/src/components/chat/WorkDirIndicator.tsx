@@ -192,7 +192,7 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
 
   const titleText = (() => {
     if (isActive) {
-      if (activeIsDetached) return `Worktree @${activeShortHead}`
+      if (activeIsDetached) return `Worktree ${activeShortHead}`
       return `Worktree ${activeEntry?.branch ?? activeBaseBranch ?? ''}`
     }
     if (isPending) {

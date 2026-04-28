@@ -309,6 +309,7 @@ export const zh: Messages = {
       modeBranch: '新分支',
       modeAttach: '附加',
       modeDetach: '分离',
+      baseBranchLabel: '基础分支',
       branchNameLabel: '新分支名',
       branchNamePlaceholder: '例如 fix/login-bug',
       branchExists: '分支 {{name}} 已存在',

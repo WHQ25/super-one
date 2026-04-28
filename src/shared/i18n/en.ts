@@ -295,6 +295,7 @@ export type Messages = {
       modeBranch: string
       modeAttach: string
       modeDetach: string
+      baseBranchLabel: string
       branchNameLabel: string
       branchNamePlaceholder: string
       branchExists: string
@@ -1038,6 +1039,7 @@ export const en: Messages = {
       modeBranch: 'New branch',
       modeAttach: 'Attach',
       modeDetach: 'Detach',
+      baseBranchLabel: 'Base branch',
       branchNameLabel: 'New branch name',
       branchNamePlaceholder: 'e.g. fix/login-bug',
       branchExists: 'Branch {{name}} already exists',

@@ -1507,7 +1507,8 @@ export type MentionSearchItem =
   | { kind: 'agent'; name: string; model: string; matchIndices: number[]; score: number }
 
 export type RemoteCommand =
-  | { type: 'send_message'; content: string; projectPath?: string; sessionId?: string; model?: string; effort?: string; images?: ImageAttachment[]; provider?: 'claude' | 'codex'; permissionMode?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; gitBranch?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
+  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: 'claude' | 'codex'; permissionMode?: string; effort?: string; model?: string; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean }
+  | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: 'claude' | 'codex'; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
   | { type: 'respond_permission'; requestId: string; decision: boolean; reason?: string; selectedSuggestions?: number[]; projectPath?: string; sessionId: string }
@@ -1535,7 +1536,6 @@ export type RemoteCommand =
   | { type: 'get_worktree_info'; requestId: string; projectPath: string }
   | { type: 'get_checked_out_branches'; requestId: string; projectPath: string }
   | { type: 'activate_worktree'; requestId: string; projectPath: string; baseBranch: string | null; mode?: WorktreeMode; branchName?: string; carryLocalChanges?: boolean }
-  | { type: 'switch_worktree'; requestId: string; projectPath: string; worktreePath: string; gitBranch: string | null }
   | { type: 'search_mentions'; requestId: string; projectPath: string; query: string }
   | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
 

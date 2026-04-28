@@ -77,12 +77,18 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
   }, [currentFolder])
 
   const openPopover = useCallback((open: boolean) => {
+    if (!open && currentFolder) {
+      const wt = useAppStore.getState()._worktrees[currentFolder]
+      if (wt && wt.pendingBaseBranch && wt.pendingMode === 'branch' && !wt.pendingBranchName.trim()) {
+        useAppStore.getState().clearPendingWorktree(currentFolder)
+      }
+    }
     setPopoverOpen(open)
     if (open) {
       setSearch('')
       void loadPopoverData()
     }
-  }, [loadPopoverData])
+  }, [loadPopoverData, currentFolder])
 
   const handleSelectBase = useCallback((baseBranch: string) => {
     if (!currentFolder) return
@@ -384,7 +390,7 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
           {isPending && (
             <div className="border-t p-3">
               <div className="mb-2 text-[10px] text-muted-foreground">
-                {t('chat.worktree.createFromHeading').split(' ')[0] || ''}: <span className="font-mono text-foreground">{pendingBase}</span>
+                {t('chat.worktree.baseBranchLabel')}: <span className="font-mono text-foreground">{pendingBase}</span>
               </div>
               <div className="mb-3 flex gap-1 rounded-md bg-muted p-0.5">
                 <ModeButton active={pendingMode === 'branch'} onClick={() => handleSetMode('branch')}>{t('chat.worktree.modeBranch')}</ModeButton>

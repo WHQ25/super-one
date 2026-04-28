@@ -129,6 +129,7 @@ interface AppState {
   setActiveWorktree: (projectPath: string, path: string | null) => void
   switchToExistingWorktree: (projectPath: string, wtPath: string, gitBranch: string | null) => Promise<{ ok: true } | { ok: false; error: string }>
   clearWorktree: (projectPath: string) => Promise<void>
+  clearPendingWorktree: (projectPath: string) => void
   getWorktreeState: (projectPath: string) => WorktreeState
 }
 
@@ -484,6 +485,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }))
     return { ok: true as const }
+  },
+
+  clearPendingWorktree: (projectPath) => {
+    set((s) => {
+      const prev = s._worktrees[projectPath] ?? defaultWorktreeState
+      return {
+        _worktrees: {
+          ...s._worktrees,
+          [projectPath]: {
+            ...prev,
+            pendingBaseBranch: null,
+            pendingMode: 'branch',
+            pendingBranchName: '',
+            pendingCarryLocalChanges: false,
+          },
+        },
+      }
+    })
   },
 
   clearWorktree: async (projectPath) => {

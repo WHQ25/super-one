@@ -299,45 +299,35 @@ export class AgentService {
     const deviceId = source?.deviceId ?? 'unknown-device'
     trace('remote.cmd', command.type, command)
     switch (command.type) {
-      case 'send_message': {
-        const projectPath = command.projectPath
-        if (!projectPath) break
+      case 'create_session': {
+        const { projectPath, sessionId, provider } = command
+        if (!projectPath || !sessionId) {
+          await respond?.(command.requestId, { ok: false, error: 'projectPath and sessionId required' })
+          break
+        }
+        const mgr = this.requireSessionManager()
 
-        if (command.provider === 'codex') {
-          const sessionId = command.sessionId ?? `codex-remote-${Date.now()}`
-          await this.runCodexRemoteTurn(projectPath, sessionId, deviceId, command, !command.sessionId)
+        if (provider === 'codex') {
+          try {
+            mgr.createSession({ projectPath, providerId: 'codex-base', id: sessionId })
+            await respond?.(command.requestId, { ok: true, sessionId })
+          } catch (err) {
+            await respond?.(command.requestId, { ok: false, error: (err as Error).message })
+          }
           break
         }
 
-        const mgr = this.requireSessionManager()
-        const targetSid = command.sessionId
-        let session: import('../session/types').Session
-        let sid: string
-
-        if (targetSid) {
-          if (!this.canAccessSession(projectPath, targetSid)) {
-            log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, targetSid))
-            break
-          }
-          const saved = loadSessionState(targetSid)
-          if (saved?.provider === 'codex') {
-            await this.runCodexRemoteTurn(projectPath, targetSid, deviceId, command)
-            break
-          }
-          const existing = mgr.getSession(targetSid)
-          if (existing) {
-            session = existing
-          } else {
-            try { session = mgr.resumeSession(targetSid) } catch {
-              log.warn('[AgentService] remote send_message: session %s not found', targetSid)
+        let cwd = projectPath
+        let recordedGitBranch: string | null | undefined = undefined
+        try {
+          if (command.worktreePath && command.worktreePath !== projectPath) {
+            if (!existsSync(command.worktreePath)) {
+              await respond?.(command.requestId, { ok: false, error: 'Worktree path not found' })
               break
             }
-          }
-          sid = targetSid
-        } else {
-          let cwd = projectPath
-          let recordedGitBranch: string | null | undefined = undefined
-          if (command.worktreeBranch) {
+            cwd = command.worktreePath
+            recordedGitBranch = command.gitBranch ?? undefined
+          } else if (command.worktreeBranch) {
             const wtMode = command.worktreeMode ?? 'branch'
             const wtBranchName = command.worktreeBranchName ?? (wtMode === 'branch' ? command.worktreeBranch : undefined)
             const result = await activateWorktree(projectPath, {
@@ -357,19 +347,49 @@ export class AgentService {
             } catch { /* branch may already be correct */ }
           }
 
-          sid = randomUUID()
-          session = mgr.createSession({
+          mgr.createSession({
             projectPath,
             cwd,
             providerId: 'claude-base',
-            id: sid,
+            id: sessionId,
             ...(recordedGitBranch !== undefined ? { gitBranch: recordedGitBranch } : {}),
             permissionMode: command.permissionMode as PermissionMode | undefined,
             effort: command.effort as SendMessageRequest['effort'] | undefined,
           })
+          await respond?.(command.requestId, { ok: true, sessionId, cwd, gitBranch: recordedGitBranch ?? null })
+        } catch (err) {
+          await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
+        }
+        break
+      }
+      case 'send_message': {
+        const { projectPath, sessionId } = command
+        if (!projectPath || !sessionId) break
+
+        const mgr = this.requireSessionManager()
+        if (!this.canAccessSession(projectPath, sessionId)) {
+          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, sessionId))
+          break
         }
 
-        trace('remote.debug', 'send_message:dispatch', { sid, targetSid, projectPath, deviceId })
+        const saved = loadSessionState(sessionId)
+        if (command.provider === 'codex' || saved?.provider === 'codex') {
+          await this.runCodexRemoteTurn(projectPath, sessionId, deviceId, command)
+          break
+        }
+
+        let session: import('../session/types').Session
+        const existing = mgr.getSession(sessionId)
+        if (existing) {
+          session = existing
+        } else {
+          try { session = mgr.resumeSession(sessionId) } catch {
+            log.warn('[AgentService] remote send_message: session %s not found', sessionId)
+            break
+          }
+        }
+
+        trace('remote.debug', 'send_message:dispatch', { sid: sessionId, projectPath, deviceId })
         try {
           await this.ensureRemoteOwnership(deviceId, session, async () => {
             await session.send({
@@ -383,7 +403,7 @@ export class AgentService {
           })
         } catch (err) {
           if (err instanceof SessionClaimConflictError) {
-            await this.notifySessionLocked(deviceId, sid, err.currentOwnerDeviceId)
+            await this.notifySessionLocked(deviceId, sessionId, err.currentOwnerDeviceId)
             break
           }
           throw err
@@ -902,19 +922,6 @@ export class AgentService {
           })
           await this.switchCwd(command.projectPath, result.path, result.recordedBranch)
           await respond?.(command.requestId, { ok: true, path: result.path })
-        } catch (err) {
-          await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
-        }
-        break
-      }
-      case 'switch_worktree': {
-        try {
-          if (!existsSync(command.worktreePath)) {
-            await respond?.(command.requestId, { ok: false, error: 'Worktree path not found' })
-            break
-          }
-          await this.switchCwd(command.projectPath, command.worktreePath, command.gitBranch)
-          await respond?.(command.requestId, { ok: true, path: command.worktreePath })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
         }

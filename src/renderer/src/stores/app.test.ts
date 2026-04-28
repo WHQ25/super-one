@@ -219,3 +219,69 @@ describe('clearWorktree', () => {
     expect(mockWindowApp.activateWorktree).toHaveBeenCalledWith('/proj', null)
   })
 })
+
+describe('clearPendingWorktree', () => {
+  it('clears all pending fields while preserving activePath', () => {
+    useAppStore.setState({
+      _worktrees: {
+        '/proj': {
+          pendingBaseBranch: 'feat/x',
+          pendingMode: 'attach',
+          pendingBranchName: 'feat/y',
+          pendingCarryLocalChanges: true,
+          activePath: '/proj-worktrees/feat-x',
+        },
+      },
+    })
+
+    useAppStore.getState().clearPendingWorktree('/proj')
+
+    const wt = useAppStore.getState()._worktrees['/proj']
+    expect(wt).toEqual({
+      pendingBaseBranch: null,
+      pendingMode: 'branch',
+      pendingBranchName: '',
+      pendingCarryLocalChanges: false,
+      activePath: '/proj-worktrees/feat-x',
+    })
+    expect(mockWindowApp.activateWorktree).not.toHaveBeenCalled()
+  })
+
+  it('is a no-op-style clear when there is no pending and no active', () => {
+    useAppStore.setState({
+      _worktrees: {
+        '/proj': {
+          pendingBaseBranch: null,
+          pendingMode: 'branch',
+          pendingBranchName: '',
+          pendingCarryLocalChanges: false,
+          activePath: null,
+        },
+      },
+    })
+
+    useAppStore.getState().clearPendingWorktree('/proj')
+
+    expect(useAppStore.getState()._worktrees['/proj']).toEqual({
+      pendingBaseBranch: null,
+      pendingMode: 'branch',
+      pendingBranchName: '',
+      pendingCarryLocalChanges: false,
+      activePath: null,
+    })
+  })
+
+  it('initializes default state when projectPath has no entry', () => {
+    useAppStore.setState({ _worktrees: {} })
+
+    useAppStore.getState().clearPendingWorktree('/new-proj')
+
+    expect(useAppStore.getState()._worktrees['/new-proj']).toEqual({
+      pendingBaseBranch: null,
+      pendingMode: 'branch',
+      pendingBranchName: '',
+      pendingCarryLocalChanges: false,
+      activePath: null,
+    })
+  })
+})

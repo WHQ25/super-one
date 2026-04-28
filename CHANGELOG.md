@@ -4,6 +4,28 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.23.0-alpha] - 2026-04-28
+
+### Added
+
+- **Three-mode worktree flow with semantic indicator** — `WorkDirIndicator` popover redesigned into Local / Existing worktrees / Create new from sections, with a segmented New branch / Attach / Detach control inside the pending panel. New branch mode requires a name with inline duplicate-branch detection (offers a "Switch to Attach" affordance); Attach hides itself when the base is already checked out elsewhere. Worktree directories now name as `~/.worktrees/<repo>/<base36-epoch>-<short-hash>` for chronological ordering. Indicator label is semantic with inline icons via `<Trans>`, so language reordering keeps icons in the right slot. New IPC: `GIT_SWITCH_WORKTREE` (one-click switch to existing), `GIT_CHECKED_OUT_BRANCHES` (attach availability check). "Carry local changes" is hidden when the main repo is clean.
+- **Per-harness brand hue picker in light mode** — palette popover in the sidebar lets you shift the whole app's color temperature by hue. Each harness (Claude / Codex) persists its own hue in `app-settings.json`; dark mode is unaffected.
+- **Per-token LCH override with advanced editor** — extend brand theming from a single hue to layered LCH+alpha overrides per design token. Basic mode keeps the hue slider; Advanced mode swaps in a 2D L×C area, hue strip, alpha strip, and L/C/H/A inputs. Default brand hue unified to 240° for both Claude and Codex harnesses. CSS tokens migrated to `var()` fallback chains so changes ripple via single `--brand-hue` or per-channel vars without JS-side `setProperty` fan-out.
+
+### Fixed
+
+- **Light-mode contrast for chat, sidebar, and diff surfaces** — Tailwind `text-X-400` shades are tuned for dark backgrounds and turn illegible on the warm cream palette. Migrated to the dark-aware pair `text-X-600 dark:text-X-400` across chat blocks, sidebar status icons, git status colors, drop-zone borders, diff markers, and the file dirty indicator. Also replaced hardcoded `text-white` / `border-white/N` / `bg-white/N` in chat message chips with semantic foreground tokens so they invert correctly on theme switch.
+- **Worktree indicator locks to read-only on hydrated or active sessions** — the indicator now refuses to mutate the working directory once a session has loaded messages or the SDK session is up, preventing mid-stream cwd drift. The "is old session" heuristic also switched to messages count + SDK session, fixing edge cases where the lock fired or relaxed at the wrong moment.
+
+### Changed
+
+- **Worktree operations centralized into a dedicated module** — `src/main/git/worktree-ops.ts` is now the single home for worktree create/attach/detach/switch logic, replacing scattered call sites in `agent-service.ts` and `index.ts`. The remote protocol (`agent-types.ts`) gains the corresponding worktree commands so mobile clients can drive the same flows.
+- **Pinned session row simplified to two-line text layout** — sidebar's pinned sessions drop the avatar/preview clutter for a cleaner two-line text presentation.
+
+### Performance
+
+- **Codex app-server connection cached for prewarm reuse** — the Codex prewarm path now reuses an existing app-server connection instead of dialing a fresh one each time, cutting cold-start latency on first message.
+
 ## [0.22.4-alpha] - 2026-04-27
 
 ### Added

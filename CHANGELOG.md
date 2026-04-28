@@ -4,6 +4,13 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.23.1-alpha] - 2026-04-28
+
+### Fixed
+
+- **`border-{token}` utilities now apply token colors** — the global `* { border-color }` fallback was unlayered, so Tailwind utilities like `border-insight-border`, `border-sidebar-border`, `border-primary` were silently overridden into the default border gray (most visibly: chat insight blocks rendered with a gray left bar instead of purple). Wrapping the fallback in `@layer base` lets each utility's own color win. The New Session button is pinned to `--border` in dark mode to preserve its previous look.
+- **Mini-apps follow live theme changes** — the iframe bridge previously only re-sent theme vars on dark/light toggle, so brand hue tweaks, per-token LCH overrides, and harness switches were not reflected in running mini-apps. The bridge now observes inline-style mutations on `<html>` and pushes a fresh theme snapshot whenever host CSS variables change.
+
 ## [0.23.0-alpha] - 2026-04-28
 
 ### Added

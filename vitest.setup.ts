@@ -22,7 +22,7 @@ if (typeof globalThis.window !== 'undefined' && !(globalThis.window as unknown a
   w.agent = new Proxy({}, { get: () => noop })
 }
 
-if (typeof globalThis.localStorage === 'undefined') {
+if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage.setItem !== 'function') {
   const store = new Map<string, string>()
   const localStorage = {
     get length() {

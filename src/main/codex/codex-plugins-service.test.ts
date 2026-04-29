@@ -100,6 +100,63 @@ describe('CodexPluginsService', () => {
     ])
   })
 
+  it('lists and installs remote marketplace plugins without a local source path', async () => {
+    const requestMock = vi.fn(async (method: string) => {
+      if (method === 'plugin/list') {
+        return {
+          marketplaces: [
+            {
+              name: 'remote-marketplace',
+              path: 'https://example.com/marketplace.json',
+              plugins: [
+                {
+                  id: 'remote-plugin@remote-marketplace',
+                  name: 'remote-plugin',
+                  installed: false,
+                  enabled: false,
+                  installPolicy: 'AVAILABLE',
+                  authPolicy: 'ON_INSTALL',
+                  source: { type: 'remote', url: 'https://example.com/remote-plugin.zip' },
+                  interface: {
+                    displayName: 'Remote Plugin',
+                    shortDescription: 'Install remotely',
+                    composerIcon: './icon.svg',
+                  },
+                },
+              ],
+            },
+          ],
+        }
+      }
+      return {}
+    })
+    withAppServerRequestMock.mockImplementation(async (_projectPath, fn) => fn(requestMock))
+
+    const marketplace = await service.listMarketplacePlugins('/project')
+
+    expect(marketplace).toEqual([
+      {
+        name: 'remote-plugin',
+        marketplace: 'remote-marketplace',
+        key: 'remote-plugin@remote-marketplace',
+        description: 'Install remotely',
+        displayName: 'Remote Plugin',
+        enabled: false,
+        installPolicy: 'AVAILABLE',
+        authPolicy: 'ON_INSTALL',
+        installed: false,
+        installedScope: undefined,
+      },
+    ])
+
+    await service.installPlugin('/project', 'remote-plugin@remote-marketplace')
+
+    expect(requestMock).toHaveBeenLastCalledWith('plugin/install', {
+      marketplacePath: 'https://example.com/marketplace.json',
+      pluginName: 'remote-plugin',
+    })
+  })
+
   it('maps installed plugins and reads manifest metadata', async () => {
     withAppServerRequestMock.mockImplementation(async (_projectPath, fn) => fn(async () => ({
       marketplaces: [

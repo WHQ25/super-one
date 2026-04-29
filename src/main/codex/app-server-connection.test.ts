@@ -83,7 +83,7 @@ vi.mock('module', async () => {
   }
 })
 
-const { createAppServerConnection } = await import('./app-server-connection')
+const { createAppServerConnection, resolvePermissionProfile } = await import('./app-server-connection')
 
 function writeLineToChild(child: FakeChild, payload: Record<string, unknown>): void {
   child.stdout.write(`${JSON.stringify(payload)}\n`)
@@ -250,5 +250,22 @@ describe('createAppServerConnection', () => {
     })
 
     await handle.close()
+  })
+})
+
+describe('resolvePermissionProfile', () => {
+  it('keeps Codex permission profiles aligned with app-server enforcement fields', () => {
+    expect(resolvePermissionProfile('default')).toEqual({
+      permissionPreset: 'default',
+      approvalPolicy: 'on-request',
+      sandboxMode: 'workspace-write',
+      networkAccessEnabled: false,
+    })
+    expect(resolvePermissionProfile('full-access')).toEqual({
+      permissionPreset: 'full-access',
+      approvalPolicy: 'never',
+      sandboxMode: 'danger-full-access',
+      networkAccessEnabled: true,
+    })
   })
 })

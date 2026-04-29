@@ -406,4 +406,31 @@ describe('runCodexTurn turn/start payload', () => {
       },
     }))
   })
+
+  it('sends resolved full-access permission profile to thread and turn app-server APIs', async () => {
+    const { handle, request } = makeConnectionDriver('thread-4', 'turn-4')
+    const session = { ...makeSession({ model: 'gpt-5.4' }) }
+    session.permissionPreset = 'full-access'
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+
+    await runCodexTurn(session, { mode: 'auto' }, '/project', {
+      prompt: 'Test prompt',
+      model: 'gpt-5.4',
+      permissionPreset: 'full-access',
+    })
+
+    expect(request).toHaveBeenCalledWith('thread/start', expect.objectContaining({
+      approvalPolicy: 'never',
+      sandbox: 'danger-full-access',
+      persistExtendedHistory: true,
+    }))
+    expect(request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+      threadId: 'thread-4',
+      approvalPolicy: 'never',
+      sandboxPolicy: {
+        type: 'dangerFullAccess',
+      },
+    }))
+  })
 })

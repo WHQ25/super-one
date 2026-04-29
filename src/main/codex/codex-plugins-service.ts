@@ -19,7 +19,7 @@ interface PluginInventoryRecord {
   marketplace: string
   marketplaceDisplayName?: string
   marketplacePath: string
-  sourcePath: string
+  sourcePath?: string
   installed: boolean
   enabled: boolean
   installPolicy?: PluginInstallPolicy
@@ -52,10 +52,11 @@ function hasUrlScheme(value: string): boolean {
   return /^[A-Za-z][A-Za-z+\-.0-9]*:/.test(value) && !isWindowsAbsolutePath(value)
 }
 
-function resolvePluginAssetPath(value: unknown, sourcePath: string): string | undefined {
+function resolvePluginAssetPath(value: unknown, sourcePath?: string): string | undefined {
   const assetPath = readString(value)
   if (!assetPath) return undefined
   if (hasUrlScheme(assetPath) || isAbsoluteFileSystemPath(assetPath)) return assetPath
+  if (!sourcePath) return undefined
   return resolve(sourcePath, assetPath)
 }
 
@@ -83,7 +84,7 @@ function readPolicy<T extends string>(value: unknown, valid: readonly T[]): T | 
   return policy && valid.includes(policy as T) ? policy as T : undefined
 }
 
-function readResolvedAssetArray(value: unknown, sourcePath: string): string[] {
+function readResolvedAssetArray(value: unknown, sourcePath?: string): string[] {
   if (!Array.isArray(value)) return []
   return value
     .map((entry) => resolvePluginAssetPath(entry, sourcePath))
@@ -173,7 +174,7 @@ function mapMarketplacePlugin(record: PluginInventoryRecord): MarketplacePlugin 
 }
 
 function mapInstalledPlugin(
-  record: PluginInventoryRecord,
+  record: PluginInventoryRecord & { sourcePath: string },
   description: string,
   author: string | undefined,
   version: string | undefined,
@@ -225,8 +226,8 @@ export class CodexPluginsService {
           const key = readString(plugin.id)
           const name = readString(plugin.name)
           const source = asRecord(plugin.source)
-          const sourcePath = readString(source?.path)
-          if (!key || !name || !sourcePath) continue
+          const sourcePath = readString(source?.path) ?? undefined
+          if (!key || !name) continue
 
           const pluginInterface = asRecord(plugin.interface)
           records.push({
@@ -270,10 +271,11 @@ export class CodexPluginsService {
   async listPlugins(projectPath: string): Promise<PluginInfo[]> {
     const records = await this.listInventory(projectPath)
     return records
-      .filter((record) => record.installed)
+      .filter((record): record is PluginInventoryRecord & { sourcePath: string } => record.installed && !!record.sourcePath)
       .map((record) => {
-        const manifest = readPluginManifest(record.sourcePath)
-        const contents = detectPluginContents(record.sourcePath)
+        const sourcePath = record.sourcePath
+        const manifest = readPluginManifest(sourcePath)
+        const contents = detectPluginContents(sourcePath)
         return mapInstalledPlugin(
           record,
           record.shortDescription ?? record.longDescription ?? manifest?.description ?? '',
@@ -286,7 +288,8 @@ export class CodexPluginsService {
 
   async readPlugin(projectPath: string, key: string): Promise<PluginDetail | null> {
     const record = await this.findPlugin(projectPath, key)
-    if (!record) return null
+    if (!record || !record.sourcePath) return null
+    const sourcePath = record.sourcePath
 
     const detail = await this.codexService.withAppServerRequest(projectPath, async (request) => {
       return request('plugin/read', {
@@ -297,8 +300,8 @@ export class CodexPluginsService {
 
     const detailContainer = asRecord(detail)
     const detailRecord = asRecord(detailContainer?.plugin) ?? detailContainer
-    const manifest = readPluginManifest(record.sourcePath)
-    const contents = detectPluginContents(record.sourcePath)
+    const manifest = readPluginManifest(sourcePath)
+    const contents = detectPluginContents(sourcePath)
     const summaryRecord = asRecord(detailRecord?.summary)
     const description = readString(detailRecord?.description)
       ?? record.longDescription
@@ -310,7 +313,7 @@ export class CodexPluginsService {
       ?? manifest?.author?.name
     const mcpServers = readStringArray(detailRecord?.mcpServers)
     const plugin = mapInstalledPlugin(
-      record,
+      { ...record, sourcePath },
       description,
       author,
       manifest?.version,
@@ -360,13 +363,13 @@ export class CodexPluginsService {
       apps,
       skills,
       mcpServers,
-      files: scanDir(record.sourcePath),
+      files: scanDir(sourcePath),
     }
   }
 
   async readPluginFile(projectPath: string, key: string, relativePath: string): Promise<string | null> {
     const record = await this.findPlugin(projectPath, key)
-    if (!record || !record.installed) return null
+    if (!record || !record.installed || !record.sourcePath) return null
 
     const resolved = resolve(record.sourcePath, relativePath)
     if (!resolved.startsWith(record.sourcePath)) return null

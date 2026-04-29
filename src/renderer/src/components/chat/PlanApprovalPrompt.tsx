@@ -1,13 +1,15 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
-import { PenLine, Check, X, FastForward, Circle, CheckCircle2 } from 'lucide-react'
+import { PenLine, Check, X, FastForward, Zap, Circle, CheckCircle2 } from 'lucide-react'
 import { Kbd } from '@/components/ui/kbd'
 import { streamdownLinkSafety, streamdownRehypePlugins, mathPlugin } from './chat-shared'
+import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
+import type { PermissionMode } from '../../../../shared/agent-types'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 const streamdownPlugins = { code: codePlugin, math: mathPlugin }
@@ -18,31 +20,45 @@ export function PlanApprovalPrompt() {
   const { t } = useTranslation()
   const pending = useActiveSession((s) => s.pendingPlanApproval)
   const respond = useChatStore((s) => s.respondToPlanApproval)
+  const account = useChatStore((s) => s.account)
+  const availableModels = useChatStore((s) => s.availableModels)
+  const selectedModel = useActiveSession((s) => s.selectedModel)
   const [feedback, setFeedback] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
-  const [acceptEdits, setAcceptEdits] = useState(false)
+  const [switchAfterApproval, setSwitchAfterApproval] = useState(false)
   const requestId = pending?.requestId
   const planContent = pending?.planContent ?? ''
   const planFilePath = pending?.planFilePath ?? ''
   const allowedPrompts = pending?.allowedPrompts ?? []
   const fileName = planFilePath.split('/').pop() ?? ''
 
+  const fastModeTarget: PermissionMode = useMemo(() => {
+    const modelInfo = availableModels.find((m) => m.id === selectedModel)
+    const elig = checkAutoModeEligibility({
+      subscriptionType: account?.subscriptionType,
+      apiProvider: account?.apiProvider,
+      modelSupportsAutoMode: modelInfo?.supportsAutoMode,
+    })
+    return elig.ok ? 'auto' : 'acceptEdits'
+  }, [account, availableModels, selectedModel])
+  const isAutoTarget = fastModeTarget === 'auto'
+
   useEffect(() => {
     setFeedback('')
     setIsFeedbackFocused(false)
-    setAcceptEdits(false)
+    setSwitchAfterApproval(false)
   }, [requestId])
 
   const handleApprove = useCallback(() => {
     if (!requestId) return
-    respond(requestId, true, undefined, acceptEdits ? 'acceptEdits' : undefined)
-  }, [requestId, respond, acceptEdits])
+    respond(requestId, true, undefined, switchAfterApproval ? fastModeTarget : undefined)
+  }, [requestId, respond, switchAfterApproval, fastModeTarget])
 
-  const handleApproveAcceptEdits = useCallback(() => {
+  const handleApproveFastMode = useCallback(() => {
     if (!requestId) return
-    respond(requestId, true, undefined, 'acceptEdits')
-  }, [requestId, respond])
+    respond(requestId, true, undefined, fastModeTarget)
+  }, [requestId, respond, fastModeTarget])
 
   const handleReject = useCallback(() => {
     if (!requestId) return
@@ -84,7 +100,7 @@ export function PlanApprovalPrompt() {
       if (e.key === 'Tab' && e.shiftKey) {
         e.preventDefault()
         e.stopImmediatePropagation()
-        handleApproveAcceptEdits()
+        handleApproveFastMode()
         return
       }
 
@@ -106,13 +122,13 @@ export function PlanApprovalPrompt() {
 
       if (e.key === '1') {
         e.preventDefault()
-        setAcceptEdits((prev) => !prev)
+        setSwitchAfterApproval((prev) => !prev)
         return
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [focusVisibleFeedbackInput, handleApprove, handleApproveAcceptEdits, handleReject, requestId])
+  }, [focusVisibleFeedbackInput, handleApprove, handleApproveFastMode, handleReject, requestId])
 
   if (!pending) return null
 
@@ -164,16 +180,23 @@ export function PlanApprovalPrompt() {
 
           {/* @xl: inline layout */}
           <div className="hidden items-center gap-2 @xl:flex">
-            {acceptEdits ? (
+            {switchAfterApproval ? (
               <Button
                 size="sm"
-                className="h-7 cursor-pointer gap-1 bg-purple-600 px-3 text-xs text-white hover:bg-purple-500"
+                className={`h-7 cursor-pointer gap-1 px-3 text-xs text-white ${
+                  isAutoTarget
+                    ? 'bg-amber-600 hover:bg-amber-500'
+                    : 'bg-purple-600 hover:bg-purple-500'
+                }`}
                 onClick={handleApprove}
               >
-                <FastForward className="size-3" />
-                {t('chat.plan.approveAccept')}
+                {isAutoTarget ? <Zap className="size-3" /> : <FastForward className="size-3" />}
+                {t(isAutoTarget ? 'chat.plan.approveAuto' : 'chat.plan.approveAccept')}
                 {!isFeedbackFocused && (
-                  <Kbd variant="inline" className="ml-1 text-purple-200/80">↵</Kbd>
+                  <Kbd
+                    variant="inline"
+                    className={`ml-1 ${isAutoTarget ? 'text-amber-200/80' : 'text-purple-200/80'}`}
+                  >↵</Kbd>
                 )}
               </Button>
             ) : (
@@ -229,16 +252,23 @@ export function PlanApprovalPrompt() {
               <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
             </div>
             <div className="flex items-center gap-2">
-              {acceptEdits ? (
+              {switchAfterApproval ? (
                 <Button
                   size="sm"
-                  className="h-7 flex-1 cursor-pointer gap-1 bg-purple-600 px-3 text-xs text-white hover:bg-purple-500"
+                  className={`h-7 flex-1 cursor-pointer gap-1 px-3 text-xs text-white ${
+                    isAutoTarget
+                      ? 'bg-amber-600 hover:bg-amber-500'
+                      : 'bg-purple-600 hover:bg-purple-500'
+                  }`}
                   onClick={handleApprove}
                 >
-                  <FastForward className="size-3" />
-                  {t('chat.plan.approveAccept')}
+                  {isAutoTarget ? <Zap className="size-3" /> : <FastForward className="size-3" />}
+                  {t(isAutoTarget ? 'chat.plan.approveAuto' : 'chat.plan.approveAccept')}
                   {!isFeedbackFocused && (
-                    <Kbd variant="inline" className="ml-1 text-purple-200/80">↵</Kbd>
+                    <Kbd
+                      variant="inline"
+                      className={`ml-1 ${isAutoTarget ? 'text-amber-200/80' : 'text-purple-200/80'}`}
+                    >↵</Kbd>
                   )}
                 </Button>
               ) : (
@@ -268,25 +298,27 @@ export function PlanApprovalPrompt() {
             </div>
           </div>
 
-          {/* Toggle: Accept Edits after approval */}
+          {/* Toggle: switch to a faster mode after approval (auto when supported, else acceptEdits) */}
           <button
             type="button"
             className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors ${
-              acceptEdits
-                ? 'border-purple-500/50 bg-purple-500/10 text-purple-500 hover:bg-purple-500/20'
+              switchAfterApproval
+                ? isAutoTarget
+                  ? 'border-amber-500/50 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-500'
+                  : 'border-purple-500/50 bg-purple-500/10 text-purple-500 hover:bg-purple-500/20'
                 : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
             }`}
-            onClick={() => setAcceptEdits((prev) => !prev)}
+            onClick={() => setSwitchAfterApproval((prev) => !prev)}
           >
-            {acceptEdits
-              ? <CheckCircle2 className="size-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
+            {switchAfterApproval
+              ? <CheckCircle2 className={`size-3.5 shrink-0 ${isAutoTarget ? 'text-amber-600 dark:text-amber-400' : 'text-purple-600 dark:text-purple-400'}`} />
               : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
             }
             <span className="flex min-w-0 items-center gap-1">
               <span>{t('chat.plan.switchTo')}</span>
-              <span className="inline-flex items-center gap-0.5 font-medium text-purple-600 dark:text-purple-400">
-                <FastForward className="size-3" />
-                {t('chat.plan.acceptEdits')}
+              <span className={`inline-flex items-center gap-0.5 font-medium ${isAutoTarget ? 'text-amber-600 dark:text-amber-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                {isAutoTarget ? <Zap className="size-3" /> : <FastForward className="size-3" />}
+                {t(isAutoTarget ? 'chat.plan.auto' : 'chat.plan.acceptEdits')}
               </span>
               <span>{t('chat.plan.afterApproval')}</span>
             </span>

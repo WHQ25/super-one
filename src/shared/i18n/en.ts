@@ -221,10 +221,12 @@ export type Messages = {
       requestedPermissions: string
       approve: string
       approveAccept: string
+      approveAuto: string
       reject: string
       feedbackPlaceholder: string
       switchTo: string
       acceptEdits: string
+      auto: string
       afterApproval: string
       label: string
       approved: string
@@ -967,10 +969,12 @@ export const en: Messages = {
       requestedPermissions: 'Requested permissions',
       approve: 'Approve',
       approveAccept: 'Approve & Accept Edits',
+      approveAuto: 'Approve & Auto',
       reject: 'Reject',
       feedbackPlaceholder: 'Reject feedback (optional, Enter to submit)',
       switchTo: 'Switch to',
       acceptEdits: 'Accept Edits',
+      auto: 'Auto',
       afterApproval: 'after approval',
       label: 'Plan',
       approved: 'Approved',

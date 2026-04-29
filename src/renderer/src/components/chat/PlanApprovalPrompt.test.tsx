@@ -80,7 +80,7 @@ vi.mock('@/components/chat/PermissionModeList', () => ({
 vi.mock('lucide-react', () => {
   const Stub = () => null
   return {
-    PenLine: Stub, Check: Stub, X: Stub, FastForward: Stub,
+    PenLine: Stub, Check: Stub, X: Stub, FastForward: Stub, Zap: Stub,
     Circle: Stub, CheckCircle2: Stub,
   }
 })
@@ -101,7 +101,10 @@ function resetStore() {
   })
 }
 
-function seedPlanApprovalState(initialMode: 'plan' | 'default' = 'plan') {
+function seedPlanApprovalState(
+  initialMode: 'plan' | 'default' = 'plan',
+  opts?: { selectedModel?: string },
+) {
   useChatStore.getState().ensureSession('/proj')
   useChatStore.setState({ activeProject: '/proj' })
   const proj = useChatStore.getState().projectSessions['/proj']
@@ -114,6 +117,7 @@ function seedPlanApprovalState(initialMode: 'plan' | 'default' = 'plan') {
           [sid]: {
             ...createDefaultPerSessionState(),
             permissionMode: initialMode,
+            selectedModel: opts?.selectedModel ?? '',
             pendingPlanApproval: {
               requestId: 'plan-req-1',
               planContent: '# My plan\n- step A\n- step B',
@@ -210,5 +214,51 @@ describe('PlanApprovalPrompt — integration', () => {
     fireEvent.keyDown(window, { key: 'Enter' })
 
     expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'acceptEdits')
+  })
+
+  it('scenario: account+model support auto mode → toggle switches post-approval mode to "auto"', () => {
+    useChatStore.setState({
+      account: { subscriptionType: 'Claude Max', apiProvider: 'firstParty' },
+      availableModels: [
+        {
+          id: 'claude-opus-4-7',
+          name: 'Claude Opus 4.7',
+          description: '',
+          supportsAutoMode: true,
+        },
+      ],
+    })
+    seedPlanApprovalState('plan', { selectedModel: 'claude-opus-4-7' })
+    render(<PlanApprovalPrompt />)
+
+    fireEvent.keyDown(window, { key: '1' })
+    fireEvent.keyDown(window, { key: 'Enter' })
+
+    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
+      expect.any(String), 'plan-req-1', true, undefined,
+    )
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+    expect(activeSession().permissionMode).toBe('auto')
+  })
+
+  it('scenario: auto-supported session + Shift+Tab approves directly into auto mode', () => {
+    useChatStore.setState({
+      account: { subscriptionType: 'Claude Max', apiProvider: 'firstParty' },
+      availableModels: [
+        {
+          id: 'claude-opus-4-7',
+          name: 'Claude Opus 4.7',
+          description: '',
+          supportsAutoMode: true,
+        },
+      ],
+    })
+    seedPlanApprovalState('plan', { selectedModel: 'claude-opus-4-7' })
+    render(<PlanApprovalPrompt />)
+
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+    expect(activeSession().permissionMode).toBe('auto')
   })
 })

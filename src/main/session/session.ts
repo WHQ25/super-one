@@ -74,6 +74,7 @@ export interface SessionConstructorOptions {
   onStateChange?: (snapshot: SessionStateChange) => void
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
   getActiveProvider?: (harnessId: HarnessId) => RemoteActiveProvider | null
+  onBeforeInterrupt?: () => void
 }
 
 const DEFAULT_SANDBOX: SandboxInfo = { enabled: true, autoAllowBash: false }
@@ -131,6 +132,7 @@ export class Session implements SessionContract {
   private onStateChange?: (snapshot: SessionStateChange) => void
   private onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
   private getActiveProvider?: (harnessId: HarnessId) => RemoteActiveProvider | null
+  private onBeforeInterrupt?: () => void
 
   private abortController: AbortController | null = null
   private backendStarted = false
@@ -240,6 +242,7 @@ export class Session implements SessionContract {
     this.onStateChange = opts.onStateChange
     this.onProviderSessionIdChange = opts.onProviderSessionIdChange
     this.getActiveProvider = opts.getActiveProvider
+    this.onBeforeInterrupt = opts.onBeforeInterrupt
 
     this.unsubs.push(this.backend.onEvent((e) => this.forwardEvent(e)))
     this.unsubs.push(this.backend.onProviderSessionId((id) => {
@@ -337,12 +340,18 @@ export class Session implements SessionContract {
     }
   }
 
-  async interrupt(): Promise<void> {
-    if (this._status === 'disposed') return
-    if (this._status !== 'streaming' && this._status !== 'starting') return
+  async interrupt(): Promise<boolean> {
+    if (this._status === 'disposed') return false
+    if (this._status === 'interrupting') return true
+    if (this._status !== 'streaming' && this._status !== 'starting') return false
     const prev = this._status
     this._status = 'interrupting'
     this._pendingQueuedRequests.clear()
+    try {
+      this.onBeforeInterrupt?.()
+    } catch (err) {
+      log.warn('[Session] onBeforeInterrupt hook error:', err)
+    }
     try {
       await this.backend.interrupt()
     } catch (err) {
@@ -352,6 +361,7 @@ export class Session implements SessionContract {
         this._status = prev === 'starting' ? 'idle' : 'ended'
       }
     }
+    return true
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {

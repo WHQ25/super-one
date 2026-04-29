@@ -21,8 +21,6 @@ import { buildRemoteActiveProvider } from '../../shared/provider-utils'
 import { sanitizeGitRef } from '../path-security'
 import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from '../git/worktree-ops'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
-import { clearAllGates } from '../generative-ui/widget-gate'
-import { clearAllPendingCalls as clearAllPendingMiniAppCalls } from '../mcp/superone-mcp-server'
 import { SessionClaimConflictError, SessionLockedError } from '../session/types'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -424,7 +422,7 @@ export class AgentService {
           break
         }
         const agent = this.findSessionBySid(projectPath, command.sessionId)
-        if (agent) { clearAllGates(); clearAllPendingMiniAppCalls(); await agent.interrupt() }
+        if (agent) await agent.interrupt()
         break
       }
       case 'respond_permission': {
@@ -1090,22 +1088,20 @@ export class AgentService {
       try { session.prewarm(hint) } catch (err) { log.debug('[agent-service] prewarm failed: %s', err instanceof Error ? err.message : String(err)) }
     })
 
-    ipcMain.handle(AgentIpcChannels.INTERRUPT, async (_event, projectPath: string) => {
-      const session = this.sessionManager?.getActiveSession(projectPath)
+    ipcMain.handle(AgentIpcChannels.INTERRUPT, async (_event, sessionId: string) => {
+      const session = this.sessionManager?.getSession(sessionId)
       if (!session) return false
-      clearAllGates()
-      clearAllPendingMiniAppCalls()
-      await session.interrupt()
-      return true
+      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      return session.interrupt()
     })
 
-    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string) => {
-      this.throwIfRemoteLocked(projectPath)
-      trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
-      trace('permission.flow', 'ipc_response', { projectPath, sessionId: sessionId ?? null, allow, alwaysAllow, reason }, requestId)
-      const session = this.resolveInteractionSession(projectPath, sessionId)
+    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel') => {
+      const session = this.sessionManager?.getSession(sessionId)
       if (!session) return false
-      return session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions)
+      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
+      trace('permission.flow', 'ipc_response', { projectPath: session.snapshot.projectPath, sessionId, allow, alwaysAllow, reason, decision }, requestId)
+      return session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
@@ -1127,22 +1123,28 @@ export class AgentService {
       session.setSelectedSettings(settings)
     })
 
-    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations, sessionId?: string) => {
-      this.throwIfRemoteLocked(projectPath)
+    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (!session) return
+      this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'question_answered', { requestId, answers, sessionId })
-      this.resolveInteractionSession(projectPath, sessionId)?.respondToQuestion(requestId, answers, annotations)
+      session.respondToQuestion(requestId, answers, annotations)
     })
 
-    ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, projectPath: string, requestId: string, sessionId?: string) => {
-      this.throwIfRemoteLocked(projectPath)
+    ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, sessionId: string, requestId: string) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (!session) return
+      this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'question_dismissed', { requestId, sessionId })
-      this.resolveInteractionSession(projectPath, sessionId)?.dismissQuestion(requestId)
+      session.dismissQuestion(requestId)
     })
 
-    ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, projectPath: string, requestId: string, approved: boolean, feedback?: string, sessionId?: string) => {
-      this.throwIfRemoteLocked(projectPath)
+    ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, sessionId: string, requestId: string, approved: boolean, feedback?: string) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (!session) return
+      this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback, sessionId })
-      this.resolveInteractionSession(projectPath, sessionId)?.respondToPlanApproval(requestId, approved, feedback)
+      session.respondToPlanApproval(requestId, approved, feedback)
     })
 
     ipcMain.handle(AgentIpcChannels.CREATE_SESSION, async (_event, projectPath: string) => {
@@ -1152,17 +1154,28 @@ export class AgentService {
       return session.snapshot.id
     })
 
-    ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, projectPath: string, newSessionId?: string) => {
+    ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, sessionId: string, newSessionId?: string) => {
       const mgr = this.requireSessionManager()
-      const existing = mgr.getActiveSession(projectPath)
+      const existing = mgr.getSession(sessionId)
+      if (!existing) {
+        trace('session.lifecycle', 'ipc_resetSession_miss', { sessionId, newSessionId: newSessionId ?? '(none)' })
+        return null
+      }
+      const projectPath = existing.snapshot.projectPath
+      const providerId = existing.snapshot.providerId
+      const harnessId = existing.snapshot.harnessId
       trace('session.lifecycle', 'ipc_resetSession', {
         projectPath,
-        oldSessionId: existing?.snapshot.id || '(none)',
-        newSessionId: newSessionId ?? '(auto)',
+        oldSessionId: sessionId,
+        newSessionId: newSessionId ?? '(none)',
+        harnessId,
       })
-      if (existing) await mgr.disposeSession(existing.snapshot.id)
-      const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
-      const fresh = mgr.createSession({ projectPath, providerId: 'claude-base', permissionMode, sandboxMode, id: newSessionId })
+      await mgr.disposeSession(sessionId)
+      if (!newSessionId) return null
+      const prefs = harnessId === 'claude'
+        ? this.readDefaultSessionPrefs()
+        : { permissionMode: undefined, sandboxMode: undefined }
+      const fresh = mgr.createSession({ projectPath, providerId, ...prefs, id: newSessionId })
       return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
     })
 

@@ -18,11 +18,11 @@ const agentAPI = {
   prewarm: (projectPath: string, hint?: AgentPrewarmHint) =>
     ipcRenderer.invoke(AgentIpcChannels.PREWARM, projectPath, hint),
 
-  interrupt: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, projectPath),
+  interrupt: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, sessionId) as Promise<boolean>,
 
-  respondToPermission: (projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, projectPath, requestId, allow, alwaysAllow, reason, selectedSuggestions, sessionId) as Promise<boolean>,
+  respondToPermission: (sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel') =>
+    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, sessionId, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision) as Promise<boolean>,
 
   setPermissionMode: (projectPath: string, mode: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_PERMISSION_MODE, projectPath, mode),
@@ -33,20 +33,20 @@ const agentAPI = {
   setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null }) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_SETTINGS, projectPath, settings),
 
-  answerQuestion: (projectPath: string, requestId: string, answers: Record<string, string>, annotations?: Record<string, { preview?: string; notes?: string }>, sessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, projectPath, requestId, answers, annotations, sessionId),
+  answerQuestion: (sessionId: string, requestId: string, answers: Record<string, string>, annotations?: Record<string, { preview?: string; notes?: string }>) =>
+    ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, sessionId, requestId, answers, annotations),
 
-  dismissQuestion: (projectPath: string, requestId: string, sessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.DISMISS_QUESTION, projectPath, requestId, sessionId),
+  dismissQuestion: (sessionId: string, requestId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DISMISS_QUESTION, sessionId, requestId),
 
-  respondToPlanApproval: (projectPath: string, requestId: string, approved: boolean, feedback?: string, sessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.RESPOND_PLAN_APPROVAL, projectPath, requestId, approved, feedback, sessionId),
+  respondToPlanApproval: (sessionId: string, requestId: string, approved: boolean, feedback?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESPOND_PLAN_APPROVAL, sessionId, requestId, approved, feedback),
 
   createSession: (projectPath: string): Promise<string> =>
     ipcRenderer.invoke(AgentIpcChannels.CREATE_SESSION, projectPath),
 
-  resetSession: (projectPath: string, newSessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, projectPath, newSessionId),
+  resetSession: (sessionId: string, newSessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, sessionId, newSessionId),
 
   truncateAtCheckpoint: (projectPath: string, checkpointId: string): Promise<boolean> =>
     ipcRenderer.invoke(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT, projectPath, checkpointId),
@@ -193,52 +193,6 @@ const appAPI = {
 
   codexListModels: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_LIST_MODELS, projectPath),
-
-  codexReset: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_RESET, sessionId),
-
-  codexInterrupt: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_INTERRUPT, sessionId),
-
-  codexRespondToPermission: (
-    sessionId: string,
-    requestId: string,
-    allow: boolean,
-    alwaysAllow?: boolean,
-    reason?: string,
-    decision?: 'cancel',
-  ) =>
-    ipcRenderer.invoke(
-      AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
-      sessionId,
-      requestId,
-      allow,
-      alwaysAllow,
-      reason,
-      decision,
-    ),
-
-  codexAnswerQuestion: (
-    sessionId: string,
-    requestId: string,
-    answers: Record<string, string>,
-  ) =>
-    ipcRenderer.invoke(
-      AgentIpcChannels.CODEX_ANSWER_QUESTION,
-      sessionId,
-      requestId,
-      answers,
-    ),
-
-  codexDismissQuestion: (
-    sessionId: string,
-    requestId: string,
-  ) =>
-    ipcRenderer.invoke(
-      AgentIpcChannels.CODEX_DISMISS_QUESTION,
-      sessionId,
-      requestId,
-    ),
 
   codexSteer: (sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: UserMessageExtras) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, sessionId, input, messageId, userMessageId, userMessageText, gitBranch, worktreePath, extras),

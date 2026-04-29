@@ -205,7 +205,7 @@ export interface Session {
   unsubscribe(deviceId: string, reason?: SessionLeaveReason): void
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void
   send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void>
-  interrupt(): Promise<void>
+  interrupt(): Promise<boolean>
   setPermissionMode(mode: PermissionMode): Promise<void>
   setSandboxMode(mode: SandboxMode): Promise<SandboxInfo>
   getCurrentPermissionMode(): PermissionMode

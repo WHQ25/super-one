@@ -40,6 +40,7 @@ export interface SessionManagerPersistence {
   loadSession?: (sessionId: string) => LoadedSessionData | null
   resolveProviderConfig?: (provider: SessionProvider) => unknown
   getActiveProvider?: (harnessId: HarnessId) => RemoteActiveProvider | null
+  onBeforeInterrupt?: () => void
 }
 
 function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorktreePath: string | null } {
@@ -172,6 +173,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       getActiveProvider: this.persistence.getActiveProvider
         ? (h) => this.persistence.getActiveProvider!(h)
         : undefined,
+      onBeforeInterrupt: this.persistence.onBeforeInterrupt,
     })
 
     this.registerSession(session, opts.projectPath)
@@ -256,6 +258,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       getActiveProvider: this.persistence.getActiveProvider
         ? (h) => this.persistence.getActiveProvider!(h)
         : undefined,
+      onBeforeInterrupt: this.persistence.onBeforeInterrupt,
     })
 
     this.registerSession(session, data.projectPath)

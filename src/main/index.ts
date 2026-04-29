@@ -13,7 +13,7 @@ import { startMediaServer, getMediaServerPort } from './media-server'
 import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, detectStandaloneApp, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti } from './miniapp/miniapp-service'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearAllPendingCalls as clearAllPendingMiniAppCalls } from './mcp/superone-mcp-server'
 import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
@@ -46,7 +46,7 @@ import {
 } from '../shared/agent-types'
 import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, disposeUpdater } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
-import { notifyWidgetReady } from './generative-ui/widget-gate'
+import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { parseGitStatusOutput, parseGitStatusFiles } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
@@ -143,6 +143,10 @@ const sessionManager = new SessionManagerImpl({
     }
   },
   getActiveProvider: (harnessId) => buildRemoteActiveProvider(getActiveProviderRaw(harnessId), harnessId),
+  onBeforeInterrupt: () => {
+    clearAllGates()
+    clearAllPendingMiniAppCalls()
+  },
 })
 sessionManager.onAny((_sid, event) => {
   if (event.type === 'permission_request') {
@@ -474,46 +478,6 @@ function registerIpcHandlers(): void {
     log.debug('[CODEX_LIST_MODELS] project=%s models=%s', projectPath, JSON.stringify(models))
     return models
   })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_RESET, async (_event, sessionId: string) => {
-    if (getCodexSession(sessionId)) await sessionManager.disposeSession(sessionId)
-  })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_INTERRUPT, async (_event, sessionId: string) => {
-    const existing = getCodexSession(sessionId)
-    if (!existing) return false
-    await existing.interrupt()
-    return true
-  })
-
-  ipcMain.handle(
-    AgentIpcChannels.CODEX_PERMISSION_RESPONSE,
-    (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel') => {
-      const session = getCodexSession(sessionId)
-      if (!session) return false
-      return session.respondToPermission(requestId, allow, alwaysAllow, reason, undefined, decision)
-    },
-  )
-
-  ipcMain.handle(
-    AgentIpcChannels.CODEX_ANSWER_QUESTION,
-    (_event, sessionId: string, requestId: string, answers: Record<string, string>) => {
-      const session = getCodexSession(sessionId)
-      if (!session) return false
-      session.respondToQuestion(requestId, answers)
-      return true
-    },
-  )
-
-  ipcMain.handle(
-    AgentIpcChannels.CODEX_DISMISS_QUESTION,
-    (_event, sessionId: string, requestId: string) => {
-      const session = getCodexSession(sessionId)
-      if (!session) return false
-      session.dismissQuestion(requestId)
-      return true
-    },
-  )
 
   ipcMain.handle(AgentIpcChannels.CODEX_GET_AUTH_STATUS, (_event, projectPath: string) => {
     return codexService.getAuthStatus(projectPath)

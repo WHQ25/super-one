@@ -8,16 +8,16 @@ interface AgentAPI {
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
   dequeueMessage(projectPath: string, clientMessageId: string): Promise<boolean>
   prewarm(projectPath: string, hint?: AgentPrewarmHint): Promise<void>
-  interrupt(projectPath: string): Promise<boolean>
-  respondToPermission(projectPath: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], sessionId?: string): Promise<boolean>
+  interrupt(sessionId: string): Promise<boolean>
+  respondToPermission(sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel'): Promise<boolean>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
   setSandboxMode(projectPath: string, mode: SandboxMode): Promise<SandboxInfo>
   setSessionSettings(projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null }): Promise<void>
-  answerQuestion(projectPath: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations, sessionId?: string): Promise<void>
-  dismissQuestion(projectPath: string, requestId: string, sessionId?: string): Promise<void>
-  respondToPlanApproval(projectPath: string, requestId: string, approved: boolean, feedback?: string, sessionId?: string): Promise<void>
+  answerQuestion(sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>
+  dismissQuestion(sessionId: string, requestId: string): Promise<void>
+  respondToPlanApproval(sessionId: string, requestId: string, approved: boolean, feedback?: string): Promise<void>
   createSession(projectPath: string): Promise<string>
-  resetSession(projectPath: string, newSessionId?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
+  resetSession(sessionId: string, newSessionId?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | null>
   truncateAtCheckpoint(projectPath: string, checkpointId: string): Promise<boolean>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   activateSession(projectPath: string, sessionId: string): Promise<void>
@@ -59,11 +59,6 @@ interface AppAPI {
   codexReview(sessionId: string, projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] }): Promise<CodexRunResult>
   codexCompact(sessionId: string, projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] }): Promise<CodexRunResult>
   codexListModels(projectPath: string): Promise<ModelOption[]>
-  codexReset(sessionId: string): Promise<void>
-  codexInterrupt(sessionId: string): Promise<boolean>
-  codexRespondToPermission(sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, decision?: 'cancel'): Promise<boolean>
-  codexAnswerQuestion(sessionId: string, requestId: string, answers: Record<string, string>): Promise<boolean>
-  codexDismissQuestion(sessionId: string, requestId: string): Promise<boolean>
   codexPlanApproval(projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string): Promise<void>
   codexCollaborationModeChange(projectPath: string, sessionId: string, mode: string): Promise<void>
   codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>

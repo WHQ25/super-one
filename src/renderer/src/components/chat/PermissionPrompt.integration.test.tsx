@@ -52,10 +52,6 @@ const mockWindowApp = {
   codexCompact: vi.fn(),
   codexListModels: vi.fn().mockResolvedValue([]),
   codexSteer: vi.fn().mockResolvedValue(undefined),
-  codexAnswerQuestion: vi.fn().mockResolvedValue(true),
-  codexDismissQuestion: vi.fn().mockResolvedValue(true),
-  codexReset: vi.fn().mockResolvedValue(undefined),
-  codexInterrupt: vi.fn().mockResolvedValue(false),
   codexPlanApproval: vi.fn().mockResolvedValue(undefined),
   codexCollaborationModeChange: vi.fn().mockResolvedValue(undefined),
   getAppSettings: vi.fn().mockResolvedValue({

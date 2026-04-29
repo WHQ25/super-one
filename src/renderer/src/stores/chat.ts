@@ -3027,7 +3027,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (utilityKind === 'help') {
             popupContent = getCodexHelpText()
           } else if (utilityKind === 'reset') {
-            if (codexSessionId) await window.app.codexReset(codexSessionId)
+            if (codexSessionId) await window.agent.resetSession(codexSessionId)
             popupContent = 'Codex thread has been reset.'
           } else if (utilityKind === 'auth-status') {
             const status = await window.app.codexGetAuthStatus(activeProject)
@@ -3259,14 +3259,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   interrupt: async () => {
     const { activeProject } = get()
     if (!activeProject) return
-    const codexSid = _getEffectiveSessionId(getProject(get(), activeProject))
+    const project = getProject(get(), activeProject)
+    const sid = _getEffectiveSessionId(project)
     set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))
-    const [claudeResult] = await Promise.allSettled([
-      window.agent.interrupt(activeProject),
-      codexSid ? window.app.codexInterrupt(codexSid) : Promise.resolve(false),
-    ])
-    const claudeFailed = claudeResult.status === 'rejected' || claudeResult.value === false
-    if (claudeFailed) {
+    let interrupted = false
+    try {
+      interrupted = sid ? await window.agent.interrupt(sid) : false
+    } catch {
+      interrupted = false
+    }
+    if (!interrupted) {
       set((s) => updateActivePerSession(s, () => ({
         status: 'idle',
         pendingPermissions: [],
@@ -3406,7 +3408,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     try {
       if (activeSession.sessionProvider === 'codex') {
         if (activeSession.status !== 'streaming' && currentSid) {
-          await window.app.codexReset(currentSid).catch(() => {})
+          await window.agent.resetSession(currentSid).catch(() => {})
         }
       } else if (
         isRemoteSession(get(), activeProject, currentSid) ||
@@ -3414,8 +3416,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         activeSession.awaitingAssistantReply
       ) {
         agentConfig = await _parkActiveSession(activeProject, project._activeSessionId, newSessionId)
-      } else {
-        agentConfig = await window.agent.resetSession(activeProject, newSessionId)
+      } else if (currentSid) {
+        agentConfig = (await window.agent.resetSession(currentSid, newSessionId)) ?? undefined
       }
 
       await useAppStore.getState().clearWorktree(activeProject)
@@ -3802,12 +3804,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     window.app.trace?.('permission.flow', 'user_click', { allow, activeSid, provider: session.sessionProvider }, requestId)
     let handled = false
     try {
-      if (session.sessionProvider === 'codex') {
-        const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-        if (sid) handled = await window.app.codexRespondToPermission(sid, requestId, allow, alwaysAllow, reason, decision)
-      } else {
-        handled = await window.agent.respondToPermission(activeProject, requestId, allow, alwaysAllow, reason, selectedSuggestions, activeSid)
-      }
+      const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
+      if (targetSid) handled = await window.agent.respondToPermission(targetSid, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision)
     } catch (err) {
       console.warn('[chat] respondToPermission failed:', err)
       return false
@@ -3853,13 +3851,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     const session = getActivePerSession(get(), activeProject)
     const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-    if (session.sessionProvider === 'codex') {
-      const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-      if (sid) void window.app.codexAnswerQuestion(sid, requestId, answers)
-    } else {
-      const respondedQuestion = session.pendingQuestion
-      void window.agent.answerQuestion(activeProject, requestId, answers, annotations, activeSid)
-    }
+    const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
+    if (targetSid) void window.agent.answerQuestion(targetSid, requestId, answers, annotations)
     const codexQaItem = session.sessionProvider === 'codex' && session.pendingQuestion
       ? _buildQuestionAnswerItem(session.pendingQuestion.questions, answers)
       : null
@@ -3895,15 +3888,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   dismissQuestion: (requestId) => {
     const { activeProject } = get()
     if (!activeProject) return
-    const session = getActivePerSession(get(), activeProject)
     const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-    if (session.sessionProvider === 'codex') {
-      const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-      if (sid) void window.app.codexDismissQuestion(sid, requestId)
-    } else {
-      const respondedQuestion = session.pendingQuestion
-      void window.agent.dismissQuestion(activeProject, requestId, activeSid)
-    }
+    const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
+    if (targetSid) void window.agent.dismissQuestion(targetSid, requestId)
     set((s) => {
       const perSessionUpdate = updateActivePerSession(s, () => ({ pendingQuestion: null }))
       const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
@@ -3923,7 +3910,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-    window.agent.respondToPlanApproval(activeProject, requestId, approved, feedback, activeSid)
+    const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
+    if (targetSid) window.agent.respondToPlanApproval(targetSid, requestId, approved, feedback)
     if (approved) {
       const nextMode: PermissionMode = postApprovalMode ?? 'default'
       void window.agent.setPermissionMode(activeProject, nextMode)

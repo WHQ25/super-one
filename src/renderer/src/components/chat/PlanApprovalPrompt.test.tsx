@@ -149,7 +149,7 @@ describe('PlanApprovalPrompt — integration', () => {
     fireEvent.keyDown(window, { key: 'Enter' })
 
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      '/proj', 'plan-req-1', true, undefined, expect.any(String),
+      expect.any(String), 'plan-req-1', true, undefined,
     )
     expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'acceptEdits')
 
@@ -166,7 +166,7 @@ describe('PlanApprovalPrompt — integration', () => {
     fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
 
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      '/proj', 'plan-req-1', true, undefined, expect.any(String),
+      expect.any(String), 'plan-req-1', true, undefined,
     )
     expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'acceptEdits')
     expect(activeSession().permissionMode).toBe('acceptEdits')
@@ -179,7 +179,7 @@ describe('PlanApprovalPrompt — integration', () => {
     fireEvent.keyDown(window, { key: 'Enter' })
 
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      '/proj', 'plan-req-1', true, undefined, expect.any(String),
+      expect.any(String), 'plan-req-1', true, undefined,
     )
     expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'default')
     expect(activeSession().permissionMode).toBe('default')
@@ -192,7 +192,7 @@ describe('PlanApprovalPrompt — integration', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
 
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      '/proj', 'plan-req-1', false, undefined, expect.any(String),
+      expect.any(String), 'plan-req-1', false, undefined,
     )
     expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
     const session = activeSession()

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useAppStore } from '@/stores/app'
+import { useChatStore } from '@/stores/chat'
 import type { RemoteCommand } from '../../../shared/agent-types'
 
 export function useRemoteControl(): void {
@@ -11,17 +12,24 @@ export function useRemoteControl(): void {
   }, [])
 }
 
+function getActiveSid(): string | null {
+  const projectPath = useAppStore.getState().currentFolder
+  if (!projectPath) return null
+  const project = useChatStore.getState().projectSessions[projectPath]
+  return project?._activeSessionId ?? null
+}
+
 function dispatchCommand(command: RemoteCommand): void {
   switch (command.type) {
     case 'interrupt': {
-      const projectPath = useAppStore.getState().currentFolder
-      if (projectPath) window.agent.interrupt(projectPath)
+      const sid = getActiveSid()
+      if (sid) window.agent.interrupt(sid)
       break
     }
     case 'respond_permission': {
-      const projectPath = useAppStore.getState().currentFolder
-      if (projectPath) {
-        window.agent.respondToPermission(projectPath, command.requestId, command.decision)
+      const sid = getActiveSid()
+      if (sid) {
+        window.agent.respondToPermission(sid, command.requestId, command.decision)
       }
       break
     }

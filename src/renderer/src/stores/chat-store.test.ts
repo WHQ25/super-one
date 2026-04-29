@@ -36,6 +36,7 @@ const mockWindowAgent = {
   activateSession: vi.fn().mockResolvedValue(undefined),
   getSessionId: vi.fn().mockResolvedValue(''),
   sendMessage: vi.fn().mockResolvedValue(undefined),
+  interrupt: vi.fn().mockResolvedValue(true),
   readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
   respondToPermission: vi.fn().mockResolvedValue(true),
   answerQuestion: vi.fn().mockResolvedValue(undefined),
@@ -58,11 +59,6 @@ const mockWindowApp = {
   codexCompact: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
   codexListModels: vi.fn().mockResolvedValue([]),
   codexSteer: vi.fn().mockResolvedValue(undefined),
-  codexRespondToPermission: vi.fn().mockResolvedValue(true),
-  codexAnswerQuestion: vi.fn().mockResolvedValue(true),
-  codexDismissQuestion: vi.fn().mockResolvedValue(true),
-  codexReset: vi.fn().mockResolvedValue(undefined),
-  codexInterrupt: vi.fn().mockResolvedValue(false),
   codexPlanApproval: vi.fn().mockResolvedValue(undefined),
   codexCollaborationModeChange: vi.fn().mockResolvedValue(undefined),
   getAppSettings: vi.fn().mockResolvedValue({
@@ -1124,11 +1120,13 @@ describe('resetSession', () => {
     })
 
     setupProject('/test')
+    const before = useChatStore.getState().projectSessions['/test']
+    const oldSid = before._activeSessionId
 
     await useChatStore.getState().resetSession()
 
     const after = useChatStore.getState().projectSessions['/test']
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith('/test', after._activeSessionId)
+    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid, after._activeSessionId)
   })
 
   it.skip('parks streaming DRAFT session instead of killing it', async () => {
@@ -2791,8 +2789,7 @@ describe('codex question routing', () => {
 
     useChatStore.getState().answerQuestion('q1', { q1: 'Answer' })
 
-    expect(mockWindowApp.codexAnswerQuestion).toHaveBeenCalledWith(codexSid, 'q1', { q1: 'Answer' })
-    expect(mockWindowAgent.answerQuestion).not.toHaveBeenCalled()
+    expect(mockWindowAgent.answerQuestion).toHaveBeenCalledWith(codexSid, 'q1', { q1: 'Answer' }, undefined)
     expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingQuestion).toBeNull()
   })
 
@@ -2823,8 +2820,7 @@ describe('codex question routing', () => {
 
     useChatStore.getState().dismissQuestion('q1')
 
-    expect(mockWindowApp.codexDismissQuestion).toHaveBeenCalledWith(codexSid, 'q1')
-    expect(mockWindowAgent.dismissQuestion).not.toHaveBeenCalled()
+    expect(mockWindowAgent.dismissQuestion).toHaveBeenCalledWith(codexSid, 'q1')
     expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingQuestion).toBeNull()
   })
 })
@@ -2868,6 +2864,96 @@ describe('message_interrupted clears pending states', () => {
     expect(session.pendingPlanApproval).toBeNull()
     expect(session.messages[0].status).toBe('interrupted')
     expect(after.hasPendingInteraction).toBe(false)
+  })
+})
+
+describe('interrupt', () => {
+  it('routes claude sessions through agent interrupt by sessionId', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'claude-a',
+          _sessions: {
+            'claude-a': {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              sessionProvider: 'claude',
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().interrupt()
+
+    expect(mockWindowAgent.interrupt).toHaveBeenCalledWith('claude-a')
+  })
+
+  it('routes codex sessions through agent interrupt by sessionId', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'codex-a',
+          _sessions: {
+            'codex-a': {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              sessionProvider: 'codex',
+            },
+          },
+        },
+      },
+    })
+
+    mockWindowAgent.interrupt.mockResolvedValueOnce(true)
+
+    await useChatStore.getState().interrupt()
+
+    expect(mockWindowAgent.interrupt).toHaveBeenCalledWith('codex-a')
+  })
+
+  it('clears pending state when interrupt is not accepted', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'codex-a',
+          _sessions: {
+            'codex-a': {
+              ...createDefaultPerSessionState(),
+              status: 'streaming' as const,
+              awaitingAssistantReply: true,
+              sessionProvider: 'codex',
+              pendingPermissions: [{ requestId: 'r1', toolName: 'Bash', description: 'ls' } as never],
+              pendingQuestion: { requestId: 'q1', questions: [] } as never,
+              pendingPlanApproval: { requestId: 'p1', planContent: '' } as never,
+            },
+          },
+        },
+      },
+    })
+
+    mockWindowAgent.interrupt.mockResolvedValueOnce(false)
+
+    await useChatStore.getState().interrupt()
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions['codex-a']
+    expect(session.status).toBe('idle')
+    expect(session.awaitingAssistantReply).toBe(false)
+    expect(session.pendingPermissions).toEqual([])
+    expect(session.pendingQuestion).toBeNull()
+    expect(session.pendingPlanApproval).toBeNull()
   })
 })
 
@@ -3308,7 +3394,7 @@ describe('codex run session isolation', () => {
 })
 
 describe('resetSession codex handling', () => {
-  it('calls codexReset for idle codex session instead of claude resetSession', async () => {
+  it('calls resetSession by sid for idle codex session', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     const codexSid = 'codex_local_reset'
@@ -3332,8 +3418,7 @@ describe('resetSession codex handling', () => {
 
     await useChatStore.getState().resetSession()
 
-    expect(mockWindowApp.codexReset).toHaveBeenCalledWith(codexSid)
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(codexSid)
     expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
 
     const after = useChatStore.getState().projectSessions['/test']
@@ -3364,8 +3449,7 @@ describe('resetSession codex handling', () => {
 
     await useChatStore.getState().resetSession()
 
-    expect(mockWindowApp.codexInterrupt).not.toHaveBeenCalled()
-    expect(mockWindowApp.codexReset).not.toHaveBeenCalled()
+    expect(mockWindowAgent.interrupt).not.toHaveBeenCalled()
     expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
     expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
 
@@ -4308,7 +4392,7 @@ describe('interaction response routing', () => {
     const result = await useChatStore.getState().respondToPermission('r1', true)
 
     expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
-      '/test', 'r1', true, undefined, undefined, undefined, 'a',
+      'a', 'r1', true, undefined, undefined, undefined, undefined,
     )
     expect(result).toBe(true)
   })
@@ -4364,8 +4448,7 @@ describe('interaction response routing', () => {
 
     const result = await useChatStore.getState().respondToPermission('r1', false, undefined, undefined, undefined, 'cancel')
 
-    expect(mockWindowApp.codexRespondToPermission).toHaveBeenCalledWith(codexSid, 'r1', false, undefined, undefined, 'cancel')
-    expect(mockWindowAgent.respondToPermission).not.toHaveBeenCalled()
+    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(codexSid, 'r1', false, undefined, undefined, undefined, 'cancel')
     expect(result).toBe(true)
     expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingPermissions).toHaveLength(0)
   })
@@ -4391,9 +4474,7 @@ describe('interaction response routing', () => {
 
     useChatStore.getState().answerQuestion('q1', { q: 'a' })
 
-    expect(mockWindowAgent.answerQuestion).toHaveBeenCalledWith(
-      '/test', 'q1', { q: 'a' }, undefined, 'a',
-    )
+    expect(mockWindowAgent.answerQuestion).toHaveBeenCalledWith('a', 'q1', { q: 'a' }, undefined)
   })
 
   it('dismissQuestion calls IPC with active sessionId', () => {
@@ -4417,9 +4498,7 @@ describe('interaction response routing', () => {
 
     useChatStore.getState().dismissQuestion('q1')
 
-    expect(mockWindowAgent.dismissQuestion).toHaveBeenCalledWith(
-      '/test', 'q1', 'a',
-    )
+    expect(mockWindowAgent.dismissQuestion).toHaveBeenCalledWith('a', 'q1')
   })
 
   it('respondToPlanApproval calls IPC with active sessionId', () => {
@@ -4443,9 +4522,7 @@ describe('interaction response routing', () => {
 
     useChatStore.getState().respondToPlanApproval('p1', true, 'ok')
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      '/test', 'p1', true, 'ok', 'a',
-    )
+    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith('a', 'p1', true, 'ok')
   })
 
   it('respondToPlanApproval(approved=true, postApprovalMode="acceptEdits") also tells main to switch mode', () => {

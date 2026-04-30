@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.24.0-alpha] - 2026-05-01
+
+### Added
+
+- **`/add-dir` slash command with inline path completion** — typing `/add-dir [project|session] [path]` in chat input now opens an in-input popup that walks you through scope picker → path picker, supporting relative, absolute, and `~` paths. Candidates are validated server-side (rejects not-found, not-directory, same-as-project, and same-repo worktrees) with a sonner toast on rejection, replacing the modal-only `DirManagerPanel` trigger.
+- **Additional directories follow Claude CLI scope conventions** — `additionalDirectories` is now read from all three Claude scopes (`~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json`) at both top-level and `permissions.*` paths, then merged for the SDK option. Writes converge to `permissions.additionalDirectories` in `.claude/settings.local.json` to match Claude CLI's default `add-dir` target. New session screen also shows a hint row above the chat input listing every scoped dir as a basename chip with tooltip.
+- **Codex chat slash menu shows user prompts + project skills** — `/` menu in Codex sessions now merges hardcoded utility commands with `~/.codex/prompts/*.md` (top-level only, per official docs) and per-project skills returned by `codexListSkills(cwd)`. Cached in a new `_codexSkills` map, refreshed on `switchProject` and `setPreferredProvider('codex')`.
+- **Mobile slash menu also receives Codex user prompts** — desktop's `get_system_info` Codex branch now appends cached `CodexResources.prompts` to the slash-command list it sends mobile, so the iOS/Android slash menu lists the same `~/.codex/prompts/*.md` entries the desktop sees. No mobile-side change needed (existing payload field already accepted).
+
+### Changed
+
+- **Per-harness resource architecture with lazy init** — global resource cache is split into per-harness `ClaudeResources` / `CodexResources` types, backed by a new SQLite table `harness_resource_cache` (replacing the flat `global_resource_cache`, with migration). A new `initializeHarness(harness)` action runs once per app session via a `harnessHandlers` dispatch table and is triggered on `continueToMain` (Claude) or `setPreferredProvider` (Codex). New `CONNECT_CODEX` IPC mirrors `CONNECT_CLAUDE`. Renderer reads now go through selector helpers (`selectClaudeModels` / `selectCodexModels` / ...) instead of direct field access. Fixes a Codex per-session model-sync regression along the way.
+
+### Fixed
+
+- **Denied / errored tool blocks hover with status color, not gray** — hover state was unconditionally applying `bg-muted/70`, washing out the red/amber tint on denied or errored tool rows. Hover class is now bound to status (`red-500/20` for denied, `amber-500/20` for errored), matching the badge swatches already shown in the same row.
+- **Insight blocks render even with heading-wrapped header or inline footer** — the `★ Title ───` parser is now tolerant of an optional markdown heading prefix (`## ★ Title ───`) and of footers fused with the final content line (`Last line ─────`). Both forms are common in real model output and were previously falling through as plain text. Fix applied identically to the main-process splitter and the renderer markdown splitter.
+
 ## [0.23.2-alpha] - 2026-04-30
 
 ### Added

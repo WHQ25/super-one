@@ -1255,6 +1255,51 @@ export class AgentService {
       }
     })
 
+    ipcMain.handle(AgentIpcChannels.VALIDATE_ADD_DIR, async (_event, projectPath: string, candidate: string) => {
+      const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
+      if (!existsSync(candidate)) return { ok: false, reason: 'not-found' as const }
+      try {
+        if (!statSync(candidate).isDirectory()) return { ok: false, reason: 'not-directory' as const }
+      } catch {
+        return { ok: false, reason: 'not-found' as const }
+      }
+      const candidateResolved = resolve(candidate)
+      const cwdResolved = resolve(cwd)
+      const projectResolved = resolve(projectPath)
+      if (candidateResolved === cwdResolved || candidateResolved === projectResolved) {
+        return { ok: false, reason: 'same-as-project' as const }
+      }
+      const projectGitRoot = getGitRoot(cwdResolved)
+      const candidateGitRoot = getGitRoot(candidateResolved)
+      if (projectGitRoot === candidateGitRoot && projectGitRoot !== cwdResolved && projectGitRoot !== candidateResolved) {
+        return { ok: false, reason: 'same-repo' as const }
+      }
+      return { ok: true as const }
+    })
+
+    ipcMain.handle(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR, async (_event, projectPath: string, rawInput: string) => {
+      const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
+      const expanded = rawInput.startsWith('~')
+        ? join(homedir(), rawInput.slice(1))
+        : rawInput
+      const target = resolve(cwd, expanded || '.')
+      if (!existsSync(target)) return { absolutePath: target, entries: [] }
+      try {
+        const stat = statSync(target)
+        if (!stat.isDirectory()) return { absolutePath: target, entries: [] }
+        const entries = readdirSync(target, { withFileTypes: true })
+        const result: Array<{ name: string; isDirectory: boolean }> = []
+        for (const entry of entries) {
+          if (EXCLUDED_DIRS.has(entry.name)) continue
+          result.push({ name: entry.name, isDirectory: entry.isDirectory() })
+        }
+        result.sort((a, b) => (a.isDirectory !== b.isDirectory ? (a.isDirectory ? -1 : 1) : a.name.localeCompare(b.name)))
+        return { absolutePath: target, entries: result }
+      } catch {
+        return { absolutePath: target, entries: [] }
+      }
+    })
+
     ipcMain.handle(AgentIpcChannels.FIND_LINE_NUMBER, async (_event, _projectPath: string, filePath: string, text: string) => {
       try {
         const content = readFileSync(filePath, 'utf-8')
@@ -1730,6 +1775,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.GET_CONTEXT_USAGE)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_RELOAD)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
+    ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR)
+    ipcMain.removeHandler(AgentIpcChannels.VALIDATE_ADD_DIR)
     ipcMain.removeHandler(AgentIpcChannels.FIND_LINE_NUMBER)
     ipcMain.removeHandler(AgentIpcChannels.SEARCH_FILES)
     ipcMain.removeHandler(AgentIpcChannels.SEARCH_MENTIONS)

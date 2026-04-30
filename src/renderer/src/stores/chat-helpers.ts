@@ -29,7 +29,7 @@ export function buildSlashCommands(
   }
   // Local-only commands (handled in renderer, not sent to agent)
   if (!seen.has('add-dir')) {
-    extra.push({ name: 'add-dir', description: 'Manage additional working directories', argumentHint: '', isSkill: false })
+    extra.push({ name: 'add-dir', description: 'Manage additional working directories', argumentHint: '[project|session] [dir]', isSkill: false })
   }
   return [...tagged, ...extra]
 }

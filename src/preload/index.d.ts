@@ -31,6 +31,8 @@ interface AgentAPI {
   getContextUsage(projectPath: string, sessionId?: string): Promise<ContextUsageInfo | null>
   reloadPlugins(projectPath: string): Promise<boolean>
   listDirectory(projectPath: string, relativePath: string): Promise<ListDirEntry[]>
+  listDirectoryForAddDir(projectPath: string, rawInput: string): Promise<{ absolutePath: string; entries: ListDirEntry[] }>
+  validateAddDir(projectPath: string, candidate: string): Promise<{ ok: true } | { ok: false; reason: 'not-found' | 'not-directory' | 'same-as-project' | 'same-repo' }>
   findLineNumber(projectPath: string, filePath: string, text: string): Promise<number | null>
   searchFiles(projectPath: string, query: string, additionalDirs?: string[]): Promise<FileSearchResult[]>
   searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string): Promise<MentionSearchItem[]>

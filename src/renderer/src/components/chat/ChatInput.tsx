@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { CODEX_REJECT_PLAN_PLACEHOLDER, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
@@ -25,7 +26,7 @@ import { AttachmentBar } from './AttachmentBar'
 import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
-import { DirManagerPanel } from './DirManagerPanel'
+import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { ReviewPanel } from './ReviewPanel'
 import { StopButton } from './StopButton'
 
@@ -51,9 +52,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const {
       setText, sendMessage, editQueuedMessage,
       interrupt, toggleOpen, addAttachment, removeAttachment, clearAttachments,
-      addMention, removeMention, dismissCommandPopup, setShowDirManager, setShowReviewPanel,
+      addMention, removeMention, dismissCommandPopup, setShowReviewPanel,
       toggleMiniAppContext, clearMiniAppContext,
       removeUserSelectionAt, clearUserSelections,
+      addDir, removeDir,
     } = useChatStore(useShallow((s) => ({
       setText: s.setDraftText,
       sendMessage: s.sendMessage,
@@ -66,14 +68,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       addMention: s.addMention,
       removeMention: s.removeMention,
       dismissCommandPopup: s.dismissSlashCommandOutput,
-      setShowDirManager: s.setShowDirManager,
       setShowReviewPanel: s.setShowReviewPanel,
       toggleMiniAppContext: s.toggleMiniAppContext,
       clearMiniAppContext: s.clearMiniAppContext,
       removeUserSelectionAt: s.removeUserSelectionAt,
       clearUserSelections: s.clearUserSelections,
+      addDir: s.addDir,
+      removeDir: s.removeDir,
     })))
-    const { text, status, attachments, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections } =
+    const { text, status, attachments, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, userAdditionalDirs, projectAdditionalDirs, additionalDirs } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
         status: s.status,
@@ -84,11 +87,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         queuedMessages: s.queuedMessages,
         miniAppContexts: s.miniAppContexts,
         userSelections: s.userSelections,
+        userAdditionalDirs: s.userAdditionalDirs,
+        projectAdditionalDirs: s.projectAdditionalDirs,
+        additionalDirs: s.additionalDirs,
       })))
     const {
       slashCommands, preferredProvider, sessionProvider, agents,
       selectedCodexCollaborationMode, codexPlanRejectHintActive, chatInputFocusNonce,
-      promptSuggestion, showDirManager, showReviewPanel,
+      promptSuggestion, showReviewPanel,
       activeSessionId,
     } = useActiveSession(useShallow((s) => ({
       slashCommands: s.slashCommands,
@@ -99,7 +105,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       codexPlanRejectHintActive: s.codexPlanRejectHintActive,
       chatInputFocusNonce: s.chatInputFocusNonce,
       promptSuggestion: s.promptSuggestion,
-      showDirManager: s.showDirManager,
       showReviewPanel: s.showReviewPanel,
       activeSessionId: s._activeSessionId,
     })))
@@ -120,6 +125,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [mentionIndex, setMentionIndex] = useState(0)
     const mentionRef = useRef<MentionPopupHandle>(null)
     const [hasPasteChips, setHasPasteChips] = useState(false)
+
+    const [addDirIndex, setAddDirIndex] = useState(0)
+    const addDirRef = useRef<AddDirPopupHandle>(null)
 
     const mentionInfoRef = useRef<{ atPos: number; query: string } | null>(null)
     const mentionActiveRef = useRef(mentionActive)
@@ -186,7 +194,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           .filter((cmd) => cmd.matched)
           .sort((a, b) => b.score - a.score)
       }
-      if (!text.startsWith('/') || text.includes(' ')) return []
+      if (!text.startsWith('/')) return []
+      if (/^\/add-dir(\s|$)/.test(text)) return []
+      if (text.includes(' ')) return []
       const query = text.slice(1).toLowerCase()
       return activeSlashCommands
         .filter((cmd) => !HIDDEN_COMMANDS.has(cmd.name))
@@ -206,16 +216,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
+    const replaceEditorTextPreservingTrailingSpace = useCallback((value: string) => {
+      const ed = editorRef.current
+      if (!ed) return
+      if (!value) {
+        ed.commands.clearContent()
+        return
+      }
+      ed.chain()
+        .focus()
+        .setContent({
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: value }] }],
+        })
+        .run()
+      ed.commands.focus('end')
+    }, [])
+
     const selectSlashCommand = useCallback(
       (name: string) => {
         if (name === 'add-dir') {
-          const ed = editorRef.current
-          if (ed) {
-            ed.chain().focus().setContent('').run()
-          }
-          setText('')
+          replaceEditorTextPreservingTrailingSpace('/add-dir ')
+          setText('/add-dir ')
           setSlashIndex(-1)
-          setShowDirManager(true)
           return
         }
         if (name === 'plan' && activeProviderForResources === 'codex') {
@@ -250,8 +273,73 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         setText(`/${name} `)
         setSlashIndex(-1)
       },
-      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowDirManager, setShowReviewPanel, setText]
+      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, setText, replaceEditorTextPreservingTrailingSpace]
     )
+
+    const addDirParse = useMemo(() => {
+      const m = text.match(/^\/add-dir(?:\s(.*))?$/s)
+      if (!m) return { active: false, argsText: '' }
+      return { active: true, argsText: m[1] ?? '' }
+    }, [text])
+    const addDirActive = addDirParse.active
+    const addDirArgsText = addDirParse.argsText
+
+    const handleAddDirScopeFill = useCallback((scope: 'project' | 'session') => {
+      const next = `/add-dir ${scope} `
+      replaceEditorTextPreservingTrailingSpace(next)
+      setText(next)
+      setAddDirIndex(0)
+    }, [setText, replaceEditorTextPreservingTrailingSpace])
+
+    const handleAddDirPathNavigate = useCallback((nextPathInput: string) => {
+      const m = text.match(/^\/add-dir\s(project|session)\s/)
+      if (!m) return
+      const next = `/add-dir ${m[1]} ${nextPathInput}`
+      replaceEditorTextPreservingTrailingSpace(next)
+      setText(next)
+      setAddDirIndex(0)
+    }, [text, setText, replaceEditorTextPreservingTrailingSpace])
+
+    const validateAndAddDir = useCallback(async (absolutePath: string, scope: 'project' | 'session'): Promise<boolean> => {
+      if (!activeProject) return false
+      const known = new Set([...userAdditionalDirs, ...projectAdditionalDirs, ...additionalDirs])
+      if (known.has(absolutePath)) {
+        toast.error(t('chat.addDir.errors.duplicate', { defaultValue: 'Directory is already added' }))
+        return false
+      }
+      const res = await window.agent.validateAddDir(activeProject, absolutePath)
+      if (!res.ok) {
+        const messageMap: Record<string, string> = {
+          'not-found': t('chat.addDir.errors.notFound', { defaultValue: 'Directory not found' }),
+          'not-directory': t('chat.addDir.errors.notDirectory', { defaultValue: 'Path is not a directory' }),
+          'same-as-project': t('chat.addDir.errors.sameAsProject', { defaultValue: 'Directory is the project itself' }),
+          'same-repo': t('chat.addDir.errors.sameRepo', { defaultValue: 'Directory belongs to the same git repository as the project' }),
+        }
+        toast.error(messageMap[res.reason] ?? res.reason)
+        return false
+      }
+      addDir(absolutePath, scope)
+      return true
+    }, [activeProject, addDir, additionalDirs, projectAdditionalDirs, userAdditionalDirs, t])
+
+    const handleAddDirCommit = useCallback(async (absolutePath: string, scope: 'project' | 'session') => {
+      const ok = await validateAndAddDir(absolutePath, scope)
+      if (!ok) return
+      const ed = editorRef.current
+      if (ed) ed.commands.clearContent()
+      setText('')
+      setAddDirIndex(0)
+    }, [validateAndAddDir, setText])
+
+    const handleAddDirPicker = useCallback(async (scope: 'project' | 'session') => {
+      const folder = await window.app.selectFolder()
+      if (!folder) return
+      await validateAndAddDir(folder, scope)
+    }, [validateAndAddDir])
+
+    const handleAddDirRemove = useCallback((path: string, scope: 'project' | 'session') => {
+      removeDir(path, scope)
+    }, [removeDir])
 
     const handleMentionSelect = useCallback(
       (value: string, action: 'navigate' | 'select') => {
@@ -342,8 +430,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           setShowReviewPanel(false)
           return true
         }
-        if (e.key === 'Escape' && showDirManager) {
-          setShowDirManager(false)
+        if (e.key === 'Escape' && addDirActive) {
+          const ed = editorRef.current
+          if (ed) ed.commands.clearContent()
+          setText('')
+          setAddDirIndex(0)
           return true
         }
         if (e.key === 'Escape' && commandPopup) {
@@ -355,6 +446,30 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           e.preventDefault()
           toggleOpen()
           return true
+        }
+
+        if (addDirActive) {
+          const count = addDirRef.current?.getItemCount() ?? 0
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setAddDirIndex((i) => (count > 0 ? (i + 1) % count : 0))
+            return true
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setAddDirIndex((i) => (count > 0 ? (i <= 0 ? count - 1 : i - 1) : 0))
+            return true
+          }
+          if (e.key === 'Tab') {
+            e.preventDefault()
+            addDirRef.current?.confirmTab()
+            return true
+          }
+          if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+            e.preventDefault()
+            addDirRef.current?.confirmEnter()
+            return true
+          }
         }
 
         if (mentionInfoRef.current && mentionActive) {
@@ -455,7 +570,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         return false
       },
-      [handleSend, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, showDirManager, setShowDirManager, showReviewPanel, setShowReviewPanel]
+      [handleSend, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, addDirActive, setText, showReviewPanel, setShowReviewPanel]
     )
 
     handleKeyDownRef.current = handleKeyDownCore
@@ -883,10 +998,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           </div>
         )}
 
-        {showDirManager && <DirManagerPanel isCoding={isCoding} />}
+        {addDirActive && (
+          <AddDirPopup
+            ref={addDirRef}
+            argsText={addDirArgsText}
+            selectedIndex={addDirIndex}
+            onSetSelectedIndex={setAddDirIndex}
+            onScopeFill={handleAddDirScopeFill}
+            onPathNavigate={handleAddDirPathNavigate}
+            onPathCommit={handleAddDirCommit}
+            onAddViaPicker={handleAddDirPicker}
+            onRemoveDir={handleAddDirRemove}
+            rounded={isCoding}
+          />
+        )}
         {showReviewPanel && <ReviewPanel isCoding={isCoding} />}
 
-        {mentionInfoRef.current && mentionActive && matchingCommands.length === 0 && (
+        {mentionInfoRef.current && mentionActive && matchingCommands.length === 0 && !addDirActive && (
           <MentionPopup
             ref={mentionRef}
             query={mentionInfoRef.current.query}

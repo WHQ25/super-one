@@ -87,6 +87,12 @@ const agentAPI = {
   listDirectory: (projectPath: string, relativePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.LIST_DIRECTORY, projectPath, relativePath),
 
+  listDirectoryForAddDir: (projectPath: string, rawInput: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR, projectPath, rawInput),
+
+  validateAddDir: (projectPath: string, candidate: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.VALIDATE_ADD_DIR, projectPath, candidate),
+
   findLineNumber: (projectPath: string, filePath: string, text: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FIND_LINE_NUMBER, projectPath, filePath, text),
 

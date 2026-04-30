@@ -30,6 +30,7 @@ vi.mock('./project-additional-dirs', () => ({
 vi.mock('./fuzzy-file-search', () => ({
   searchFiles: vi.fn(),
   searchMentions: vi.fn(),
+  EXCLUDED_DIRS: new Set<string>(),
 }))
 
 vi.mock('../db-sessions', () => ({
@@ -161,6 +162,11 @@ vi.mock('fs/promises', () => ({
   readdir: (...args: unknown[]) => mockReaddir(...args),
   mkdir: (...args: unknown[]) => mockMkdir(...args),
 }))
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>()
+  return { ...actual, execFileSync: vi.fn(actual.execFileSync) }
+})
 
 vi.mock('../remote-control-service', () => ({}))
 
@@ -1784,5 +1790,132 @@ describe('AgentService.handleRemoteCommand', () => {
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
     expect(payload.defaults).toEqual({ model: 'gpt-5-codex', reasoningEffort: 'high' })
     expect(payload.permissionPresets).toEqual(['default', 'full-access'])
+  })
+})
+
+const fsForAddDirTests = await import('fs')
+const osForAddDirTests = await import('os')
+const pathForAddDirTests = await import('path')
+const childProcessForAddDirTests = await import('child_process')
+
+describe('add-dir IPC handlers', () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = fsForAddDirTests
+  const { tmpdir, homedir } = osForAddDirTests
+  const { join, basename } = pathForAddDirTests
+  const childProcess = childProcessForAddDirTests
+
+  let tmpRoot: string
+
+  beforeEach(() => {
+    tmpRoot = mkdtempSync(join(tmpdir(), 'addir-test-'))
+    vi.mocked(childProcess.execFileSync).mockReset()
+    vi.mocked(childProcess.execFileSync).mockImplementation(((..._args: unknown[]) => {
+      throw new Error('not a git repo')
+    }) as unknown as typeof childProcess.execFileSync)
+  })
+
+  afterEach(() => {
+    try { rmSync(tmpRoot, { recursive: true, force: true }) } catch { /* noop */ }
+  })
+
+  describe('validate-add-dir', () => {
+    it('rejects a candidate that does not exist on disk with not-found', async () => {
+      const service = new AgentService()
+      service.setup()
+      const handler = getRegisteredIpcHandler(AgentIpcChannels.VALIDATE_ADD_DIR)!
+      const res = await handler({}, '/some/project', join(tmpRoot, 'nonexistent-xyz'))
+      expect(res).toEqual({ ok: false, reason: 'not-found' })
+    })
+
+    it('rejects a candidate that points at a regular file with not-directory', async () => {
+      const file = join(tmpRoot, 'a-file.txt')
+      writeFileSync(file, '')
+      const service = new AgentService()
+      service.setup()
+      const handler = getRegisteredIpcHandler(AgentIpcChannels.VALIDATE_ADD_DIR)!
+      const res = await handler({}, tmpRoot, file)
+      expect(res).toEqual({ ok: false, reason: 'not-directory' })
+    })
+
+    it('rejects when candidate equals the project path itself with same-as-project', async () => {
+      const proj = join(tmpRoot, 'proj')
+      mkdirSync(proj)
+      const service = new AgentService()
+      service.setup()
+      const handler = getRegisteredIpcHandler(AgentIpcChannels.VALIDATE_ADD_DIR)!
+      const res = await handler({}, proj, proj)
+      expect(res).toEqual({ ok: false, reason: 'same-as-project' })
+    })
+
+    it('rejects worktree of the same git repository as the project with same-repo', async () => {
+      const proj = join(tmpRoot, 'main-repo'); mkdirSync(proj)
+      const wt = join(tmpRoot, 'worktree'); mkdirSync(wt)
+      const sharedGitDir = join(tmpRoot, '.git-shared')
+      vi.mocked(childProcess.execFileSync).mockImplementation(((..._args: unknown[]) => sharedGitDir) as unknown as typeof childProcess.execFileSync)
+
+      const service = new AgentService()
+      service.setup()
+      const handler = getRegisteredIpcHandler(AgentIpcChannels.VALIDATE_ADD_DIR)!
+      const res = await handler({}, proj, wt)
+      expect(res).toEqual({ ok: false, reason: 'same-repo' })
+    })
+
+    it('accepts an unrelated valid directory with ok', async () => {
+      const proj = join(tmpRoot, 'proj'); mkdirSync(proj)
+      const other = join(tmpRoot, 'other'); mkdirSync(other)
+      vi.mocked(childProcess.execFileSync).mockImplementation(((_cmd: string, _args: string[], opts: { cwd?: string }) => {
+        return opts.cwd === proj ? join(tmpRoot, '.git-proj') : join(tmpRoot, '.git-other')
+      }) as unknown as typeof childProcess.execFileSync)
+
+      const service = new AgentService()
+      service.setup()
+      const handler = getRegisteredIpcHandler(AgentIpcChannels.VALIDATE_ADD_DIR)!
+      const res = await handler({}, proj, other)
+      expect(res).toEqual({ ok: true })
+    })
+  })
+
+  describe('list-directory-for-add-dir', () => {
+    it('lists entries of the absolute path directly without cwd sandboxing', async () => {
+      const target = join(tmpRoot, 'outside')
+      mkdirSync(target)
+      mkdirSync(join(target, 'a-dir'))
+      writeFileSync(join(target, 'b-file.txt'), '')
+
+      const service = new AgentService()
+      service.setup()
+      const handler = getRegisteredIpcHandler(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR)!
+      const res = await handler({}, '/some/unrelated/project', target) as { absolutePath: string; entries: Array<{ name: string; isDirectory: boolean }> }
+
+      expect(res.absolutePath).toBe(target)
+      expect(res.entries.find((e) => e.name === 'a-dir')?.isDirectory).toBe(true)
+      expect(res.entries.find((e) => e.name === 'b-file.txt')?.isDirectory).toBe(false)
+    })
+
+    it('expands ~ to the user home directory', async () => {
+      const service = new AgentService()
+      service.setup()
+      const handler = getRegisteredIpcHandler(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR)!
+      const res = await handler({}, '/some/project', '~') as { absolutePath: string }
+      expect(res.absolutePath).toBe(homedir())
+    })
+
+    it('returns empty entries when the resolved path does not exist', async () => {
+      const service = new AgentService()
+      service.setup()
+      const handler = getRegisteredIpcHandler(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR)!
+      const res = await handler({}, tmpRoot, 'definitely-not-here-xyz') as { entries: unknown[] }
+      expect(res.entries).toEqual([])
+    })
+
+    it('returns empty entries when the path resolves to a file', async () => {
+      const file = join(tmpRoot, 'a-file.txt')
+      writeFileSync(file, '')
+      const service = new AgentService()
+      service.setup()
+      const handler = getRegisteredIpcHandler(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR)!
+      const res = await handler({}, tmpRoot, basename(file)) as { entries: unknown[] }
+      expect(res.entries).toEqual([])
+    })
   })
 })

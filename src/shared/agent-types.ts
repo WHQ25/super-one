@@ -1274,6 +1274,8 @@ export const AgentIpcChannels = {
   MCP_SERVER_STATUS: 'agent:mcp-server-status',
   GET_CONTEXT_USAGE: 'agent:get-context-usage',
   LIST_DIRECTORY: 'agent:list-directory',
+  LIST_DIRECTORY_FOR_ADD_DIR: 'agent:list-directory-for-add-dir',
+  VALIDATE_ADD_DIR: 'agent:validate-add-dir',
   FIND_LINE_NUMBER: 'agent:find-line-number',
   SEARCH_FILES: 'agent:search-files',
   SEARCH_MENTIONS: 'agent:search-mentions',

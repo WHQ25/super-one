@@ -453,7 +453,8 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
       className={cn(
         'tool-node my-0.5 rounded transition-colors',
         isDenied ? 'denied bg-red-500/10' : isError ? 'errored bg-amber-500/10' : 'bg-muted/50',
-        expandable && 'cursor-pointer hover:bg-muted/70'
+        expandable && 'cursor-pointer',
+        expandable && (isDenied ? 'hover:bg-red-500/20' : isError ? 'hover:bg-amber-500/20' : 'hover:bg-muted/70')
       )}
     >
       <div
@@ -735,8 +736,8 @@ function BashTerminalView({
 
   return (
     <div className={cn(
-      'tool-node my-0.5 rounded transition-colors cursor-pointer hover:bg-muted/70',
-      isDenied ? 'denied bg-red-500/10' : 'bg-muted/50',
+      'tool-node my-0.5 rounded transition-colors cursor-pointer',
+      isDenied ? 'denied bg-red-500/10 hover:bg-red-500/20' : 'bg-muted/50 hover:bg-muted/70',
       expanded && 'overflow-hidden',
     )}>
       <div

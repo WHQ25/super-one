@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AgentInfo, ApiProvider, CreateProviderRequest, MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo, UpdateProviderRequest } from '../../../shared/agent-types'
 import { useAppStore } from './app'
+import { useChatStore } from './chat'
 
 /** Get the active project path. Returns empty string if none active. */
 function getProjectPath(): string {
@@ -21,12 +22,15 @@ interface SettingsState {
   skillDetail: SkillDetail | null
   skillFileContent: string | null
   skillFilePath: string | null
+  disabledSkills: string[]
   fetchSkills: () => Promise<void>
   readSkill: (name: string) => Promise<void>
   readSkillFile: (skillName: string, relativePath: string) => Promise<void>
   clearSkillDetail: () => void
   installSkill: (sourcePath: string) => Promise<void>
   deleteSkill: (name: string, scope: ResourceScope) => Promise<void>
+  loadDisabledSkills: () => Promise<void>
+  toggleSkill: (name: string, disabled: boolean) => Promise<void>
 
   // Codex Skills (reuses skills/skillDetail/skillFileContent/skillFilePath state)
   fetchCodexSkills: () => Promise<void>
@@ -101,6 +105,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   skillDetail: null,
   skillFileContent: null,
   skillFilePath: null,
+  disabledSkills: [],
   mcpConfigs: [],
   mcpStatus: [],
   mcpMeta: {},
@@ -153,6 +158,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } else {
       await get().fetchSkills()
     }
+  },
+
+  loadDisabledSkills: async () => {
+    const settings = await window.app.getAppSettings()
+    const list = settings.agentPreference.claude.disabledSkills ?? []
+    set({ disabledSkills: list })
+    useChatStore.getState().setDisabledSkills(list)
+  },
+
+  toggleSkill: async (name, disabled) => {
+    set((state) => ({
+      disabledSkills: disabled
+        ? Array.from(new Set([...state.disabledSkills, name]))
+        : state.disabledSkills.filter((n) => n !== name),
+    }))
+    useChatStore.getState().setDisabledSkills(get().disabledSkills)
+    const next = await window.app.toggleSkill(name, disabled)
+    set({ disabledSkills: next })
+    useChatStore.getState().setDisabledSkills(next)
   },
 
   // Codex Skills (reuse same state fields)

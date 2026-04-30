@@ -417,6 +417,8 @@ export type Messages = {
       deleteTooltip: string
       previewToggle: string
       sourceToggle: string
+      hideFromAgent: string
+      showToAgent: string
     }
     providers: {
       title: string
@@ -1161,6 +1163,8 @@ export const en: Messages = {
       deleteTooltip: 'Delete skill',
       previewToggle: 'Preview',
       sourceToggle: 'Source',
+      hideFromAgent: 'Hide from agent',
+      showToAgent: 'Show to agent',
     },
     providers: {
       title: 'Providers',

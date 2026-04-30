@@ -71,6 +71,39 @@ describe('buildSlashCommands', () => {
     expect(contextEntries).toHaveLength(1)
     expect(contextEntries[0].description).toBe('')
   })
+
+  it('drops skills present in disabledSkills set from tagged commands', () => {
+    const global = [cmd('release'), cmd('commit')]
+    const userSkills: SlashCommandInfo[] = [
+      { name: 'release', description: 'release skill', argumentHint: '', isSkill: true },
+    ]
+    const result = buildSlashCommands(global, userSkills, [], [], [], new Set(['release']))
+
+    expect(result.find((c) => c.name === 'release')).toBeUndefined()
+    expect(result.find((c) => c.name === 'commit')).toBeTruthy()
+  })
+
+  it('drops skills present in disabledSkills set from extra commands', () => {
+    const global: SlashCommandInfo[] = []
+    const projectSkills: SlashCommandInfo[] = [
+      { name: 'release', description: 'r', argumentHint: '', isSkill: true },
+    ]
+    const result = buildSlashCommands(global, [], [], projectSkills, [], new Set(['release']))
+
+    expect(result.find((c) => c.name === 'release')).toBeUndefined()
+  })
+
+  it('keeps non-skill commands of the same name when disabled set has the name', () => {
+    const global: SlashCommandInfo[] = []
+    const userCommands: SlashCommandInfo[] = [
+      { name: 'release', description: 'plain command', argumentHint: '', isSkill: false },
+    ]
+    const result = buildSlashCommands(global, [], userCommands, [], [], new Set(['release']))
+
+    const release = result.find((c) => c.name === 'release')
+    expect(release).toBeTruthy()
+    expect(release?.isSkill).toBe(false)
+  })
 })
 
 describe('getCommandOutputMode', () => {

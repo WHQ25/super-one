@@ -7,22 +7,25 @@ export function buildSlashCommands(
   userCommands: SlashCommandInfo[],
   projectSkills: SlashCommandInfo[],
   projectCommands: SlashCommandInfo[],
+  disabledSkills: ReadonlySet<string> = new Set(),
 ): SlashCommandInfo[] {
   const allSkills = [...userSkills, ...projectSkills]
   const skillMap = new Map(allSkills.map((sk) => [sk.name, sk]))
-  const tagged = globalSlashCommands.map((c) => {
+  const tagged = globalSlashCommands.flatMap((c): SlashCommandInfo[] => {
     const skill = skillMap.get(c.name)
-    return skill
-      ? { ...c, isSkill: true, argumentHint: c.argumentHint || skill.argumentHint }
-      : c
+    if (skill) {
+      if (disabledSkills.has(c.name)) return []
+      return [{ ...c, isSkill: true, argumentHint: c.argumentHint || skill.argumentHint }]
+    }
+    return [c]
   })
   const seen = new Set(tagged.map((c) => c.name))
   const extra: SlashCommandInfo[] = []
   for (const c of [...userSkills, ...userCommands, ...projectSkills, ...projectCommands]) {
-    if (!seen.has(c.name)) {
-      seen.add(c.name)
-      extra.push(c)
-    }
+    if (seen.has(c.name)) continue
+    if (c.isSkill && disabledSkills.has(c.name)) continue
+    seen.add(c.name)
+    extra.push(c)
   }
   // Local-only commands (handled in renderer, not sent to agent)
   if (!seen.has('add-dir')) {

@@ -4,6 +4,7 @@ import { motion, LayoutGroup } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
@@ -127,8 +128,9 @@ function isMarkdown(filePath: string): boolean {
 
 function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: string; readOnly?: boolean }) {
   const { t } = useTranslation()
-  const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail, deleteSkill } = useSettingsStore()
+  const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail, deleteSkill, disabledSkills, toggleSkill } = useSettingsStore()
   const settingsProvider = useAppStore((s) => s.settingsProvider)
+  const isCodex = settingsProvider === 'codex'
   const isExpanded = skillDetail?.name === skill.name
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mdRawView, setMdRawView] = useState(false)
@@ -136,6 +138,8 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
   const [deleting, setDeleting] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const canDelete = !readOnly && !skill.name.includes(':')
+  const isHidden = !isCodex && disabledSkills.includes(skill.name)
+  const canToggle = !isCodex && !skill.name.includes(':')
 
   const doReadSkill = settingsProvider === 'codex' ? readCodexSkill : readSkill
   const doReadSkillFile = settingsProvider === 'codex' ? readCodexSkillFile : readSkillFile
@@ -187,7 +191,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
       layoutId={layoutId}
       transition={{ layout: layoutTransition }}
       style={{ borderRadius: 8 }}
-      className="flex flex-col border border-border bg-card"
+      className={`flex flex-col border border-border bg-card transition-opacity ${isHidden ? 'opacity-50' : ''}`}
     >
       <div
         role="button"
@@ -197,17 +201,27 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
         <div className="flex items-center gap-2">
           <Puzzle className="size-4 shrink-0 text-muted-foreground" />
           <span className="text-sm font-medium">{skill.displayName}</span>
-          {canDelete && isExpanded && (
-            <button
-              type="button"
-              onClick={handleDeleteClick}
-              disabled={deleting}
-              className="ml-auto rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-              title={deleting ? t('resources.skills.deleting') : t('resources.skills.deleteTooltip')}
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-          )}
+          <div className="ml-auto flex items-center gap-2">
+            {canToggle && (
+              <Switch
+                checked={!isHidden}
+                onClick={(e) => e.stopPropagation()}
+                onCheckedChange={(checked) => { void toggleSkill(skill.name, !checked) }}
+                title={isHidden ? t('resources.skills.showToAgent') : t('resources.skills.hideFromAgent')}
+              />
+            )}
+            {canDelete && isExpanded && (
+              <button
+                type="button"
+                onClick={handleDeleteClick}
+                disabled={deleting}
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+                title={deleting ? t('resources.skills.deleting') : t('resources.skills.deleteTooltip')}
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            )}
+          </div>
         </div>
         {skill.description && (
           <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{skill.description}</p>

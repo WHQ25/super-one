@@ -319,6 +319,7 @@ interface ChatStore {
   userCommands: SlashCommandInfo[]
   userAgents: AgentInfo[]
   availableOutputStyles: string[]
+  disabledSkills: string[]
 
   // Global resource setter
   setGlobalResources: (
@@ -331,6 +332,7 @@ interface ChatStore {
     codexModels?: ModelOption[],
     availableOutputStyles?: string[],
   ) => void
+  setDisabledSkills: (list: string[]) => void
 
   // Event handling
   handleAgentEvent: (event: AgentEvent) => void
@@ -2321,10 +2323,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   userCommands: [],
   userAgents: [],
   availableOutputStyles: [],
+  disabledSkills: [],
 
   setGlobalResources: (models, account, slashCommands, userSkills, userCommands, userAgents, codexModels, availableOutputStyles) => {
     set((s) => {
       const effectiveCodexModels = codexModels ?? s.cachedCodexModels
+      const disabledSet = new Set(s.disabledSkills)
       const updates: Partial<ChatStore> = {
         availableModels: models,
         cachedCodexModels: effectiveCodexModels,
@@ -2343,7 +2347,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const patched = { ...project }
 
         if (patched._activeSessionId) {
-          patched.slashCommands = buildSlashCommands(slashCommands, userSkills, userCommands, patched._projectSkills, patched._projectCommands)
+          patched.slashCommands = buildSlashCommands(slashCommands, userSkills, userCommands, patched._projectSkills, patched._projectCommands, disabledSet)
           projectChanged = true
         }
 
@@ -2388,6 +2392,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       if (changed) updates.projectSessions = projects
       return updates
+    })
+  },
+
+  setDisabledSkills: (list: string[]) => {
+    set((s) => {
+      const disabledSet = new Set(list)
+      const projects = { ...s.projectSessions }
+      let changed = false
+      for (const [path, project] of Object.entries(projects)) {
+        if (!project._activeSessionId) continue
+        projects[path] = {
+          ...project,
+          slashCommands: buildSlashCommands(
+            s.globalSlashCommands, s.userSkills, s.userCommands,
+            project._projectSkills, project._projectCommands,
+            disabledSet,
+          ),
+        }
+        changed = true
+      }
+      return changed
+        ? { disabledSkills: list, projectSessions: projects }
+        : { disabledSkills: list }
     })
   },
 
@@ -2623,6 +2650,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         updatedProject.slashCommands = buildSlashCommands(
           s.globalSlashCommands, s.userSkills, s.userCommands,
           event.skills, event.projectCommands,
+          new Set(s.disabledSkills),
         )
         updatedProject.agents = [...s.userAgents, ...event.projectAgents]
 

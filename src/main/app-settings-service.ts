@@ -20,6 +20,7 @@ const defaults: AppSettings = {
       defaultSandboxMode: '',
       brandHue: null,
       tokenOverrides: {},
+      disabledSkills: [],
     },
     codex: {
       defaultModel: '',
@@ -80,6 +81,9 @@ function readClaudePreference(data: Record<string, unknown>): ClaudePref {
       : defaults.agentPreference.claude.defaultSandboxMode,
     brandHue: readBrandHue(claudePreference?.brandHue),
     tokenOverrides: sanitizeOverrides(claudePreference?.tokenOverrides),
+    disabledSkills: Array.isArray(claudePreference?.disabledSkills)
+      ? claudePreference.disabledSkills.filter((x): x is string => typeof x === 'string')
+      : defaults.agentPreference.claude.disabledSkills,
   }
 }
 

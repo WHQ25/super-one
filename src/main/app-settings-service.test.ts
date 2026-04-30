@@ -36,6 +36,7 @@ describe('app-settings-service', () => {
     defaultSandboxMode: '',
     brandHue: null,
     tokenOverrides: {},
+    disabledSkills: [],
   }
   const defaultCodex = {
     defaultModel: '',
@@ -85,6 +86,7 @@ describe('app-settings-service', () => {
             defaultSandboxMode: 'off',
             brandHue: null,
             tokenOverrides: {},
+            disabledSkills: [],
           },
           codex: {
             defaultModel: 'gpt-5.4',
@@ -210,6 +212,25 @@ describe('app-settings-service', () => {
       const result = saveAppSettings({})
       expect(result).toEqual(defaultSettings)
       expect(mocks.writeFileSync).toHaveBeenCalledOnce()
+    })
+
+    it('persists disabledSkills round-trip', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+
+      saveAppSettings({ agentPreference: { claude: { disabledSkills: ['release', 'loop'] } } })
+      const written = mocks.writeFileSync.mock.calls[0][1] as string
+      mocks.readFileSync.mockReturnValue(written)
+
+      const reloaded = readAppSettings()
+      expect(reloaded.agentPreference.claude.disabledSkills).toEqual(['release', 'loop'])
+    })
+
+    it('rejects non-string entries in disabledSkills on read', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        agentPreference: { claude: { disabledSkills: ['release', 42, null, 'loop'] } },
+      }))
+      const reloaded = readAppSettings()
+      expect(reloaded.agentPreference.claude.disabledSkills).toEqual(['release', 'loop'])
     })
   })
 })

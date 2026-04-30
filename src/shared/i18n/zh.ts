@@ -431,6 +431,8 @@ export const zh: Messages = {
       deleteTooltip: '删除技能',
       previewToggle: '预览',
       sourceToggle: '源代码',
+      hideFromAgent: '对代理隐藏',
+      showToAgent: '对代理显示',
     },
     providers: {
       title: '服务商',

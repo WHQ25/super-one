@@ -89,6 +89,7 @@ interface AppAPI {
   readSkillFile(projectPath: string, skillName: string, relativePath: string): Promise<string | null>
   installSkill(sourcePath: string): Promise<SkillInfo>
   deleteSkill(projectPath: string, name: string, scope: ResourceScope): Promise<void>
+  toggleSkill(name: string, disabled: boolean): Promise<string[]>
 
   // Codex Skills
   codexListSkills(projectPath: string): Promise<SkillInfo[]>

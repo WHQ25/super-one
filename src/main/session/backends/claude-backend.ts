@@ -26,6 +26,8 @@ import type {
 import log from '../../logger'
 import { trace } from '../../agent/event-trace'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import { readAppSettings } from '../../app-settings-service'
+import { listSkills } from '../../skills-service'
 
 interface ClaudeConfig {
   apiKey?: string
@@ -88,6 +90,12 @@ export class ClaudeBackend implements SessionBackend {
     if (config.apiKey) env.ANTHROPIC_API_KEY = config.apiKey
     if (config.baseUrl) env.ANTHROPIC_BASE_URL = config.baseUrl
     const { canUseTool, trackPlanFile } = this.ensurePermissionHandles()
+    const disabled = readAppSettings().agentPreference.claude.disabledSkills
+    let enabledSkills: string[] | undefined
+    if (disabled.length > 0) {
+      const all = listSkills(opts.cwd).map((s) => s.name)
+      enabledSkills = all.filter((n) => !disabled.includes(n))
+    }
     return {
       cwd: opts.cwd,
       model: opts.model ?? config.model,
@@ -100,6 +108,7 @@ export class ClaudeBackend implements SessionBackend {
       abortController: opts.abortController,
       additionalDirectories: opts.additionalDirectories,
       env: Object.keys(env).length > 0 ? env : undefined,
+      enabledSkills,
     }
   }
 

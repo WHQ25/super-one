@@ -39,7 +39,7 @@ import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from 
 import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
 import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, listCodexSkills, readCodexSkillContent, readCodexSkillFile, deleteCodexSkill } from '../skills-service'
-import { readAppSettings } from '../app-settings-service'
+import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
@@ -1359,6 +1359,15 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SKILLS_DELETE, (_event, projectPath: string, name: string, scope: ResourceScope) => {
       deleteSkill(name, scope, projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SKILLS_TOGGLE, (_event, name: string, disabled: boolean): string[] => {
+      const current = readAppSettings().agentPreference.claude.disabledSkills
+      const next = disabled
+        ? Array.from(new Set([...current, name]))
+        : current.filter((n) => n !== name)
+      saveAppSettings({ agentPreference: { claude: { disabledSkills: next } } })
+      return next
     })
 
     // --- Codex Skills (read-only) ---

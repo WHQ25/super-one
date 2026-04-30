@@ -342,6 +342,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_INSTALL, sourcePath),
   deleteSkill: (projectPath: string, name: string, scope: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_DELETE, projectPath, name, scope),
+  toggleSkill: (name: string, disabled: boolean): Promise<string[]> =>
+    ipcRenderer.invoke(AgentIpcChannels.SKILLS_TOGGLE, name, disabled),
 
   // Codex Skills
   codexListSkills: (projectPath: string) =>

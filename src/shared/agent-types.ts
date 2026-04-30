@@ -1284,6 +1284,7 @@ export const AgentIpcChannels = {
   SKILLS_READ_FILE: 'skills:read-file',
   SKILLS_INSTALL: 'skills:install',
   SKILLS_DELETE: 'skills:delete',
+  SKILLS_TOGGLE: 'skills:toggle',
 
   // Codex skills
   CODEX_SKILLS_LIST: 'codex:skills-list',
@@ -1572,6 +1573,7 @@ export interface AppSettings {
       defaultSandboxMode: SandboxMode | ''
       brandHue: number | null
       tokenOverrides: TokenOverrides
+      disabledSkills: string[]
     }
     codex: {
       defaultModel: string

@@ -28,6 +28,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useActiveSession } from '@/stores/chat'
+import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 import { initAnalytics } from '@/lib/analytics'
@@ -57,6 +58,9 @@ function App(): React.JSX.Element {
   useEffect(() => {
     useAppStore.getState().loadRemoteConfig()
     useAppStore.getState().loadBrandHues()
+    useSettingsStore.getState().loadDisabledSkills().catch((err) =>
+      console.error('[skills] failed to load disabledSkills', err)
+    )
     window.app.getAppSettings()
       .then((s) => { if (s.analyticsEnabled) initAnalytics() })
       .catch((err) => console.error('[analytics] failed to load app settings', err))

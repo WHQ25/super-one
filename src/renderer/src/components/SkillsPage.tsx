@@ -139,7 +139,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const canDelete = !readOnly && !skill.name.includes(':')
   const isHidden = !isCodex && disabledSkills.includes(skill.name)
-  const canToggle = !isCodex && !skill.name.includes(':')
+  const canToggle = !isCodex
 
   const doReadSkill = settingsProvider === 'codex' ? readCodexSkill : readSkill
   const doReadSkillFile = settingsProvider === 'codex' ? readCodexSkillFile : readSkillFile

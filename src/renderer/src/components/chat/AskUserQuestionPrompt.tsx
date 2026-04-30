@@ -81,16 +81,34 @@ function OptionButtons({
             onClick={() => onSelect(q, opt.label)}
             className={`cursor-pointer rounded px-2 py-1 text-xs text-left whitespace-normal transition @[420px]:py-1.5 ${
               selected
-                ? 'bg-blue-600 text-white'
+                ? 'bg-primary text-primary-foreground dark:bg-blue-600 dark:text-white'
                 : 'bg-muted text-foreground hover:bg-accent'
             }`}
-            title={opt.description}
           >
             <Kbd variant="square" className="mr-1.5">{i + 1}</Kbd>
             {opt.label}
           </button>
         )
       })}
+    </div>
+  )
+}
+
+function OptionDescription({
+  q,
+  selections,
+}: {
+  q: UserQuestion
+  selections: Record<string, string>
+}) {
+  const sel = selections[questionKey(q)]
+  if (!sel) return null
+  const label = q.multiSelect ? sel.split(', ').pop() : sel
+  const desc = q.options.find((o) => o.label === label)?.description
+  if (!desc) return null
+  return (
+    <div className="mt-2 border-l-2 border-primary bg-primary/10 px-2.5 py-1.5 text-xs leading-snug text-primary dark:border-blue-500 dark:bg-blue-500/15 dark:text-blue-400">
+      {desc}
     </div>
   )
 }
@@ -174,7 +192,7 @@ function PreviewQuestionPanel({
                 onChange={(e) => onNotes(q, e.target.value)}
                 onFocus={onNoteFocus}
                 onBlur={onNoteBlur}
-                className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-blue-500"
               />
             </div>
           )}
@@ -216,10 +234,9 @@ function SimpleQuestionPanel({
               onClick={() => onSelect(q, opt.label)}
               className={`cursor-pointer rounded px-2 py-1 text-xs text-left whitespace-normal transition ${
                 selected
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground dark:bg-blue-600 dark:text-white'
                   : 'bg-muted text-foreground hover:bg-accent'
               }`}
-              title={opt.description}
             >
               <Kbd variant="square" className="mr-1.5">{i + 1}</Kbd>
               {opt.label}
@@ -237,9 +254,10 @@ function SimpleQuestionPanel({
           placeholder={t('chat.askUser.otherOption')}
           value={otherTexts[key] ?? ''}
           onChange={(e) => onOther(q, e.target.value)}
-          className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-blue-500"
         />
       </div>
+      <OptionDescription q={q} selections={selections} />
     </div>
   )
 }
@@ -456,7 +474,7 @@ export function AskUserQuestionPrompt() {
   )
 
   return (
-    <div className="@container mx-3 mb-2 rounded-lg border border-blue-600/40 bg-muted/60 p-3">
+    <div className="@container mx-3 mb-2 rounded-lg border border-primary/40 bg-muted/60 p-3 dark:border-blue-600/40">
       {!singleQuestion && (
         <div className="mb-3 flex gap-1 border-b border-border/50 pb-2">
           {questions.map((q, i) => (
@@ -465,7 +483,7 @@ export function AskUserQuestionPrompt() {
               onClick={() => setActiveTab(i)}
               className={`relative cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition ${
                 activeTab === i
-                  ? 'bg-blue-600/15 text-blue-500'
+                  ? 'bg-primary/15 text-primary dark:bg-blue-600/15 dark:text-blue-500'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -482,11 +500,11 @@ export function AskUserQuestionPrompt() {
         <Button
           size="sm"
           disabled={!allAnswered}
-          className="h-7 cursor-pointer bg-blue-600 px-4 text-xs text-white hover:bg-blue-500 disabled:opacity-50"
+          className="h-7 cursor-pointer bg-primary px-4 text-xs text-primary-foreground hover:bg-primary/90 dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500 disabled:opacity-50"
           onClick={handleSubmit}
         >
           {t('chat.askUser.submit')}
-          <Kbd variant="inline" className="ml-1 text-white/70">↵</Kbd>
+          <Kbd variant="inline" className="ml-1 text-primary-foreground/70 dark:text-white/70">↵</Kbd>
         </Button>
         <span className="text-[10px] text-muted-foreground">
           {!singleQuestion && <><Kbd>⇥</Kbd><span className="ml-0.5">{t('chat.askUser.hintSwitch')}</span><span className="mx-1 opacity-40">·</span></>}

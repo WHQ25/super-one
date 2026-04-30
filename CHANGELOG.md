@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.23.2-alpha] - 2026-04-30
+
+### Added
+
+- **Per-skill toggle to hide skills from Claude** — each skill row gains a switch that lets you disable specific skills from running Claude sessions without uninstalling them. State persists in `agentPreference.claude.disabledSkills` and is applied via Claude Agent SDK 0.2.122's `skills` option. Plugin-provided skills can also be toggled (deletion remains gated by plugin uninstall).
+- **AskUserQuestion descriptions render inline** — option descriptions now appear in a fixed insight-style band below the "Other" input the moment you select an option, replacing the unreliable native `title` tooltip. Light-mode accents follow the per-harness brand hue; dark mode keeps the original blue via `dark:` variants.
+- **Plan approval offers Auto Mode when supported** — the post-approval permission target swaps from "Switch to Accept Edits" to "Switch to Auto" when the active account + model are eligible for Auto Mode, with the approve button restyled (amber + Zap icon) to match.
+
+### Changed
+
+- **Unified Codex + Claude session-control IPC** — interrupt, reset, permission-response, answer-question, and dismiss-question now route through a single `agent:*` channel keyed by `sessionId`, dropping the parallel `codex:*` plane. `Session.interrupt()` returns boolean and runs an injected `onBeforeInterrupt` hook, so widget-gate + mini-app pending-call cleanup happens once inside the Session abstraction instead of being duplicated at the IPC layer for Claude only.
+- **Mobile remote protocol splits `create_session` from `send_message`** — mobile clients now generate the session id and call `create_session` first (which owns worktree path/branch, gitBranch checkout, and session registration), then `send_message` carries only content to that existing session. Removes the previous `switch_worktree` RPC since worktree selection is now part of `create_session`. Adds `clearPendingWorktree` to drop incomplete pending state when the worktree popover is dismissed without naming a branch.
+- **Codex SDK 0.124.0 → 0.125.0** — `codex-plugins-service` adapted to handle remote marketplace plugins that have no local `sourcePath` (only installed plugins read manifest/files from disk). Vitest `localStorage` stub hardened so 0.125's import-time `setItem` probe doesn't crash on bare `globalThis` stubs.
+- **Dockview theme driven by design tokens** — dockview CSS variables now read SuperOne theme tokens directly, so harness brand hue and per-token LCH overrides flow into panel chrome.
+- **Detached worktree chip drops `@` prefix** — desktop trigger label and mobile chip now render as `Worktree {hash}` instead of `Worktree @{hash}`. The leading commit icon already conveys the detached semantics.
+
 ## [0.23.1-alpha] - 2026-04-28
 
 ### Fixed

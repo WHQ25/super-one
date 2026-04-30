@@ -25,6 +25,8 @@ bun run build:linux      # Linux package (AppImage)
 
 To run a single test file: `bunx vitest run src/path/to/file.test.ts`
 
+**Sandbox note**: `bun run test` (full suite) and any LAN/mDNS tests (`src/main/lan-server.test.ts`, `src/main/lan-advertiser.test.ts`) bind to `0.0.0.0:5353` / `127.0.0.1` and will fail with `EPERM` under the default sandbox. Run them with `dangerouslyDisableSandbox: true` (Bash tool) or outside the sandbox.
+
 ## Architecture
 
 Three-process Electron architecture using **electron-vite**:

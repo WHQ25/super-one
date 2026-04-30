@@ -21,8 +21,10 @@ vi.mock('electron', () => ({
 }))
 
 vi.mock('./project-additional-dirs', () => ({
-  readProjectAdditionalDirs: vi.fn(),
-  writeProjectAdditionalDirs: vi.fn(),
+  readScopedAdditionalDirs: vi.fn(() => ({ user: [], projectShared: [], projectLocal: [] })),
+  readProjectAdditionalDirs: vi.fn(() => []),
+  addProjectAdditionalDir: vi.fn(),
+  removeProjectAdditionalDir: vi.fn(),
 }))
 
 vi.mock('./fuzzy-file-search', () => ({

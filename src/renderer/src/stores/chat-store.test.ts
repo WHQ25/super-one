@@ -1273,6 +1273,7 @@ describe('init_ready updates session fields', () => {
       projectCommands: [],
       projectAgents: [],
       additionalDirectories: [],
+      additionalDirsScoped: { user: [], projectShared: [], projectLocal: [] },
     } as never)
 
     const proj = useChatStore.getState().projectSessions['/test']
@@ -1295,10 +1296,18 @@ describe('init_ready updates session fields', () => {
       projectCommands: [],
       projectAgents: [],
       additionalDirectories: ['/proj-add-dir/lib', '/proj-add-dir/shared'],
+      additionalDirsScoped: {
+        user: [],
+        projectShared: ['/proj-add-dir/shared'],
+        projectLocal: ['/proj-add-dir/lib'],
+      },
     } as never)
 
     const proj = useChatStore.getState().projectSessions['/proj-add-dir']
-    expect(proj.projectAdditionalDirs).toEqual(['/proj-add-dir/lib', '/proj-add-dir/shared'])
+    expect(proj.projectAdditionalDirs).toEqual(['/proj-add-dir/shared', '/proj-add-dir/lib'])
+    expect(proj.userAdditionalDirs).toEqual([])
+    expect(proj.projectSharedDirs).toEqual(['/proj-add-dir/shared'])
+    expect(proj.projectLocalDirs).toEqual(['/proj-add-dir/lib'])
   })
 })
 

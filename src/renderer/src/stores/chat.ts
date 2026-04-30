@@ -153,6 +153,9 @@ export interface ProjectState {
   _codexSkills: SkillInfo[]
   _codexSkillsLoading: boolean
   projectAdditionalDirs: string[]
+  userAdditionalDirs: string[]
+  projectSharedDirs: string[]
+  projectLocalDirs: string[]
   showDirManager: boolean
   showReviewPanel: boolean
 }
@@ -279,6 +282,9 @@ export function createDefaultProjectState(): ProjectState {
     _codexSkills: [],
     _codexSkillsLoading: false,
     projectAdditionalDirs: [],
+    userAdditionalDirs: [],
+    projectSharedDirs: [],
+    projectLocalDirs: [],
     showDirManager: false,
     showReviewPanel: false,
   }
@@ -446,7 +452,11 @@ function getActivePerSession(state: ChatStore, projectPath?: string | null): Per
 }
 
 function mergeProjectAndSessionDirs(project: ProjectState, session: PerSessionState): string[] {
-  return [...new Set([...project.projectAdditionalDirs, ...session.additionalDirs])]
+  return [...new Set([
+    ...project.userAdditionalDirs,
+    ...project.projectAdditionalDirs,
+    ...session.additionalDirs,
+  ])]
 }
 
 function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
@@ -2661,7 +2671,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         updatedProject.sandboxInfo = event.sandboxInfo
         updatedProject._projectSkills = event.skills
         updatedProject._projectCommands = event.projectCommands
-        updatedProject.projectAdditionalDirs = event.additionalDirectories
+        updatedProject.userAdditionalDirs = event.additionalDirsScoped.user
+        updatedProject.projectSharedDirs = event.additionalDirsScoped.projectShared
+        updatedProject.projectLocalDirs = event.additionalDirsScoped.projectLocal
+        updatedProject.projectAdditionalDirs = Array.from(new Set([
+          ...event.additionalDirsScoped.projectShared,
+          ...event.additionalDirsScoped.projectLocal,
+        ]))
         const claudeRes = s.harnessResources.claude
         updatedProject.slashCommands = buildSlashCommands(
           claudeRes?.slashCommands ?? [], claudeRes?.skills ?? [], claudeRes?.commands ?? [],
@@ -4405,10 +4421,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set((s) => {
         const sess = getActivePerSession(s)
         const proj = getProject(s, activeProject)
-        if (sess.additionalDirs.includes(path) || proj.projectAdditionalDirs.includes(path)) return {}
-        const updated = [...proj.projectAdditionalDirs, path]
-        window.agent.writeProjectAdditionalDirs(activeProject, updated).catch(() => {})
-        return updateProjectState(s, activeProject, () => ({ projectAdditionalDirs: updated }))
+        if (sess.additionalDirs.includes(path) || proj.projectLocalDirs.includes(path)) return {}
+        window.agent.addProjectAdditionalDir(activeProject, path).catch(() => {})
+        const nextLocal = [...proj.projectLocalDirs, path]
+        const nextMerged = Array.from(new Set([...proj.projectSharedDirs, ...nextLocal]))
+        return updateProjectState(s, activeProject, () => ({
+          projectLocalDirs: nextLocal,
+          projectAdditionalDirs: nextMerged,
+        }))
       })
     }
   },
@@ -4423,9 +4443,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } else {
       set((s) => {
         const proj = getProject(s, activeProject)
-        const updated = proj.projectAdditionalDirs.filter((d) => d !== path)
-        window.agent.writeProjectAdditionalDirs(activeProject, updated).catch(() => {})
-        return updateProjectState(s, activeProject, () => ({ projectAdditionalDirs: updated }))
+        if (!proj.projectLocalDirs.includes(path)) return {}
+        window.agent.removeProjectAdditionalDir(activeProject, path).catch(() => {})
+        const nextLocal = proj.projectLocalDirs.filter((d) => d !== path)
+        const nextMerged = Array.from(new Set([...proj.projectSharedDirs, ...nextLocal]))
+        return updateProjectState(s, activeProject, () => ({
+          projectLocalDirs: nextLocal,
+          projectAdditionalDirs: nextMerged,
+        }))
       })
     }
   },

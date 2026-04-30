@@ -28,8 +28,14 @@ vi.mock('../agent/discover-resources', () => ({
 }))
 
 vi.mock('../agent/project-additional-dirs', () => ({
+  readScopedAdditionalDirs: vi.fn((cwd: string) => ({
+    user: [],
+    projectShared: [`${cwd}/extra-dir`],
+    projectLocal: [],
+  })),
   readProjectAdditionalDirs: vi.fn((cwd: string) => [`${cwd}/extra-dir`]),
-  writeProjectAdditionalDirs: vi.fn(),
+  addProjectAdditionalDir: vi.fn(),
+  removeProjectAdditionalDir: vi.fn(),
 }))
 
 vi.mock('os', async (importActual) => {

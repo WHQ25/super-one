@@ -5,7 +5,7 @@ import type { AgentEvent, ChatMessage, RemoteActiveProvider } from '../../shared
 import type { HarnessId } from './types'
 import log from '../logger'
 import { discoverProjectAgents, discoverProjectCommands, discoverSkills } from '../agent/discover-resources'
-import { readProjectAdditionalDirs } from '../agent/project-additional-dirs'
+import { readScopedAdditionalDirs } from '../agent/project-additional-dirs'
 import { harnessRegistry } from './harness-registry'
 import { getSessionProvider } from './session-provider-repo'
 import { ProjectResourceCache } from './project-resource-cache'
@@ -66,7 +66,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       discoverSkills,
       discoverProjectCommands,
       discoverProjectAgents,
-      discoverAdditionalDirectories: readProjectAdditionalDirs,
+      discoverScopedAdditionalDirs: readScopedAdditionalDirs,
     })
   }
 

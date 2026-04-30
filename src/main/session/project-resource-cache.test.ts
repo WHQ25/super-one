@@ -6,7 +6,11 @@ function makeDiscover(): DiscoverFns {
     discoverSkills: vi.fn((cwd: string) => [{ name: `skill@${cwd}`, description: 'd', argumentHint: '', isSkill: true }]),
     discoverProjectCommands: vi.fn((cwd: string) => [{ name: `cmd@${cwd}`, description: '', argumentHint: '', isSkill: false }]),
     discoverProjectAgents: vi.fn((cwd: string) => [{ name: `agent@${cwd}`, description: '', source: 'project' as const }]),
-    discoverAdditionalDirectories: vi.fn((cwd: string) => [`${cwd}/extra-1`, `${cwd}/extra-2`]),
+    discoverScopedAdditionalDirs: vi.fn((cwd: string) => ({
+      user: [`${cwd}/user-extra`],
+      projectShared: [`${cwd}/extra-1`],
+      projectLocal: [`${cwd}/extra-2`],
+    })),
   }
 }
 
@@ -39,7 +43,7 @@ describe('ProjectResourceCache', () => {
     cache.get('/proj')
     cache.get('/proj')
     expect(discover.discoverSkills).toHaveBeenCalledTimes(1)
-    expect(discover.discoverAdditionalDirectories).toHaveBeenCalledTimes(1)
+    expect(discover.discoverScopedAdditionalDirs).toHaveBeenCalledTimes(1)
   })
 
   it('invalidate(cwd) drops only that cwd entry', () => {
@@ -62,10 +66,20 @@ describe('ProjectResourceCache', () => {
     expect(cache.get('/b')).not.toBe(b)
   })
 
-  it('includes additionalDirectories in returned ProjectResources', () => {
+  it('exposes flat additionalDirectories merged across scopes', () => {
     const cache = new ProjectResourceCache(makeDiscover())
     const r = cache.get('/proj')
-    expect(r.additionalDirectories).toEqual(['/proj/extra-1', '/proj/extra-2'])
+    expect(r.additionalDirectories).toEqual(['/proj/user-extra', '/proj/extra-1', '/proj/extra-2'])
+  })
+
+  it('exposes scoped additionalDirsScoped untouched', () => {
+    const cache = new ProjectResourceCache(makeDiscover())
+    const r = cache.get('/proj')
+    expect(r.additionalDirsScoped).toEqual({
+      user: ['/proj/user-extra'],
+      projectShared: ['/proj/extra-1'],
+      projectLocal: ['/proj/extra-2'],
+    })
   })
 
   it('passes cwd verbatim to all discover functions', () => {
@@ -75,6 +89,6 @@ describe('ProjectResourceCache', () => {
     expect(discover.discoverSkills).toHaveBeenCalledWith('/exact/cwd-string')
     expect(discover.discoverProjectCommands).toHaveBeenCalledWith('/exact/cwd-string')
     expect(discover.discoverProjectAgents).toHaveBeenCalledWith('/exact/cwd-string')
-    expect(discover.discoverAdditionalDirectories).toHaveBeenCalledWith('/exact/cwd-string')
+    expect(discover.discoverScopedAdditionalDirs).toHaveBeenCalledWith('/exact/cwd-string')
   })
 })

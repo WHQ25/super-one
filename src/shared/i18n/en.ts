@@ -216,6 +216,14 @@ export type Messages = {
       addProject: string
       poweredBy: string
     }
+    additionalDirs: {
+      label: string
+      scopes: {
+        user: string
+        project: string
+        session: string
+      }
+    }
     plan: {
       review: string
       requestedPermissions: string
@@ -963,6 +971,14 @@ export const en: Messages = {
       openProject: 'Open a project to get started',
       addProject: 'Add Project',
       poweredBy: 'Powered by',
+    },
+    additionalDirs: {
+      label: 'Additional folder',
+      scopes: {
+        user: 'User Settings',
+        project: 'Project Settings',
+        session: 'Session Settings',
+      },
     },
     plan: {
       review: 'Review',

@@ -1130,6 +1130,7 @@ describe('Session persist hook', () => {
         projectCommands: [{ name: `cmd@${cwd}`, description: '', argumentHint: '', isSkill: false }],
         projectAgents: [{ name: `agent@${cwd}`, description: '', source: 'project' as const }],
         additionalDirectories: [`${cwd}/extra`],
+        additionalDirsScoped: { user: [], projectShared: [`${cwd}/extra`], projectLocal: [] },
       }
     }
 

@@ -22,6 +22,7 @@ import { fuzzyMatch } from '@/lib/fuzzy-match'
 import { HighlightedText } from '@/components/ui/HighlightedText'
 import { toMentionPath } from './chat-input-utils'
 import { AttachmentBar } from './AttachmentBar'
+import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
 import { DirManagerPanel } from './DirManagerPanel'
@@ -802,6 +803,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const isCoding = useAppStore.getState().layoutMode === 'coding'
 
     return (
+      <>
+        <ChatInputDirsHint isCoding={isCoding} />
       <div
         className={cn(
           'relative',
@@ -957,6 +960,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           </div>
         )}
       </div>
+      </>
     )
   }
 )

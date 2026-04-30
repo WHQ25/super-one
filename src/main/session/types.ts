@@ -249,12 +249,19 @@ export interface Session {
   getReplayEvents(): AgentEvent[]
 }
 
+export interface ScopedAdditionalDirs {
+  readonly user: string[]
+  readonly projectShared: string[]
+  readonly projectLocal: string[]
+}
+
 export interface ProjectResources {
   readonly cwd: string
   readonly skills: SlashCommandInfo[]
   readonly projectCommands: SlashCommandInfo[]
   readonly projectAgents: AgentInfo[]
   readonly additionalDirectories: string[]
+  readonly additionalDirsScoped: ScopedAdditionalDirs
 }
 
 export interface SessionManager {

@@ -4,7 +4,7 @@ import { statSync } from 'fs'
 import log from '../logger'
 import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
-import { readProjectAdditionalDirs, writeProjectAdditionalDirs } from './project-additional-dirs'
+import { addProjectAdditionalDir, readScopedAdditionalDirs, removeProjectAdditionalDir } from './project-additional-dirs'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
 import { resolveSdkClaudeBinary } from './claude-binary'
@@ -1297,11 +1297,17 @@ export class AgentService {
     // --- Additional directories ---
 
     ipcMain.handle(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, (_event, projectPath: string) => {
-      return readProjectAdditionalDirs(projectPath)
+      return readScopedAdditionalDirs(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.WRITE_PROJECT_ADDITIONAL_DIRS, (_event, projectPath: string, dirs: string[]) => {
-      writeProjectAdditionalDirs(projectPath, dirs)
+    ipcMain.handle(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR, (_event, projectPath: string, dir: string) => {
+      addProjectAdditionalDir(projectPath, dir)
+      this.sessionManager?.invalidateProjectResources(projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR, (_event, projectPath: string, dir: string) => {
+      removeProjectAdditionalDir(projectPath, dir)
+      this.sessionManager?.invalidateProjectResources(projectPath)
     })
 
     // --- Plugins (session-scoped — need cwd) ---
@@ -1729,7 +1735,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SEARCH_MENTIONS)
     ipcMain.removeHandler(AgentIpcChannels.DISCONNECT_REMOTE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS)
-    ipcMain.removeHandler(AgentIpcChannels.WRITE_PROJECT_ADDITIONAL_DIRS)
+    ipcMain.removeHandler(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR)
+    ipcMain.removeHandler(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ_FILE)

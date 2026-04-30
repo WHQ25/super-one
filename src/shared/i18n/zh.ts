@@ -230,6 +230,14 @@ export const zh: Messages = {
       addProject: '添加项目',
       poweredBy: 'Powered by',
     },
+    additionalDirs: {
+      label: '附加目录',
+      scopes: {
+        user: '用户设置',
+        project: '项目设置',
+        session: '会话设置',
+      },
+    },
     plan: {
       review: '审查',
       requestedPermissions: '请求的权限',

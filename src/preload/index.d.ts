@@ -35,8 +35,9 @@ interface AgentAPI {
   searchFiles(projectPath: string, query: string, additionalDirs?: string[]): Promise<FileSearchResult[]>
   searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string): Promise<MentionSearchItem[]>
   disconnectRemoteSession(sessionId?: string): Promise<void>
-  readProjectAdditionalDirs(projectPath: string): Promise<string[]>
-  writeProjectAdditionalDirs(projectPath: string, dirs: string[]): Promise<void>
+  readProjectAdditionalDirs(projectPath: string): Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>
+  addProjectAdditionalDir(projectPath: string, dir: string): Promise<void>
+  removeProjectAdditionalDir(projectPath: string, dir: string): Promise<void>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 

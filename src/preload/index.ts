@@ -100,10 +100,13 @@ const agentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, sessionId),
 
   readProjectAdditionalDirs: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, projectPath) as Promise<string[]>,
+    ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_ADDITIONAL_DIRS, projectPath) as Promise<{ user: string[]; projectShared: string[]; projectLocal: string[] }>,
 
-  writeProjectAdditionalDirs: (projectPath: string, dirs: string[]) =>
-    ipcRenderer.invoke(AgentIpcChannels.WRITE_PROJECT_ADDITIONAL_DIRS, projectPath, dirs),
+  addProjectAdditionalDir: (projectPath: string, dir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR, projectPath, dir),
+
+  removeProjectAdditionalDir: (projectPath: string, dir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR, projectPath, dir),
 
   onAgentEvent: (callback: (event: unknown) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: unknown): void => {

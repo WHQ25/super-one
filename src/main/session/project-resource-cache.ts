@@ -1,11 +1,11 @@
 import type { AgentInfo, SlashCommandInfo } from '../../shared/agent-types'
-import type { ProjectResources } from './types'
+import type { ProjectResources, ScopedAdditionalDirs } from './types'
 
 export interface DiscoverFns {
   discoverSkills(cwd: string): SlashCommandInfo[]
   discoverProjectCommands(cwd: string): SlashCommandInfo[]
   discoverProjectAgents(cwd: string): AgentInfo[]
-  discoverAdditionalDirectories(cwd: string): string[]
+  discoverScopedAdditionalDirs(cwd: string): ScopedAdditionalDirs
 }
 
 export class ProjectResourceCache {
@@ -16,12 +16,15 @@ export class ProjectResourceCache {
   get(cwd: string): ProjectResources {
     const existing = this.cache.get(cwd)
     if (existing) return existing
+    const scoped = this.discover.discoverScopedAdditionalDirs(cwd)
+    const merged = Array.from(new Set([...scoped.user, ...scoped.projectShared, ...scoped.projectLocal]))
     const resources: ProjectResources = {
       cwd,
       skills: this.discover.discoverSkills(cwd),
       projectCommands: this.discover.discoverProjectCommands(cwd),
       projectAgents: this.discover.discoverProjectAgents(cwd),
-      additionalDirectories: this.discover.discoverAdditionalDirectories(cwd),
+      additionalDirectories: merged,
+      additionalDirsScoped: scoped,
     }
     this.cache.set(cwd, resources)
     return resources

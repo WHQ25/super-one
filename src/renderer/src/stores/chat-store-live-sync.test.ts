@@ -453,6 +453,9 @@ function projectExtras() {
     codexModels: [],
     codexModelsLoading: false,
     projectAdditionalDirs: [],
+    userAdditionalDirs: [],
+    projectSharedDirs: [],
+    projectLocalDirs: [],
     showDirManager: false,
     showReviewPanel: false,
   }

@@ -203,5 +203,33 @@ describe('splitByInsightBlocks', () => {
       { type: 'text', content: '```' },
     ])
   })
+
+  it('extracts insight when footer dashes are glued to the last content line', () => {
+    const text = '★ Insight ─────────────────\nLine 1\nLine 2 ─────────────────────────────\nAfter'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'insight', title: 'Insight', content: 'Line 1\nLine 2' },
+      { type: 'text', content: 'After' },
+    ])
+  })
+
+  it('extracts insight with inline footer wrapped in backticks', () => {
+    const text = '`★ Insight ─────────────────`\nLine 1\nLine 2 `─────────────────────────────`\nAfter'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'insight', title: 'Insight', content: 'Line 1\nLine 2' },
+      { type: 'text', content: 'After' },
+    ])
+  })
+
+  it('extracts insight when header is wrapped in a markdown heading', () => {
+    const text = 'Pre.\n\n## `★ Insight ─────────────────────────────────────`\n- **a**: x\n- **b**: y\n`─────────────────────────────────────────────────`\n\nPost.'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'text', content: 'Pre.\n' },
+      { type: 'insight', title: 'Insight', content: '- **a**: x\n- **b**: y' },
+      { type: 'text', content: '\nPost.' },
+    ])
+  })
 })
 

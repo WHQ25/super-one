@@ -1,5 +1,6 @@
-const INSIGHT_HEADER_RE = /^`?★\s+(.+?)\s+─{3,}`?\s*$/m
+const INSIGHT_HEADER_RE = /^(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{3,}`?\s*$/m
 const INSIGHT_FOOTER_RE = /^`?─{3,}`?\s*$/
+const INSIGHT_INLINE_FOOTER_RE = /^(?!`?─)(.+?\S)\s+`?─{3,}`?\s*$/
 
 export interface TextSegment { type: 'text' | 'insight'; text: string; title?: string; content?: string }
 export interface SplitResult { segments: TextSegment[]; remainder: string }
@@ -39,7 +40,15 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
         insightTitle = null
         insightLines = []
       } else {
-        insightLines.push(line)
+        const inlineMatch = line.match(INSIGHT_INLINE_FOOTER_RE)
+        if (inlineMatch) {
+          insightLines.push(inlineMatch[1])
+          segments.push({ type: 'insight', text: '', title: insightTitle, content: insightLines.join('\n') })
+          insightTitle = null
+          insightLines = []
+        } else {
+          insightLines.push(line)
+        }
       }
       continue
     }

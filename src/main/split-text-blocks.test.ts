@@ -75,6 +75,53 @@ describe('splitTextIntoBlocks', () => {
       expect(segments[2]).toEqual({ type: 'text', text: 'After' })
     })
 
+    it('should extract insight when footer dashes are glued to the last content line', () => {
+      const text = '★ Title ─────────────────────────────\nLine 1\nLine 2 ─────────────────────────────────────────────────\nAfter'
+      const { segments } = splitTextIntoBlocks(text, false)
+      expect(segments).toHaveLength(2)
+      expect(segments[0]).toEqual({ type: 'insight', text: '', title: 'Title', content: 'Line 1\nLine 2' })
+      expect(segments[1]).toEqual({ type: 'text', text: 'After' })
+    })
+
+    it('should extract insight with inline footer wrapped in backticks', () => {
+      const text = '`★ Title ─────────────────────────────`\nLine 1\nLine 2 `─────────────────────────────────────────────────`\nAfter'
+      const { segments } = splitTextIntoBlocks(text, false)
+      expect(segments).toHaveLength(2)
+      expect(segments[0]).toEqual({ type: 'insight', text: '', title: 'Title', content: 'Line 1\nLine 2' })
+      expect(segments[1]).toEqual({ type: 'text', text: 'After' })
+    })
+
+    it('should extract insight when header is wrapped in a markdown heading', () => {
+      const text = 'Pre.\n\n## `★ Insight ─────────────────────────────────────`\n- **a**: x\n- **b**: y\n`─────────────────────────────────────────────────`\n\nPost.'
+      const { segments } = splitTextIntoBlocks(text, false)
+      expect(segments).toHaveLength(3)
+      expect(segments[0]).toEqual({ type: 'text', text: 'Pre.' })
+      expect(segments[1]).toEqual({ type: 'insight', text: '', title: 'Insight', content: '- **a**: x\n- **b**: y' })
+      expect(segments[2]).toEqual({ type: 'text', text: 'Post.' })
+    })
+
+    it('should extract a real-world heading-wrapped insight with multiple bullets and bold', () => {
+      const text = [
+        'Some preamble paragraph describing the change.',
+        '',
+        '## `★ Insight ─────────────────────────────────────`',
+        '- **basename 选择是个 UX 平衡**：相对/绝对路径的"最短路径"算法虽然信息量大，但视觉密度高',
+        '- **Tooltip 的延迟选 300ms**：跟 `BrandColorPopover` 一致',
+        '- **"messages.length === 0" 是天然的一次性触发器**：不需要单独的 dismissed 状态',
+        '`─────────────────────────────────────────────────`',
+        '',
+        'Closing line.',
+      ].join('\n')
+      const { segments } = splitTextIntoBlocks(text, false)
+      expect(segments).toHaveLength(3)
+      expect(segments[0]).toMatchObject({ type: 'text' })
+      expect(segments[1]).toMatchObject({ type: 'insight', title: 'Insight' })
+      expect(segments[1].content).toContain('basename 选择是个 UX 平衡')
+      expect(segments[1].content).toContain('Tooltip 的延迟选 300ms')
+      expect(segments[1].content).toContain('messages.length === 0')
+      expect(segments[2]).toMatchObject({ type: 'text', text: 'Closing line.' })
+    })
+
     it('should handle multiple code blocks', () => {
       const text = '```js\na()\n```\n\nMiddle\n\n```py\nb()\n```'
       const { segments } = splitTextIntoBlocks(text, false)

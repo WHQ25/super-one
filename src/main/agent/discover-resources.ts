@@ -86,6 +86,19 @@ function isProjectScoped(entry: PluginEntry, cwd: string): boolean {
   return (entry.scope === 'project' || entry.scope === 'local') && entry.projectPath === cwd
 }
 
+/** Iterate over installed plugins matching `filter`, invoking `callback(installPath, pluginName)`. */
+function forEachPluginScope(
+  filter: (entry: PluginEntry) => boolean,
+  callback: (installPath: string, pluginName: string) => void,
+): void {
+  for (const [pluginKey, entries] of Object.entries(readPlugins())) {
+    const pluginName = pluginKey.split('@')[0]
+    for (const entry of entries) {
+      if (entry.installPath && filter(entry)) callback(entry.installPath, pluginName)
+    }
+  }
+}
+
 // --- Skill discovery ---
 
 /**
@@ -111,13 +124,9 @@ function scanSkillDir(dir: string): SlashCommandInfo[] {
 
 function discoverPluginSkills(filter: (entry: PluginEntry) => boolean): SlashCommandInfo[] {
   const skills: SlashCommandInfo[] = []
-  const plugins = readPlugins()
-  for (const entries of Object.values(plugins)) {
-    for (const entry of entries) {
-      if (!entry.installPath || !filter(entry)) continue
-      skills.push(...scanSkillDir(join(entry.installPath, 'skills')))
-    }
-  }
+  forEachPluginScope(filter, (installPath) => {
+    skills.push(...scanSkillDir(join(installPath, 'skills')))
+  })
   return skills
 }
 
@@ -181,21 +190,10 @@ export function discoverCodexUserPrompts(): SlashCommandInfo[] {
 
 /** Discover user-level slash commands (~/.claude/commands + user-scoped plugin commands). */
 export function discoverUserCommands(): SlashCommandInfo[] {
-  const commands: SlashCommandInfo[] = []
-
-  // 1. User commands: ~/.claude/commands/*.md
-  commands.push(...scanCommandDir(join(homedir(), '.claude', 'commands')))
-
-  // 2. User-scoped plugin commands
-  const plugins = readPlugins()
-  for (const [pluginKey, entries] of Object.entries(plugins)) {
-    const pluginName = pluginKey.split('@')[0]
-    for (const entry of entries) {
-      if (!entry.installPath || !isUserScoped(entry)) continue
-      commands.push(...scanCommandDir(join(entry.installPath, 'commands'), `${pluginName}:`))
-    }
-  }
-
+  const commands: SlashCommandInfo[] = [...scanCommandDir(join(homedir(), '.claude', 'commands'))]
+  forEachPluginScope(isUserScoped, (installPath, pluginName) => {
+    commands.push(...scanCommandDir(join(installPath, 'commands'), `${pluginName}:`))
+  })
   return commands
 }
 
@@ -230,31 +228,19 @@ function scanAgentDir(dir: string, source: AgentInfo['source'], namePrefix = '')
 
 /** Discover user-level agents (~/.claude/agents + user-scoped plugin agents). */
 export function discoverUserAgents(): AgentInfo[] {
-  const agents: AgentInfo[] = []
-  agents.push(...scanAgentDir(join(homedir(), '.claude', 'agents'), 'user'))
-  const plugins = readPlugins()
-  for (const [pluginKey, entries] of Object.entries(plugins)) {
-    const pluginName = pluginKey.split('@')[0]
-    for (const entry of entries) {
-      if (!entry.installPath || !isUserScoped(entry)) continue
-      agents.push(...scanAgentDir(join(entry.installPath, 'agents'), 'plugin', `${pluginName}:`))
-    }
-  }
+  const agents: AgentInfo[] = [...scanAgentDir(join(homedir(), '.claude', 'agents'), 'user')]
+  forEachPluginScope(isUserScoped, (installPath, pluginName) => {
+    agents.push(...scanAgentDir(join(installPath, 'agents'), 'plugin', `${pluginName}:`))
+  })
   return agents
 }
 
 /** Discover project-level agents ({cwd}/.claude/agents + project-scoped plugin agents). */
 export function discoverProjectAgents(cwd: string): AgentInfo[] {
-  const agents: AgentInfo[] = []
-  agents.push(...scanAgentDir(join(cwd, '.claude', 'agents'), 'project'))
-  const plugins = readPlugins()
-  for (const [pluginKey, entries] of Object.entries(plugins)) {
-    const pluginName = pluginKey.split('@')[0]
-    for (const entry of entries) {
-      if (!entry.installPath || !isProjectScoped(entry, cwd)) continue
-      agents.push(...scanAgentDir(join(entry.installPath, 'agents'), 'plugin', `${pluginName}:`))
-    }
-  }
+  const agents: AgentInfo[] = [...scanAgentDir(join(cwd, '.claude', 'agents'), 'project')]
+  forEachPluginScope((e) => isProjectScoped(e, cwd), (installPath, pluginName) => {
+    agents.push(...scanAgentDir(join(installPath, 'agents'), 'plugin', `${pluginName}:`))
+  })
   return agents
 }
 
@@ -308,20 +294,9 @@ export function readAgentFile(cwd: string, name: string): string | null {
 
 /** Discover project-level slash commands ({cwd}/.claude/commands + project-scoped plugin commands). */
 export function discoverProjectCommands(cwd: string): SlashCommandInfo[] {
-  const commands: SlashCommandInfo[] = []
-
-  // 1. Project commands: {cwd}/.claude/commands/*.md
-  commands.push(...scanCommandDir(join(cwd, '.claude', 'commands')))
-
-  // 2. Project-scoped plugin commands
-  const plugins = readPlugins()
-  for (const [pluginKey, entries] of Object.entries(plugins)) {
-    const pluginName = pluginKey.split('@')[0]
-    for (const entry of entries) {
-      if (!entry.installPath || !isProjectScoped(entry, cwd)) continue
-      commands.push(...scanCommandDir(join(entry.installPath, 'commands'), `${pluginName}:`))
-    }
-  }
-
+  const commands: SlashCommandInfo[] = [...scanCommandDir(join(cwd, '.claude', 'commands'))]
+  forEachPluginScope((e) => isProjectScoped(e, cwd), (installPath, pluginName) => {
+    commands.push(...scanCommandDir(join(installPath, 'commands'), `${pluginName}:`))
+  })
   return commands
 }

@@ -109,7 +109,7 @@ vi.mock('../database', () => ({
   deleteProvider: vi.fn(),
   activateProvider: vi.fn(),
   deactivateAllProviders: vi.fn(),
-  getCachedResources: vi.fn(() => null),
+  getCachedHarnessResources: vi.fn(() => null),
   getActiveProviderRaw: vi.fn(() => null),
   getDb: vi.fn(),
 }))

@@ -1,7 +1,7 @@
 import { ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount } from '@/stores/chat'
 import { useMemo, useState } from 'react'
 import { eligibilityFromStore } from '@/lib/auto-mode-eligibility'
 import { PermissionModeList, modes, PERMISSION_MODES } from './PermissionModeList'
@@ -18,8 +18,8 @@ export function PermissionModeSelector({ compact = false }: PermissionModeSelect
   const permissionMode = useActiveSession((s) => s.permissionMode)
   const selectedModel = useActiveSession((s) => s.selectedModel)
   const setPermissionMode = useChatStore((s) => s.setPermissionMode)
-  const account = useChatStore((s) => s.account)
-  const availableModels = useChatStore((s) => s.availableModels)
+  const account = useChatStore(selectClaudeAccount)
+  const availableModels = useChatStore(selectClaudeModels)
 
   const autoEligibility = useMemo(
     () => eligibilityFromStore(account, availableModels.find((m) => m.id === selectedModel)),

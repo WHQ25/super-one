@@ -16,7 +16,7 @@ import { getRecentFolders, addRecentFolder } from '../recent-folders'
 import { readdir, mkdir } from 'fs/promises'
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
-import { getDb, getCachedResources, getActiveProviderRaw } from '../database'
+import { getDb, getCachedHarnessResources, getActiveProviderRaw } from '../database'
 import { buildRemoteActiveProvider } from '../../shared/provider-utils'
 import { sanitizeGitRef } from '../path-security'
 import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from '../git/worktree-ops'
@@ -741,8 +741,8 @@ export class AgentService {
       }
       case 'list_models': {
         try {
-          const cached = getCachedResources()
-          const cachedModels = cached?.models as ModelOption[] | undefined
+          const cached = getCachedHarnessResources('claude')
+          const cachedModels = cached?.models
           const models = cachedModels?.length ? cachedModels : await fetchModels(command.projectPath)
           await respond?.(command.requestId, { models })
         } catch (err) {
@@ -753,11 +753,11 @@ export class AgentService {
       case 'get_system_info': {
         try {
           const isClaude = command.provider !== 'codex'
-          const cached = getCachedResources()
           const { agentPreference } = readAppSettings()
-          log.info('[get_system_info] provider=%s hasCached=%s cachedModels=%d projectPath=%s', command.provider, !!cached, cached?.models?.length ?? 0, command.projectPath)
           if (isClaude) {
-            const cachedModels = cached?.models as ModelOption[] | undefined
+            const cached = getCachedHarnessResources('claude')
+            log.info('[get_system_info] provider=claude hasCached=%s cachedModels=%d projectPath=%s', !!cached, cached?.models?.length ?? 0, command.projectPath)
+            const cachedModels = cached?.models
             const models = cachedModels?.length ? cachedModels : await fetchModels(command.projectPath)
             log.info('[get_system_info] resolvedModels=%d source=%s', models.length, cachedModels?.length ? 'cache' : 'fetch')
             const skills = listSkills(command.projectPath)

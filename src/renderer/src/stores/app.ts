@@ -150,21 +150,6 @@ async function openFolderDirect(folderPath: string, set: (partial: Partial<AppSt
   return true
 }
 
-async function refreshResourcesInBackground(): Promise<void> {
-  try {
-    console.info('[refreshResources] Calling connectClaude...')
-    const result = await window.app.connectClaude()
-    console.info('[refreshResources] Done:', result.models?.length, 'models')
-    const { useChatStore } = await import('./chat')
-    useChatStore.getState().setGlobalResources(
-      result.models, result.account, result.slashCommands,
-      result.userSkills, result.userCommands, result.userAgents,
-      undefined, result.availableOutputStyles,
-    )
-  } catch (err) {
-    console.error('[refreshResources] Failed:', err)
-  }
-}
 
 const defaultWorktreeState: WorktreeState = {
   pendingBaseBranch: null,
@@ -347,25 +332,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       window.app.getRecentFolders(),
     ])
     set({ recentFolders: folders })
-    console.info('[continueToMain] cached:', startupData.cached ? `${startupData.cached.models?.length} models` : 'null')
+    console.info(
+      '[continueToMain] cached: claude=%s codex=%s',
+      startupData.cached.claude ? `${startupData.cached.claude.models?.length ?? 0} models` : 'null',
+      startupData.cached.codex ? `${startupData.cached.codex.models?.length ?? 0} models` : 'null',
+    )
     const { useChatStore } = await import('./chat')
 
-    if (startupData.cached) {
-      useChatStore.getState().setGlobalResources(
-        startupData.cached.models,
-        startupData.cached.account,
-        startupData.cached.slashCommands,
-        startupData.userSkills,
-        startupData.userCommands,
-        startupData.userAgents,
-        startupData.cached.codexModels,
-      )
-    } else {
-      console.info('[continueToMain] No cache, using empty models')
-      useChatStore.getState().setGlobalResources([], {}, [], startupData.userSkills, startupData.userCommands, startupData.userAgents)
+    if (startupData.cached.claude) {
+      useChatStore.getState().setHarnessResources('claude', startupData.cached.claude)
+    }
+    if (startupData.cached.codex) {
+      useChatStore.getState().setHarnessResources('codex', startupData.cached.codex)
     }
 
-    refreshResourcesInBackground()
+    void useChatStore.getState().initializeHarness('claude')
 
     if (get().layoutMode === 'coding' && !get().currentFolder) {
       let opened = false

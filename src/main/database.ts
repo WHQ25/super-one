@@ -2,7 +2,7 @@ import { app, type App } from 'electron'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
-import type { ApiProvider, CreateProviderRequest, UpdateProviderRequest } from '../shared/agent-types'
+import type { ApiProvider, CreateProviderRequest, HarnessId, HarnessResourcesMap, UpdateProviderRequest } from '../shared/agent-types'
 import { runDatabaseMigrations } from './database-migrations'
 
 export { runDatabaseMigrations }
@@ -25,36 +25,31 @@ export function getDb(): Database.Database {
 }
 
 
-export function getCachedResources(): { models: unknown[]; codexModels: unknown[]; account: Record<string, unknown>; slashCommands: unknown[] } | null {
-  const row = getDb().prepare('SELECT models_json, codex_models_json, account_json, slash_commands_json FROM global_resource_cache WHERE id = 1').get() as
-    | { models_json: string; codex_models_json: string; account_json: string; slash_commands_json: string }
-    | undefined
+export function getCachedHarnessResources<H extends HarnessId>(
+  harnessId: H,
+): HarnessResourcesMap[H] | null {
+  const row = getDb()
+    .prepare('SELECT resources_json FROM harness_resource_cache WHERE harness_id = ?')
+    .get(harnessId) as { resources_json: string } | undefined
   if (!row) return null
-  return {
-    models: JSON.parse(row.models_json),
-    codexModels: JSON.parse(row.codex_models_json || '[]'),
-    account: JSON.parse(row.account_json),
-    slashCommands: JSON.parse(row.slash_commands_json),
+  try {
+    return JSON.parse(row.resources_json) as HarnessResourcesMap[H]
+  } catch {
+    return null
   }
 }
 
-export function setCachedResources(models: unknown[], codexModels: unknown[], account: unknown, slashCommands: unknown[]): void {
+export function setCachedHarnessResources<H extends HarnessId>(
+  harnessId: H,
+  resources: HarnessResourcesMap[H],
+): void {
   getDb().prepare(`
-    INSERT INTO global_resource_cache (id, models_json, codex_models_json, account_json, slash_commands_json, updated_at)
-    VALUES (1, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      models_json = excluded.models_json,
-      codex_models_json = excluded.codex_models_json,
-      account_json = excluded.account_json,
-      slash_commands_json = excluded.slash_commands_json,
+    INSERT INTO harness_resource_cache (harness_id, resources_json, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(harness_id) DO UPDATE SET
+      resources_json = excluded.resources_json,
       updated_at = excluded.updated_at
-  `).run(
-    JSON.stringify(models),
-    JSON.stringify(codexModels),
-    JSON.stringify(account),
-    JSON.stringify(slashCommands),
-    new Date().toISOString(),
-  )
+  `).run(harnessId, JSON.stringify(resources), new Date().toISOString())
 }
 
 export function maskApiKey(key: string): string {

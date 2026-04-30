@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { AgentEvent, ChatMessage } from '../../../shared/agent-types'
+import type { AgentEvent, ChatMessage, ClaudeResources, CodexResources } from '../../../shared/agent-types'
 
 const mockSetActiveWorktree = vi.fn()
 const mockClearWorktree = vi.fn().mockResolvedValue(undefined)
@@ -61,6 +61,16 @@ const mockWindowApp = {
   codexSteer: vi.fn().mockResolvedValue(undefined),
   codexPlanApproval: vi.fn().mockResolvedValue(undefined),
   codexCollaborationModeChange: vi.fn().mockResolvedValue(undefined),
+  connectClaude: vi.fn().mockResolvedValue({
+    models: [],
+    account: {},
+    slashCommands: [],
+    skills: [],
+    commands: [],
+    agents: [],
+    outputStyles: [],
+  }),
+  connectCodex: vi.fn().mockResolvedValue({ models: [] }),
   getAppSettings: vi.fn().mockResolvedValue({
     analyticsEnabled: true,
     agentPreference: {
@@ -128,12 +138,32 @@ function resetStore() {
     projectSessions: {},
     activeProject: null,
     remoteSessions: {},
-    availableModels: [],
+    harnessResources: { claude: null, codex: null },
+    initializedHarnesses: new Set(),
+  })
+}
+
+function setClaude(partial: Partial<ClaudeResources>) {
+  const current = useChatStore.getState().harnessResources.claude
+  useChatStore.getState().setHarnessResources('claude', {
+    models: [],
     account: {},
-    globalSlashCommands: [],
-    userSkills: [],
-    userCommands: [],
-    userAgents: [],
+    slashCommands: [],
+    skills: [],
+    commands: [],
+    agents: [],
+    outputStyles: [],
+    ...(current ?? {}),
+    ...partial,
+  })
+}
+
+function setCodex(partial: Partial<CodexResources>) {
+  const current = useChatStore.getState().harnessResources.codex
+  useChatStore.getState().setHarnessResources('codex', {
+    models: [],
+    ...(current ?? {}),
+    ...partial,
   })
 }
 
@@ -260,15 +290,7 @@ describe('ensureSession', () => {
   })
 
   it('triggers Codex prewarm with provider and Codex model when switching an empty draft to Codex', () => {
-    useChatStore.getState().setGlobalResources(
-      [],
-      {},
-      [],
-      [],
-      [],
-      [],
-      [{ id: 'gpt-5.4', name: 'GPT-5.4', supportedReasoningEfforts: [{ value: 'high', description: 'high' }] } as never],
-    )
+    setCodex({ models: [{ id: 'gpt-5.4', name: 'GPT-5.4', supportedReasoningEfforts: [{ value: 'high', description: 'high' }] } as never] })
     setupProject('/prewarm-codex')
     const beforeSid = useChatStore.getState().projectSessions['/prewarm-codex']._activeSessionId
     mockWindowAgent.prewarm.mockClear()
@@ -1385,18 +1407,16 @@ describe('switchProject restores parked session', () => {
   })
 })
 
-describe('setGlobalResources rebuilds slashCommands', () => {
+describe('setHarnessResources(claude) rebuilds slashCommands', () => {
   it('rebuilds slashCommands for initialized project even with empty skills/commands', () => {
     setupProject('/test')
 
-    useChatStore.getState().setGlobalResources(
-      [{ id: 'm1', name: 'model-1' }] as never[],
-      {} as never,
-      [{ name: '/global-cmd', description: 'global' }] as never[],
-      [{ name: '/user-skill', description: 'user skill' }] as never[],
-      [{ name: '/user-cmd', description: 'user cmd' }] as never[],
-      [] as never[],
-    )
+    setClaude({
+      models: [{ id: 'm1', name: 'model-1' }] as never[],
+      slashCommands: [{ name: '/global-cmd', description: 'global' }] as never[],
+      skills: [{ name: '/user-skill', description: 'user skill' }] as never[],
+      commands: [{ name: '/user-cmd', description: 'user cmd' }] as never[],
+    })
 
     const proj = useChatStore.getState().projectSessions['/test']
     expect(proj.slashCommands.length).toBeGreaterThan(0)
@@ -1405,8 +1425,8 @@ describe('setGlobalResources rebuilds slashCommands', () => {
 
 describe('applyDefaultModel via ensureSession', () => {
   it('applies first available model to new DRAFT session', () => {
-    useChatStore.setState({
-      availableModels: [
+    setClaude({
+      models: [
         { id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] },
         { id: 'claude-haiku-4-5', name: 'Haiku' },
       ] as never[],
@@ -1419,8 +1439,8 @@ describe('applyDefaultModel via ensureSession', () => {
   })
 
   it('does not set effort when model has no supportedEffortLevels', () => {
-    useChatStore.setState({
-      availableModels: [{ id: 'claude-haiku-4-5', name: 'Haiku' }] as never[],
+    setClaude({
+      models: [{ id: 'claude-haiku-4-5', name: 'Haiku' }] as never[],
     })
 
     useChatStore.getState().ensureSession('/no-effort')
@@ -1430,8 +1450,8 @@ describe('applyDefaultModel via ensureSession', () => {
   })
 
   it('defaults to xhigh when model supports xhigh (e.g. Opus 4.7)', () => {
-    useChatStore.setState({
-      availableModels: [
+    setClaude({
+      models: [
         { id: 'claude-opus-4-7', name: 'Opus 4.7', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'] },
       ] as never[],
     })
@@ -1443,7 +1463,7 @@ describe('applyDefaultModel via ensureSession', () => {
   })
 
   it('leaves default model when no models available', () => {
-    useChatStore.setState({ availableModels: [] })
+    setClaude({ models: [] })
 
     useChatStore.getState().ensureSession('/empty-models')
     const session = getActiveDraftSession('/empty-models')!
@@ -1472,21 +1492,15 @@ describe('getDefaultEffortForModel', () => {
 
 describe('codex model cache + defaults', () => {
   it('seeds new session with cached codex models and prefers GPT-5.4 high', () => {
-    useChatStore.getState().setGlobalResources(
-      [],
-      {},
-      [],
-      [],
-      [],
-      [],
-      [
+    setCodex({
+      models: [
         {
           id: 'gpt-5.4',
           name: 'GPT-5.4',
           supportedReasoningEfforts: [{ value: 'low', description: 'low' }, { value: 'high', description: 'high' }],
         } as never,
-      ] as never[],
-    )
+      ],
+    })
 
     useChatStore.getState().ensureSession('/codex-cache')
     const session = getActiveDraftSession('/codex-cache')!
@@ -1506,21 +1520,15 @@ describe('codex model cache + defaults', () => {
     invalidateDefaultCodexPreferencesCache()
     await new Promise((r) => setTimeout(r, 0))
 
-    useChatStore.getState().setGlobalResources(
-      [],
-      {},
-      [],
-      [],
-      [],
-      [],
-      [
+    setCodex({
+      models: [
         {
           id: 'gpt-5.4',
           name: 'GPT-5.4',
           supportedReasoningEfforts: [{ value: 'low', description: 'low' }, { value: 'high', description: 'high' }],
         } as never,
-      ] as never[],
-    )
+      ],
+    })
 
     useChatStore.getState().ensureSession('/codex-pref')
     const session = getActiveDraftSession('/codex-pref')!
@@ -1534,21 +1542,15 @@ describe('codex model cache + defaults', () => {
       reasoningEffort: 'low',
     }))
 
-    useChatStore.getState().setGlobalResources(
-      [],
-      {},
-      [],
-      [],
-      [],
-      [],
-      [
+    setCodex({
+      models: [
         {
           id: 'gpt-5.4',
           name: 'GPT-5.4',
           supportedReasoningEfforts: [{ value: 'low', description: 'low' }, { value: 'high', description: 'high' }],
         } as never,
-      ] as never[],
-    )
+      ],
+    })
 
     useChatStore.getState().ensureSession('/codex-memory')
     const session = getActiveDraftSession('/codex-memory')!
@@ -1591,25 +1593,19 @@ describe('codex model cache + defaults', () => {
     ])
 
     await useChatStore.getState().refreshCodexModels(true)
-    expect(useChatStore.getState().cachedCodexModels.map((m) => m.id)).toEqual(['gpt-5.4'])
+    expect((useChatStore.getState().harnessResources.codex?.models ?? []).map((m) => m.id)).toEqual(['gpt-5.4'])
   })
 
   it('persists codex selection changes to localStorage', () => {
-    useChatStore.getState().setGlobalResources(
-      [],
-      {},
-      [],
-      [],
-      [],
-      [],
-      [
+    setCodex({
+      models: [
         {
           id: 'gpt-5.4',
           name: 'GPT-5.4',
           supportedReasoningEfforts: [{ value: 'low', description: 'low' }, { value: 'high', description: 'high' }],
         } as never,
-      ] as never[],
-    )
+      ],
+    })
     setupProject('/codex-persist')
 
     useChatStore.getState().setSelectedCodexModel('gpt-5.4')
@@ -1654,7 +1650,7 @@ describe('switchSession Case A (in _sessions)', () => {
   it('switches pointer and resumes runtime for non-running target session', async () => {
     setupProject('/test')
     useChatStore.setState({
-      availableModels: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[],
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
     })
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -1709,7 +1705,7 @@ describe('switchSession Case B (from DB)', () => {
   it('loads session from DB and sets active', async () => {
     setupProject('/test')
     useChatStore.setState({
-      availableModels: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[],
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
     })
 
     mockWindowApp.loadSessionState.mockResolvedValue({
@@ -2305,7 +2301,7 @@ describe('awaitingAssistantReply state machine', () => {
   it('sets awaitingAssistantReply true when sending a new Claude turn', async () => {
     setupProject('/test')
     useChatStore.setState({
-      availableModels: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[],
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
     })
 
     await useChatStore.getState().sendMessage('hello')
@@ -2380,7 +2376,7 @@ describe('awaitingAssistantReply state machine', () => {
   it('clears awaitingAssistantReply when sendMessage throws', async () => {
     setupProject('/test')
     useChatStore.setState({
-      availableModels: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[],
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
     })
     mockWindowAgent.sendMessage.mockRejectedValueOnce(new Error('send failed'))
 
@@ -4156,11 +4152,11 @@ describe('cyclePermissionMode', () => {
 
   it('includes auto when account + model qualify: default → acceptEdits → auto → plan → default', async () => {
     setupProject('/test')
-    useChatStore.setState({
+    setClaude({
       account: { subscriptionType: 'max', apiProvider: 'firstParty' },
-      availableModels: [
+      models: [
         { id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportsAutoMode: true },
-      ],
+      ] as never[],
     })
     patchDraftSession('/test', { selectedModel: 'claude-opus-4-7' })
 
@@ -4181,12 +4177,12 @@ describe('cyclePermissionMode', () => {
 describe('setSelectedModel auto-mode downgrade', () => {
   it('downgrades permissionMode from auto to default when new model does not support auto mode', () => {
     setupProject('/test')
-    useChatStore.setState({
+    setClaude({
       account: { subscriptionType: 'max', apiProvider: 'firstParty' },
-      availableModels: [
+      models: [
         { id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportsAutoMode: true },
         { id: 'claude-haiku-4-5', name: 'Haiku 4.5', description: '' },
-      ],
+      ] as never[],
     })
     patchDraftSession('/test', { selectedModel: 'claude-opus-4-7', permissionMode: 'auto' })
 
@@ -4200,12 +4196,12 @@ describe('setSelectedModel auto-mode downgrade', () => {
 
   it('keeps permissionMode when new model still qualifies for auto', () => {
     setupProject('/test')
-    useChatStore.setState({
+    setClaude({
       account: { subscriptionType: 'team', apiProvider: 'firstParty' },
-      availableModels: [
+      models: [
         { id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportsAutoMode: true },
         { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', description: '', supportsAutoMode: true },
-      ],
+      ] as never[],
     })
     patchDraftSession('/test', { selectedModel: 'claude-opus-4-7', permissionMode: 'auto' })
 
@@ -5319,5 +5315,100 @@ describe('multi-mobile remoteSessions tracking', () => {
 
     const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-A']
     expect(sess.messages.filter((m) => m.id === 'user-1')).toHaveLength(1)
+  })
+})
+
+describe('initializeHarness', () => {
+  beforeEach(() => {
+    mockWindowApp.connectClaude.mockResolvedValue({
+      models: [{ id: 'claude-haiku-4-5', name: 'Haiku' }],
+      account: {},
+      slashCommands: [],
+      skills: [],
+      commands: [],
+      agents: [],
+      outputStyles: [],
+    })
+    mockWindowApp.connectCodex.mockResolvedValue({
+      models: [{ id: 'gpt-5.4', name: 'GPT-5.4' }],
+    })
+  })
+
+  it('routes claude to connectClaude and applies models without touching codex', async () => {
+    await useChatStore.getState().initializeHarness('claude')
+
+    expect(mockWindowApp.connectClaude).toHaveBeenCalledTimes(1)
+    expect(mockWindowApp.connectCodex).not.toHaveBeenCalled()
+    expect(useChatStore.getState().harnessResources.claude?.models[0].id).toBe('claude-haiku-4-5')
+    expect(useChatStore.getState().harnessResources.codex).toBeNull()
+  })
+
+  it('routes codex to connectCodex and applies models without touching claude', async () => {
+    await useChatStore.getState().initializeHarness('codex')
+
+    expect(mockWindowApp.connectCodex).toHaveBeenCalledTimes(1)
+    expect(mockWindowApp.connectClaude).not.toHaveBeenCalled()
+    expect(useChatStore.getState().harnessResources.codex?.models[0].id).toBe('gpt-5.4')
+    expect(useChatStore.getState().harnessResources.claude).toBeNull()
+  })
+
+  it('skips connect on second call within the same app session', async () => {
+    await useChatStore.getState().initializeHarness('claude')
+    await useChatStore.getState().initializeHarness('claude')
+
+    expect(mockWindowApp.connectClaude).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips connect even when called concurrently before the first promise resolves', async () => {
+    const p1 = useChatStore.getState().initializeHarness('codex')
+    const p2 = useChatStore.getState().initializeHarness('codex')
+    await Promise.all([p1, p2])
+
+    expect(mockWindowApp.connectCodex).toHaveBeenCalledTimes(1)
+  })
+
+  it('rolls back initializedHarnesses on failure so a retry can re-attempt', async () => {
+    mockWindowApp.connectCodex
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ models: [{ id: 'gpt-5.4', name: 'GPT-5.4' }] })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await useChatStore.getState().initializeHarness('codex')
+    expect(useChatStore.getState().initializedHarnesses.has('codex')).toBe(false)
+    expect(useChatStore.getState().harnessResources.codex).toBeNull()
+
+    await useChatStore.getState().initializeHarness('codex')
+    expect(useChatStore.getState().harnessResources.codex?.models[0].id).toBe('gpt-5.4')
+    expect(mockWindowApp.connectCodex).toHaveBeenCalledTimes(2)
+
+    warn.mockRestore()
+  })
+})
+
+describe('setHarnessResources(codex) syncs models to per-session', () => {
+  it('updates project.codexModels when a fresh refresh replaces the cached models', () => {
+    setCodex({ models: [{ id: 'gpt-5.3', name: 'old' }] as never[] })
+    setupProject('/codex-refresh')
+
+    expect(
+      useChatStore.getState().projectSessions['/codex-refresh'].codexModels?.map((m) => m.id),
+    ).toEqual(['gpt-5.3'])
+
+    setCodex({ models: [{ id: 'gpt-5.4', name: 'new' }] as never[] })
+
+    expect(
+      useChatStore.getState().projectSessions['/codex-refresh'].codexModels?.map((m) => m.id),
+    ).toEqual(['gpt-5.4'])
+  })
+
+  it('does not overwrite per-session codexModels when models payload is empty', () => {
+    setCodex({ models: [{ id: 'gpt-5.3', name: 'old' }] as never[] })
+    setupProject('/codex-empty-payload')
+
+    setCodex({ models: [] })
+
+    expect(
+      useChatStore.getState().projectSessions['/codex-empty-payload'].codexModels?.map((m) => m.id),
+    ).toEqual(['gpt-5.3'])
   })
 })

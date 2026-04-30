@@ -92,12 +92,8 @@ function resetStore() {
   useChatStore.setState({
     projectSessions: {},
     activeProject: null,
-    availableModels: [],
-    account: {},
-    globalSlashCommands: [],
-    userSkills: [],
-    userCommands: [],
-    userAgents: [],
+    harnessResources: { claude: null, codex: null },
+    initializedHarnesses: new Set(),
   })
 }
 
@@ -218,15 +214,25 @@ describe('PlanApprovalPrompt — integration', () => {
 
   it('scenario: account+model support auto mode → toggle switches post-approval mode to "auto"', () => {
     useChatStore.setState({
-      account: { subscriptionType: 'Claude Max', apiProvider: 'firstParty' },
-      availableModels: [
-        {
-          id: 'claude-opus-4-7',
-          name: 'Claude Opus 4.7',
-          description: '',
-          supportsAutoMode: true,
+      harnessResources: {
+        claude: {
+          account: { subscriptionType: 'Claude Max', apiProvider: 'firstParty' },
+          models: [
+            {
+              id: 'claude-opus-4-7',
+              name: 'Claude Opus 4.7',
+              description: '',
+              supportsAutoMode: true,
+            },
+          ] as never[],
+          slashCommands: [],
+          skills: [],
+          commands: [],
+          agents: [],
+          outputStyles: [],
         },
-      ],
+        codex: null,
+      },
     })
     seedPlanApprovalState('plan', { selectedModel: 'claude-opus-4-7' })
     render(<PlanApprovalPrompt />)
@@ -243,15 +249,25 @@ describe('PlanApprovalPrompt — integration', () => {
 
   it('scenario: auto-supported session + Shift+Tab approves directly into auto mode', () => {
     useChatStore.setState({
-      account: { subscriptionType: 'Claude Max', apiProvider: 'firstParty' },
-      availableModels: [
-        {
-          id: 'claude-opus-4-7',
-          name: 'Claude Opus 4.7',
-          description: '',
-          supportsAutoMode: true,
+      harnessResources: {
+        claude: {
+          account: { subscriptionType: 'Claude Max', apiProvider: 'firstParty' },
+          models: [
+            {
+              id: 'claude-opus-4-7',
+              name: 'Claude Opus 4.7',
+              description: '',
+              supportsAutoMode: true,
+            },
+          ] as never[],
+          slashCommands: [],
+          skills: [],
+          commands: [],
+          agents: [],
+          outputStyles: [],
         },
-      ],
+        codex: null,
+      },
     })
     seedPlanApprovalState('plan', { selectedModel: 'claude-opus-4-7' })
     render(<PlanApprovalPrompt />)

@@ -963,25 +963,36 @@ export interface LoadSessionMessagesResult {
   hasMore: boolean
 }
 
-// --- Connect result (global init at app startup) ---
+// --- Per-harness global resources ---
 
-export interface ConnectResult {
+export interface ClaudeResources {
   models: ModelOption[]
   account: AccountInfo
   slashCommands: SlashCommandInfo[]
-  userSkills: SlashCommandInfo[]
-  userCommands: SlashCommandInfo[]
-  userAgents: AgentInfo[]
-  availableOutputStyles: string[]
+  skills: SlashCommandInfo[]
+  commands: SlashCommandInfo[]
+  agents: AgentInfo[]
+  outputStyles: string[]
 }
 
-// --- Startup data (cached resources + user resources) ---
+export interface CodexResources {
+  models: ModelOption[]
+}
+
+export interface HarnessResourcesMap {
+  claude: ClaudeResources
+  codex: CodexResources
+}
+
+export type HarnessId = keyof HarnessResourcesMap
+
+// --- Startup data (cached per-harness resources) ---
 
 export interface StartupData {
-  cached: { models: ModelOption[]; codexModels: ModelOption[]; account: AccountInfo; slashCommands: SlashCommandInfo[] } | null
-  userSkills: SlashCommandInfo[]
-  userCommands: SlashCommandInfo[]
-  userAgents: AgentInfo[]
+  cached: {
+    claude: ClaudeResources | null
+    codex: CodexResources | null
+  }
 }
 
 // --- Codex experimental integration ---
@@ -1216,6 +1227,7 @@ export interface UpdateProviderRequest {
 export const AgentIpcChannels = {
   // App-level channels
   CONNECT_CLAUDE: 'app:connect-claude',
+  CONNECT_CODEX: 'app:connect-codex',
   GET_STARTUP_DATA: 'app:get-startup-data',
   SELECT_FOLDER: 'app:select-folder',
   GET_RECENT_FOLDERS: 'app:get-recent-folders',

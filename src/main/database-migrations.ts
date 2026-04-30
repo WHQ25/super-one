@@ -150,20 +150,14 @@ export function runDatabaseMigrations(db: Database.Database): void {
   migrateModelEnvToStructured(db)
 
   db.exec(`
-    CREATE TABLE IF NOT EXISTS global_resource_cache (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      models_json TEXT NOT NULL,
-      codex_models_json TEXT NOT NULL DEFAULT '[]',
-      account_json TEXT NOT NULL,
-      slash_commands_json TEXT NOT NULL,
+    CREATE TABLE IF NOT EXISTS harness_resource_cache (
+      harness_id TEXT PRIMARY KEY,
+      resources_json TEXT NOT NULL DEFAULT '{}',
       updated_at TEXT NOT NULL
     );
   `)
 
-  const cacheCols = db.prepare("PRAGMA table_info(global_resource_cache)").all() as Array<{ name: string }>
-  if (!cacheCols.some((c) => c.name === 'codex_models_json')) {
-    db.exec("ALTER TABLE global_resource_cache ADD COLUMN codex_models_json TEXT NOT NULL DEFAULT '[]'")
-  }
+  migrateGlobalResourceCacheToHarness(db)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS paired_devices (
@@ -423,6 +417,54 @@ function migrateModelEnvToStructured(db: Database.Database): void {
     if (changed) {
       stmt.run(JSON.stringify(configs), row.id)
     }
+  }
+}
+
+function migrateGlobalResourceCacheToHarness(db: Database.Database): void {
+  const legacyExists = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='global_resource_cache'")
+    .get()
+  if (!legacyExists) return
+
+  const row = db
+    .prepare('SELECT models_json, codex_models_json, account_json, slash_commands_json FROM global_resource_cache WHERE id = 1')
+    .get() as
+    | { models_json: string; codex_models_json: string; account_json: string; slash_commands_json: string }
+    | undefined
+
+  if (row) {
+    const claudeResources = {
+      models: safeParse(row.models_json, []),
+      account: safeParse(row.account_json, {}),
+      slashCommands: safeParse(row.slash_commands_json, []),
+      skills: [],
+      commands: [],
+      agents: [],
+      outputStyles: [],
+    }
+    const codexResources = {
+      models: safeParse(row.codex_models_json, []),
+    }
+    const now = new Date().toISOString()
+    const upsert = db.prepare(`
+      INSERT INTO harness_resource_cache (harness_id, resources_json, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(harness_id) DO UPDATE SET
+        resources_json = excluded.resources_json,
+        updated_at = excluded.updated_at
+    `)
+    upsert.run('claude', JSON.stringify(claudeResources), now)
+    upsert.run('codex', JSON.stringify(codexResources), now)
+  }
+
+  db.exec('DROP TABLE global_resource_cache')
+}
+
+function safeParse<T>(input: string, fallback: T): T {
+  try {
+    return JSON.parse(input) as T
+  } catch {
+    return fallback
   }
 }
 

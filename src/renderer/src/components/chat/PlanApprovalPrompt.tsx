@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
@@ -20,8 +20,8 @@ export function PlanApprovalPrompt() {
   const { t } = useTranslation()
   const pending = useActiveSession((s) => s.pendingPlanApproval)
   const respond = useChatStore((s) => s.respondToPlanApproval)
-  const account = useChatStore((s) => s.account)
-  const availableModels = useChatStore((s) => s.availableModels)
+  const account = useChatStore(selectClaudeAccount)
+  const availableModels = useChatStore(selectClaudeModels)
   const selectedModel = useActiveSession((s) => s.selectedModel)
   const [feedback, setFeedback] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)

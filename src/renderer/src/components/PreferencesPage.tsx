@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
 import { useAppStore } from '@/stores/app'
-import { invalidateDefaultClaudePreferencesCache, invalidateDefaultCodexPreferencesCache, invalidateDefaultPermissionModeCache, resolveCodexReasoningEffort, useChatStore } from '@/stores/chat'
+import { invalidateDefaultClaudePreferencesCache, invalidateDefaultCodexPreferencesCache, invalidateDefaultPermissionModeCache, resolveCodexReasoningEffort, useChatStore, selectClaudeModels, selectCodexModels, selectClaudeAccount, selectClaudeOutputStyles } from '@/stores/chat'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,9 +35,9 @@ function ClaudePreferencesPage() {
     max: t('settings.preferences.effort.levels.max'),
   }
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const availableOutputStyles = useChatStore((s) => s.availableOutputStyles)
-  const availableModels = useChatStore((s) => s.availableModels)
-  const account = useChatStore((s) => s.account)
+  const availableOutputStyles = useChatStore(selectClaudeOutputStyles)
+  const availableModels = useChatStore(selectClaudeModels)
+  const account = useChatStore(selectClaudeAccount)
   const autoPlanEligibility = checkAutoModePlanEligibility(account)
 
   const [outputStyle, setOutputStyle] = useState('')
@@ -370,7 +370,7 @@ function ClaudePreferencesPage() {
 function CodexPreferencesPage() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const cachedCodexModels = useChatStore((s) => s.cachedCodexModels)
+  const cachedCodexModels = useChatStore(selectCodexModels)
 
   const [defaultModel, setDefaultModel] = useState('')
   const [defaultReasoningEffort, setDefaultReasoningEffort] = useState<CodexReasoningEffort | ''>('')

@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { SchedulePicker } from './SchedulePicker'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, selectClaudeModels, selectCodexModels } from '@/stores/chat'
 import { modes as permissionModes } from '@/components/chat/PermissionModeSelector'
 import { sandboxModes } from '@/components/chat/SandboxModeSelector'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
@@ -158,8 +158,8 @@ export function AutomationDialog({
   const [form, setForm] = useState<FormState>(() => initForm(editAutomation))
   const [showAgentSettings, setShowAgentSettings] = useState(false)
 
-  const availableModels = useChatStore((s) => s.availableModels)
-  const cachedCodexModels = useChatStore((s) => s.cachedCodexModels)
+  const availableModels = useChatStore(selectClaudeModels)
+  const cachedCodexModels = useChatStore(selectCodexModels)
 
   useEffect(() => {
     if (open) {

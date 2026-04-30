@@ -64,6 +64,14 @@ vi.mock('@/stores/chat', () => ({
     { getState: () => chatState },
   ),
   isDraftSession: (id: string | null) => id === '__draft__' || (!!id && id.startsWith('__draft_')),
+  selectClaudeModels: () => [],
+  selectCodexModels: () => [],
+  selectClaudeAccount: () => ({}),
+  selectClaudeSlashCommands: () => [],
+  selectClaudeSkills: () => [],
+  selectClaudeCommands: () => [],
+  selectClaudeAgents: () => [],
+  selectClaudeOutputStyles: () => [],
 }))
 
 vi.mock('@/stores/miniapp', () => ({

@@ -24,6 +24,7 @@ const activeSessionState = {
 vi.mock('@/stores/chat', () => ({
   useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
+  selectClaudeModels: () => chatState.availableModels,
 }))
 
 import { ContextUsage } from './ContextUsage'

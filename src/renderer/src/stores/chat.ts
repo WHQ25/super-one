@@ -4,7 +4,7 @@ import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, g
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '../../../shared/event-seq-utils'
 import { perfEvent } from '@/lib/perf-trace'
 
@@ -293,7 +293,7 @@ export interface ToolRendererState {
   status: 'awaiting' | 'submitted' | 'cancelled'
 }
 
-interface ChatStore {
+export interface ChatStore {
   projectSessions: Record<string, ProjectState>
   activeProject: string | null
   remoteSessions: Record<string, string[]>
@@ -311,27 +311,17 @@ interface ChatStore {
   // Global UI state (not per-session)
   isOpen: boolean
   corner: Corner
-  availableModels: ModelOption[]
-  cachedCodexModels: ModelOption[]
-  account: AccountInfo
-  globalSlashCommands: SlashCommandInfo[]
-  userSkills: SlashCommandInfo[]
-  userCommands: SlashCommandInfo[]
-  userAgents: AgentInfo[]
-  availableOutputStyles: string[]
+
+  // Per-harness global resources (replaces flat availableModels/cachedCodexModels/account/globalSlashCommands/userSkills/userCommands/userAgents/availableOutputStyles)
+  harnessResources: {
+    claude: ClaudeResources | null
+    codex: CodexResources | null
+  }
+  initializedHarnesses: Set<HarnessId>
   disabledSkills: string[]
 
-  // Global resource setter
-  setGlobalResources: (
-    models: ModelOption[],
-    account: AccountInfo,
-    slashCommands: SlashCommandInfo[],
-    userSkills: SlashCommandInfo[],
-    userCommands: SlashCommandInfo[],
-    userAgents: AgentInfo[],
-    codexModels?: ModelOption[],
-    availableOutputStyles?: string[],
-  ) => void
+  setHarnessResources<H extends HarnessId>(harness: H, resources: HarnessResourcesMap[H]): void
+  initializeHarness(harness: HarnessId): Promise<void>
   setDisabledSkills: (list: string[]) => void
 
   // Event handling
@@ -1560,7 +1550,7 @@ export function invalidateDefaultCodexPreferencesCache(): void {
 
 function _reapplyAgentDefaultsToSessions(kind: 'claude' | 'codex'): void {
   const state = useChatStore.getState()
-  const availableModels = state.availableModels
+  const availableModels = state.harnessResources.claude?.models ?? []
   const nextProjects: Record<string, ProjectState> = { ...state.projectSessions }
   let changed = false
   for (const [projectPath, project] of Object.entries(state.projectSessions)) {
@@ -2279,6 +2269,79 @@ function removeRemoteSession(map: Record<string, string[]>, projectPath: string,
   return { ...map, [projectPath]: next }
 }
 
+interface HarnessHandler<H extends HarnessId> {
+  connect: () => Promise<HarnessResourcesMap[H]>
+  apply: (state: ChatStore, resources: HarnessResourcesMap[H]) => Partial<ChatStore>
+}
+
+function applyClaudeResources(s: ChatStore, r: ClaudeResources): Partial<ChatStore> {
+  const disabledSet = new Set(s.disabledSkills)
+  const updates: Partial<ChatStore> = {
+    harnessResources: { ...s.harnessResources, claude: r },
+  }
+  const projects = { ...s.projectSessions }
+  let changed = false
+  for (const [path, project] of Object.entries(projects)) {
+    if (!project._activeSessionId) continue
+    const patched = { ...project }
+    patched.slashCommands = buildSlashCommands(
+      r.slashCommands, r.skills, r.commands,
+      patched._projectSkills, patched._projectCommands, disabledSet,
+    )
+    const activeSid = patched._activeSessionId
+    if (activeSid && patched._sessions[activeSid]) {
+      const sess = patched._sessions[activeSid]
+      if (!sess.selectedModel && r.models.length > 0) {
+        const updated = { ...sess }
+        applyDefaultModel(updated, r.models)
+        patched._sessions = { ...patched._sessions, [activeSid]: updated }
+      }
+    }
+    projects[path] = patched
+    changed = true
+  }
+  if (changed) updates.projectSessions = projects
+  return updates
+}
+
+function applyCodexResources(s: ChatStore, r: CodexResources): Partial<ChatStore> {
+  const updates: Partial<ChatStore> = {
+    harnessResources: { ...s.harnessResources, codex: r },
+  }
+  if (r.models.length === 0) return updates
+  const projects = { ...s.projectSessions }
+  let changed = false
+  for (const [path, project] of Object.entries(projects)) {
+    const patched = { ...project, codexModels: r.models }
+    const activeSid = patched._activeSessionId
+    if (activeSid && patched._sessions[activeSid]) {
+      const sess = patched._sessions[activeSid]
+      if (!sess.selectedCodexModel || !sess.selectedCodexReasoningEffort) {
+        const selected = resolveSessionCodexSelection(r.models, sess.selectedCodexModel, sess.selectedCodexReasoningEffort)
+        if (selected.modelId !== sess.selectedCodexModel || selected.reasoningEffort !== sess.selectedCodexReasoningEffort) {
+          const updated = { ...sess, selectedCodexModel: selected.modelId, selectedCodexReasoningEffort: selected.reasoningEffort }
+          patched._sessions = { ...patched._sessions, [activeSid]: updated }
+        }
+      }
+    }
+    projects[path] = patched
+    changed = true
+  }
+  if (changed) updates.projectSessions = projects
+  return updates
+}
+
+const harnessHandlers: { [H in HarnessId]: HarnessHandler<H> } = {
+  claude: {
+    connect: () => window.app.connectClaude(),
+    apply: applyClaudeResources,
+  },
+  codex: {
+    connect: () => window.app.connectCodex(),
+    apply: applyCodexResources,
+  },
+}
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   projectSessions: {},
   activeProject: null,
@@ -2315,88 +2378,35 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   isOpen: false,
   corner: 'br',
-  availableModels: [],
-  cachedCodexModels: [],
-  account: {},
-  globalSlashCommands: [],
-  userSkills: [],
-  userCommands: [],
-  userAgents: [],
-  availableOutputStyles: [],
+  harnessResources: { claude: null, codex: null },
+  initializedHarnesses: new Set<HarnessId>(),
   disabledSkills: [],
 
-  setGlobalResources: (models, account, slashCommands, userSkills, userCommands, userAgents, codexModels, availableOutputStyles) => {
-    set((s) => {
-      const effectiveCodexModels = codexModels ?? s.cachedCodexModels
-      const disabledSet = new Set(s.disabledSkills)
-      const updates: Partial<ChatStore> = {
-        availableModels: models,
-        cachedCodexModels: effectiveCodexModels,
-        account,
-        globalSlashCommands: slashCommands,
-        userSkills,
-        userCommands,
-        userAgents,
-        availableOutputStyles: availableOutputStyles ?? s.availableOutputStyles,
-      }
+  setHarnessResources: (harness, resources) => {
+    const handler = harnessHandlers[harness] as HarnessHandler<typeof harness>
+    set((s) => handler.apply(s, resources))
+  },
 
-      const projects = { ...s.projectSessions }
-      let changed = false
-      for (const [path, project] of Object.entries(projects)) {
-        let projectChanged = false
-        const patched = { ...project }
-
-        if (patched._activeSessionId) {
-          patched.slashCommands = buildSlashCommands(slashCommands, userSkills, userCommands, patched._projectSkills, patched._projectCommands, disabledSet)
-          projectChanged = true
-        }
-
-        if (effectiveCodexModels.length > 0 && patched.codexModels.length === 0) {
-          patched.codexModels = effectiveCodexModels
-          projectChanged = true
-        }
-
-        const activeSid = patched._activeSessionId
-        if (activeSid && patched._sessions[activeSid]) {
-          const sess = patched._sessions[activeSid]
-          let updated = sess
-          if (!sess.selectedModel && models.length > 0) {
-            updated = updated === sess ? { ...sess } : updated
-            applyDefaultModel(updated, models)
-          }
-          if (effectiveCodexModels.length > 0 && (!updated.selectedCodexModel || !updated.selectedCodexReasoningEffort)) {
-            const selected = resolveSessionCodexSelection(
-              effectiveCodexModels,
-              updated.selectedCodexModel,
-              updated.selectedCodexReasoningEffort,
-            )
-            if (
-              selected.modelId !== updated.selectedCodexModel
-              || selected.reasoningEffort !== updated.selectedCodexReasoningEffort
-            ) {
-              updated = updated === sess ? { ...sess } : updated
-              updated.selectedCodexModel = selected.modelId
-              updated.selectedCodexReasoningEffort = selected.reasoningEffort
-            }
-          }
-          if (updated !== sess) {
-            patched._sessions = { ...patched._sessions, [activeSid]: updated }
-            projectChanged = true
-          }
-        }
-
-        if (projectChanged) {
-          projects[path] = patched
-          changed = true
-        }
-      }
-      if (changed) updates.projectSessions = projects
-      return updates
-    })
+  initializeHarness: async (harness) => {
+    if (get().initializedHarnesses.has(harness)) return
+    set((s) => ({ initializedHarnesses: new Set([...s.initializedHarnesses, harness]) }))
+    try {
+      const handler = harnessHandlers[harness] as HarnessHandler<typeof harness>
+      const resources = await handler.connect()
+      get().setHarnessResources(harness, resources)
+    } catch (err) {
+      set((s) => {
+        const next = new Set(s.initializedHarnesses)
+        next.delete(harness)
+        return { initializedHarnesses: next }
+      })
+      console.warn(`[initializeHarness:${harness}] failed:`, err)
+    }
   },
 
   setDisabledSkills: (list: string[]) => {
     set((s) => {
+      const claude = s.harnessResources.claude
       const disabledSet = new Set(list)
       const projects = { ...s.projectSessions }
       let changed = false
@@ -2405,7 +2415,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         projects[path] = {
           ...project,
           slashCommands: buildSlashCommands(
-            s.globalSlashCommands, s.userSkills, s.userCommands,
+            claude?.slashCommands ?? [], claude?.skills ?? [], claude?.commands ?? [],
             project._projectSkills, project._projectCommands,
             disabledSet,
           ),
@@ -2647,14 +2657,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         updatedProject._projectSkills = event.skills
         updatedProject._projectCommands = event.projectCommands
         updatedProject.projectAdditionalDirs = event.additionalDirectories
+        const claudeRes = s.harnessResources.claude
         updatedProject.slashCommands = buildSlashCommands(
-          s.globalSlashCommands, s.userSkills, s.userCommands,
+          claudeRes?.slashCommands ?? [], claudeRes?.skills ?? [], claudeRes?.commands ?? [],
           event.skills, event.projectCommands,
           new Set(s.disabledSkills),
         )
-        updatedProject.agents = [...s.userAgents, ...event.projectAgents]
+        updatedProject.agents = [...(claudeRes?.agents ?? []), ...event.projectAgents]
 
-        const globalModels = s.availableModels
+        const globalModels = claudeRes?.models ?? []
         if (!updatedSession.selectedModel && globalModels[0]) {
           updatedSession.selectedModel = globalModels[0].id
           const effort = getDefaultEffortForModel(globalModels[0])
@@ -2872,15 +2883,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => {
       if (s.projectSessions[projectPath]) return {}
       const project = createDefaultProjectState()
-      project.agents = s.userAgents
-      project.codexModels = s.cachedCodexModels
+      project.agents = s.harnessResources.claude?.agents ?? []
+      project.codexModels = s.harnessResources.codex?.models ?? []
       if (_cachedDefaultSandboxMode) project.sandboxInfo = sandboxModeToInfo(_cachedDefaultSandboxMode)
       const draftId = createSessionId()
       project._activeSessionId = draftId
       const newSession = createDefaultPerSessionState()
       newSession.cwd = projectPath
       if (_cachedDefaultPermissionMode) newSession.permissionMode = _cachedDefaultPermissionMode
-      applyDefaultModel(newSession, s.availableModels)
+      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
       const codexSelection = resolveDefaultCodexSelection(project.codexModels)
       newSession.selectedCodexModel = codexSelection.modelId
       newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
@@ -3364,7 +3375,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       newSession._worktreePath = opts?.wtPath ?? null
       newSession._worktreeBaseBranch = opts?.gitBranch ?? null
       if (_cachedDefaultPermissionMode) newSession.permissionMode = _cachedDefaultPermissionMode
-      applyDefaultModel(newSession, s.availableModels)
+      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
       const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
       newSession.selectedCodexModel = codexSelection.modelId
       newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
@@ -3410,7 +3421,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       newSession.cwd = activeProject
       newSession.preferredProvider = nextProvider
       newSession.sessionProvider = nextProvider
-      applyDefaultModel(newSession, s.availableModels)
+      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
       const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
       newSession.selectedCodexModel = codexSelection.modelId
       newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
@@ -3568,7 +3579,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setSelectedModel: (model) => {
-    const { activeProject, availableModels, account } = get()
+    const state = get()
+    const { activeProject } = state
+    const claude = state.harnessResources.claude
+    const availableModels = claude?.models ?? []
+    const account = claude?.account ?? {}
     if (!activeProject) return
     const modelInfo = availableModels.find((m) => m.id === model)
     const defaultEffort = getDefaultEffortForModel(modelInfo)
@@ -3729,7 +3744,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             ...s.projectSessions,
             [activeProject]: { ...proj, codexModels: models, codexModelsLoading: false, _sessions: updatedSessions },
           },
-          cachedCodexModels: models,
+          harnessResources: { ...s.harnessResources, codex: { models } },
         }
       })
     } catch (error) {
@@ -3791,8 +3806,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           selectedCodexReasoningEffort: selected.reasoningEffort,
         })))
       }
-      void get().refreshCodexModels()
     }
+    void get().initializeHarness(provider)
     triggerPrewarm(get(), activeProject)
   },
 
@@ -3972,7 +3987,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   cyclePermissionMode: () => {
     const session = getActivePerSession(get())
-    const { account, availableModels } = get()
+    const claude = get().harnessResources.claude
+    const account = claude?.account ?? {}
+    const availableModels = claude?.models ?? []
     const modelInfo = availableModels.find((m) => m.id === session.selectedModel)
     const startIdx = PERMISSION_MODES.indexOf(session.permissionMode)
     const anchor = startIdx === -1 ? 0 : startIdx
@@ -4228,7 +4245,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
 
       if (!targetSession.selectedModel) {
-        const defaultModel = get().availableModels[0]
+        const defaultModel = (get().harnessResources.claude?.models ?? [])[0]
         if (defaultModel) {
           const effort = getDefaultEffortForModel(defaultModel)
           set((s) => updatePerSession(s, activeProject, sessionId, () => ({
@@ -4296,7 +4313,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       permissionMode: defaultPermissionMode,
     }
     if (restoredProvider !== 'codex') {
-      applyDefaultModel(restoredSession, get().availableModels)
+      applyDefaultModel(restoredSession, get().harnessResources.claude?.models ?? [])
     } else {
       const codexSelection = resolveSessionCodexSelection(
         freshProject.codexModels,
@@ -4498,3 +4515,20 @@ export function applyDelta(content: ContentBlock[], delta: ContentBlock): Conten
   }
   return [...content, delta]
 }
+
+const EMPTY_ACCOUNT: AccountInfo = {}
+const EMPTY_MODELS: ModelOption[] = []
+const EMPTY_SLASH_COMMANDS: SlashCommandInfo[] = []
+const EMPTY_AGENTS: AgentInfo[] = []
+const EMPTY_OUTPUT_STYLES: string[] = []
+
+export const selectClaudeResources = (s: ChatStore): ClaudeResources | null => s.harnessResources.claude
+export const selectCodexResources = (s: ChatStore): CodexResources | null => s.harnessResources.codex
+export const selectClaudeModels = (s: ChatStore): ModelOption[] => s.harnessResources.claude?.models ?? EMPTY_MODELS
+export const selectCodexModels = (s: ChatStore): ModelOption[] => s.harnessResources.codex?.models ?? EMPTY_MODELS
+export const selectClaudeAccount = (s: ChatStore): AccountInfo => s.harnessResources.claude?.account ?? EMPTY_ACCOUNT
+export const selectClaudeSlashCommands = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.slashCommands ?? EMPTY_SLASH_COMMANDS
+export const selectClaudeSkills = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.skills ?? EMPTY_SLASH_COMMANDS
+export const selectClaudeCommands = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.commands ?? EMPTY_SLASH_COMMANDS
+export const selectClaudeAgents = (s: ChatStore): AgentInfo[] => s.harnessResources.claude?.agents ?? EMPTY_AGENTS
+export const selectClaudeOutputStyles = (s: ChatStore): string[] => s.harnessResources.claude?.outputStyles ?? EMPTY_OUTPUT_STYLES

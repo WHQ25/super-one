@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useChatStore, useActiveSession, selectClaudeModels } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ChevronDown, Loader2, Zap } from 'lucide-react'
@@ -38,7 +38,7 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
   const codexModelsLoading = useActiveSession((s) => s.codexModelsLoading)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
-  const availableModels = useChatStore((s) => s.availableModels)
+  const availableModels = useChatStore(selectClaudeModels)
   const setSelectedModel = useChatStore((s) => s.setSelectedModel)
   const setSelectedEffort = useChatStore((s) => s.setSelectedEffort)
   const setSelectedCodexModel = useChatStore((s) => s.setSelectedCodexModel)

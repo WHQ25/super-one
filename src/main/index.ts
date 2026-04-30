@@ -38,7 +38,8 @@ import {
   type CodexUsageInfo,
   type CodexSetAuthRequest,
   type ImageAttachment,
-  type ConnectResult,
+  type ClaudeResources,
+  type CodexResources,
   type StartupData,
   type FileTreeEntry,
   type GitFileStatus,
@@ -51,7 +52,7 @@ import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as 
 import { parseGitStatusOutput, parseGitStatusFiles } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
-import { getDb, closeDb, getCachedResources, setCachedResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw } from './database'
+import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw } from './database'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
 import { CodexPluginsService } from './codex/codex-plugins-service'
@@ -468,13 +469,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CODEX_LIST_MODELS, async (_event, projectPath: string) => {
     const models = await codexService.listModels(projectPath)
-    const currentCached = getCachedResources()
-    setCachedResources(
-      currentCached?.models ?? [],
-      models,
-      currentCached?.account ?? {},
-      currentCached?.slashCommands ?? [],
-    )
+    setCachedHarnessResources('codex', { models })
     log.debug('[CODEX_LIST_MODELS] project=%s models=%s', projectPath, JSON.stringify(models))
     return models
   })
@@ -1302,18 +1297,17 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.GET_FULLSCREEN, () => getMainWindow().isFullScreen())
 
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
-    const cached = getCachedResources() as StartupData['cached']
+    const claude = getCachedHarnessResources('claude')
+    const codex = getCachedHarnessResources('codex')
     log.info(
-      '[GET_STARTUP_DATA] cached:',
-      cached ? `${cached.models?.length ?? 0} models, ${cached.codexModels?.length ?? 0} codex models` : 'null',
+      '[GET_STARTUP_DATA] cached: claude=%s codex=%s',
+      claude ? `${claude.models?.length ?? 0} models` : 'null',
+      codex ? `${codex.models?.length ?? 0} models` : 'null',
     )
-    const userSkills = discoverUserSkills()
-    const userCommands = discoverUserCommands()
-    const userAgents = discoverUserAgents()
-    return { cached, userSkills, userCommands, userAgents }
+    return { cached: { claude, codex } }
   })
 
-  ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ConnectResult> => {
+  ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ClaudeResources> => {
     log.info('[CONNECT_CLAUDE] cwd:', app.getPath('userData'))
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
     const q = query({
@@ -1331,14 +1325,15 @@ function registerIpcHandlers(): void {
       log.info('[CONNECT_CLAUDE] Fetch complete, closing query...')
       q.close()
 
-      const userSkills = discoverUserSkills()
+      const skills = discoverUserSkills()
       const userCommands = discoverUserCommands()
+      const agents = discoverUserAgents()
 
       log.info('[CONNECT_CLAUDE] Models:', JSON.stringify(modelInfos, null, 2))
       log.info('[CONNECT_CLAUDE] Account:', JSON.stringify(accountInfo, null, 2))
       log.info('[CONNECT_CLAUDE] Commands:', JSON.stringify(commands, null, 2))
       log.info('[CONNECT_CLAUDE] OutputStyle=%s AvailableStyles=%j', initResult.output_style, initResult.available_output_styles)
-      log.info('[CONNECT_CLAUDE] User Skills:', JSON.stringify(userSkills, null, 2))
+      log.info('[CONNECT_CLAUDE] User Skills:', JSON.stringify(skills, null, 2))
       log.info('[CONNECT_CLAUDE] User Commands:', JSON.stringify(userCommands, null, 2))
 
       const models = modelInfos.map(mapModelInfo)
@@ -1356,14 +1351,20 @@ function registerIpcHandlers(): void {
         isSkill: false,
       }))
 
-      const currentCached = getCachedResources()
-      setCachedResources(models, currentCached?.codexModels ?? [], account, slashCommands)
+      const outputStyles = initResult.available_output_styles ?? []
 
-      const userAgents = discoverUserAgents()
+      const resources: ClaudeResources = {
+        models,
+        account,
+        slashCommands,
+        skills,
+        commands: userCommands,
+        agents,
+        outputStyles,
+      }
+      setCachedHarnessResources('claude', resources)
 
-      const availableOutputStyles = initResult.available_output_styles ?? []
-
-      return { models, account, slashCommands, userSkills, userCommands, userAgents, availableOutputStyles }
+      return resources
     } catch (error) {
       log.error('[CONNECT_CLAUDE] failed: %s', error instanceof Error ? error.message : String(error))
       const debugLogPath = String(log.transports.file.getFile().path)
@@ -1372,6 +1373,20 @@ function registerIpcHandlers(): void {
       try {
         q.close()
       } catch {}
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CONNECT_CODEX, async (): Promise<CodexResources> => {
+    log.info('[CONNECT_CODEX] Fetching codex models...')
+    try {
+      const models = await codexService.listModels(app.getPath('userData'))
+      const resources: CodexResources = { models }
+      setCachedHarnessResources('codex', resources)
+      log.info('[CONNECT_CODEX] Fetch complete: %d models', models.length)
+      return resources
+    } catch (error) {
+      log.error('[CONNECT_CODEX] failed: %s', error instanceof Error ? error.message : String(error))
+      throw error
     }
   })
 

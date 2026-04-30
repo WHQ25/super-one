@@ -120,6 +120,9 @@ const appAPI = {
   connectClaude: () =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_CLAUDE),
 
+  connectCodex: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CODEX),
+
   getStartupData: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_STARTUP_DATA),
 

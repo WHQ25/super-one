@@ -18,6 +18,9 @@ vi.mock('@/components/activity/activity-panel-api', () => ({
   openFileTab: vi.fn(),
 }))
 
+const mockInitializeHarness = vi.fn().mockResolvedValue(undefined)
+const mockSetHarnessResources = vi.fn()
+
 vi.mock('./chat', () => {
   const state = { projectSessions: {} as Record<string, unknown>, activeProject: null as string | null }
   const resetSessionForWorktreeSwitch = vi.fn()
@@ -26,7 +29,8 @@ vi.mock('./chat', () => {
       () => state,
       {
         getState: () => ({
-          setGlobalResources: vi.fn(),
+          setHarnessResources: mockSetHarnessResources,
+          initializeHarness: mockInitializeHarness,
           ensureSession: vi.fn(),
           switchProject: vi.fn(),
           resetSessionForWorktreeSwitch,
@@ -46,8 +50,9 @@ const mockWindowApp = {
   activateWorktree: vi.fn().mockResolvedValue({ ok: true, path: '/proj' }),
   selectFolder: vi.fn(),
   getRecentFolders: vi.fn().mockResolvedValue([]),
-  getStartupData: vi.fn().mockResolvedValue({ userSkills: [], userCommands: [], userAgents: [] }),
-  connectClaude: vi.fn().mockResolvedValue({ models: [], account: {}, slashCommands: [], userSkills: [], userCommands: [], userAgents: [] }),
+  getStartupData: vi.fn().mockResolvedValue({ cached: { claude: null, codex: null } }),
+  connectClaude: vi.fn().mockResolvedValue({ models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }),
+  connectCodex: vi.fn().mockResolvedValue({ models: [] }),
 }
 
 const storage: Record<string, string> = {}
@@ -139,14 +144,14 @@ describe('continueToMain', () => {
     expect(useAppStore.getState().view).toBe('startup')
   })
 
-  it('should still call connectClaude when no projects exist (first install)', async () => {
+  it('should still initialize claude harness when no projects exist (first install)', async () => {
     mockWindowApp.getRecentFolders.mockResolvedValue([])
     resetStore({ recentFolders: [], layoutMode: 'coding' })
 
     await useAppStore.getState().continueToMain()
     await vi.dynamicImportSettled()
 
-    expect(mockWindowApp.connectClaude).toHaveBeenCalled()
+    expect(mockInitializeHarness).toHaveBeenCalledWith('claude')
   })
 
   it('should go to main and open first project when projects exist', async () => {

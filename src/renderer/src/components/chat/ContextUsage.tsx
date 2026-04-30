@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useChatStore, useActiveSession, selectClaudeModels } from '@/stores/chat'
 import { DEFAULT_CONTEXT_WINDOW } from '../../../../shared/agent-types'
 
 const EXTENDED_CONTEXT_WINDOW = 1_000_000
@@ -24,7 +24,7 @@ export function ContextUsage() {
   const status = useActiveSession((s) => s.status)
   const detailedUsage = useActiveSession((s) => s.detailedUsage)
   const activeSessionId = useActiveSession((s) => s._activeSessionId)
-  const availableModels = useChatStore((s) => s.availableModels)
+  const availableModels = useChatStore(selectClaudeModels)
   const activeProject = useChatStore((s) => s.activeProject)
   const setDetailedUsage = useChatStore((s) => s.setDetailedUsage)
 

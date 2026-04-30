@@ -12,57 +12,41 @@
 }
 
 :root .dockview-theme-superone {
-  --dv-drag-over-background-color: oklch(0.65 0.22 42 / 0.08);
-  --dv-drag-over-border-color: oklch(0.65 0.22 42 / 0.3);
-  --dv-tabs-container-scrollbar-color: oklch(0.52 0.02 50 / 0.4);
-  --dv-icon-hover-background-color: oklch(0.96 0.01 65);
-  --dv-active-sash-color: oklch(0.65 0.22 42 / 0.3);
+  --dv-active-sash-color: oklch(from var(--primary) l c h / 0.3);
+  --dv-drag-over-background-color: oklch(from var(--primary) l c h / 0.08);
+  --dv-drag-over-border-color: oklch(from var(--primary) l c h / 0.3);
+  --dv-paneview-active-outline-color: var(--primary);
 
-  --dv-group-view-background-color: oklch(0.99 0.005 70);
-  --dv-tabs-and-actions-container-background-color: oklch(0.97 0.01 63);
-  --dv-activegroup-visiblepanel-tab-background-color: oklch(0.99 0.005 70);
-  --dv-activegroup-hiddenpanel-tab-background-color: oklch(0.97 0.01 63);
-  --dv-inactivegroup-visiblepanel-tab-background-color: oklch(0.99 0.005 70);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: oklch(0.97 0.01 63);
-  --dv-tab-divider-color: oklch(0.91 0.012 65);
+  --dv-group-view-background-color: var(--background);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--background);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--background);
 
-  --dv-activegroup-visiblepanel-tab-color: oklch(0.18 0.01 50);
-  --dv-activegroup-hiddenpanel-tab-color: oklch(0.52 0.02 50);
-  --dv-inactivegroup-visiblepanel-tab-color: oklch(0.52 0.02 50);
-  --dv-inactivegroup-hiddenpanel-tab-color: oklch(0.52 0.02 50 / 0.6);
+  --dv-tabs-and-actions-container-background-color: var(--muted);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--muted);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--muted);
 
-  --dv-separator-border: oklch(0.91 0.012 65);
-  --dv-paneview-header-border-color: oklch(0.91 0.012 65);
-  --dv-paneview-active-outline-color: oklch(0.65 0.22 42);
+  --dv-icon-hover-background-color: var(--accent);
+
+  --dv-tab-divider-color: var(--border);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+
+  --dv-activegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-hiddenpanel-tab-color: oklch(from var(--muted-foreground) l c h / 0.6);
+
+  --dv-tabs-container-scrollbar-color: oklch(from var(--muted-foreground) l c h / 0.4);
+  --dv-scrollbar-background-color: oklch(from var(--muted-foreground) l c h / 0.25);
+
   --dv-floating-box-shadow: 0 4px 12px oklch(0 0 0 / 0.1);
-  --dv-scrollbar-background-color: oklch(0.52 0.02 50 / 0.25);
 }
 
 .dark .dockview-theme-superone {
-  --dv-drag-over-background-color: oklch(0.922 0 0 / 0.08);
-  --dv-drag-over-border-color: oklch(0.922 0 0 / 0.3);
-  --dv-tabs-container-scrollbar-color: oklch(0.708 0 0 / 0.4);
-  --dv-icon-hover-background-color: oklch(0.269 0 0);
-  --dv-active-sash-color: oklch(0.922 0 0 / 0.3);
-
-  --dv-group-view-background-color: oklch(0.145 0 0);
-  --dv-tabs-and-actions-container-background-color: oklch(0.18 0 0);
-  --dv-activegroup-visiblepanel-tab-background-color: oklch(0.145 0 0);
-  --dv-activegroup-hiddenpanel-tab-background-color: oklch(0.18 0 0);
-  --dv-inactivegroup-visiblepanel-tab-background-color: oklch(0.145 0 0);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: oklch(0.18 0 0);
-  --dv-tab-divider-color: oklch(0.269 0 0);
-
-  --dv-activegroup-visiblepanel-tab-color: oklch(0.985 0 0);
-  --dv-activegroup-hiddenpanel-tab-color: oklch(0.708 0 0);
-  --dv-inactivegroup-visiblepanel-tab-color: oklch(0.708 0 0);
-  --dv-inactivegroup-hiddenpanel-tab-color: oklch(0.708 0 0 / 0.6);
-
-  --dv-separator-border: oklch(0.269 0 0);
-  --dv-paneview-header-border-color: oklch(0.269 0 0);
-  --dv-paneview-active-outline-color: oklch(0.488 0.243 264.376);
+  --dv-tabs-and-actions-container-background-color: var(--sidebar);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--sidebar);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--sidebar);
   --dv-floating-box-shadow: 0 4px 12px oklch(0 0 0 / 0.3);
-  --dv-scrollbar-background-color: oklch(0.708 0 0 / 0.25);
 }
 
 .dockview-theme-superone .dv-tab:focus-within::after,

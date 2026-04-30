@@ -24,6 +24,7 @@ import {
   readAgentFile,
   discoverUserCommands,
   discoverProjectCommands,
+  discoverCodexUserPrompts,
 } from './discover-resources'
 
 function dirent(name: string, isFile = true) {
@@ -356,6 +357,29 @@ describe('discoverUserCommands', () => {
 
     const result = discoverUserCommands()
     expect(result.some((c) => c.name === 'cool:build')).toBe(true)
+  })
+})
+
+describe('discoverCodexUserPrompts', () => {
+  it('reads top-level .md files from ~/.codex/prompts', () => {
+    existsSyncMock.mockImplementation((p: string) => p === '/home/user/.codex/prompts')
+    readdirSyncMock.mockReturnValue([dirent('align.md'), dirent('tdd.md')])
+    readFileSyncMock.mockImplementation((p: string) => {
+      if (p.endsWith('align.md')) return '---\ndescription: Align requirements\n---\n'
+      if (p.endsWith('tdd.md')) return '---\ndescription: TDD workflow\n---\n'
+      return ''
+    })
+
+    const result = discoverCodexUserPrompts()
+    expect(result).toEqual([
+      { name: 'align', description: 'Align requirements', argumentHint: '', isSkill: false },
+      { name: 'tdd', description: 'TDD workflow', argumentHint: '', isSkill: false },
+    ])
+  })
+
+  it('returns empty when ~/.codex/prompts does not exist', () => {
+    existsSyncMock.mockReturnValue(false)
+    expect(discoverCodexUserPrompts()).toEqual([])
   })
 })
 

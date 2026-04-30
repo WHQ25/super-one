@@ -58,6 +58,7 @@ const mockWindowApp = {
   codexReview: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
   codexCompact: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
   codexListModels: vi.fn().mockResolvedValue([]),
+  codexListSkills: vi.fn().mockResolvedValue([]),
   codexSteer: vi.fn().mockResolvedValue(undefined),
   codexPlanApproval: vi.fn().mockResolvedValue(undefined),
   codexCollaborationModeChange: vi.fn().mockResolvedValue(undefined),
@@ -70,7 +71,7 @@ const mockWindowApp = {
     agents: [],
     outputStyles: [],
   }),
-  connectCodex: vi.fn().mockResolvedValue({ models: [] }),
+  connectCodex: vi.fn().mockResolvedValue({ models: [], prompts: [] }),
   getAppSettings: vi.fn().mockResolvedValue({
     analyticsEnabled: true,
     agentPreference: {
@@ -162,6 +163,7 @@ function setCodex(partial: Partial<CodexResources>) {
   const current = useChatStore.getState().harnessResources.codex
   useChatStore.getState().setHarnessResources('codex', {
     models: [],
+    prompts: [],
     ...(current ?? {}),
     ...partial,
   })
@@ -5410,5 +5412,41 @@ describe('setHarnessResources(codex) syncs models to per-session', () => {
     expect(
       useChatStore.getState().projectSessions['/codex-empty-payload'].codexModels?.map((m) => m.id),
     ).toEqual(['gpt-5.3'])
+  })
+})
+
+describe('refreshCodexSkills', () => {
+  it('writes IPC result into project _codexSkills', async () => {
+    setupProject('/p')
+    mockWindowApp.codexListSkills.mockResolvedValueOnce([
+      { name: 'review', displayName: 'Review', scope: 'user', description: 'r', hasConfig: false },
+    ])
+    await useChatStore.getState().refreshCodexSkills('/p')
+    expect(mockWindowApp.codexListSkills).toHaveBeenCalledWith('/p')
+    expect(useChatStore.getState().projectSessions['/p']._codexSkills.map((s) => s.name)).toEqual(['review'])
+    expect(useChatStore.getState().projectSessions['/p']._codexSkillsLoading).toBe(false)
+  })
+
+  it('skips concurrent calls while a refresh is in flight', async () => {
+    setupProject('/p2')
+    let resolve: ((v: unknown[]) => void) | null = null
+    mockWindowApp.codexListSkills.mockImplementationOnce(
+      () => new Promise((r) => { resolve = r as (v: unknown[]) => void }),
+    )
+    const first = useChatStore.getState().refreshCodexSkills('/p2')
+    const second = useChatStore.getState().refreshCodexSkills('/p2')
+    resolve!([])
+    await Promise.all([first, second])
+    expect(mockWindowApp.codexListSkills).toHaveBeenCalledTimes(1)
+  })
+
+  it('triggers from setPreferredProvider("codex") when not yet cached', async () => {
+    setupProject('/p3')
+    mockWindowApp.codexListSkills.mockResolvedValueOnce([
+      { name: 'tdd', displayName: 'TDD', scope: 'user', description: '', hasConfig: false },
+    ])
+    useChatStore.getState().setPreferredProvider('codex')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mockWindowApp.codexListSkills).toHaveBeenCalledWith('/p3')
   })
 })

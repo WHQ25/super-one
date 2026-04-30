@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
-import { CODEX_REJECT_PLAN_PLACEHOLDER, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
+import { CODEX_REJECT_PLAN_PLACEHOLDER, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { ArrowUp, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
@@ -153,6 +153,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const canSend = hasContent && !isRemoteLocked
     const showAgentMentions = activeProviderForResources === 'claude'
 
+    const codexPrompts = useChatStore(selectCodexPrompts)
+    const codexSkills = useChatStore(selectActiveCodexSkills)
+
     const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
       { name: 'help', description: t('chat.codexCommands.helpDesc'), argumentHint: '', isSkill: false },
       { name: 'reset', description: t('chat.codexCommands.resetDesc'), argumentHint: '', isSkill: false },
@@ -163,7 +166,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       { name: 'review', description: t('chat.codexCommands.reviewDesc'), argumentHint: '', isSkill: false },
       { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
       { name: 'plan', description: t('chat.codexCommands.planDesc'), argumentHint: '', isSkill: false },
-    ]), [t])
+      ...codexPrompts,
+      ...codexSkills.map((s): SlashCommandInfo => ({ name: s.name, description: s.description, argumentHint: '', isSkill: true })),
+    ]), [t, codexPrompts, codexSkills])
 
     const activeSlashCommands = activeProviderForResources === 'codex' ? codexSlashCommands : slashCommands
 

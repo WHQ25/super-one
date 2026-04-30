@@ -53,7 +53,7 @@ import { parseGitStatusOutput, parseGitStatusFiles } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw } from './database'
-import { discoverUserSkills, discoverUserCommands, discoverUserAgents } from './agent/discover-resources'
+import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
 import { CodexPluginsService } from './codex/codex-plugins-service'
 import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
@@ -469,7 +469,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CODEX_LIST_MODELS, async (_event, projectPath: string) => {
     const models = await codexService.listModels(projectPath)
-    setCachedHarnessResources('codex', { models })
+    const current = getCachedHarnessResources('codex')
+    setCachedHarnessResources('codex', { models, prompts: current?.prompts ?? [] })
     log.debug('[CODEX_LIST_MODELS] project=%s models=%s', projectPath, JSON.stringify(models))
     return models
   })
@@ -1377,12 +1378,13 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CONNECT_CODEX, async (): Promise<CodexResources> => {
-    log.info('[CONNECT_CODEX] Fetching codex models...')
+    log.info('[CONNECT_CODEX] Fetching codex resources...')
     try {
       const models = await codexService.listModels(app.getPath('userData'))
-      const resources: CodexResources = { models }
+      const prompts = discoverCodexUserPrompts()
+      const resources: CodexResources = { models, prompts }
       setCachedHarnessResources('codex', resources)
-      log.info('[CONNECT_CODEX] Fetch complete: %d models', models.length)
+      log.info('[CONNECT_CODEX] Fetch complete: %d models, %d prompts', models.length, prompts.length)
       return resources
     } catch (error) {
       log.error('[CONNECT_CODEX] failed: %s', error instanceof Error ? error.message : String(error))

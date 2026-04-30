@@ -202,6 +202,8 @@ vi.mock('@/stores/chat', () => ({
   useChatStore,
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
   useIsRemoteLocked: () => false,
+  selectCodexPrompts: () => [],
+  selectActiveCodexSkills: () => [],
 }))
 
 vi.mock('@/stores/app', () => ({

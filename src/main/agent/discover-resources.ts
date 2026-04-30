@@ -174,6 +174,11 @@ export function scanCommandDir(dir: string, namePrefix = ''): SlashCommandInfo[]
   return commands
 }
 
+/** Discover Codex user-level prompts (~/.codex/prompts/*.md, top-level only). */
+export function discoverCodexUserPrompts(): SlashCommandInfo[] {
+  return scanCommandDir(join(homedir(), '.codex', 'prompts'))
+}
+
 /** Discover user-level slash commands (~/.claude/commands + user-scoped plugin commands). */
 export function discoverUserCommands(): SlashCommandInfo[] {
   const commands: SlashCommandInfo[] = []

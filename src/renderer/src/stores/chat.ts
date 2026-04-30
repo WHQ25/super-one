@@ -4,7 +4,7 @@ import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, g
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
-import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
+import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SkillInfo, SlashCommandInfo, TodoItem, UserQuestion } from '../../../shared/agent-types'
 import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '../../../shared/event-seq-utils'
 import { perfEvent } from '@/lib/perf-trace'
 
@@ -150,6 +150,8 @@ export interface ProjectState {
   unseenCompletedSessions: Set<string>
   codexModels: ModelOption[]
   codexModelsLoading: boolean
+  _codexSkills: SkillInfo[]
+  _codexSkillsLoading: boolean
   projectAdditionalDirs: string[]
   showDirManager: boolean
   showReviewPanel: boolean
@@ -274,6 +276,8 @@ export function createDefaultProjectState(): ProjectState {
     unseenCompletedSessions: new Set(),
     codexModels: [],
     codexModelsLoading: false,
+    _codexSkills: [],
+    _codexSkillsLoading: false,
     projectAdditionalDirs: [],
     showDirManager: false,
     showReviewPanel: false,
@@ -370,6 +374,7 @@ export interface ChatStore {
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void
   setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode) => void
   refreshCodexModels: (force?: boolean) => Promise<void>
+  refreshCodexSkills: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void
 
   // Attachment actions
@@ -2876,6 +2881,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         } catch (err) { console.warn('[chat] resumeSession failed:', err) }
       }
     }
+    const switchedProject = get().projectSessions[projectPath]
+    const switchedSid = switchedProject?._activeSessionId
+    const switchedSession = switchedSid ? switchedProject?._sessions[switchedSid] : undefined
+    const isCodexActive = (switchedSession?.sessionProvider ?? switchedSession?.preferredProvider) === 'codex'
+    if (isCodexActive && switchedProject && switchedProject._codexSkills.length === 0 && !switchedProject._codexSkillsLoading) {
+      void get().refreshCodexSkills(projectPath)
+    }
   },
 
   ensureSession: (projectPath: string) => {
@@ -3744,12 +3756,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             ...s.projectSessions,
             [activeProject]: { ...proj, codexModels: models, codexModelsLoading: false, _sessions: updatedSessions },
           },
-          harnessResources: { ...s.harnessResources, codex: { models } },
+          harnessResources: { ...s.harnessResources, codex: { models, prompts: s.harnessResources.codex?.prompts ?? [] } },
         }
       })
     } catch (error) {
       console.warn('[refreshCodexModels] Failed:', error)
       set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: false })))
+    }
+  },
+
+  refreshCodexSkills: async (projectPath) => {
+    const target = projectPath ?? get().activeProject
+    if (!target) return
+    const current = get().projectSessions[target]
+    if (current?._codexSkillsLoading) return
+    set((s) => updateProjectState(s, target, () => ({ _codexSkillsLoading: true })))
+    try {
+      const skills = await window.app.codexListSkills(target)
+      set((s) => updateProjectState(s, target, () => ({ _codexSkills: skills, _codexSkillsLoading: false })))
+    } catch (error) {
+      console.warn('[refreshCodexSkills] Failed:', error)
+      set((s) => updateProjectState(s, target, () => ({ _codexSkillsLoading: false })))
     }
   },
 
@@ -3805,6 +3832,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           selectedCodexModel: selected.modelId,
           selectedCodexReasoningEffort: selected.reasoningEffort,
         })))
+      }
+      if (project._codexSkills.length === 0 && !project._codexSkillsLoading) {
+        void get().refreshCodexSkills(activeProject)
       }
     }
     void get().initializeHarness(provider)
@@ -4521,11 +4551,17 @@ const EMPTY_MODELS: ModelOption[] = []
 const EMPTY_SLASH_COMMANDS: SlashCommandInfo[] = []
 const EMPTY_AGENTS: AgentInfo[] = []
 const EMPTY_OUTPUT_STYLES: string[] = []
+const EMPTY_SKILL_INFOS: SkillInfo[] = []
 
 export const selectClaudeResources = (s: ChatStore): ClaudeResources | null => s.harnessResources.claude
 export const selectCodexResources = (s: ChatStore): CodexResources | null => s.harnessResources.codex
 export const selectClaudeModels = (s: ChatStore): ModelOption[] => s.harnessResources.claude?.models ?? EMPTY_MODELS
 export const selectCodexModels = (s: ChatStore): ModelOption[] => s.harnessResources.codex?.models ?? EMPTY_MODELS
+export const selectCodexPrompts = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.codex?.prompts ?? EMPTY_SLASH_COMMANDS
+export const selectActiveCodexSkills = (s: ChatStore): SkillInfo[] => {
+  if (!s.activeProject) return EMPTY_SKILL_INFOS
+  return s.projectSessions[s.activeProject]?._codexSkills ?? EMPTY_SKILL_INFOS
+}
 export const selectClaudeAccount = (s: ChatStore): AccountInfo => s.harnessResources.claude?.account ?? EMPTY_ACCOUNT
 export const selectClaudeSlashCommands = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.slashCommands ?? EMPTY_SLASH_COMMANDS
 export const selectClaudeSkills = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.skills ?? EMPTY_SLASH_COMMANDS

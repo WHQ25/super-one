@@ -977,6 +977,7 @@ export interface ClaudeResources {
 
 export interface CodexResources {
   models: ModelOption[]
+  prompts: SlashCommandInfo[]
 }
 
 export interface HarnessResourcesMap {

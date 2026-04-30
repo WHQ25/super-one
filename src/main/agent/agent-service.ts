@@ -781,8 +781,10 @@ export class AgentService {
               },
             })
           } else {
+            const cached = getCachedHarnessResources('codex')
             const models = this.codexListModels ? await this.codexListModels(command.projectPath) : []
             const skills = listCodexSkills(command.projectPath)
+            const userPrompts = cached?.prompts ?? []
             const activeProvider = buildRemoteActiveProvider(getActiveProviderRaw('codex'), 'codex')
             await respond?.(command.requestId, {
               models,
@@ -793,6 +795,7 @@ export class AgentService {
                 { name: 'auth', description: 'Show auth status' },
                 { name: 'review', description: 'Review code changes' },
                 { name: 'compact', description: 'Compact thread context' },
+                ...userPrompts.map((p) => ({ name: p.name, description: p.description ?? '', argumentHint: p.argumentHint ?? '' })),
               ],
               account: this.codexGetAuthStatus?.(command.projectPath) ?? null,
               permissionPresets: ['default', 'full-access'],

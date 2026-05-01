@@ -1817,6 +1817,7 @@ function performQuit(): void {
   stopWatching()
   stopMcpHttpServer()
   disposeUpdater()
+  remoteControlService.stop().catch(() => {})
   agentService
     .dispose()
     .catch(() => {})

@@ -61,6 +61,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
     const [dirEntries, setDirEntries] = useState<ListDirEntry[]>([])
     const [searchResults, setSearchResults] = useState<MentionSearchItem[]>([])
+    const [searchCompleted, setSearchCompleted] = useState(false)
     const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
     const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -75,20 +76,24 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const scopeDir = !isBrowseMode && lastSlash >= 0 ? query.slice(0, lastSlash + 1) : undefined
 
     useEffect(() => {
+      setSearchCompleted(false)
       if (debounceRef.current) clearTimeout(debounceRef.current)
 
       if (isBrowseMode) {
         setSearchResults([])
-        if (!activeProject) return
-        window.agent.listDirectory(activeProject, query).then(setDirEntries).catch(() => setDirEntries([]))
+        if (!activeProject) { setSearchCompleted(true); return }
+        window.agent.listDirectory(activeProject, query)
+          .then((entries) => { setDirEntries(entries); setSearchCompleted(true) })
+          .catch(() => { setDirEntries([]); setSearchCompleted(true) })
         return
       }
 
       debounceRef.current = setTimeout(() => {
-        if (!activeProject) return
+        if (!activeProject) { setSearchCompleted(true); return }
         const searchQuery = scopeDir ? query.slice(scopeDir.length) : query
         window.agent.searchMentions(activeProject, searchQuery, agentEntries, additionalDirs, scopeDir)
-          .then(setSearchResults).catch(() => setSearchResults([]))
+          .then((results) => { setSearchResults(results); setSearchCompleted(true) })
+          .catch(() => { setSearchResults([]); setSearchCompleted(true) })
       }, 150)
       return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
     }, [query, activeProject, additionalDirs, agentEntries, isBrowseMode, scopeDir])
@@ -159,6 +164,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const activeScopeDir = isBrowseMode ? browseDir : scopeDir
     const breadcrumbs = activeScopeDir ? activeScopeDir.split('/').filter(Boolean) : []
     const projectName = activeProject?.split('/').pop() || ''
+
+    if (searchCompleted && flatItems.length === 0) return null
 
     return (
       <div className={cn("absolute bottom-full left-0 right-0 z-10 max-h-72 overflow-hidden border border-border bg-card flex flex-col", rounded ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg')}>
@@ -272,10 +279,6 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               </button>
             )
           })}
-
-          {flatItems.length === 0 && (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">No matches</div>
-          )}
         </div>
 
         <div className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground shrink-0">

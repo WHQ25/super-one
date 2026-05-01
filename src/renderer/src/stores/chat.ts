@@ -99,6 +99,7 @@ export interface PerSessionState {
   selectedCodexCollaborationMode: CodexCollaborationMode
   codexPlanRejectHintActive: boolean
   chatInputFocusNonce: number
+  chatInputRestoreFocusNonce: number
   preferredProvider: ChatProvider
   draftText: string
   promptSuggestion: string | null
@@ -191,6 +192,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     selectedCodexCollaborationMode: 'default',
     codexPlanRejectHintActive: false,
     chatInputFocusNonce: 0,
+    chatInputRestoreFocusNonce: 0,
     preferredProvider: 'claude',
     draftText: '',
     promptSuggestion: null,
@@ -351,6 +353,7 @@ export interface ChatStore {
 
   // UI actions
   toggleOpen: () => void
+  requestChatInputFocusRestore: () => void
   setCorner: (corner: Corner) => void
   clearMessages: () => void
   resetSession: () => Promise<void>
@@ -3346,6 +3349,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   toggleOpen: () => set((s) => ({ isOpen: !s.isOpen })),
+
+  requestChatInputFocusRestore: () => {
+    set((s) => updateActivePerSession(s, (sess) => ({
+      chatInputRestoreFocusNonce: sess.chatInputRestoreFocusNonce + 1,
+    })))
+  },
 
   setCorner: (corner) => set({ corner }),
 

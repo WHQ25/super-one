@@ -9,6 +9,7 @@ import { PenLine, Check, X, FastForward, Zap, Circle, CheckCircle2 } from 'lucid
 import { Kbd } from '@/components/ui/kbd'
 import { streamdownLinkSafety, streamdownRehypePlugins, mathPlugin } from './chat-shared'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
+import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import type { PermissionMode } from '../../../../shared/agent-types'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
@@ -28,6 +29,7 @@ export function PlanApprovalPrompt() {
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const [switchAfterApproval, setSwitchAfterApproval] = useState(false)
   const requestId = pending?.requestId
+  useRestoreChatInputFocus(!!requestId)
   const planContent = pending?.planContent ?? ''
   const planFilePath = pending?.planFilePath ?? ''
   const allowedPrompts = pending?.allowedPrompts ?? []

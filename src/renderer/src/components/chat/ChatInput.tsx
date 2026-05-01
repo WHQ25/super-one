@@ -93,7 +93,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       })))
     const {
       slashCommands, preferredProvider, sessionProvider, agents,
-      selectedCodexCollaborationMode, codexPlanRejectHintActive, chatInputFocusNonce,
+      selectedCodexCollaborationMode, codexPlanRejectHintActive, chatInputFocusNonce, chatInputRestoreFocusNonce,
       promptSuggestion, showReviewPanel,
       activeSessionId,
     } = useActiveSession(useShallow((s) => ({
@@ -104,6 +104,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       selectedCodexCollaborationMode: s.selectedCodexCollaborationMode,
       codexPlanRejectHintActive: s.codexPlanRejectHintActive,
       chatInputFocusNonce: s.chatInputFocusNonce,
+      chatInputRestoreFocusNonce: s.chatInputRestoreFocusNonce,
       promptSuggestion: s.promptSuggestion,
       showReviewPanel: s.showReviewPanel,
       activeSessionId: s._activeSessionId,
@@ -724,6 +725,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       editorProps: {
         attributes: {
           class: 'w-full min-h-[36px] max-h-[120px] overflow-y-auto text-[15px] leading-6 outline-none text-foreground',
+          'data-chat-input-editor': 'true',
         },
         handleKeyDown: (_view, event) => {
           return handleKeyDownRef.current(event)
@@ -848,6 +850,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         editor.commands.focus('end')
       }
     }, [chatInputFocusNonce, compact, editor, showReviewPanel])
+
+    useEffect(() => {
+      if (!chatInputRestoreFocusNonce) return
+      if (compact) {
+        compactInputRef.current?.focus()
+        return
+      }
+      if (editor && !showReviewPanel) {
+        editor.commands.focus()
+      }
+    }, [chatInputRestoreFocusNonce, compact, editor, showReviewPanel])
 
     useEffect(() => {
       if (showReviewPanel && editor) {

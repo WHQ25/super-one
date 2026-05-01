@@ -5,6 +5,7 @@ import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Kbd } from '@/components/ui/kbd'
 import { Streamdown } from 'streamdown'
 import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from './chat-shared'
+import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import type { UserQuestion, QuestionAnnotations } from '../../../../shared/agent-types'
 
 function questionKey(q: UserQuestion): string {
@@ -277,6 +278,7 @@ export function AskUserQuestionPrompt() {
   const pendingQuestion = useActiveSession((s) => s.pendingQuestion)
   const answerQuestion = useChatStore((s) => s.answerQuestion)
   const dismissQuestion = useChatStore((s) => s.dismissQuestion)
+  useRestoreChatInputFocus(!!pendingQuestion)
 
   const [selections, setSelections] = useState<Record<string, string>>({})
   const [otherTexts, setOtherTexts] = useState<Record<string, string>>({})

@@ -27,6 +27,7 @@ const { chatActions, activeSessionState, editorState, useChatStore } = vi.hoiste
     selectedCodexCollaborationMode: 'default' as const,
     codexPlanRejectHintActive: false,
     chatInputFocusNonce: 0,
+    chatInputRestoreFocusNonce: 0,
     promptSuggestion: null as string | null,
     showDirManager: false,
     showReviewPanel: false,

@@ -402,6 +402,7 @@ function createEmptySession() {
     selectedCodexCollaborationMode: 'default' as const,
     codexPlanRejectHintActive: false,
     chatInputFocusNonce: 0,
+    chatInputRestoreFocusNonce: 0,
     preferredProvider: 'claude' as const,
     draftText: '',
     promptSuggestion: null,

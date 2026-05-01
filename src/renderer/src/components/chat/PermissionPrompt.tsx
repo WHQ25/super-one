@@ -11,6 +11,7 @@ import { ToolIcon } from './ToolIcon'
 import { getToolDisplay, parseMcpToolName } from './tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
+import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 
 interface MiniAppToolInfo {
   appId: string
@@ -118,6 +119,7 @@ export function PermissionPrompt() {
   const requestId = pendingPermission?.requestId
   const toolName = pendingPermission?.toolName
   const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow
+  useRestoreChatInputFocus(!!requestId)
   const isCodexDecisionPrompt = sessionProvider === 'codex' && allowAlwaysAllow
   const isEditTool = toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit'
   const suggestionsCount = pendingPermission?.suggestions?.length ?? 0

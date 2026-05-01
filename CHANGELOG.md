@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.24.1-alpha] - 2026-05-01
+
+### Added
+
+- **Mobile `/add-dir` parity** — full `additionalDirectories` management is now exposed to mobile via new RemoteCommands (`list_directory_for_add_dir`, `validate_add_dir`, `add/remove_project_additional_dir`, `set_session_additional_dirs`); `create_session` also carries `additionalDirectories` from the start. An `additional_dirs_changed` agent event broadcasts every change so renderer + all mobile peers stay in sync. The add-dir popup overview is reorganized into USER (conditional) / PROJECT / SESSION groups with folder chip ↔ path layout, and `BackendCommand` gains `claude.set_additional_dirs` so `Session` handles dir replacement + idle-rebuild uniformly.
+- **Chat input focus auto-restored after prompts** — when a permission request, plan approval, or AskUserQuestion appears mid-typing, the prompt steals or absorbs key events and previously left ChatInput unfocused after dismissal. A new per-session `chatInputRestoreFocusNonce` (distinct from the existing focus nonce that jumps cursor to end) restores the editor's saved ProseMirror selection so the cursor returns exactly where typing was interrupted. Multi-prompt sequences only restore once at the end.
+
+### Changed
+
+- **`get_system_info` split into connection-only + `get_project_resources`** — skills, agents, and project slash-commands moved out of `get_system_info` into the new `get_project_resources`, which also returns `additionalDirsScoped` + `cwd` + `homedir` so mobile can render dir hints and shortened paths before `init_ready` arrives. `get_system_info` is now strictly connection metadata, giving mobile a clean separation between cheap connect-time fetch and per-project resource fetch.
+
+### Fixed
+
+- **Skills `argumentHint` reaches mobile** — `listSkills` (used by remote `system_info` / `project_resources`) only parsed `name` + `description` from frontmatter, so every skill row on mobile rendered with an empty argument hint even though the desktop sidebar showed it. `parseFrontmatter` now reads `arguments`/`argument-hint` and propagates `argumentHint` into `SkillInfo`, matching `scanSkillDir`.
+- **`@` mention popup auto-hides on zero results** — popup previously stayed open until you typed a space, even if no matches existed for the query. It now closes the moment a search returns zero results and reappears on backspace as soon as the query matches again.
+
 ## [0.24.0-alpha] - 2026-05-01
 
 ### Added

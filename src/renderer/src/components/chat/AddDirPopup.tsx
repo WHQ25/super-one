@@ -89,7 +89,7 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
   function AddDirPopup({ argsText, selectedIndex, onSetSelectedIndex, onScopeFill, onPathNavigate, onPathCommit, onAddViaPicker, onRemoveDir, rounded }, ref) {
     const activeProject = useChatStore((s) => s.activeProject)
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
-    const projectAdditionalDirs = useActiveSession((s) => s.projectAdditionalDirs)
+    const projectSharedDirs = useActiveSession((s) => s.projectSharedDirs)
     const projectLocalDirs = useActiveSession((s) => s.projectLocalDirs)
     const userAdditionalDirs = useActiveSession((s) => s.userAdditionalDirs)
     const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
@@ -218,9 +218,9 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
           {phase.kind === 'overview' && (
             <OverviewView
               user={userAdditionalDirs}
-              project={projectAdditionalDirs}
-              session={additionalDirs}
+              projectShared={projectSharedDirs}
               projectLocal={projectLocalDirs}
+              session={additionalDirs}
               onAddViaPicker={onAddViaPicker}
               onRemoveDir={onRemoveDir}
             />
@@ -284,65 +284,54 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
 
 function OverviewView({
   user,
-  project,
-  session,
+  projectShared,
   projectLocal,
+  session,
   onAddViaPicker,
   onRemoveDir,
 }: {
   user: string[]
-  project: string[]
-  session: string[]
+  projectShared: string[]
   projectLocal: string[]
+  session: string[]
   onAddViaPicker: (scope: 'project' | 'session') => void
   onRemoveDir: (path: string, scope: 'project' | 'session') => void
 }) {
-  const removableInProject = new Set(projectLocal)
+  const hasUser = user.length > 0
+  const projectEmpty = projectShared.length === 0 && projectLocal.length === 0
+  const sessionEmpty = session.length === 0
+
   return (
-    <div className="space-y-2 px-2 py-1">
-      {user.length > 0 && (
-        <DirGroup label="User" dirs={user} subtle />
+    <div className="px-2 py-1 space-y-2">
+      {hasUser && (
+        <DirGroup label="USER">
+          {user.map((d) => (
+            <DirRow key={`user:${d}`} dir={d} />
+          ))}
+        </DirGroup>
       )}
-      <DirGroup
-        label="Project"
-        dirs={project}
-        hint={(d) => (removableInProject.has(d) ? 'local' : 'shared')}
-        onAdd={() => onAddViaPicker('project')}
-        canRemove={(d) => removableInProject.has(d)}
-        onRemove={(d) => onRemoveDir(d, 'project')}
-      />
-      <DirGroup
-        label="Session"
-        dirs={session}
-        onAdd={() => onAddViaPicker('session')}
-        canRemove={() => true}
-        onRemove={(d) => onRemoveDir(d, 'session')}
-      />
+      <DirGroup label="PROJECT" empty={projectEmpty} onAdd={() => onAddViaPicker('project')}>
+        {projectShared.map((d) => (
+          <DirRow key={`shared:${d}`} dir={d} />
+        ))}
+        {projectLocal.map((d) => (
+          <DirRow key={`local:${d}`} dir={d} onRemove={() => onRemoveDir(d, 'project')} />
+        ))}
+      </DirGroup>
+      <DirGroup label="SESSION" empty={sessionEmpty} onAdd={() => onAddViaPicker('session')}>
+        {session.map((d) => (
+          <DirRow key={`session:${d}`} dir={d} onRemove={() => onRemoveDir(d, 'session')} />
+        ))}
+      </DirGroup>
     </div>
   )
 }
 
-function DirGroup({
-  label,
-  dirs,
-  subtle,
-  hint,
-  onAdd,
-  canRemove,
-  onRemove,
-}: {
-  label: string
-  dirs: string[]
-  subtle?: boolean
-  hint?: (d: string) => string
-  onAdd?: () => void
-  canRemove?: (d: string) => boolean
-  onRemove?: (d: string) => void
-}) {
+function DirGroup({ label, empty, onAdd, children }: { label: string; empty?: boolean; onAdd?: () => void; children: React.ReactNode }) {
   return (
     <div>
       <div className="mb-0.5 flex items-center gap-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
         {onAdd && (
           <button
             onMouseDown={(e) => { e.preventDefault(); onAdd() }}
@@ -353,44 +342,42 @@ function DirGroup({
           </button>
         )}
       </div>
-      {dirs.length === 0 ? (
-        <div className="text-[11px] italic text-muted-foreground/60">none</div>
+      {empty ? (
+        <div className="px-1.5 text-[11px] italic text-muted-foreground/60">none</div>
       ) : (
-        <div className="space-y-0.5">
-          {dirs.map((d) => {
-            const removable = canRemove?.(d) && onRemove
-            return (
-              <div
-                key={d}
-                className={cn(
-                  'group flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs hover:bg-muted/50',
-                  subtle ? 'text-muted-foreground' : 'text-foreground'
-                )}
-              >
-                <Folder className="size-3 shrink-0 text-blue-500" />
-                <span className="truncate">{d}</span>
-                {hint && (
-                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">{hint(d)}</span>
-                )}
-                {removable && (
-                  <button
-                    onMouseDown={(e) => { e.preventDefault(); onRemove!(d) }}
-                    className={cn(
-                      'shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground',
-                      hint ? 'ml-1' : 'ml-auto'
-                    )}
-                    title="Remove"
-                  >
-                    <X className="size-2.5" />
-                  </button>
-                )}
-              </div>
-            )
-          })}
-        </div>
+        <div className="space-y-0.5">{children}</div>
       )}
     </div>
   )
+}
+
+function DirRow({ dir, onRemove }: { dir: string; onRemove?: () => void }) {
+  return (
+    <div className="group flex items-center justify-between gap-2 rounded py-0.5 text-xs hover:bg-muted/30">
+      <div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 py-0.5">
+        <Folder className="size-3 shrink-0 text-blue-500" />
+        <span className="font-medium text-foreground">{basename(dir)}</span>
+        {onRemove && (
+          <button
+            onMouseDown={(ev) => { ev.preventDefault(); onRemove() }}
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+            title="Remove"
+          >
+            <X className="size-2.5" />
+          </button>
+        )}
+      </div>
+      <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-right font-mono text-[11px] text-muted-foreground/70 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {dir}
+      </div>
+    </div>
+  )
+}
+
+function basename(p: string): string {
+  const trimmed = p.replace(/[/\\]+$/, '')
+  const parts = trimmed.split(/[/\\]/)
+  return parts[parts.length - 1] || p
 }
 
 function ScopeView({

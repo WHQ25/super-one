@@ -576,6 +576,7 @@ export type AgentEventBase =
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode; selectedModel?: string | null; selectedEffort?: EffortLevel | null; activeProvider?: RemoteActiveProvider | null }
+  | { type: 'additional_dirs_changed'; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; sessionAdditionalDirs: string[] }
   | { type: 'prompt_suggestion'; suggestion: string }
   | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; overageStatus?: string; overageResetsAt?: number; overageDisabledReason?: string; isUsingOverage?: boolean; surpassedThreshold?: number }
   | { type: 'assistant_error'; messageId: string; error: string }
@@ -867,6 +868,7 @@ export interface SkillInfo {
   displayName: string
   scope: ResourceScope
   description: string
+  argumentHint?: string
   hasConfig: boolean
 }
 
@@ -1519,7 +1521,7 @@ export type MentionSearchItem =
   | { kind: 'agent'; name: string; model: string; matchIndices: number[]; score: number }
 
 export type RemoteCommand =
-  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: 'claude' | 'codex'; permissionMode?: string; effort?: string; model?: string; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean }
+  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: 'claude' | 'codex'; permissionMode?: string; effort?: string; model?: string; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[] }
   | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: 'claude' | 'codex'; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
@@ -1550,6 +1552,11 @@ export type RemoteCommand =
   | { type: 'activate_worktree'; requestId: string; projectPath: string; baseBranch: string | null; mode?: WorktreeMode; branchName?: string; carryLocalChanges?: boolean }
   | { type: 'search_mentions'; requestId: string; projectPath: string; query: string }
   | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
+  | { type: 'list_directory_for_add_dir'; requestId: string; projectPath: string; rawInput: string }
+  | { type: 'validate_add_dir'; requestId: string; projectPath: string; candidate: string }
+  | { type: 'add_project_additional_dir'; requestId: string; projectPath: string; dir: string }
+  | { type: 'remove_project_additional_dir'; requestId: string; projectPath: string; dir: string }
+  | { type: 'set_session_additional_dirs'; requestId: string; projectPath: string; sessionId: string; dirs: string[] }
 
 export interface PairedDevice {
   id: string

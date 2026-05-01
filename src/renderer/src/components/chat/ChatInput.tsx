@@ -277,15 +277,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     )
 
     const addDirParse = useMemo(() => {
+      if (activeProviderForResources !== 'claude') return { active: false, argsText: '' }
       const m = text.match(/^\/add-dir(?:\s(.*))?$/s)
       if (!m) return { active: false, argsText: '' }
       return { active: true, argsText: m[1] ?? '' }
-    }, [text])
+    }, [text, activeProviderForResources])
     const addDirActive = addDirParse.active
     const addDirArgsText = addDirParse.argsText
 
     const handleAddDirScopeFill = useCallback((scope: 'project' | 'session') => {
-      const next = `/add-dir ${scope} `
+      const next = `/add-dir ${scope} ../`
       replaceEditorTextPreservingTrailingSpace(next)
       setText(next)
       setAddDirIndex(0)
@@ -474,31 +475,33 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         if (mentionInfoRef.current && mentionActive) {
           const count = mentionRef.current?.getItemCount() ?? 0
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            setMentionIndex((i) => (count > 0 ? (i + 1) % count : 0))
-            return true
-          }
-          if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            setMentionIndex((i) => (count > 0 ? (i <= 0 ? count - 1 : i - 1) : 0))
-            return true
-          }
-          if (e.key === 'Tab') {
-            e.preventDefault()
-            mentionRef.current?.confirmTab()
-            return true
+          if (count > 0) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              setMentionIndex((i) => (i + 1) % count)
+              return true
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              setMentionIndex((i) => (i <= 0 ? count - 1 : i - 1))
+              return true
+            }
+            if (e.key === 'Tab') {
+              e.preventDefault()
+              mentionRef.current?.confirmTab()
+              return true
+            }
+            if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+              e.preventDefault()
+              mentionRef.current?.confirmEnter()
+              return true
+            }
           }
           if (e.key === 'Escape') {
             e.preventDefault()
             setMentionActive(false)
             setMentionIndex(0)
             mentionInfoRef.current = null
-            return true
-          }
-          if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
-            e.preventDefault()
-            mentionRef.current?.confirmEnter()
             return true
           }
         }
@@ -897,6 +900,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       return (
         <input
           ref={compactInputRef}
+          data-chat-input-editor="true"
           type="text"
           value={text}
           onChange={(e) => {
@@ -919,7 +923,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     return (
       <>
-        <ChatInputDirsHint isCoding={isCoding} />
+        {activeProviderForResources === 'claude' && <ChatInputDirsHint isCoding={isCoding} />}
       <div
         className={cn(
           'relative',

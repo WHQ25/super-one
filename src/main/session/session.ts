@@ -565,6 +565,18 @@ export class Session implements SessionContract {
         } as AgentEvent)
         return
       }
+      case 'claude.set_additional_dirs': {
+        if (this.harnessId !== 'claude') return
+        if (sameStringArray(cmd.dirs, this.additionalDirectories)) return
+        this.additionalDirectories = [...cmd.dirs]
+        if (this.backendStarted && !this.isStreaming()) {
+          await this.backend.rebuild(this.buildBackendStartOpts())
+          this._needsRebuild = false
+        } else {
+          this._needsRebuild = true
+        }
+        return
+      }
     }
   }
 
@@ -716,6 +728,10 @@ export class Session implements SessionContract {
   markNeedsRebuild(): void {
     this.assertNotDisposed()
     this._needsRebuild = true
+  }
+
+  getAdditionalDirectoriesSnapshot(): string[] {
+    return [...this.additionalDirectories]
   }
 
   async switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void> {

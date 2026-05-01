@@ -100,6 +100,10 @@ export type BackendCommand =
       kind: 'codex.collaboration_mode_change'
       mode: string
     }
+  | {
+      kind: 'claude.set_additional_dirs'
+      dirs: string[]
+    }
 
 export type BackendEvent = AgentEvent
 
@@ -241,6 +245,7 @@ export interface Session {
   dispatchBackendCommand(cmd: BackendCommand): Promise<void>
   updateProviderConfig(nextConfig: unknown): void
   markNeedsRebuild(): void
+  getAdditionalDirectoriesSnapshot(): string[]
   switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void>
   isStreaming(): boolean
   truncateMessagesAt(checkpointId: string): void

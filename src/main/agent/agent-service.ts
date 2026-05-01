@@ -212,6 +212,71 @@ export class AgentService {
     this.broadcastEventToRenderer(event)
   }
 
+  private validateAddDirCandidate(
+    projectPath: string,
+    candidate: string,
+  ): { ok: true } | { ok: false; reason: 'not-found' | 'not-directory' | 'same-as-project' | 'same-repo' } {
+    const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
+    if (!existsSync(candidate)) return { ok: false, reason: 'not-found' }
+    try {
+      if (!statSync(candidate).isDirectory()) return { ok: false, reason: 'not-directory' }
+    } catch {
+      return { ok: false, reason: 'not-found' }
+    }
+    const candidateResolved = resolve(candidate)
+    const cwdResolved = resolve(cwd)
+    const projectResolved = resolve(projectPath)
+    if (candidateResolved === cwdResolved || candidateResolved === projectResolved) {
+      return { ok: false, reason: 'same-as-project' }
+    }
+    const projectGitRoot = getGitRoot(cwdResolved)
+    const candidateGitRoot = getGitRoot(candidateResolved)
+    if (projectGitRoot === candidateGitRoot && projectGitRoot !== cwdResolved && projectGitRoot !== candidateResolved) {
+      return { ok: false, reason: 'same-repo' }
+    }
+    return { ok: true }
+  }
+
+  private listDirectoryForAddDir(
+    projectPath: string,
+    rawInput: string,
+  ): { absolutePath: string; entries: Array<{ name: string; isDirectory: boolean }> } {
+    const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
+    const expanded = rawInput.startsWith('~') ? join(homedir(), rawInput.slice(1)) : rawInput
+    const target = resolve(cwd, expanded || '.')
+    if (!existsSync(target)) return { absolutePath: target, entries: [] }
+    try {
+      if (!statSync(target).isDirectory()) return { absolutePath: target, entries: [] }
+      const entries = readdirSync(target, { withFileTypes: true })
+      const result: Array<{ name: string; isDirectory: boolean }> = []
+      for (const entry of entries) {
+        if (EXCLUDED_DIRS.has(entry.name)) continue
+        result.push({ name: entry.name, isDirectory: entry.isDirectory() })
+      }
+      result.sort((a, b) => (a.isDirectory !== b.isDirectory ? (a.isDirectory ? -1 : 1) : a.name.localeCompare(b.name)))
+      return { absolutePath: target, entries: result }
+    } catch {
+      return { absolutePath: target, entries: [] }
+    }
+  }
+
+  private emitAdditionalDirsChanged(projectPath: string, sessionId?: string): void {
+    const scoped = readScopedAdditionalDirs(projectPath)
+    const targetSession = sessionId ? this.sessionManager?.getSession(sessionId) : this.sessionManager?.getActiveSession(projectPath)
+    const sessionDirs = targetSession?.getAdditionalDirectoriesSnapshot() ?? []
+    const dedup = Array.from(new Set([...scoped.user, ...scoped.projectShared, ...scoped.projectLocal, ...sessionDirs]))
+    const event: AgentEvent = {
+      type: 'additional_dirs_changed',
+      projectPath,
+      sessionId: targetSession?.snapshot.id,
+      additionalDirectories: dedup,
+      additionalDirsScoped: scoped,
+      sessionAdditionalDirs: sessionDirs,
+    }
+    this.notifyEventSubscribers(event)
+    this.broadcastEventToRenderer(event)
+  }
+
   private async ensureRemoteOwnership<T>(
     deviceId: string,
     session: import('../session/types').Session,
@@ -295,6 +360,10 @@ export class AgentService {
       log.warn('[AgentService] handleRemoteCommand without source.deviceId for command=%s; using "unknown-device" fallback', command.type)
     }
     const deviceId = source?.deviceId ?? 'unknown-device'
+    const cmdStart = Date.now()
+    if (command.type === 'list_projects' || command.type === 'get_system_info' || command.type === 'list_sessions' || command.type === 'list_models') {
+      log.info('[CONN-DESK] %s start transport=%s deviceId=%s', command.type, source?.transport ?? '?', deviceId)
+    }
     trace('remote.cmd', command.type, command)
     switch (command.type) {
       case 'create_session': {
@@ -353,6 +422,7 @@ export class AgentService {
             ...(recordedGitBranch !== undefined ? { gitBranch: recordedGitBranch } : {}),
             permissionMode: command.permissionMode as PermissionMode | undefined,
             effort: command.effort as SendMessageRequest['effort'] | undefined,
+            ...(command.additionalDirectories?.length ? { additionalDirectories: command.additionalDirectories } : {}),
           })
           await respond?.(command.requestId, { ok: true, sessionId, cwd, gitBranch: recordedGitBranch ?? null })
         } catch (err) {
@@ -706,6 +776,7 @@ export class AgentService {
         await respond?.(command.requestId, {
           projects: folders.map((f) => ({ path: f.path, name: basename(f.path) })),
         })
+        log.info('[CONN-DESK] list_projects done elapsed=%dms count=%d', Date.now() - cmdStart, folders.length)
         break
       }
       case 'list_sessions': {
@@ -758,18 +829,13 @@ export class AgentService {
             const cached = getCachedHarnessResources('claude')
             log.info('[get_system_info] provider=claude hasCached=%s cachedModels=%d projectPath=%s', !!cached, cached?.models?.length ?? 0, command.projectPath)
             const cachedModels = cached?.models
+            const fetchStart = Date.now()
             const models = cachedModels?.length ? cachedModels : await fetchModels(command.projectPath)
-            log.info('[get_system_info] resolvedModels=%d source=%s', models.length, cachedModels?.length ? 'cache' : 'fetch')
-            const skills = listSkills(command.projectPath)
-            const agents = discoverAllAgents(command.projectPath)
-            const projectSlashCommands = discoverProjectCommands(command.projectPath)
+            log.info('[get_system_info] resolvedModels=%d source=%s modelsElapsed=%dms', models.length, cachedModels?.length ? 'cache' : 'fetch', Date.now() - fetchStart)
             const activeProvider = buildRemoteActiveProvider(getActiveProviderRaw('claude'), 'claude')
             await respond?.(command.requestId, {
               models,
-              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
-              agents: agents.map((a) => ({ name: a.name, description: a.description ?? '', model: a.model })),
               userSlashCommands: cached?.slashCommands ?? [],
-              projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '', argumentHint: c.argumentHint ?? '' })),
               account: cached?.account ?? null,
               permissionModes: ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions', 'dontAsk'],
               sandboxModes: ['off', 'on', 'auto'],
@@ -783,12 +849,10 @@ export class AgentService {
           } else {
             const cached = getCachedHarnessResources('codex')
             const models = this.codexListModels ? await this.codexListModels(command.projectPath) : []
-            const skills = listCodexSkills(command.projectPath)
             const userPrompts = cached?.prompts ?? []
             const activeProvider = buildRemoteActiveProvider(getActiveProviderRaw('codex'), 'codex')
             await respond?.(command.requestId, {
               models,
-              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
               slashCommands: [
                 { name: 'help', description: 'Show available commands' },
                 { name: 'reset', description: 'Reset Codex thread' },
@@ -810,6 +874,7 @@ export class AgentService {
           log.error('[get_system_info] error: %s', err instanceof Error ? err.message : String(err))
           await respond?.(command.requestId, { error: (err as Error).message })
         }
+        log.info('[CONN-DESK] get_system_info done elapsed=%dms', Date.now() - cmdStart)
         break
       }
       case 'get_project_resources': {
@@ -819,15 +884,19 @@ export class AgentService {
             const skills = listSkills(command.projectPath)
             const agents = discoverAllAgents(command.projectPath)
             const projectSlashCommands = discoverProjectCommands(command.projectPath)
+            const scoped = readScopedAdditionalDirs(command.projectPath)
             await respond?.(command.requestId, {
-              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
+              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
               agents: agents.map((a) => ({ name: a.name, description: a.description ?? '', model: a.model })),
               projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '', argumentHint: c.argumentHint ?? '' })),
+              additionalDirsScoped: { user: scoped.user, projectShared: scoped.projectShared, projectLocal: scoped.projectLocal },
+              cwd: command.projectPath,
+              homedir: homedir(),
             })
           } else {
             const skills = listCodexSkills(command.projectPath)
             await respond?.(command.requestId, {
-              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '' })),
+              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
             })
           }
         } catch (err) {
@@ -925,6 +994,66 @@ export class AgentService {
           await respond?.(command.requestId, { ok: true, path: result.path })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
+        }
+        break
+      }
+      case 'list_directory_for_add_dir': {
+        try {
+          const result = this.listDirectoryForAddDir(command.projectPath, command.rawInput)
+          await respond?.(command.requestId, result)
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'validate_add_dir': {
+        try {
+          const result = this.validateAddDirCandidate(command.projectPath, command.candidate)
+          await respond?.(command.requestId, result)
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'add_project_additional_dir': {
+        try {
+          const v = this.validateAddDirCandidate(command.projectPath, command.dir)
+          if (!v.ok) {
+            await respond?.(command.requestId, v)
+            break
+          }
+          addProjectAdditionalDir(command.projectPath, command.dir)
+          this.sessionManager?.invalidateProjectResources(command.projectPath)
+          this.emitAdditionalDirsChanged(command.projectPath)
+          await respond?.(command.requestId, { ok: true })
+        } catch (err) {
+          await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
+        }
+        break
+      }
+      case 'remove_project_additional_dir': {
+        try {
+          removeProjectAdditionalDir(command.projectPath, command.dir)
+          this.sessionManager?.invalidateProjectResources(command.projectPath)
+          this.emitAdditionalDirsChanged(command.projectPath)
+          await respond?.(command.requestId, { ok: true })
+        } catch (err) {
+          await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
+        }
+        break
+      }
+      case 'set_session_additional_dirs': {
+        try {
+          const session = this.sessionManager?.getSession(command.sessionId)
+          if (!session) {
+            await respond?.(command.requestId, { ok: false, reason: 'session-not-found' })
+            break
+          }
+          await session.dispatchBackendCommand({ kind: 'claude.set_additional_dirs', dirs: command.dirs })
+          this.emitAdditionalDirsChanged(command.projectPath, command.sessionId)
+          await respond?.(command.requestId, { ok: true })
+        } catch (err) {
+          await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
         }
         break
       }
@@ -1256,48 +1385,11 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.VALIDATE_ADD_DIR, async (_event, projectPath: string, candidate: string) => {
-      const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
-      if (!existsSync(candidate)) return { ok: false, reason: 'not-found' as const }
-      try {
-        if (!statSync(candidate).isDirectory()) return { ok: false, reason: 'not-directory' as const }
-      } catch {
-        return { ok: false, reason: 'not-found' as const }
-      }
-      const candidateResolved = resolve(candidate)
-      const cwdResolved = resolve(cwd)
-      const projectResolved = resolve(projectPath)
-      if (candidateResolved === cwdResolved || candidateResolved === projectResolved) {
-        return { ok: false, reason: 'same-as-project' as const }
-      }
-      const projectGitRoot = getGitRoot(cwdResolved)
-      const candidateGitRoot = getGitRoot(candidateResolved)
-      if (projectGitRoot === candidateGitRoot && projectGitRoot !== cwdResolved && projectGitRoot !== candidateResolved) {
-        return { ok: false, reason: 'same-repo' as const }
-      }
-      return { ok: true as const }
+      return this.validateAddDirCandidate(projectPath, candidate)
     })
 
     ipcMain.handle(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR, async (_event, projectPath: string, rawInput: string) => {
-      const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
-      const expanded = rawInput.startsWith('~')
-        ? join(homedir(), rawInput.slice(1))
-        : rawInput
-      const target = resolve(cwd, expanded || '.')
-      if (!existsSync(target)) return { absolutePath: target, entries: [] }
-      try {
-        const stat = statSync(target)
-        if (!stat.isDirectory()) return { absolutePath: target, entries: [] }
-        const entries = readdirSync(target, { withFileTypes: true })
-        const result: Array<{ name: string; isDirectory: boolean }> = []
-        for (const entry of entries) {
-          if (EXCLUDED_DIRS.has(entry.name)) continue
-          result.push({ name: entry.name, isDirectory: entry.isDirectory() })
-        }
-        result.sort((a, b) => (a.isDirectory !== b.isDirectory ? (a.isDirectory ? -1 : 1) : a.name.localeCompare(b.name)))
-        return { absolutePath: target, entries: result }
-      } catch {
-        return { absolutePath: target, entries: [] }
-      }
+      return this.listDirectoryForAddDir(projectPath, rawInput)
     })
 
     ipcMain.handle(AgentIpcChannels.FIND_LINE_NUMBER, async (_event, _projectPath: string, filePath: string, text: string) => {
@@ -1348,11 +1440,13 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.ADD_PROJECT_ADDITIONAL_DIR, (_event, projectPath: string, dir: string) => {
       addProjectAdditionalDir(projectPath, dir)
       this.sessionManager?.invalidateProjectResources(projectPath)
+      this.emitAdditionalDirsChanged(projectPath)
     })
 
     ipcMain.handle(AgentIpcChannels.REMOVE_PROJECT_ADDITIONAL_DIR, (_event, projectPath: string, dir: string) => {
       removeProjectAdditionalDir(projectPath, dir)
       this.sessionManager?.invalidateProjectResources(projectPath)
+      this.emitAdditionalDirsChanged(projectPath)
     })
 
     // --- Plugins (session-scoped — need cwd) ---

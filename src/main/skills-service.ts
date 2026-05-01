@@ -49,14 +49,17 @@ export function getCodexSkillDirs(cwd: string): SkillDir[] {
   ]
 }
 
-function parseFrontmatter(filePath: string): { name: string; description: string } {
+function parseFrontmatter(filePath: string): { name: string; description: string; argumentHint: string } {
   try {
     const content = readFileSync(filePath, 'utf-8')
     const match = content.match(/^---\s*\n([\s\S]*?)\n---/)
-    if (!match) return { name: '', description: '' }
+    if (!match) return { name: '', description: '', argumentHint: '' }
     const yaml = match[1]
     const name = yaml.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? ''
-    // Support both single-line and multi-line (> or |) description
+    const argumentHint =
+      yaml.match(/^arguments:\s*(.+)$/m)?.[1]?.trim() ??
+      yaml.match(/^argument-hint:\s*(.+)$/m)?.[1]?.trim() ??
+      ''
     const lines = yaml.split('\n')
     let description = ''
     const descIdx = lines.findIndex(l => /^description:\s/.test(l))
@@ -65,7 +68,6 @@ function parseFrontmatter(filePath: string): { name: string; description: string
       if (inline) {
         description = inline
       } else {
-        // Collect indented continuation lines
         const parts: string[] = []
         for (let i = descIdx + 1; i < lines.length; i++) {
           if (/^\s+/.test(lines[i])) parts.push(lines[i].trim())
@@ -74,9 +76,9 @@ function parseFrontmatter(filePath: string): { name: string; description: string
         description = parts.join(' ')
       }
     }
-    return { name, description }
+    return { name, description, argumentHint }
   } catch {
-    return { name: '', description: '' }
+    return { name: '', description: '', argumentHint: '' }
   }
 }
 
@@ -102,6 +104,7 @@ export function listSkillsFromDirs(dirs: SkillDir[]): SkillInfo[] {
         displayName: fm.name || name,
         scope,
         description: fm.description,
+        argumentHint: fm.argumentHint,
         hasConfig: existsSync(join(dir, entry.name, 'config.json')),
       })
     }

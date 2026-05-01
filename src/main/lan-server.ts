@@ -231,11 +231,12 @@ export class LanServer {
     state.deviceId = deviceId
     state.deviceName = deviceName
 
-    log.info('[LanServer] Device registered:', deviceName, deviceId)
+    log.info('[CONN-DESK] LAN register received deviceId=%s name=%s', deviceId, deviceName)
     this.callbacks.onClientRegistered?.({ deviceName, deviceId })
 
     try {
       ws.send(JSON.stringify({ type: 'handshake', hostName: this.callbacks.hostName }))
+      log.info('[CONN-DESK] LAN handshake sent deviceId=%s', deviceId)
     } catch (err) {
       log.error('[LanServer] Failed to send handshake:', err)
     }

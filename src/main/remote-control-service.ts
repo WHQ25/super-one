@@ -781,12 +781,12 @@ export class RemoteControlService {
           this.lanServer?.kickDevice(deviceId)
           return
         }
-        log.info('[RemoteControl] Client registered via relay:', deviceName, deviceId)
+        log.info('[CONN-DESK] register received deviceId=%s name=%s', deviceId, deviceName)
         this.markDeviceOnline(deviceName, deviceId, 'relay')
         break
       }
       case 'peer_connected':
-        log.info('[RemoteControl] Mobile peer connected: %s', frame.mobileDeviceId ?? '(unknown)')
+        log.info('[CONN-DESK] peer_connected mobileDeviceId=%s, sending handshake', frame.mobileDeviceId ?? '(unknown)')
         this.relayWs?.send(this.buildHandshakeFrame())
         break
       case 'peer_disconnected': {

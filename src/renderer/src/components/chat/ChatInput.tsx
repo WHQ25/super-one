@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { CODEX_REJECT_PLAN_PLACEHOLDER, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
+import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { ArrowUp, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
@@ -236,6 +236,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const selectSlashCommand = useCallback(
       (name: string) => {
+        if (activeProviderForResources === 'claude' && CLAUDE_INTERCEPTED_COMMAND_NAMES.has(name)) {
+          const ed = editorRef.current
+          if (ed) ed.chain().focus().setContent('').run()
+          setText('')
+          setSlashIndex(-1)
+          void runClaudeInterceptedCommand(name)
+          return
+        }
         if (name === 'add-dir') {
           replaceEditorTextPreservingTrailingSpace('/add-dir ')
           setText('/add-dir ')

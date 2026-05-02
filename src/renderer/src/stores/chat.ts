@@ -16,6 +16,20 @@ const CODEX_LAST_SELECTION_STORAGE_KEY = 'super-one.codex.last-selection.v1'
 const CODEX_APPROVE_PLAN_PROMPT = 'Plan approved, start implementation.'
 export const CODEX_REJECT_PLAN_PLACEHOLDER = 'Tell Codex what to do differently'
 
+const CLAUDE_INTERCEPTED_COMMANDS: Record<string, () => Promise<void>> = {
+  clear: async () => {
+    await useChatStore.getState().resetSession()
+  },
+}
+
+export const CLAUDE_INTERCEPTED_COMMAND_NAMES: ReadonlySet<string> =
+  new Set(Object.keys(CLAUDE_INTERCEPTED_COMMANDS))
+
+export async function runClaudeInterceptedCommand(name: string): Promise<void> {
+  const handler = CLAUDE_INTERCEPTED_COMMANDS[name]
+  if (handler) await handler()
+}
+
 const STREAMING_INPUT_TOOLS = new Set(['Edit', 'Write', 'FileChange', 'NotebookEdit'])
 const STREAMING_PREVIEW_THROTTLE_MS = 100
 const streamingToolInputRaw = new Map<string, string>()
@@ -3119,6 +3133,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         set((s) => updateActivePerSession(s, () => ({
           slashCommandOutput: { command: utilityKind, content: popupContent, mode: getCommandOutputMode(utilityKind) },
         })))
+        return
+      }
+    }
+
+    if (effectiveProvider === 'claude') {
+      const m = rawContent.match(/^\/(\S+)$/)
+      if (m && CLAUDE_INTERCEPTED_COMMANDS[m[1]]) {
+        set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
+        await CLAUDE_INTERCEPTED_COMMANDS[m[1]]()
         return
       }
     }

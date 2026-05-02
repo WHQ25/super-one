@@ -1258,6 +1258,81 @@ describe('resetSession', () => {
   })
 })
 
+describe('Claude /clear command interception', () => {
+  it('intercepts /clear and triggers resetSession without sending to SDK', async () => {
+    mockWindowAgent.resetSession.mockClear()
+    mockWindowAgent.sendMessage.mockClear()
+
+    setupProject('/test')
+    const before = useChatStore.getState().projectSessions['/test']
+    const oldSid = before._activeSessionId
+
+    await useChatStore.getState().sendMessage('/clear')
+
+    expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
+    expect(mockWindowAgent.resetSession).toHaveBeenCalledTimes(1)
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(isDraftSession(after._activeSessionId)).toBe(true)
+    expect(after._activeSessionId).not.toBe(oldSid)
+    expect(getActiveDraftSession('/test')!.messages).toHaveLength(0)
+  })
+
+  it('treats trailing whitespace as part of the bare /clear command (rawContent is trimmed)', async () => {
+    mockWindowAgent.resetSession.mockClear()
+    mockWindowAgent.sendMessage.mockClear()
+
+    setupProject('/test')
+
+    await useChatStore.getState().sendMessage('/clear   ')
+
+    expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
+    expect(mockWindowAgent.resetSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not intercept /clear when followed by arguments', async () => {
+    mockWindowAgent.resetSession.mockClear()
+    mockWindowAgent.sendMessage.mockClear()
+
+    setupProject('/test')
+
+    await useChatStore.getState().sendMessage('/clear something')
+
+    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowAgent.sendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not intercept /clear under codex provider', async () => {
+    mockWindowAgent.resetSession.mockClear()
+    mockWindowApp.codexRun.mockClear()
+
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const codexSid = 'codex_local_clear_test'
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: codexSid,
+          _sessions: {
+            [codexSid]: {
+              ...createDefaultPerSessionState(),
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().sendMessage('/clear')
+
+    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowApp.codexRun).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('init_ready updates session fields', () => {
   it('sets cwd on the active session and updates project metadata', () => {
     setupProject('/test')

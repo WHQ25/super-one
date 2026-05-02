@@ -1642,7 +1642,7 @@ export class AgentService {
         Object.assign(env, parsed)
       } catch { /* ignore */ }
       if (data.api_key && env.ANTHROPIC_AUTH_TOKEN !== undefined) env.ANTHROPIC_AUTH_TOKEN = data.api_key
-      const TEST_TIMEOUT_MS = 8000
+      const TEST_TIMEOUT_MS = 15000
       try {
         const { query: testQuery } = await import('@anthropic-ai/claude-agent-sdk')
         trace('providers.test', 'options', {

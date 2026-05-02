@@ -449,6 +449,7 @@ export type Messages = {
       defaultDescCodex: string
       empty: string
       emptyHint: string
+      updateAvailable: string
     }
     providerDialog: {
       addTitle: string
@@ -479,6 +480,16 @@ export type Messages = {
       test: string
       save: string
       delete: string
+      sync: string
+      syncTitle: string
+      syncDescription: string
+      syncNoChanges: string
+      syncSupportedAgentsAdded: string
+      syncExtraEnvSection: string
+      syncModelEnvSection: string
+      syncBaseUrlSection: string
+      syncEmptyPlaceholder: string
+      syncApply: string
     }
     mcp: {
       title: string
@@ -1211,6 +1222,7 @@ export const en: Messages = {
       defaultDescCodex: 'Uses Codex session auth (ChatGPT login or API key)',
       empty: 'No third-party providers configured',
       emptyHint: 'Click "Add Provider" to connect a third-party API',
+      updateAvailable: 'Sync from preset',
     },
     providerDialog: {
       addTitle: 'Add Provider',
@@ -1241,6 +1253,16 @@ export const en: Messages = {
       test: 'Test',
       save: 'Save',
       delete: 'Delete',
+      sync: 'Sync from preset',
+      syncTitle: 'Sync from {{name}} preset',
+      syncDescription: 'Pick what to sync. Newly added items are checked by default; items that differ from your current values are unchecked — enable them only if you want to override.',
+      syncNoChanges: 'This provider already matches the preset exactly.',
+      syncSupportedAgentsAdded: 'Newly supported agents',
+      syncExtraEnvSection: 'Environment variables',
+      syncModelEnvSection: 'Model mappings',
+      syncBaseUrlSection: 'Base URL',
+      syncEmptyPlaceholder: '<empty, filled by API key>',
+      syncApply: 'Apply',
     },
     mcp: {
       title: 'MCP Servers',

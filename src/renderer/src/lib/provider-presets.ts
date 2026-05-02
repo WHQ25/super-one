@@ -160,12 +160,13 @@ export const PRESETS: QuickPreset[] = [
     agent_configs: {
       claude: {
         base_url: 'https://api.deepseek.com/anthropic',
-        extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
+        extra_env: '{"ANTHROPIC_AUTH_TOKEN":"","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK":"1","CLAUDE_CODE_EFFORT_LEVEL":"max"}',
         model_env: {
-          default: { id: 'DeepSeek-V3.2', name: 'DeepSeek V3.2' },
-          opus: { id: 'DeepSeek-V3.2', name: 'DeepSeek V3.2' },
-          sonnet: { id: 'DeepSeek-V3.2', name: 'DeepSeek V3.2' },
-          haiku: { id: 'DeepSeek-V3.2', name: 'DeepSeek V3.2' },
+          default: { id: 'deepseek-v4-pro[1m]', name: 'DeepSeek V4 Pro 1M' },
+          opus: { id: 'deepseek-v4-pro[1m]', name: 'DeepSeek V4 Pro 1M' },
+          sonnet: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
+          haiku: { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
+          subagent: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
         },
       },
     },

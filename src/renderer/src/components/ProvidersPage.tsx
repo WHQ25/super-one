@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Check, Plus, Server } from 'lucide-react'
+import { Check, Plus, RefreshCw, Server } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { resolvePresetKey, getPresetByKey } from '@/lib/preset-match'
+import { diffProviderAgainstPreset } from '@/lib/preset-merge'
 import type { ApiProvider, AgentType, CreateProviderRequest, UpdateProviderRequest } from '../../../shared/agent-types'
 import { ProviderDialog } from './ProviderDialog'
 import { ProviderLabel } from './ProviderLabel'
@@ -28,16 +31,27 @@ function ProviderRow({
   provider,
   currentAgent,
   onEdit,
+  onSync,
   onActivate,
 }: {
   provider: ApiProvider
   currentAgent: AgentType
   onEdit: () => void
+  onSync: () => void
   onActivate: () => void
 }) {
+  const { t } = useTranslation()
   const configs = JSON.parse(provider.agent_configs || '{}')
   const url = configs[currentAgent]?.base_url || ''
   const isActive = currentAgent === 'claude' ? provider.is_active_claude === 1 : provider.is_active_codex === 1
+
+  const hasUpdate = useMemo(() => {
+    const key = resolvePresetKey(provider)
+    if (!key) return false
+    const preset = getPresetByKey(key)
+    if (!preset) return false
+    return diffProviderAgainstPreset(provider, preset).hasChanges
+  }, [provider])
 
   return (
     <div className="flex cursor-pointer items-center justify-between rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:bg-muted/50" onClick={onEdit}>
@@ -47,7 +61,26 @@ function ProviderRow({
           <span className="truncate text-xs text-muted-foreground">{url}</span>
         )}
       </div>
-      <ConnectButton isActive={isActive} onClick={onActivate} />
+      <div className="flex items-center gap-2">
+        {hasUpdate && (
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onSync() }}
+                  className="flex size-6 items-center justify-center rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
+                  aria-label={t('resources.providers.updateAvailable')}
+                >
+                  <RefreshCw className="size-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t('resources.providers.updateAvailable')}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+        <ConnectButton isActive={isActive} onClick={onActivate} />
+      </div>
     </div>
   )
 }
@@ -59,6 +92,7 @@ export function ProvidersPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingProvider, setEditingProvider] = useState<ApiProvider | null>(null)
+  const [autoSync, setAutoSync] = useState(false)
 
   useEffect(() => {
     fetchProviders()
@@ -73,11 +107,19 @@ export function ProvidersPage() {
 
   const handleAdd = useCallback(() => {
     setEditingProvider(null)
+    setAutoSync(false)
     setDialogOpen(true)
   }, [])
 
   const handleEdit = useCallback((provider: ApiProvider) => {
     setEditingProvider(provider)
+    setAutoSync(false)
+    setDialogOpen(true)
+  }, [])
+
+  const handleSync = useCallback((provider: ApiProvider) => {
+    setEditingProvider(provider)
+    setAutoSync(true)
     setDialogOpen(true)
   }, [])
 
@@ -147,6 +189,7 @@ export function ProvidersPage() {
             provider={p}
             currentAgent={settingsProvider}
             onEdit={() => handleEdit(p)}
+            onSync={() => handleSync(p)}
             onActivate={() => handleActivate(p.id)}
           />
         ))}
@@ -168,6 +211,7 @@ export function ProvidersPage() {
         onSave={handleSave}
         onDelete={handleDelete}
         agentFilter={settingsProvider}
+        autoSync={autoSync}
       />
     </div>
   )

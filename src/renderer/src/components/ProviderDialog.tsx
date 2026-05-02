@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { ChevronLeft, Eye, EyeOff, Loader2, Plus, Trash2, X, Zap } from 'lucide-react'
+import { ChevronLeft, Eye, EyeOff, Loader2, Plus, RefreshCw, Trash2, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,7 +12,11 @@ import {
 } from '@/components/ui/dialog'
 import { PRESETS, getPresetsByCategory, resolveTemplateValues, CATEGORY_LABELS, type QuickPreset, type AgentType, type AgentPresetConfig } from '@/lib/provider-presets'
 import { parseEnvString, RESERVED_ENV_KEYS } from '@/lib/provider-env'
+import { resolvePresetKey, getPresetByKey } from '@/lib/preset-match'
+import { diffProviderAgainstPreset, type PresetSyncDiff } from '@/lib/preset-merge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ProviderLabel } from './ProviderLabel'
+import { PresetSyncDialog } from './PresetSyncDialog'
 import type { ApiProvider, CreateProviderRequest, UpdateProviderRequest, AgentProviderConfig, ProviderModelEnv, ModelBucket, ProviderModelSlot } from '../../../shared/agent-types'
 import { MODEL_BUCKETS, expandProviderModelEnv, parseProviderModelEnv } from '../../../shared/agent-types'
 
@@ -298,6 +302,7 @@ export function ProviderDialog({
   onSave,
   onDelete,
   agentFilter,
+  autoSync,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -305,6 +310,7 @@ export function ProviderDialog({
   onSave: (data: CreateProviderRequest | (UpdateProviderRequest & { id: string })) => void
   onDelete?: (id: string) => void
   agentFilter?: AgentType
+  autoSync?: boolean
 }) {
   const { t } = useTranslation()
   const [step, setStep] = useState<DialogStep>('select')
@@ -315,6 +321,8 @@ export function ProviderDialog({
   const [showApiKey, setShowApiKey] = useState(false)
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
   const [testMessage, setTestMessage] = useState('')
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false)
+  const [syncDiff, setSyncDiff] = useState<PresetSyncDiff | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -385,6 +393,102 @@ export function ProviderDialog({
   const showFields = matchedPreset?.fields ?? ['name', 'api_key'] as const
   const currentAgentForm = form.agentForms[activeAgentTab] || { base_url: '', extra_env: '{}', model_env: {} }
   const currentPresetConfig = matchedPreset?.agent_configs[activeAgentTab]
+
+  const syncPreset = useMemo(() => {
+    if (!editProvider) return null
+    const key = resolvePresetKey(editProvider)
+    return key ? getPresetByKey(key) ?? null : null
+  }, [editProvider])
+
+  const initialSyncDiff = useMemo(() => {
+    if (!editProvider || !syncPreset) return null
+    return diffProviderAgainstPreset(editProvider, syncPreset)
+  }, [editProvider, syncPreset])
+
+  const canSync = !!initialSyncDiff && initialSyncDiff.hasChanges
+
+  const handleOpenSync = () => {
+    if (!initialSyncDiff) return
+    setSyncDiff(initialSyncDiff)
+    setSyncDialogOpen(true)
+  }
+
+  const handleApplySync = (effective: PresetSyncDiff) => {
+    if (!syncPreset || !editProvider) return
+    const newForms: Record<string, AgentFormState> = { ...form.agentForms }
+    for (const agentDiff of effective.perAgent) {
+      const presetCfg = syncPreset.agent_configs[agentDiff.agent as keyof typeof syncPreset.agent_configs]
+      const existing = newForms[agentDiff.agent]
+      let nextBaseUrl = existing?.base_url ?? presetCfg?.base_url ?? ''
+      let nextExtraStr = existing?.extra_env ?? presetCfg?.extra_env ?? '{}'
+      let nextModelEnv: ProviderModelEnv = existing
+        ? { ...existing.model_env }
+        : { ...(presetCfg?.model_env ?? {}) }
+
+      if (agentDiff.baseUrlMismatch) nextBaseUrl = agentDiff.baseUrlMismatch.preset
+
+      if (Object.keys(agentDiff.extraEnvAdded).length > 0 || agentDiff.extraEnvChanged.length > 0) {
+        const extra = (() => { try { return JSON.parse(nextExtraStr || '{}') } catch { return {} } })()
+        for (const [k, v] of Object.entries(agentDiff.extraEnvAdded)) {
+          if (!(k in extra)) extra[k] = v
+        }
+        for (const c of agentDiff.extraEnvChanged) {
+          extra[c.key] = c.to
+        }
+        nextExtraStr = JSON.stringify(extra)
+      }
+
+      if (Object.keys(agentDiff.modelEnvSlotsAdded).length > 0 || agentDiff.modelEnvSlotsChanged.length > 0) {
+        for (const [bucket, slot] of Object.entries(agentDiff.modelEnvSlotsAdded)) {
+          if (slot && !nextModelEnv[bucket as ModelBucket]) nextModelEnv[bucket as ModelBucket] = slot
+        }
+        for (const c of agentDiff.modelEnvSlotsChanged) {
+          nextModelEnv[c.slot] = c.to
+        }
+      }
+
+      newForms[agentDiff.agent] = {
+        base_url: nextBaseUrl,
+        extra_env: nextExtraStr,
+        model_env: nextModelEnv,
+      }
+    }
+
+    let resolvedAgentForms = newForms
+    if (matchedPreset?.templateValues && Object.keys(templateVals).length > 0) {
+      resolvedAgentForms = {}
+      for (const [agent, af] of Object.entries(newForms)) {
+        resolvedAgentForms[agent] = {
+          ...af,
+          base_url: resolveTemplateValues(af.base_url, templateVals),
+          extra_env: resolveTemplateValues(af.extra_env, templateVals),
+          model_env: af.model_env,
+        }
+      }
+    }
+    const dbSupportedAgents: AgentType[] = (() => {
+      try { return JSON.parse(editProvider.supported_agents || '["claude"]') as AgentType[] } catch { return ['claude'] }
+    })()
+    const nextSupportedAgents = Array.from(new Set([...dbSupportedAgents, ...(effective.supportedAgentsAdded as AgentType[])]))
+    onSave({
+      id: editProvider.id,
+      name: form.name,
+      api_key: form.api_key,
+      supported_agents: JSON.stringify(nextSupportedAgents),
+      agent_configs: buildAgentConfigs(resolvedAgentForms),
+    })
+
+    setSyncDialogOpen(false)
+    setSyncDiff(null)
+    onOpenChange(false)
+  }
+
+  useEffect(() => {
+    if (open && autoSync && editProvider && initialSyncDiff?.hasChanges) {
+      setSyncDiff(initialSyncDiff)
+      setSyncDialogOpen(true)
+    }
+  }, [open, autoSync, editProvider, initialSyncDiff])
 
   const handleTest = async () => {
     setTestStatus('testing')
@@ -502,6 +606,9 @@ export function ProviderDialog({
                   {t('common.back')}
                 </button>
               )}
+              <DialogTitle className="sr-only">
+                {editProvider?.name ?? selectedPreset?.name ?? t('resources.providerDialog.addTitle')}
+              </DialogTitle>
               {editProvider
                 ? <ProviderLabel provider={editProvider} fallback={editProvider.name} size={28} />
                 : <ProviderLabel presetKey={selectedPreset?.key} fallback={selectedPreset?.name} size={28} />}
@@ -628,6 +735,18 @@ export function ProviderDialog({
                   {testStatus === 'testing' ? <Loader2 className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}
                   {t('resources.providerDialog.test')}
                 </Button>
+                {editProvider && canSync && (
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" size="icon" className="size-8" onClick={handleOpenSync} aria-label={t('resources.providerDialog.sync')}>
+                          <RefreshCw className="size-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">{t('resources.providerDialog.sync')}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
@@ -637,6 +756,12 @@ export function ProviderDialog({
           </>
         )}
       </DialogContent>
+      <PresetSyncDialog
+        open={syncDialogOpen}
+        onOpenChange={setSyncDialogOpen}
+        diff={syncDiff}
+        onApply={handleApplySync}
+      />
     </Dialog>
   )
 }

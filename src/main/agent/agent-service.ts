@@ -1657,6 +1657,7 @@ export class AgentService {
             pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
             maxTurns: 1,
             permissionMode: 'bypassPermissions',
+            persistSession: false,
             systemPrompt: 'Reply with a single word. Do not use any tools.',
             allowedTools: ['Noop'],
           },

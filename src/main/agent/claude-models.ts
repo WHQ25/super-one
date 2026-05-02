@@ -1,9 +1,8 @@
-import { query, type Query } from '@anthropic-ai/claude-agent-sdk'
+import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { ModelOption } from '../../shared/agent-types'
 import log from '../logger'
 import { resolveSdkClaudeBinary } from './claude-binary'
 
-/** Create a throwaway query to fetch the model list. */
 export async function fetchModels(cwd: string, env?: Record<string, string | undefined>): Promise<ModelOption[]> {
   try {
     log.info('[claude] fetchModels start cwd=%s platform=%s arch=%s', cwd, process.platform, process.arch)
@@ -14,6 +13,7 @@ export async function fetchModels(cwd: string, env?: Record<string, string | und
         pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
         maxTurns: 0,
         permissionMode: 'bypassPermissions',
+        persistSession: false,
         env,
       },
     })
@@ -24,18 +24,6 @@ export async function fetchModels(cwd: string, env?: Record<string, string | und
     return models.map(mapModelInfo)
   } catch (error) {
     log.warn('[claude] fetchModels failed: %s', error instanceof Error ? error.message : String(error))
-    return []
-  }
-}
-
-/** Refresh model list from an active query (non-blocking). */
-export async function refreshModelsFromQuery(activeQuery: Query): Promise<ModelOption[]> {
-  try {
-    const models = await activeQuery.supportedModels()
-    log.info('[claude] refreshModelsFromQuery success count=%d', models.length)
-    return models.map(mapModelInfo)
-  } catch (error) {
-    log.warn('[claude] refreshModelsFromQuery failed: %s', error instanceof Error ? error.message : String(error))
     return []
   }
 }

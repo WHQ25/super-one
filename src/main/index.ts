@@ -1313,7 +1313,7 @@ function registerIpcHandlers(): void {
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
     const q = query({
       prompt: 'hi',
-      options: { cwd: app.getPath('userData'), pathToClaudeCodeExecutable: resolveSdkClaudeBinary(), maxTurns: 0, permissionMode: 'default' },
+      options: { cwd: app.getPath('userData'), pathToClaudeCodeExecutable: resolveSdkClaudeBinary(), maxTurns: 0, permissionMode: 'default', persistSession: false },
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')

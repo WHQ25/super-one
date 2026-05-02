@@ -1629,7 +1629,12 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST, async (_event, data: { api_key: string; base_url: string; extra_env: string }) => {
+      const SYSTEM_ENV_ALLOWLIST = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'SystemRoot', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES', 'USERPROFILE', 'PROGRAMDATA', 'COMSPEC']
       const env: Record<string, string> = {}
+      for (const key of SYSTEM_ENV_ALLOWLIST) {
+        const v = process.env[key]
+        if (v !== undefined) env[key] = v
+      }
       if (data.api_key) env.ANTHROPIC_API_KEY = data.api_key
       if (data.base_url) env.ANTHROPIC_BASE_URL = data.base_url
       try {
@@ -1637,17 +1642,17 @@ export class AgentService {
         Object.assign(env, parsed)
       } catch { /* ignore */ }
       if (data.api_key && env.ANTHROPIC_AUTH_TOKEN !== undefined) env.ANTHROPIC_AUTH_TOKEN = data.api_key
+      const TEST_TIMEOUT_MS = 8000
       try {
         const { query: testQuery } = await import('@anthropic-ai/claude-agent-sdk')
-        const mergedEnv = { ...process.env, ...env }
         trace('providers.test', 'options', {
           cwd: process.cwd(),
-          envKeys: Object.keys(mergedEnv),
+          envKeys: Object.keys(env),
         })
         const q = testQuery({
           prompt: 'Reply with "ok" only.',
           options: {
-            env: mergedEnv,
+            env,
             cwd: process.cwd(),
             pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
             maxTurns: 1,
@@ -1656,28 +1661,39 @@ export class AgentService {
             allowedTools: ['Noop'],
           },
         })
-        let authError = ''
-        for await (const msg of q) {
-          const m = msg as any
-          trace('providers.test', 'msg', { type: m.type, subtype: m.subtype, error: m.error })
-          if (m.type === 'assistant' && m.error) {
-            authError = m.error
-            break
+        const drain = async (): Promise<{ success: boolean; models: number; error?: string }> => {
+          let authError = ''
+          for await (const msg of q) {
+            const m = msg as any
+            trace('providers.test', 'msg', { type: m.type, subtype: m.subtype, error: m.error })
+            if (m.type === 'assistant' && m.error) {
+              authError = m.error
+              break
+            }
+            if (m.type === 'result') {
+              if (m.is_error) authError = m.result ?? 'Unknown error'
+              break
+            }
+            if (m.type === 'stream_event' && m.event?.type === 'content_block_start') {
+              break
+            }
           }
-          if (m.type === 'result') {
-            if (m.is_error) authError = m.result ?? 'Unknown error'
-            break
-          }
-          if (m.type === 'stream_event' && m.event?.type === 'content_block_start') {
-            break
-          }
+          return authError
+            ? { success: false, models: 0, error: authError }
+            : { success: true, models: 0 }
         }
-        q.close()
-        const result = authError
-          ? { success: false, models: 0, error: authError }
-          : { success: true, models: 0 }
-        trace('providers.test', 'result', result)
-        return result
+        let timer: NodeJS.Timeout | undefined
+        const timeout = new Promise<{ success: false; models: 0; error: string }>((resolve) => {
+          timer = setTimeout(() => resolve({ success: false, models: 0, error: `Test timed out after ${TEST_TIMEOUT_MS / 1000}s` }), TEST_TIMEOUT_MS)
+        })
+        try {
+          const result = await Promise.race([drain(), timeout])
+          trace('providers.test', 'result', result)
+          return result
+        } finally {
+          if (timer) clearTimeout(timer)
+          try { q.close() } catch { /* ignore */ }
+        }
       } catch (err) {
         trace('providers.test', 'error', { message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined })
         return { success: false, models: 0, error: err instanceof Error ? err.message : String(err) }

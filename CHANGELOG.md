@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.24.2-alpha] - 2026-05-02
+
+### Changed
+
+- **`/clear` now resets the session locally instead of forwarding to Claude** — typing `/clear` (or selecting it from the slash popup) starts a fresh session in the same panel, matching the "New Session" button. Previously the command was sent to the Claude SDK with no local effect. Strict match only — `/clear something` still goes to the SDK as before. Implemented as an extensible interception table, so future SDK commands (e.g. `/compact`) can be redirected to local actions with a one-line registration.
+- **Mini-app dev workspace can now live anywhere** — `setup_mini_app_dev` takes a user-picked `directory` and a `scope` of `project` or `user` (replacing the old standalone mode); SuperOne's install slot under `~/.superone/apps/<id>/` keeps its source location via a new `.s1-dev.json` pointer. `.s1app` upgrades preserve `.s1-dev.json` and the app's `data/` folder so user storage survives dev rebuilds, and only the freshly-scaffolded app opens after setup (no more re-opening every existing dev app).
+
+### Fixed
+
+- **mDNS advertiser no longer outlives desktop quit** — `dns-sd` subprocess is now killed via two layers so mobile reliably sees the desktop go offline: `performQuit()` calls `remoteControlService.stop()` for the Cmd+Q path, and `lan-advertiser` registers process-level `exit`/`SIGINT`/`SIGTERM` hooks for the `bun run dev` Ctrl+C path and crashes where `before-quit` never fires. Previously an orphaned `dns-sd` child would keep broadcasting and pin the device as `onlineLan` on mobile.
+
 ## [0.24.1-alpha] - 2026-05-01
 
 ### Added

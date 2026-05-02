@@ -23,6 +23,7 @@ import { fuzzyMatch } from '@/lib/fuzzy-match'
 import { HighlightedText } from '@/components/ui/HighlightedText'
 import { toMentionPath } from './chat-input-utils'
 import { AttachmentBar } from './AttachmentBar'
+import { buildImageAttachment } from './image-compress'
 import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
@@ -619,7 +620,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const processSelectedFiles = useCallback(
       (files: FileList | File[]) => {
         for (const file of Array.from(files)) {
-          if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+          if (file.type.startsWith('image/')) {
+            void buildImageAttachment(file).then((att) => {
+              if (att) addAttachment(att)
+            })
+            continue
+          }
+          if (file.type === 'application/pdf') {
             const reader = new FileReader()
             reader.onload = () => {
               const result = reader.result as string

@@ -8,7 +8,16 @@ const { mockReadFileSync, mockHomedir } = vi.hoisted(() => ({
 vi.mock('fs', () => ({ readFileSync: mockReadFileSync }))
 vi.mock('os', () => ({ homedir: mockHomedir }))
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
-vi.mock('../mcp/superone-mcp-server', () => ({ isToolPreapproved: vi.fn(() => false) }))
+const BUILT_IN_QUALIFIED = new Set([
+  'mcp__superone__read_miniapp_guide',
+  'mcp__superone__setup_mini_app_dev',
+  'mcp__superone__pack_mini_app',
+  'mcp__superone__update_superone_types',
+])
+vi.mock('../mcp/superone-mcp-server', () => ({
+  isToolPreapproved: vi.fn(() => false),
+  isBuiltInSuperoneTool: vi.fn((name: string) => BUILT_IN_QUALIFIED.has(name)),
+}))
 
 import {
   respondToPermission,
@@ -202,14 +211,18 @@ describe('createCanUseTool', () => {
     await promise
   })
 
-  it('should not auto-approve other superone MCP tools', async () => {
+  it('should auto-approve all built-in superone tools (system tools, not user code)', async () => {
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
-    const promise = canUseTool('mcp__superone__setup_mini_app_dev', { name: 'Test' }, makeContext())
-    expect(events).toHaveLength(1)
-    expect(events[0].type).toBe('permission_request')
-    const [id] = [...perms.keys()]
-    respondToPermission(perms, id, true)
-    await promise
+    for (const tool of [
+      'mcp__superone__setup_mini_app_dev',
+      'mcp__superone__pack_mini_app',
+      'mcp__superone__update_superone_types',
+    ]) {
+      const result = await canUseTool(tool, {}, makeContext())
+      expect(result.behavior).toBe('allow')
+    }
+    expect(events).toHaveLength(0)
+    expect(perms.size).toBe(0)
   })
 
   it('should emit permission_request with correct shape', async () => {

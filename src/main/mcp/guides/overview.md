@@ -26,8 +26,8 @@ Do NOT skip these steps. Do NOT start coding before the user confirms the plan.
 
 **After confirmation, build the app:**
 
-1. Call `setup_mini_app_dev` with the confirmed info (name, type, template, mode, description)
-2. The scaffold creates a minimal working app with `manifest.json` and HTML/source files
+1. Confirm with the user **where** the mini-app source should live (`directory`) and **who** should see it (`scope`: `project` or `user`). See "Where the App Lives" below.
+2. Call `setup_mini_app_dev` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, type, description). It scaffolds files at `directory` and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
 3. Read the type-specific guide for next steps:
    - `panel`, `sidebar`, `fullscreen` → read **`standard`** topic
    - `in-chat` → read **`inchat`** topic
@@ -80,16 +80,42 @@ Use `react` when:
 
 Most mini-apps should use vanilla. CDN libraries (Chart.js, D3, Alpine.js, Three.js, etc.) work great — add a `<script>` tag and declare the CDN domain in `permissions.network`.
 
-## Choosing a Mode
+## Where the App Lives — `directory` and `scope`
+
+`setup_mini_app_dev` takes two location-related arguments:
+
+- **`directory`** (required, absolute path): where the mini-app source files are scaffolded. This is the **user's choice** — anywhere on disk. Common patterns:
+  - Inside a project's source tree: `<projectDir>/packages/my-app` (monorepo workspace), `<projectDir>/tools/dashboard`
+  - A dedicated standalone dir: `~/code/my-mini-app`
+- **`scope`**: who can see this app
+  - `project` (default): only visible when SuperOne is opened on `projectDir`. Required argument: `projectDir`. The `directory` MUST be inside `projectDir`.
+  - `user`: visible across every project on this machine. `projectDir` not required; `directory` can be anywhere.
+
+After scaffolding, `setup_mini_app_dev` writes a small pointer file at:
+
+- `<projectDir>/.superone/apps/<appId>/.s1-dev.json` for `scope=project`
+- `~/.superone/apps/<appId>/.s1-dev.json` for `scope=user`
+
+This pointer is how SuperOne discovers the app:
+
+```jsonc
+{
+  "distDir": "packages/my-app/dist",   // relative to projectDir for scope=project; absolute for scope=user
+  "enabled": true                       // set false to fall back to a packed prod version (see "Switching dev/prod" below)
+}
+```
+
+**No registry file, no symlink** — each app's pointer lives in its own slot under `.superone/apps/<appId>/`. The slot also holds `data/` (the app's persistent storage when `permissions.fs` declares `scope: 'app'`), which survives any rebuild or pack/install cycle.
+
+### Choosing scope
 
 Use `project` (default) when:
-- Building a utility or tool for the current project
-- App lives alongside the project's code (stored in `.superone/apps/<appId>/`)
+- Building a tool specific to the current codebase (kanban, dashboard, custom helper)
+- The whole team should auto-discover this dev app by committing `.superone/apps/<appId>/.s1-dev.json` into git (relative `distDir` makes this portable)
 
-Use `standalone` when:
-- The user wants to create a dedicated mini-app project
-- The app will be packaged and distributed as `.s1app`
-- The entire project directory is the mini-app
+Use `user` when:
+- Building a personal tool you want available regardless of which project you open (e.g. a notes pad, a clipboard manager)
+- Cross-machine distribution will go through `pack_mini_app` → `.s1app` → drag-drop install, not via this dev pointer
 
 ## React Template Setup Flow
 
@@ -97,41 +123,56 @@ Use `standalone` when:
 2. If neither found, install bun:
    - macOS/Linux: `curl -fsSL https://bun.sh/install | bash`
    - Windows: `powershell -c "irm bun.sh/install.ps1 | iex"`
-3. Call `setup_mini_app_dev` with `template: "react"`
-4. Run `<pm> install && <pm> run build` in the app directory
-5. For ongoing development with auto-rebuild: `<pm> run build --watch`
+3. Decide where the mini-app project lives (any directory; for `scope=project`, must be inside `projectDir` — e.g. `packages/<name>` for a monorepo workspace)
+4. Call `setup_mini_app_dev` with `template: "react"`, `directory` pointing to that path, and the chosen `scope`
+5. Run `<pm> install && <pm> run build` in the directory
+6. For ongoing development with auto-rebuild: `<pm> run build --watch`
 
 Prefer bun over npm when both are available (faster installs and builds).
 
+## Switching between Dev and Prod Versions
+
+Once a `.s1app` package has been installed by drag-drop into the same install slot, both versions can coexist:
+
+- `.s1-dev.json` with `enabled: true` → SuperOne loads files from your dev `distDir` (live build output)
+- `.s1-dev.json` with `enabled: false` → SuperOne loads the packed prod files from the install slot itself
+- Delete `.s1-dev.json` → only the prod version remains
+
+**Drag-drop install never deletes `.s1-dev.json` or the `data/` directory** — your dev pointer and user data are preserved across version upgrades.
+
 ## App Directory Structure
+
+The directory you scaffold into (the user-chosen `directory`) holds the actual mini-app source:
+
+```
+<directory>/                  # for vanilla — manifest.json + index.html in root
+├── manifest.json             # Required: app metadata
+├── index.html                # Required: entry point (bridge auto-injected)
+├── logo.png                  # Optional: app icon (see `icon` topic)
+└── ...                       # CSS, JS, assets
+
+<directory>/                  # for react — Vite project
+├── package.json
+├── vite.config.ts
+├── src/
+└── dist/                     # build output that SuperOne actually serves
+    ├── manifest.json
+    ├── index.html
+    └── ...
+```
+
+The install slot at `<scope-root>/.superone/apps/<appId>/` holds only:
 
 ```
 <appId>/
-├── manifest.json     # Required: app metadata
-├── index.html        # Required: entry point (bridge auto-injected)
-├── logo.png          # Optional: app icon (see `icon` topic)
-└── ...               # CSS, JS, assets
+├── .s1-dev.json     # dev pointer (this file is what makes the app discoverable)
+└── data/            # created lazily on first app-scope fs write
 ```
+
+After `pack_mini_app` + drag-drop install, the slot also contains the packed prod files (manifest.json, index.html, …) alongside `.s1-dev.json` and `data/`.
 
 ## Updating Type Definitions
 
 If a mini-app was created with an older version of SuperOne and needs access to newly added APIs, call `update_superone_types` with the app directory path. This regenerates `superone.d.ts` with the latest API definitions.
 
-## Testing
 
-1. Run `bun run dev` to start SuperOne in development mode
-2. Switch to canvas mode (paintbrush icon in header)
-3. The app should appear in the catalog (dev apps from `examples/miniapp/` are auto-discovered)
-4. Click to open — verify the UI loads
-5. Ask the agent to use the app's tools — verify the round-trip works
-
-## Debugging Tips
-
-- Open DevTools (Cmd+Option+I) to see iframe console logs
-- Check `dev.log` for main process logs (`[superone-mcp]` prefix for tool registration)
-- If tools aren't showing up, verify `manifest.json` has valid `toolSlug` and `tools` array
-- If `superone` is undefined, check that `index.html` has a `<head>` tag (bridge is injected there)
-
-## Example
-
-See `examples/miniapp/hello/` for a working standard app reference.

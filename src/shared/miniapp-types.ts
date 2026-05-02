@@ -90,7 +90,8 @@ export interface MiniAppToolDefinition {
 export interface MiniAppEntry {
   id: string
   manifest: MiniAppManifest
-  basePath: string
+  installDir: string
+  distDir?: string
 }
 
 export interface MiniAppToolCallRequest {

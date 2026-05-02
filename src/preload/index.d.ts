@@ -263,7 +263,7 @@ interface MiniAppAPI {
   onToolCall(callback: (call: MiniAppToolCallRequest) => void): () => void
   getPreloadPath(): Promise<string>
   detectDev(projectDir: string): Promise<MiniAppEntry[]>
-  onDevAppReady(callback: (projectDir: string) => void): () => void
+  onDevAppReady(callback: (projectDir: string, appId: string) => void): () => void
   preview(s1appPath: string): Promise<MiniAppPreviewResult>
   confirmInstall(tempDir: string, installDir?: string, preapprovedTools?: string[]): Promise<MiniAppInstallResult>
   cancelInstall(tempDir: string): Promise<void>

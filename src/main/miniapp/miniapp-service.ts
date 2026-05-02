@@ -8,9 +8,11 @@ import log from '../logger'
 import { gitRun } from '../git-run'
 import { sanitizeGitRef } from '../path-security'
 import { parseGitStatusFiles } from '../git-status-utils'
-import { parseManifest } from './miniapp-schema'
+import { parseManifest, parseDevLink } from './miniapp-schema'
 import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp, MiniAppFsAccess } from '../../shared/miniapp-types'
 import { generateVanillaFiles, generateReactFiles, type GeneratedFile } from './miniapp-templates'
+
+const DEV_LINK_FILE = '.s1-dev.json'
 
 const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
 const devAppsDir = () => join(process.cwd(), 'examples', 'miniapp')
@@ -153,7 +155,7 @@ export function clearAllowedDirectories(appId: string): void {
   allowedDirs.delete(appId)
 }
 
-async function scanDir(base: string): Promise<MiniAppEntry[]> {
+async function scanDir(base: string, opts: { projectDir?: string } = {}): Promise<MiniAppEntry[]> {
   let dirs: string[]
   try {
     dirs = await readdir(base)
@@ -161,13 +163,61 @@ async function scanDir(base: string): Promise<MiniAppEntry[]> {
     return []
   }
   const results = await Promise.all(
-    dirs.map(async (name) => {
-      const basePath = join(base, name)
-      const manifest = await readManifest(basePath)
-      return manifest ? { id: manifest.appId, manifest, basePath } : null
-    }),
+    dirs.map(async (name) => resolveAppEntry(join(base, name), opts)),
   )
   return results.filter((e): e is MiniAppEntry => e !== null)
+}
+
+interface ResolveAppEntryOpts {
+  projectDir?: string
+}
+
+export async function resolveAppEntry(installDir: string, opts: ResolveAppEntryOpts): Promise<MiniAppEntry | null> {
+  const devLink = await readDevLink(installDir)
+  if (devLink && devLink.enabled) {
+    const distDir = resolveDistDir(devLink.distDir, opts.projectDir)
+    if (distDir) {
+      const manifest = await readManifest(distDir)
+      if (manifest) {
+        return { id: manifest.appId, manifest, installDir, distDir }
+      }
+      log.warn('[miniapp] dev link distDir has no manifest: %s → %s', installDir, distDir)
+    }
+  }
+  const manifest = await readManifest(installDir)
+  if (!manifest) return null
+  return { id: manifest.appId, manifest, installDir }
+}
+
+async function readDevLink(installDir: string): Promise<{ distDir: string; enabled: boolean } | null> {
+  let raw: string
+  try {
+    raw = await readFile(join(installDir, DEV_LINK_FILE), 'utf-8')
+  } catch {
+    return null
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    log.warn('[miniapp] %s is not valid JSON in %s', DEV_LINK_FILE, installDir)
+    return null
+  }
+  const result = parseDevLink(parsed)
+  if (!result.ok) {
+    log.warn('[miniapp] invalid %s in %s: %s', DEV_LINK_FILE, installDir, result.errors.join('; '))
+    return null
+  }
+  return result.devLink
+}
+
+function resolveDistDir(distDir: string, projectDir: string | undefined): string | null {
+  if (distDir.startsWith('/')) return distDir
+  if (!projectDir) {
+    log.warn('[miniapp] relative distDir %s requires a projectDir base', distDir)
+    return null
+  }
+  return resolve(projectDir, distDir)
 }
 
 export async function discoverApps(): Promise<MiniAppEntry[]> {
@@ -182,6 +232,17 @@ export async function discoverApps(): Promise<MiniAppEntry[]> {
     }
   }
   return entries
+}
+
+export async function detectStandaloneApp(projectDir: string): Promise<MiniAppEntry | null> {
+  const rootManifest = await readManifest(projectDir)
+  if (rootManifest) return { id: rootManifest.appId, manifest: rootManifest, installDir: projectDir }
+
+  const distDir = join(projectDir, 'dist')
+  const distManifest = await readManifest(distDir)
+  if (distManifest) return { id: distManifest.appId, manifest: distManifest, installDir: projectDir, distDir }
+
+  return null
 }
 
 export async function readManifest(appDir: string): Promise<MiniAppManifest | null> {
@@ -199,14 +260,15 @@ export async function readManifest(appDir: string): Promise<MiniAppManifest | nu
   }
 }
 
-export type CreateMiniAppMode = 'project' | 'standalone'
+export type CreateMiniAppScope = 'project' | 'user'
 export type CreateMiniAppTemplate = 'vanilla' | 'react'
 
 export interface CreateMiniAppOptions {
   name: string
   slug: string
-  projectDir: string
-  mode?: CreateMiniAppMode
+  directory: string
+  scope?: CreateMiniAppScope
+  projectDir?: string
   template?: CreateMiniAppTemplate
   type?: MiniAppManifest['type']
   description?: string
@@ -225,18 +287,7 @@ export function getProjectAppsDir(projectDir: string): string {
 }
 
 export async function discoverProjectApps(projectDir: string): Promise<MiniAppEntry[]> {
-  return scanDir(getProjectAppsDir(projectDir))
-}
-
-export async function detectStandaloneApp(projectDir: string): Promise<MiniAppEntry | null> {
-  const rootManifest = await readManifest(projectDir)
-  if (rootManifest) return { id: rootManifest.appId, manifest: rootManifest, basePath: projectDir }
-
-  const distDir = join(projectDir, 'dist')
-  const distManifest = await readManifest(distDir)
-  if (distManifest) return { id: distManifest.appId, manifest: distManifest, basePath: distDir }
-
-  return null
+  return scanDir(getProjectAppsDir(projectDir), { projectDir })
 }
 
 async function writeGeneratedFiles(baseDir: string, files: GeneratedFile[]): Promise<void> {
@@ -248,8 +299,23 @@ async function writeGeneratedFiles(baseDir: string, files: GeneratedFile[]): Pro
 }
 
 export async function createMiniApp(opts: CreateMiniAppOptions): Promise<CreateMiniAppResult> {
-  const mode = opts.mode ?? 'project'
+  const scope = opts.scope ?? 'project'
   const template = opts.template ?? 'vanilla'
+  const directory = opts.directory
+
+  if (!directory.startsWith('/')) {
+    throw new Error(`directory must be an absolute path, got: ${directory}`)
+  }
+  if (scope === 'project') {
+    if (!opts.projectDir) {
+      throw new Error('scope="project" requires projectDir')
+    }
+    const projectBase = opts.projectDir.endsWith('/') ? opts.projectDir : opts.projectDir + '/'
+    if (!directory.startsWith(projectBase) && directory !== opts.projectDir) {
+      throw new Error(`scope="project" requires directory to be inside projectDir; ${directory} is outside ${opts.projectDir}`)
+    }
+  }
+
   const appId = `${opts.slug}-${Date.now().toString(36)}`
 
   const manifest: MiniAppManifest = {
@@ -261,37 +327,63 @@ export async function createMiniApp(opts: CreateMiniAppOptions): Promise<CreateM
   }
 
   const templateOpts = { name: opts.name, manifest }
-  const appPath = mode === 'project'
-    ? join(getProjectAppsDir(opts.projectDir), appId)
-    : opts.projectDir
   const files = template === 'react'
     ? generateReactFiles(templateOpts)
     : generateVanillaFiles(templateOpts)
   const buildRequired = template === 'react'
 
-  await writeGeneratedFiles(appPath, files)
+  await writeGeneratedFiles(directory, files)
 
-  const basePath = template === 'react'
-    ? join(appPath, 'dist')
-    : appPath
+  const distAbs = template === 'react' ? join(directory, 'dist') : directory
+  const installRoot = scope === 'project'
+    ? getProjectAppsDir(opts.projectDir!)
+    : userAppsDir()
+  const installDir = join(installRoot, appId)
+  const distDirField = scope === 'project'
+    ? relative(opts.projectDir!, distAbs)
+    : distAbs
+
+  const devLink = { distDir: distDirField, enabled: true }
+  await mkdir(installDir, { recursive: true })
+  await writeFile(join(installDir, DEV_LINK_FILE), JSON.stringify(devLink, null, 2), 'utf-8')
 
   return {
-    entry: { id: appId, manifest, basePath },
-    appPath,
+    entry: { id: appId, manifest, installDir, distDir: distAbs },
+    appPath: directory,
     buildRequired,
   }
 }
 
-const appBasePathCache = new Map<string, string>()
+interface CachedAppPaths {
+  installDir: string
+  assetDir: string
+}
+
+const appPathCache = new Map<string, CachedAppPaths>()
+
+export function cacheAppPaths(appId: string, paths: CachedAppPaths): void {
+  appPathCache.set(appId, paths)
+}
+
+export function cacheAppEntry(entry: MiniAppEntry): void {
+  appPathCache.set(entry.id, { installDir: entry.installDir, assetDir: entry.distDir ?? entry.installDir })
+}
 
 export function getAppBasePath(appId: string): string {
-  const cached = appBasePathCache.get(appId)
-  if (cached) return cached
+  const cached = appPathCache.get(appId)
+  if (cached) return cached.assetDir
   return join(userAppsDir(), appId)
 }
 
+export function getAppInstallDir(appId: string): string {
+  const cached = appPathCache.get(appId)
+  if (cached) return cached.installDir
+  return join(userAppsDir(), appId)
+}
+
+/** @deprecated use cacheAppEntry; kept for callers that only know the asset path. */
 export function cacheAppBasePath(appId: string, basePath: string): void {
-  appBasePathCache.set(appId, basePath)
+  appPathCache.set(appId, { installDir: basePath, assetDir: basePath })
 }
 
 export function generateCSP(manifest: MiniAppManifest): string {

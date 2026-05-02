@@ -10,7 +10,7 @@ import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessa
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getAppBasePath, cacheAppBasePath, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, detectStandaloneApp, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti } from './miniapp/miniapp-service'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearAllPendingCalls as clearAllPendingMiniAppCalls } from './mcp/superone-mcp-server'
@@ -285,14 +285,14 @@ function createWindow(): void {
 }
 
 /** Register all IPC handlers once at app startup. */
-function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Array<{ scope: string; path?: string; access?: string; reason: string }> } }, projectDir: string, basePath: string): void {
+function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Array<{ scope: string; path?: string; access?: string; reason: string }> } }, projectDir: string, installDir: string): void {
   const fsEntries = manifest.permissions?.fs ?? []
   if (fsEntries.length === 0) return
   const dirs = fsEntries.flatMap((entry) => {
     switch (entry.scope) {
       case 'project': return [{ path: join(projectDir, entry.path!), access: entry.access as 'read' | 'readwrite' } as const]
       case 'user': return [{ path: join(homedir(), entry.path!), access: entry.access as 'read' | 'readwrite' } as const]
-      case 'app': return [{ path: join(basePath, 'data'), access: 'readwrite' as const }]
+      case 'app': return [{ path: join(installDir, 'data'), access: 'readwrite' as const }]
       default: return []
     }
   })
@@ -1403,18 +1403,16 @@ function registerIpcHandlers(): void {
     const apps = await discoverApps()
     if (projectDir) {
       const projectApps = await discoverProjectApps(projectDir)
-      const standaloneApp = await detectStandaloneApp(projectDir)
       const existingIds = new Set(apps.map((a) => a.id))
       for (const app of projectApps) {
         if (!existingIds.has(app.id)) apps.push(app)
       }
-      if (standaloneApp && !existingIds.has(standaloneApp.id)) apps.push(standaloneApp)
     }
     for (const app of apps) {
-      cacheAppBasePath(app.id, app.basePath)
+      cacheAppEntry(app)
       if (app.manifest.type === 'in-chat') {
         registerInChatApp(app.manifest)
-        if (projectDir) setAppFsPermissions(app.id, app.manifest, projectDir, app.basePath)
+        if (projectDir) setAppFsPermissions(app.id, app.manifest, projectDir, app.installDir)
       }
     }
     return apps
@@ -1422,9 +1420,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_OPEN, async (_e, appId: string, projectDir: string) => {
     const basePath = getAppBasePath(appId)
+    const installDir = getAppInstallDir(appId)
     const manifest = await readManifest(basePath)
     if (!manifest) throw new Error(`App not found: ${appId}`)
-    setAppFsPermissions(appId, manifest, projectDir, basePath)
+    setAppFsPermissions(appId, manifest, projectDir, installDir)
     const toolSlug = manifest.toolSlug ?? appId
     registerAppTools(appId, toolSlug, manifest.tools ?? [])
     registerAppTemplates(appId, manifest.templates)
@@ -1489,10 +1488,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_DETECT_DEV, async (_e, projectDir: string) => {
     const projectApps = await discoverProjectApps(projectDir)
-    const standaloneApp = await detectStandaloneApp(projectDir)
-    const allApps = [...projectApps, ...(standaloneApp ? [standaloneApp] : [])]
-    for (const app of allApps) cacheAppBasePath(app.id, app.basePath)
-    return allApps
+    for (const app of projectApps) cacheAppEntry(app)
+    return projectApps
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_PREVIEW, async (_e, s1appPath: string) => {

@@ -1,20 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockRemove, mockRegisterTool, mockSendToolListChanged, mockIsConnected } = vi.hoisted(() => {
+const { mockRemove, mockRegisterTool, mockBuiltInTool, mockSendToolListChanged, mockIsConnected } = vi.hoisted(() => {
   const mockRemove = vi.fn()
   const mockRegisterTool = vi.fn((_name: string, _opts: unknown, handler: Function) => {
     const entry = { remove: mockRemove, handler }
     return entry
   })
+  const mockBuiltInTool = vi.fn()
   const mockSendToolListChanged = vi.fn()
   const mockIsConnected = vi.fn(() => true)
-  return { mockRemove, mockRegisterTool, mockSendToolListChanged, mockIsConnected }
+  return { mockRemove, mockRegisterTool, mockBuiltInTool, mockSendToolListChanged, mockIsConnected }
 })
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({}))
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   McpServer: vi.fn(function(this: Record<string, unknown>) {
-    this.tool = vi.fn()
+    this.tool = mockBuiltInTool
     this.registerTool = mockRegisterTool
     this.sendToolListChanged = mockSendToolListChanged
     this.isConnected = mockIsConnected
@@ -24,9 +25,13 @@ vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
 }))
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
+const { mockCreateMiniApp, mockCacheAppEntry } = vi.hoisted(() => ({
+  mockCreateMiniApp: vi.fn(),
+  mockCacheAppEntry: vi.fn(),
+}))
 vi.mock('../miniapp/miniapp-service', () => ({
-  createMiniApp: vi.fn(),
-  cacheAppBasePath: vi.fn(),
+  createMiniApp: mockCreateMiniApp,
+  cacheAppEntry: mockCacheAppEntry,
 }))
 vi.mock('../miniapp/miniapp-packager', () => ({
   packApp: vi.fn(),
@@ -293,5 +298,157 @@ describe('executeAppTool with renderer.intercept', () => {
     const result = await handler({ agent_field: 'x' })
     expect(result.content[0].text).toContain('[Error]')
     expect(result.content[0].text).toContain('Template "confirm" not found')
+  })
+})
+
+describe('setup_mini_app_dev tool handler', () => {
+  function getBuiltInHandler(toolName: string): Function {
+    const call = mockBuiltInTool.mock.calls.find((c) => c[0] === toolName)
+    if (!call) throw new Error(`Built-in tool ${toolName} not registered`)
+    return call[3] as Function
+  }
+
+  const sentMessages: Array<{ channel: string; args: unknown[] }> = []
+  const mockWebContents = {
+    send: (channel: string, ...args: unknown[]) => sentMessages.push({ channel, args }),
+  }
+  const mockWin = {
+    webContents: mockWebContents,
+    isDestroyed: () => false,
+  } as unknown as import('electron').BrowserWindow
+
+  beforeEach(() => {
+    sentMessages.length = 0
+    initSuperoneMcpServer(() => mockWin)
+    getSuperoneMcpServer()
+  })
+
+  it('returns status=created and notifies dev-app-ready with the new appId', async () => {
+    mockCreateMiniApp.mockResolvedValueOnce({
+      entry: {
+        id: 'weather-1abc',
+        manifest: { appId: 'weather-1abc', name: 'Weather', type: 'panel' },
+        installDir: '/proj/.superone/apps/weather-1abc',
+        distDir: '/proj/packages/weather/dist',
+      },
+      appPath: '/proj/packages/weather',
+      buildRequired: true,
+    })
+    const handler = getBuiltInHandler('setup_mini_app_dev')
+
+    const result = await handler({
+      name: 'Weather',
+      slug: 'weather',
+      directory: '/proj/packages/weather',
+      scope: 'project',
+      projectDir: '/proj',
+      template: 'react',
+    })
+
+    expect(mockCreateMiniApp).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Weather',
+      slug: 'weather',
+      directory: '/proj/packages/weather',
+      scope: 'project',
+      projectDir: '/proj',
+      template: 'react',
+    }))
+    expect(mockCacheAppEntry).toHaveBeenCalledWith(expect.objectContaining({ id: 'weather-1abc' }))
+
+    const payload = JSON.parse(result.content[0].text)
+    expect(payload).toMatchObject({
+      status: 'created',
+      appId: 'weather-1abc',
+      name: 'Weather',
+      installDir: '/proj/.superone/apps/weather-1abc',
+      template: 'react',
+      scope: 'project',
+      buildRequired: true,
+    })
+
+    const readyMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_DEV_APP_READY)
+    expect(readyMsg).toBeTruthy()
+    expect(readyMsg!.args).toEqual(['/proj', 'weather-1abc'])
+  })
+
+  it('returns status=error (no throw) when createMiniApp throws — UI needs the structured payload', async () => {
+    mockCreateMiniApp.mockRejectedValueOnce(new Error('directory must be an absolute path, got: foo'))
+    const handler = getBuiltInHandler('setup_mini_app_dev')
+
+    const result = await handler({
+      name: 'Bad',
+      slug: 'bad',
+      directory: 'foo',
+      scope: 'project',
+      projectDir: '/proj',
+    })
+
+    const payload = JSON.parse(result.content[0].text)
+    expect(payload.status).toBe('error')
+    expect(payload.message).toContain('absolute path')
+    expect(mockCacheAppEntry).not.toHaveBeenCalled()
+    expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_DEV_APP_READY)).toBeUndefined()
+  })
+
+  it('skips dev-app-ready notify when scope=user (no projectDir)', async () => {
+    mockCreateMiniApp.mockResolvedValueOnce({
+      entry: {
+        id: 'notes-x',
+        manifest: { appId: 'notes-x', name: 'Notes' },
+        installDir: '/home/.superone/apps/notes-x',
+        distDir: '/Users/me/notes',
+      },
+      appPath: '/Users/me/notes',
+      buildRequired: false,
+    })
+    const handler = getBuiltInHandler('setup_mini_app_dev')
+
+    const result = await handler({
+      name: 'Notes',
+      slug: 'notes',
+      directory: '/Users/me/notes',
+      scope: 'user',
+    })
+
+    const payload = JSON.parse(result.content[0].text)
+    expect(payload.status).toBe('created')
+    expect(payload.scope).toBe('user')
+    expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_DEV_APP_READY)).toBeUndefined()
+  })
+
+  it('still notifies dev-app-ready for an in-chat scaffold (no separate UI window opens, but list refreshes)', async () => {
+    mockCreateMiniApp.mockResolvedValueOnce({
+      entry: {
+        id: 'card-y',
+        manifest: {
+          appId: 'card-y',
+          name: 'Card',
+          type: 'in-chat',
+          inChat: { toolName: 'render_card', description: 'Render a card', inputSchema: { type: 'object', properties: {} } },
+        },
+        installDir: '/proj/.superone/apps/card-y',
+        distDir: '/proj/packages/card/dist',
+      },
+      appPath: '/proj/packages/card',
+      buildRequired: true,
+    })
+    const handler = getBuiltInHandler('setup_mini_app_dev')
+
+    const result = await handler({
+      name: 'Card',
+      slug: 'card',
+      directory: '/proj/packages/card',
+      scope: 'project',
+      projectDir: '/proj',
+      template: 'react',
+      type: 'in-chat',
+    })
+
+    const payload = JSON.parse(result.content[0].text)
+    expect(payload.status).toBe('created')
+
+    const readyMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_DEV_APP_READY)
+    expect(readyMsg).toBeTruthy()
+    expect(readyMsg!.args).toEqual(['/proj', 'card-y'])
   })
 })

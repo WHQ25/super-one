@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseManifest } from './miniapp-schema'
+import { parseManifest, parseDevLink } from './miniapp-schema'
 
 describe('parseManifest', () => {
   const validManifest = {
@@ -312,5 +312,67 @@ describe('parseManifest', () => {
       }],
     })
     expect(result.ok).toBe(true)
+  })
+})
+
+describe('parseDevLink', () => {
+  it('accepts a minimal dev link with only distDir', () => {
+    const result = parseDevLink({ distDir: 'packages/dashboard/dist' })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.devLink.distDir).toBe('packages/dashboard/dist')
+      expect(result.devLink.enabled).toBe(true)
+    }
+  })
+
+  it('defaults enabled to true when omitted', () => {
+    const result = parseDevLink({ distDir: '/abs/path' })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.devLink.enabled).toBe(true)
+  })
+
+  it('accepts enabled=false', () => {
+    const result = parseDevLink({ distDir: '/abs/path', enabled: false })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.devLink.enabled).toBe(false)
+  })
+
+  it('accepts enabled=true explicitly', () => {
+    const result = parseDevLink({ distDir: '/abs/path', enabled: true })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.devLink.enabled).toBe(true)
+  })
+
+  it('rejects when distDir missing', () => {
+    const result = parseDevLink({ enabled: true })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes('distDir'))).toBe(true)
+    }
+  })
+
+  it('rejects empty distDir', () => {
+    const result = parseDevLink({ distDir: '' })
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects non-boolean enabled', () => {
+    const result = parseDevLink({ distDir: 'x', enabled: 'yes' })
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects non-string distDir', () => {
+    const result = parseDevLink({ distDir: 123 })
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects non-object input', () => {
+    const result = parseDevLink('not an object')
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects null', () => {
+    const result = parseDevLink(null)
+    expect(result.ok).toBe(false)
   })
 })

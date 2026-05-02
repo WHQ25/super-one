@@ -136,3 +136,25 @@ export function parseManifest(raw: unknown): ManifestParseResult {
   )
   return { ok: false, errors }
 }
+
+export const devLinkSchema = z.object({
+  distDir: z.string().min(1),
+  enabled: z.boolean().default(true),
+})
+
+export type DevLink = z.infer<typeof devLinkSchema>
+
+export type DevLinkParseResult =
+  | { ok: true; devLink: DevLink }
+  | { ok: false; errors: string[] }
+
+export function parseDevLink(raw: unknown): DevLinkParseResult {
+  const result = devLinkSchema.safeParse(raw)
+  if (result.success) {
+    return { ok: true, devLink: result.data }
+  }
+  const errors = result.error.issues.map(
+    (i) => `${i.path.join('.')}: ${i.message}`,
+  )
+  return { ok: false, errors }
+}

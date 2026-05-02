@@ -25,23 +25,20 @@ interface MiniAppStoreState {
 
 export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
   if (typeof window !== 'undefined' && window.miniapp?.onDevAppReady) {
-    window.miniapp.onDevAppReady(async (projectDir) => {
+    window.miniapp.onDevAppReady(async (projectDir, appId) => {
       const dir = get()._lastProjectDir ?? projectDir
-      const [, devApps] = await Promise.all([
-        get().refreshApps(dir),
-        window.miniapp.detectDev(projectDir),
-      ])
-      for (const entry of devApps) {
-        const type = entry.manifest.type ?? 'panel'
-        if (type === 'sidebar') {
-          useAppStore.getState().setSidebarTab(`miniapp:${entry.id}`)
-        } else if (type === 'fullscreen') {
-          useAppStore.getState().setLayoutMode('canvas')
-          get().requestOpenInCanvas(entry.id)
-        } else if (type === 'panel') {
-          window.miniapp.open(entry.id, projectDir)
-          openMiniAppTab(entry.id, entry.manifest.name)
-        }
+      await get().refreshApps(dir)
+      const entry = get().apps.find((a) => a.id === appId)
+      if (!entry) return
+      const type = entry.manifest.type ?? 'panel'
+      if (type === 'sidebar') {
+        useAppStore.getState().setSidebarTab(`miniapp:${entry.id}`)
+      } else if (type === 'fullscreen') {
+        useAppStore.getState().setLayoutMode('canvas')
+        get().requestOpenInCanvas(entry.id)
+      } else if (type === 'panel') {
+        window.miniapp.open(entry.id, projectDir)
+        openMiniAppTab(entry.id, entry.manifest.name)
       }
     })
   }

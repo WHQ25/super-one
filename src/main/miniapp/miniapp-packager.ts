@@ -186,8 +186,8 @@ export async function confirmInstall(tempDir: string, installDir?: string, preap
       upgraded = existingMeta.version !== manifest.version
     } catch { /* not installed */ }
 
-    if (upgraded || !(await dirExists(targetDir))) {
-      await rm(targetDir, { recursive: true, force: true })
+    if (upgraded) {
+      await clearTargetPreservingUserData(targetDir)
     }
 
     await mkdir(targetDir, { recursive: true })
@@ -208,12 +208,25 @@ export async function confirmInstall(tempDir: string, installDir?: string, preap
     log.info('[miniapp] installed %s@%s → %s', manifest.appId, manifest.version, targetDir)
 
     return {
-      entry: { id: manifest.appId, manifest, basePath: targetDir },
+      entry: { id: manifest.appId, manifest, installDir: targetDir },
       meta,
       upgraded,
     }
   } finally {
     await rm(tempDir, { recursive: true, force: true })
+  }
+}
+
+async function clearTargetPreservingUserData(targetDir: string): Promise<void> {
+  let entries: string[]
+  try {
+    entries = await readdir(targetDir)
+  } catch {
+    return
+  }
+  for (const name of entries) {
+    if (name.startsWith('.s1-') || name === 'data') continue
+    await rm(join(targetDir, name), { recursive: true, force: true })
   }
 }
 

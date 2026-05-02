@@ -96,6 +96,66 @@ function AppToolBlock({ icon, appName, toolText, summary, isStreaming, expandabl
   )
 }
 
+function SetupMiniAppDevBlock({ appName, isStreaming, params, result }: {
+  appName: string
+  isStreaming: boolean
+  params: Record<string, unknown>
+  result: Record<string, unknown> | null
+}) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const errored = !!result && result.status === 'error'
+  const headerLabel = errored
+    ? t('chat.toolBlock.setUpMiniAppFailed')
+    : isStreaming
+      ? t('chat.toolBlock.settingUpMiniApp')
+      : t('chat.toolBlock.setUpMiniApp')
+  const appId = result?.appId ? String(result.appId) : ''
+  const directory = params.directory ? String(params.directory) : ''
+  const description = params.description ? String(params.description) : ''
+  const errorMsg = errored ? String((result?.message as string | undefined) ?? '') : ''
+  const rows: Array<{ key: string; label: string; value: string; mono?: boolean }> = []
+  if (appId) rows.push({ key: 'appId', label: t('chat.toolBlock.setupFields.appId'), value: appId, mono: true })
+  if (directory) rows.push({ key: 'directory', label: t('chat.toolBlock.setupFields.directory'), value: directory, mono: true })
+  if (description) rows.push({ key: 'description', label: t('chat.toolBlock.setupFields.description'), value: description })
+  return (
+    <div className={cn('tool-node my-0.5 rounded bg-muted/50', 'cursor-pointer hover:bg-muted/70')}>
+      <div
+        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        <ToolIcon icon="file-plus" className={cn('size-3 shrink-0', errored ? 'text-destructive' : 'text-muted-foreground')} />
+        <span className="shrink-0 font-medium text-foreground">{headerLabel}{isStreaming && '…'}</span>
+        {appName && <>
+          <span className="shrink-0 text-muted-foreground">·</span>
+          <span className="min-w-0 truncate text-foreground">{appName}</span>
+        </>}
+        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
+      </div>
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-out"
+        style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
+      >
+        <div className="overflow-hidden">
+          <div className="space-y-1 border-t border-border/40 px-2 py-2 text-xs">
+            {errorMsg && (
+              <div className="mb-2 rounded bg-destructive/10 px-2 py-1.5 text-destructive">
+                {errorMsg}
+              </div>
+            )}
+            {rows.map(({ key, label, value, mono }) => (
+              <div key={key} className="flex items-baseline gap-2">
+                <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
+                <span className={cn('min-w-0 flex-1 break-all text-foreground', mono && 'font-mono')}>{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AppResultRendererBlock({ appId, toolUseId, toolName, appName, toolReadableName, summary, icon, templatePath, result, autoExpand }: {
   appId: string
   toolUseId: string
@@ -312,12 +372,11 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   if (mcpInfo?.serverName === SUPERONE_SERVER && !mcpInfo.mcpToolName.startsWith(INCHAT_TOOL_PREFIX)) {
     const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string }> = {
       read_miniapp_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide') },
-      setup_mini_app_dev: { icon: 'file-plus', streaming: t('chat.toolBlock.settingUpMiniApp'), done: t('chat.toolBlock.setUpMiniApp') },
     }
     if (mcpInfo.mcpToolName === 'pack_mini_app') {
       const appDir = String(params.appDir ?? '')
       const outputDir = String(params.outputDir ?? '')
-      const packApp = appDir ? useMiniAppStore.getState().apps.find((a) => a.basePath === appDir) : undefined
+      const packApp = appDir ? useMiniAppStore.getState().apps.find((a) => a.distDir === appDir || a.installDir === appDir) : undefined
       const s1appName = packApp ? `${packApp.manifest.appId}-${packApp.manifest.version}.s1app` : null
       return (
         <CompactToolRow icon={<ToolIcon icon="package" className="size-3 shrink-0 text-muted-foreground" />}>
@@ -337,6 +396,21 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
             </>
           )}
         </CompactToolRow>
+      )
+    }
+    if (mcpInfo.mcpToolName === 'setup_mini_app_dev') {
+      const appName = String(params.name ?? '')
+      let parsedResult: Record<string, unknown> | null = null
+      if (!isStreaming && result) {
+        try { parsedResult = JSON.parse(result) as Record<string, unknown> } catch {}
+      }
+      return (
+        <SetupMiniAppDevBlock
+          appName={appName}
+          isStreaming={isStreaming}
+          params={params}
+          result={parsedResult}
+        />
       )
     }
     const d = superoneToolDisplay[mcpInfo.mcpToolName]

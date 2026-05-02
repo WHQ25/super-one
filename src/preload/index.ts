@@ -835,10 +835,11 @@ const miniappAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GET_PRELOAD_PATH) as Promise<string>,
 
   detectDev: (projectDir: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DETECT_DEV, projectDir) as Promise<MiniAppEntry | null>,
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DETECT_DEV, projectDir) as Promise<MiniAppEntry[]>,
 
-  onDevAppReady: (callback: (projectDir: string) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, projectDir: string) => callback(projectDir)
+  onDevAppReady: (callback: (projectDir: string, appId: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, projectDir: string, appId: string) =>
+      callback(projectDir, appId)
     ipcRenderer.on('miniapp:dev-app-ready', handler)
     return () => ipcRenderer.removeListener('miniapp:dev-app-ready', handler)
   },

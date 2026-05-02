@@ -239,8 +239,8 @@ export function AppsSettingsPage() {
     setSelectedApp(null)
   }
 
-  const personalApps = apps.filter((a) => !currentFolder || !a.basePath.startsWith(currentFolder))
-  const projectApps = apps.filter((a) => currentFolder && a.basePath.startsWith(currentFolder))
+  const personalApps = apps.filter((a) => !currentFolder || !a.installDir.startsWith(currentFolder))
+  const projectApps = apps.filter((a) => currentFolder && a.installDir.startsWith(currentFolder))
 
   return (
     <div className="mx-auto max-w-4xl">

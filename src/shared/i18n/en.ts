@@ -363,6 +363,12 @@ export type Messages = {
       readMiniAppGuide: string
       settingUpMiniApp: string
       setUpMiniApp: string
+      setUpMiniAppFailed: string
+      setupFields: {
+        directory: string
+        description: string
+        appId: string
+      }
       packing: string
       miniAppPacked: string
       generatingWidget: string
@@ -1117,8 +1123,14 @@ export const en: Messages = {
       readWidgetGuidelines: 'Read widget guidelines',
       readingMiniAppGuide: 'Reading mini-app guide',
       readMiniAppGuide: 'Read mini-app guide',
-      settingUpMiniApp: 'Setting up mini-app…',
+      settingUpMiniApp: 'Setting up mini-app',
       setUpMiniApp: 'Set up mini-app',
+      setUpMiniAppFailed: 'Mini-app setup failed',
+      setupFields: {
+        directory: 'Directory',
+        description: 'Description',
+        appId: 'App ID',
+      },
       packing: 'Packing…',
       miniAppPacked: 'Mini-app packed',
       generatingWidget: 'Generating widget…',

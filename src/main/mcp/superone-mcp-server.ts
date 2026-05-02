@@ -9,7 +9,7 @@ import { BrowserWindow } from 'electron'
 import log from '../logger'
 import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest, MiniAppManifest } from '../../shared/miniapp-types'
 import { AgentIpcChannels } from '../../shared/agent-types'
-import { createMiniApp, cacheAppBasePath } from '../miniapp/miniapp-service'
+import { createMiniApp, cacheAppEntry } from '../miniapp/miniapp-service'
 import { packApp, getPreapprovedByPath } from '../miniapp/miniapp-packager'
 import { generateSuperoneDts } from '../miniapp/miniapp-templates'
 import overviewMd from './guides/overview.md?raw'
@@ -129,11 +129,26 @@ export function initSuperoneMcpServer(windowGetter: () => BrowserWindow | null):
   getMainWindow = windowGetter
 }
 
-export function notifyDevAppReady(projectDir: string): void {
+export function notifyDevAppReady(projectDir: string, appId: string): void {
   const win = getMainWindow?.()
   if (win && !win.isDestroyed()) {
-    win.webContents.send(AgentIpcChannels.MINIAPP_DEV_APP_READY, projectDir)
+    win.webContents.send(AgentIpcChannels.MINIAPP_DEV_APP_READY, projectDir, appId)
   }
+}
+
+export const BUILT_IN_SUPERONE_TOOL_NAMES = [
+  'read_miniapp_guide',
+  'setup_mini_app_dev',
+  'pack_mini_app',
+  'update_superone_types',
+] as const
+
+const BUILT_IN_QUALIFIED_NAMES = new Set(
+  BUILT_IN_SUPERONE_TOOL_NAMES.map((n) => `mcp__superone__${n}`),
+)
+
+export function isBuiltInSuperoneTool(qualifiedName: string): boolean {
+  return BUILT_IN_QUALIFIED_NAMES.has(qualifiedName)
 }
 
 export function registerSuperoneTools(server: McpServer): void {
@@ -155,38 +170,50 @@ export function registerSuperoneTools(server: McpServer): void {
 
   server.tool(
     'setup_mini_app_dev',
-    `Initialize a mini-app development environment. Creates a minimal scaffold with manifest.json and HTML/source files.
+    `Scaffold a new mini-app in a directory of your choice and register it as a development app so SuperOne can discover it.
 
-This tool only sets up the basic structure. To add tools, permissions, or in-chat config, edit manifest.json directly after scaffolding.`,
+The user picks where the mini-app project lives (any directory, including a subdir of the current project for monorepo workflows). After scaffolding, this tool writes a tiny pointer file at <scope-root>/.superone/apps/<appId>/.s1-dev.json that points back at the dist (or root for vanilla). SuperOne reads that pointer during discovery.
+
+Use scope="project" (default) for an app intended for the current project. Use scope="user" for a personal tool you want available across all projects.
+
+After scaffolding, edit manifest.json in the directory to add tools, permissions, or in-chat config. To switch a registered dev app to its production version (after installing a packed .s1app), set "enabled": false in .s1-dev.json.`,
     {
       name: z.string().describe('Display name for the mini-app'),
       slug: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).describe('URL-safe lowercase identifier (e.g. "weather-app"). Used to build the appId. Must be lowercase alphanumeric with hyphens.'),
-      projectDir: z.string().describe('Absolute path to the project directory'),
-      mode: z.enum(['project', 'standalone']).optional().describe('project (default): mini-app for the current project, placed in .superone/apps/<appId>/. standalone: the project IS the mini-app.'),
-      template: z.enum(['vanilla', 'react']).optional().describe('vanilla (default): plain HTML, no build needed. react: React + TypeScript + Tailwind, requires build step.'),
+      directory: z.string().describe('Absolute path to the directory where the mini-app source will be scaffolded. For scope="project", this MUST be inside projectDir (e.g. <projectDir>/packages/my-app or <projectDir>/tools/dashboard). For scope="user", anywhere on disk (e.g. ~/code/my-tool).'),
+      scope: z.enum(['project', 'user']).optional().describe('project (default): app visible only in the given project; .s1-dev.json is committable. user: app visible across every project on this machine.'),
+      projectDir: z.string().optional().describe('Absolute path to the project directory. Required when scope="project".'),
+      template: z.enum(['vanilla', 'react']).optional().describe('vanilla (default): single index.html, no build needed. react: React + TypeScript + Tailwind, requires `bun run build` after scaffold.'),
       type: z.enum(['sidebar', 'panel', 'in-chat', 'fullscreen']).optional().describe('Where the app appears: panel (resizable, default), sidebar (narrow left panel), in-chat (inline in chat messages, data-driven rendering), fullscreen (full canvas)'),
       description: z.string().optional().describe('Short description of what the app does'),
     },
-    async ({ name: appName, slug, projectDir, mode, template, type, description }) => {
-      const result = await createMiniApp({ name: appName, slug, projectDir, mode, template, type, description })
-      cacheAppBasePath(result.entry.id, result.entry.basePath)
-      if (result.entry.manifest.type === 'in-chat') {
-        registerInChatApp(result.entry.manifest)
-      }
-      notifyDevAppReady(projectDir)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({
-            status: 'created',
-            appId: result.entry.id,
-            name: appName,
-            appPath: result.appPath,
-            template: template ?? 'vanilla',
-            mode: mode ?? 'project',
-            buildRequired: result.buildRequired,
-          }),
-        }],
+    async ({ name: appName, slug, directory, scope, projectDir, template, type, description }) => {
+      try {
+        const result = await createMiniApp({ name: appName, slug, directory, scope, projectDir, template, type, description })
+        cacheAppEntry(result.entry)
+        if (result.entry.manifest.type === 'in-chat') {
+          registerInChatApp(result.entry.manifest)
+        }
+        if (projectDir) notifyDevAppReady(projectDir, result.entry.id)
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              status: 'created',
+              appId: result.entry.id,
+              name: appName,
+              appPath: result.appPath,
+              installDir: result.entry.installDir,
+              template: template ?? 'vanilla',
+              scope: scope ?? 'project',
+              buildRequired: result.buildRequired,
+            }),
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', message: err instanceof Error ? err.message : String(err) }) }],
+        }
       }
     },
   )

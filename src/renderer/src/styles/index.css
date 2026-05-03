@@ -487,6 +487,10 @@ body {
   outline: none;
 }
 
+.tiptap:focus-visible {
+  box-shadow: none;
+}
+
 .tiptap p {
   margin: 0;
 }

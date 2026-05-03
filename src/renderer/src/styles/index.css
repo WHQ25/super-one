@@ -188,6 +188,11 @@
     outline: none;
     box-shadow: 0 0 0 3px oklch(from var(--ring) l c h / 0.5);
   }
+
+  input:focus-visible,
+  textarea:focus-visible {
+    box-shadow: none;
+  }
 }
 
 body {

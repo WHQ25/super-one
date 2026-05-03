@@ -29,6 +29,7 @@ export function getReadableAssetRoots(
   const extraRoots = [
     join(homeDir, '.codex', '.tmp', 'plugins'),
     join(homeDir, '.codex', '.tmp', 'bundled-marketplaces'),
+    join(homeDir, '.cache', 'codex-runtimes'),
   ]
   return Array.from(new Set([...projectRoots, ...tmpDirs, ...extraRoots]))
 }

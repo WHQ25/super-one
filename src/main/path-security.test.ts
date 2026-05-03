@@ -84,6 +84,7 @@ describe('getReadableAssetRoots', () => {
       '/private/tmp',
       '/Users/alice/.codex/.tmp/plugins',
       '/Users/alice/.codex/.tmp/bundled-marketplaces',
+      '/Users/alice/.cache/codex-runtimes',
     ])
   })
 
@@ -93,6 +94,7 @@ describe('getReadableAssetRoots', () => {
       '/private/tmp',
       '/Users/alice/.codex/.tmp/plugins',
       '/Users/alice/.codex/.tmp/bundled-marketplaces',
+      '/Users/alice/.cache/codex-runtimes',
     ])
   })
 })

@@ -4474,7 +4474,7 @@ describe('interaction response routing', () => {
     const result = await useChatStore.getState().respondToPermission('r1', true)
 
     expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
-      'a', 'r1', true, undefined, undefined, undefined, undefined,
+      'a', 'r1', true, undefined, undefined, undefined, undefined, undefined,
     )
     expect(result).toBe(true)
   })
@@ -4530,7 +4530,7 @@ describe('interaction response routing', () => {
 
     const result = await useChatStore.getState().respondToPermission('r1', false, undefined, undefined, undefined, 'cancel')
 
-    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(codexSid, 'r1', false, undefined, undefined, undefined, 'cancel')
+    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(codexSid, 'r1', false, undefined, undefined, undefined, 'cancel', undefined)
     expect(result).toBe(true)
     expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingPermissions).toHaveLength(0)
   })

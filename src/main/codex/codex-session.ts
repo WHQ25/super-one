@@ -1,6 +1,7 @@
 import type {
   CodexPermissionPreset,
   CodexReasoningEffort,
+  ElicitationFormField,
 } from '../../shared/agent-types'
 import {
   CODEX_PERMISSION_PRESETS,
@@ -19,13 +20,23 @@ export interface AppServerUserInputQuestion {
 
 export type CodexApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel'
 
+export type CodexElicitationAction = 'accept' | 'decline' | 'cancel'
+
+export interface CodexElicitationResponse {
+  action: CodexElicitationAction
+  content: Record<string, unknown> | null
+  _meta: { persist?: 'always' } | null
+}
+
 export type PendingCodexApprovalResponse =
   | { decision: CodexApprovalDecision }
   | { answers: Record<string, { answers: string[] }> }
+  | CodexElicitationResponse
 
 export interface PendingCodexApproval {
-  responseKind: 'decision' | 'user_input'
+  responseKind: 'decision' | 'user_input' | 'elicitation'
   questions?: AppServerUserInputQuestion[]
+  formFields?: ElicitationFormField[]
   resolve: (response: PendingCodexApprovalResponse) => void
   reject: (error: Error) => void
 }

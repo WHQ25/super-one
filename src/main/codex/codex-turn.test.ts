@@ -30,7 +30,9 @@ const {
   resolveThread,
   streamTurnEvents,
   respondToCodexPermission,
+  respondToCodexElicitation,
   runCodexTurn,
+  mapApprovalRequest,
 } = await import('./codex-turn')
 const { createCodexSession } = await import('./codex-session')
 
@@ -125,6 +127,153 @@ describe('respondToCodexPermission', () => {
     expect(respondToCodexPermission(session, 'req-1', false, undefined, undefined, 'cancel')).toBe(true)
     expect(resolve).toHaveBeenCalledWith({ decision: 'cancel' })
     expect(session.pendingApprovals.has('req-1')).toBe(false)
+  })
+
+  it('routes elicitation pending entries through respondToCodexElicitation', () => {
+    const resolve = vi.fn()
+    const session = makeSession()
+    session.pendingApprovals.set('req-2', {
+      responseKind: 'elicitation',
+      resolve,
+      reject: vi.fn(),
+    })
+
+    expect(respondToCodexPermission(session, 'req-2', true, true)).toBe(true)
+    expect(resolve).toHaveBeenCalledWith({
+      action: 'accept',
+      content: null,
+      _meta: { persist: 'always' },
+    })
+  })
+})
+
+describe('mapApprovalRequest mcpServer/elicitation/request', () => {
+  it('parses approval-only elicitation (empty schema) into a PermissionRequest', () => {
+    const parsed = mapApprovalRequest({
+      requestIdRaw: 0,
+      requestId: '0',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        threadId: 't1',
+        turnId: 'turn1',
+        serverName: 'computer-use',
+        mode: 'form',
+        message: 'Allow Codex to use Google Chrome?',
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: {
+          persist: ['always'],
+          riskLevel: 'high',
+          subtitle: 'Risky',
+        },
+      },
+    })
+
+    expect(parsed?.responseKind).toBe('elicitation')
+    if (parsed?.responseKind !== 'elicitation') return
+    expect(parsed.formFields).toEqual([])
+    expect(parsed.request).toMatchObject({
+      requestId: '0',
+      toolName: 'computer-use',
+      requestKind: 'mcp_elicitation',
+      serverName: 'computer-use',
+      message: 'Allow Codex to use Google Chrome?',
+      subtitle: 'Risky',
+      riskLevel: 'high',
+      supportsAlwaysPersist: true,
+      allowAlwaysAllow: true,
+    })
+    expect(parsed.request.elicitationForm).toBeUndefined()
+  })
+
+  it('parses form-mode elicitation across string / boolean / number / enum types', () => {
+    const parsed = mapApprovalRequest({
+      requestIdRaw: 7,
+      requestId: '7',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        message: 'Configure',
+        serverName: 'demo',
+        requestedSchema: {
+          type: 'object',
+          required: ['name', 'mood'],
+          properties: {
+            name: { type: 'string', title: 'Name', description: 'Your name' },
+            age: { type: 'integer' },
+            optIn: { type: 'boolean', title: 'Opt-in' },
+            mood: { type: 'string', enum: ['happy', 'sad'], title: 'Mood' },
+          },
+        },
+      },
+    })
+
+    expect(parsed?.responseKind).toBe('elicitation')
+    if (parsed?.responseKind !== 'elicitation') return
+    expect(parsed.formFields).toEqual([
+      { name: 'name', type: 'string', label: 'Name', description: 'Your name', required: true },
+      { name: 'age', type: 'number', label: 'age', required: false },
+      { name: 'optIn', type: 'boolean', label: 'Opt-in', required: false },
+      { name: 'mood', type: 'enum', label: 'Mood', required: true, enumOptions: ['happy', 'sad'] },
+    ])
+    expect(parsed.request.elicitationForm).toEqual(parsed.formFields)
+  })
+})
+
+describe('respondToCodexElicitation', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  function setupPending() {
+    const resolve = vi.fn()
+    const session = makeSession()
+    session.pendingApprovals.set('e1', {
+      responseKind: 'elicitation',
+      resolve,
+      reject: vi.fn(),
+    })
+    return { session, resolve }
+  }
+
+  it('serializes accept without form into action=accept,content=null,_meta=null', () => {
+    const { session, resolve } = setupPending()
+    expect(respondToCodexElicitation(session, 'e1', true)).toBe(true)
+    expect(resolve).toHaveBeenCalledWith({ action: 'accept', content: null, _meta: null })
+  })
+
+  it('serializes accept + alwaysAllow into _meta.persist=always', () => {
+    const { session, resolve } = setupPending()
+    respondToCodexElicitation(session, 'e1', true, true)
+    expect(resolve).toHaveBeenCalledWith({ action: 'accept', content: null, _meta: { persist: 'always' } })
+  })
+
+  it('serializes accept + form answers as content', () => {
+    const { session, resolve } = setupPending()
+    respondToCodexElicitation(session, 'e1', true, false, undefined, { name: 'Alice', age: 30 })
+    expect(resolve).toHaveBeenCalledWith({
+      action: 'accept',
+      content: { name: 'Alice', age: 30 },
+      _meta: null,
+    })
+  })
+
+  it('serializes decline correctly', () => {
+    const { session, resolve } = setupPending()
+    respondToCodexElicitation(session, 'e1', false)
+    expect(resolve).toHaveBeenCalledWith({ action: 'decline', content: null, _meta: null })
+  })
+
+  it('serializes cancel correctly', () => {
+    const { session, resolve } = setupPending()
+    respondToCodexElicitation(session, 'e1', false, undefined, 'cancel')
+    expect(resolve).toHaveBeenCalledWith({ action: 'cancel', content: null, _meta: null })
+  })
+
+  it('returns false when pending entry is not an elicitation', () => {
+    const session = makeSession()
+    session.pendingApprovals.set('d1', {
+      responseKind: 'decision',
+      resolve: vi.fn(),
+      reject: vi.fn(),
+    })
+    expect(respondToCodexElicitation(session, 'd1', true)).toBe(false)
   })
 })
 

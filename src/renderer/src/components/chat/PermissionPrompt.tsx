@@ -6,12 +6,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
-import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert } from 'lucide-react'
+import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay, parseMcpToolName } from './tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
+import { ElicitationForm, isElicitationFormValid } from './ElicitationForm'
 
 interface MiniAppToolInfo {
   appId: string
@@ -119,10 +120,14 @@ export function PermissionPrompt() {
   const requestId = pendingPermission?.requestId
   const toolName = pendingPermission?.toolName
   const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow
+  const isElicitation = pendingPermission?.requestKind === 'mcp_elicitation'
+  const elicitationForm = pendingPermission?.elicitationForm ?? []
+  const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
-  const isCodexDecisionPrompt = sessionProvider === 'codex' && allowAlwaysAllow
+  const isCodexDecisionPrompt = sessionProvider === 'codex' && allowAlwaysAllow && !isElicitation
   const isEditTool = toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit'
   const suggestionsCount = pendingPermission?.suggestions?.length ?? 0
+  const [formValues, setFormValues] = useState<Record<string, unknown>>({})
 
   const apps = useMiniAppStore((s) => s.apps)
   const miniAppInfo: MiniAppToolInfo | null = useMemo(() => {
@@ -148,6 +153,7 @@ export function PermissionPrompt() {
     setSelectedSuggestions(new Set())
     setIsFeedbackFocused(false)
     setIsCollapsed(false)
+    setFormValues({})
   }, [requestId, suggestionsCount])
 
   useEffect(() => {
@@ -195,12 +201,26 @@ export function PermissionPrompt() {
 
   const handleAllow = useCallback(() => {
     if (!requestId) return
+    if (isElicitation) {
+      respondToPermission(requestId, true, false, undefined, undefined, undefined, formValues)
+      return
+    }
     if (selectedSuggestions.size > 0) {
       respondToPermission(requestId, true, undefined, undefined, [...selectedSuggestions])
     } else {
       respondToPermission(requestId, true)
     }
-  }, [requestId, respondToPermission, selectedSuggestions])
+  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, formValues])
+
+  const handleElicitationAlwaysAllow = useCallback(() => {
+    if (!requestId) return
+    respondToPermission(requestId, true, true, undefined, undefined, undefined, formValues)
+  }, [requestId, respondToPermission, formValues])
+
+  const handleElicitationDecline = useCallback(() => {
+    if (!requestId) return
+    respondToPermission(requestId, false)
+  }, [requestId, respondToPermission])
 
   useEffect(() => {
     if (!requestId) return
@@ -290,6 +310,92 @@ export function PermissionPrompt() {
   }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion])
 
   if (!pendingPermission) return null
+
+  if (isElicitation) {
+    const message = pendingPermission.message ?? `Allow ${pendingPermission.serverName ?? 'tool'}?`
+    const subtitle = pendingPermission.subtitle
+    const riskLevel = pendingPermission.riskLevel
+    const riskColor = riskLevel === 'high'
+      ? 'text-red-500'
+      : riskLevel === 'medium'
+        ? 'text-amber-500'
+        : 'text-muted-foreground'
+    const formValid = isElicitationFormValid(elicitationForm, formValues)
+
+    return (
+      <div className="mx-3 mb-2">
+        {isCollapsed ? (
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(false)}
+            className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/60 px-3 py-2 text-left transition-colors hover:bg-muted"
+          >
+            <AlertTriangle className={`size-3.5 shrink-0 ${riskColor}`} />
+            <span className="min-w-0 flex-1 truncate text-xs text-foreground">{message}</span>
+            <ChevronUp className="size-3.5 shrink-0 text-muted-foreground" />
+          </button>
+        ) : (
+          <div className="rounded-lg border border-border bg-muted/60 p-3">
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <div className="flex items-start gap-1.5">
+                <AlertTriangle className={`mt-0.5 size-3.5 shrink-0 ${riskColor}`} />
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-foreground">{message}</div>
+                  {subtitle && (
+                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCollapsed(true)}
+                className="cursor-pointer text-muted-foreground hover:text-foreground"
+              >
+                <ChevronDown className="size-3.5" />
+              </button>
+            </div>
+            {elicitationForm.length > 0 && (
+              <ElicitationForm fields={elicitationForm} value={formValues} onChange={setFormValues} />
+            )}
+            <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
+              <Button
+                size="sm"
+                disabled={!formValid}
+                className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50 focus:ring-2 focus:ring-green-600 dark:focus:ring-green-400 focus:outline-none"
+                onClick={handleAllow}
+              >
+                {t('chat.permission.allow')}
+              </Button>
+              {supportsAlwaysPersist && (
+                <Button
+                  size="sm"
+                  disabled={!formValid}
+                  className="h-7 cursor-pointer bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50 focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-400 focus:outline-none"
+                  onClick={handleElicitationAlwaysAllow}
+                >
+                  {t('chat.permission.alwaysAllow')}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400 focus:outline-none"
+                onClick={handleElicitationDecline}
+              >
+                {t('chat.permission.decline')}
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-slate-400 focus:outline-none"
+                onClick={handleCancel}
+              >
+                {t('common.cancel')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const { input, decisionReason, blockedPath, suggestions } = pendingPermission
   const display = getToolDisplay(toolName ?? '', input, cwd, homedir)

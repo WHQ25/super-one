@@ -330,6 +330,18 @@ export interface ChatMessage {
 
 // --- Permission request ---
 
+export type ElicitationFormFieldType = 'string' | 'number' | 'boolean' | 'enum'
+
+export interface ElicitationFormField {
+  name: string
+  type: ElicitationFormFieldType
+  label: string
+  description?: string
+  required: boolean
+  enumOptions?: string[]
+  defaultValue?: string | number | boolean
+}
+
 export interface PermissionRequest {
   requestId: string
   toolName: string
@@ -342,6 +354,13 @@ export interface PermissionRequest {
   toolDiff?: string
   toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
   toolLineDelta?: { added: number; removed: number }
+  requestKind?: 'mcp_elicitation'
+  serverName?: string
+  message?: string
+  subtitle?: string
+  riskLevel?: 'low' | 'medium' | 'high'
+  supportsAlwaysPersist?: boolean
+  elicitationForm?: ElicitationFormField[]
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'

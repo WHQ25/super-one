@@ -1227,13 +1227,13 @@ export class AgentService {
       return session.interrupt()
     })
 
-    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel') => {
+    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return false
       this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
-      trace('permission.flow', 'ipc_response', { projectPath: session.snapshot.projectPath, sessionId, allow, alwaysAllow, reason, decision }, requestId)
-      return session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision)
+      trace('permission.flow', 'ipc_response', { projectPath: session.snapshot.projectPath, sessionId, allow, alwaysAllow, reason, decision, formAnswers }, requestId)
+      return session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {

@@ -406,7 +406,7 @@ export interface ChatStore {
   clearAttachments: () => void
 
   // Permission actions
-  respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel') => Promise<boolean>
+  respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) => Promise<boolean>
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   cyclePermissionMode: () => void
   togglePlanModeShortcut: () => void
@@ -3912,7 +3912,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateActivePerSession(s,() => ({ attachments: [] })))
   },
 
-  respondToPermission: async (requestId, allow, alwaysAllow, reason, selectedSuggestions, decision) => {
+  respondToPermission: async (requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers) => {
     const { activeProject } = get()
     if (!activeProject) return false
     const session = getActivePerSession(get(), activeProject)
@@ -3926,7 +3926,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     let handled = false
     try {
       const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
-      if (targetSid) handled = await window.agent.respondToPermission(targetSid, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision)
+      if (targetSid) handled = await window.agent.respondToPermission(targetSid, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
     } catch (err) {
       console.warn('[chat] respondToPermission failed:', err)
       return false

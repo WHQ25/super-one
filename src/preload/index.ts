@@ -21,8 +21,8 @@ const agentAPI = {
   interrupt: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, sessionId) as Promise<boolean>,
 
-  respondToPermission: (sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel') =>
-    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, sessionId, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision) as Promise<boolean>,
+  respondToPermission: (sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, sessionId, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers) as Promise<boolean>,
 
   setPermissionMode: (projectPath: string, mode: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_PERMISSION_MODE, projectPath, mode),

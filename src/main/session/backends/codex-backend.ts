@@ -568,10 +568,11 @@ export class CodexBackend implements SessionBackend {
     reason?: string,
     _selectedSuggestions?: number[],
     decision?: 'cancel',
+    formAnswers?: Record<string, unknown>,
   ): boolean {
     const session = this.session
     if (!session) return false
-    return respondToCodexPermission(session, requestId, allow, alwaysAllow, reason, decision)
+    return respondToCodexPermission(session, requestId, allow, alwaysAllow, reason, decision, formAnswers)
   }
 
   respondToQuestion(requestId: string, answers: Record<string, string>, _annotations?: QuestionAnnotations): void {

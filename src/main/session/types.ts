@@ -174,6 +174,7 @@ export interface SessionBackend {
     reason?: string,
     selectedSuggestions?: number[],
     decision?: 'cancel',
+    formAnswers?: Record<string, unknown>,
   ): boolean
   respondToQuestion(
     requestId: string,
@@ -225,6 +226,7 @@ export interface Session {
     reason?: string,
     selectedSuggestions?: number[],
     decision?: 'cancel',
+    formAnswers?: Record<string, unknown>,
   ): boolean
   respondToQuestion(
     requestId: string,

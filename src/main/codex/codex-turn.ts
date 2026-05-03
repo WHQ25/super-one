@@ -40,6 +40,8 @@ import type {
   CodexSandboxMode,
   CodexThreadItem,
   CodexUsageInfo,
+  ElicitationFormField,
+  ElicitationFormFieldType,
   ImageAttachment,
   PermissionRequest,
 } from '../../shared/agent-types'
@@ -61,6 +63,11 @@ export type ParsedApprovalRequest =
     request: AskUserQuestionRequest
     responseKind: 'user_input'
     questions: AppServerUserInputQuestion[]
+  }
+  | {
+    request: PermissionRequest
+    responseKind: 'elicitation'
+    formFields: ElicitationFormField[]
   }
 
 function readBoolean(value: unknown): boolean | null {
@@ -597,6 +604,49 @@ function extractTurnErrorMessage(raw: unknown): string {
 const POSITIVE_OPTION_PATTERN = /\b(accept|allow|yes|continue|proceed|approve|ok|confirm|run)\b/i
 const NEGATIVE_OPTION_PATTERN = /\b(decline|deny|reject|cancel|no|stop|abort|disallow)\b/i
 
+function parseElicitationSchema(schema: Record<string, unknown> | null): ElicitationFormField[] {
+  if (!schema) return []
+  const properties = asRecord(schema.properties)
+  if (!properties || Object.keys(properties).length === 0) return []
+  const required = Array.isArray(schema.required)
+    ? schema.required.filter((r): r is string => typeof r === 'string')
+    : []
+  const fields: ElicitationFormField[] = []
+  for (const [name, raw] of Object.entries(properties)) {
+    const propRec = asRecord(raw)
+    if (!propRec) continue
+    const t = readString(propRec.type)
+    const label = readString(propRec.title) ?? name
+    const description = readString(propRec.description) ?? undefined
+    const isRequired = required.includes(name)
+    const enumValues = Array.isArray(propRec.enum)
+      ? propRec.enum.filter((v): v is string => typeof v === 'string')
+      : undefined
+    let fieldType: ElicitationFormFieldType | null = null
+    let enumOptions: string[] | undefined
+    if (enumValues && enumValues.length > 0 && t === 'string') {
+      fieldType = 'enum'
+      enumOptions = enumValues
+    } else if (t === 'boolean') {
+      fieldType = 'boolean'
+    } else if (t === 'number' || t === 'integer') {
+      fieldType = 'number'
+    } else if (t === 'string') {
+      fieldType = 'string'
+    }
+    if (!fieldType) continue
+    fields.push({
+      name,
+      type: fieldType,
+      label,
+      ...(description ? { description } : {}),
+      required: isRequired,
+      ...(enumOptions ? { enumOptions } : {}),
+    })
+  }
+  return fields
+}
+
 function parseUserInputQuestions(value: unknown): AppServerUserInputQuestion[] {
   if (!Array.isArray(value)) return []
 
@@ -671,7 +721,7 @@ function buildUserInputAnswersResponse(
   return { answers }
 }
 
-function mapApprovalRequest(notification: AppServerNotification): ParsedApprovalRequest | null {
+export function mapApprovalRequest(notification: AppServerNotification): ParsedApprovalRequest | null {
   const requestId = notification.requestId
   if (!requestId) return null
 
@@ -711,6 +761,41 @@ function mapApprovalRequest(notification: AppServerNotification): ParsedApproval
         decisionReason: reason,
         blockedPath: grantRoot,
         allowAlwaysAllow: true,
+      },
+    }
+  }
+
+  if (notification.method === 'mcpServer/elicitation/request') {
+    const message = readString(notification.params.message) ?? ''
+    const serverName = readString(notification.params.serverName) ?? 'mcp'
+    const meta = asRecord(notification.params._meta)
+    const subtitle = readString(meta?.subtitle) ?? undefined
+    const rawRiskLevel = readString(meta?.riskLevel)
+    const riskLevel = (rawRiskLevel === 'low' || rawRiskLevel === 'medium' || rawRiskLevel === 'high')
+      ? rawRiskLevel
+      : undefined
+    const persistFlags = Array.isArray(meta?.persist)
+      ? (meta.persist as unknown[]).filter((v): v is string => typeof v === 'string')
+      : []
+    const supportsAlwaysPersist = persistFlags.includes('always')
+    const schema = asRecord(notification.params.requestedSchema)
+    const formFields = parseElicitationSchema(schema)
+    return {
+      responseKind: 'elicitation',
+      formFields,
+      request: {
+        requestId,
+        toolName: serverName,
+        toolUseId: requestId,
+        input: {},
+        allowAlwaysAllow: supportsAlwaysPersist,
+        requestKind: 'mcp_elicitation',
+        serverName,
+        message,
+        ...(subtitle ? { subtitle } : {}),
+        ...(riskLevel ? { riskLevel } : {}),
+        supportsAlwaysPersist,
+        ...(formFields.length > 0 ? { elicitationForm: formFields } : {}),
       },
     }
   }
@@ -956,6 +1041,10 @@ async function respondToPrewarmRequest(connection: AppServerConnection, notifica
     await connection.respond(notification.requestIdRaw, { decision: 'decline' })
     return
   }
+  if (parsed?.responseKind === 'elicitation') {
+    await connection.respond(notification.requestIdRaw, { action: 'decline', content: null, _meta: null })
+    return
+  }
   await connection.respond(notification.requestIdRaw, {})
 }
 
@@ -1123,19 +1212,25 @@ export async function streamTurnEvents(
 
     const parsedApprovalRequest = mapApprovalRequest(notification)
     if (parsedApprovalRequest) {
-      const fallbackResponse: PendingCodexApprovalResponse = parsedApprovalRequest.responseKind === 'user_input'
-        ? buildUserInputApprovalResponse(parsedApprovalRequest.questions, false)
-        : { decision: 'decline' }
+      const fallbackResponse: PendingCodexApprovalResponse =
+        parsedApprovalRequest.responseKind === 'user_input'
+          ? buildUserInputApprovalResponse(parsedApprovalRequest.questions, false)
+          : parsedApprovalRequest.responseKind === 'elicitation'
+            ? { action: 'decline', content: null, _meta: null }
+            : { decision: 'decline' }
+
+      const respondToServer = (req: typeof notification.requestIdRaw, resp: PendingCodexApprovalResponse): Promise<void> =>
+        connection.respond(req!, resp as unknown as Record<string, unknown>)
 
       if (controller.signal.aborted) {
-        await connection.respond(notification.requestIdRaw, fallbackResponse)
+        await respondToServer(notification.requestIdRaw, fallbackResponse)
         return true
       }
       const canHandleRequest = parsedApprovalRequest.responseKind === 'user_input'
         ? callbacks?.onAskUserQuestion
         : callbacks?.onPermissionRequest
       if (!canHandleRequest) {
-        await connection.respond(notification.requestIdRaw, fallbackResponse)
+        await respondToServer(notification.requestIdRaw, fallbackResponse)
         return true
       }
       try {
@@ -1144,6 +1239,9 @@ export async function streamTurnEvents(
             responseKind: parsedApprovalRequest.responseKind,
             questions: parsedApprovalRequest.responseKind === 'user_input'
               ? parsedApprovalRequest.questions
+              : undefined,
+            formFields: parsedApprovalRequest.responseKind === 'elicitation'
+              ? parsedApprovalRequest.formFields
               : undefined,
             resolve,
             reject,
@@ -1155,7 +1253,7 @@ export async function streamTurnEvents(
           callbacks?.onPermissionRequest?.(parsedApprovalRequest.request)
         }
         const response = await responsePromise
-        await connection.respond(notification.requestIdRaw, response)
+        await respondToServer(notification.requestIdRaw, response)
         return true
       } finally {
         session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
@@ -1749,11 +1847,16 @@ export function respondToCodexPermission(
   alwaysAllow?: boolean,
   _reason?: string,
   decision?: 'cancel',
+  formAnswers?: Record<string, unknown>,
 ): boolean {
   const pending = session.pendingApprovals.get(requestId)
   if (!pending) return false
 
   if (pending.responseKind === 'user_input') return false
+
+  if (pending.responseKind === 'elicitation') {
+    return respondToCodexElicitation(session, requestId, allow, alwaysAllow, decision, formAnswers)
+  }
 
   session.pendingApprovals.delete(requestId)
   const resolvedDecision: CodexApprovalDecision = decision === 'cancel'
@@ -1762,6 +1865,35 @@ export function respondToCodexPermission(
       ? (alwaysAllow ? 'acceptForSession' : 'accept')
       : 'decline'
   pending.resolve({ decision: resolvedDecision })
+  return true
+}
+
+export function respondToCodexElicitation(
+  session: CodexSession,
+  requestId: string,
+  allow: boolean,
+  alwaysAllow?: boolean,
+  decision?: 'cancel',
+  formAnswers?: Record<string, unknown>,
+): boolean {
+  const pending = session.pendingApprovals.get(requestId)
+  if (!pending || pending.responseKind !== 'elicitation') return false
+
+  session.pendingApprovals.delete(requestId)
+  if (decision === 'cancel') {
+    pending.resolve({ action: 'cancel', content: null, _meta: null })
+    return true
+  }
+  if (allow) {
+    const content = formAnswers && Object.keys(formAnswers).length > 0 ? formAnswers : null
+    pending.resolve({
+      action: 'accept',
+      content,
+      _meta: alwaysAllow ? { persist: 'always' } : null,
+    })
+    return true
+  }
+  pending.resolve({ action: 'decline', content: null, _meta: null })
   return true
 }
 

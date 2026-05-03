@@ -305,7 +305,7 @@ export class ClaudeBackend implements SessionBackend {
     await this.query.applyFlagSettings({ sandbox })
   }
 
-  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], _decision?: 'cancel'): boolean {
+  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], _decision?: 'cancel', _formAnswers?: Record<string, unknown>): boolean {
     return respondToPermissionInternal(this.pendingPermissions, requestId, allow, alwaysAllow, reason, selectedSuggestions)
   }
 

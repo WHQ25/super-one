@@ -553,12 +553,12 @@ describe('CodexBackend interrupt / approval forwarding', () => {
 
   it('respondToPermission forwards allow + reason to respondToCodexPermission', () => {
     backend.respondToPermission('req-1', true, false, 'because')
-    expect(service.respondPermissionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'req-1', true, false, 'because', undefined)
+    expect(service.respondPermissionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'req-1', true, false, 'because', undefined, undefined)
   })
 
   it('respondToPermission forwards cancel decision through to respondToCodexPermission', () => {
     backend.respondToPermission('req-1', false, undefined, undefined, undefined, 'cancel')
-    expect(service.respondPermissionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'req-1', false, undefined, undefined, 'cancel')
+    expect(service.respondPermissionMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'req-1', false, undefined, undefined, 'cancel', undefined)
   })
 
   it('respondToQuestion / dismissQuestion forward to codex-turn module', () => {

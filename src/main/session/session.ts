@@ -456,9 +456,9 @@ export class Session implements SessionContract {
   getSelectedModel(): string | undefined { return this.model }
   getSelectedEffort(): SendMessageRequest['effort'] { return this.effort }
 
-  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel'): boolean {
+  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): boolean {
     this.assertNotDisposed()
-    return this.backend.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision)
+    return this.backend.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
   }
 
   respondToQuestion(requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): void {

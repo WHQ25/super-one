@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.25.1-alpha] - 2026-05-03
+
+### Fixed
+
+- LAN device discovery no longer spawns the `dns-sd` CLI; uses an in-process bonjour client instead, improving reliability of mDNS advertisement and discovery on macOS.
+
+### Changed
+
+- Removed focus-visible ring on chat input fields and textareas for a cleaner appearance.
+
 ## [0.25.0-alpha] - 2026-05-03
 
 ### Added

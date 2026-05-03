@@ -183,6 +183,11 @@
   ::after {
     border-color: var(--color-border);
   }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px oklch(from var(--ring) l c h / 0.5);
+  }
 }
 
 body {

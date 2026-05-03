@@ -1394,6 +1394,7 @@ export const AgentIpcChannels = {
   CONTENT_ZOOM: 'app:content-zoom',
   GET_FULLSCREEN: 'app:get-fullscreen',
   FULLSCREEN_CHANGED: 'app:fullscreen-changed',
+  SET_MIN_WINDOW_SIZE: 'app:set-min-window-size',
   RECENT_FOLDERS_CHANGED: 'app:recent-folders-changed',
   OPEN_EXTERNAL_LINK: 'app:open-external-link',
   CLIPBOARD_READ: 'app:clipboard-read',

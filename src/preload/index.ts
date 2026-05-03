@@ -597,6 +597,8 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.FULLSCREEN_CHANGED, handler)
     }
   },
+  setMinWindowSize: (width: number, height: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.SET_MIN_WINDOW_SIZE, width, height) as Promise<void>,
 
   // Git
   getGitInfo: (folderPath: string) =>

@@ -185,6 +185,7 @@ interface AppAPI {
   // Window state
   getFullscreen(): Promise<boolean>
   onFullscreenChanged(callback: (isFullscreen: boolean) => void): () => void
+  setMinWindowSize(width: number, height: number): Promise<void>
 
   // Git
   getGitInfo(folderPath: string): Promise<GitInfo | null>

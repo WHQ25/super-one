@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, protocol, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, shell } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir } from 'fs/promises'
@@ -1351,6 +1351,23 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.GET_FULLSCREEN, () => getMainWindow().isFullScreen())
+
+  ipcMain.handle(AgentIpcChannels.SET_MIN_WINDOW_SIZE, (_e, width: number, height: number) => {
+    const win = getMainWindow()
+    const w = Math.max(1, Math.round(width))
+    const h = Math.max(1, Math.round(height))
+    win.setMinimumSize(w, h)
+    if (win.isFullScreen() || win.isMaximized()) return
+    const [curW, curH] = win.getSize()
+    if (curW >= w && curH >= h) return
+    const newW = Math.max(curW, w)
+    const newH = Math.max(curH, h)
+    const work = screen.getDisplayMatching(win.getBounds()).workArea
+    let [x, y] = win.getPosition()
+    if (x + newW > work.x + work.width) x = Math.max(work.x, work.x + work.width - newW)
+    if (y + newH > work.y + work.height) y = Math.max(work.y, work.y + work.height - newH)
+    win.setBounds({ x, y, width: newW, height: newH }, true)
+  })
 
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
     const claude = getCachedHarnessResources('claude')

@@ -107,6 +107,16 @@ function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
+  useEffect(() => {
+    const isCoding = view === 'main' && layoutMode === 'coding'
+    const min = isCoding
+      ? LAYOUT.MIN_MAIN
+        + (showSidebar ? LAYOUT.MIN_SIDEBAR : 0)
+        + (showActivityPanel ? LAYOUT.MIN_AP : 0)
+      : LAYOUT.MIN_MAIN + LAYOUT.MIN_SIDEBAR + LAYOUT.MIN_AP
+    window.app.setMinWindowSize(min, 700)
+  }, [view, layoutMode, showSidebar, showActivityPanel])
+
   const { MIN_MAIN, MIN_SIDEBAR, MAX_SIDEBAR, MIN_AP } = LAYOUT
   const sidebarRef = useRef<HTMLDivElement>(null)
   const sidebarInnerRef = useRef<HTMLDivElement>(null)

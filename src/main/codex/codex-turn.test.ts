@@ -32,6 +32,7 @@ const {
   respondToCodexPermission,
   respondToCodexElicitation,
   runCodexTurn,
+  mapThreadItemFromAppServer,
   mapApprovalRequest,
 } = await import('./codex-turn')
 const { createCodexSession } = await import('./codex-session')
@@ -581,5 +582,102 @@ describe('runCodexTurn turn/start payload', () => {
         type: 'dangerFullAccess',
       },
     }))
+  })
+})
+
+describe('mapThreadItemFromAppServer image generation', () => {
+  it('maps a completed imageGeneration item with camelCase fields', () => {
+    const result = mapThreadItemFromAppServer({
+      id: 'ig-1',
+      type: 'imageGeneration',
+      status: 'completed',
+      revisedPrompt: 'a fluffy orange cat with a hat',
+      savedPath: '/tmp/codex/generated_images/sess-1/ig-1.png',
+    })
+
+    expect(result).toEqual({
+      id: 'ig-1',
+      type: 'image_generation',
+      status: 'completed',
+      revisedPrompt: 'a fluffy orange cat with a hat',
+      savedPath: '/tmp/codex/generated_images/sess-1/ig-1.png',
+    })
+  })
+
+  it('accepts snake_case field names from the protocol', () => {
+    const result = mapThreadItemFromAppServer({
+      id: 'ig-2',
+      type: 'image_generation',
+      status: 'completed',
+      revised_prompt: 'a sunset over mountains',
+      saved_path: '/tmp/codex/generated_images/sess-1/ig-2.png',
+    })
+
+    expect(result).toMatchObject({
+      id: 'ig-2',
+      type: 'image_generation',
+      revisedPrompt: 'a sunset over mountains',
+      savedPath: '/tmp/codex/generated_images/sess-1/ig-2.png',
+    })
+  })
+
+  it('defaults missing status to in_progress on the first event', () => {
+    const result = mapThreadItemFromAppServer({
+      id: 'ig-3',
+      type: 'imageGeneration',
+    })
+
+    expect(result).toEqual({
+      id: 'ig-3',
+      type: 'image_generation',
+      status: 'in_progress',
+    })
+  })
+
+  it('merges saved_path from a completed event into a previously in-progress item', () => {
+    const previous = {
+      id: 'ig-4',
+      type: 'image_generation' as const,
+      status: 'in_progress',
+    }
+    const result = mapThreadItemFromAppServer(
+      {
+        id: 'ig-4',
+        type: 'imageGeneration',
+        status: 'completed',
+        savedPath: '/tmp/foo.png',
+      },
+      previous,
+    )
+
+    expect(result).toEqual({
+      id: 'ig-4',
+      type: 'image_generation',
+      status: 'completed',
+      savedPath: '/tmp/foo.png',
+    })
+  })
+
+  it('preserves prior savedPath when a follow-up event omits it', () => {
+    const previous = {
+      id: 'ig-5',
+      type: 'image_generation' as const,
+      status: 'completed',
+      revisedPrompt: 'a city skyline',
+      savedPath: '/tmp/bar.png',
+    }
+    const result = mapThreadItemFromAppServer(
+      {
+        id: 'ig-5',
+        type: 'imageGeneration',
+        status: 'completed',
+      },
+      previous,
+    )
+
+    expect(result).toMatchObject({
+      savedPath: '/tmp/bar.png',
+      revisedPrompt: 'a city skyline',
+    })
   })
 })

@@ -143,6 +143,11 @@ interface AppAPI {
   deleteFile(folderPath: string, relPath: string): Promise<FileOpResult>
   renameFile(folderPath: string, relPath: string, newName: string): Promise<FileOpResult>
   saveFile(folderPath: string, filePath: string, content: string): Promise<FileOpResult>
+  readFileAsDataUri(absPath: string): Promise<{ ok: true; dataUri: string } | { ok: false; error: string }>
+  saveFileAs(
+    sourcePath: string,
+    defaultName: string,
+  ): Promise<{ ok: true; savedPath: string } | { ok: false; canceled?: boolean; error?: string }>
   showInFolder(folderPath: string, relPath: string): Promise<void>
   openExternalLink(url: string): Promise<void>
   clipboardRead(): Promise<string>

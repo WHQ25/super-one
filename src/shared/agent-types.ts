@@ -216,6 +216,14 @@ export interface CodexCompactionItem {
   type: 'compaction'
 }
 
+export interface CodexImageGenerationItem {
+  id: string
+  type: 'image_generation'
+  status: 'in_progress' | 'completed' | 'failed' | string
+  revisedPrompt?: string
+  savedPath?: string
+}
+
 export interface CodexPlanApprovalState {
   status: 'approved' | 'rejected'
   feedback?: string
@@ -256,6 +264,7 @@ export type CodexThreadItem =
   | CodexReviewItem
   | CodexCompactionItem
   | CodexCollabToolCallItem
+  | CodexImageGenerationItem
 
 export interface CodexTurnInfo {
   threadId: string | null
@@ -1392,6 +1401,8 @@ export const AgentIpcChannels = {
   GIT_DIFF_FILE: 'app:git-diff-file',
   GIT_READ_FILE: 'app:git-read-file',
   SAVE_FILE: 'app:save-file',
+  READ_FILE_AS_DATA_URI: 'app:read-file-as-data-uri',
+  SAVE_FILE_AS: 'app:save-file-as',
 
   // Concurrent session management
   PARK_SESSION: 'agent:park-session',

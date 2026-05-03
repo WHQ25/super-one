@@ -33,7 +33,7 @@ export function ImagePreview({ src, alt }: ImagePreviewProps) {
   }, [src])
 
   return (
-    <div className="relative h-full">
+    <div className="relative h-full w-full">
       <TransformWrapper
         minScale={0.1}
         maxScale={10}
@@ -48,7 +48,13 @@ export function ImagePreview({ src, alt }: ImagePreviewProps) {
           wrapperStyle={{ width: '100%', height: '100%' }}
           contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
-          <img src={src} alt={alt} draggable={false} className="max-h-full max-w-full select-none object-contain" />
+          <img
+            src={src}
+            alt={alt}
+            draggable={false}
+            onLoad={() => resetRef.current?.()}
+            className="max-h-full max-w-full select-none object-contain"
+          />
         </TransformComponent>
       </TransformWrapper>
     </div>

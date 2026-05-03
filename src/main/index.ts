@@ -1092,6 +1092,61 @@ function registerIpcHandlers(): void {
     }
   })
 
+  const READABLE_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+  const READABLE_IMAGE_MIME: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+  }
+  const MAX_READABLE_IMAGE_BYTES = 10 * 1024 * 1024
+
+  ipcMain.handle(AgentIpcChannels.READ_FILE_AS_DATA_URI, async (_event, absPath: string) => {
+    try {
+      if (typeof absPath !== 'string' || !isAbsolute(absPath)) {
+        return { ok: false, error: 'Path must be absolute' }
+      }
+      const ext = extname(absPath).toLowerCase()
+      if (!READABLE_IMAGE_EXTS.has(ext)) {
+        return { ok: false, error: `Unsupported file extension: ${ext}` }
+      }
+      const info = await stat(absPath)
+      if (!info.isFile()) {
+        return { ok: false, error: 'Not a regular file' }
+      }
+      if (info.size > MAX_READABLE_IMAGE_BYTES) {
+        return { ok: false, error: `File too large (${info.size} bytes)` }
+      }
+      const buf = await readFile(absPath)
+      const mime = READABLE_IMAGE_MIME[ext] ?? 'application/octet-stream'
+      return { ok: true, dataUri: `data:${mime};base64,${buf.toString('base64')}` }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.SAVE_FILE_AS, async (_event, sourcePath: string, defaultName: string) => {
+    try {
+      if (typeof sourcePath !== 'string' || !isAbsolute(sourcePath)) {
+        return { ok: false, error: 'Source path must be absolute' }
+      }
+      await access(sourcePath)
+      const ext = extname(sourcePath).toLowerCase().replace(/^\./, '') || 'png'
+      const result = await dialog.showSaveDialog(mainWindow ?? undefined!, {
+        defaultPath: defaultName || basename(sourcePath),
+        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+      })
+      if (result.canceled || !result.filePath) {
+        return { ok: false, canceled: true }
+      }
+      await cp(sourcePath, result.filePath)
+      return { ok: true, savedPath: result.filePath }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
   ipcMain.handle(AgentIpcChannels.OPEN_EXTERNAL_LINK, (_event, url: string) => {
     if (!/^https?:\/\//i.test(url)) {
       throw new Error(`Blocked: only http/https URLs are allowed, got: ${url}`)

@@ -432,6 +432,21 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
         query: readString(rec.query) ?? (previous?.type === 'web_search' ? previous.query : ''),
       }
 
+    case 'image_generation':
+    case 'imageGeneration': {
+      const prev = previous?.type === 'image_generation' ? previous : null
+      const status = readString(rec.status) ?? prev?.status ?? 'in_progress'
+      const revisedPrompt = readString(rec.revisedPrompt ?? rec.revised_prompt) ?? prev?.revisedPrompt
+      const savedPath = readString(rec.savedPath ?? rec.saved_path) ?? prev?.savedPath
+      return {
+        id,
+        type: 'image_generation',
+        status,
+        ...(revisedPrompt ? { revisedPrompt } : {}),
+        ...(savedPath ? { savedPath } : {}),
+      }
+    }
+
     case 'todo_list':
     case 'todoList': {
       const items = Array.isArray(rec.items)

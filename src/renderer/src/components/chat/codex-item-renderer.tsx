@@ -14,6 +14,7 @@ import { AnsiText } from '@/lib/ansi'
 import { FileChip } from './ToolBlock'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
+import { CodexImageGenerationBlock } from './CodexImageGenerationBlock'
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { useChatStore } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
@@ -443,6 +444,9 @@ export function renderCodexItem(
           status="complete"
         />
       )
+
+    case 'image_generation':
+      return <CodexImageGenerationBlock key={`${item.id}-${index}`} item={item} />
 
     case 'todo_list':
       return null

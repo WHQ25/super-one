@@ -45,3 +45,6 @@ debug-data/
 
 # Local mini-app data
 .superone/
+
+# Storybook build output
+storybook-static/

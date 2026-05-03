@@ -4,6 +4,26 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.25.0-alpha] - 2026-05-03
+
+### Added
+
+- **Codex generated images render with fullscreen preview and download** — Codex `imageGeneration` thread items now render as a thumbnail; clicking opens a Dialog with pan/zoom, a download button, and prompt + dimension info. Two new IPC channels (`read-file-as-data-uri`, `save-file-as`) load and export the saved file. Path-security checks were also expanded to allow reading from `~/.cache/codex-runtimes/` so Codex bundle artifacts load correctly.
+- **Codex computer-use approvals via MCP Elicitation** — Codex's macOS computer-use feature uses `mcpServer/elicitation/request` to ask "Allow Codex to use Google Chrome?"-style permissions. The previous code did not recognize this method, and the fallback empty response was interpreted by Codex as an implicit decline — every computer-use tool call failed silently. Requests are now wired through `PermissionPrompt` with risk icon, subtitle, Allow / Always allow / Decline / Cancel, and a minimal JSON Schema form renderer for string / number / boolean / enum fields. Responses serialize as `{ action, content, _meta }` with `_meta.persist: 'always'` for always-allow.
+- **Keyboard shortcuts for image preview** — `=` / `+` zoom in, `-` / `_` zoom out, `0` reset, arrow keys pan. New `usePreventFocusSteal` hook stops pointer-induced focus retention on toolbar buttons so the focus ring no longer lingers after keyboard interaction.
+- **One-click sync for legacy providers** — when a stored provider config has drifted from its preset (missing fields, stale model ids, etc.), `ProviderDialog` and the `ProvidersPage` row both surface a sync icon. Opening `PresetSyncDialog` shows per-field added/changed lists with checkboxes — added entries default ON, changed entries default OFF (you opt in to override your own values). `base_url` and changed fields are only touched when explicitly checked. DeepSeek preset bumped to V4 Pro / V4 Pro 1M / V4 Flash with subagent slot.
+
+### Changed
+
+- **Oversized image attachments downscale to 2000px max side** — images whose long side exceeds Claude's 2000px limit are now resized before being base64-encoded. PDFs keep the existing FileReader path; decode/encode failures fall back to the original file so attachments never disappear.
+- **Window minWidth adapts to visible panels** — sidebar and activity panel each have their own min width; the previous hardcoded 1080 was the all-three-open sum, leaving the window stuck at that floor even when panels were collapsed. The renderer now computes the floor from current panel visibility, pushes it to main via IPC, and grows the window (clamped to display work area) when the new floor exceeds the current size.
+- **Unified focus-visible ring on non-shadcn elements** — a single `:focus-visible` rule in `@layer base` produces a 3px ring at 50% `--ring` opacity. Tailwind utility specificity keeps shadcn's per-component focus styles winning, so the rule only paints over the gap (native button, `tabIndex` divs, Tiptap) without disturbing variant or aria-invalid overrides. The Tiptap editor is opted out via `.tiptap:focus-visible` so the chat input no longer gets a 3px brand ring as soon as you start typing.
+- **Throwaway SDK probes no longer leave stub session files** — `CONNECT_CLAUDE`, `fetchModels`, and `PROVIDERS_TEST` spawn one-shot SDK queries solely for metadata or connectivity tests; they now pass `persistSession: false` so they no longer leave un-resumable jsonl stubs in `~/.claude/projects/`.
+
+### Fixed
+
+- **Provider connection-test env isolation and timeout** — the test SDK call now uses a 17-key system-env allowlist (PATH / HOME / TMPDIR / Windows essentials) instead of `{...process.env, ...env}`, so shell-leaked `ANTHROPIC_*` / `OPENAI_*` / `CLAUDE_*` no longer bleed into the test. The SDK query loop is wrapped in a `Promise.race` with a 15s timeout (raised from the initial 8s after some legitimately slow first-token responses), and the subprocess is always closed in `finally` so api_retry storms (e.g. provider 401/429) no longer hang the UI for 40+ seconds.
+
 ## [0.24.2-alpha] - 2026-05-02
 
 ### Changed

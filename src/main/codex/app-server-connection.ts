@@ -2,6 +2,7 @@ import { execFileSync, spawn, type ChildProcess } from 'child_process'
 import { createRequire } from 'module'
 import { createInterface } from 'readline'
 import log from '../logger'
+import { trace } from '../agent/event-trace'
 import { getNodeRuntime } from '../agent/resolve-cli'
 import { getActiveProviderRaw } from '../database'
 import {
@@ -414,19 +415,31 @@ export async function createAppServerConnection(
     })
   }
 
+  const isDev = process.env.NODE_ENV === 'development'
+
   const connection: AppServerConnection = {
     request: async (method, params) => {
       const requestId = nextRequestId
       nextRequestId += 1
+      if (isDev) trace('codex.appserver.request', method, { requestId, params }, String(requestId))
       await sendMessage(compactRecord({ id: requestId, method, params }))
-      return waitForResponse(requestId, method)
+      try {
+        const result = await waitForResponse(requestId, method)
+        if (isDev) trace('codex.appserver.response', method, { requestId, ok: true, result }, String(requestId))
+        return result
+      } catch (err) {
+        if (isDev) trace('codex.appserver.response', method, { requestId, ok: false, error: (err as Error).message }, String(requestId))
+        throw err
+      }
     },
 
     respond: async (requestId, result) => {
+      if (isDev) trace('codex.appserver.respond', 'client_response', { requestId, result }, String(requestId))
       await sendMessage(compactRecord({ id: requestId, result: result ?? {} }))
     },
 
     notify: async (method, params) => {
+      if (isDev) trace('codex.appserver.notify', method, { params })
       await sendMessage(compactRecord({ method, params }))
     },
 

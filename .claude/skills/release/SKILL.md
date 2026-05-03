@@ -25,31 +25,34 @@ Tags are created by GitHub at publish time, never pushed from local. A failing b
 
 ## Workflow
 
-### Step 1: Parse and Validate
+### Step 1: Confirm version + CHANGELOG (single turn)
+
+This is the **only** human checkpoint in the pipeline. Do all of the following **in one response** and ask for a single combined confirmation:
 
 1. Read `version` from `package.json`.
-2. Parse args; default to `alpha` + `patch`.
-3. Reject `beta` / `public` channels (not yet supported) and stop.
-4. Calculate the new version string.
-5. Show the user: `Current: X.Y.Z-alpha → New: A.B.C-alpha` and ask for confirmation before proceeding.
+2. Parse args; default to `alpha` + `patch`. Reject `beta` / `public` (not yet supported) and stop.
+3. Calculate the new version string.
+4. `git log --oneline --no-decorate v<previous-version>..HEAD` to enumerate commits since the last release tag.
+5. Draft the CHANGELOG entry:
+   - Drop noise (`chore(release): bump version`, purely internal refactors with no user impact).
+   - Group by type — **Added** (feat), **Fixed** (fix), **Changed** (refactor affecting user behavior, dep upgrades with user impact), **Performance** (perf), **Tests** (test), **CI** (ci). Omit empty groups.
+   - Concise, human-readable bullets. Combine related commits. No unverified claims ("may fix X") — only statements you can defend.
+6. Show the user **both** in one message:
+   - `Current: X.Y.Z-alpha → New: A.B.C-alpha`
+   - The full drafted CHANGELOG entry (as the literal block that will be inserted)
+7. Ask for one combined confirmation / edits.
 
-### Step 2: Update CHANGELOG
+After this confirmation, **everything below runs without further prompting** unless an actual error occurs. Do not ask the user to confirm before push, before build, before promote, or before publish.
 
-1. `git log --oneline --no-decorate v<previous-version>..HEAD` to enumerate commits since the last release tag.
-2. Drop noise (`chore(release): bump version`, purely internal refactors with no user impact).
-3. Group by type — **Added** (feat), **Fixed** (fix), **Changed** (refactor affecting user behavior, dep upgrades with user impact), **Performance** (perf), **Tests** (test), **CI** (ci). Omit empty groups.
-4. Write concise, human-readable bullets. Combine related commits. Do NOT write unverified claims ("may fix X") — only ship statements you can defend.
-5. Insert `## [<new-version>] - <YYYY-MM-DD>` at the top of `CHANGELOG.md`, right after the header block.
-6. Show the drafted entry to the user and ask for confirmation or edits before continuing.
+### Step 2: Bump version, write CHANGELOG, commit, push
 
-### Step 3: Bump Version and Push main
+1. Insert `## [<new-version>] - <YYYY-MM-DD>` at the top of `CHANGELOG.md`, right after the header block, with the confirmed entry.
+2. Update `package.json` `version` to the new value. Do NOT modify `bun.lock` (version bumps don't touch deps).
+3. `git add package.json CHANGELOG.md && git commit -m "chore(release): bump version to <new-version>"`
+4. **Do NOT create a local git tag**. Tag creation is deferred to GitHub at publish time.
+5. `git push origin main` (no `--tags`). No confirmation needed — already covered by Step 1.
 
-1. Update `package.json` `version` to the new value. Do NOT modify `bun.lock` (version bumps don't touch deps).
-2. Stage + commit: `git add package.json CHANGELOG.md && git commit -m "chore(release): bump version to <new-version>"`
-3. **Do NOT create a local git tag**. Tag creation is deferred to GitHub at publish time.
-4. Ask the user to confirm before pushing. On confirmation: `git push origin main` (no `--tags`).
-
-### Step 4: Trigger per-platform builds
+### Step 3: Trigger per-platform builds
 
 For each platform that should be built (default: all three), fire `workflow_dispatch`:
 
@@ -65,7 +68,7 @@ Record each run's URL / ID. Each build:
 - Runs `bun run build:<os> -- --publish never` → electron-builder produces `dist/` but uploads nowhere
 - `actions/upload-artifact@v4` → artifacts `dist-mac` / `dist-win` / `dist-linux` attached to the run (30-day retention)
 
-### Step 5: Monitor builds
+### Step 4: Monitor builds
 
 Poll `gh run view <id> --json status,conclusion` for each run. macOS is the longest (~15 min, signing + notarization); Linux and Windows usually finish in 3-6 min.
 
@@ -75,7 +78,7 @@ If any build fails:
 - Fix on `main`, push, and re-trigger ONLY that platform's workflow. The other two platforms' successful artifacts remain valid — `promote.yml` will pull each from its own run ID.
 - Do NOT proceed to promote until all three builds are green (or the user explicitly asks for a partial promote).
 
-### Step 6: Trigger promote
+### Step 5: Trigger promote
 
 Once all three builds are green, collect the run IDs and fire promote:
 
@@ -94,17 +97,13 @@ gh workflow run promote.yml --ref main \
 
 Promote downloads each platform's artifact, then either creates a new draft release (with `--draft --prerelease`, tag name set) or uploads to an existing one with `--clobber`. Idempotent — safe to re-run.
 
-### Step 7: Monitor promote + verify draft
+### Step 6: Monitor promote + verify draft
 
 1. Poll `gh run view <promote-run-id>` until complete.
 2. `gh release view v<new-version> --json isDraft,isPrerelease,assets -q '.isDraft, .isPrerelease, (.assets | length), (.assets[].name)'` — expect `isDraft=true`, `isPrerelease=true`, and exactly the set of artifacts expected (typically 14 for full mac+win+linux: 4 dmg/zip + 4 blockmap + 1 exe + 1 exe blockmap + 1 AppImage + 3 `latest-*.yml`).
-3. Download the platform-appropriate DMG/EXE/AppImage and smoke-test locally:
-   ```bash
-   gh release download v<new-version> --pattern "*arm64.dmg" -D ~/Downloads/
-   ```
-4. Ask the user to confirm local install works before publishing.
+3. If the assertions pass, proceed to publish without prompting. If they fail, stop and surface the mismatch.
 
-### Step 8: Publish
+### Step 7: Publish
 
 Extract the changelog entry for this version from `CHANGELOG.md` (everything between the `## [<new-version>]` heading and the next `##` heading). Use a HEREDOC so formatting is preserved:
 
@@ -119,7 +118,7 @@ For `public` (future): omit `--prerelease`.
 
 Publishing materializes the tag on `target_commitish` (the SHA supplied to promote). Run `git fetch origin --tags` afterwards so the local repo has the new tag.
 
-### Step 9: Confirm
+### Step 8: Report
 
 Show the user the final release URL and the tag SHA. Mention `git fetch origin --tags` so their local is in sync.
 
@@ -130,7 +129,6 @@ Show the user the final release URL and the tag SHA. Mention `git fetch origin -
 | Build workflow fails on one platform | Fix on main, re-trigger that platform only, reuse the other two platforms' existing run IDs in promote |
 | Promote workflow fails mid-upload | Re-trigger promote with the same tag — `--clobber` replaces any partial assets |
 | Draft release has wrong tag or SHA | `gh release delete v<new-version> --cleanup-tag --yes`, then re-run promote |
-| Smoke test reveals regression | Fix on main, re-run Steps 3–7 with a new patch version; do NOT reuse a tag that had a bad artifact |
 | Already published and later found broken | Leave the broken release as-is (alpha users get it and can report), ship a new patch version; don't rewrite history |
 
 ## Invariants

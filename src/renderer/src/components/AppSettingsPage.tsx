@@ -45,7 +45,7 @@ export function AppSettingsPage() {
     setSavingLocale(true)
     try {
       await changeLocale(locale)
-      toast.success(t('settings.general.language.updated'))
+      toast.success(i18n.t('settings.general.language.updated', { lng: locale }))
     } finally {
       setSavingLocale(false)
     }

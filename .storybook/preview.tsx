@@ -2,6 +2,10 @@ import type { Preview } from '@storybook/react-vite'
 import React, { useEffect } from 'react'
 import '../src/renderer/src/styles/index.css'
 import { installIpcMocks } from './mock-ipc'
+
+const sbOverrideStyle = document.createElement('style')
+sbOverrideStyle.textContent = 'html, body { overflow: auto !important; }'
+document.head.appendChild(sbOverrideStyle)
 import { useAppStore } from '../src/renderer/src/stores/app'
 import {
   createDefaultPerSessionState,

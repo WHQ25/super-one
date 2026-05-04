@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Globe, HardDrive, FolderOpen, Package, ArrowUpCircle, Link, Check, Wrench } from 'lucide-react'
+import { Globe, HardDrive, FolderOpen, Package, ArrowUpCircle, Link, Check, Wrench, Mic, Video } from 'lucide-react'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useAppStore } from '@/stores/app'
 import { cn } from '@/lib/utils'
-import type { MiniAppFsEntry } from '../../../../shared/miniapp-types'
+import type { MiniAppFsEntry, MiniAppMediaEntry } from '../../../../shared/miniapp-types'
 
 type InstallTarget = 'personal' | 'project'
 type ReviewTab = 'permissions' | 'tools'
@@ -49,15 +49,17 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
   const existingVersion = pendingInstall?.existingVersion
   const fsEntries = manifest?.permissions?.fs ?? []
   const networkEntries = manifest?.permissions?.network ?? []
+  const mediaEntries = manifest?.permissions?.media ?? []
   const tools = manifest?.tools ?? []
-  const hasPermissions = fsEntries.length > 0 || networkEntries.length > 0
+  const hasPermissions = fsEntries.length > 0 || networkEntries.length > 0 || mediaEntries.length > 0
   const hasTools = tools.length > 0
   const isUpgrade = !!existingVersion && existingVersion !== manifest?.version
 
   const permissionKeys = useMemo(() => [
     ...fsEntries.map((_, i) => `fs:${i}`),
     ...networkEntries.map((e) => `net:${e.domain}`),
-  ], [fsEntries, networkEntries])
+    ...mediaEntries.map((e) => `media:${e.kind}`),
+  ], [fsEntries, networkEntries, mediaEntries])
 
   const toolKeys = useMemo(() => tools.map((_, i) => `tool:${i}`), [tools])
   const allPermissionsApproved = !hasPermissions || permissionKeys.every((k) => approved.has(k))
@@ -183,6 +185,7 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
                   <PermissionsSection
                     fsEntries={fsEntries}
                     networkEntries={networkEntries}
+                    mediaEntries={mediaEntries}
                     permissionKeys={permissionKeys}
                     approved={approved}
                     allApproved={allPermissionsApproved}
@@ -204,6 +207,7 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
               <PermissionsSection
                 fsEntries={fsEntries}
                 networkEntries={networkEntries}
+                mediaEntries={mediaEntries}
                 permissionKeys={permissionKeys}
                 approved={approved}
                 allApproved={allPermissionsApproved}
@@ -242,6 +246,7 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
 function PermissionsSection({
   fsEntries,
   networkEntries,
+  mediaEntries,
   permissionKeys,
   approved,
   allApproved,
@@ -250,6 +255,7 @@ function PermissionsSection({
 }: {
   fsEntries: MiniAppFsEntry[]
   networkEntries: { domain: string; reason: string }[]
+  mediaEntries: MiniAppMediaEntry[]
   permissionKeys: string[]
   approved: Set<string>
   allApproved: boolean
@@ -301,6 +307,25 @@ function PermissionsSection({
               <Globe className="size-5 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-mono">{entry.domain}</div>
+                <div className="text-xs text-muted-foreground">{entry.reason}</div>
+              </div>
+              <ApprovalCheck checked={isApproved} />
+            </button>
+          )
+        })}
+        {mediaEntries.map((entry) => {
+          const key = `media:${entry.kind}`
+          const isApproved = approved.has(key)
+          const Icon = entry.kind === 'microphone' ? Mic : Video
+          const label = entry.kind === 'microphone' ? 'Microphone' : 'Camera'
+          return (
+            <button key={key} onClick={() => onToggle(key)} className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50">
+              <Icon className="size-5 shrink-0 text-red-500" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-sm">
+                  <span className="font-medium">{label}</span>
+                  <span className="inline-flex h-4 shrink-0 items-center rounded bg-red-500/10 px-1 text-[10px] leading-none text-red-600 dark:text-red-400">Live</span>
+                </div>
                 <div className="text-xs text-muted-foreground">{entry.reason}</div>
               </div>
               <ApprovalCheck checked={isApproved} />

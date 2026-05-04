@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, session, shell } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir } from 'fs/promises'
@@ -10,7 +10,7 @@ import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessa
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl } from './miniapp/miniapp-service'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearAllPendingCalls as clearAllPendingMiniAppCalls } from './mcp/superone-mcp-server'
@@ -299,6 +299,12 @@ function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Arr
   })
   setAllowedDirectories(appId, dirs)
 }
+
+function setAppMediaPermissions(appId: string, manifest: { permissions?: { media?: Array<{ kind: import('../shared/miniapp-types').MiniAppMediaKind; reason: string }> } }): void {
+  const entries = manifest.permissions?.media ?? []
+  setAllowedMedia(appId, entries.map((e) => e.kind))
+}
+
 
 function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string, gitBranch?: string | null) {
   const existing = sessionManager.getSession(sessionId)
@@ -1493,6 +1499,7 @@ function registerIpcHandlers(): void {
     }
     for (const app of apps) {
       cacheAppEntry(app)
+      setAppMediaPermissions(app.id, app.manifest)
       if (app.manifest.type === 'in-chat') {
         registerInChatApp(app.manifest)
         if (projectDir) setAppFsPermissions(app.id, app.manifest, projectDir, app.installDir)
@@ -1507,6 +1514,7 @@ function registerIpcHandlers(): void {
     const manifest = await readManifest(basePath)
     if (!manifest) throw new Error(`App not found: ${appId}`)
     setAppFsPermissions(appId, manifest, projectDir, installDir)
+    setAppMediaPermissions(appId, manifest)
     const toolSlug = manifest.toolSlug ?? appId
     registerAppTools(appId, toolSlug, manifest.tools ?? [])
     registerAppTemplates(appId, manifest.templates)
@@ -1518,6 +1526,7 @@ function registerIpcHandlers(): void {
     unregisterAppTools(appId)
     unregisterAppTemplates(appId)
     clearAllowedDirectories(appId)
+    clearAllowedMedia(appId)
     agentService.markAllNeedsRebuild()
   })
 
@@ -1841,6 +1850,37 @@ app.whenReady().then(async () => {
   ipcMain.handle(AgentIpcChannels.MEDIA_SERVER_PORT, () => getMediaServerPort())
   getDb() // Initialize database
   registerIpcHandlers()
+
+  const ses = session.defaultSession
+  ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    if (permission !== 'media') {
+      callback(false)
+      return
+    }
+    const reqUrl = (details as { requestingUrl?: string }).requestingUrl ?? ''
+    const appId = appIdFromUrl(reqUrl)
+    if (!appId) {
+      callback(false)
+      return
+    }
+    const mediaTypes = (details as { mediaTypes?: Array<'audio' | 'video'> }).mediaTypes ?? []
+    if (mediaTypes.length === 0) {
+      callback(false)
+      return
+    }
+    const ok = mediaTypes.every((t) => isMediaAllowed(appId, t === 'audio' ? 'microphone' : 'camera'))
+    callback(ok)
+  })
+  ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
+    if (permission !== 'media') return false
+    const appId = appIdFromUrl(requestingOrigin) ?? appIdFromUrl((details as { requestingUrl?: string }).requestingUrl ?? '')
+    if (!appId) return false
+    const mediaType = (details as { mediaType?: 'audio' | 'video' | 'unknown' }).mediaType
+    if (mediaType === 'audio') return isMediaAllowed(appId, 'microphone')
+    if (mediaType === 'video') return isMediaAllowed(appId, 'camera')
+    return isMediaAllowed(appId, 'microphone') || isMediaAllowed(appId, 'camera')
+  })
+
   createWindow()
   initUpdater(mainWindow!)
 

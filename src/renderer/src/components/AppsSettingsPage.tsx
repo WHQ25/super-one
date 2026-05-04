@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, ChevronRight, Link, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Link, Trash2, Mic, Video, Globe, HardDrive, FolderOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@/components/ui/switch'
@@ -9,7 +9,18 @@ import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useAppStore } from '@/stores/app'
 import { cn } from '@/lib/utils'
-import type { MiniAppEntry } from '../../../shared/miniapp-types'
+import type { MiniAppEntry, MiniAppFsEntry } from '../../../shared/miniapp-types'
+
+function formatFsLabel(entry: MiniAppFsEntry): { label: string; detail: string } {
+  switch (entry.scope) {
+    case 'project':
+      return { label: 'Project', detail: entry.path === '.' ? 'Root directory' : entry.path! }
+    case 'user':
+      return { label: 'Home', detail: `~/${entry.path}` }
+    case 'app':
+      return { label: 'App', detail: 'Own data storage' }
+  }
+}
 
 function AppCard({ app, onClick }: { app: MiniAppEntry; onClick: () => void }) {
   const { t } = useTranslation()
@@ -87,7 +98,10 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
 
   const tools = app.manifest.tools ?? []
   const { manifest } = app
-  const hasPermissions = (manifest.permissions?.fs?.length ?? 0) > 0 || (manifest.permissions?.network?.length ?? 0) > 0
+  const hasPermissions =
+    (manifest.permissions?.fs?.length ?? 0) > 0 ||
+    (manifest.permissions?.network?.length ?? 0) > 0 ||
+    (manifest.permissions?.media?.length ?? 0) > 0
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -164,28 +178,53 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
         {hasPermissions && (
           <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-3 text-sm font-medium">{t('resources.apps.permissions')}</h3>
-            <div className="space-y-2">
-              {manifest.permissions?.fs?.map((entry, i) => (
-                <div key={`fs-${i}`} className="rounded-md border border-border px-3 py-2">
-                  <div className="flex items-center gap-1.5 text-sm">
-                    <span className="font-medium">{entry.scope}</span>
-                    {entry.path && <span className="text-muted-foreground font-mono text-xs">{entry.path}</span>}
-                    <span className={cn('inline-flex h-4 shrink-0 items-center rounded px-1 text-[10px] leading-none', entry.access === 'read' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400')}>
-                      {entry.scope === 'app' ? t('resources.apps.readWrite') : entry.access === 'read' ? t('resources.apps.readOnly') : t('resources.apps.readWrite')}
-                    </span>
+            <div className="space-y-1.5">
+              {manifest.permissions?.fs?.map((entry, i) => {
+                const { label, detail } = formatFsLabel(entry)
+                const accessLabel = entry.scope === 'app' ? t('resources.apps.readWrite') : entry.access === 'read' ? t('resources.apps.readOnly') : t('resources.apps.readWrite')
+                return (
+                  <div key={`fs-${i}`} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                    {entry.scope === 'project' ? (
+                      <FolderOpen className="size-5 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <HardDrive className="size-5 shrink-0 text-muted-foreground" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-sm">
+                        <span className="font-medium">{label}</span>
+                        <span className="text-muted-foreground">{detail}</span>
+                        <span className={cn('inline-flex h-4 shrink-0 items-center rounded px-1 text-[10px] leading-none', entry.access === 'read' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400')}>{accessLabel}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">{entry.reason}</div>
+                    </div>
                   </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{entry.reason}</p>
-                </div>
-              ))}
+                )
+              })}
               {manifest.permissions?.network?.map((entry) => (
-                <div key={`net-${entry.domain}`} className="rounded-md border border-border px-3 py-2">
-                  <div className="flex items-center gap-1.5 text-sm">
-                    <span className="font-medium">{t('resources.apps.network')}</span>
-                    <span className="text-muted-foreground font-mono text-xs">{entry.domain}</span>
+                <div key={`net-${entry.domain}`} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                  <Globe className="size-5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-mono">{entry.domain}</div>
+                    <div className="text-xs text-muted-foreground">{entry.reason}</div>
                   </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{entry.reason}</p>
                 </div>
               ))}
+              {manifest.permissions?.media?.map((entry) => {
+                const Icon = entry.kind === 'microphone' ? Mic : Video
+                const label = entry.kind === 'microphone' ? 'Microphone' : 'Camera'
+                return (
+                  <div key={`media-${entry.kind}`} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                    <Icon className="size-5 shrink-0 text-red-500" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-sm">
+                        <span className="font-medium">{label}</span>
+                        <span className="inline-flex h-4 shrink-0 items-center rounded bg-red-500/10 px-1 text-[10px] leading-none text-red-600 dark:text-red-400">Live</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">{entry.reason}</div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

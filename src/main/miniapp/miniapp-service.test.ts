@@ -23,7 +23,7 @@ vi.mock('../git-run', () => ({ gitRun: vi.fn() }))
 vi.mock('../path-security', () => ({ sanitizeGitRef: vi.fn((s: string) => s) }))
 vi.mock('../git-status-utils', () => ({ parseGitStatusFiles: vi.fn(() => []) }))
 
-import { discoverProjectApps, detectStandaloneApp, createMiniApp, getProjectAppsDir, setAllowedDirectories, handleFsRequest, resolveAppEntry } from './miniapp-service'
+import { discoverProjectApps, detectStandaloneApp, createMiniApp, getProjectAppsDir, setAllowedDirectories, handleFsRequest, resolveAppEntry, setAllowedMedia, isMediaAllowed, clearAllowedMedia, getAllowedMedia, appIdFromUrl } from './miniapp-service'
 
 function mockManifest(appId: string, name: string) {
   return { appId, name, tools: [] }
@@ -543,5 +543,80 @@ describe('.superone directory protection', () => {
     mockReadFile.mockResolvedValue('ok')
     const result = await handleFsRequest('test-app', 'readFile', { path: 'test.txt' })
     expect(result).toBe('ok')
+  })
+})
+
+describe('allowedMedia registry', () => {
+  beforeEach(() => {
+    clearAllowedMedia('app-a')
+    clearAllowedMedia('app-b')
+  })
+
+  it('records granted kinds and answers isMediaAllowed', () => {
+    setAllowedMedia('app-a', ['microphone'])
+    expect(isMediaAllowed('app-a', 'microphone')).toBe(true)
+    expect(isMediaAllowed('app-a', 'camera')).toBe(false)
+  })
+
+  it('isolates apps from each other', () => {
+    setAllowedMedia('app-a', ['microphone'])
+    setAllowedMedia('app-b', ['camera'])
+    expect(isMediaAllowed('app-b', 'microphone')).toBe(false)
+    expect(isMediaAllowed('app-b', 'camera')).toBe(true)
+    expect(isMediaAllowed('app-a', 'camera')).toBe(false)
+  })
+
+  it('replaces previous grants when set again', () => {
+    setAllowedMedia('app-a', ['microphone', 'camera'])
+    setAllowedMedia('app-a', ['camera'])
+    expect(isMediaAllowed('app-a', 'microphone')).toBe(false)
+    expect(isMediaAllowed('app-a', 'camera')).toBe(true)
+  })
+
+  it('clearAllowedMedia removes all grants for an app', () => {
+    setAllowedMedia('app-a', ['microphone', 'camera'])
+    clearAllowedMedia('app-a')
+    expect(isMediaAllowed('app-a', 'microphone')).toBe(false)
+    expect(getAllowedMedia('app-a')).toBeUndefined()
+  })
+
+  it('setting an empty array drops the registry entry', () => {
+    setAllowedMedia('app-a', ['microphone'])
+    setAllowedMedia('app-a', [])
+    expect(getAllowedMedia('app-a')).toBeUndefined()
+    expect(isMediaAllowed('app-a', 'microphone')).toBe(false)
+  })
+
+  it('returns false for unregistered apps', () => {
+    expect(isMediaAllowed('ghost', 'microphone')).toBe(false)
+  })
+})
+
+describe('appIdFromUrl', () => {
+  it('extracts appId from a superone-app URL', () => {
+    expect(appIdFromUrl('superone-app://hello/index.html')).toBe('hello')
+  })
+
+  it('extracts appId regardless of path / query / fragment', () => {
+    expect(appIdFromUrl('superone-app://my-app/sub/page.html?_locale=zh#section')).toBe('my-app')
+  })
+
+  it('returns null for non-superone protocols', () => {
+    expect(appIdFromUrl('https://hello/index.html')).toBeNull()
+    expect(appIdFromUrl('file:///etc/passwd')).toBeNull()
+    expect(appIdFromUrl('superone-fs://hello/file')).toBeNull()
+  })
+
+  it('returns null for malformed URLs', () => {
+    expect(appIdFromUrl('not a url')).toBeNull()
+    expect(appIdFromUrl('')).toBeNull()
+  })
+
+  it('returns null for empty hostname', () => {
+    expect(appIdFromUrl('superone-app:///path')).toBeNull()
+  })
+
+  it('lowercases hostname (URL spec)', () => {
+    expect(appIdFromUrl('superone-app://Hello/x')).toBe('hello')
   })
 })

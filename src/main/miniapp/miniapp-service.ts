@@ -9,7 +9,7 @@ import { gitRun } from '../git-run'
 import { sanitizeGitRef } from '../path-security'
 import { parseGitStatusFiles } from '../git-status-utils'
 import { parseManifest, parseDevLink } from './miniapp-schema'
-import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp, MiniAppFsAccess } from '../../shared/miniapp-types'
+import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp, MiniAppFsAccess, MiniAppMediaKind } from '../../shared/miniapp-types'
 import { generateVanillaFiles, generateReactFiles, type GeneratedFile } from './miniapp-templates'
 
 const DEV_LINK_FILE = '.s1-dev.json'
@@ -153,6 +153,38 @@ export function clearAllowedDirectories(appId: string): void {
   clearWatchersForApp(appId)
   stopGitHeadWatch(appId)
   allowedDirs.delete(appId)
+}
+
+const allowedMedia = new Map<string, Set<MiniAppMediaKind>>()
+
+export function setAllowedMedia(appId: string, kinds: MiniAppMediaKind[]): void {
+  if (kinds.length === 0) {
+    allowedMedia.delete(appId)
+    return
+  }
+  allowedMedia.set(appId, new Set(kinds))
+}
+
+export function getAllowedMedia(appId: string): Set<MiniAppMediaKind> | undefined {
+  return allowedMedia.get(appId)
+}
+
+export function clearAllowedMedia(appId: string): void {
+  allowedMedia.delete(appId)
+}
+
+export function isMediaAllowed(appId: string, kind: MiniAppMediaKind): boolean {
+  return allowedMedia.get(appId)?.has(kind) ?? false
+}
+
+export function appIdFromUrl(url: string): string | null {
+  try {
+    const u = new URL(url)
+    if (u.protocol !== 'superone-app:') return null
+    return u.hostname ? u.hostname.toLowerCase() : null
+  } catch {
+    return null
+  }
 }
 
 async function scanDir(base: string, opts: { projectDir?: string } = {}): Promise<MiniAppEntry[]> {

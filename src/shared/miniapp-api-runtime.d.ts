@@ -116,3 +116,4 @@ export interface SuperoneApi {
 
 export function createSuperoneApi(transport: MiniAppTransport, version: string, opts?: { initialLocale?: MiniAppLocale }): SuperoneApi
 export function startSuperoneResize(transport: MiniAppTransport): void
+export function installSuperoneMediaProbe(transport: MiniAppTransport): void

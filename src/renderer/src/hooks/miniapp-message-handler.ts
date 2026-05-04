@@ -1,9 +1,10 @@
 import { useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useMiniAppMediaStore } from '@/stores/miniapp-media'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { requestClipboardRead, requestClipboardWrite } from '@/lib/miniapp-clipboard'
 import { toast } from 'sonner'
-import type { MiniAppTooltipRequest, MiniAppContextMenuRequest, MiniAppPopoverShowRequest } from '../../../shared/miniapp-types'
+import type { MiniAppMediaKind, MiniAppTooltipRequest, MiniAppContextMenuRequest, MiniAppPopoverShowRequest } from '../../../shared/miniapp-types'
 
 export interface MiniAppOverlayCallbacks {
   onTooltip?: (req: MiniAppTooltipRequest | null) => void
@@ -133,6 +134,18 @@ export function handleMiniAppMessage(
     case 'miniapp-context-clear':
       useChatStore.getState().clearMiniAppContext(appId)
       return true
+    case 'miniapp-media-started': {
+      const kinds = (data.kinds as string[] | undefined)?.filter((k): k is MiniAppMediaKind => k === 'microphone' || k === 'camera') ?? []
+      if (kinds.length > 0) useMiniAppMediaStore.getState().start(appId, kinds)
+      return true
+    }
+    case 'miniapp-media-track-ended': {
+      const kind = data.kind as string
+      if (kind === 'microphone' || kind === 'camera') {
+        useMiniAppMediaStore.getState().endTrack(appId, kind)
+      }
+      return true
+    }
     default:
       return false
   }

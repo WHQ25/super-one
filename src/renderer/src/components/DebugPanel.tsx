@@ -83,6 +83,26 @@ const MOCK_INSTALL_NO_PERMS: MiniAppPreviewResult = {
   tempDir: '/tmp/debug-mock',
 }
 
+const MOCK_INSTALL_MEDIA: MiniAppPreviewResult = {
+  manifest: {
+    appId: 'debug-media-app',
+    name: 'Voice Notes Pro',
+    version: '1.2.0',
+    author: { name: 'SuperOne Demos', url: 'https://example.com' },
+    description: 'Records voice memos and captures snapshots',
+    permissions: {
+      fs: [
+        { scope: 'app', reason: 'Persist recordings and snapshots between sessions' },
+      ],
+      media: [
+        { kind: 'microphone', reason: 'Record voice memos and dictation' },
+        { kind: 'camera', reason: 'Take profile photos and document scans' },
+      ],
+    },
+  },
+  tempDir: '/tmp/debug-mock',
+}
+
 const DEBUG_TRIGGERS: DebugTrigger[] = [
   {
     id: 'install-dialog',
@@ -113,6 +133,12 @@ const DEBUG_TRIGGERS: DebugTrigger[] = [
     label: 'Install Dialog (No Perms)',
     description: 'No permissions declared',
     action: () => useMiniAppStore.setState({ pendingInstall: MOCK_INSTALL_NO_PERMS }),
+  },
+  {
+    id: 'install-dialog-media',
+    label: 'Install Dialog (Media)',
+    description: 'Mic + camera permissions',
+    action: () => useMiniAppStore.setState({ pendingInstall: MOCK_INSTALL_MEDIA }),
   },
 ]
 

@@ -12,6 +12,13 @@ export interface MiniAppNetworkEntry {
   reason: string
 }
 
+export type MiniAppMediaKind = 'microphone' | 'camera'
+
+export interface MiniAppMediaEntry {
+  kind: MiniAppMediaKind
+  reason: string
+}
+
 export type MiniAppType = 'sidebar' | 'panel' | 'in-chat' | 'fullscreen'
 
 export interface MiniAppAuthor {
@@ -72,6 +79,7 @@ export interface MiniAppIntegrity {
 export interface MiniAppPermissions {
   network?: MiniAppNetworkEntry[]
   fs?: MiniAppFsEntry[]
+  media?: MiniAppMediaEntry[]
 }
 
 export interface MiniAppToolDefinition {
@@ -253,6 +261,8 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-context-set'
   | 'miniapp-context-clear'
   | 'miniapp-context-consumed'
+  | 'miniapp-media-started'
+  | 'miniapp-media-track-ended'
 
 export const MiniAppToolBridgeMsg = {
   SUBMIT: 'miniapp-tool-submit',

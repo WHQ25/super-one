@@ -8,7 +8,13 @@
   "logo": "logo.png",
   "type": "sidebar",
   "toolSlug": "hello",
-  "permissions": { "fs": [{ "scope": "project", "path": ".", "access": "readwrite", "reason": "Read and write project files" }] },
+  "permissions": {
+    "fs": [{ "scope": "project", "path": ".", "access": "readwrite", "reason": "Read and write project files" }],
+    "media": [
+      { "kind": "microphone", "reason": "Demo voice recorder" },
+      { "kind": "camera", "reason": "Demo webcam preview & snapshot" }
+    ]
+  },
   "templates": {
     "detail": "popovers/detail.html",
     "confirm": "popovers/confirm.html",

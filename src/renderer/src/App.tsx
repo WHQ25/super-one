@@ -15,6 +15,7 @@ import { SettingsLayout } from '@/components/SettingsLayout'
 import { UpdateNotification } from '@/components/UpdateNotification'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
+import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
 import { DebugPanel } from '@/components/DebugPanel'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
@@ -268,7 +269,8 @@ function App(): React.JSX.Element {
         <div className="flex h-11 shrink-0 items-center justify-between px-3" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
           <div className="w-20" />
           <div />
-          <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <div className="flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <MiniAppMediaIndicator />
             <button
               onClick={theme.toggle}
               className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -337,6 +339,7 @@ function App(): React.JSX.Element {
 
           {/* Mode switch + theme */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <MiniAppMediaIndicator />
             <Tabs
               value={layoutMode}
               onValueChange={(v) => setLayoutMode(v as 'canvas' | 'coding')}

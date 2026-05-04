@@ -39,6 +39,17 @@ vi.mock('@/stores/miniapp', () => ({
   },
 }))
 
+const mockMediaStart = vi.fn()
+const mockMediaEndTrack = vi.fn()
+vi.mock('@/stores/miniapp-media', () => ({
+  useMiniAppMediaStore: {
+    getState: () => ({
+      start: mockMediaStart,
+      endTrack: mockMediaEndTrack,
+    }),
+  },
+}))
+
 beforeEach(() => {
   vi.clearAllMocks()
   ;(window as any).miniapp = mockMiniapp
@@ -238,5 +249,43 @@ describe('handleMiniAppMessage', () => {
     const result = handleMiniAppMessage('miniapp-context-clear', {}, appId, send)
     expect(result).toBe(true)
     expect(mockClearMiniAppContext).toHaveBeenCalledWith('test-app')
+  })
+
+  describe('media lifecycle', () => {
+    it('routes miniapp-media-started with microphone to media store', () => {
+      const result = handleMiniAppMessage('miniapp-media-started', { kinds: ['microphone'] }, appId, send)
+      expect(result).toBe(true)
+      expect(mockMediaStart).toHaveBeenCalledWith('test-app', ['microphone'])
+    })
+
+    it('routes miniapp-media-started with both kinds', () => {
+      handleMiniAppMessage('miniapp-media-started', { kinds: ['microphone', 'camera'] }, appId, send)
+      expect(mockMediaStart).toHaveBeenCalledWith('test-app', ['microphone', 'camera'])
+    })
+
+    it('filters out unknown kinds (e.g. screen)', () => {
+      handleMiniAppMessage('miniapp-media-started', { kinds: ['microphone', 'screen', 'unknown'] }, appId, send)
+      expect(mockMediaStart).toHaveBeenCalledWith('test-app', ['microphone'])
+    })
+
+    it('drops empty kind arrays without calling start', () => {
+      handleMiniAppMessage('miniapp-media-started', { kinds: ['screen'] }, appId, send)
+      expect(mockMediaStart).not.toHaveBeenCalled()
+    })
+
+    it('routes miniapp-media-track-ended for microphone', () => {
+      handleMiniAppMessage('miniapp-media-track-ended', { kind: 'microphone' }, appId, send)
+      expect(mockMediaEndTrack).toHaveBeenCalledWith('test-app', 'microphone')
+    })
+
+    it('routes miniapp-media-track-ended for camera', () => {
+      handleMiniAppMessage('miniapp-media-track-ended', { kind: 'camera' }, appId, send)
+      expect(mockMediaEndTrack).toHaveBeenCalledWith('test-app', 'camera')
+    })
+
+    it('ignores unknown track-ended kind', () => {
+      handleMiniAppMessage('miniapp-media-track-ended', { kind: 'screen' }, appId, send)
+      expect(mockMediaEndTrack).not.toHaveBeenCalled()
+    })
   })
 })

@@ -86,5 +86,8 @@ if (popoverParam) {
 }
 
 contextBridge.exposeInMainWorld('superone', api)
+contextBridge.exposeInMainWorld('__superoneIpcToHost', (type: string, data: Record<string, unknown>) => {
+  ipcRenderer.sendToHost(type, data)
+})
 startSuperoneResize(transport)
 ipcRenderer.sendToHost('miniapp-ready', {})

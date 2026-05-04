@@ -4,6 +4,7 @@ import { useIsDark } from '@/hooks/use-is-dark'
 import { onThemeChange, readThemeVars } from '@/components/miniapp/miniapp-theme'
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 import { useContextConsumedEvent } from '@/hooks/useContextConsumedEvent'
+import { useMiniAppMediaStore } from '@/stores/miniapp-media'
 import type { MiniAppToolCallRequest } from '../../../shared/miniapp-types'
 
 export interface MiniAppBridgeOptions {
@@ -56,6 +57,10 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
     window.addEventListener('message', handlePostMessage)
     return () => window.removeEventListener('message', handlePostMessage)
   }, [handlePostMessage])
+
+  useEffect(() => {
+    return () => useMiniAppMediaStore.getState().clearApp(appId)
+  }, [appId])
 
   useEffect(() => {
     if (!readyRef.current) return

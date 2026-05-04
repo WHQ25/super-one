@@ -240,6 +240,54 @@ describe('parseManifest', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('should accept permissions.media with microphone', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { media: [{ kind: 'microphone', reason: 'Voice input' }] },
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.manifest.permissions?.media?.[0].kind).toBe('microphone')
+    }
+  })
+
+  it('should accept permissions.media with camera', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { media: [{ kind: 'camera', reason: 'Capture frames' }] },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('should accept permissions.media with both kinds', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: {
+        media: [
+          { kind: 'microphone', reason: 'Voice' },
+          { kind: 'camera', reason: 'Video' },
+        ],
+      },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('should reject permissions.media without reason', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { media: [{ kind: 'microphone' }] },
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject permissions.media with unknown kind', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { media: [{ kind: 'screen', reason: 'not supported' }] },
+    })
+    expect(result.ok).toBe(false)
+  })
+
   it('should reject old string-based permissions.fs format', () => {
     const result = parseManifest({
       ...validManifest,

@@ -280,6 +280,52 @@ function startSuperoneResize(transport) {
   else document.addEventListener('DOMContentLoaded', start)
 }
 
+// eslint-disable-next-line no-unused-vars
+function installSuperoneMediaProbe(transport) {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices) return
+  const md = navigator.mediaDevices
+
+  function notify(type, data) {
+    // webview path: parent.postMessage doesn't reach the host (parent === window in <webview>),
+    // so the preload exposes a direct IPC bridge. iframe path: this is undefined → fall through to postMessage.
+    if (typeof window !== 'undefined' && typeof window.__superoneIpcToHost === 'function') {
+      try { window.__superoneIpcToHost(type, data); return } catch (_) { /* fall through */ }
+    }
+    transport.send(type, data)
+  }
+
+  function instrument(stream, kindOf) {
+    const kinds = stream.getTracks().map(kindOf)
+    notify('miniapp-media-started', { kinds })
+    stream.getTracks().forEach((t) => {
+      const kind = kindOf(t)
+      let fired = false
+      const onEnded = () => {
+        if (fired) return
+        fired = true
+        notify('miniapp-media-track-ended', { kind })
+        t.removeEventListener('ended', onEnded)
+      }
+      t.addEventListener('ended', onEnded)
+      const realStop = t.stop.bind(t)
+      t.stop = function () {
+        realStop()
+        onEnded()
+      }
+    })
+  }
+
+  if (md.getUserMedia) {
+    const realGUM = md.getUserMedia.bind(md)
+    md.getUserMedia = function (constraints) {
+      return realGUM(constraints).then(function (stream) {
+        instrument(stream, (t) => t.kind === 'audio' ? 'microphone' : t.kind === 'video' ? 'camera' : t.kind)
+        return stream
+      })
+    }
+  }
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createSuperoneApi, startSuperoneResize }
+  module.exports = { createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe }
 }

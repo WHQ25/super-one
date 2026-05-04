@@ -47,6 +47,7 @@ function generateTransportBlock(appId: string): string {
 function generateReadyBlock(appId: string): string {
   return `
   startSuperoneResize(transport);
+  installSuperoneMediaProbe(transport);
 
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     parent.postMessage({ type: 'miniapp-ready', appId: '${appId}' }, '*');

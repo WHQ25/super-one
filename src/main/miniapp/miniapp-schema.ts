@@ -19,9 +19,15 @@ const networkEntrySchema = z.object({
   reason: z.string().min(1),
 })
 
+const mediaEntrySchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('microphone'), reason: z.string().min(1) }),
+  z.object({ kind: z.literal('camera'), reason: z.string().min(1) }),
+])
+
 const permissionsSchema = z.object({
   network: z.array(networkEntrySchema).optional(),
   fs: z.array(fsEntrySchema).optional(),
+  media: z.array(mediaEntrySchema).optional(),
 })
 
 const toolInputSchemaSchema = z.looseObject({

@@ -32,6 +32,13 @@ export async function runClaudeInterceptedCommand(name: string): Promise<void> {
 
 const STREAMING_INPUT_TOOLS = new Set(['Edit', 'Write', 'FileChange', 'NotebookEdit'])
 const STREAMING_PREVIEW_THROTTLE_MS = 100
+
+export const SUBAGENT_COLOR_POOL = ['purple', 'blue', 'cyan', 'teal', 'green', 'amber', 'orange', 'rose'] as const
+export type SubagentColor = (typeof SUBAGENT_COLOR_POOL)[number]
+const SUBAGENT_COLOR_POOL_SIZE = SUBAGENT_COLOR_POOL.length
+function freshSubagentColorPool(): number[] {
+  return Array.from({ length: SUBAGENT_COLOR_POOL_SIZE }, (_, i) => i)
+}
 const streamingToolInputRaw = new Map<string, string>()
 const streamingPreviewLastUpdate = new Map<string, number>()
 
@@ -97,6 +104,8 @@ export interface PerSessionState {
   contextWindow: number | null
   detailedUsage: ContextUsageInfo | null
   subagentTokens: Record<string, { input: number; output: number }>
+  subagentColors: Record<string, number>
+  _subagentColorsFree: number[]
   taskProgress: Record<string, { description: string; lastToolName?: string; summary?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; outputFile?: string; toolHistory: Array<{ toolName: string; description: string }> }>
   streamingTokens: { input: number; output: number }
   codexUsageSnapshot: CodexUsageInfo | null
@@ -190,6 +199,8 @@ export function createDefaultPerSessionState(): PerSessionState {
     contextWindow: null,
     detailedUsage: null,
     subagentTokens: {},
+    subagentColors: {},
+    _subagentColorsFree: freshSubagentColorPool(),
     taskProgress: {},
     streamingTokens: { input: 0, output: 0 },
     codexUsageSnapshot: null,
@@ -384,6 +395,10 @@ export interface ChatStore {
 
   // Draft text
   setDraftText: (text: string) => void
+
+  // Subagent color pool (per-session)
+  assignSubagentColor: (toolUseId: string) => void
+  releaseSubagentColor: (toolUseId: string) => void
 
   // Context usage detail (per-session, in-memory)
   setDetailedUsage: (projectPath: string, sessionId: string, usage: ContextUsageInfo | null) => void
@@ -3014,6 +3029,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         showTodos: false,
         _todosUserDismissed: false,
         subagentTokens: {},
+        subagentColors: {},
+        _subagentColorsFree: freshSubagentColorPool(),
       })))
     }
 
@@ -3413,6 +3430,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       sessionProvider: null, slashCommandOutput: null,
       pendingPermissions: [], pendingQuestion: null, pendingPlanApproval: null,
       planApprovalOutcome: null, mentions: [], subagentTokens: {},
+      subagentColors: {}, _subagentColorsFree: freshSubagentColorPool(),
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
       awaitingAssistantReply: false,
       codexPlanRejectHintActive: false,
@@ -3636,6 +3654,35 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (prevText.length === 0 && text.length > 0) {
       triggerPrewarm(get(), activeProject)
     }
+  },
+
+  assignSubagentColor: (toolUseId) => {
+    set((s) => updateActivePerSession(s, (sess) => {
+      if (sess.subagentColors[toolUseId] !== undefined) return {}
+      const free = sess._subagentColorsFree.length > 0 ? sess._subagentColorsFree : freshSubagentColorPool()
+      const pickIdx = Math.floor(Math.random() * free.length)
+      const color = free[pickIdx]
+      const newFree = [...free.slice(0, pickIdx), ...free.slice(pickIdx + 1)]
+      return {
+        subagentColors: { ...sess.subagentColors, [toolUseId]: color },
+        _subagentColorsFree: newFree,
+      }
+    }))
+  },
+
+  releaseSubagentColor: (toolUseId) => {
+    set((s) => updateActivePerSession(s, (sess) => {
+      const idx = sess.subagentColors[toolUseId]
+      if (idx === undefined) return {}
+      const { [toolUseId]: _drop, ...restColors } = sess.subagentColors
+      const newFree = sess._subagentColorsFree.includes(idx)
+        ? sess._subagentColorsFree
+        : [...sess._subagentColorsFree, idx]
+      return {
+        subagentColors: restColors,
+        _subagentColorsFree: newFree,
+      }
+    }))
   },
 
   setDetailedUsage: (projectPath, sessionId, usage) => {

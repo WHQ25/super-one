@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.27.1-alpha] - 2026-05-05
+
+### Fixed
+
+- **Usage stats**: Claude token counts no longer balloon as a session grows. The SDK reports cumulative usage per turn; the old code summed each turn's cumulative value, inflating totals quadratically. Now writes only the per-step delta.
+- **Usage stats**: Sessions / messages counts no longer collapse when sessions are deleted. Counts are now recorded as events into a new `activity_daily` table at the moment a session/message is first saved, independent of whether the chat history is later removed.
+
+### Changed
+
+- **Usage stats backfill bumped to v2**: on next launch, `usage_daily` is cleared and recomputed from chat history (Claude as per-session per-model cumulative max, Codex as sum-of-step), and the new `activity_daily` table is filled from existing sessions and messages. Numbers in Settings → Usage will adjust on first open after this update.
+
 ## [0.27.0-alpha] - 2026-05-05
 
 ### Added

@@ -489,6 +489,90 @@ export interface HookEvent {
   outcome?: 'success' | 'error' | 'cancelled'
 }
 
+// --- Hooks config (settings.json#hooks) ---
+
+export type HookScope = 'user' | 'project' | 'local'
+
+export type HookEventName =
+  | 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'PostToolBatch'
+  | 'Notification' | 'UserPromptSubmit' | 'UserPromptExpansion'
+  | 'SessionStart' | 'SessionEnd'
+  | 'Stop' | 'StopFailure'
+  | 'SubagentStart' | 'SubagentStop'
+  | 'PreCompact' | 'PostCompact'
+  | 'PermissionRequest' | 'PermissionDenied'
+  | 'Setup' | 'TeammateIdle'
+  | 'TaskCreated' | 'TaskCompleted'
+  | 'Elicitation' | 'ElicitationResult'
+  | 'ConfigChange'
+  | 'WorktreeCreate' | 'WorktreeRemove'
+  | 'InstructionsLoaded' | 'CwdChanged' | 'FileChanged'
+
+export type HookEntryType = 'command' | 'prompt' | 'agent' | 'http' | 'mcp_tool'
+
+interface BaseHookFields {
+  if?: string
+  timeout?: number
+  statusMessage?: string
+  once?: boolean
+}
+
+export interface CommandHookEntry extends BaseHookFields {
+  type: 'command'
+  command: string
+  shell?: 'bash' | 'powershell'
+  async?: boolean
+  asyncRewake?: boolean
+}
+
+export interface PromptHookEntry extends BaseHookFields {
+  type: 'prompt'
+  prompt: string
+  model?: string
+}
+
+export interface AgentHookEntry extends BaseHookFields {
+  type: 'agent'
+  prompt: string
+  model?: string
+}
+
+export interface HttpHookEntry extends BaseHookFields {
+  type: 'http'
+  url: string
+  headers?: Record<string, string>
+  allowedEnvVars?: string[]
+}
+
+export interface McpToolHookEntry extends BaseHookFields {
+  type: 'mcp_tool'
+  server: string
+  tool: string
+  input?: Record<string, unknown>
+}
+
+export type HookEntry =
+  | CommandHookEntry
+  | PromptHookEntry
+  | AgentHookEntry
+  | HttpHookEntry
+  | McpToolHookEntry
+
+export interface HookConfig {
+  id: string
+  scope: HookScope
+  event: HookEventName
+  matcher?: string
+  entry: HookEntry
+}
+
+export interface HookSavePayload {
+  scope: HookScope
+  event: HookEventName
+  matcher?: string
+  entry: HookEntry
+}
+
 // --- Sandbox info ---
 
 export type SandboxMode = 'off' | 'on' | 'auto'
@@ -1363,6 +1447,11 @@ export const AgentIpcChannels = {
   // MCP library
   MCP_LIST_LIBRARY: 'mcp:list-library',
   MCP_DELETE_LIBRARY_ENTRY: 'mcp:delete-library-entry',
+
+  // Hooks config (settings.json#hooks)
+  HOOKS_LIST: 'hooks:list',
+  HOOKS_SAVE: 'hooks:save',
+  HOOKS_DELETE: 'hooks:delete',
 
   CLAUDE_PROJECT_PREFERENCES_GET: 'claude:project-preferences-get',
   CLAUDE_PROJECT_PREFERENCES_SAVE: 'claude:project-preferences-save',

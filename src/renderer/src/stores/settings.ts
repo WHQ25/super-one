@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentInfo, ApiProvider, CreateProviderRequest, MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo, UpdateProviderRequest } from '../../../shared/agent-types'
+import type { AgentInfo, ApiProvider, CreateProviderRequest, HookConfig, HookSavePayload, MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo, UpdateProviderRequest } from '../../../shared/agent-types'
 import { useAppStore } from './app'
 import { useChatStore } from './chat'
 
@@ -80,6 +80,12 @@ interface SettingsState {
   deletePlugin: (key: string, scope: ResourceScope) => Promise<void>
   fetchMarketplacePlugins: () => Promise<void>
   installPlugin: (key: string, scope: ResourceScope) => Promise<void>
+
+  // Hooks
+  hooks: HookConfig[]
+  fetchHooks: () => Promise<void>
+  saveHook: (payload: HookSavePayload, replaceId?: string) => Promise<void>
+  deleteHook: (id: string) => Promise<void>
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -118,6 +124,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   pluginFileContent: null,
   pluginFilePath: null,
   marketplacePlugins: [],
+  hooks: [],
 
   fetchSkills: async () => {
     const pp = getProjectPath()
@@ -391,5 +398,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   deactivateAllProviders: async (agentType) => {
     await window.app.deactivateAllProviders(agentType)
     await get().fetchProviders()
+  },
+
+  fetchHooks: async () => {
+    const pp = getProjectPath()
+    const hooks = await window.app.listHooks(pp)
+    set({ hooks })
+  },
+
+  saveHook: async (payload, replaceId) => {
+    const pp = getProjectPath()
+    await window.app.saveHook(pp, payload, replaceId)
+    await get().fetchHooks()
+  },
+
+  deleteHook: async (id) => {
+    const pp = getProjectPath()
+    await window.app.deleteHook(pp, id)
+    await get().fetchHooks()
   },
 }))

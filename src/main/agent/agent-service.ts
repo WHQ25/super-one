@@ -39,6 +39,7 @@ function getGitRoot(cwd: string): string {
 import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
+import { listHooks, saveHook, deleteHook } from '../hooks-config-service'
 import { checkMcpServers } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
 import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, listCodexSkills, readCodexSkillContent, readCodexSkillFile, deleteCodexSkill } from '../skills-service'
@@ -48,7 +49,7 @@ import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './dis
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
 import { backupMcpServers, listLibrary, deleteLibraryEntry } from '../mcp-library-service'
 import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
-import type { CreateProviderRequest, UpdateProviderRequest } from '../../shared/agent-types'
+import type { CreateProviderRequest, UpdateProviderRequest, HookSavePayload } from '../../shared/agent-types'
 
 export class AgentService {
   private mainWindow: BrowserWindow | null = null
@@ -1681,6 +1682,20 @@ export class AgentService {
       return authorizeHttpMcpServer(serverUrl, headers, transport)
     })
 
+    // --- Hooks config (settings.json#hooks) ---
+
+    ipcMain.handle(AgentIpcChannels.HOOKS_LIST, (_event, projectPath: string) => {
+      return listHooks(projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.HOOKS_SAVE, (_event, projectPath: string, payload: HookSavePayload, replaceId?: string) => {
+      saveHook(projectPath, payload, replaceId)
+    })
+
+    ipcMain.handle(AgentIpcChannels.HOOKS_DELETE, (_event, projectPath: string, id: string) => {
+      deleteHook(projectPath, id)
+    })
+
     // --- Providers ---
 
     ipcMain.handle(AgentIpcChannels.PROVIDERS_LIST, () => {
@@ -2009,6 +2024,9 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.MCP_OAUTH_AUTHORIZE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_LIBRARY)
     ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY)
+    ipcMain.removeHandler(AgentIpcChannels.HOOKS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.HOOKS_SAVE)
+    ipcMain.removeHandler(AgentIpcChannels.HOOKS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_GET)

@@ -3,6 +3,8 @@ export type Messages = {
     cancel: string
     confirm: string
     save: string
+    saving: string
+    delete: string
     close: string
     loading: string
     systemDefault: string
@@ -101,6 +103,7 @@ export type Messages = {
         agents: string
         skills: string
         mcp: string
+        hooks: string
         plugins: string
         preferences: string
       }
@@ -611,6 +614,80 @@ export type Messages = {
         mcp: string
       }
     }
+    hooks: {
+      title: string
+      subtitle: string
+      add: string
+      empty: string
+      emptyHint: string
+      applyNote: string
+      entryCount_one: string
+      entryCount_other: string
+      deleteTitle: string
+      deleteDescription: string
+      scope: {
+        user: string
+        project: string
+        local: string
+      }
+      types: {
+        command: string
+        prompt: string
+        agent: string
+        http: string
+        mcp_tool: string
+      }
+      editor: {
+        titleNew: string
+        titleEdit: string
+        subtitle: string
+        advanced: string
+        eventGroup: {
+          common: string
+          more: string
+        }
+        fields: {
+          scope: string
+          event: string
+          matcher: string
+          matcherHint: string
+          type: string
+          command: string
+          shell: string
+          shellAuto: string
+          async: string
+          asyncHint: string
+          asyncRewake: string
+          asyncRewakeHint: string
+          prompt: string
+          promptHint: string
+          model: string
+          url: string
+          headers: string
+          headersHint: string
+          allowedEnvVars: string
+          allowedEnvVarsHint: string
+          mcpServer: string
+          mcpTool: string
+          mcpInput: string
+          mcpInputHint: string
+          ifHint: string
+          timeout: string
+          statusMessage: string
+          once: string
+          onceHint: string
+        }
+      }
+      errors: {
+        commandRequired: string
+        promptRequired: string
+        urlRequired: string
+        mcpToolRequired: string
+        invalidTimeout: string
+        headersJson: string
+        toolInputJson: string
+      }
+    }
     schedule: {
       label: string
       simple: string
@@ -764,6 +841,8 @@ export const en: Messages = {
     cancel: 'Cancel',
     confirm: 'Confirm',
     save: 'Save',
+    saving: 'Saving...',
+    delete: 'Delete',
     close: 'Close',
     loading: 'Loading...',
     systemDefault: 'Default',
@@ -874,6 +953,7 @@ export const en: Messages = {
         agents: 'Subagents',
         skills: 'Skills',
         mcp: 'MCP Servers',
+        hooks: 'Hooks',
         plugins: 'Plugins',
         preferences: 'Preference',
       },
@@ -1382,6 +1462,80 @@ export const en: Messages = {
         skills: 'Skills',
         hooks: 'Hooks',
         mcp: 'MCP',
+      },
+    },
+    hooks: {
+      title: 'Hooks',
+      subtitle: 'Configure custom commands, prompts, or HTTP requests that fire on tool use, user submit, session lifecycle, and other events',
+      add: 'Add Hook',
+      empty: 'No hooks configured',
+      emptyHint: 'Click "Add Hook" to create one. Hooks are stored in settings.json',
+      applyNote: 'Changes apply to **new sessions** only. Currently running sessions are not affected.',
+      entryCount_one: '{{count}} entry',
+      entryCount_other: '{{count}} entries',
+      deleteTitle: 'Delete this hook?',
+      deleteDescription: 'This removes the hook from settings.json. Cannot be undone.',
+      scope: {
+        user: 'User',
+        project: 'Project',
+        local: 'Local',
+      },
+      types: {
+        command: 'Command',
+        prompt: 'Prompt',
+        agent: 'Agent',
+        http: 'HTTP',
+        mcp_tool: 'MCP Tool',
+      },
+      editor: {
+        titleNew: 'New Hook',
+        titleEdit: 'Edit Hook',
+        subtitle: 'Saves to settings.json at the chosen scope',
+        advanced: 'Advanced',
+        eventGroup: {
+          common: 'Common',
+          more: 'More',
+        },
+        fields: {
+          scope: 'Scope',
+          event: 'Event',
+          matcher: 'Matcher',
+          matcherHint: 'Permission rule syntax. Hook only fires when the tool call matches. e.g. Bash(git push *)',
+          type: 'Type',
+          command: 'Command',
+          shell: 'Shell',
+          shellAuto: 'Auto',
+          async: 'Async',
+          asyncHint: 'Run in background, do not block the main thread',
+          asyncRewake: 'Async rewake',
+          asyncRewakeHint: 'Background run; exit code 2 wakes the model (implies async)',
+          prompt: 'Prompt',
+          promptHint: 'Use $ARGUMENTS as a placeholder for the hook input JSON',
+          model: 'Model (optional)',
+          url: 'URL',
+          headers: 'Headers (JSON)',
+          headersHint: 'Reference env vars with $VAR_NAME (must be listed in allowedEnvVars)',
+          allowedEnvVars: 'Allowed env vars',
+          allowedEnvVarsHint: 'Comma-separated. Only these vars get interpolated into headers',
+          mcpServer: 'MCP server',
+          mcpTool: 'Tool name',
+          mcpInput: 'Tool input (JSON)',
+          mcpInputHint: 'String values support ${path} interpolation (e.g. "${tool_input.file_path}")',
+          ifHint: 'Permission-rule syntax for secondary filtering',
+          timeout: 'Timeout (seconds)',
+          statusMessage: 'Status message',
+          once: 'Run once',
+          onceHint: 'Auto-removes from config after firing',
+        },
+      },
+      errors: {
+        commandRequired: 'Command is required',
+        promptRequired: 'Prompt is required',
+        urlRequired: 'URL is required',
+        mcpToolRequired: 'Server and tool name are required',
+        invalidTimeout: 'Timeout must be a positive number',
+        headersJson: 'Headers must be a valid JSON object',
+        toolInputJson: 'Tool input must be a valid JSON object',
       },
     },
     schedule: {

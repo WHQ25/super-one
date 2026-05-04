@@ -1,4 +1,4 @@
-import { ArrowLeft, Blocks, Bot, Globe, LayoutGrid, Palette, Puzzle, Server, Settings, Smartphone } from 'lucide-react'
+import { ArrowLeft, Blocks, Bot, Globe, LayoutGrid, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/app'
@@ -6,6 +6,7 @@ import { AgentsPage } from './AgentsPage'
 import { SkillsPage } from './SkillsPage'
 import { McpPage } from './McpPage'
 import { PluginsPage } from './PluginsPage'
+import { HooksPage } from './HooksPage'
 import { PreferencesPage } from './PreferencesPage'
 import { ProvidersPage } from './ProvidersPage'
 import { RemotePage } from './RemotePage'
@@ -26,6 +27,7 @@ const providerTabs = [
   { id: 'agents' as const, labelKey: 'settings.layout.tabs.agents', icon: Bot },
   { id: 'skills' as const, labelKey: 'settings.layout.tabs.skills', icon: Puzzle },
   { id: 'mcp' as const, labelKey: 'settings.layout.tabs.mcp', icon: Server },
+  { id: 'hooks' as const, labelKey: 'settings.layout.tabs.hooks', icon: Webhook },
   { id: 'plugins' as const, labelKey: 'settings.layout.tabs.plugins', icon: Blocks },
   { id: 'preferences' as const, labelKey: 'settings.layout.tabs.preferences', icon: Palette },
 ]
@@ -118,6 +120,7 @@ export function SettingsLayout() {
         {settingsTab === 'agents' && <AgentsPage />}
         {settingsTab === 'skills' && <SkillsPage />}
         {settingsTab === 'mcp' && <McpPage />}
+        {settingsTab === 'hooks' && <HooksPage />}
         {settingsTab === 'plugins' && <PluginsPage />}
         {settingsTab === 'app-settings' && <AppSettingsPage />}
         {settingsTab === 'apps' && <AppsSettingsPage />}

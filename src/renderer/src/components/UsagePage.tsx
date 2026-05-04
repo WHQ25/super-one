@@ -1,8 +1,30 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts'
 import { cn } from '@/lib/utils'
+
+function SizedChart({ height, className, children }: { height: number | string; className?: string; children: (size: { width: number; height: number }) => ReactNode }) {
+  const [size, setSize] = useState({ width: 0, height: 0 })
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect
+      if (!rect) return
+      setSize({ width: Math.max(0, Math.floor(rect.width)), height: Math.max(0, Math.floor(rect.height)) })
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const heightStyle = typeof height === 'number' ? `${height}px` : height
+  return (
+    <div ref={ref} style={{ height: heightStyle, minWidth: 0 }} className={cn('w-full', className)}>
+      {size.width > 0 && size.height > 0 ? children(size) : null}
+    </div>
+  )
+}
 
 type Harness = 'claude' | 'codex'
 type HarnessFilter = 'all' | Harness
@@ -63,7 +85,7 @@ export function UsagePage() {
   const [counts, setCounts] = useState<{ sessions: number; messages: number }>({ sessions: 0, messages: 0 })
   const [loading, setLoading] = useState(true)
   const [backfilling, setBackfilling] = useState(false)
-  const [preset, setPreset] = useState<RangePreset>('30d')
+  const [preset, setPreset] = useState<RangePreset>('today')
   const [harnessFilter, setHarnessFilter] = useState<HarnessFilter>('all')
 
   const range = useMemo(() => {
@@ -180,7 +202,7 @@ export function UsagePage() {
         : 'settings.usage.daily.titleByTokenType'
 
   return (
-    <div className="flex flex-col gap-6 max-w-5xl">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <div className="flex items-baseline justify-between">
         <h2 className="text-xl font-semibold">{t('settings.usage.title')}</h2>
         {backfilling && (
@@ -290,13 +312,12 @@ export function UsagePage() {
           <table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr className="border-b border-border">
-                <th className="px-4 py-2 text-left font-normal">{t('settings.usage.byModel.harness')}</th>
                 <th className="px-4 py-2 text-left font-normal">{t('settings.usage.byModel.model')}</th>
-                <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.total')}</th>
                 <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.input')}</th>
                 <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.output')}</th>
                 <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.cacheRead')}</th>
                 <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.cacheCreation')}</th>
+                <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.total')}</th>
               </tr>
             </thead>
             <tbody>
@@ -304,20 +325,12 @@ export function UsagePage() {
                 const total = m.input + m.output + m.cacheRead + m.cacheCreation
                 return (
                   <tr key={`${m.harness}::${m.model}`} className="border-b border-border/50 last:border-b-0">
-                    <td className="px-4 py-2">
-                      <span className={cn(
-                        'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium',
-                        m.harness === 'claude' ? 'bg-primary/10 text-primary' : 'bg-foreground/10 text-foreground',
-                      )}>
-                        {m.harness}
-                      </span>
-                    </td>
                     <td className="px-4 py-2 font-mono text-xs">{m.model}</td>
-                    <td className="px-4 py-2 text-right font-semibold tabular-nums">{formatNumber(total)}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.input)}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.output)}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.cacheRead)}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.cacheCreation)}</td>
+                    <td className="px-4 py-2 text-right font-semibold tabular-nums">{formatNumber(total)}</td>
                   </tr>
                 )
               })}
@@ -493,9 +506,9 @@ interface DailyTokenTypeRow { day: string; input: number; output: number; cacheR
 
 function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: string) => string }) {
   return (
-    <div className="h-56 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+    <SizedChart height={224}>
+      {({ width: cw, height: ch }) => (
+        <AreaChart width={cw} height={ch} data={data} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
           <defs>
             <linearGradient id="claudeFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.6} />
@@ -534,16 +547,16 @@ function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: 
           <Area type="monotone" dataKey="codex" stackId="usage" stroke="var(--foreground)" strokeOpacity={0.4} strokeWidth={1.5} fill="url(#codexFill)" />
           <Area type="monotone" dataKey="claude" stackId="usage" stroke="var(--primary)" strokeWidth={1.5} fill="url(#claudeFill)" />
         </AreaChart>
-      </ResponsiveContainer>
-    </div>
+      )}
+    </SizedChart>
   )
 }
 
 function DailyTokenTypeAreaChart({ data, t }: { data: DailyTokenTypeRow[]; t: (key: string) => string }) {
   return (
-    <div className="h-56 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+    <SizedChart height={224}>
+      {({ width: cw, height: ch }) => (
+        <AreaChart width={cw} height={ch} data={data} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
           <XAxis
             dataKey="day"
             tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
@@ -593,8 +606,8 @@ function DailyTokenTypeAreaChart({ data, t }: { data: DailyTokenTypeRow[]; t: (k
             />
           ))}
         </AreaChart>
-      </ResponsiveContainer>
-    </div>
+      )}
+    </SizedChart>
   )
 }
 interface ByModelRow { harness: Harness; model: string; input: number; output: number; cacheRead: number; cacheCreation: number }
@@ -609,9 +622,9 @@ function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) =
   }))
   const height = Math.max(120, chartData.length * 36 + 24)
   return (
-    <div style={{ height }} className="w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 16, left: 4, bottom: 4 }} barCategoryGap={6}>
+    <SizedChart height={height}>
+      {({ width: cw, height: ch }) => (
+        <BarChart width={cw} height={ch} data={chartData} layout="vertical" margin={{ top: 4, right: 16, left: 4, bottom: 4 }} barCategoryGap={6}>
           <XAxis type="number" hide domain={[0, 'dataMax']} />
           <YAxis
             type="category"
@@ -659,8 +672,8 @@ function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) =
             />
           ))}
         </BarChart>
-      </ResponsiveContainer>
-    </div>
+      )}
+    </SizedChart>
   )
 }
 
@@ -669,9 +682,9 @@ function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]
   const positives = totals.filter((v) => v > 0)
   const avg = positives.length > 0 ? positives.reduce((a, b) => a + b, 0) / positives.length : 0
   return (
-    <div className="h-60 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: showTopLabels ? 24 : 8, right: 8, left: 8, bottom: 4 }} barCategoryGap={showTopLabels ? 12 : 4}>
+    <SizedChart height={240}>
+      {({ width: cw, height: ch }) => (
+        <BarChart width={cw} height={ch} data={data} margin={{ top: showTopLabels ? 24 : 8, right: 8, left: 8, bottom: 4 }} barCategoryGap={showTopLabels ? 12 : 4}>
           <defs>
             <linearGradient id="barClaude" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--primary)" stopOpacity={1} />
@@ -734,8 +747,8 @@ function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]
             )}
           </Bar>
         </BarChart>
-      </ResponsiveContainer>
-    </div>
+      )}
+    </SizedChart>
   )
 }
 
@@ -744,9 +757,9 @@ function DailyTokenTypeChart({ data, t, showTopLabels }: { data: DailyTokenTypeR
   const positives = totals.filter((v) => v > 0)
   const avg = positives.length > 0 ? positives.reduce((a, b) => a + b, 0) / positives.length : 0
   return (
-    <div className="h-60 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: showTopLabels ? 24 : 8, right: 8, left: 8, bottom: 4 }} barCategoryGap={showTopLabels ? 16 : 2}>
+    <SizedChart height={240}>
+      {({ width: cw, height: ch }) => (
+        <BarChart width={cw} height={ch} data={data} margin={{ top: showTopLabels ? 24 : 8, right: 8, left: 8, bottom: 4 }} barCategoryGap={showTopLabels ? 16 : 2}>
           <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
           <XAxis
             dataKey="day"
@@ -821,8 +834,8 @@ function DailyTokenTypeChart({ data, t, showTopLabels }: { data: DailyTokenTypeR
             )
           })}
         </BarChart>
-      </ResponsiveContainer>
-    </div>
+      )}
+    </SizedChart>
   )
 }
 

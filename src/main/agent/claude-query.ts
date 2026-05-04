@@ -7,7 +7,7 @@ import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
 import { getSuperoneMcpServer } from '../mcp/superone-mcp-server'
 import type { WarmupManager } from './warmup-manager'
 import { resolveSdkClaudeBinary } from './claude-binary'
-import { recordClaudeFromMetadata } from '../usage-stats-service'
+import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
 
 export interface SessionQueryOptions {
   cwd: string
@@ -189,6 +189,10 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let lastTrackedMessageId = ''
   // Subagent token accumulation per parent_tool_use_id
   const subagentTracking = new Map<string, { stepIds: Set<string>; input: number; output: number }>()
+  // Per-model usage snapshot: SDK's result.modelUsage is cumulative across the
+  // streaming query's lifetime. Diff against the prior snapshot to get the
+  // step delta to record into usage_daily.
+  const usageSnapshotByModel = new Map<string, UsageStepDelta>()
 
   let turnMessageId = getCurrentMessageId()
   let turnActive = false
@@ -771,7 +775,17 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           const metadata = buildResultMetadata(result, getCurrentStartTime(), timing.pausedMs, lastAssistantUsage)
 
           try {
-            recordClaudeFromMetadata(metadata, new Date())
+            if (metadata.modelUsage && Object.keys(metadata.modelUsage).length > 0) {
+              const deltas: Record<string, UsageStepDelta> = {}
+              for (const [model, usage] of Object.entries(metadata.modelUsage)) {
+                const curr = modelUsageInfoToDelta(usage)
+                const prev = usageSnapshotByModel.get(model)
+                const delta = prev ? subtractDelta(curr, prev) : curr
+                usageSnapshotByModel.set(model, curr)
+                deltas[model] = delta
+              }
+              recordClaudeStepDeltas(deltas, new Date())
+            }
           } catch (err) {
             log.warn('[usage-stats] failed to record Claude usage: %s', err instanceof Error ? err.message : String(err))
           }

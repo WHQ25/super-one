@@ -1,6 +1,7 @@
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
 import { serializeMessageContent, parseMessageContent } from './session/session-repo'
+import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, SessionHistoryEntry, PinnedSessionEntry } from '../shared/agent-types'
 
 interface DbSession {
@@ -112,14 +113,15 @@ export function saveSessionState(
   const lastUserMessageAt = [...data.messages].reverse().find((msg) => msg.role === 'user')?.createdAt ?? null
 
   const upsertMsg = db.prepare(`
-    INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id, usage_counted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       status = excluded.status,
       content_json = excluded.content_json,
       metadata_json = excluded.metadata_json,
       checkpoint_id = excluded.checkpoint_id,
-      resume_point_id = excluded.resume_point_id
+      resume_point_id = excluded.resume_point_id,
+      usage_counted_at = COALESCE(chat_messages.usage_counted_at, excluded.usage_counted_at)
   `)
 
   const updateSession = data.title
@@ -135,12 +137,31 @@ export function saveSessionState(
         WHERE id = ?
       `)
 
-  const deleteStale = db.prepare('DELETE FROM chat_messages WHERE session_id = ?')
+  const sessionRow = db.prepare(`
+    SELECT created_at, usage_counted_at FROM sessions WHERE id = ?
+  `).get(sessionId) as { created_at: string; usage_counted_at: string | null } | undefined
+
+  const priorCounted = db.prepare(`
+    SELECT id FROM chat_messages WHERE session_id = ? AND usage_counted_at IS NOT NULL
+  `).all(sessionId) as Array<{ id: string }>
+  const priorCountedIds = new Set(priorCounted.map((r) => r.id))
+
+  const provider = data.provider ?? 'claude'
+  const harness: HarnessKind = provider === 'codex' ? 'codex' : 'claude'
+
+  const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
+  let countSessionStarted = false
 
   const tx = db.transaction(() => {
-    deleteStale.run(sessionId)
+    db.prepare('DELETE FROM chat_messages WHERE session_id = ?').run(sessionId)
     for (let i = 0; i < data.messages.length; i++) {
       const msg = data.messages[i]
+      const isAssistantComplete = msg.role === 'assistant' && msg.status === 'complete'
+      const isUser = msg.role === 'user'
+      const wasAlreadyCounted = priorCountedIds.has(msg.id)
+      const shouldCount = !wasAlreadyCounted && (isUser || isAssistantComplete)
+      const usageCountedAt = wasAlreadyCounted || shouldCount ? new Date().toISOString() : null
+
       upsertMsg.run(
         msg.id,
         sessionId,
@@ -153,18 +174,48 @@ export function saveSessionState(
         msg.metadata ? JSON.stringify(msg.metadata) : null,
         msg.checkpointId ?? null,
         msg.resumePointId ?? null,
+        usageCountedAt,
       )
+
+      if (shouldCount) {
+        newlyCountedMessages.push({ role: msg.role, createdAt: msg.createdAt })
+      }
     }
 
-    const provider = data.provider ?? 'claude'
     if (data.title) {
       updateSession.run(data.totalCostUsd, data.contextTokens, provider, lastUserMessageAt, data.title, sessionId)
     } else {
       updateSession.run(data.totalCostUsd, data.contextTokens, provider, lastUserMessageAt, sessionId)
     }
+
+    if (sessionRow && !sessionRow.usage_counted_at) {
+      db.prepare('UPDATE sessions SET usage_counted_at = ? WHERE id = ?').run(new Date().toISOString(), sessionId)
+      countSessionStarted = true
+    }
   })
 
   tx()
+
+  if (countSessionStarted && sessionRow) {
+    recordSessionStarted(harness, sessionRow.created_at)
+  }
+  if (newlyCountedMessages.length > 0) {
+    const userByDay = new Map<string, number>()
+    const assistantByDay = new Map<string, number>()
+    for (const m of newlyCountedMessages) {
+      if (m.role === 'user') {
+        userByDay.set(m.createdAt, (userByDay.get(m.createdAt) ?? 0) + 1)
+      } else if (m.role === 'assistant') {
+        assistantByDay.set(m.createdAt, (assistantByDay.get(m.createdAt) ?? 0) + 1)
+      }
+    }
+    for (const [createdAt, n] of userByDay) {
+      recordMessageCounts(harness, createdAt, { userMessages: n })
+    }
+    for (const [createdAt, n] of assistantByDay) {
+      recordMessageCounts(harness, createdAt, { assistantMessages: n })
+    }
+  }
 }
 
 /** Load session state from DB */

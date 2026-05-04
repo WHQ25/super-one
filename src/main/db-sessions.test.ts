@@ -171,11 +171,33 @@ describe('saveSessionState', () => {
     getDbMock.mockReset()
   })
 
-  it('converts streaming status to interrupted on write', () => {
-    const runMock = vi.fn()
-    const prepareMock = vi.fn().mockReturnValue({ run: runMock })
+  function makeSaveSessionMock() {
+    const upsertMsgRun = vi.fn()
+    const updateSessionRun = vi.fn()
+    const deleteRun = vi.fn()
+    const updateUsageCountedRun = vi.fn()
+    const activityRun = vi.fn()
+    const sessionGet = vi.fn().mockReturnValue({ created_at: '2026-01-01T00:00:00.000Z', usage_counted_at: null })
+    const priorCountedAll = vi.fn().mockReturnValue([])
+
+    const prepareMock = vi.fn((sql: string) => {
+      const trimmed = sql.replace(/\s+/g, ' ').trim()
+      if (trimmed.startsWith('INSERT INTO chat_messages')) return { run: upsertMsgRun }
+      if (trimmed.startsWith('UPDATE sessions') && trimmed.includes('total_cost_usd')) return { run: updateSessionRun }
+      if (trimmed.startsWith('SELECT created_at, usage_counted_at FROM sessions')) return { get: sessionGet }
+      if (trimmed.startsWith('SELECT id FROM chat_messages')) return { all: priorCountedAll }
+      if (trimmed.startsWith('DELETE FROM chat_messages')) return { run: deleteRun }
+      if (trimmed.startsWith('UPDATE sessions SET usage_counted_at')) return { run: updateUsageCountedRun }
+      if (trimmed.startsWith('INSERT INTO activity_daily')) return { run: activityRun }
+      return { run: vi.fn(), get: vi.fn(), all: vi.fn().mockReturnValue([]) }
+    })
     const transactionMock = vi.fn((fn: () => void) => fn)
     getDbMock.mockReturnValue({ prepare: prepareMock, transaction: transactionMock })
+    return { upsertMsgRun, updateSessionRun }
+  }
+
+  it('converts streaming status to interrupted on write', () => {
+    const { upsertMsgRun } = makeSaveSessionMock()
 
     saveSessionState('session-1', {
       messages: [
@@ -186,19 +208,16 @@ describe('saveSessionState', () => {
       contextTokens: 0,
     })
 
-    const upsertCalls = runMock.mock.calls
-    expect(upsertCalls[0][0]).toBe('session-1')
-    expect(upsertCalls[1][3]).toBe('assistant')
-    expect(upsertCalls[1][4]).toBe('interrupted')
-    expect(upsertCalls[2][3]).toBe('user')
-    expect(upsertCalls[2][4]).toBe('complete')
+    const calls = upsertMsgRun.mock.calls
+    expect(calls).toHaveLength(2)
+    expect(calls[0][3]).toBe('assistant')
+    expect(calls[0][4]).toBe('interrupted')
+    expect(calls[1][3]).toBe('user')
+    expect(calls[1][4]).toBe('complete')
   })
 
   it('stores latest user message timestamp on session update', () => {
-    const runMock = vi.fn()
-    const prepareMock = vi.fn().mockReturnValue({ run: runMock })
-    const transactionMock = vi.fn((fn: () => void) => fn)
-    getDbMock.mockReturnValue({ prepare: prepareMock, transaction: transactionMock })
+    const { updateSessionRun } = makeSaveSessionMock()
 
     saveSessionState('session-1', {
       messages: [
@@ -211,6 +230,6 @@ describe('saveSessionState', () => {
       provider: 'claude',
     })
 
-    expect(runMock).toHaveBeenLastCalledWith(0, 0, 'claude', '2026-01-01T00:02:00.000Z', 'session-1')
+    expect(updateSessionRun).toHaveBeenLastCalledWith(0, 0, 'claude', '2026-01-01T00:02:00.000Z', 'session-1')
   })
 })

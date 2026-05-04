@@ -334,6 +334,15 @@ export function runDatabaseMigrations(db: Database.Database): void {
   }
   if (needsRebuild) db.pragma('foreign_keys = ON')
 
+  const sessionColsPostRebuild = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
+  if (!sessionColsPostRebuild.some((c) => c.name === 'usage_counted_at')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN usage_counted_at TEXT')
+  }
+  const msgColsPostRebuild = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
+  if (!msgColsPostRebuild.some((c) => c.name === 'usage_counted_at')) {
+    db.exec('ALTER TABLE chat_messages ADD COLUMN usage_counted_at TEXT')
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS usage_daily (
       day TEXT NOT NULL,
@@ -346,6 +355,16 @@ export function runDatabaseMigrations(db: Database.Database): void {
       PRIMARY KEY (day, harness, model)
     );
     CREATE INDEX IF NOT EXISTS idx_usage_daily_day ON usage_daily(day DESC);
+
+    CREATE TABLE IF NOT EXISTS activity_daily (
+      day TEXT NOT NULL,
+      harness TEXT NOT NULL,
+      sessions_started INTEGER NOT NULL DEFAULT 0,
+      user_messages INTEGER NOT NULL DEFAULT 0,
+      assistant_messages INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, harness)
+    );
+    CREATE INDEX IF NOT EXISTS idx_activity_daily_day ON activity_daily(day DESC);
 
     CREATE TABLE IF NOT EXISTS app_meta (
       key TEXT PRIMARY KEY,

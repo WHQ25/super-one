@@ -4,6 +4,29 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.27.0-alpha] - 2026-05-05
+
+### Added
+
+- **Mini-app microphone & camera permissions** — mini-apps can declare `permissions.media: [microphone | camera]` in the manifest and use standard `navigator.mediaDevices.getUserMedia`. Grants are gated by the manifest, dynamically applied to iframe sandbox/allow attrs, and surfaced in the install dialog, settings detail page, and a host-rendered recording indicator that clears deterministically when tracks end.
+- **Per-day token usage stats** — new Settings → Usage tab shows token usage with Today / 7d / 30d / 90d / All presets and harness filter. Charts switch by preset (horizontal bars, grouped/stacked bars, stacked area, GitHub-style heatmap). Includes summary cards (Total Tokens / Sessions / Messages) and a by-model breakdown. First launch backfills from existing chat history.
+- **Claude hooks settings UI** — new settings page for editing `settings.json#hooks` across user / project / local scopes. Supports all 5 SDK hook types (command, prompt, agent, http, mcp_tool) with type-specific fields and a shared advanced section. Writes take effect on the next session start. Codex tab is hidden since Codex has no hook system.
+- **Shared Textarea primitive** — new component matching the Input visual language; consolidates ad-hoc `<textarea>` elements across dialogs.
+
+### Fixed
+
+- **Language switch toast now appears in the new locale** — the toast captured `t` via `useTranslation`, which bound it to the pre-switch language, so the success toast appeared in the previous language.
+- **Removed double focus ring on project selector dropdown** — the global `:focus-visible` 3px ring overlapped with the accent highlight; only the bg-accent remains.
+
+### Changed
+
+- **Quieter input focus ring** — Input and Textarea focus-visible rings drop from 3px (with border tint) to a subtle 1px ring, matching older hand-rolled inputs. Less visual noise in form-dense dialogs.
+- **Bumped `@anthropic-ai/claude-agent-sdk` to 0.2.126.**
+
+### Tests
+
+- Storybook coverage expanded: stories for all chat tool-call UIs, regrouped by harness ownership (Claude vs Codex vs shared), plus CopyableMarkdown stories for chat markdown rendering.
+
 ## [0.26.0-alpha] - 2026-05-04
 
 ### Added

@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.27.2-alpha] - 2026-05-05
+
+### Added
+
+- **MCP server bundles (`.mcpb`)**: drag-and-drop or pick a `.mcpb` file in MCP settings to install a bundled MCP server. Bundles are previewed before install, listed alongside manually configured servers with a version badge, and have a dedicated uninstall path that cleans up the extracted bundle directory.
+
+### Fixed
+
+- **Copy buttons in chat**: code-block, insight-block, and user / assistant message copy buttons now actually write to the clipboard. The mini-app media-permissions handler added in 0.27.0 was rejecting every non-media permission including `clipboard-sanitized-write`, so copies silently failed — the ✓ icon flashed but the clipboard stayed empty. The handler now only enforces strict checks against mini-app origins; the main renderer keeps Electron defaults. Copy paths with visible feedback also now `await` the write so any future regression won't fake a success.
+
 ## [0.27.1-alpha] - 2026-05-05
 
 ### Fixed

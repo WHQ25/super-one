@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, isValidElement, type RefObjec
 import { Check, Copy } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import { MermaidBlock } from './MermaidBlock'
+import { tryCopy } from '@/lib/clipboard'
 
 export function InlineCode({ children, className, ...props }: React.ComponentProps<'code'>) {
   return (
@@ -79,8 +80,8 @@ export function HighlightedCodeBlock({ code, language, codePlugin }: Highlighted
     }
   }, [code, language, codePlugin, applyHighlightResult, normalizeLanguage])
 
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code)
+  const handleCopy = useCallback(async () => {
+    if (!(await tryCopy(code))) return
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [code])

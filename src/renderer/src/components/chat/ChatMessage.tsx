@@ -23,6 +23,7 @@ import {
 } from './chat-shared'
 import { RewindButton } from './RewindButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
+import { tryCopy } from '@/lib/clipboard'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { ReasoningBlock } from './ReasoningBlock'
 import { parseUserMentions, type UserMentionKind } from './user-mention-parser'
@@ -202,9 +203,9 @@ function CopyButton({ copied, onClick, className }: { copied: boolean; onClick: 
 
 function useCopyText() {
   const [copied, setCopied] = useState(false)
-  const copy = useCallback((text: string) => {
+  const copy = useCallback(async (text: string) => {
     if (window.getSelection()?.toString()) return
-    navigator.clipboard.writeText(text)
+    if (!(await tryCopy(text))) return
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }, [])
@@ -792,9 +793,9 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
 
   const showDuration = durationMs && (isStreaming ? durationMs >= 1000 : durationMs >= 20000)
   const [copied, setCopied] = useState(false)
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!copyText) return
-    navigator.clipboard.writeText(copyText)
+    if (!(await tryCopy(copyText))) return
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }

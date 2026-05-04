@@ -10,6 +10,7 @@ import {
   streamdownRehypePlugins,
 } from './chat-shared'
 import { createStreamdownCodeComponent } from './CodeBlock'
+import { tryCopy } from '@/lib/clipboard'
 
 export function splitByCodeFences(text: string): { content: string; isCode: boolean }[] {
   const segments: { content: string; isCode: boolean }[] = []
@@ -157,8 +158,8 @@ function InsightBlock({ title, content, isStreaming, components }: { title: stri
       : { ...streamdownComponents, code: codeComponent },
     [components, codeComponent],
   )
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(content)
+  const handleCopy = useCallback(async () => {
+    if (!(await tryCopy(content))) return
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }, [content])

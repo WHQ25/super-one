@@ -1873,14 +1873,14 @@ app.whenReady().then(async () => {
   registerIpcHandlers()
 
   const ses = session.defaultSession
-  ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
-    if (permission !== 'media') {
-      callback(false)
-      return
-    }
-    const reqUrl = (details as { requestingUrl?: string }).requestingUrl ?? ''
+  ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const reqUrl = (details as { requestingUrl?: string }).requestingUrl ?? wc.getURL() ?? ''
     const appId = appIdFromUrl(reqUrl)
     if (!appId) {
+      callback(true)
+      return
+    }
+    if (permission !== 'media') {
       callback(false)
       return
     }
@@ -1893,9 +1893,9 @@ app.whenReady().then(async () => {
     callback(ok)
   })
   ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
-    if (permission !== 'media') return false
     const appId = appIdFromUrl(requestingOrigin) ?? appIdFromUrl((details as { requestingUrl?: string }).requestingUrl ?? '')
-    if (!appId) return false
+    if (!appId) return true
+    if (permission !== 'media') return false
     const mediaType = (details as { mediaType?: 'audio' | 'video' | 'unknown' }).mediaType
     if (mediaType === 'audio') return isMediaAllowed(appId, 'microphone')
     if (mediaType === 'video') return isMediaAllowed(appId, 'camera')

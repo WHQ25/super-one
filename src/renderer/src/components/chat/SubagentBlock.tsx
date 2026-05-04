@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
 import { getToolDisplay, getToolVerb, parseToolInput } from './tool-display'
 import { ToolIcon } from './ToolIcon'
-import { useActiveSession, useBashOutput, useChatStore } from '@/stores/chat'
+import { useActiveSession, useBashOutput, useChatStore, SUBAGENT_COLOR_POOL } from '@/stores/chat'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '../../../../shared/agent-types'
 import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety, formatTokens } from './chat-shared'
@@ -13,6 +13,81 @@ import { parseJsonlOutput, type JsonlEntry } from './subagent-utils'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
 const SUBAGENT_OUTPUT_TAIL_LINES = 400
+
+interface SubagentColorClasses {
+  text: string
+  tagBg: string
+  tagText: string
+  activityBg: string
+  borderL: string
+}
+
+const SUBAGENT_COLOR_CLASSES: Record<string, SubagentColorClasses> = {
+  purple: {
+    text: 'text-purple-600 dark:text-purple-400',
+    tagBg: 'bg-purple-500/15 dark:bg-purple-900/40',
+    tagText: 'text-purple-700 dark:text-purple-300',
+    activityBg: 'bg-purple-500/10 dark:bg-purple-900/20',
+    borderL: 'border-purple-500/30',
+  },
+  blue: {
+    text: 'text-blue-600 dark:text-blue-400',
+    tagBg: 'bg-blue-500/15 dark:bg-blue-900/40',
+    tagText: 'text-blue-700 dark:text-blue-300',
+    activityBg: 'bg-blue-500/10 dark:bg-blue-900/20',
+    borderL: 'border-blue-500/30',
+  },
+  cyan: {
+    text: 'text-cyan-600 dark:text-cyan-400',
+    tagBg: 'bg-cyan-500/15 dark:bg-cyan-900/40',
+    tagText: 'text-cyan-700 dark:text-cyan-300',
+    activityBg: 'bg-cyan-500/10 dark:bg-cyan-900/20',
+    borderL: 'border-cyan-500/30',
+  },
+  teal: {
+    text: 'text-teal-600 dark:text-teal-400',
+    tagBg: 'bg-teal-500/15 dark:bg-teal-900/40',
+    tagText: 'text-teal-700 dark:text-teal-300',
+    activityBg: 'bg-teal-500/10 dark:bg-teal-900/20',
+    borderL: 'border-teal-500/30',
+  },
+  green: {
+    text: 'text-green-600 dark:text-green-400',
+    tagBg: 'bg-green-500/15 dark:bg-green-900/40',
+    tagText: 'text-green-700 dark:text-green-300',
+    activityBg: 'bg-green-500/10 dark:bg-green-900/20',
+    borderL: 'border-green-500/30',
+  },
+  amber: {
+    text: 'text-amber-600 dark:text-amber-400',
+    tagBg: 'bg-amber-500/15 dark:bg-amber-900/40',
+    tagText: 'text-amber-700 dark:text-amber-300',
+    activityBg: 'bg-amber-500/10 dark:bg-amber-900/20',
+    borderL: 'border-amber-500/30',
+  },
+  orange: {
+    text: 'text-orange-600 dark:text-orange-400',
+    tagBg: 'bg-orange-500/15 dark:bg-orange-900/40',
+    tagText: 'text-orange-700 dark:text-orange-300',
+    activityBg: 'bg-orange-500/10 dark:bg-orange-900/20',
+    borderL: 'border-orange-500/30',
+  },
+  rose: {
+    text: 'text-rose-600 dark:text-rose-400',
+    tagBg: 'bg-rose-500/15 dark:bg-rose-900/40',
+    tagText: 'text-rose-700 dark:text-rose-300',
+    activityBg: 'bg-rose-500/10 dark:bg-rose-900/20',
+    borderL: 'border-rose-500/30',
+  },
+}
+
+const DEFAULT_SUBAGENT_COLOR_CLASSES = SUBAGENT_COLOR_CLASSES.purple
+
+function getSubagentColorClasses(idx: number | undefined): SubagentColorClasses {
+  if (idx === undefined) return DEFAULT_SUBAGENT_COLOR_CLASSES
+  const name = SUBAGENT_COLOR_POOL[idx % SUBAGENT_COLOR_POOL.length]
+  return SUBAGENT_COLOR_CLASSES[name] ?? DEFAULT_SUBAGENT_COLOR_CLASSES
+}
 
 interface SubagentBlockProps {
   taskBlock: ContentBlock & { type: 'tool_use' }
@@ -76,6 +151,8 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   const { t } = useTranslation()
   const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
   const progress = useActiveSession((s) => s.taskProgress[taskBlock.toolUseId])
+  const colorIdx = useActiveSession((s) => s.subagentColors[taskBlock.toolUseId])
+  const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
   const bashOutput = useBashOutput(taskBlock.toolUseId)
   const taskInput = useMemo(() => parseTaskInput(taskBlock.input), [taskBlock.input])
   const showSpawningPlaceholder = !taskInput.subagentType && !taskInput.description
@@ -88,6 +165,16 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
     : !resultBlock && isStreaming
   const hasTokens = tokens.input > 0 || tokens.output > 0
   const [expanded, setExpanded] = useState(defaultExpanded ?? (isAsync ? false : !isComplete))
+
+  useEffect(() => {
+    if (isComplete) return
+    useChatStore.getState().assignSubagentColor(taskBlock.toolUseId)
+  }, [isComplete, taskBlock.toolUseId])
+
+  useEffect(() => {
+    if (!isComplete) return
+    useChatStore.getState().releaseSubagentColor(taskBlock.toolUseId)
+  }, [isComplete, taskBlock.toolUseId])
 
   useEffect(() => {
     if (isAsync && defaultExpanded === undefined) setExpanded(false)
@@ -221,9 +308,9 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"
       >
-        <Bot className={cn('size-3.5 shrink-0 text-purple-600 dark:text-purple-400', isRunning && !expanded && 'animate-pulse')} />
+        <Bot className={cn('size-3.5 shrink-0', colors.text, isRunning && !expanded && 'animate-pulse')} />
         {taskInput.subagentType && (
-          <span className="shrink-0 rounded bg-purple-500/15 px-1 py-px text-[10px] text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
+          <span className={cn('shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
             {taskInput.subagentType}
           </span>
         )}
@@ -251,12 +338,13 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
               activeTool={isRunning && progress?.description ? { toolName: progress.lastToolName ?? '', description: progress.description } : undefined}
               isRunning={isRunning}
               summary={undefined}
+              colors={colors}
             />
           )}
 
           {/* Sub tool calls — no grouping, scrollable with auto-scroll */}
           {childBlocks.length > 0 && (
-            <SubagentScrollArea isStreaming={isStreaming}>
+            <SubagentScrollArea isStreaming={isStreaming} borderClass={colors.borderL}>
               {childBlocks.map((block, i) =>
                 renderChildBlock(block, i, isStreaming, toolResultMap)
               )}
@@ -314,12 +402,13 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   )
 }
 
-function AgentActivity({ entries, fallbackTools, activeTool, isRunning, summary }: {
+function AgentActivity({ entries, fallbackTools, activeTool, isRunning, summary, colors }: {
   entries: JsonlEntry[]
   fallbackTools?: Array<{ toolName: string; description: string }>
   activeTool?: { toolName: string; description: string }
   isRunning: boolean
   summary?: string
+  colors: SubagentColorClasses
 }) {
   const latestActivity = useMemo(
     () => entries.findLast((e) => e.type === 'activity') as { type: 'activity'; text: string } | undefined,
@@ -338,12 +427,12 @@ function AgentActivity({ entries, fallbackTools, activeTool, isRunning, summary 
         </div>
       )}
       {isRunning && latestActivity && (
-        <div className="mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md bg-purple-500/10 px-2.5 py-1.5 text-xs leading-relaxed text-foreground dark:bg-purple-900/20">
-          <MessageSquare className="mt-0.5 size-3 shrink-0 animate-pulse text-purple-600 dark:text-purple-400" />
+        <div className={cn('mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md px-2.5 py-1.5 text-xs leading-relaxed text-foreground', colors.activityBg)}>
+          <MessageSquare className={cn('mt-0.5 size-3 shrink-0 animate-pulse', colors.text)} />
           <span className="whitespace-pre-wrap">{latestActivity.text.trim()}</span>
         </div>
       )}
-      <SubagentScrollArea isStreaming={isRunning}>
+      <SubagentScrollArea isStreaming={isRunning} borderClass={colors.borderL}>
         {(tools.length > 0 ? tools : fallbackTools ?? []).map((entry, i) => (
           <AsyncToolRow key={i} toolName={entry.toolName} description={entry.description} isActive={false} />
         ))}
@@ -369,7 +458,7 @@ function AsyncToolRow({ toolName, description, isActive }: { toolName: string; d
 }
 
 /** Scrollable container that auto-scrolls to bottom on new content, unless user scrolled up. */
-function SubagentScrollArea({ children, isStreaming }: { children: React.ReactNode; isStreaming: boolean }) {
+function SubagentScrollArea({ children, isStreaming, borderClass }: { children: React.ReactNode; isStreaming: boolean; borderClass: string }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
 
@@ -392,7 +481,7 @@ function SubagentScrollArea({ children, isStreaming }: { children: React.ReactNo
   return (
     <div
       ref={scrollRef}
-      className="max-h-[100px] overflow-y-auto border-l-2 border-purple-500/30 ml-3 pl-2.5 py-1"
+      className={cn('max-h-[100px] overflow-y-auto border-l-2 ml-3 pl-2.5 py-1', borderClass)}
     >
       {children}
     </div>

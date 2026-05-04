@@ -79,7 +79,7 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
                   void openFolder(folder.path)
                 }
               }}
-              className="flex items-center justify-between"
+              className="flex items-center justify-between focus-visible:shadow-none"
             >
               <div className="flex items-center gap-2 truncate">
                 <Folder className="size-4 shrink-0 text-muted-foreground" />
@@ -100,7 +100,7 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
               void selectAndOpenFolder()
             }
           }}
-          className="gap-2"
+          className="gap-2 focus-visible:shadow-none"
         >
           <Plus className="size-4 shrink-0" />
           <span>Add Project...</span>

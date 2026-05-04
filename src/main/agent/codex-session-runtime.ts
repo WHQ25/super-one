@@ -339,6 +339,7 @@ export function finalizeCodexAssistantMessage(
     text: string
     result?: CodexRunResult
     durationMs?: number
+    model?: string
   },
 ): CodexSessionRuntime {
   const consumedTokens = runtime.streamingTokensByMessageId[args.messageId]
@@ -368,6 +369,7 @@ export function finalizeCodexAssistantMessage(
           threadId: args.result.threadId,
           usage: args.result.usage,
           items: args.result.items,
+          ...(args.model ? { model: args.model } : {}),
         },
       } : {
         durationMs: args.durationMs,
@@ -375,6 +377,7 @@ export function finalizeCodexAssistantMessage(
           threadId: args.result.threadId,
           usage: null,
           items: args.result.items,
+          ...(args.model ? { model: args.model } : {}),
         },
       },
     }

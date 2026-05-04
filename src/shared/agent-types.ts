@@ -272,6 +272,7 @@ export interface CodexTurnInfo {
   usage: CodexUsageInfo | null
   items: CodexThreadItem[]
   planApproval?: CodexPlanApprovalState
+  model?: string
 }
 
 export interface PermissionDenialInfo {
@@ -1530,6 +1531,12 @@ export const AgentIpcChannels = {
   APP_SETTINGS_SAVE: 'app:settings-save',
   APP_SYSTEM_LOCALE: 'app:system-locale',
   APP_LOCALE_CHANGED: 'app:locale-changed',
+
+  // Usage statistics
+  USAGE_QUERY: 'app:usage:query',
+  USAGE_COUNTS_QUERY: 'app:usage:counts',
+  USAGE_BACKFILL_STATUS: 'app:usage:backfill-status',
+  USAGE_BACKFILL_DONE: 'app:usage:backfill-done',
 
   // Logging
   GET_LOG_PATH: 'app:get-log-path',

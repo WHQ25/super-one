@@ -185,6 +185,25 @@ interface AppAPI {
   // Logging
   getLogPath(): Promise<string>
 
+  // Usage statistics
+  queryUsage(range?: { from?: string; to?: string }): Promise<{
+    rows: Array<{
+      day: string
+      harness: 'claude' | 'codex'
+      model: string
+      input_tokens: number
+      output_tokens: number
+      cache_read_tokens: number
+      cache_creation_tokens: number
+    }>
+  }>
+  queryUsageCounts(range?: { from?: string; to?: string; harness?: 'claude' | 'codex' }): Promise<{
+    sessions: number
+    messages: number
+  }>
+  getUsageBackfillStatus(): Promise<'done' | 'pending'>
+  onUsageBackfillDone(callback: (summary: { scanned: number; claudeRecorded: number; codexRecorded: number; durationMs: number }) => void): () => void
+
   onContentZoom(callback: (action: 'in' | 'out' | 'reset') => void): () => void
 
   // Window state

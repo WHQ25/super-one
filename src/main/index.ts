@@ -53,6 +53,7 @@ import { parseGitStatusOutput, parseGitStatusFiles } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw } from './database'
+import { backfillFromHistory, getBackfillStatus, queryCounts, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
 import { CodexPluginsService } from './codex/codex-plugins-service'
@@ -1292,6 +1293,16 @@ function registerIpcHandlers(): void {
     return log.transports.file.getFile().path
   })
 
+  ipcMain.handle(AgentIpcChannels.USAGE_QUERY, (_e, range: { from?: string; to?: string } | undefined) => {
+    return queryUsage(range ?? {})
+  })
+  ipcMain.handle(AgentIpcChannels.USAGE_COUNTS_QUERY, (_e, range: { from?: string; to?: string; harness?: 'claude' | 'codex' } | undefined) => {
+    return queryCounts(range ?? {})
+  })
+  ipcMain.handle(AgentIpcChannels.USAGE_BACKFILL_STATUS, () => {
+    return getBackfillStatus()
+  })
+
   const remoteConfigPath = join(app.getPath('userData'), 'remote-config.json')
   function readRemoteConfig(): RemoteDeviceConfig | null {
     try {
@@ -1631,6 +1642,20 @@ app.whenReady().then(async () => {
     log.transports.file.getFile().path,
   )
   await initMainI18n()
+
+  if (getBackfillStatus() !== 'done') {
+    setImmediate(() => {
+      try {
+        const summary = backfillFromHistory()
+        log.info('[usage-stats] backfill done: %s', JSON.stringify(summary))
+        for (const win of BrowserWindow.getAllWindows()) {
+          try { win.webContents.send(AgentIpcChannels.USAGE_BACKFILL_DONE, summary) } catch { /* window may have closed */ }
+        }
+      } catch (err) {
+        log.error('[usage-stats] backfill failed: %s', err instanceof Error ? err.message : String(err))
+      }
+    })
+  }
   const LOCAL_FILE_MIME: Record<string, string> = {
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
     svg: 'image/svg+xml', webp: 'image/webp', ico: 'image/x-icon', bmp: 'image/bmp',

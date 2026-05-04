@@ -99,6 +99,7 @@ export type Messages = {
         general: string
         apps: string
         remote: string
+        usage: string
         providers: string
         agents: string
         skills: string
@@ -186,6 +187,61 @@ export type Messages = {
         description: string
         updated: string
         systemDefault: string
+      }
+    }
+    usage: {
+      title: string
+      backfilling: string
+      presets: {
+        today: string
+        '7d': string
+        '30d': string
+        '90d': string
+        all: string
+      }
+      harness: {
+        all: string
+        claude: string
+        codex: string
+      }
+      summary: {
+        totalTokens: string
+        sessions: string
+        messages: string
+      }
+      daily: {
+        titleByHarness: string
+        titleByTokenType: string
+        titleToday: string
+        titleHeatmap: string
+        empty: string
+      }
+      heatmap: {
+        less: string
+        more: string
+        tokens: string
+        noActivity: string
+      }
+      tokenTypes: {
+        input: string
+        output: string
+        cacheRead: string
+        cacheCreation: string
+      }
+      tooltip: {
+        total: string
+        avg: string
+      }
+      byModel: {
+        title: string
+        empty: string
+        harness: string
+        model: string
+        total: string
+        input: string
+        output: string
+        cacheRead: string
+        cacheCreation: string
       }
     }
   }
@@ -949,6 +1005,7 @@ export const en: Messages = {
         general: 'General',
         apps: 'Mini Apps',
         remote: 'Remote Control',
+        usage: 'Usage Stats',
         providers: 'Providers',
         agents: 'Subagents',
         skills: 'Skills',
@@ -1036,6 +1093,61 @@ export const en: Messages = {
         description: 'Applied when the selected default model supports reasoning effort selection.',
         updated: 'Default reasoning effort updated',
         systemDefault: 'Using system default reasoning effort',
+      },
+    },
+    usage: {
+      title: 'Usage Statistics',
+      backfilling: 'Generating statistics from history sessions...',
+      presets: {
+        today: 'Today',
+        '7d': 'Last 7 days',
+        '30d': 'Last 30 days',
+        '90d': 'Last 90 days',
+        all: 'All time',
+      },
+      harness: {
+        all: 'All',
+        claude: 'Claude',
+        codex: 'Codex',
+      },
+      summary: {
+        totalTokens: 'Total Tokens',
+        sessions: 'Sessions',
+        messages: 'Messages',
+      },
+      daily: {
+        titleByHarness: 'Daily Usage (by Harness)',
+        titleByTokenType: 'Daily Usage (by Token Type)',
+        titleToday: "Today's Usage by Model",
+        titleHeatmap: 'Activity Heatmap',
+        empty: 'No data in the selected range',
+      },
+      heatmap: {
+        less: 'Less',
+        more: 'More',
+        tokens: 'tokens',
+        noActivity: 'No activity',
+      },
+      tokenTypes: {
+        input: 'Input',
+        output: 'Output',
+        cacheRead: 'Cache Read',
+        cacheCreation: 'Cache Creation',
+      },
+      tooltip: {
+        total: 'Total',
+        avg: 'avg',
+      },
+      byModel: {
+        title: 'By Model',
+        empty: 'No data',
+        harness: 'Harness',
+        model: 'Model',
+        total: 'Total',
+        input: 'Input',
+        output: 'Output',
+        cacheRead: 'Cache Read',
+        cacheCreation: 'Cache Creation',
       },
     },
   },

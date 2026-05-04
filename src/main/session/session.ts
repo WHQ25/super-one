@@ -889,6 +889,7 @@ export class Session implements SessionContract {
           text: finalText,
           result,
           durationMs: codexMeta?.durationMs as number | undefined,
+          model: codexMeta?.model as string | undefined,
         })
         this._messages = next.messages
         this._totalCostUsd = next.totalCostUsd

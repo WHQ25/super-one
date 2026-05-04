@@ -20,6 +20,7 @@ import type {
 } from '../../../shared/agent-types'
 import log from '../../logger'
 import { trace } from '../../agent/event-trace'
+import { recordCodexFromUsage } from '../../usage-stats-service'
 import type { CodexSession } from '../../codex/codex-session'
 import {
   createCodexSession,
@@ -480,6 +481,11 @@ export class CodexBackend implements SessionBackend {
           itemsLength: result.items.length,
           itemsTail: summarizeCodexItemsForTrace(result.items),
         }, runningAssistantId)
+        try {
+          recordCodexFromUsage(result.usage, resolvedModel, new Date())
+        } catch (err) {
+          log.warn('[usage-stats] failed to record Codex usage: %s', err instanceof Error ? err.message : String(err))
+        }
         this.emit({
           type: 'message_complete',
           messageId: runningAssistantId,
@@ -490,6 +496,7 @@ export class CodexBackend implements SessionBackend {
               items: result.items,
               threadId: result.threadId,
               usage: result.usage,
+              model: resolvedModel,
             },
           } as Record<string, unknown>,
         })

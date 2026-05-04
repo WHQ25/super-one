@@ -333,6 +333,25 @@ export function runDatabaseMigrations(db: Database.Database): void {
     db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider_session_id ON sessions(provider_session_id)')
   }
   if (needsRebuild) db.pragma('foreign_keys = ON')
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS usage_daily (
+      day TEXT NOT NULL,
+      harness TEXT NOT NULL,
+      model TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, harness, model)
+    );
+    CREATE INDEX IF NOT EXISTS idx_usage_daily_day ON usage_daily(day DESC);
+
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `)
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {

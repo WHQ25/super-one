@@ -7,6 +7,7 @@ import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
 import { getSuperoneMcpServer } from '../mcp/superone-mcp-server'
 import type { WarmupManager } from './warmup-manager'
 import { resolveSdkClaudeBinary } from './claude-binary'
+import { recordClaudeFromMetadata } from '../usage-stats-service'
 
 export interface SessionQueryOptions {
   cwd: string
@@ -768,6 +769,12 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           const result = msg as any
           log.debug(`[iterateMessages] result subtype=${result.subtype} session_id=${result.session_id ?? '(none)'}`)
           const metadata = buildResultMetadata(result, getCurrentStartTime(), timing.pausedMs, lastAssistantUsage)
+
+          try {
+            recordClaudeFromMetadata(metadata, new Date())
+          } catch (err) {
+            log.warn('[usage-stats] failed to record Claude usage: %s', err instanceof Error ? err.message : String(err))
+          }
 
           if (getInterrupted()) {
             emit({ type: 'message_interrupted', messageId, metadata })

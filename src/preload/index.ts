@@ -581,6 +581,36 @@ const appAPI = {
   getLogPath: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_LOG_PATH) as Promise<string>,
 
+  // Usage statistics
+  queryUsage: (range?: { from?: string; to?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.USAGE_QUERY, range ?? {}) as Promise<{
+      rows: Array<{
+        day: string
+        harness: 'claude' | 'codex'
+        model: string
+        input_tokens: number
+        output_tokens: number
+        cache_read_tokens: number
+        cache_creation_tokens: number
+      }>
+    }>,
+  queryUsageCounts: (range?: { from?: string; to?: string; harness?: 'claude' | 'codex' }) =>
+    ipcRenderer.invoke(AgentIpcChannels.USAGE_COUNTS_QUERY, range ?? {}) as Promise<{
+      sessions: number
+      messages: number
+    }>,
+  getUsageBackfillStatus: () =>
+    ipcRenderer.invoke(AgentIpcChannels.USAGE_BACKFILL_STATUS) as Promise<'done' | 'pending'>,
+  onUsageBackfillDone: (callback: (summary: { scanned: number; claudeRecorded: number; codexRecorded: number; durationMs: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, summary: { scanned: number; claudeRecorded: number; codexRecorded: number; durationMs: number }): void => {
+      callback(summary)
+    }
+    ipcRenderer.on(AgentIpcChannels.USAGE_BACKFILL_DONE, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.USAGE_BACKFILL_DONE, handler)
+    }
+  },
+
   platform: process.platform,
 
   onContentZoom: (callback: (action: 'in' | 'out' | 'reset') => void) => {

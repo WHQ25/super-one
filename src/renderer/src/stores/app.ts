@@ -20,7 +20,7 @@ export type { RemoteDeviceConfig }
 type AppView = 'loading' | 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
-export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'automations' | 'app-settings'
+export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings'
 export type LayoutMode = 'canvas' | 'coding'
 export type SidebarTab = 'sessions' | 'files' | `miniapp:${string}`
 

@@ -2464,13 +2464,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (event.type === 'remote_session_start') {
       const projectPath = event.remoteProjectPath
       const sessionId = event.remoteSessionId
+      const remoteProvider: ChatProvider | null = event.harnessId === 'codex'
+        ? 'codex'
+        : event.harnessId === 'claude'
+          ? 'claude'
+          : null
       set((s) => {
         const project = s.projectSessions[projectPath] ?? createDefaultProjectState()
         const existingSession = project._sessions[sessionId]
-        const nextSession = existingSession ?? {
+        const baseSession = existingSession ?? {
           ...createDefaultPerSessionState(),
           _historyHydrated: !event.isSubscribe,
         }
+        const nextSession = remoteProvider && !baseSession.sessionProvider
+          ? { ...baseSession, sessionProvider: remoteProvider, preferredProvider: remoteProvider }
+          : baseSession
         return {
           remoteSessions: event.isSubscribe
             ? addRemoteSession(s.remoteSessions, projectPath, sessionId)

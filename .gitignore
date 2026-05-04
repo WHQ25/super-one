@@ -45,3 +45,9 @@ debug-data/
 
 # Local mini-app data
 .superone/
+
+# Playwright artifacts
+e2e/.artifacts/
+e2e/.report/
+playwright-report/
+test-results/

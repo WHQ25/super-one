@@ -11,13 +11,15 @@ import type { Session, SessionLifecycleEvent } from '../session/types'
 class FakeSession {
   readonly id: string
   readonly projectPath: string
+  readonly snapshot: { harnessId: 'claude' | 'codex' }
   owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } = { kind: 'local' }
   subscribers = new Set<string>()
   private listeners = new Set<(e: SessionLifecycleEvent) => void>()
 
-  constructor(id: string, projectPath: string) {
+  constructor(id: string, projectPath: string, harnessId: 'claude' | 'codex' = 'claude') {
     this.id = id
     this.projectPath = projectPath
+    this.snapshot = { harnessId }
   }
 
   onLifecycle(handler: (e: SessionLifecycleEvent) => void): () => void {
@@ -75,7 +77,23 @@ describe('PresenceCoordinator', () => {
       current: { kind: 'remote', deviceId: 'dev-A' },
     })
     expect(transport.sent).toEqual([
-      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1' },
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', harnessId: 'claude' },
+    ])
+  })
+
+  it('carries harnessId=codex when the session is a codex session', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s-codex', '/proj/A', 'codex')
+    source.add(s)
+    s.emit({
+      type: 'owner_changed', sessionId: 's-codex',
+      previous: { kind: 'local' },
+      current: { kind: 'remote', deviceId: 'dev-A' },
+    })
+    expect(transport.sent).toEqual([
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's-codex', harnessId: 'codex' },
     ])
   })
 
@@ -169,7 +187,7 @@ describe('PresenceCoordinator', () => {
     source.add(s)
     s.emit({ type: 'subscriber_added', sessionId: 's1', deviceId: 'dev-B' })
     expect(transport.sent).toEqual([
-      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', isSubscribe: true },
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', isSubscribe: true, harnessId: 'claude' },
     ])
   })
 
@@ -218,7 +236,7 @@ describe('PresenceCoordinator', () => {
     source.add(s2)
     s2.emit({ type: 'subscriber_added', sessionId: 's2', deviceId: 'dev-C' })
     expect(transport.sent).toEqual([
-      { type: 'remote_session_start', remoteProjectPath: '/proj/B', remoteSessionId: 's2', isSubscribe: true },
+      { type: 'remote_session_start', remoteProjectPath: '/proj/B', remoteSessionId: 's2', isSubscribe: true, harnessId: 'claude' },
     ])
   })
 
@@ -257,7 +275,7 @@ describe('PresenceCoordinator', () => {
       reason: 'desktop_kick',
     })
     expect(transport.sent).toEqual([
-      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1' },
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', harnessId: 'claude' },
     ])
     expect(transport.mobile).toEqual([
       { event: { type: 'session_kicked', sessionId: 's1' }, targets: ['dev-A'] },

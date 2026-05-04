@@ -273,7 +273,7 @@ function createWindow(): void {
     safeSend(AgentIpcChannels.FULLSCREEN_CHANGED, false)
   })
 
-  if (is.dev) {
+  if (is.dev && !process.env.SUPERONE_E2E) {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
 

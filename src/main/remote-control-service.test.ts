@@ -498,3 +498,131 @@ describe('stripMessagesForRemote', () => {
     expect(stripMessagesForRemote([])).toEqual([])
   })
 })
+
+describe('RemoteControlService LAN frame seq', () => {
+  let service: RemoteControlService | null = null
+  let client: import('ws').WebSocket | null = null
+
+  afterEach(async () => {
+    client?.close()
+    client?.removeAllListeners()
+    client = null
+    await service?.stop()
+    service = null
+  })
+
+  it('injects monotonically increasing seq into LAN frames so mobile seq filter does not drop them', async () => {
+    const { WebSocket } = await import('ws')
+    const { webcrypto } = await import('node:crypto')
+    const { bytesToHex } = await import('./remote-control-crypto')
+
+    const masterSecret = bytesToHex(webcrypto.getRandomValues(new Uint8Array(32)).buffer)
+    const deviceId = 'mobile-test'
+
+    service = new RemoteControlService('ws://127.0.0.1:1', {
+      onCommand: vi.fn(),
+      isPairedDevice: () => true,
+    })
+    await service.start({
+      enabled: true,
+      masterSecret,
+      deviceId: 'desktop-test',
+      preventSleep: false,
+      relayUrl: 'ws://127.0.0.1:1',
+    })
+
+    const port = service.getLanPort()
+    expect(port).not.toBeNull()
+
+    client = new WebSocket(`ws://127.0.0.1:${port}/ws?role=mobile`)
+    await new Promise<void>((r) => client!.once('open', () => r()))
+    client.send(JSON.stringify({ type: 'register', deviceName: 'tester', mobileDeviceId: deviceId }))
+
+    const frames: Array<Record<string, unknown>> = []
+    client.on('message', (raw) => {
+      try {
+        const f = JSON.parse(raw.toString())
+        if (f.type === 'event') frames.push(f)
+      } catch { /* ignore */ }
+    })
+    await new Promise<void>((r) => {
+      const onMsg = (raw: import('ws').RawData) => {
+        try {
+          const f = JSON.parse(raw.toString())
+          if (f.type === 'handshake') { client!.off('message', onMsg); r() }
+        } catch { /* ignore */ }
+      }
+      client!.on('message', onMsg)
+    })
+
+    for (let i = 0; i < 3; i++) {
+      await service.sendEventToMobile({ type: 'status_change', status: 'streaming', n: i }, [deviceId])
+    }
+    await new Promise((r) => setTimeout(r, 100))
+
+    expect(frames).toHaveLength(3)
+    expect(frames[0].seq).toBe(1)
+    expect(frames[1].seq).toBe(2)
+    expect(frames[2].seq).toBe(3)
+  })
+
+  it('resets LAN frame seq on stop so a fresh start begins at 1', async () => {
+    const { WebSocket } = await import('ws')
+    const { webcrypto } = await import('node:crypto')
+    const { bytesToHex } = await import('./remote-control-crypto')
+
+    const masterSecret = bytesToHex(webcrypto.getRandomValues(new Uint8Array(32)).buffer)
+    const deviceId = 'mobile-test'
+
+    service = new RemoteControlService('ws://127.0.0.1:1', {
+      onCommand: vi.fn(),
+      isPairedDevice: () => true,
+    })
+    const config = {
+      enabled: true,
+      masterSecret,
+      deviceId: 'desktop-test',
+      preventSleep: false,
+      relayUrl: 'ws://127.0.0.1:1',
+    }
+    await service.start(config)
+
+    const captureFrames = async (): Promise<Array<Record<string, unknown>>> => {
+      const port = service!.getLanPort()
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?role=mobile`)
+      await new Promise<void>((r) => ws.once('open', () => r()))
+      ws.send(JSON.stringify({ type: 'register', deviceName: 'tester', mobileDeviceId: deviceId }))
+      const collected: Array<Record<string, unknown>> = []
+      ws.on('message', (raw) => {
+        try {
+          const f = JSON.parse(raw.toString())
+          if (f.type === 'event') collected.push(f)
+        } catch { /* ignore */ }
+      })
+      await new Promise<void>((r) => {
+        const onMsg = (raw: import('ws').RawData) => {
+          try {
+            const f = JSON.parse(raw.toString())
+            if (f.type === 'handshake') { ws.off('message', onMsg); r() }
+          } catch { /* ignore */ }
+        }
+        ws.on('message', onMsg)
+      })
+      await service!.sendEventToMobile({ type: 'status_change', status: 'streaming' }, [deviceId])
+      await service!.sendEventToMobile({ type: 'status_change', status: 'idle' }, [deviceId])
+      await new Promise((r) => setTimeout(r, 80))
+      ws.close()
+      ws.removeAllListeners()
+      return collected
+    }
+
+    const first = await captureFrames()
+    expect(first.map((f) => f.seq)).toEqual([1, 2])
+
+    await service.stop()
+    await service.start(config)
+
+    const second = await captureFrames()
+    expect(second.map((f) => f.seq)).toEqual([1, 2])
+  })
+})

@@ -19,6 +19,9 @@ import { homedir } from 'os'
 import { getDb, getCachedHarnessResources, getActiveProviderRaw } from '../database'
 import { buildRemoteActiveProvider } from '../../shared/provider-utils'
 import { sanitizeGitRef } from '../path-security'
+import { authorizeAndStat, FileBridgeError, type AuthorizedFile } from '../file-bridge'
+import { tmpdir } from 'os'
+import { app } from 'electron'
 import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from '../git/worktree-ops'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { SessionClaimConflictError, SessionLockedError } from '../session/types'
@@ -1057,6 +1060,89 @@ export class AgentService {
         }
         break
       }
+      case 'read_desktop_file': {
+        await this.handleReadDesktopFile(command, respond, source)
+        break
+      }
+    }
+  }
+
+  private getDesktopFileAllowedRoots(sessionId?: string): string[] {
+    const roots: string[] = []
+    if (sessionId) {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (session) {
+        roots.push(session.cwd)
+        const extras = session.getAdditionalDirectoriesSnapshot()
+        if (extras.length) roots.push(...extras)
+      }
+    }
+    roots.push(join(homedir(), '.codex'))
+    roots.push(tmpdir())
+    try {
+      roots.push(app.getPath('userData'))
+    } catch { /* electron not initialized in tests */ }
+    return roots
+  }
+
+  private async handleReadDesktopFile(
+    command: Extract<RemoteCommand, { type: 'read_desktop_file' }>,
+    respond?: RemoteResponder,
+    source?: { deviceId: string; transport: 'lan' | 'relay' },
+  ): Promise<void> {
+    if (!respond) return
+    let authorized: AuthorizedFile
+    try {
+      const allowedRoots = this.getDesktopFileAllowedRoots(command.sessionId)
+      authorized = await authorizeAndStat(command.path, { allowedRoots }, { maxBytes: command.maxBytes })
+    } catch (err) {
+      if (err instanceof FileBridgeError) {
+        await respond(command.requestId, { ok: false, error: err.code, message: err.message })
+      } else {
+        await respond(command.requestId, { ok: false, error: 'internal_error', message: (err as Error).message })
+      }
+      return
+    }
+
+    const transport = source?.transport ?? 'relay'
+    const remote = this.remoteControlService
+    if (!remote) {
+      await respond(command.requestId, { ok: false, error: 'no_transport', message: 'remote control unavailable' })
+      return
+    }
+
+    try {
+      let url: string
+      let expiresAt: number
+      if (transport === 'lan') {
+        const lanUrl = await remote.signLanFileUrl(authorized.realPath, { ttlMs: 60_000 })
+        if (!lanUrl) {
+          await respond(command.requestId, { ok: false, error: 'no_transport', message: 'LAN file bridge unavailable' })
+          return
+        }
+        url = lanUrl
+        expiresAt = Date.now() + 60_000
+      } else {
+        const result = await remote.uploadFileToRelay(
+          authorized.realPath,
+          { mimeType: authorized.mimeType, size: authorized.size },
+          command.sessionId ?? 'no-session',
+        )
+        url = result.downloadUrl
+        expiresAt = result.expiresAt
+      }
+      await respond(command.requestId, {
+        ok: true,
+        url,
+        mimeType: authorized.mimeType,
+        name: authorized.name,
+        size: authorized.size,
+        modifiedAt: authorized.modifiedAt,
+        expiresAt,
+      })
+    } catch (err) {
+      log.error('[AgentService] read_desktop_file failed:', err)
+      await respond(command.requestId, { ok: false, error: 'upload_failed', message: (err as Error).message })
     }
   }
 

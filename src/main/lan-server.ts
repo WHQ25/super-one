@@ -1,12 +1,15 @@
-import { createServer, type Server } from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
 import { networkInterfaces } from 'node:os'
 import { webcrypto } from 'node:crypto'
+import { createReadStream, statSync } from 'node:fs'
 import { WebSocket, WebSocketServer } from 'ws'
 import log from './logger'
 import { trace } from './agent/event-trace'
 import type { RemoteCommand } from '../shared/agent-types'
 import { decryptPayload, encryptPayload } from './remote-control-crypto'
+import type { LanFileTokenSigner } from './lan-file-token'
+import { inferMimeType } from './file-bridge'
 
 export function listLanIpAddresses(): string[] {
   const result: string[] = []
@@ -35,6 +38,7 @@ export interface LanServerCallbacks {
   hostName: string
   onClientRegistered?: (info: { deviceName: string; deviceId: string }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
+  getFileTokenSigner?: () => LanFileTokenSigner | null
 }
 
 interface ClientState {
@@ -56,7 +60,18 @@ export class LanServer {
     const port = opts.port ?? 0
     const host = opts.host ?? '0.0.0.0'
 
-    const httpServer = createServer((_req, res) => {
+    const httpServer = createServer((req, res) => {
+      const path = (req.url ?? '/').split('?')[0]
+      if (req.method === 'GET' && path.startsWith('/files/')) {
+        this.handleFileRequest(req, res, path).catch((err) => {
+          log.error('[LanServer] file request handler error:', err)
+          if (!res.headersSent) {
+            res.writeHead(500)
+            res.end('Internal server error')
+          }
+        })
+        return
+      }
       res.writeHead(426)
       res.end('Upgrade required')
     })
@@ -269,6 +284,88 @@ export class LanServer {
     trace('remote.in', (command as { type?: string }).type ?? 'unknown', command)
     const respond: LanRemoteResponder = (requestId, payload) => this.sendResponse(ws, requestId, payload)
     this.callbacks.onCommand(command, respond, { deviceId })
+  }
+
+  private async handleFileRequest(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+    const signer = this.callbacks.getFileTokenSigner?.()
+    if (!signer) {
+      res.writeHead(503)
+      res.end('File bridge unavailable')
+      return
+    }
+    const token = decodeURIComponent(path.slice('/files/'.length))
+    if (!token) {
+      res.writeHead(400)
+      res.end('Missing token')
+      return
+    }
+    const payload = await signer.verify(token)
+    if (!payload) {
+      res.writeHead(403)
+      res.end('Invalid or expired token')
+      return
+    }
+    let stat: ReturnType<typeof statSync>
+    try {
+      stat = statSync(payload.path)
+    } catch {
+      res.writeHead(404)
+      res.end('Not found')
+      return
+    }
+    if (!stat.isFile()) {
+      res.writeHead(403)
+      res.end('Not a regular file')
+      return
+    }
+    const mimeType = inferMimeType(payload.path)
+    const fileSize = stat.size
+    const range = req.headers.range
+    if (range) {
+      const m = /^bytes=(\d*)-(\d*)$/.exec(range)
+      if (!m) {
+        res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` })
+        res.end()
+        return
+      }
+      const startStr = m[1]
+      const endStr = m[2]
+      let start: number
+      let end: number
+      if (startStr === '' && endStr !== '') {
+        const suffix = parseInt(endStr, 10)
+        if (!Number.isFinite(suffix) || suffix <= 0) {
+          res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` })
+          res.end()
+          return
+        }
+        start = Math.max(0, fileSize - suffix)
+        end = fileSize - 1
+      } else {
+        start = parseInt(startStr, 10)
+        end = endStr === '' ? fileSize - 1 : parseInt(endStr, 10)
+      }
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= fileSize) {
+        res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` })
+        res.end()
+        return
+      }
+      end = Math.min(end, fileSize - 1)
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': end - start + 1,
+        'Content-Type': mimeType,
+      })
+      createReadStream(payload.path, { start, end }).pipe(res)
+      return
+    }
+    res.writeHead(200, {
+      'Content-Length': fileSize,
+      'Content-Type': mimeType,
+      'Accept-Ranges': 'bytes',
+    })
+    createReadStream(payload.path).pipe(res)
   }
 
   private async sendResponse(ws: WebSocket, requestId: string, data: unknown): Promise<void> {

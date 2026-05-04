@@ -4444,6 +4444,51 @@ describe('remote session interaction routing', () => {
     expect(after._sessions['bg-agent-1'].pendingPermissions).toHaveLength(1)
     expect(after._sessions['bg-agent-1'].pendingPermissions[0].requestId).toBe('r2')
   })
+
+  it('marks the lazily-created remote session as codex when harnessId=codex on remote_session_start', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/test',
+      remoteSessionId: 'mobile-codex-1',
+      harnessId: 'codex',
+    } as AgentEvent)
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['mobile-codex-1'].sessionProvider).toBe('codex')
+    expect(after._sessions['mobile-codex-1'].preferredProvider).toBe('codex')
+  })
+
+  it('marks the lazily-created remote session as claude when harnessId=claude on remote_session_start', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/test',
+      remoteSessionId: 'mobile-claude-1',
+      harnessId: 'claude',
+    } as AgentEvent)
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['mobile-claude-1'].sessionProvider).toBe('claude')
+    expect(after._sessions['mobile-claude-1'].preferredProvider).toBe('claude')
+  })
+
+  it('does not overwrite an already-set sessionProvider on later remote_session_start (e.g. subscribe replay)', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/test',
+      remoteSessionId: 'mobile-codex-2',
+      harnessId: 'codex',
+    } as AgentEvent)
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/test',
+      remoteSessionId: 'mobile-codex-2',
+      harnessId: 'claude',
+      isSubscribe: true,
+    } as AgentEvent)
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['mobile-codex-2'].sessionProvider).toBe('codex')
+  })
 })
 
 describe('interaction response routing', () => {

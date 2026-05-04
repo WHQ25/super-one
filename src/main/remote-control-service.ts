@@ -22,6 +22,8 @@ import {
 } from './remote-control-crypto'
 import { LanServer, listLanIpAddresses } from './lan-server'
 import { LanAdvertiser } from './lan-advertiser'
+import { createLanFileTokenSigner, deriveFileTokenKeyFromExtractable, type LanFileTokenSigner } from './lan-file-token'
+import { uploadFileToRelay, relayWsToHttp, type RelayUploadResult } from './relay-file-uploader'
 
 const PAIRING_TIMEOUT_MS = 3 * 60 * 1000
 const MAX_RECONNECT_DELAY_MS = 30_000
@@ -398,6 +400,15 @@ function convertCodexItemsToBlocks(items: CodexThreadItem[], projectPath?: strin
       case 'mcp_tool_call':
         blocks.push({ type: 'tool_use', toolName: `${item.server}:${item.tool}`, toolUseId: item.id, input: '', status: 'complete' } as ContentBlock)
         break
+      case 'image_generation':
+        blocks.push({
+          type: 'codex_image_generation',
+          itemId: item.id,
+          status: item.status,
+          ...(item.savedPath ? { savedPath: item.savedPath } : {}),
+          ...(item.revisedPrompt ? { revisedPrompt: item.revisedPrompt } : {}),
+        } as ContentBlock)
+        break
       case 'error':
         blocks.push({ type: 'text', text: item.message } as ContentBlock)
         break
@@ -494,6 +505,7 @@ type ConnectedDevice = { name: string; transports: Set<DeviceTransport> }
 export class RemoteControlService {
   private relayWs: WebSocket | null = null
   private keys: { channelKeyHex: string; aesKey: webcrypto.CryptoKey } | null = null
+  private fileTokenSigner: LanFileTokenSigner | null = null
   private connectedDevices = new Map<string, ConnectedDevice>()
   private lanServer: LanServer | null = null
   private lanAdvertiser: LanAdvertiser | null = null
@@ -519,6 +531,8 @@ export class RemoteControlService {
 
   private relayUrl = ''
 
+  private lanFrameSeq = 0
+
   constructor(
     private readonly defaultRelayUrl: string,
     private readonly callbacks: RemoteControlCallbacks,
@@ -540,6 +554,28 @@ export class RemoteControlService {
 
   getLanPort(): number | null {
     return this.lanServer?.getPort() ?? null
+  }
+
+  async signLanFileUrl(realPath: string, opts: { ttlMs?: number } = {}): Promise<string | null> {
+    if (!this.fileTokenSigner) return null
+    const port = this.lanServer?.getPort()
+    if (!port) return null
+    const token = await this.fileTokenSigner.sign(realPath, opts)
+    return `http://{lanHost}:${port}/files/${encodeURIComponent(token)}`
+  }
+
+  async uploadFileToRelay(
+    realPath: string,
+    meta: { mimeType: string; size: number },
+    sessionId: string,
+  ): Promise<RelayUploadResult> {
+    if (!this.keys || !this.relayUrl) {
+      throw new Error('Relay not connected')
+    }
+    return uploadFileToRelay(realPath, meta, sessionId, {
+      channelKeyHex: this.keys.channelKeyHex,
+      relayHttpUrl: relayWsToHttp(this.relayUrl),
+    })
   }
 
   private primaryTransport(info: ConnectedDevice): DeviceTransport {
@@ -619,6 +655,13 @@ export class RemoteControlService {
     if (!config.enabled || !this.relayUrl) return
 
     this.keys = await deriveKeys(config.masterSecret)
+    try {
+      const hmacKey = await deriveFileTokenKeyFromExtractable(config.masterSecret)
+      this.fileTokenSigner = createLanFileTokenSigner(hmacKey)
+    } catch (err) {
+      log.error('[RemoteControl] Failed to derive file token signer:', err)
+      this.fileTokenSigner = null
+    }
     this.intentionallyClosed = false
     await this.connectRelay()
     await this.startLanServer()
@@ -635,6 +678,7 @@ export class RemoteControlService {
       hostName: hostname(),
       onClientRegistered: ({ deviceName, deviceId }) => this.markDeviceOnline(deviceName, deviceId, 'lan'),
       onClientDisconnected: ({ deviceId }) => this.markDeviceOffline(deviceId, 'lan'),
+      getFileTokenSigner: () => this.fileTokenSigner,
     })
     try {
       const { port } = await server.start()
@@ -704,6 +748,8 @@ export class RemoteControlService {
     }
     await this.stopLanServer()
     this.keys = null
+    this.fileTokenSigner = null
+    this.lanFrameSeq = 0
     this.releasePowerLock()
   }
 
@@ -911,11 +957,15 @@ export class RemoteControlService {
   }
 
   private sendEventFrame(encryptedData: string, targetDeviceIds?: string[]): void {
-    const framePayload: Record<string, unknown> = { type: 'event', data: encryptedData }
-    if (targetDeviceIds && targetDeviceIds.length > 0) framePayload.targets = targetDeviceIds
-    const frame = JSON.stringify(framePayload)
-    if (this.relayWs?.readyState === WebSocket.OPEN) this.relayWs.send(frame)
-    this.lanServer?.broadcastFrame(frame, targetDeviceIds)
+    const basePayload: Record<string, unknown> = { type: 'event', data: encryptedData }
+    if (targetDeviceIds && targetDeviceIds.length > 0) basePayload.targets = targetDeviceIds
+    if (this.relayWs?.readyState === WebSocket.OPEN) {
+      this.relayWs.send(JSON.stringify(basePayload))
+    }
+    if (this.lanServer) {
+      const lanFrame = JSON.stringify({ ...basePayload, seq: ++this.lanFrameSeq })
+      this.lanServer.broadcastFrame(lanFrame, targetDeviceIds)
+    }
   }
 
   async sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void> {

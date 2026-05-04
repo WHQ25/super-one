@@ -51,6 +51,7 @@ export class PresenceCoordinator {
             type: 'remote_session_start',
             remoteProjectPath: projectPath,
             remoteSessionId: sessionId,
+            harnessId: session.snapshot.harnessId,
           })
         } else if (evt.previous.kind === 'remote' && evt.current.kind === 'local') {
           this.transport.broadcastToRenderer({
@@ -67,6 +68,7 @@ export class PresenceCoordinator {
             type: 'remote_session_start',
             remoteProjectPath: projectPath,
             remoteSessionId: sessionId,
+            harnessId: session.snapshot.harnessId,
           })
           this.notifyMobileLeave(sessionId, evt.previous.deviceId, evt.reason)
         }
@@ -78,6 +80,7 @@ export class PresenceCoordinator {
           remoteProjectPath: projectPath,
           remoteSessionId: sessionId,
           isSubscribe: true,
+          harnessId: session.snapshot.harnessId,
         })
         return
       case 'subscriber_removed':

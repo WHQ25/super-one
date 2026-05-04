@@ -52,6 +52,7 @@ export type ContentBlock =
   | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[] }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
   | { type: 'codex_plan'; text: string; itemId: string }
+  | { type: 'codex_image_generation'; itemId: string; status: string; savedPath?: string; revisedPrompt?: string; startedAt?: number; completedAt?: number }
   | { type: 'image'; name: string }
   | { type: 'document'; name: string }
 
@@ -613,7 +614,7 @@ export type AgentEventBase =
   | { type: 'elicitation_complete'; mcpServerName: string; elicitationId: string }
   | { type: 'stream_message_start'; messageId: string; apiMessageId: string; model: string; parentToolUseId?: string | null }
   | { type: 'stream_message_stop'; messageId: string; parentToolUseId?: string | null }
-  | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean }
+  | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean; harnessId?: HarnessId }
   | { type: 'remote_session_end'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean }
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string }
   | { type: 'codex_collaboration_mode_change'; mode: string }
@@ -1588,6 +1589,23 @@ export type RemoteCommand =
   | { type: 'add_project_additional_dir'; requestId: string; projectPath: string; dir: string }
   | { type: 'remove_project_additional_dir'; requestId: string; projectPath: string; dir: string }
   | { type: 'set_session_additional_dirs'; requestId: string; projectPath: string; sessionId: string; dirs: string[] }
+  | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number }
+
+export interface ReadDesktopFileResponse {
+  ok: true
+  url: string
+  mimeType: string
+  name: string
+  size: number
+  modifiedAt: number
+  expiresAt: number
+}
+
+export interface ReadDesktopFileError {
+  ok: false
+  error: 'forbidden_path' | 'not_found' | 'too_large' | 'no_session' | 'no_transport' | 'upload_failed' | 'internal_error'
+  message?: string
+}
 
 export interface PairedDevice {
   id: string

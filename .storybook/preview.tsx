@@ -1,7 +1,10 @@
 import type { Preview } from '@storybook/react-vite'
 import React, { useEffect } from 'react'
+import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
 import '../src/renderer/src/styles/index.css'
 import { installIpcMocks } from './mock-ipc'
+import { resources } from '../src/shared/i18n'
 
 const sbOverrideStyle = document.createElement('style')
 sbOverrideStyle.textContent = 'html, body { overflow: auto !important; }'
@@ -17,6 +20,16 @@ import { clampBrandHue, brandHueToOklch } from '../src/shared/harness-brand'
 import type { HarnessId } from '../src/shared/session-types'
 
 installIpcMocks()
+
+if (!i18n.isInitialized) {
+  void i18n.use(initReactI18next).init({
+    resources,
+    lng: 'en',
+    fallbackLng: 'en',
+    interpolation: { escapeValue: false },
+    returnNull: false,
+  })
+}
 
 const SB_PROJECT = '__storybook__'
 const SB_SESSION = 'sb'

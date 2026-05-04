@@ -1201,7 +1201,7 @@ function ExitPlanModeBlock({ result }: { result?: string }) {
 }
 
 /** Debug view showing raw input and output for a tool call. */
-function DebugToolBlock({
+export function DebugToolBlock({
   toolName,
   input,
   result,

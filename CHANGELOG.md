@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.26.0-alpha] - 2026-05-04
+
+### Added
+
+- **Multi-color subagent indicators** — each Task subagent picks a color from a per-session 8-color pool (purple/blue/cyan/teal/green/amber/orange/rose) so concurrent subagents stay visually distinct. `SubagentBlock` dyes its bot icon, type tag, activity strip, and scroll-area border accordingly; the pool recycles once exhausted.
+- **Codex generated images visible on mobile** — desktop converts Codex `image_generation` thread items into `codex_image_generation` content blocks and serves the underlying file to mobile via either an HMAC-signed LAN URL (60s TTL) or a relay R2 upload, depending on transport. New `read_desktop_file` remote command enforces auth + size limits.
+- **Codex permission preset descriptions** — `CodexPermissionSelector` and `AutomationDialog` now show what each preset actually does (sandboxed run vs full machine access) via the existing `defaultDesc` / `fullAccessDesc` i18n keys.
+
+### Fixed
+
+- **Subagent color no longer reverts to purple after task completes** — completed subagents had their color released back to the pool, making the selector fall back to the default purple. Colors now persist for the lifetime of the session and apply to history-loaded tasks too.
+- **Mobile no longer drops LAN-delivered remote events** — LAN frames now carry the same monotonically increasing `seq` field as relay frames, so mobile's seq filter no longer silently discards everything coming through LAN transport.
+- **Mobile-driven Codex sessions correctly identified** — `remote_session_start` now propagates `harnessId`, so the renderer tags codex sessions instead of falling back to the default Claude harness.
+
+### Tests
+
+- Added LAN frame seq monotonicity / reset-on-stop tests, presence-coordinator `harnessId` propagation tests, chat-store `sessionProvider` derivation tests, and a Playwright e2e launch smoke test.
+
 ## [0.25.1-alpha] - 2026-05-03
 
 ### Fixed

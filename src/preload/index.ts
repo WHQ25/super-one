@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type HookSavePayload } from '../shared/agent-types'
+import type { McpbInstallRequest } from '../shared/mcpb-types'
 
 type UserMessageExtras = {
   contexts?: ChatMessageContext[]
@@ -434,6 +435,18 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MCP_LIST_LIBRARY),
   deleteMcpLibraryEntry: (name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY, name),
+
+  // MCP bundles (.mcpb)
+  previewMcpb: (filePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCPB_PREVIEW, filePath),
+  installMcpb: (request: McpbInstallRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCPB_INSTALL, request),
+  uninstallMcpb: (name: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCPB_UNINSTALL, name),
+  listInstalledMcpb: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MCPB_LIST),
+  revealMcpb: (name: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCPB_REVEAL, name),
 
   // Hooks config
   listHooks: (projectPath: string) =>

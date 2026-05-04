@@ -624,6 +624,36 @@ export type Messages = {
         confirmQuestion: string
         confirm: string
         uninstall: string
+        bundleBadge: string
+        bundleReveal: string
+      }
+      bundle: {
+        installButton: string
+        dropToInstall: string
+        dropZoneTitle: string
+        dropZoneHint: string
+        notMcpbFile: string
+        installed: string
+        dialogTitle: string
+        dialogDescription: string
+        readingBundle: string
+        cannotRead: string
+        warningHeader: string
+        replaceExistingSameVersion: string
+        replaceExistingDifferentVersion: string
+        toolsSection: string
+        promptsSection: string
+        toolsGenerated: string
+        scopeLabel: string
+        scopeUser: string
+        scopeProject: string
+        scopeHint: string
+        configurationSection: string
+        sensitiveBadge: string
+        requiredField: string
+        cancel: string
+        install: string
+        installing: string
       }
     }
     plugins: {
@@ -1530,6 +1560,36 @@ export const en: Messages = {
         confirmQuestion: 'Are you sure?',
         confirm: 'Confirm',
         uninstall: 'Uninstall Server',
+        bundleBadge: 'Bundle v{{version}}',
+        bundleReveal: 'Reveal',
+      },
+      bundle: {
+        installButton: 'Install bundle',
+        dropToInstall: 'Drop .mcpb file to install',
+        dropZoneTitle: 'Install from .mcpb bundle',
+        dropZoneHint: 'Drop a file here, or click to browse',
+        notMcpbFile: 'Not a .mcpb file',
+        installed: '{{name}} installed',
+        dialogTitle: 'Install MCP Bundle',
+        dialogDescription: 'Review what this bundle ships with, then choose where to install it.',
+        readingBundle: 'Reading bundle…',
+        cannotRead: 'Cannot read bundle',
+        warningHeader: 'Heads up',
+        replaceExistingSameVersion: 'An installation already exists. Installing will reinstall it.',
+        replaceExistingDifferentVersion: 'Replacing existing version {{version}}.',
+        toolsSection: 'Tools',
+        promptsSection: 'Prompts',
+        toolsGenerated: '+ tools generated at runtime',
+        scopeLabel: 'Install scope',
+        scopeUser: 'All projects (user)',
+        scopeProject: 'This project only',
+        scopeHint: "Choose where this bundle's MCP server should be available.",
+        configurationSection: 'Configuration',
+        sensitiveBadge: 'Sensitive',
+        requiredField: 'Required',
+        cancel: 'Cancel',
+        install: 'Install',
+        installing: 'Installing…',
       },
     },
     plugins: {

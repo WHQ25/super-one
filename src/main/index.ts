@@ -13,6 +13,7 @@ import { startMediaServer, getMediaServerPort } from './media-server'
 import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl } from './miniapp/miniapp-service'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
+import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearAllPendingCalls as clearAllPendingMiniAppCalls } from './mcp/superone-mcp-server'
 import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
 import { query } from '@anthropic-ai/claude-agent-sdk'
@@ -524,6 +525,26 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CODEX_MCP_TOGGLE_CONFIG, (_event, projectPath: string, name: string, disabled: boolean, scope: 'user' | 'project') => {
     toggleCodexMcpConfig(name, disabled, scope, projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MCPB_PREVIEW, (_event, filePath: string) => {
+    return previewMcpbBundle(filePath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MCPB_INSTALL, (_event, request: Parameters<typeof installMcpbBundle>[0]) => {
+    return installMcpbBundle(request)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MCPB_UNINSTALL, (_event, name: string) => {
+    return uninstallMcpbBundle(name)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MCPB_LIST, () => {
+    return listInstalledMcpb()
+  })
+
+  ipcMain.handle(AgentIpcChannels.MCPB_REVEAL, (_event, name: string) => {
+    return revealMcpbBundle(name)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLAN_APPROVAL, (_event, _projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) => {

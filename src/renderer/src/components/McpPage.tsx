@@ -1,15 +1,29 @@
-import { useEffect, useState } from 'react'
-import { Plus, ChevronRight, Clipboard, X, ArrowLeft, Check, Library, RefreshCw, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import { Plus, ChevronRight, Clipboard, X, ArrowLeft, Check, Library, RefreshCw, Trash2, Package, PackagePlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { McpDetailPage } from './McpDetailPage'
+import { McpbInstallDialog } from './McpbInstallDialog'
 import type { McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta } from '../../../shared/agent-types'
+import type { McpbInstalledEntry } from '../../../shared/mcpb-types'
 import { cn } from '@/lib/utils'
+
+const MCPB_EXT = '.mcpb'
+
+function getMcpbDropPath(e: DragEvent): string | null {
+  for (let i = 0; i < e.dataTransfer.files.length; i++) {
+    const file = e.dataTransfer.files[i]
+    const path = window.app.getPathForFile(file)
+    if (path.endsWith(MCPB_EXT)) return path
+  }
+  return null
+}
 
 export function McpIcon({ name, meta, size = 'sm' }: { name: string; meta?: McpServerMeta; size?: 'sm' | 'md' }) {
   const icon = meta?.icons?.[0]
@@ -36,12 +50,14 @@ function ServerCard({
   config,
   status,
   meta,
+  bundle,
   interactive = true,
   statusMode = 'live',
 }: {
   config: McpServerConfig
   status?: McpServerInfo
   meta?: McpServerMeta
+  bundle?: McpbInstalledEntry
   interactive?: boolean
   statusMode?: 'live' | 'managed'
 }) {
@@ -92,6 +108,12 @@ function ServerCard({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium truncate">{config.name}</p>
+          {bundle && (
+            <Badge variant="outline" className="shrink-0 gap-1 px-1.5 py-0 text-[10px] font-normal">
+              <Package className="size-2.5" />
+              v{bundle.meta.version}
+            </Badge>
+          )}
           {!isManaged && isFailed && (
             <button
               onClick={handleReconnect}
@@ -252,7 +274,15 @@ function extractFromRaw(name: string | undefined, raw: Record<string, unknown>):
   return result
 }
 
-function AddServerForm({ onClose }: { onClose: () => void }) {
+function AddServerForm({
+  onClose,
+  onBundleSelected,
+  onBundleRejected,
+}: {
+  onClose: () => void
+  onBundleSelected: (path: string) => void
+  onBundleRejected: () => void
+}) {
   const { t } = useTranslation()
   const { saveMcpConfig } = useSettingsStore()
   const [name, setName] = useState('')
@@ -267,6 +297,45 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
   const [verified, setVerified] = useState(false)
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
+  const [isBundleDragOver, setIsBundleDragOver] = useState(false)
+  const bundleInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handleBundleDragOver = (e: DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = 'copy'
+      setIsBundleDragOver(true)
+    }
+  }
+
+  const handleBundleDragLeave = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsBundleDragOver(false)
+  }
+
+  const handleBundleDrop = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsBundleDragOver(false)
+    const path = getMcpbDropPath(e)
+    if (path) {
+      onBundleSelected(path)
+    } else {
+      onBundleRejected()
+    }
+  }
+
+  const handleBundleFileInput = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const path = window.app.getPathForFile(file)
+      if (path.endsWith(MCPB_EXT)) onBundleSelected(path)
+      else onBundleRejected()
+    }
+    e.target.value = ''
+  }
 
   const handlePaste = async () => {
     try {
@@ -342,6 +411,30 @@ function AddServerForm({ onClose }: { onClose: () => void }) {
           {t('resources.mcp.form.paste')}
         </Button>
       </div>
+      <input
+        ref={bundleInputRef}
+        type="file"
+        accept=".mcpb"
+        className="hidden"
+        onChange={handleBundleFileInput}
+      />
+      <button
+        type="button"
+        onClick={() => bundleInputRef.current?.click()}
+        onDragOver={handleBundleDragOver}
+        onDragLeave={handleBundleDragLeave}
+        onDrop={handleBundleDrop}
+        className={cn(
+          'mb-3 flex w-full flex-col items-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-4 text-center transition-colors',
+          isBundleDragOver
+            ? 'border-primary bg-primary/5 text-primary'
+            : 'border-border text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground',
+        )}
+      >
+        <PackagePlus className="size-5" />
+        <span className="text-xs font-medium">{t('resources.mcp.bundle.dropZoneTitle')}</span>
+        <span className="text-[11px] text-muted-foreground">{t('resources.mcp.bundle.dropZoneHint')}</span>
+      </button>
       <div className="space-y-3">
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.name')}</label>
@@ -714,6 +807,7 @@ function ServerSection({
   configs,
   mcpStatus,
   mcpMeta,
+  bundlesByName,
   interactive = true,
   statusMode = 'live',
 }: {
@@ -721,6 +815,7 @@ function ServerSection({
   configs: McpServerConfig[]
   mcpStatus: McpServerInfo[]
   mcpMeta: Record<string, McpServerMeta>
+  bundlesByName?: Record<string, McpbInstalledEntry>
   interactive?: boolean
   statusMode?: 'live' | 'managed'
 }) {
@@ -735,6 +830,7 @@ function ServerSection({
             config={config}
             status={mcpStatus.find((s) => s.name === config.name)}
             meta={mcpMeta[config.name]}
+            bundle={bundlesByName?.[config.name]}
             interactive={interactive}
             statusMode={statusMode}
           />
@@ -748,15 +844,18 @@ export function McpPage() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const settingsProvider = useAppStore((s) => s.settingsProvider)
-  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, codexMcpConfigs, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchCodexMcpConfigs, selectMcp, toggleMcpConfig } = useSettingsStore()
+  const { mcpConfigs, mcpStatus, mcpMeta, mcpLibrary, mcpbInstalled, codexMcpConfigs, selectedMcpName, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, selectMcp, toggleMcpConfig } = useSettingsStore()
   const [addView, setAddView] = useState<'none' | 'form' | 'library'>('none')
   const [refreshing, setRefreshing] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [pendingBundlePath, setPendingBundlePath] = useState<string | null>(null)
+  const [installStatus, setInstallStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const isCodex = settingsProvider === 'codex'
 
   useEffect(() => {
     selectMcp(null)
     setAddView('none')
+    fetchMcpbInstalled()
     if (isCodex) {
       fetchCodexMcpConfigs()
     } else {
@@ -765,7 +864,16 @@ export function McpPage() {
       checkMcpServers().finally(() => setChecking(false))
       fetchMcpLibrary()
     }
-  }, [currentFolder, isCodex, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchCodexMcpConfigs, selectMcp])
+  }, [currentFolder, isCodex, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, selectMcp])
+
+  const handleBundleSelected = useCallback((path: string) => {
+    setPendingBundlePath(path)
+  }, [])
+
+  const handleBundleRejected = useCallback(() => {
+    setInstallStatus({ type: 'error', message: t('resources.mcp.bundle.notMcpbFile') })
+    setTimeout(() => setInstallStatus(null), 3000)
+  }, [t])
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -801,8 +909,36 @@ export function McpPage() {
 
   const hasAnyServer = currentConfigs.length > 0 || claudeaiServers.length > 0
 
+  const bundleProvider = isCodex ? 'codex' : 'claude'
+  const bundlesByName: Record<string, McpbInstalledEntry> = {}
+  for (const entry of mcpbInstalled) {
+    if (entry.meta.provider === bundleProvider) bundlesByName[entry.meta.name] = entry
+  }
+
   return (
     <div className="mx-auto max-w-4xl">
+      {installStatus && (
+        <div className={cn(
+          'mb-3 rounded-md border px-3 py-2 text-xs',
+          installStatus.type === 'success' && 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400',
+          installStatus.type === 'error' && 'border-destructive/40 bg-destructive/5 text-destructive',
+        )}>
+          {installStatus.message}
+        </div>
+      )}
+      <McpbInstallDialog
+        filePath={pendingBundlePath}
+        provider={isCodex ? 'codex' : 'claude'}
+        onClose={() => setPendingBundlePath(null)}
+        onInstalled={(name) => {
+          setInstallStatus({ type: 'success', message: t('resources.mcp.bundle.installed', { name }) })
+          setTimeout(() => setInstallStatus(null), 3000)
+        }}
+        onError={(message) => {
+          setInstallStatus({ type: 'error', message })
+          setTimeout(() => setInstallStatus(null), 4000)
+        }}
+      />
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">{t('resources.mcp.title')}</h2>
@@ -831,7 +967,11 @@ export function McpPage() {
 
       {addView === 'form' && (
         <div className="mb-4">
-          <AddServerForm onClose={() => setAddView('none')} />
+          <AddServerForm
+            onClose={() => setAddView('none')}
+            onBundleSelected={handleBundleSelected}
+            onBundleRejected={handleBundleRejected}
+          />
         </div>
       )}
 
@@ -856,6 +996,7 @@ export function McpPage() {
             configs={userConfigs}
             mcpStatus={isCodex ? codexCardStatus : mcpStatus}
             mcpMeta={isCodex ? {} : mcpMeta}
+            bundlesByName={bundlesByName}
             statusMode={isCodex ? 'managed' : 'live'}
           />
           <ServerSection
@@ -863,6 +1004,7 @@ export function McpPage() {
             configs={projectConfigs}
             mcpStatus={isCodex ? codexCardStatus : mcpStatus}
             mcpMeta={isCodex ? {} : mcpMeta}
+            bundlesByName={bundlesByName}
             statusMode={isCodex ? 'managed' : 'live'}
           />
         </div>

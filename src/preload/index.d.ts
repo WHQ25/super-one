@@ -1,6 +1,7 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SendMessageRequest, SessionHistoryEntry, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo } from '../shared/agent-types'
 import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest } from '../shared/miniapp-types'
+import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '../shared/mcpb-types'
 import type { LiveSessionSnapshot } from '../shared/session-types'
 
 
@@ -126,6 +127,13 @@ interface AppAPI {
   // MCP library
   listMcpLibrary(): Promise<McpLibraryEntry[]>
   deleteMcpLibraryEntry(name: string): Promise<void>
+
+  // MCP bundles (.mcpb)
+  previewMcpb(filePath: string): Promise<McpbPreview>
+  installMcpb(request: McpbInstallRequest): Promise<McpbInstalledEntry>
+  uninstallMcpb(name: string): Promise<void>
+  listInstalledMcpb(): Promise<McpbInstalledEntry[]>
+  revealMcpb(name: string): Promise<void>
 
   // Hooks config
   listHooks(projectPath: string): Promise<HookConfig[]>

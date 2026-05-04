@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { ArrowLeft, Trash2, ShieldAlert } from 'lucide-react'
+import { ArrowLeft, Trash2, ShieldAlert, Package, FolderOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { McpIcon } from './McpPage'
 import type { McpServerConfig, McpServerInfo, McpServerMeta } from '../../../shared/agent-types'
@@ -10,7 +11,10 @@ import { cn } from '@/lib/utils'
 
 export function McpDetailPage({ config, status, meta }: { config: McpServerConfig; status?: McpServerInfo; meta?: McpServerMeta }) {
   const { t } = useTranslation()
-  const { selectMcp, saveMcpConfig, deleteMcpConfig, checkMcpServers } = useSettingsStore()
+  const settingsProvider = useAppStore((s) => s.settingsProvider)
+  const { selectMcp, saveMcpConfig, deleteMcpConfig, checkMcpServers, mcpbInstalled, uninstallMcpb, revealMcpb } = useSettingsStore()
+  const bundleProvider = settingsProvider === 'codex' ? 'codex' : 'claude'
+  const bundle = mcpbInstalled.find((b) => b.meta.name === config.name && b.meta.provider === bundleProvider)
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [authorizing, setAuthorizing] = useState(false)
@@ -54,8 +58,17 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
   }
 
   const handleDelete = async () => {
-    await deleteMcpConfig(config.name, config.scope)
+    if (bundle) {
+      await uninstallMcpb(config.name)
+    } else {
+      await deleteMcpConfig(config.name, config.scope)
+    }
     selectMcp(null)
+  }
+
+  const handleReveal = async () => {
+    if (!bundle) return
+    try { await revealMcpb(config.name) } catch { /* ignore */ }
   }
 
   const handleAuthorize = async () => {
@@ -96,10 +109,16 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
         </button>
         <div className="flex items-center gap-3">
           <McpIcon name={config.name} meta={meta} size="md" />
-          <div>
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">{config.name}</h2>
               <span className={cn('size-2 rounded-full', isConnected ? 'bg-green-500' : needsAuth ? 'bg-yellow-500' : 'bg-red-500')} />
+              {bundle && (
+                <Badge variant="outline" className="gap-1 text-[10px]">
+                  <Package className="size-2.5" />
+                  {t('resources.mcp.detail.bundleBadge', { version: bundle.meta.version })}
+                </Badge>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {meta?.description && (
@@ -113,6 +132,12 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
               )}
             </div>
           </div>
+          {bundle && (
+            <Button size="sm" variant="ghost" onClick={handleReveal} className="shrink-0">
+              <FolderOpen className="size-3.5" />
+              {t('resources.mcp.detail.bundleReveal')}
+            </Button>
+          )}
         </div>
       </div>
 

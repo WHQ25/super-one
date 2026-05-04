@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { AgentInfo, ApiProvider, CreateProviderRequest, HookConfig, HookSavePayload, MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo, UpdateProviderRequest } from '../../../shared/agent-types'
+import type { McpbInstalledEntry } from '../../../shared/mcpb-types'
 import { useAppStore } from './app'
 import { useChatStore } from './chat'
 
@@ -57,6 +58,12 @@ interface SettingsState {
   mcpLibrary: McpLibraryEntry[]
   fetchMcpLibrary: () => Promise<void>
   deleteMcpLibraryEntry: (name: string) => Promise<void>
+
+  // MCP bundles (.mcpb)
+  mcpbInstalled: McpbInstalledEntry[]
+  fetchMcpbInstalled: () => Promise<void>
+  uninstallMcpb: (name: string) => Promise<void>
+  revealMcpb: (name: string) => Promise<void>
 
   // Providers
   providers: ApiProvider[]
@@ -118,6 +125,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   selectedMcpName: null,
   codexMcpConfigs: [],
   mcpLibrary: [],
+  mcpbInstalled: [],
   providers: [],
   plugins: [],
   pluginDetail: null,
@@ -302,6 +310,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   deleteMcpLibraryEntry: async (name) => {
     await window.app.deleteMcpLibraryEntry(name)
     await get().fetchMcpLibrary()
+  },
+
+  fetchMcpbInstalled: async () => {
+    try {
+      const installed = await window.app.listInstalledMcpb()
+      set({ mcpbInstalled: installed })
+    } catch {
+      // ignore
+    }
+  },
+
+  uninstallMcpb: async (name) => {
+    await window.app.uninstallMcpb(name)
+    set({ selectedMcpName: null })
+    await Promise.all([get().fetchMcpbInstalled(), get().fetchMcpConfigs(), get().checkMcpServers()])
+  },
+
+  revealMcpb: async (name) => {
+    await window.app.revealMcpb(name)
   },
 
   fetchPlugins: async () => {

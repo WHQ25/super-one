@@ -1449,6 +1449,13 @@ export const AgentIpcChannels = {
   MCP_LIST_LIBRARY: 'mcp:list-library',
   MCP_DELETE_LIBRARY_ENTRY: 'mcp:delete-library-entry',
 
+  // MCP bundles (.mcpb)
+  MCPB_PREVIEW: 'mcpb:preview',
+  MCPB_INSTALL: 'mcpb:install',
+  MCPB_UNINSTALL: 'mcpb:uninstall',
+  MCPB_LIST: 'mcpb:list',
+  MCPB_REVEAL: 'mcpb:reveal',
+
   // Hooks config (settings.json#hooks)
   HOOKS_LIST: 'hooks:list',
   HOOKS_SAVE: 'hooks:save',

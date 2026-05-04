@@ -167,14 +167,8 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   const [expanded, setExpanded] = useState(defaultExpanded ?? (isAsync ? false : !isComplete))
 
   useEffect(() => {
-    if (isComplete) return
     useChatStore.getState().assignSubagentColor(taskBlock.toolUseId)
-  }, [isComplete, taskBlock.toolUseId])
-
-  useEffect(() => {
-    if (!isComplete) return
-    useChatStore.getState().releaseSubagentColor(taskBlock.toolUseId)
-  }, [isComplete, taskBlock.toolUseId])
+  }, [taskBlock.toolUseId])
 
   useEffect(() => {
     if (isAsync && defaultExpanded === undefined) setExpanded(false)

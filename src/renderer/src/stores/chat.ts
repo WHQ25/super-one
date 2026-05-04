@@ -398,7 +398,6 @@ export interface ChatStore {
 
   // Subagent color pool (per-session)
   assignSubagentColor: (toolUseId: string) => void
-  releaseSubagentColor: (toolUseId: string) => void
 
   // Context usage detail (per-session, in-memory)
   setDetailedUsage: (projectPath: string, sessionId: string, usage: ContextUsageInfo | null) => void
@@ -3665,21 +3664,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const newFree = [...free.slice(0, pickIdx), ...free.slice(pickIdx + 1)]
       return {
         subagentColors: { ...sess.subagentColors, [toolUseId]: color },
-        _subagentColorsFree: newFree,
-      }
-    }))
-  },
-
-  releaseSubagentColor: (toolUseId) => {
-    set((s) => updateActivePerSession(s, (sess) => {
-      const idx = sess.subagentColors[toolUseId]
-      if (idx === undefined) return {}
-      const { [toolUseId]: _drop, ...restColors } = sess.subagentColors
-      const newFree = sess._subagentColorsFree.includes(idx)
-        ? sess._subagentColorsFree
-        : [...sess._subagentColorsFree, idx]
-      return {
-        subagentColors: restColors,
         _subagentColorsFree: newFree,
       }
     }))

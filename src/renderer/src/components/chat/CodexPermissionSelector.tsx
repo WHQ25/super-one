@@ -14,18 +14,21 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
   const options: Array<{
     id: CodexPermissionPreset
     label: string
+    description: string
     icon: React.ReactNode
     toneClass: string
   }> = [
     {
       id: 'default',
       label: t('resources.automation.defaultValue'),
+      description: t('resources.automation.defaultDesc'),
       icon: <ShieldCheck className="size-3.5" />,
       toneClass: 'text-foreground',
     },
     {
       id: 'full-access',
       label: t('resources.automation.fullAccess'),
+      description: t('resources.automation.fullAccessDesc'),
       icon: <AlertTriangle className="size-3.5" />,
       toneClass: 'text-destructive',
     },
@@ -56,7 +59,7 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-64 border-border bg-card p-2">
+      <PopoverContent align="start" side="top" className="w-72 border-border bg-card p-2">
         <div className="space-y-1 text-xs">
           <div className="px-2 py-1.5 text-muted-foreground">{t('chat.codex.permissionPreset')}</div>
           {options.map((option) => (
@@ -72,12 +75,17 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
                   : 'text-foreground hover:bg-muted/50'
               }`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className={`inline-flex items-center gap-1.5 font-medium ${option.toneClass}`}>
-                  {option.icon}
-                  {option.label}
-                </span>
-                {option.id === preset && <Check className="size-3.5 shrink-0" />}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className={`inline-flex items-center gap-1.5 font-medium ${option.toneClass}`}>
+                    {option.icon}
+                    {option.label}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {option.description}
+                  </span>
+                </div>
+                {option.id === preset && <Check className="size-3.5 shrink-0 mt-0.5" />}
               </div>
             </button>
           ))}

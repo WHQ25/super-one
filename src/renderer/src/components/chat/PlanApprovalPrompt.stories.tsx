@@ -72,7 +72,7 @@ const LONG_PLAN = [
 ].join('\n')
 
 const meta: Meta<typeof PlanApprovalPrompt> = {
-  title: 'Codex/PlanApprovalPrompt',
+  title: 'ClaudeCode/PlanApprovalPrompt',
   component: PlanApprovalPrompt,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell width={820}><Story /></StoryShell>],

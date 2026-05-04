@@ -86,7 +86,7 @@ function makeTaskBlock(overrides: Partial<ContentBlock & { type: 'tool_use' }> =
 }
 
 const meta: Meta<typeof SubagentBlock> = {
-  title: 'Chat/SubagentBlock',
+  title: 'ClaudeCode/SubagentBlock',
   component: SubagentBlock,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],

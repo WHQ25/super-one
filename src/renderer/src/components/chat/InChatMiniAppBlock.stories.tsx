@@ -46,7 +46,7 @@ const DEV_APP: MiniAppEntry = {
 }
 
 const meta: Meta<typeof InChatMiniAppBlock> = {
-  title: 'Chat/InChatMiniAppBlock',
+  title: 'Common/InChatMiniAppBlock',
   component: InChatMiniAppBlock,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],

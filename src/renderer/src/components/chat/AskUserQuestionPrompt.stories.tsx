@@ -46,7 +46,7 @@ function SeedQuestion({ request }: { request: AskUserQuestionRequest | null }) {
 }
 
 const meta: Meta<typeof AskUserQuestionPrompt> = {
-  title: 'Chat/AskUserQuestionPrompt',
+  title: 'ClaudeCode/AskUserQuestionPrompt',
   component: AskUserQuestionPrompt,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell width={820}><Story /></StoryShell>],

@@ -11,7 +11,7 @@ function StoryShell({ children, width = 640 }: { children: ReactNode; width?: nu
 }
 
 const meta: Meta<typeof ToolBlock> = {
-  title: 'Chat/SetupMiniAppDevBlock',
+  title: 'Common/SetupMiniAppDevBlock',
   component: ToolBlock,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],

@@ -11,7 +11,7 @@ function StoryShell({ children, width = 640 }: { children: ReactNode; width?: nu
 }
 
 const meta: Meta<typeof ToolBlock> = {
-  title: 'Chat/GenericToolHeader',
+  title: 'ClaudeCode/GenericToolHeader',
   component: ToolBlock,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <StoryShell><Story /></StoryShell>],

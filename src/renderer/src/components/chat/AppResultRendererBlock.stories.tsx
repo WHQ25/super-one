@@ -53,7 +53,7 @@ function SeedApps({ children }: { children: ReactNode }) {
 }
 
 const meta: Meta<typeof ToolBlock> = {
-  title: 'Chat/AppResultRendererBlock',
+  title: 'Common/AppResultRendererBlock',
   component: ToolBlock,
   parameters: { layout: 'padded' },
   decorators: [

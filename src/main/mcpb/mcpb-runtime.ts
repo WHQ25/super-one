@@ -116,6 +116,10 @@ export function resolveMcpbServer(options: ResolveOptions): ResolvedMcpbServer {
     env.ELECTRON_RUN_AS_NODE = '1'
   }
 
+  if (options.manifest.server.type === 'uv' && !args.includes('--directory')) {
+    args.unshift('--directory', options.installDir)
+  }
+
   return { command, args, env }
 }
 

@@ -173,6 +173,49 @@ describe('resolveMcpbServer', () => {
     expect(resolved.args).toEqual(['/Users/alice/data'])
   })
 
+  it('prepends --directory <installDir> to args for uv type so `uv run` finds the bundled pyproject.toml', () => {
+    const m = nodeManifest({
+      server: {
+        type: 'uv',
+        entry_point: 'pkg/__init__.py',
+        mcp_config: {
+          command: 'uv',
+          args: ['run', 'blender-mcp'],
+          env: {},
+        },
+      },
+    })
+    const resolved = resolveMcpbServer({
+      manifest: m,
+      installDir: '/install/Blender@1.0.0',
+      userConfig: {},
+      electronExecPath: '/electron',
+    })
+    expect(resolved.command).toBe('uv')
+    expect(resolved.args).toEqual(['--directory', '/install/Blender@1.0.0', 'run', 'blender-mcp'])
+  })
+
+  it('does not double-inject --directory when manifest already includes it for uv type', () => {
+    const m = nodeManifest({
+      server: {
+        type: 'uv',
+        entry_point: 'pkg/__init__.py',
+        mcp_config: {
+          command: 'uv',
+          args: ['--directory', '${__dirname}', 'run', 'something'],
+          env: {},
+        },
+      },
+    })
+    const resolved = resolveMcpbServer({
+      manifest: m,
+      installDir: '/install',
+      userConfig: {},
+      electronExecPath: '/electron',
+    })
+    expect(resolved.args).toEqual(['--directory', '/install', 'run', 'something'])
+  })
+
   it('replaces unknown user_config placeholder with empty string', () => {
     const m = nodeManifest({
       server: {

@@ -22,6 +22,7 @@ import type { SlashCommandInfo } from '../../../../shared/agent-types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
 import { HighlightedText } from '@/components/ui/HighlightedText'
 import { toMentionPath } from './chat-input-utils'
+import { internalDragSource } from '@/components/sidebar/drag-drop-utils'
 import { AttachmentBar } from './AttachmentBar'
 import { buildImageAttachment } from './image-compress'
 import { ChatInputDirsHint } from './ChatInputDirsHint'
@@ -660,7 +661,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       e.preventDefault()
       e.stopPropagation()
       dragCounterRef.current++
-      if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-tree-path')) {
+      if (e.dataTransfer.types.includes('Files')) {
         setIsDragging(true)
       }
     }, [])
@@ -680,24 +681,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     }, [])
 
     const handleDrop = useCallback(
-      (e: React.DragEvent) => {
+      async (e: React.DragEvent) => {
         e.preventDefault()
         e.stopPropagation()
         dragCounterRef.current = 0
         setIsDragging(false)
-        const treePath = e.dataTransfer.getData('application/x-tree-path')
-        if (treePath) {
-          const isDir = e.dataTransfer.getData('application/x-tree-is-dir') === '1'
-          const displayName = treePath.split('/').pop() || treePath
-          const mentionValue = isDir ? `${treePath}/` : treePath
-          insertMention(isDir ? 'directory' : 'file', mentionValue, displayName)
+        const files = e.dataTransfer.files
+        if (files.length === 0) return
+        if (internalDragSource.active) {
+          for (const file of Array.from(files)) {
+            const absPath = window.app.getPathForFile(file)
+            if (!absPath) continue
+            const stat = await window.app.pathStat(absPath)
+            const isDir = stat?.isDirectory ?? false
+            const mentionValue = toMentionPath(isDir ? absPath + '/' : absPath, activeProject)
+            const displayName = mentionValue.split('/').filter(Boolean).pop() || mentionValue
+            insertMention(isDir ? 'directory' : 'file', mentionValue, displayName)
+          }
           return
         }
-        if (e.dataTransfer.files.length > 0) {
-          processSelectedFiles(e.dataTransfer.files)
-        }
+        processSelectedFiles(files)
       },
-      [processSelectedFiles, insertMention]
+      [processSelectedFiles, insertMention, activeProject]
     )
 
     const shouldShowCodexRejectHint = isCodexPlanMode && codexPlanRejectHintActive && text.trim().length === 0

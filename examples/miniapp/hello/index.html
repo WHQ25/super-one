@@ -21,6 +21,10 @@
     #mic-status.live::before, #cam-status.live::before { content: '● '; animation: blink 1.4s infinite; }
     @keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }
     #mic-player { width: 100%; margin-top: 8px; }
+    #dropzone { border: 2px dashed #d6d3d1; border-radius: 8px; padding: 24px; text-align: center; color: #78716c; transition: background .15s, border-color .15s, color .15s; }
+    .dark #dropzone { border-color: #57534e; }
+    #dropzone.drag-over { border-color: #f97316; background: rgba(249,115,22,0.08); color: #c2410c; }
+    #drop-list { margin-top: 8px; font-size: 13px; color: #78716c; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -39,6 +43,11 @@
       <button id="btn-paste">Read Clipboard</button>
     </div>
     <div id="api-result" style="margin-top:8px;font-size:13px;color:#78716c"></div>
+  </div>
+  <div id="drop-api" style="margin-top:20px">
+    <h2 style="font-size:16px;margin-bottom:8px">File Drop</h2>
+    <div id="dropzone">Drop files here to save into <code>uploads/</code></div>
+    <div id="drop-list">(empty)</div>
   </div>
   <div id="ui-api" style="margin-top:20px">
     <h2 style="font-size:16px;margin-bottom:8px">UI Overlay APIs</h2>
@@ -347,6 +356,58 @@
       camSnapBtn.disabled = true;
       camStopBtn.disabled = true;
     };
+
+    var dropzone = document.getElementById('dropzone');
+    var dropList = document.getElementById('drop-list');
+
+    function refreshDropList() {
+      superone.fs.exists('uploads').then(function(ok) {
+        if (!ok) { dropList.textContent = '(empty)'; return; }
+        superone.fs.readDir('uploads').then(function(entries) {
+          var files = entries.filter(function(e) { return !e.isDir; }).map(function(e) { return e.name; });
+          dropList.textContent = files.length === 0 ? '(empty)' : 'uploads/: ' + files.join(', ');
+        });
+      });
+    }
+
+    ['dragenter', 'dragover'].forEach(function(ev) {
+      dropzone.addEventListener(ev, function(e) {
+        e.preventDefault();
+        dropzone.classList.add('drag-over');
+      });
+    });
+    ['dragleave', 'drop'].forEach(function(ev) {
+      dropzone.addEventListener(ev, function(e) {
+        e.preventDefault();
+        dropzone.classList.remove('drag-over');
+      });
+    });
+
+    dropzone.addEventListener('drop', function(e) {
+      e.preventDefault();
+      var files = Array.prototype.slice.call(e.dataTransfer.files || []);
+      if (files.length === 0) return;
+      Promise.all(files.map(function(file) {
+        return file.arrayBuffer().then(function(buf) {
+          return superone.fs.writeFile('uploads/' + file.name, buf)
+            .then(function() { return { ok: true, name: file.name, size: buf.byteLength }; })
+            .catch(function(err) { return { ok: false, name: file.name, error: err && err.message || String(err) }; });
+        });
+      })).then(function(results) {
+        var saved = results.filter(function(r) { return r.ok; });
+        var failed = results.filter(function(r) { return !r.ok; });
+        if (saved.length > 0) {
+          var kb = saved.reduce(function(s, r) { return s + r.size; }, 0) / 1024;
+          superone.ui.toast('Saved ' + saved.length + ' file(s) · ' + kb.toFixed(1) + ' KB', 'success');
+        }
+        if (failed.length > 0) {
+          superone.ui.toast('Failed: ' + failed.map(function(r) { return r.name + ' (' + r.error + ')'; }).join(', '), 'error');
+        }
+        refreshDropList();
+      });
+    });
+
+    refreshDropList();
 
     document.getElementById('contextmenu-target').oncontextmenu = function(e) {
       e.preventDefault();

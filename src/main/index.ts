@@ -1120,6 +1120,32 @@ function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.on(AgentIpcChannels.START_DRAG, async (event, paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }) => {
+    if (!Array.isArray(paths) || paths.length === 0) return
+    try {
+      let icon: Electron.NativeImage
+      if (iconOpts?.png) {
+        const { nativeImage } = await import('electron')
+        const buf = Buffer.from(iconOpts.png)
+        icon = nativeImage.createFromBuffer(buf, { scaleFactor: iconOpts.scaleFactor ?? 1 })
+      } else {
+        icon = await app.getFileIcon(paths[0], { size: 'small' })
+      }
+      event.sender.startDrag({ files: paths, file: paths[0], icon })
+    } catch (err) {
+      log.warn('[start-drag] failed:', err)
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.PATH_STAT, async (_event, p: string): Promise<{ isFile: boolean; isDirectory: boolean } | null> => {
+    try {
+      const s = await stat(p)
+      return { isFile: s.isFile(), isDirectory: s.isDirectory() }
+    } catch {
+      return null
+    }
+  })
+
   const READABLE_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
   const READABLE_IMAGE_MIME: Record<string, string> = {
     '.png': 'image/png',

@@ -166,6 +166,8 @@ interface AppAPI {
   clipboardRead(): Promise<string>
   clipboardWrite(text: string): Promise<void>
   getPathForFile(file: File): string
+  startDrag(paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }): void
+  pathStat(path: string): Promise<{ isFile: boolean; isDirectory: boolean } | null>
 
   // File watcher
   startFileWatch(folderPath: string): Promise<void>

@@ -79,30 +79,13 @@ function InlineRenameInput({
   )
 }
 
-export const TREE_DND_MIME = 'application/x-tree-path'
-export const TREE_DND_DIR_MIME = 'application/x-tree-is-dir'
-
 const EXPAND_HOVER_DELAY = 500
 export const autoExpandedDirs = new Set<string>()
 
-function createDragImage(name: string, button: HTMLElement): HTMLElement {
-  const el = document.createElement('div')
-  el.style.cssText = 'position:fixed;left:-9999px;display:flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:13px;max-width:160px;background:var(--sidebar-accent);color:var(--sidebar-foreground);border:1px solid var(--sidebar-border);'
-  const iconEl = button.children[1]
-  if (iconEl) {
-    const cloned = iconEl.cloneNode(true) as HTMLElement
-    cloned.style.flexShrink = '0'
-    el.appendChild(cloned)
-  }
-  const text = document.createElement('span')
-  text.textContent = name
-  text.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
-  el.appendChild(text)
-  document.body.appendChild(el)
-  return el
-}
+import { getDropAction, getTargetDir, isChildPath, isWithinFolder, toAbsolutePath, internalDragSource } from './drag-drop-utils'
+import { buildDragImagePng, preloadDragIcons, loadIconFromSvgElement } from './drag-image-builder'
 
-import { getDropAction, getTargetDir, isChildPath } from './drag-drop-utils'
+preloadDragIcons()
 
 export const TreeRow = memo(function TreeRow({
   item,
@@ -119,7 +102,6 @@ export const TreeRow = memo(function TreeRow({
 }) {
   const toggleDir = useFileTreeStore((s) => s.toggleDir)
   const setRenamingPath = useFileTreeStore((s) => s.setRenamingPath)
-  const moveFile = useFileTreeStore((s) => s.moveFile)
   const copyFilesIn = useFileTreeStore((s) => s.copyFilesIn)
   const moveFilesIn = useFileTreeStore((s) => s.moveFilesIn)
   const setDragOverPath = useFileTreeStore((s) => s.setDragOverPath)
@@ -127,17 +109,14 @@ export const TreeRow = memo(function TreeRow({
 
   const targetDir = getTargetDir(item.path, item.isDirectory)
 
-  const [isDragging, setIsDragging] = useState(false)
   const [isDropTarget, setIsDropTarget] = useState(false)
   const dragCounterRef = useRef(0)
-  const isDraggingRef = useRef(false)
   const expandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const dragImageRef = useRef<HTMLElement | null>(null)
+  const dragIconRef = useRef<HTMLImageElement | null>(null)
 
   useEffect(() => {
     return () => {
       if (expandTimerRef.current) clearTimeout(expandTimerRef.current)
-      if (dragImageRef.current) dragImageRef.current.remove()
     }
   }, [])
 
@@ -145,6 +124,7 @@ export const TreeRow = memo(function TreeRow({
 
   const handleClick = useCallback(() => {
     if (isRenaming) return
+    if (Date.now() - internalDragSource.lastEndMs < 200) return
     if (item.isDirectory) {
       toggleDir(currentFolder, item.path)
       return
@@ -162,27 +142,33 @@ export const TreeRow = memo(function TreeRow({
     openNewFileTab(item.path)
   }, [item.path, item.isDirectory, isRenaming])
 
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    const target = e.currentTarget as HTMLElement
+    const svgs = target.querySelectorAll<SVGElement>('svg')
+    const iconSvg = item.isDirectory ? svgs[1] : svgs[0]
+    if (iconSvg) dragIconRef.current = loadIconFromSvgElement(iconSvg)
+  }, [item.isDirectory])
+
   const handleDragStart = useCallback((e: React.DragEvent) => {
-    e.dataTransfer.setData(TREE_DND_MIME, item.path)
-    e.dataTransfer.setData(TREE_DND_DIR_MIME, item.isDirectory ? '1' : '0')
-    e.dataTransfer.effectAllowed = 'copyMove'
-
-    const img = createDragImage(item.name, e.currentTarget as HTMLElement)
-    dragImageRef.current = img
-    e.dataTransfer.setDragImage(img, -10, -10)
-    requestAnimationFrame(() => {
-      img.remove()
-      dragImageRef.current = null
-    })
-
-    isDraggingRef.current = true
-    setIsDragging(true)
-  }, [item.path, item.isDirectory, item.name])
-
-  const handleDragEnd = useCallback(() => {
-    isDraggingRef.current = false
-    setIsDragging(false)
-  }, [])
+    e.preventDefault()
+    const absPath = toAbsolutePath(currentFolder, item.path)
+    internalDragSource.active = true
+    const cleanup = () => {
+      internalDragSource.active = false
+      internalDragSource.lastEndMs = Date.now()
+      document.removeEventListener('mouseup', cleanup)
+      document.removeEventListener('dragend', cleanup)
+    }
+    document.addEventListener('mouseup', cleanup)
+    document.addEventListener('dragend', cleanup)
+    const dragImage = buildDragImagePng(item.name, item.isDirectory, dragIconRef.current)
+    if (dragImage) {
+      window.app.startDrag([absPath], { png: dragImage.buffer, scaleFactor: dragImage.scaleFactor })
+    } else {
+      window.app.startDrag([absPath])
+    }
+  }, [item.path, item.name, item.isDirectory, currentFolder])
 
   const clearExpandTimer = useCallback(() => {
     if (expandTimerRef.current) {
@@ -192,11 +178,10 @@ export const TreeRow = memo(function TreeRow({
   }, [])
 
   const isAcceptedDrag = useCallback((e: React.DragEvent) => {
-    return e.dataTransfer.types.includes(TREE_DND_MIME) || e.dataTransfer.types.includes('Files')
+    return e.dataTransfer.types.includes('Files')
   }, [])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (isDraggingRef.current) return
     if (!isAcceptedDrag(e)) return
     e.preventDefault()
     dragCounterRef.current++
@@ -227,8 +212,7 @@ export const TreeRow = memo(function TreeRow({
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (!isAcceptedDrag(e)) return
     e.preventDefault()
-    const isInternal = e.dataTransfer.types.includes(TREE_DND_MIME)
-    e.dataTransfer.dropEffect = getDropAction(isInternal, e.altKey)
+    e.dataTransfer.dropEffect = getDropAction(internalDragSource.active, e.altKey)
   }, [isAcceptedDrag])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -239,38 +223,41 @@ export const TreeRow = memo(function TreeRow({
       clearExpandTimer()
     }
 
-    const srcPath = e.dataTransfer.getData(TREE_DND_MIME)
-    if (srcPath) {
-      e.preventDefault()
-      e.stopPropagation()
-      if (srcPath === targetDir || isChildPath(srcPath, targetDir)) return
-      moveFile(currentFolder, srcPath, targetDir)
-      return
+    if (!e.dataTransfer.files.length) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    const absTargetDir = toAbsolutePath(currentFolder, targetDir)
+    const internalPaths: string[] = []
+    const externalPaths: string[] = []
+    for (const file of e.dataTransfer.files) {
+      const p = window.app.getPathForFile(file)
+      if (!p) continue
+      if (isWithinFolder(p, currentFolder)) {
+        if (p === absTargetDir || isChildPath(p, absTargetDir)) continue
+        internalPaths.push(p)
+      } else {
+        externalPaths.push(p)
+      }
     }
 
-    if (e.dataTransfer.types.includes('Files') && e.dataTransfer.files.length) {
-      e.preventDefault()
-      e.stopPropagation()
-      const paths: string[] = []
-      for (const file of e.dataTransfer.files) {
-        const p = window.app.getPathForFile(file)
-        if (p) paths.push(p)
-      }
-      if (paths.length > 0) {
-        const action = getDropAction(false, e.altKey)
-        if (action === 'move') moveFilesIn(currentFolder, targetDir, paths)
-        else copyFilesIn(currentFolder, targetDir, paths)
-      }
+    if (internalPaths.length > 0) {
+      moveFilesIn(currentFolder, targetDir, internalPaths)
     }
-  }, [targetDir, item.isDirectory, currentFolder, moveFile, copyFilesIn, moveFilesIn, clearExpandTimer, setDragOverPath])
+    if (externalPaths.length > 0) {
+      const action = getDropAction(false, e.altKey)
+      if (action === 'move') moveFilesIn(currentFolder, targetDir, externalPaths)
+      else copyFilesIn(currentFolder, targetDir, externalPaths)
+    }
+  }, [targetDir, item.isDirectory, currentFolder, copyFilesIn, moveFilesIn, clearExpandTimer, setDragOverPath])
 
   const rowContent = (
     <button
       draggable={!isRenaming}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
+      onMouseDown={handleMouseDown}
       onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -279,7 +266,6 @@ export const TreeRow = memo(function TreeRow({
         'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors hover:bg-sidebar-accent',
         !item.isDirectory && isSelected && 'bg-sidebar-accent',
         isDropTarget && 'bg-sidebar-accent',
-        isDragging && 'opacity-40',
       )}
       style={{ paddingLeft: `${item.depth * 16 + 8}px` }}
     >

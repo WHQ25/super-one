@@ -13,7 +13,6 @@ import { setDockApi, openNewFileTab } from './activity-panel-api'
 import { activityPanelComponents } from './panels'
 import { activityTabComponents } from './ActivityTab'
 import { ActivityWatermark } from './ActivityWatermark'
-import { TREE_DND_MIME, TREE_DND_DIR_MIME } from '@/components/sidebar/TreeRow'
 import { cn } from '@/lib/utils'
 
 interface ActivityPanelProps {
@@ -57,14 +56,16 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
 
     const d2 = event.api.onUnhandledDragOverEvent((e) => {
       const types = e.nativeEvent.dataTransfer?.types
-      if (types?.includes(TREE_DND_MIME)) e.accept()
+      if (types?.includes('Files')) e.accept()
     })
 
-    const d3 = event.api.onDidDrop((e) => {
-      const filePath = e.nativeEvent.dataTransfer?.getData(TREE_DND_MIME)
+    const d3 = event.api.onDidDrop(async (e) => {
+      const files = e.nativeEvent.dataTransfer?.files
+      if (!files || files.length === 0) return
+      const filePath = window.app.getPathForFile(files[0])
       if (!filePath) return
-      const isDir = e.nativeEvent.dataTransfer?.getData(TREE_DND_DIR_MIME) === '1'
-      if (isDir) return
+      const st = await window.app.pathStat(filePath)
+      if (!st || st.isDirectory) return
       const activePanel = e.group?.activePanel
       const isSameFile = activePanel?.id === `file:${filePath}`
       if (isSameFile) return

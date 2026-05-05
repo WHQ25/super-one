@@ -1,5 +1,7 @@
 export type DropAction = 'move' | 'copy'
 
+export const internalDragSource = { active: false, lastEndMs: 0 }
+
 export function getDropAction(isInternal: boolean, altKey: boolean): DropAction {
   if (isInternal) return 'move'
   return altKey ? 'move' : 'copy'
@@ -13,6 +15,18 @@ export function getTargetDir(path: string, isDirectory: boolean): string {
 
 export function isChildPath(parentPath: string, childPath: string): boolean {
   return childPath.startsWith(parentPath + '/')
+}
+
+export function isWithinFolder(absolutePath: string, folder: string): boolean {
+  if (absolutePath === folder) return true
+  const base = folder.endsWith('/') ? folder : folder + '/'
+  return absolutePath.startsWith(base)
+}
+
+export function toAbsolutePath(folder: string, relativePath: string): string {
+  if (relativePath === '' || relativePath === '.') return folder
+  if (relativePath.startsWith('/')) return relativePath
+  return folder.endsWith('/') ? folder + relativePath : folder + '/' + relativePath
 }
 
 export function shouldCollapseAutoExpanded(dir: string, dragOverPath: string | null): boolean {

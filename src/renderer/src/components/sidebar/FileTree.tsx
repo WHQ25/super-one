@@ -3,8 +3,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAppStore } from '@/stores/app'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
-import { TreeRow, TREE_DND_MIME, autoExpandedDirs } from './TreeRow'
-import { getDropAction, shouldCollapseAutoExpanded, computeDropOverlay } from './drag-drop-utils'
+import { TreeRow, autoExpandedDirs } from './TreeRow'
+import { getDropAction, shouldCollapseAutoExpanded, computeDropOverlay, isWithinFolder, internalDragSource } from './drag-drop-utils'
 import { Kbd } from '@/components/ui/kbd'
 import {
   Dialog,
@@ -74,7 +74,6 @@ export function FileTree() {
   const fetchTree = useFileTreeStore((s) => s.fetchTree)
   const renamingPath = useFileTreeStore((s) => s.renamingPath)
   const toggleDir = useFileTreeStore((s) => s.toggleDir)
-  const moveFile = useFileTreeStore((s) => s.moveFile)
   const copyFilesIn = useFileTreeStore((s) => s.copyFilesIn)
   const moveFilesIn = useFileTreeStore((s) => s.moveFilesIn)
   const setDragOverPath = useFileTreeStore((s) => s.setDragOverPath)
@@ -113,25 +112,44 @@ export function FileTree() {
     }
   }, [dragOverPath, fileRoot, toggleDir])
 
+  useEffect(() => {
+    const reset = () => {
+      dragCounterRef.current = 0
+      setExternalDragOver(false)
+      setAltKeyHeld(false)
+      setDragOverPath(null)
+      autoExpandedDirs.clear()
+      autoScroll.stop()
+    }
+    document.addEventListener('mouseup', reset)
+    document.addEventListener('dragend', reset)
+    return () => {
+      document.removeEventListener('mouseup', reset)
+      document.removeEventListener('dragend', reset)
+    }
+  }, [setDragOverPath, autoScroll])
+
   const dropOverlay = useMemo(
     () => computeDropOverlay(dragOverPath, visibleList.map((v) => v.path), 28),
     [dragOverPath, visibleList],
   )
 
-  const isExternalFileDrag = useCallback((e: DragEvent) => {
-    return e.dataTransfer.types.includes('Files') && !e.dataTransfer.types.includes(TREE_DND_MIME)
+  const isFileDrag = useCallback((e: DragEvent) => {
+    return e.dataTransfer.types.includes('Files')
   }, [])
 
   const handleContainerDragEnter = useCallback((e: DragEvent) => {
-    if (isExternalFileDrag(e)) {
+    if (isFileDrag(e)) {
       e.preventDefault()
       dragCounterRef.current++
-      if (dragCounterRef.current === 1) setExternalDragOver(true)
+      if (dragCounterRef.current === 1 && !internalDragSource.active) {
+        setExternalDragOver(true)
+      }
     }
-  }, [isExternalFileDrag])
+  }, [isFileDrag])
 
   const handleContainerDragLeave = useCallback((e: DragEvent) => {
-    if (isExternalFileDrag(e)) {
+    if (isFileDrag(e)) {
       dragCounterRef.current--
       if (dragCounterRef.current === 0) {
         setExternalDragOver(false)
@@ -140,19 +158,16 @@ export function FileTree() {
         autoScroll.stop()
       }
     }
-  }, [isExternalFileDrag, autoScroll, setDragOverPath])
+  }, [isFileDrag, autoScroll, setDragOverPath])
 
   const handleContainerDragOver = useCallback((e: DragEvent) => {
     autoScroll.update(e.clientY)
-    if (isExternalFileDrag(e)) {
+    if (isFileDrag(e)) {
       e.preventDefault()
-      e.dataTransfer.dropEffect = getDropAction(false, e.altKey)
+      e.dataTransfer.dropEffect = getDropAction(internalDragSource.active, e.altKey)
       setAltKeyHeld(e.altKey)
-    } else if (e.dataTransfer.types.includes(TREE_DND_MIME)) {
-      e.preventDefault()
-      e.dataTransfer.dropEffect = getDropAction(true, e.altKey)
     }
-  }, [isExternalFileDrag, autoScroll])
+  }, [isFileDrag, autoScroll])
 
   const handleContainerDrop = useCallback((e: DragEvent) => {
     autoScroll.stop()
@@ -161,26 +176,25 @@ export function FileTree() {
     setDragOverPath(null)
     autoExpandedDirs.clear()
 
-    const treePath = e.dataTransfer.getData(TREE_DND_MIME)
-    if (treePath) {
-      e.preventDefault()
-      if (fileRoot) moveFile(fileRoot, treePath, '')
-      return
-    }
-
     if (!fileRoot || !e.dataTransfer.files.length || e.defaultPrevented) return
     e.preventDefault()
-    const paths: string[] = []
+    const internalPaths: string[] = []
+    const externalPaths: string[] = []
     for (const file of e.dataTransfer.files) {
       const p = window.app.getPathForFile(file)
-      if (p) paths.push(p)
+      if (!p) continue
+      if (isWithinFolder(p, fileRoot)) internalPaths.push(p)
+      else externalPaths.push(p)
     }
-    if (paths.length > 0) {
+    if (internalPaths.length > 0) {
+      moveFilesIn(fileRoot, '', internalPaths)
+    }
+    if (externalPaths.length > 0) {
       const action = getDropAction(false, e.altKey)
-      if (action === 'move') moveFilesIn(fileRoot, '', paths)
-      else copyFilesIn(fileRoot, '', paths)
+      if (action === 'move') moveFilesIn(fileRoot, '', externalPaths)
+      else copyFilesIn(fileRoot, '', externalPaths)
     }
-  }, [fileRoot, copyFilesIn, moveFilesIn, moveFile, autoScroll, setDragOverPath])
+  }, [fileRoot, copyFilesIn, moveFilesIn, autoScroll, setDragOverPath])
 
   const handleDeleteRequest = useCallback((item: VisibleItem) => {
     setDeleteTarget({ path: item.path, name: item.name, isDirectory: item.isDirectory })

@@ -516,6 +516,10 @@ const appAPI = {
   clipboardWrite: (text: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_WRITE, text),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  startDrag: (paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }) =>
+    ipcRenderer.send(AgentIpcChannels.START_DRAG, paths, iconOpts),
+  pathStat: (path: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PATH_STAT, path) as Promise<{ isFile: boolean; isDirectory: boolean } | null>,
 
   // File watcher
   startFileWatch: (folderPath: string) =>

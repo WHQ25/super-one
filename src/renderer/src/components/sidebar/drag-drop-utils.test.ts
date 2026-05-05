@@ -3,6 +3,8 @@ import {
   getDropAction,
   getTargetDir,
   isChildPath,
+  isWithinFolder,
+  toAbsolutePath,
   shouldCollapseAutoExpanded,
   computeDropOverlay,
 } from './drag-drop-utils'
@@ -59,6 +61,50 @@ describe('isChildPath', () => {
 
   it('should return false for unrelated paths', () => {
     expect(isChildPath('src', 'lib/utils.ts')).toBe(false)
+  })
+})
+
+describe('isWithinFolder', () => {
+  it('returns true when path equals folder', () => {
+    expect(isWithinFolder('/projects/app', '/projects/app')).toBe(true)
+  })
+
+  it('returns true for nested file', () => {
+    expect(isWithinFolder('/projects/app/src/index.ts', '/projects/app')).toBe(true)
+  })
+
+  it('returns false for sibling sharing prefix', () => {
+    expect(isWithinFolder('/projects/app-old/file.ts', '/projects/app')).toBe(false)
+  })
+
+  it('returns false for unrelated path', () => {
+    expect(isWithinFolder('/other/file.ts', '/projects/app')).toBe(false)
+  })
+
+  it('handles trailing slash on folder', () => {
+    expect(isWithinFolder('/projects/app/src/index.ts', '/projects/app/')).toBe(true)
+  })
+})
+
+describe('toAbsolutePath', () => {
+  it('returns folder when relative is empty', () => {
+    expect(toAbsolutePath('/projects/app', '')).toBe('/projects/app')
+  })
+
+  it('returns folder when relative is dot', () => {
+    expect(toAbsolutePath('/projects/app', '.')).toBe('/projects/app')
+  })
+
+  it('joins folder and relative with slash', () => {
+    expect(toAbsolutePath('/projects/app', 'src/index.ts')).toBe('/projects/app/src/index.ts')
+  })
+
+  it('passes through absolute path', () => {
+    expect(toAbsolutePath('/projects/app', '/other/file.ts')).toBe('/other/file.ts')
+  })
+
+  it('handles trailing slash on folder', () => {
+    expect(toAbsolutePath('/projects/app/', 'src/index.ts')).toBe('/projects/app/src/index.ts')
   })
 })
 

@@ -47,7 +47,8 @@ import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
-import { backupMcpServers, listLibrary, deleteLibraryEntry } from '../mcp-library-service'
+import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
+import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
 import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
 import type { CreateProviderRequest, UpdateProviderRequest, HookSavePayload } from '../../shared/agent-types'
 
@@ -1845,7 +1846,11 @@ export class AgentService {
       return listLibrary()
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY, (_event, name: string) => {
+    ipcMain.handle(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY, async (_event, name: string) => {
+      const entry = getLibraryEntry(name)
+      if (entry?.bundleId) {
+        await uninstallMcpbBundle(name)
+      }
       deleteLibraryEntry(name)
     })
 

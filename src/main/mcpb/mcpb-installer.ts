@@ -3,12 +3,13 @@ import { createReadStream } from 'fs'
 import { existsSync } from 'fs'
 import { mkdir, mkdtemp, rm, readFile, writeFile, readdir, cp } from 'fs/promises'
 import { tmpdir, homedir } from 'os'
-import { join } from 'path'
+import { join, relative, resolve, sep } from 'path'
 import { Extract as unzipExtract } from 'unzipper'
 import { app, shell } from 'electron'
 import log from '../logger'
 import { saveMcpConfig, deleteMcpConfig } from '../mcp-config-service'
 import { saveCodexMcpConfig, deleteCodexMcpConfig } from '../codex-config-service'
+import { addBundleLibraryEntry } from '../mcp-library-service'
 import type { McpbProvider } from '../../shared/mcpb-types'
 import { parseMcpbManifest } from './mcpb-manifest-schema'
 import { checkRuntimeAvailable, resolveMcpbServer } from './mcpb-runtime'
@@ -53,6 +54,15 @@ function defaultPaths(): InstallerPaths {
 
 function installDirOf(rootDir: string, name: string, version: string): string {
   return join(rootDir, `${name}@${version}`)
+}
+
+function assertSafeInstallDir(rootDir: string, name: string, version: string): void {
+  const target = resolve(installDirOf(rootDir, name, version))
+  const root = resolve(rootDir)
+  const rel = relative(root, target)
+  if (rel === '' || rel.startsWith('..') || rel.includes(sep)) {
+    throw new Error(`Manifest name "${name}" would escape install root`)
+  }
 }
 
 function sha256Hex(input: string | Buffer): string {
@@ -138,6 +148,7 @@ export async function previewMcpbBundle(
   try {
     await unzipTo(filePath, tmpDir)
     const { manifest, manifestHash } = await readManifestFromDir(tmpDir)
+    assertSafeInstallDir(paths.rootDir, manifest.name, manifest.version)
 
     const platformSupported = isPlatformSupported(manifest)
     const runtime = await checkRuntimeAvailable(manifest.server.type)
@@ -188,6 +199,11 @@ export async function installMcpbBundle(
   try {
     await unzipTo(req.filePath, tmpDir)
     const { manifest, manifestHash } = await readManifestFromDir(tmpDir)
+    assertSafeInstallDir(paths.rootDir, manifest.name, manifest.version)
+
+    if (req.scope === 'project' && !req.cwd) {
+      throw new Error('Project scope requires an open project directory.')
+    }
 
     if (manifestHash !== req.expectedManifestHash) {
       throw new Error('Bundle manifest changed since preview. Please re-add the .mcpb file.')
@@ -243,9 +259,20 @@ export async function installMcpbBundle(
       req.cwd ?? '',
     )
 
+    const iconDataUrl = await loadIconDataUrl(installDir, manifest)
+    addBundleLibraryEntry({
+      name: manifest.name,
+      bundleVersion: manifest.version,
+      command: resolved.command,
+      args: resolved.args,
+      env: resolved.env,
+      description: manifest.description,
+      iconDataUrl,
+    })
+
     log.info('[mcpb] installed %s@%s provider=%s scope=%s -> %s', manifest.name, manifest.version, req.provider, req.scope, installDir)
 
-    return { meta, installDir }
+    return { meta, installDir, iconDataUrl }
   } catch (err) {
     if (!installed) throw err
     throw err
@@ -272,6 +299,8 @@ export async function uninstallMcpbBundle(
     const provider: McpbProvider = resolvedMeta.provider ?? 'claude'
     const deleteFn = provider === 'codex' ? deleteCodexMcpConfig : deleteMcpConfig
     deleteFn(resolvedMeta.name, resolvedMeta.scope, resolvedMeta.cwd ?? '')
+    const otherDeleteFn = provider === 'codex' ? deleteMcpConfig : deleteCodexMcpConfig
+    otherDeleteFn(resolvedMeta.name, 'user', '')
   }
 
   await clearSecrets(existing.dir)
@@ -297,7 +326,12 @@ export async function listInstalledMcpb(
     if (!existsSync(metaPath)) continue
     try {
       const meta = JSON.parse(await readFile(metaPath, 'utf-8')) as McpbInstallMeta
-      results.push({ meta, installDir: dir })
+      let iconDataUrl: string | undefined
+      try {
+        const { manifest } = await readManifestFromDir(dir)
+        iconDataUrl = await loadIconDataUrl(dir, manifest)
+      } catch { /* missing/invalid manifest — skip icon */ }
+      results.push({ meta, installDir: dir, iconDataUrl })
     } catch { /* skip malformed */ }
   }
   return results.sort((a, b) => a.meta.name.localeCompare(b.meta.name))

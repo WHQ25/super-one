@@ -5,11 +5,13 @@ import { createWriteStream, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import archiver from 'archiver'
 
-const { saveMcpConfigMock, deleteMcpConfigMock, saveCodexMcpConfigMock, deleteCodexMcpConfigMock, safeStorageState } = vi.hoisted(() => ({
+const { saveMcpConfigMock, deleteMcpConfigMock, saveCodexMcpConfigMock, deleteCodexMcpConfigMock, addBundleLibraryEntryMock, deleteLibraryEntryMock, safeStorageState } = vi.hoisted(() => ({
   saveMcpConfigMock: vi.fn(),
   deleteMcpConfigMock: vi.fn(),
   saveCodexMcpConfigMock: vi.fn(),
   deleteCodexMcpConfigMock: vi.fn(),
+  addBundleLibraryEntryMock: vi.fn(),
+  deleteLibraryEntryMock: vi.fn(),
   safeStorageState: { encryptionAvailable: true },
 }))
 
@@ -21,6 +23,11 @@ vi.mock('../mcp-config-service', () => ({
 vi.mock('../codex-config-service', () => ({
   saveCodexMcpConfig: saveCodexMcpConfigMock,
   deleteCodexMcpConfig: deleteCodexMcpConfigMock,
+}))
+
+vi.mock('../mcp-library-service', () => ({
+  addBundleLibraryEntry: addBundleLibraryEntryMock,
+  deleteLibraryEntry: deleteLibraryEntryMock,
 }))
 
 vi.mock('electron', () => ({
@@ -109,6 +116,8 @@ describe('mcpb installer', () => {
     deleteMcpConfigMock.mockReset()
     saveCodexMcpConfigMock.mockReset()
     deleteCodexMcpConfigMock.mockReset()
+    addBundleLibraryEntryMock.mockReset()
+    deleteLibraryEntryMock.mockReset()
     safeStorageState.encryptionAvailable = true
   })
 
@@ -141,6 +150,27 @@ describe('mcpb installer', () => {
       })
       await expect(previewMcpbBundle(bad, { rootDir: installRoot, tempBaseDir: workDir }))
         .rejects.toThrow(/Invalid manifest/)
+    })
+
+    it('accepts a manifest whose name uses uppercase letters (e.g. "Blender")', async () => {
+      const file = await buildBundle(bundleDir, {
+        manifest: nodeManifest({ name: 'Blender' }),
+      }, 'blender.mcpb')
+      const preview = await previewMcpbBundle(file, { rootDir: installRoot, tempBaseDir: workDir })
+      expect(preview.manifest.name).toBe('Blender')
+    })
+
+    it.each([
+      ['parent-dir traversal', '../evil'],
+      ['deep traversal', '../../etc/passwd'],
+      ['embedded subdir', 'foo/bar'],
+      ['just dot-dot', '..'],
+    ])('rejects a manifest whose name escapes install root (%s)', async (_label, badName) => {
+      const bad = await buildBundle(bundleDir, {
+        manifest: nodeManifest({ name: badName }),
+      }, 'evil.mcpb')
+      await expect(previewMcpbBundle(bad, { rootDir: installRoot, tempBaseDir: workDir }))
+        .rejects.toThrow(/escape install root/)
     })
 
     it('reports platform support when manifest declares incompatible platforms', async () => {
@@ -213,6 +243,47 @@ describe('mcpb installer', () => {
         userConfig: {},
         expectedManifestHash: 'deadbeef',
       }, { rootDir: installRoot, tempBaseDir: workDir })).rejects.toThrow(/manifest changed/i)
+    })
+
+    it('writes a library entry tagged with bundleId so the bundle appears in shared MCP library', async () => {
+      const file = await buildBundle(bundleDir, {
+        manifest: nodeManifest({ description: 'Bundle description for library' }),
+      })
+      const preview = await previewMcpbBundle(file, { rootDir: installRoot, tempBaseDir: workDir })
+
+      await installMcpbBundle({
+        filePath: file,
+        provider: 'claude',
+        scope: 'user',
+        userConfig: {},
+        expectedManifestHash: preview.manifestHash,
+      }, { rootDir: installRoot, tempBaseDir: workDir })
+
+      expect(addBundleLibraryEntryMock).toHaveBeenCalledTimes(1)
+      const arg = addBundleLibraryEntryMock.mock.calls[0][0]
+      expect(arg.name).toBe('demo-server')
+      expect(arg.bundleVersion).toBe('1.0.0')
+      expect(arg.command).toBeTruthy()
+      expect(arg.description).toBe('Bundle description for library')
+    })
+
+    it('rejects install when scope is "project" but cwd is missing or empty', async () => {
+      const file = await buildBundle(bundleDir, { manifest: nodeManifest() })
+      const preview = await previewMcpbBundle(file, { rootDir: installRoot, tempBaseDir: workDir })
+
+      const baseReq = {
+        filePath: file,
+        provider: 'claude' as const,
+        scope: 'project' as const,
+        userConfig: {},
+        expectedManifestHash: preview.manifestHash,
+      }
+      await expect(installMcpbBundle(baseReq, { rootDir: installRoot, tempBaseDir: workDir }))
+        .rejects.toThrow(/Project scope requires/)
+      await expect(installMcpbBundle({ ...baseReq, cwd: '' }, { rootDir: installRoot, tempBaseDir: workDir }))
+        .rejects.toThrow(/Project scope requires/)
+      expect(saveMcpConfigMock).not.toHaveBeenCalled()
+      expect((await readDirSafe(installRoot)).length).toBe(0)
     })
 
     it('writes encrypted secrets file and keeps sensitive keys out of install.json', async () => {
@@ -333,7 +404,23 @@ describe('mcpb installer', () => {
       expect(deleteMcpConfigMock).not.toHaveBeenCalled()
     })
 
-    it('routes deletion to deleteCodexMcpConfig when meta.provider is codex', async () => {
+    it('leaves the library entry intact so the user can re-install later', async () => {
+      const file = await buildBundle(bundleDir, { manifest: nodeManifest() })
+      const preview = await previewMcpbBundle(file, { rootDir: installRoot, tempBaseDir: workDir })
+      await installMcpbBundle({
+        filePath: file,
+        provider: 'claude',
+        scope: 'user',
+        userConfig: {},
+        expectedManifestHash: preview.manifestHash,
+      }, { rootDir: installRoot, tempBaseDir: workDir })
+
+      await uninstallMcpbBundle('demo-server', { rootDir: installRoot, tempBaseDir: workDir })
+
+      expect(deleteLibraryEntryMock).not.toHaveBeenCalled()
+    })
+
+    it('routes deletion to deleteCodexMcpConfig when meta.provider is codex, plus best-effort claude user-scope cleanup', async () => {
       const file = await buildBundle(bundleDir, { manifest: nodeManifest() })
       const preview = await previewMcpbBundle(file, { rootDir: installRoot, tempBaseDir: workDir })
       await installMcpbBundle({
@@ -347,7 +434,7 @@ describe('mcpb installer', () => {
       await uninstallMcpbBundle('demo-server', { rootDir: installRoot, tempBaseDir: workDir })
 
       expect(deleteCodexMcpConfigMock).toHaveBeenCalledWith('demo-server', 'user', '')
-      expect(deleteMcpConfigMock).not.toHaveBeenCalled()
+      expect(deleteMcpConfigMock).toHaveBeenCalledWith('demo-server', 'user', '')
     })
   })
 
@@ -367,6 +454,20 @@ describe('mcpb installer', () => {
     it('returns empty list when root dir does not exist', async () => {
       const list = await listInstalledMcpb({ rootDir: join(workDir, 'never-created'), tempBaseDir: workDir })
       expect(list).toEqual([])
+    })
+
+    it('surfaces iconDataUrl from the bundle manifest for installed entries', async () => {
+      const pngBytes = Buffer.from('89504E470D0A1A0A0000000D49484452', 'hex')
+      const file = await buildBundle(bundleDir, {
+        manifest: nodeManifest({ icon: 'icon.png' }),
+        files: { 'icon.png': pngBytes },
+      })
+      const preview = await previewMcpbBundle(file, { rootDir: installRoot, tempBaseDir: workDir })
+      await installMcpbBundle({ filePath: file, provider: 'claude', scope: 'user', userConfig: {}, expectedManifestHash: preview.manifestHash }, { rootDir: installRoot, tempBaseDir: workDir })
+
+      const list = await listInstalledMcpb({ rootDir: installRoot, tempBaseDir: workDir })
+      expect(list).toHaveLength(1)
+      expect(list[0].iconDataUrl).toMatch(/^data:image\/png;base64,/)
     })
   })
 })

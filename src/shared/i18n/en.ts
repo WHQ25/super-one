@@ -566,6 +566,7 @@ export type Messages = {
       emptyHintCodex: string
       claudeAiTitle: string
       claudeAiFetching: string
+      claudeAiEmpty: string
       tools: string
       noToolsConnected: string
       noToolsDisabled: string
@@ -573,6 +574,7 @@ export type Messages = {
       form: {
         title: string
         paste: string
+        pasteTooltip: string
         name: string
         namePlaceholder: string
         type: string
@@ -594,6 +596,8 @@ export type Messages = {
         verificationFailed: string
         clipboardInvalid: string
         clipboardFailed: string
+        tabManual: string
+        tabBundle: string
       }
       libraryView: {
         title: string
@@ -1502,6 +1506,7 @@ export const en: Messages = {
       emptyHintCodex: 'User: ~/.codex/config.toml | Project: .codex/config.toml',
       claudeAiTitle: 'Claude.ai',
       claudeAiFetching: 'Fetching claude.ai servers...',
+      claudeAiEmpty: 'No claude.ai MCP servers found',
       tools: 'Tools',
       noToolsConnected: 'No tools available',
       noToolsDisabled: 'Enable the server to see available tools',
@@ -1509,6 +1514,7 @@ export const en: Messages = {
       form: {
         title: 'Add MCP Server',
         paste: 'Paste',
+        pasteTooltip: 'Paste MCP server config from clipboard (JSON or URL)',
         name: 'Name',
         namePlaceholder: 'my-server',
         type: 'Type',
@@ -1530,6 +1536,8 @@ export const en: Messages = {
         verificationFailed: 'Connection verification failed',
         clipboardInvalid: 'Clipboard does not contain a recognized MCP config',
         clipboardFailed: 'Failed to read clipboard',
+        tabManual: 'Manual',
+        tabBundle: 'Bundle (.mcpb)',
       },
       libraryView: {
         title: 'Add from Library',

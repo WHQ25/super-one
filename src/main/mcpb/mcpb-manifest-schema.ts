@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import type { McpbManifest } from '../../shared/mcpb-types'
 
-const NAME_RE = /^[a-z0-9][a-z0-9_-]*$/
 const USER_CONFIG_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 const ServerType = z.enum(['node', 'python', 'binary', 'uv'])
@@ -66,7 +65,7 @@ const Compatibility = z.object({
 
 export const McpbManifestSchema = z.object({
   manifest_version: z.string(),
-  name: z.string().regex(NAME_RE),
+  name: z.string(),
   display_name: z.string().optional(),
   version: z.string(),
   description: z.string(),

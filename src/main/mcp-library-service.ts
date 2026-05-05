@@ -67,8 +67,45 @@ export function listLibrary(): McpLibraryEntry[] {
   return Object.values(library).sort((a, b) => a.name.localeCompare(b.name))
 }
 
+export function getLibraryEntry(name: string): McpLibraryEntry | undefined {
+  return readLibrary()[name]
+}
+
 export function deleteLibraryEntry(name: string): void {
   const library = readLibrary()
   delete library[name]
+  writeLibrary(library)
+}
+
+export interface AddBundleLibraryEntryInput {
+  name: string
+  bundleVersion: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+  description?: string
+  iconDataUrl?: string
+}
+
+export function addBundleLibraryEntry(input: AddBundleLibraryEntryInput): void {
+  const library = readLibrary()
+  const existing = library[input.name]
+
+  const icons: McpLibraryEntry['icons'] = input.iconDataUrl
+    ? [{ src: input.iconDataUrl }]
+    : existing?.icons
+
+  library[input.name] = {
+    name: input.name,
+    type: 'stdio',
+    command: input.command,
+    args: input.args,
+    env: input.env,
+    description: input.description ?? existing?.description,
+    icons,
+    savedAt: existing?.savedAt ?? new Date().toISOString(),
+    bundleId: `${input.name}@${input.bundleVersion}`,
+    bundleVersion: input.bundleVersion,
+  }
   writeLibrary(library)
 }

@@ -125,4 +125,5 @@ export interface McpbInstallRequest {
 export interface McpbInstalledEntry {
   meta: McpbInstallMeta
   installDir: string
+  iconDataUrl?: string
 }

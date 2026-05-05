@@ -580,6 +580,7 @@ export const zh: Messages = {
       emptyHintCodex: '用户目录：~/.codex/config.toml ｜ 项目目录：.codex/config.toml',
       claudeAiTitle: 'Claude.ai',
       claudeAiFetching: '正在获取 claude.ai 服务器...',
+      claudeAiEmpty: '未发现 claude.ai MCP 服务器',
       tools: '工具',
       noToolsConnected: '没有可用工具',
       noToolsDisabled: '启用服务器后可查看可用工具',
@@ -587,6 +588,7 @@ export const zh: Messages = {
       form: {
         title: '添加 MCP 服务器',
         paste: '粘贴',
+        pasteTooltip: '从剪贴板粘贴 MCP 服务器配置（JSON 或 URL）',
         name: '名称',
         namePlaceholder: 'my-server',
         type: '类型',
@@ -608,6 +610,8 @@ export const zh: Messages = {
         verificationFailed: '连接验证失败',
         clipboardInvalid: '剪贴板中没有可识别的 MCP 配置',
         clipboardFailed: '读取剪贴板失败',
+        tabManual: '手动配置',
+        tabBundle: '安装包 (.mcpb)',
       },
       libraryView: {
         title: '从收藏库添加',

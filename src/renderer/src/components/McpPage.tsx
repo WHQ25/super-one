@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
-import { Plus, ChevronRight, Clipboard, X, ArrowLeft, Check, Library, RefreshCw, Trash2, Package, PackagePlus } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Plus, ChevronRight, ArrowLeft, Check, Library, RefreshCw, Trash2, Package } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
@@ -9,30 +10,19 @@ import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { McpDetailPage } from './McpDetailPage'
-import { McpbInstallDialog } from './McpbInstallDialog'
+import { AddServerPanel } from './AddServerPanel'
 import type { McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta } from '../../../shared/agent-types'
 import type { McpbInstalledEntry } from '../../../shared/mcpb-types'
 import { cn } from '@/lib/utils'
 
-const MCPB_EXT = '.mcpb'
-
-function getMcpbDropPath(e: DragEvent): string | null {
-  for (let i = 0; i < e.dataTransfer.files.length; i++) {
-    const file = e.dataTransfer.files[i]
-    const path = window.app.getPathForFile(file)
-    if (path.endsWith(MCPB_EXT)) return path
-  }
-  return null
-}
-
-export function McpIcon({ name, meta, size = 'sm' }: { name: string; meta?: McpServerMeta; size?: 'sm' | 'md' }) {
-  const icon = meta?.icons?.[0]
+export function McpIcon({ name, meta, bundle, size = 'sm' }: { name: string; meta?: McpServerMeta; bundle?: McpbInstalledEntry; size?: 'sm' | 'md' }) {
+  const src = meta?.icons?.[0]?.src ?? bundle?.iconDataUrl
   const sizeClass = size === 'md' ? 'size-10 text-base' : 'size-9 text-sm'
 
-  if (icon?.src) {
+  if (src) {
     return (
       <img
-        src={icon.src}
+        src={src}
         alt={name}
         className={cn('shrink-0 rounded-full object-cover', size === 'md' ? 'size-10' : 'size-9')}
       />
@@ -104,7 +94,7 @@ function ServerCard({
         config.disabled && 'opacity-50'
       )}
     >
-      <McpIcon name={config.name} meta={meta} />
+      <McpIcon name={config.name} meta={meta} bundle={bundle} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium truncate">{config.name}</p>
@@ -143,383 +133,10 @@ function ServerCard({
   )
 }
 
-interface KvRow {
-  key: string
-  value: string
-}
-
-function KvRows({ rows, onChange, keyPlaceholder = 'Key', valuePlaceholder = 'Value' }: {
-  rows: KvRow[]
-  onChange: (rows: KvRow[]) => void
-  keyPlaceholder?: string
-  valuePlaceholder?: string
-}) {
-  const inputClass = 'w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring'
-  if (rows.length === 0) return null
-  return (
-    <div className="space-y-2">
-      {rows.map((row, idx) => (
-        <div key={idx} className="flex items-center gap-2">
-          <input
-            className={cn(inputClass, '!w-auto flex-1')}
-            value={row.key}
-            onChange={(e) => onChange(rows.map((r, i) => (i === idx ? { ...r, key: e.target.value } : r)))}
-            placeholder={keyPlaceholder}
-          />
-          <input
-            className={cn(inputClass, '!w-auto flex-1')}
-            value={row.value}
-            onChange={(e) => onChange(rows.map((r, i) => (i === idx ? { ...r, value: e.target.value } : r)))}
-            placeholder={valuePlaceholder}
-          />
-          <button type="button" onClick={() => onChange(rows.filter((_, i) => i !== idx))} className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground">
-            <X className="size-3.5" />
-          </button>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function parseClipboardConfig(text: string): {
-  name?: string
-  type?: 'stdio' | 'http' | 'sse'
-  command?: string
-  args?: string
-  env?: KvRow[]
-  url?: string
-  headers?: KvRow[]
-} | null {
-  let trimmed = text.trim()
-  // Strip trailing comma (common when copying a fragment from JSON)
-  if (trimmed.endsWith(',')) trimmed = trimmed.slice(0, -1).trimEnd()
-
-  // Try JSON parse (full object)
-  try {
-    const json = JSON.parse(trimmed)
-
-    // Format: { "mcpServers": { "name": { ... } } }
-    if (json.mcpServers && typeof json.mcpServers === 'object') {
-      const entries = Object.entries(json.mcpServers)
-      if (entries.length === 0) return null
-      const [name, raw] = entries[0] as [string, Record<string, unknown>]
-      return extractFromRaw(name, raw)
-    }
-
-    // Format: { "name": { command/url/... } } — a single entry object
-    const keys = Object.keys(json)
-    if (keys.length === 1 && typeof json[keys[0]] === 'object' && json[keys[0]] !== null) {
-      const raw = json[keys[0]] as Record<string, unknown>
-      if (raw.command || raw.url || raw.type) {
-        return extractFromRaw(keys[0], raw)
-      }
-    }
-
-    // Format: single server config object with a type/command/url field
-    if (json.type || json.command || json.url) {
-      return extractFromRaw(undefined, json)
-    }
-  } catch {
-    // not valid JSON — try wrapping as "name": { ... } fragment
-  }
-
-  // Format: "name": { ... } — a JSON fragment (key-value pair without outer braces)
-  const fragmentMatch = trimmed.match(/^"([^"]+)"\s*:\s*\{/)
-  if (fragmentMatch) {
-    try {
-      const json = JSON.parse(`{${trimmed}}`)
-      const name = fragmentMatch[1]
-      const raw = json[name] as Record<string, unknown>
-      if (raw && (raw.command || raw.url || raw.type)) {
-        return extractFromRaw(name, raw)
-      }
-    } catch {
-      // invalid fragment
-    }
-  }
-
-  // Plain URL
-  try {
-    const urlObj = new URL(trimmed)
-    if (urlObj.protocol === 'http:' || urlObj.protocol === 'https:') {
-      return { url: trimmed, type: 'http' }
-    }
-  } catch {
-    // not a URL
-  }
-
-  return null
-}
-
-function extractFromRaw(name: string | undefined, raw: Record<string, unknown>): ReturnType<typeof parseClipboardConfig> {
-  const result: NonNullable<ReturnType<typeof parseClipboardConfig>> = {}
-  if (name) result.name = name
-
-  const t = raw.type as string | undefined
-  if (t === 'http' || t === 'sse') {
-    result.type = t
-    if (raw.url) result.url = String(raw.url)
-    if (raw.headers && typeof raw.headers === 'object') {
-      result.headers = Object.entries(raw.headers as Record<string, string>).map(([key, value]) => ({ key, value: String(value) }))
-    }
-  } else {
-    result.type = 'stdio'
-    if (raw.command) result.command = String(raw.command)
-    if (Array.isArray(raw.args)) result.args = (raw.args as string[]).join(' ')
-    if (raw.env && typeof raw.env === 'object') {
-      result.env = Object.entries(raw.env as Record<string, string>).map(([key, value]) => ({ key, value: String(value) }))
-    }
-  }
-
-  return result
-}
-
-function AddServerForm({
-  onClose,
-  onBundleSelected,
-  onBundleRejected,
-}: {
-  onClose: () => void
-  onBundleSelected: (path: string) => void
-  onBundleRejected: () => void
-}) {
-  const { t } = useTranslation()
-  const { saveMcpConfig } = useSettingsStore()
-  const [name, setName] = useState('')
-  const [type, setType] = useState<'stdio' | 'http' | 'sse'>('stdio')
-  const [command, setCommand] = useState('')
-  const [args, setArgs] = useState('')
-  const [env, setEnv] = useState<KvRow[]>([])
-  const [url, setUrl] = useState('')
-  const [headers, setHeaders] = useState<KvRow[]>([])
-  const [scope, setScope] = useState<'user' | 'project'>('user')
-  const [authorizing, setAuthorizing] = useState(false)
-  const [verified, setVerified] = useState(false)
-  const [adding, setAdding] = useState(false)
-  const [error, setError] = useState('')
-  const [isBundleDragOver, setIsBundleDragOver] = useState(false)
-  const bundleInputRef = useRef<HTMLInputElement | null>(null)
-
-  const handleBundleDragOver = (e: DragEvent) => {
-    if (e.dataTransfer.types.includes('Files')) {
-      e.preventDefault()
-      e.stopPropagation()
-      e.dataTransfer.dropEffect = 'copy'
-      setIsBundleDragOver(true)
-    }
-  }
-
-  const handleBundleDragLeave = (e: DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsBundleDragOver(false)
-  }
-
-  const handleBundleDrop = (e: DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsBundleDragOver(false)
-    const path = getMcpbDropPath(e)
-    if (path) {
-      onBundleSelected(path)
-    } else {
-      onBundleRejected()
-    }
-  }
-
-  const handleBundleFileInput = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const path = window.app.getPathForFile(file)
-      if (path.endsWith(MCPB_EXT)) onBundleSelected(path)
-      else onBundleRejected()
-    }
-    e.target.value = ''
-  }
-
-  const handlePaste = async () => {
-    try {
-      const text = await navigator.clipboard.readText()
-      const parsed = parseClipboardConfig(text)
-      if (!parsed) {
-        setError(t('resources.mcp.form.clipboardInvalid'))
-        return
-      }
-      if (parsed.name) setName(parsed.name)
-      if (parsed.type) setType(parsed.type)
-      if (parsed.command) setCommand(parsed.command)
-      if (parsed.args) setArgs(parsed.args)
-      if (parsed.env) setEnv(parsed.env)
-      if (parsed.url) setUrl(parsed.url)
-      if (parsed.headers) setHeaders(parsed.headers)
-      setError('')
-    } catch {
-      setError(t('resources.mcp.form.clipboardFailed'))
-    }
-  }
-
-  const kvToRecord = (rows: KvRow[]): Record<string, string> => {
-    const result: Record<string, string> = {}
-    for (const r of rows) {
-      if (r.key.trim()) result[r.key.trim()] = r.value.trim()
-    }
-    return result
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    if (!name.trim()) return
-
-    if (type === 'http' || type === 'sse') {
-      if (!url.trim()) return
-
-      // Verify connection & try OAuth if needed
-      setAuthorizing(true)
-      setVerified(false)
-      let verifiedHeaders: Record<string, string>
-      try {
-        verifiedHeaders = await window.app.oauthAuthorize(url.trim(), kvToRecord(headers), type)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : t('resources.mcp.form.verificationFailed'))
-        setAuthorizing(false)
-        return
-      }
-      setAuthorizing(false)
-      setVerified(true)
-      setAdding(true)
-
-      await saveMcpConfig(name.trim(), { type, url: url.trim(), headers: verifiedHeaders }, scope)
-    } else {
-      if (!command.trim()) return
-      setAdding(true)
-      const parsedArgs = args.trim() ? args.trim().split(/\s+/) : []
-      await saveMcpConfig(name.trim(), { type: 'stdio', command: command.trim(), args: parsedArgs, env: kvToRecord(env) }, scope)
-    }
-    onClose()
-  }
-
-  const inputClass = 'w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring'
-  const isValid = name.trim() && (type !== 'stdio' ? url.trim() : command.trim())
-
-  return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-medium">{t('resources.mcp.form.title')}</h3>
-        <Button type="button" variant="ghost" size="sm" onClick={handlePaste} className="gap-1.5 text-xs">
-          <Clipboard className="size-3.5" />
-          {t('resources.mcp.form.paste')}
-        </Button>
-      </div>
-      <input
-        ref={bundleInputRef}
-        type="file"
-        accept=".mcpb"
-        className="hidden"
-        onChange={handleBundleFileInput}
-      />
-      <button
-        type="button"
-        onClick={() => bundleInputRef.current?.click()}
-        onDragOver={handleBundleDragOver}
-        onDragLeave={handleBundleDragLeave}
-        onDrop={handleBundleDrop}
-        className={cn(
-          'mb-3 flex w-full flex-col items-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-4 text-center transition-colors',
-          isBundleDragOver
-            ? 'border-primary bg-primary/5 text-primary'
-            : 'border-border text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground',
-        )}
-      >
-        <PackagePlus className="size-5" />
-        <span className="text-xs font-medium">{t('resources.mcp.bundle.dropZoneTitle')}</span>
-        <span className="text-[11px] text-muted-foreground">{t('resources.mcp.bundle.dropZoneHint')}</span>
-      </button>
-      <div className="space-y-3">
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.name')}</label>
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder={t('resources.mcp.form.namePlaceholder')} />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.type')}</label>
-          <div className="flex gap-2">
-            {(['stdio', 'http', 'sse'] as const).map((t) => (
-              <button key={t} type="button" onClick={() => setType(t)} className={cn('rounded-md px-3 py-1 text-xs transition-colors', type === t ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground')}>
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-        {type === 'stdio' ? (
-          <>
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.command')}</label>
-              <input className={inputClass} value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t('resources.mcp.form.commandPlaceholder')} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.args')}</label>
-              <input className={inputClass} value={args} onChange={(e) => setArgs(e.target.value)} placeholder={t('resources.mcp.form.argsPlaceholder')} />
-            </div>
-            <div>
-              <div className="mb-1 flex items-center gap-1">
-                <label className="text-xs text-muted-foreground">{t('resources.mcp.form.env')}</label>
-                <button type="button" onClick={() => setEnv([...env, { key: '', value: '' }])} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-                  <Plus className="size-3.5" />
-                </button>
-              </div>
-              <KvRows rows={env} onChange={setEnv} keyPlaceholder="KEY" valuePlaceholder="Value" />
-            </div>
-          </>
-        ) : (
-          <>
-            <div>
-              <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.url')}</label>
-              <input className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('resources.mcp.form.urlPlaceholder')} />
-            </div>
-            <div>
-              <div className="mb-1 flex items-center gap-1">
-                <label className="text-xs text-muted-foreground">{t('resources.mcp.form.headers')}</label>
-                <button type="button" onClick={() => setHeaders([...headers, { key: '', value: '' }])} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-                  <Plus className="size-3.5" />
-                </button>
-              </div>
-              <KvRows rows={headers} onChange={setHeaders} />
-            </div>
-          </>
-        )}
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.scope')}</label>
-          <div className="flex gap-2">
-            {(['user', 'project'] as const).map((s) => (
-              <button key={s} type="button" onClick={() => setScope(s)} className={cn('rounded-md px-3 py-1 text-xs transition-colors', scope === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground')}>
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        <div className="flex items-center justify-end gap-2">
-          {!verified && !adding && (
-            <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={authorizing}>{t('common.cancel')}</Button>
-          )}
-          {verified && (
-            <span className="flex items-center gap-1 text-xs text-green-500">
-              <Check className="size-3.5" />
-              {t('resources.mcp.form.verified')}
-            </span>
-          )}
-          <Button type="submit" size="sm" disabled={!isValid || authorizing || adding}>
-            {authorizing ? t('resources.mcp.form.verifying') : adding ? t('resources.mcp.form.adding') : t('resources.mcp.form.add')}
-          </Button>
-        </div>
-      </div>
-    </form>
-  )
-}
-
 function LibraryView({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
-  const { mcpLibrary, mcpConfigs, saveMcpConfig, fetchMcpLibrary, deleteMcpLibraryEntry } = useSettingsStore()
+  const settingsProvider = useAppStore((s) => s.settingsProvider)
+  const { mcpLibrary, mcpConfigs, codexMcpConfigs, saveMcpConfig, fetchMcpLibrary, deleteMcpLibraryEntry } = useSettingsStore()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [scope, setScope] = useState<'user' | 'project'>('user')
   const [adding, setAdding] = useState(false)
@@ -528,7 +145,8 @@ function LibraryView({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { fetchMcpLibrary() }, [fetchMcpLibrary])
 
-  const existingNames = new Set(mcpConfigs.map((c) => c.name))
+  const activeConfigs = settingsProvider === 'codex' ? codexMcpConfigs : mcpConfigs
+  const existingNames = new Set(activeConfigs.map((c) => c.name))
   const selectedEntries = mcpLibrary.filter((entry) => selected.has(entry.name))
   const addableEntries = selectedEntries.filter((entry) => !existingNames.has(entry.name))
 
@@ -757,7 +375,6 @@ function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onTog
 function ClaudeAiSection({ servers, loading, onToggle }: { servers: McpServerInfo[]; loading?: boolean; onToggle: (name: string, disabled: boolean) => void }) {
   const { t } = useTranslation()
   const { selectMcp } = useSettingsStore()
-  if (servers.length === 0 && !loading) return null
   return (
     <div>
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('resources.mcp.claudeAiTitle')}</h3>
@@ -765,6 +382,11 @@ function ClaudeAiSection({ servers, loading, onToggle }: { servers: McpServerInf
         <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-4">
           <RefreshCw className="size-3.5 animate-spin text-muted-foreground" />
           <span className="text-xs text-muted-foreground">{t('resources.mcp.claudeAiFetching')}</span>
+        </div>
+      )}
+      {!loading && servers.length === 0 && (
+        <div className="rounded-lg border border-dashed border-border p-4 text-center">
+          <p className="text-xs text-muted-foreground">{t('resources.mcp.claudeAiEmpty')}</p>
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
@@ -848,37 +470,31 @@ export function McpPage() {
   const [addView, setAddView] = useState<'none' | 'form' | 'library'>('none')
   const [refreshing, setRefreshing] = useState(false)
   const [checking, setChecking] = useState(false)
-  const [pendingBundlePath, setPendingBundlePath] = useState<string | null>(null)
-  const [installStatus, setInstallStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const isCodex = settingsProvider === 'codex'
 
   useEffect(() => {
     selectMcp(null)
     setAddView('none')
     fetchMcpbInstalled()
+    fetchMcpLibrary()
     if (isCodex) {
       fetchCodexMcpConfigs()
     } else {
       fetchMcpConfigs()
       setChecking(true)
       checkMcpServers().finally(() => setChecking(false))
-      fetchMcpLibrary()
     }
   }, [currentFolder, isCodex, fetchMcpConfigs, checkMcpServers, fetchMcpLibrary, fetchMcpbInstalled, fetchCodexMcpConfigs, selectMcp])
-
-  const handleBundleSelected = useCallback((path: string) => {
-    setPendingBundlePath(path)
-  }, [])
-
-  const handleBundleRejected = useCallback(() => {
-    setInstallStatus({ type: 'error', message: t('resources.mcp.bundle.notMcpbFile') })
-    setTimeout(() => setInstallStatus(null), 3000)
-  }, [t])
 
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      await checkMcpServers()
+      if (isCodex) {
+        await fetchCodexMcpConfigs()
+      } else {
+        await checkMcpServers()
+      }
+      await fetchMcpbInstalled()
     } finally {
       setRefreshing(false)
     }
@@ -917,28 +533,6 @@ export function McpPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      {installStatus && (
-        <div className={cn(
-          'mb-3 rounded-md border px-3 py-2 text-xs',
-          installStatus.type === 'success' && 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400',
-          installStatus.type === 'error' && 'border-destructive/40 bg-destructive/5 text-destructive',
-        )}>
-          {installStatus.message}
-        </div>
-      )}
-      <McpbInstallDialog
-        filePath={pendingBundlePath}
-        provider={isCodex ? 'codex' : 'claude'}
-        onClose={() => setPendingBundlePath(null)}
-        onInstalled={(name) => {
-          setInstallStatus({ type: 'success', message: t('resources.mcp.bundle.installed', { name }) })
-          setTimeout(() => setInstallStatus(null), 3000)
-        }}
-        onError={(message) => {
-          setInstallStatus({ type: 'error', message })
-          setTimeout(() => setInstallStatus(null), 4000)
-        }}
-      />
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">{t('resources.mcp.title')}</h2>
@@ -946,19 +540,17 @@ export function McpPage() {
         </div>
         <div className="flex gap-2">
           <ProjectSelector mode="switch" />
-          {!isCodex && (
-            <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing}>
-              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-              {t('resources.mcp.refresh')}
-            </Button>
-          )}
-          {!isCodex && mcpLibrary.length > 0 && (
-            <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}>
+          <Button variant="outline" onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+            {t('resources.mcp.refresh')}
+          </Button>
+          {mcpLibrary.length > 0 && (
+            <Button variant="outline" onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}>
               <Library className="size-4" />
               {t('resources.mcp.library')}
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}>
+          <Button variant="outline" onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}>
             <Plus className="size-4" />
             {t('resources.mcp.add')}
           </Button>
@@ -967,15 +559,17 @@ export function McpPage() {
 
       {addView === 'form' && (
         <div className="mb-4">
-          <AddServerForm
+          <AddServerPanel
+            provider={isCodex ? 'codex' : 'claude'}
+            cwd={currentFolder}
             onClose={() => setAddView('none')}
-            onBundleSelected={handleBundleSelected}
-            onBundleRejected={handleBundleRejected}
+            onInstalled={(name) => toast.success(t('resources.mcp.bundle.installed', { name }))}
+            onError={(message) => toast.error(message)}
           />
         </div>
       )}
 
-      {!isCodex && addView === 'library' && (
+      {addView === 'library' && (
         <div className="mb-4">
           <LibraryView onClose={() => setAddView('none')} />
         </div>
@@ -990,7 +584,7 @@ export function McpPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          <ClaudeAiSection servers={claudeaiServers} loading={checking} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />
+          {!isCodex && <ClaudeAiSection servers={claudeaiServers} loading={checking} onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')} />}
           <ServerSection
             title={t('resources.sectionUser')}
             configs={userConfigs}

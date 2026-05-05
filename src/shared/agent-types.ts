@@ -1048,6 +1048,8 @@ export interface McpLibraryEntry {
   description?: string
   icons?: McpIconInfo[]
   savedAt: string
+  bundleId?: string
+  bundleVersion?: string
 }
 
 // --- Session history ---

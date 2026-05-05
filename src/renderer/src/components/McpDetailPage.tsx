@@ -108,7 +108,7 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
           {t('common.back')}
         </button>
         <div className="flex items-center gap-3">
-          <McpIcon name={config.name} meta={meta} size="md" />
+          <McpIcon name={config.name} meta={meta} bundle={bundle} size="md" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">{config.name}</h2>

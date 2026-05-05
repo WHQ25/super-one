@@ -136,6 +136,7 @@ export interface PerSessionState {
   slashCommandOutput: { command: string; content: string; mode?: 'overlay' | 'popup' } | null
   _streamingToolInputPreviews: Record<string, Record<string, unknown>>
   _pendingSlashCommand: string
+  _pendingCompactUserId: string
   todos: Record<string, TodoItem>
   showTodos: boolean
   _todosUserDismissed: boolean
@@ -231,6 +232,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     slashCommandOutput: null,
     _streamingToolInputPreviews: {},
     _pendingSlashCommand: '',
+    _pendingCompactUserId: '',
     todos: {},
     showTodos: false,
     _todosUserDismissed: false,
@@ -1133,12 +1135,17 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       return { _worktreeRemoved: true, cwd: event.fallbackCwd }
 
     case 'compact_boundary': {
-      const msgs = [...session.messages]
+      const compactUserId = session._pendingCompactUserId
+      const msgs = compactUserId
+        ? session.messages.filter((m) => m.id !== compactUserId)
+        : [...session.messages]
       let insertIdx = msgs.length
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].role === 'user') {
-          insertIdx = i
-          break
+      if (!compactUserId) {
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === 'user') {
+            insertIdx = i
+            break
+          }
         }
       }
       msgs.splice(insertIdx, 0, {
@@ -1149,7 +1156,12 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         createdAt: new Date().toISOString(),
         providerId: 'system',
       })
-      return { isCompacting: false, messages: msgs }
+      return {
+        isCompacting: false,
+        messages: msgs,
+        _pendingCompactUserId: '',
+        ...(compactUserId ? { _pendingSlashCommand: '' } : {}),
+      }
     }
 
     case 'subagent_usage':
@@ -1239,11 +1251,16 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
 
     case 'slash_command_output': {
       const cmd = session._pendingSlashCommand
-      const filtered = session.messages.filter((m) => m.id !== event.messageId)
+      const compactUserId = session._pendingCompactUserId
+      const filtered = session.messages.filter(
+        (m) => m.id !== event.messageId && (!compactUserId || m.id !== compactUserId),
+      )
       if (cmd === 'compact') {
-        const lastUserIdx = filtered.findLastIndex((m) => m.role === 'user')
-        if (lastUserIdx >= 0) filtered.splice(lastUserIdx, 1)
-        return { _pendingSlashCommand: '', messages: filtered }
+        if (!compactUserId) {
+          const lastUserIdx = filtered.findLastIndex((m) => m.role === 'user')
+          if (lastUserIdx >= 0) filtered.splice(lastUserIdx, 1)
+        }
+        return { _pendingSlashCommand: '', _pendingCompactUserId: '', messages: filtered }
       }
       if (import.meta.env.DEV && import.meta.env.RENDERER_VITE_DEBUG_SLASH_OUTPUT === '1') {
         const debugText = `\`\`\`\n/${cmd}\n\n${event.content}\n\`\`\``
@@ -3192,6 +3209,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       contexts: messageContexts,
       userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
     }
+    const isCompactSlash = effectiveProvider === 'claude' && slashMatch?.[1] === 'compact'
     set((s) => ({
       ...updateActivePerSession(s, (sess) => ({
         ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),
@@ -3201,6 +3219,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         miniAppContexts: {},
         userSelections: [],
         codexPlanRejectHintActive: false,
+        ...(isCompactSlash ? { _pendingCompactUserId: userMessageId } : {}),
         ...(effectiveProvider === 'claude' && !isQueuedSend ? { awaitingAssistantReply: true } : {}),
       })),
       isOpen: true,

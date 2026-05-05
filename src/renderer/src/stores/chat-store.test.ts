@@ -3836,6 +3836,91 @@ describe('slash_command_output for compact', () => {
   })
 })
 
+describe('compact_boundary user-message cleanup', () => {
+  it('removes the tracked /compact user when SDK only emits compact_boundary', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const session = proj._sessions[proj._activeSessionId!]
+    session._pendingSlashCommand = 'compact'
+    session._pendingCompactUserId = 'compact-user'
+    session.messages = [
+      { id: 'prev-user', role: 'user', content: [{ type: 'text', text: 'do task' }], status: 'complete', createdAt: '', providerId: 'claude' },
+      { id: 'prev-assist', role: 'assistant', content: [{ type: 'text', text: 'done' }], status: 'complete', createdAt: '', providerId: 'claude' },
+      { id: 'compact-user', role: 'user', content: [{ type: 'text', text: '/compact' }], status: 'complete', createdAt: '', providerId: 'claude' },
+    ] as never[]
+    useChatStore.setState({ projectSessions: { '/test': proj } })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'compact_boundary',
+      trigger: 'manual',
+      preTokens: 1234,
+    } as never))
+
+    const after = useChatStore.getState().projectSessions['/test']._sessions[useChatStore.getState().projectSessions['/test']._activeSessionId!]
+    expect(after.messages.find((m: { id: string }) => m.id === 'compact-user')).toBeUndefined()
+    expect(after._pendingCompactUserId).toBe('')
+    expect(after.messages.at(-1)!.providerId).toBe('system')
+    expect(after.messages.at(-1)!.content[0]).toMatchObject({ type: 'text', text: '__compact__:manual:1234' })
+  })
+
+  it('inserts pill before last user when compactUserId is not tracked (auto compact)', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const session = proj._sessions[proj._activeSessionId!]
+    session.messages = [
+      { id: 'u0', role: 'user', content: [{ type: 'text', text: 'older' }], status: 'complete', createdAt: '', providerId: 'claude' },
+      { id: 'a0', role: 'assistant', content: [{ type: 'text', text: 'older reply' }], status: 'complete', createdAt: '', providerId: 'claude' },
+      { id: 'u1', role: 'user', content: [{ type: 'text', text: 'latest' }], status: 'complete', createdAt: '', providerId: 'claude' },
+    ] as never[]
+    useChatStore.setState({ projectSessions: { '/test': proj } })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'compact_boundary',
+      trigger: 'auto',
+      preTokens: 0,
+    } as never))
+
+    const after = useChatStore.getState().projectSessions['/test']._sessions[useChatStore.getState().projectSessions['/test']._activeSessionId!]
+    const ids = after.messages.map((m: { id: string }) => m.id)
+    expect(ids[0]).toBe('u0')
+    expect(ids[1]).toBe('a0')
+    expect(after.messages[2].providerId).toBe('system')
+    expect(ids[3]).toBe('u1')
+  })
+
+  it('does not double-remove when slash_command_output arrives after compact_boundary', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const session = proj._sessions[proj._activeSessionId!]
+    session._pendingSlashCommand = 'compact'
+    session._pendingCompactUserId = 'compact-user'
+    session.messages = [
+      { id: 'prev-user', role: 'user', content: [{ type: 'text', text: 'task' }], status: 'complete', createdAt: '', providerId: 'claude' },
+      { id: 'prev-assist', role: 'assistant', content: [{ type: 'text', text: 'done' }], status: 'complete', createdAt: '', providerId: 'claude' },
+      { id: 'compact-user', role: 'user', content: [{ type: 'text', text: '/compact' }], status: 'complete', createdAt: '', providerId: 'claude' },
+    ] as never[]
+    useChatStore.setState({ projectSessions: { '/test': proj } })
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'compact_boundary',
+      trigger: 'manual',
+      preTokens: 100,
+    } as never))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'slash_command_output',
+      messageId: 'never-existed',
+      content: 'Conversation compacted',
+    } as never))
+
+    const after = useChatStore.getState().projectSessions['/test']._sessions[useChatStore.getState().projectSessions['/test']._activeSessionId!]
+    expect(after.messages.find((m: { id: string }) => m.id === 'prev-user')).toBeDefined()
+    expect(after.messages.find((m: { id: string }) => m.id === 'prev-assist')).toBeDefined()
+    expect(after.messages.find((m: { id: string }) => m.id === 'compact-user')).toBeUndefined()
+    expect(after._pendingSlashCommand).toBe('')
+    expect(after._pendingCompactUserId).toBe('')
+  })
+})
+
 describe('createDefaultPerSessionState', () => {
   it('returns correct default values', () => {
     const state = createDefaultPerSessionState()

@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.27.4-alpha] - 2026-05-05
+
+### Added
+
+- **End-to-end encryption for relay file transfers**: files uploaded through the relay R2 bucket are now wrapped in a chunked AES-GCM envelope (4MB chunks, AAD bound to `channelKey:r2Key:chunkIndex`). R2 never sees plaintext — desktop seals on upload, mobile decrypts on download. LAN transport is unchanged.
+- **Drag files from the sidebar into other apps and mini-apps**: file-tree drag now uses Electron's native `webContents.startDrag()`, so dragged items flow through the OS as real `Files`. You can drop them into Finder, VS Code, sandboxed mini-app iframes, etc. Internal drops (within the tree, into the @-mention chat input, into the activity dock) still work as before.
+- **Right-click selected code in file preview to quote into chat**: selection in the File/Changes tabs adds a file chip (icon + basename + line range) to the chat input. The popover renders via the same diff view as FilePreview, preserving syntax highlighting and red/green diff backgrounds; mixed selections produce a unified-diff body.
+
+### Fixed
+
+- **Codex tool labels squeezed when summary overflows**: header label spans in `CodexCommandBlock`, `CollabSendInputBlock`, and `CodexPlanBlock` now use `shrink-0 whitespace-nowrap`, so CJK labels like "执行中…" stay intact instead of being squeezed character-by-character when a long bash command fills the sibling span.
+
 ## [0.27.3-alpha] - 2026-05-05
 
 ### Added

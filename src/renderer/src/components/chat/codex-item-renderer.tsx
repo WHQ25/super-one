@@ -130,7 +130,7 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
     <div className={cn('tool-node my-0.5 min-w-0 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" onClick={() => setExpanded((e) => !e)}>
         <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
-        <span className={cn('font-medium text-foreground', isRunning && 'animate-shimmer')}>
+        <span className={cn('shrink-0 whitespace-nowrap font-medium text-foreground', isRunning && 'animate-shimmer')}>
           {isRunning ? <>{display.label === 'Bash' ? t('chat.codex.statusRunning') : display.label === 'Read' ? t('chat.codex.statusReading') : t('chat.codex.statusSearching')}…</> : display.label}
         </span>
         {action?.type === 'read' && action.path
@@ -198,7 +198,7 @@ function CollabSendInputBlock({ item }: { item: CodexCollabToolCallItem }) {
     <div className={cn('tool-node my-0.5 min-w-0 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" onClick={() => setExpanded((e) => !e)}>
         <MessageSquare className="size-3 shrink-0 text-muted-foreground" />
-        <span className="font-medium text-foreground">{label}</span>
+        <span className="shrink-0 whitespace-nowrap font-medium text-foreground">{label}</span>
         {!expanded && prompt && <span className="min-w-0 truncate text-muted-foreground">{prompt}</span>}
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
@@ -313,7 +313,7 @@ function CodexPlanBlock({
     )}>
       <div className="flex items-center gap-1.5 px-2 py-2 text-xs" onClick={() => setExpanded((e) => !e)}>
         <ClipboardList className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
-        <span className="font-medium text-foreground">{t('chat.plan.label')}</span>
+        <span className="shrink-0 whitespace-nowrap font-medium text-foreground">{t('chat.plan.label')}</span>
         {planApproval && <PlanApprovalBadge planApproval={planApproval} />}
         {!expanded && <span className="min-w-0 truncate text-muted-foreground">{item.text.split('\n')[0]}</span>}
         {!expanded && planApproval?.status === 'rejected' && planApproval.feedback && (

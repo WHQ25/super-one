@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
@@ -9,14 +9,39 @@ import type { ContentBlock } from '../../../../shared/agent-types'
 interface AppToolGroupProps {
   appId: string
   blocks: ContentBlock[]
+  sealed?: boolean
 }
 
-export function AppToolGroup({ appId, blocks }: AppToolGroupProps) {
+export function AppToolGroup({ appId, blocks, sealed = false }: AppToolGroupProps) {
   const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
   const appName = app?.manifest.name ?? appId
   const toolUses = useMemo(() => blocks.filter((b): b is ContentBlock & { type: 'tool_use' } => b.type === 'tool_use'), [blocks])
   const streamingTool = useMemo(() => toolUses.find((b) => b.status === 'streaming') ?? null, [toolUses])
-  const [expanded, setExpanded] = useState(!!streamingTool)
+  const [expanded, setExpanded] = useState(!!streamingTool && !sealed)
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
+
+  useEffect(() => {
+    if (sealed) setExpanded(false)
+  }, [sealed])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    isNearBottomRef.current = true
+    const handleScroll = (): void => {
+      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [expanded])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !isNearBottomRef.current) return
+    el.scrollTop = el.scrollHeight
+  })
 
   return (
     <div className="tool-group my-0.5">
@@ -34,7 +59,7 @@ export function AppToolGroup({ appId, blocks }: AppToolGroupProps) {
       </button>
 
       {expanded && (
-        <div className="mt-0.5 space-y-0.5 pl-2">
+        <div ref={scrollRef} className="mt-0.5 max-h-[120px] space-y-0.5 overflow-y-auto pl-2">
           {toolUses.map((block, i) => (
             <ToolBlock key={i} toolName={block.toolName} toolUseId={block.toolUseId} input={block.input} status={block.status} elapsedSeconds={block.elapsedSeconds} grouped />
           ))}

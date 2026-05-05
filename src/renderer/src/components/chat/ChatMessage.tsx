@@ -634,6 +634,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                     key={`atg-${seg.startIndex}`}
                     appId={seg.appId}
                     blocks={seg.blocks}
+                    sealed={!isStreaming || segIdx < segs.length - 1}
                   />
                 )
               }
@@ -654,6 +655,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                 <ToolGroup
                   key={`tg-${seg.startIndex}`}
                   blocks={seg.blocks}
+                  sealed={!isStreaming || segIdx < segs.length - 1}
                 />
               )
             })

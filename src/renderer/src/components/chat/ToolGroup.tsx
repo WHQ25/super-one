@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolBlock } from './ToolBlock'
@@ -7,18 +7,43 @@ import type { ContentBlock } from '../../../../shared/agent-types'
 
 interface ToolGroupProps {
   blocks: ContentBlock[]
+  sealed?: boolean
 }
 
 /** Collapsible group for consecutive read-only tool calls (Read, Glob, Grep). */
-export function ToolGroup({ blocks }: ToolGroupProps) {
+export function ToolGroup({ blocks, sealed = false }: ToolGroupProps) {
   const toolUses = blocks.filter((b) => b.type === 'tool_use')
   const hasStreamingTool = toolUses.some((b) => b.type === 'tool_use' && b.status === 'streaming')
-  const [expanded, setExpanded] = useState(hasStreamingTool)
+  const [expanded, setExpanded] = useState(hasStreamingTool && !sealed)
 
   const summary = generateSummary(toolUses)
   const streamingTool = hasStreamingTool
     ? toolUses.find((b) => b.type === 'tool_use' && b.status === 'streaming')
     : null
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
+
+  useEffect(() => {
+    if (sealed) setExpanded(false)
+  }, [sealed])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    isNearBottomRef.current = true
+    const handleScroll = (): void => {
+      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [expanded])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !isNearBottomRef.current) return
+    el.scrollTop = el.scrollHeight
+  })
 
   return (
     <div className="tool-group my-0.5">
@@ -38,7 +63,7 @@ export function ToolGroup({ blocks }: ToolGroupProps) {
       </button>
 
       {expanded && (
-        <div className="mt-0.5 space-y-0.5 pl-2">
+        <div ref={scrollRef} className="mt-0.5 max-h-[120px] space-y-0.5 overflow-y-auto pl-2">
           {blocks.map((block, i) => {
             if (block.type === 'tool_use') {
               return (

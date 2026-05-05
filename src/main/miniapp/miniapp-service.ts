@@ -3,7 +3,6 @@ import { watch as watchSync } from 'fs'
 import type { FSWatcher } from 'fs'
 import { join, resolve, sep, relative, dirname } from 'path'
 import { app, shell } from 'electron'
-import { is } from '@electron-toolkit/utils'
 import log from '../logger'
 import { gitRun } from '../git-run'
 import { sanitizeGitRef } from '../path-security'
@@ -15,7 +14,6 @@ import { generateVanillaFiles, generateReactFiles, type GeneratedFile } from './
 const DEV_LINK_FILE = '.s1-dev.json'
 
 const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
-const devAppsDir = () => join(process.cwd(), 'examples', 'miniapp')
 
 export interface AllowedDir {
   path: string
@@ -253,17 +251,7 @@ function resolveDistDir(distDir: string, projectDir: string | undefined): string
 }
 
 export async function discoverApps(): Promise<MiniAppEntry[]> {
-  const entries = await scanDir(userAppsDir())
-  if (is.dev) {
-    const devEntries = await scanDir(devAppsDir())
-    const existingIds = new Set(entries.map((e) => e.id))
-    for (const entry of devEntries) {
-      if (!existingIds.has(entry.id)) {
-        entries.push(entry)
-      }
-    }
-  }
-  return entries
+  return scanDir(userAppsDir())
 }
 
 export async function detectStandaloneApp(projectDir: string): Promise<MiniAppEntry | null> {

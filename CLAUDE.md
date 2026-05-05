@@ -274,10 +274,10 @@ window.app.trace?.('agent.store', 'content_delta', data, messageId)
 **Saving & converting recordings:**
 ```bash
 # Save current trace DB as a named recording
-./scripts/save-recording.sh claude-todos    # → recordings/claude-todos.db
+./scripts/save-recording.sh claude-todos    # → scripts/recordings/claude-todos.db
 
 # Convert agent.emit → remote.out (offline, re-runnable after changing strip logic)
-bun run scripts/convert-trace.ts recordings/claude-todos.db
+bun run scripts/convert-trace.ts scripts/recordings/claude-todos.db
 ```
 
 **Querying** (from terminal while app is running):

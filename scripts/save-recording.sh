@@ -3,7 +3,7 @@ set -euo pipefail
 
 NAME="${1:-}"
 DB="event-trace.db"
-OUT_DIR="recordings"
+OUT_DIR="scripts/recordings"
 
 if [ -z "$NAME" ]; then
   echo "Usage: ./scripts/save-recording.sh <name>"
@@ -30,5 +30,5 @@ SOURCES=$(sqlite3 "$DB" "SELECT source, count(*) FROM events GROUP BY source ORD
 echo "Saved recording '$NAME' ($COUNT events)"
 echo "$SOURCES"
 echo ""
-echo "To convert:  bun run scripts/convert-trace.ts recordings/$NAME.db"
-echo "To export:   cd ../super-one-flutter && ./scripts/export_fixtures.sh ../super-one/recordings/$NAME.db remote.out $NAME"
+echo "To convert:  bun run scripts/convert-trace.ts scripts/recordings/$NAME.db"
+echo "To export:   cd ../super-one-flutter && ./scripts/export_fixtures.sh ../super-one/scripts/recordings/$NAME.db remote.out $NAME"

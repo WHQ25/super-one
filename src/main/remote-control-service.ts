@@ -575,6 +575,7 @@ export class RemoteControlService {
     return uploadFileToRelay(realPath, meta, sessionId, {
       channelKeyHex: this.keys.channelKeyHex,
       relayHttpUrl: relayWsToHttp(this.relayUrl),
+      aesKey: this.keys.aesKey,
     })
   }
 

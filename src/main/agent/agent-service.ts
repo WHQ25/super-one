@@ -1116,6 +1116,7 @@ export class AgentService {
     try {
       let url: string
       let expiresAt: number
+      let encryption: { version: number; format: string; key: string } | undefined
       if (transport === 'lan') {
         const lanUrl = await remote.signLanFileUrl(authorized.realPath, { ttlMs: 60_000 })
         if (!lanUrl) {
@@ -1132,6 +1133,7 @@ export class AgentService {
         )
         url = result.downloadUrl
         expiresAt = result.expiresAt
+        encryption = result.encryption
       }
       await respond(command.requestId, {
         ok: true,
@@ -1141,6 +1143,7 @@ export class AgentService {
         size: authorized.size,
         modifiedAt: authorized.modifiedAt,
         expiresAt,
+        ...(encryption ? { encryption } : {}),
       })
     } catch (err) {
       log.error('[AgentService] read_desktop_file failed:', err)

@@ -1,18 +1,26 @@
 import { webcrypto } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { computeHmacToken, computeRoomId } from './remote-control-crypto'
+import { computeHmacToken, computeRoomId, encryptBytesChunked } from './remote-control-crypto'
 
 const encoder = new TextEncoder()
 
 export interface RelayFileUploadContext {
   channelKeyHex: string
   relayHttpUrl: string
+  aesKey: webcrypto.CryptoKey
+}
+
+export interface RelayUploadEncryptionInfo {
+  version: number
+  format: 'chunked-v1'
+  key: string
 }
 
 export interface RelayUploadResult {
   downloadUrl: string
   expiresAt: number
   key: string
+  encryption: RelayUploadEncryptionInfo
 }
 
 export class RelayUploadError extends Error {
@@ -33,20 +41,23 @@ export async function uploadFileToRelay(
   const keyHash = await sha256Hex(`${realPath}:${sessionId}:${ts}`)
   const key = `files/${roomId}/${keyHash.slice(0, 32)}.bin`
 
+  const fileBytes = await readFile(realPath)
+  const encrypted = await encryptBytesChunked(context.aesKey, fileBytes, key, context.channelKeyHex)
+  const encryptedContentType = 'application/octet-stream'
+
   const uploadUrl = await fetchUploadUrl({
     relayHttpUrl: context.relayHttpUrl,
     channelKeyHex: context.channelKeyHex,
     key,
-    contentType: meta.mimeType,
-    contentLength: meta.size,
+    contentType: encryptedContentType,
+    contentLength: encrypted.byteLength,
   })
-  const fileBytes = await readFile(realPath)
   const putRes = await fetch(uploadUrl, {
     method: 'PUT',
-    body: fileBytes,
+    body: encrypted,
     headers: {
-      'content-type': meta.mimeType,
-      'content-length': String(meta.size),
+      'content-type': encryptedContentType,
+      'content-length': String(encrypted.byteLength),
     },
   })
   if (!putRes.ok) {
@@ -59,7 +70,12 @@ export async function uploadFileToRelay(
     channelKeyHex: context.channelKeyHex,
     key,
   })
-  return { downloadUrl: downloadResult.url, expiresAt: downloadResult.expiresAt, key }
+  return {
+    downloadUrl: downloadResult.url,
+    expiresAt: downloadResult.expiresAt,
+    key,
+    encryption: { version: 1, format: 'chunked-v1', key },
+  }
 }
 
 async function fetchUploadUrl(opts: {

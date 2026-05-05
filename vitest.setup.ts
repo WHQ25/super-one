@@ -22,6 +22,14 @@ if (typeof globalThis.window !== 'undefined' && !(globalThis.window as unknown a
   w.agent = new Proxy({}, { get: () => noop })
 }
 
+if (typeof (globalThis as unknown as { requestIdleCallback?: unknown }).requestIdleCallback === 'undefined') {
+  const ric = (cb: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void): number =>
+    setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 0 }), 0) as unknown as number
+  const cic = (id: number): void => clearTimeout(id)
+  Object.defineProperty(globalThis, 'requestIdleCallback', { configurable: true, writable: true, value: ric })
+  Object.defineProperty(globalThis, 'cancelIdleCallback', { configurable: true, writable: true, value: cic })
+}
+
 if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage.setItem !== 'function') {
   const store = new Map<string, string>()
   const localStorage = {

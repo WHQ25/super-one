@@ -4,16 +4,21 @@ import { Copy, MessageSquarePlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/stores/chat'
 
-interface MenuPos {
+export interface SelectionMenuPos {
   x: number
   y: number
-  text: string
 }
 
-function Menu({ pos, onClose }: { pos: MenuPos; onClose: () => void }) {
+interface SelectionMenuProps {
+  pos: SelectionMenuPos
+  onCopy: () => void
+  onAddToChat: () => void
+  onClose: () => void
+}
+
+export function SelectionMenu({ pos, onCopy, onAddToChat, onClose }: SelectionMenuProps) {
   const { t } = useTranslation()
   const menuRef = useRef<HTMLDivElement>(null)
-  const addUserSelection = useChatStore((s) => s.addUserSelection)
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -30,16 +35,6 @@ function Menu({ pos, onClose }: { pos: MenuPos; onClose: () => void }) {
     }
   }, [onClose])
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(pos.text)
-    onClose()
-  }
-
-  const handleAddToChat = () => {
-    addUserSelection(pos.text)
-    onClose()
-  }
-
   const vw = typeof window !== 'undefined' ? window.innerWidth : 0
   const vh = typeof window !== 'undefined' ? window.innerHeight : 0
   const left = vw ? Math.max(8, Math.min(pos.x, vw - 180)) : pos.x
@@ -54,7 +49,7 @@ function Menu({ pos, onClose }: { pos: MenuPos; onClose: () => void }) {
     >
       <button
         type="button"
-        onClick={handleCopy}
+        onClick={() => { onCopy(); onClose() }}
         className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-default outline-none hover:bg-accent hover:text-accent-foreground"
       >
         <Copy className="size-4 text-muted-foreground" />
@@ -62,7 +57,7 @@ function Menu({ pos, onClose }: { pos: MenuPos; onClose: () => void }) {
       </button>
       <button
         type="button"
-        onClick={handleAddToChat}
+        onClick={() => { onAddToChat(); onClose() }}
         className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-default outline-none hover:bg-accent hover:text-accent-foreground"
       >
         <MessageSquarePlus className="size-4 text-muted-foreground" />
@@ -75,13 +70,20 @@ function Menu({ pos, onClose }: { pos: MenuPos; onClose: () => void }) {
   return createPortal(menu, document.body)
 }
 
+interface MenuState {
+  x: number
+  y: number
+  text: string
+}
+
 interface SelectionContextMenuZoneProps {
   children: React.ReactNode
   className?: string
 }
 
 export function SelectionContextMenuZone({ children, className }: SelectionContextMenuZoneProps) {
-  const [menu, setMenu] = useState<MenuPos | null>(null)
+  const [menu, setMenu] = useState<MenuState | null>(null)
+  const addUserSelection = useChatStore((s) => s.addUserSelection)
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -93,7 +95,14 @@ export function SelectionContextMenuZone({ children, className }: SelectionConte
   return (
     <div className={className} onContextMenu={handleContextMenu}>
       {children}
-      {menu && <Menu pos={menu} onClose={() => setMenu(null)} />}
+      {menu && (
+        <SelectionMenu
+          pos={{ x: menu.x, y: menu.y }}
+          onCopy={() => navigator.clipboard.writeText(menu.text)}
+          onAddToChat={() => addUserSelection(menu.text)}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   )
 }

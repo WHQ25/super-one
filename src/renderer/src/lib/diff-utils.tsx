@@ -149,8 +149,7 @@ export function useHighlightedTokens(code: string, language: string, options?: U
     const lang = resolveHighlightLanguage(plugin, language)
     const theme = (isDark ? 'github-dark' : 'github-light') as BundledTheme
     const needsCompanions = hasCompanions(lang)
-    const cacheable = !needsCompanions && lineCount <= HIGHLIGHT_CHUNK_SIZE
-    const cacheKey = cache && cacheable ? buildHighlightKey(theme, lang, code) : null
+    const cacheKey = cache ? buildHighlightKey(theme, lang, code) : null
 
     if (cache && cacheKey) {
       const hit = cache.get(cacheKey)
@@ -205,6 +204,12 @@ export function useHighlightedTokens(code: string, language: string, options?: U
           const extracted = toHLTokens(tokens)
           for (let i = 0; i < extracted.length; i++) accumulated[start + i] = extracted[i]
           if (!cancelled) startTransition(() => setTokens([...accumulated] as HLToken[][]))
+          if (end >= codeLines.length) {
+            if (!cancelled && cache && cacheKey) {
+              cache.set(cacheKey, accumulated as HLToken[][])
+            }
+            return
+          }
           scheduleIdle(() => processChunk(chunkIdx + 1), 16)
         }
         processChunk(0)
@@ -409,6 +414,24 @@ function parseHunks(unifiedDiff: string): DiffHunk[] {
   return hunks
 }
 
+export function reconstructOldContent(newContent: string, unifiedDiff: string): string {
+  if (!unifiedDiff) return newContent
+  const hunks = parseHunks(unifiedDiff)
+  if (hunks.length === 0) return newContent
+  const lines = splitContentLines(newContent)
+  for (let i = hunks.length - 1; i >= 0; i--) {
+    const hunk = hunks[i]
+    const oldHunkLines: string[] = []
+    for (const line of hunk.lines) {
+      if (line.kind === 'removed' || line.kind === 'unchanged') {
+        oldHunkLines.push(line.text)
+      }
+    }
+    lines.splice(hunk.newStart - 1, hunk.newCount, ...oldHunkLines)
+  }
+  return lines.join('\n')
+}
+
 export function buildFullFileWithDiff(fullContent: string, unifiedDiff: string): DiffLine[] {
   const fileLines = splitContentLines(fullContent)
   if (!unifiedDiff) {
@@ -430,7 +453,7 @@ export function buildFullFileWithDiff(fullContent: string, unifiedDiff: string):
       fileLineIdx++
     }
     for (const line of hunk.lines) {
-      result.push({ ...line, sourceIdx: line.kind === 'removed' ? -1 : sourceIdx++ })
+      result.push({ ...line, sourceIdx: line.kind === 'removed' ? line.lineNum - 1 : sourceIdx++ })
       if (line.kind !== 'removed') fileLineIdx++
     }
   }
@@ -487,6 +510,8 @@ const DiffLineRow = memo(function DiffLineRow({ line, tokens, gw, size, start, i
   const s = LINE_STYLE[line.kind]
   return (
     <div
+      data-line={line.lineNum}
+      data-line-kind={line.kind}
       className={isHighlighted ? ROW_HIGHLIGHT : wasFading ? ROW_CLASS_FADE[line.kind] : ROW_CLASS[line.kind]}
       style={{ height: size, transform: `translateY(${start}px)` }}
     >

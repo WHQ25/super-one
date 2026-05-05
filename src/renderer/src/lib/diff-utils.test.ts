@@ -8,6 +8,7 @@ import {
   splitContentLines,
   buildUnifiedFileChangeDiffLines,
   buildFullFileWithDiff,
+  reconstructOldContent,
   gutterWidth,
 } from './diff-utils'
 
@@ -139,6 +140,48 @@ describe('buildFullFileWithDiff', () => {
     const lines = buildFullFileWithDiff('a\nb', 'no hunk headers here')
     expect(lines).toHaveLength(2)
     expect(lines.every(l => l.kind === 'unchanged')).toBe(true)
+  })
+})
+
+describe('reconstructOldContent', () => {
+  it('returns the new content unchanged when diff is empty', () => {
+    expect(reconstructOldContent('a\nb\nc', '')).toBe('a\nb\nc')
+  })
+
+  it('returns the new content unchanged when diff has no hunks', () => {
+    expect(reconstructOldContent('a\nb', 'no hunks here')).toBe('a\nb')
+  })
+
+  it('reverses a simple replacement', () => {
+    const newContent = 'a\nB\nc'
+    const diff = '@@ -1,3 +1,3 @@\n a\n-b\n+B\n c'
+    expect(reconstructOldContent(newContent, diff)).toBe('a\nb\nc')
+  })
+
+  it('reverses a pure addition (drops added lines)', () => {
+    const newContent = 'a\nb\nc\nd'
+    const diff = '@@ -1,2 +1,4 @@\n a\n+b\n+c\n d'
+    expect(reconstructOldContent(newContent, diff)).toBe('a\nd')
+  })
+
+  it('reverses a pure removal (restores removed lines)', () => {
+    const newContent = 'a\nd'
+    const diff = '@@ -1,4 +1,2 @@\n a\n-b\n-c\n d'
+    expect(reconstructOldContent(newContent, diff)).toBe('a\nb\nc\nd')
+  })
+
+  it('reverses multiple hunks without index drift', () => {
+    const newContent = 'A\nx\ny\nz\nB\np\nq\nC'
+    const diff = '@@ -1,1 +1,1 @@\n-a\n+A\n@@ -5,1 +5,1 @@\n-b\n+B\n@@ -8,1 +8,1 @@\n-c\n+C'
+    expect(reconstructOldContent(newContent, diff)).toBe('a\nx\ny\nz\nb\np\nq\nc')
+  })
+
+  it('preserves embedded language context across hunks (HTML scenario)', () => {
+    const newContent = '<html>\n<body>\n<script>\nvar x = 1;\nvar y = 2;\nvar z = 3;\n</script>\n</body>\n</html>'
+    const diff = '@@ -4,2 +4,3 @@\n var x = 1;\n+var y = 2;\n var z = 3;'
+    const old = reconstructOldContent(newContent, diff)
+    expect(old).toBe('<html>\n<body>\n<script>\nvar x = 1;\nvar z = 3;\n</script>\n</body>\n</html>')
+    expect(old).toContain('<script>')
   })
 })
 

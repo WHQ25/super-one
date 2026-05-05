@@ -1,22 +1,22 @@
 import { useMemo } from 'react'
-import { DiffView, buildUnifiedFileChangeDiffLines, useHighlightedTokens, inferLanguage, type DiffLine } from '@/lib/diff-utils'
+import {
+  DiffView,
+  buildUnifiedFileChangeDiffLines,
+  reconstructOldContent,
+  useHighlightedTokens,
+  inferLanguage,
+  type DiffLine,
+} from '@/lib/diff-utils'
+import { getHighlightCache } from '@/lib/highlight-cache'
+import { useAppStore } from '@/stores/app'
 
 interface FileDiffViewProps {
   filePath: string
   diff: string
+  content: string
 }
 
-function buildDiffSourceText(lines: DiffLine[]): { oldText: string; newText: string } {
-  const oldParts: string[] = []
-  const newParts: string[] = []
-  for (const line of lines) {
-    if (line.kind !== 'added') oldParts.push(line.text)
-    if (line.kind !== 'removed') newParts.push(line.text)
-  }
-  return { oldText: oldParts.join('\n'), newText: newParts.join('\n') }
-}
-
-export function FileDiffView({ filePath, diff }: FileDiffViewProps) {
+export function FileDiffView({ filePath, diff, content }: FileDiffViewProps) {
   if (!diff) {
     return (
       <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
@@ -25,15 +25,20 @@ export function FileDiffView({ filePath, diff }: FileDiffViewProps) {
     )
   }
 
-  return <DiffContent filePath={filePath} diff={diff} />
+  return <DiffContent filePath={filePath} diff={diff} content={content} />
 }
 
-function DiffContent({ filePath, diff }: { filePath: string; diff: string }) {
+function DiffContent({ filePath, diff, content }: { filePath: string; diff: string; content: string }) {
   const language = inferLanguage(filePath)
-  const lines = useMemo(() => buildUnifiedFileChangeDiffLines(diff), [diff])
-  const { oldText, newText } = useMemo(() => buildDiffSourceText(lines), [lines])
-  const oldTokens = useHighlightedTokens(oldText, language)
-  const newTokens = useHighlightedTokens(newText, language)
+  const lines = useMemo<DiffLine[]>(() => {
+    const raw = buildUnifiedFileChangeDiffLines(diff)
+    return raw.map((line) => ({ ...line, sourceIdx: line.lineNum - 1 }))
+  }, [diff])
+  const oldContent = useMemo(() => reconstructOldContent(content, diff), [content, diff])
+  const currentFolder = useAppStore((s) => s.currentFolder)
+  const cache = useMemo(() => getHighlightCache(currentFolder), [currentFolder])
+  const newTokens = useHighlightedTokens(content, language, { cache })
+  const oldTokens = useHighlightedTokens(oldContent, language, { cache })
 
   if (lines.length === 0) {
     return (

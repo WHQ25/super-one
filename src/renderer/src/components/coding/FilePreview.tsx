@@ -13,6 +13,7 @@ import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
 import { ImagePreview } from './ImagePreview'
 import { MarkdownEditor } from './MarkdownEditor'
+import { FileSelectionContextMenuZone } from './FileSelectionContextMenuZone'
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown'])
 const BINARY_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'])
@@ -179,7 +180,9 @@ export function FilePreview({ filePath }: FilePreviewProps) {
           </div>
         )}
         {effectiveTab === 'changes' && hasDiff ? (
-          <FileDiffView filePath={selectedFile} diff={fileDiff?.diff ?? ''} />
+          <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
+            <FileDiffView filePath={selectedFile} diff={fileDiff?.diff ?? ''} content={fileContent?.content ?? ''} />
+          </FileSelectionContextMenuZone>
         ) : effectiveTab === 'preview' && isBinImg ? (
           <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
         ) : effectiveTab === 'preview' && isPdfFile ? (
@@ -197,7 +200,9 @@ export function FilePreview({ filePath }: FilePreviewProps) {
         ) : effectiveTab === 'preview' && isMd ? (
           <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
         ) : !isMd ? (
-          <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />
+          <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
+            <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />
+          </FileSelectionContextMenuZone>
         ) : null}
       </div>
     </div>

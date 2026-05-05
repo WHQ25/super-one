@@ -36,8 +36,8 @@ vi.mock('shiki', () => ({
 const highlighter = {
   codeToTokensBase: codeToTokensBaseSpy,
   getLastGrammarState: getLastGrammarStateSpy,
-  loadTheme: vi.fn(),
-  loadLanguage: vi.fn(),
+  loadTheme: vi.fn().mockResolvedValue(undefined),
+  loadLanguage: vi.fn().mockResolvedValue(undefined),
 }
 
 type IdleCallback = (deadline: IdleDeadline) => void
@@ -140,6 +140,58 @@ describe('useHighlightedTokens', () => {
     renderHook(() => useHighlightedTokens('const a = 1', 'typescript', { cache: cache2 }))
     await act(async () => { await Promise.resolve() })
     expect(codeToTokensBaseSpy).toHaveBeenCalledTimes(2)
+
+    disposeHighlightCache(projectPath)
+  })
+
+  async function drainIdleQueue(): Promise<void> {
+    while (idleQueue.length > 0) {
+      flushNextIdle()
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+  }
+
+  it('writes cache entry after chunked path completes for long files', async () => {
+    const { useHighlightedTokens } = await import('./diff-utils')
+    const { getHighlightCache, disposeHighlightCache } = await import('./highlight-cache')
+    const projectPath = '/tmp/project-cache-chunked'
+    disposeHighlightCache(projectPath)
+    const cache = getHighlightCache(projectPath)!
+    const code = Array.from({ length: 250 }, (_, i) => `line ${i}`).join('\n')
+
+    renderHook(() => useHighlightedTokens(code, 'typescript', { cache }))
+    await act(async () => { await drainIdleQueue() })
+    const initialCalls = codeToTokensBaseSpy.mock.calls.length
+    expect(initialCalls).toBeGreaterThan(1)
+    expect(cache.size).toBe(1)
+
+    const second = renderHook(() => useHighlightedTokens(code, 'typescript', { cache }))
+    await act(async () => { await Promise.resolve() })
+    await waitFor(() => expect(second.result.current).not.toBeNull())
+    expect(codeToTokensBaseSpy).toHaveBeenCalledTimes(initialCalls)
+
+    disposeHighlightCache(projectPath)
+  })
+
+  it('writes cache entry after chunked path completes for embedded-grammar files', async () => {
+    const { useHighlightedTokens } = await import('./diff-utils')
+    const { getHighlightCache, disposeHighlightCache } = await import('./highlight-cache')
+    const projectPath = '/tmp/project-cache-html'
+    disposeHighlightCache(projectPath)
+    const cache = getHighlightCache(projectPath)!
+    const code = '<html>\n<script>\nvar a = 1;\n</script>\n</html>'
+
+    renderHook(() => useHighlightedTokens(code, 'html', { cache }))
+    await act(async () => { await drainIdleQueue() })
+    const initialCalls = codeToTokensBaseSpy.mock.calls.length
+    expect(initialCalls).toBeGreaterThanOrEqual(1)
+    expect(cache.size).toBe(1)
+
+    const second = renderHook(() => useHighlightedTokens(code, 'html', { cache }))
+    await act(async () => { await Promise.resolve() })
+    await waitFor(() => expect(second.result.current).not.toBeNull())
+    expect(codeToTokensBaseSpy).toHaveBeenCalledTimes(initialCalls)
 
     disposeHighlightCache(projectPath)
   })

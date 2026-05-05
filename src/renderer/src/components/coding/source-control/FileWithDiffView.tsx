@@ -1,7 +1,9 @@
 import { useMemo, useRef } from 'react'
-import { DiffView, buildFullFileWithDiff, useHighlightedTokens, inferLanguage } from '@/lib/diff-utils'
+import { DiffView, buildFullFileWithDiff, reconstructOldContent, useHighlightedTokens, inferLanguage } from '@/lib/diff-utils'
 import { CodeMinimap } from '@/components/coding/CodeMinimap'
 import { useSourceControlStore } from '@/stores/source-control'
+import { getHighlightCache } from '@/lib/highlight-cache'
+import { useAppStore } from '@/stores/app'
 
 interface FileWithDiffViewProps {
   filePath: string
@@ -26,12 +28,16 @@ function FileWithDiffContent({ filePath, content, diff }: { filePath: string; co
   const scrollToLine = useSourceControlStore((s) => s.scrollToLine)
   const language = inferLanguage(filePath)
   const lines = useMemo(() => buildFullFileWithDiff(content, diff), [content, diff])
-  const tokens = useHighlightedTokens(content, language)
+  const oldContent = useMemo(() => reconstructOldContent(content, diff), [content, diff])
+  const currentFolder = useAppStore((s) => s.currentFolder)
+  const cache = useMemo(() => getHighlightCache(currentFolder), [currentFolder])
+  const newTokens = useHighlightedTokens(content, language, { cache })
+  const oldTokens = useHighlightedTokens(oldContent, language, { cache })
 
   return (
     <div className="flex h-full">
-      <DiffView ref={scrollRef} lines={lines} newTokens={tokens} fontSize={14} maxHeight="max-h-full" className="min-h-full flex-1 text-sm" hideScrollbar scrollToLine={scrollToLine} />
-      <CodeMinimap lines={lines} tokens={tokens} scrollRef={scrollRef} />
+      <DiffView ref={scrollRef} lines={lines} newTokens={newTokens} oldTokens={oldTokens} fontSize={14} maxHeight="max-h-full" className="min-h-full flex-1 text-sm" hideScrollbar scrollToLine={scrollToLine} />
+      <CodeMinimap lines={lines} tokens={newTokens} scrollRef={scrollRef} />
     </div>
   )
 }

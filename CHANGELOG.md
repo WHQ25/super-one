@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.27.3-alpha] - 2026-05-05
+
+### Added
+
+- **Tool-group viewing**: collapsed-by-default tool-call groups now cap at 120px with scroll and auto-scroll to the newest tool call as it streams. The group auto-collapses once the segment is sealed (next segment isn't a collapsible tool — text reply, reasoning, non-collapsible tool, or message round done).
+- **Unified Add Server panel**: replaced the separate "Add server" form and ".mcpb install" dialog with a single tabbed panel (default: Bundle). `.mcpb` preview now renders inline in the drop zone — no extra dialog. Scope toggle and Cancel/Install share one row across tabs. Install success shows a toast instead of an in-page banner.
+- **Bundle icons**: `.mcpb` server icons (e.g. Blender) now render in the MCP list and detail page using the bundle's manifest icon.
+
+### Fixed
+
+- **`.mcpb` `uv` bundles failed to spawn**: `uv run <script>` ran in the harness's working directory and couldn't find the bundle's `pyproject.toml`, surfacing as `Failed to spawn: blender-mcp` (ENOENT). The installer now prepends `--directory <installDir>` to `uv` args so the bundled script entry point resolves regardless of harness cwd.
+- **`/compact` slash command**: when triggered via slash command, the user's `/compact` message could be left in history alongside the compact summary; the boundary handler now drops the pending compact user message during both `slash_command_output` and `compact_boundary` events.
+
+### Changed
+
+- **Bundle uninstall vs library deletion**: uninstalling a `.mcpb` server no longer deletes its library entry. Users can re-install later without re-adding the entry; library deletion is now an explicit, separate action.
+
 ## [0.27.2-alpha] - 2026-05-05
 
 ### Added

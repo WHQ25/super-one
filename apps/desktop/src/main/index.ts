@@ -11,6 +11,7 @@ import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl } from './miniapp/miniapp-service'
+import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
@@ -50,7 +51,7 @@ import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNo
 import { startWatching, stopWatching } from './file-watcher'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
-import { parseGitStatusOutput, parseGitStatusFiles } from './git-status-utils'
+import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw } from './database'
@@ -1629,6 +1630,10 @@ function registerIpcHandlers(): void {
     mainWindow?.webContents.send(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, event)
   })
 
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DB_REQUEST, async (_e, appId: string, op: string, args: Record<string, unknown>) => {
+    return handleDbRequest(appId, op as any, args)
+  })
+
   ipcMain.handle(AgentIpcChannels.MINIAPP_IFRAME_READY, (_e, appId: string) => {
     notifyMiniAppReady(appId)
   })
@@ -2016,6 +2021,7 @@ function performQuit(): void {
   ]).catch(() => {})
   Promise.allSettled([remoteStop, agentService.dispose()]).finally(() => {
     codexService.dispose()
+    closeAllDbConnections()
     closeDb()
     closeTraceDb()
     setTimeout(() => app.quit(), 500)
@@ -2027,6 +2033,7 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   if (signalQuitting) return
   signalQuitting = true
   log.info(`[main] received ${sig}, shutting down`)
+  closeAllDbConnections()
   remoteControlService.stop().catch(() => {}).finally(() => process.exit(0))
   setTimeout(() => process.exit(0), 1500).unref()
 }

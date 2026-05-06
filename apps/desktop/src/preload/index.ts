@@ -876,6 +876,9 @@ const miniappAPI = {
   gitRequest: (appId: string, op: string, args: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GIT_REQUEST, appId, op, args),
 
+  dbRequest: (appId: string, op: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DB_REQUEST, appId, op, args),
+
   onGitHeadChangeEvent: (callback: (event: { appId: string }) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: { appId: string }) => callback(event)
     ipcRenderer.on(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, handler)

@@ -10,6 +10,7 @@ import { parseGitStatusFiles } from '../git-status-utils'
 import { parseManifest, parseDevLink } from './miniapp-schema'
 import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp, MiniAppFsAccess, MiniAppMediaKind } from '@superone/shared/miniapp-types'
 import { generateVanillaFiles, generateReactFiles, type GeneratedFile } from './miniapp-templates'
+import { closeDbForApp } from './miniapp-db'
 
 const DEV_LINK_FILE = '.s1-dev.json'
 
@@ -150,6 +151,7 @@ export function setAllowedDirectories(appId: string, dirs: AllowedDir[]): void {
 export function clearAllowedDirectories(appId: string): void {
   clearWatchersForApp(appId)
   stopGitHeadWatch(appId)
+  closeDbForApp(appId)
   allowedDirs.delete(appId)
 }
 
@@ -712,3 +714,4 @@ export async function handleGitRequest(
       throw new Error(`Unknown git operation: ${op}`)
   }
 }
+

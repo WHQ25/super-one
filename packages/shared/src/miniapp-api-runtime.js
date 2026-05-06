@@ -103,6 +103,20 @@ function createSuperoneApi(transport, version, opts) {
       if (initData !== null) callback(initData)
       else initCallbacks.push(callback)
     },
+    db: {
+      query(sql, params) {
+        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'query', args: { sql, params } })
+      },
+      exec(sql, params) {
+        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'exec', args: { sql, params } })
+      },
+      batch(statements) {
+        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'batch', args: { statements } })
+      },
+      pragma(name, value) {
+        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'pragma', args: { name, value } })
+      },
+    },
     fs: {
       readFile(path, opts) {
         const op = opts && opts.binary ? 'readFileBinary' : 'readFile'

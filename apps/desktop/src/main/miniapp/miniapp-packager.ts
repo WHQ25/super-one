@@ -7,6 +7,7 @@ import { Extract as unzipExtract } from 'unzipper'
 import { app } from 'electron'
 import log from '../logger'
 import { parseManifest } from './miniapp-schema'
+import { closeDbForApp } from './miniapp-db'
 import type { MiniAppInstallMeta, MiniAppInstallResult, MiniAppIntegrity, MiniAppManifest, MiniAppPackResult, MiniAppPreviewResult } from '@superone/shared/miniapp-types'
 
 const INTEGRITY_FILE = 'integrity.json'
@@ -239,6 +240,7 @@ export async function uninstallApp(appId: string): Promise<void> {
   if (!(await dirExists(targetDir))) {
     throw new Error(`App not installed: ${appId}`)
   }
+  closeDbForApp(appId)
   await rm(targetDir, { recursive: true, force: true })
   log.info('[miniapp] uninstalled %s', appId)
 }

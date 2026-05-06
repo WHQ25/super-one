@@ -29,6 +29,7 @@ const transport: MiniAppTransport = {
 ipcRenderer.on('miniapp-fs-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-fs-watch-ack', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-git-response', (_e, data) => dispatchResponse(data))
+ipcRenderer.on('miniapp-db-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-clipboard-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-ui-contextmenu-result', (_e, data) => dispatchResponse(data))
 

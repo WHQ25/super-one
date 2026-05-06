@@ -393,6 +393,12 @@ interface SuperOne {
     handle(name: string, callback: (args: Record<string, unknown>) => unknown | Promise<unknown>): void
   }
   onInit(callback: (data: Record<string, unknown>) => void): void
+  db: {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[] | Record<string, unknown>): Promise<T[]>
+    exec(sql: string, params?: unknown[] | Record<string, unknown>): Promise<{ changes: number; lastInsertRowid: number }>
+    batch(statements: Array<{ sql: string; params?: unknown[] | Record<string, unknown> }>): Promise<Array<{ changes: number; lastInsertRowid: number }>>
+    pragma<T = unknown>(name: string, value?: string | number): Promise<T>
+  }
   fs: {
     readFile(path: string): Promise<string>
     readFile(path: string, opts: { binary: true }): Promise<ArrayBuffer>

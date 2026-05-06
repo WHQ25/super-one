@@ -43,6 +43,12 @@ export function handleMiniAppMessage(
         .then((result) => { send({ type: 'miniapp-git-response', id: data.id, result }) })
         .catch((err: unknown) => { send({ type: 'miniapp-git-response', id: data.id, error: (err as Error).message }) })
       return true
+    case 'miniapp-db-request':
+      window.miniapp
+        .dbRequest(appId, data.op as string, data.args as Record<string, unknown>)
+        .then((result) => { send({ type: 'miniapp-db-response', id: data.id, result }) })
+        .catch((err: unknown) => { send({ type: 'miniapp-db-response', id: data.id, error: (err as Error).message }) })
+      return true
     case 'miniapp-fs-watch':
       window.miniapp
         .fsWatch(appId, data.path as string)

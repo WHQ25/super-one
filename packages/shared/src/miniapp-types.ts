@@ -139,6 +139,18 @@ export type MiniAppFsOp = 'readFile' | 'readFileBinary' | 'readDir' | 'writeFile
 
 export type MiniAppGitOp = 'info' | 'branches' | 'log' | 'status' | 'diff' | 'show' | 'blame' | 'diffSummary' | 'getCommit' | 'tags' | 'remotes' | 'branchDetail' | 'stashList' | 'logFile'
 
+export type MiniAppDbOp = 'query' | 'exec' | 'batch' | 'pragma'
+
+export interface MiniAppDbStatement {
+  sql: string
+  params?: unknown[] | Record<string, unknown>
+}
+
+export interface MiniAppDbRunResult {
+  changes: number
+  lastInsertRowid: number
+}
+
 export interface MiniAppFsRequest {
   appId: string
   op: MiniAppFsOp
@@ -240,6 +252,8 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-git-request'
   | 'miniapp-git-response'
   | 'miniapp-git-head-change'
+  | 'miniapp-db-request'
+  | 'miniapp-db-response'
   | 'miniapp-sendPrompt'
   | 'miniapp-ready'
   | 'miniapp-inchat-init'

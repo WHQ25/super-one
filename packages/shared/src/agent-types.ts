@@ -613,7 +613,8 @@ export interface FileTreeEntry {
   path: string
   isDirectory: boolean
   children?: FileTreeEntry[]
-  gitStatus?: GitFileStatus | null
+  gitIndex?: GitFileStatus | null
+  gitWorktree?: GitFileStatus | null
 }
 
 export interface GitStatusFile {
@@ -1628,6 +1629,7 @@ export const AgentIpcChannels = {
   MINIAPP_FS_WATCH_EVENT: 'miniapp:fs-watch-event',
   MINIAPP_GIT_REQUEST: 'miniapp:git-request',
   MINIAPP_GIT_HEAD_CHANGE: 'miniapp:git-head-change',
+  MINIAPP_DB_REQUEST: 'miniapp:db-request',
   MINIAPP_IFRAME_READY: 'miniapp:iframe-ready',
   MINIAPP_GET_PRELOAD_PATH: 'miniapp:get-preload-path',
   MINIAPP_DETECT_DEV: 'miniapp:detect-dev',

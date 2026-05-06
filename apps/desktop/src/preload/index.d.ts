@@ -298,6 +298,7 @@ interface MiniAppAPI {
   toolResult(callId: string, result: unknown, error?: string): Promise<void>
   fsRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   gitRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
+  dbRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   onGitHeadChangeEvent(callback: (event: { appId: string }) => void): () => void
   fsWatch(appId: string, path: string): Promise<number>
   fsUnwatch(watchId: number): Promise<void>

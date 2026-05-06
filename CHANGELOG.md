@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.28.0-alpha] - 2026-05-06
+
+### Added
+
+- **Canvas chat panel redesign**: collapsed state is now a 48px robot icon with three states (idle / running-breathing / task-done-check) and width-expansion when a permission or question is pending. The floating panel gains 4 edge-midpoint snap points alongside the 4 corners — midpoints expose three resize handles and re-center smoothly after release. Drag, resize, anchor switch and window-resize now share one motion-driven coordinate system.
+- **Remote status at a glance**: the sidebar's Smartphone tooltip and the Remote settings page both show host name plus separate Relay (cloud) / LAN (wifi) reachability indicators, sourced from a single shared `useRemoteStatus` hook.
+
+### Fixed
+
+- **Mobile plan-approval outcome was dropped on the desktop**: when a mobile peer approved or rejected a plan, the desktop only cleared the prompt without recording the result. The `interaction_resolved` event now carries `approved` + `feedback` and the renderer stamps `planApprovalOutcome` on the remote session, matching the local-approval path.
+- **Mobile missed the start of thinking blocks**: when a new thinking content block begins, an empty `content_delta` is now emitted upfront so the mobile renderer creates the block immediately instead of waiting for the first non-empty chunk.
+- **mDNS goodbye lost on quit / OS signal**: `performQuit` now bounds remote-control shutdown at 1.5s and runs it in parallel with agent dispose; SIGTERM/SIGINT/SIGHUP each trigger the same shutdown so the LAN advertiser sends its TTL=0 goodbye records before the process exits.
+
+### Changed
+
+- **LAN advertiser stack**: replaced `bonjour-service` with `multicast-dns` (Linux/Windows) and `/usr/bin/dns-sd` (macOS — defers to the system mDNSResponder, avoiding a duplicate Bonjour stack on loopback). Advertiser `publish` / `unpublish` are now async and idempotent.
+
 ## [0.27.4-alpha] - 2026-05-05
 
 ### Added

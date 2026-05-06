@@ -5,6 +5,10 @@
   "type": "module",
   "license": "BUSL-1.1",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WHQ25/super-one.git"
+  },
   "scripts": {
     "postinstall": "electron-rebuild -f -w better-sqlite3 --module-dir ../.. && chmod +x ../../node_modules/@anthropic-ai/claude-agent-sdk-*/claude 2>/dev/null; chmod +x ../../node_modules/@openai/codex-*/codex* 2>/dev/null || true",
     "dev": "rm -f dev.log event-trace.db && sqlite3 ~/Library/Application\\ Support/super-one/superone.db 'DELETE FROM global_resource_cache' 2>/dev/null; electron-vite dev",

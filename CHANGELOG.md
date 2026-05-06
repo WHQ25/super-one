@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.28.3-alpha] - 2026-05-07
+
+### Fixed
+- Black screen on startup (`require_react is not a function`) introduced by the
+  monorepo conversion. Rollup's default chunk splitting assigned React's CJS
+  wrapper to a chunk that had a mutual static import with the main app bundle,
+  causing the wrapper to be called before it was assigned. Added `manualChunks`
+  to the renderer Vite config to pin React, ReactDOM, and scheduler to a
+  dedicated `react-vendor` chunk with no app-code dependencies, making the
+  cycle structurally impossible regardless of how source modules are organized.
+
 ## [0.28.2-alpha] - 2026-05-06
 
 ### Fixed

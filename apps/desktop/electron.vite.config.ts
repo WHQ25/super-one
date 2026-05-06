@@ -53,7 +53,24 @@ export default defineConfig(({ mode }) => {
         '@': resolve('src/renderer/src')
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [react(), tailwindcss()],
+    build: {
+      rollupOptions: {
+        input: resolve('src/renderer/index.html'),
+        output: {
+          manualChunks(id) {
+            if (
+              id.includes('/node_modules/react/') ||
+              id.includes('/node_modules/react-dom/') ||
+              id.includes('/node_modules/react/jsx-runtime') ||
+              id.includes('/node_modules/scheduler/')
+            ) {
+              return 'react-vendor'
+            }
+          }
+        }
+      }
+    }
   }
   }
 })

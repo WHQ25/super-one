@@ -1,0 +1,40 @@
+name: Mirror apps/relay → super-one-relay-public
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/relay/**'
+      - '.github/workflows/mirror-relay.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-relay
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions (relay mirror)"
+
+      - name: Subtree split apps/relay
+        run: |
+          git subtree split --prefix=apps/relay -b relay-mirror-tmp
+
+      - name: Force-push to public mirror
+        env:
+          PAT: ${{ secrets.RELAY_MIRROR_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::error::RELAY_MIRROR_PAT secret is not set on this repo. Create a fine-grained PAT with Contents: Read+Write on WHQ25/super-one-relay-public and add as RELAY_MIRROR_PAT."
+            exit 1
+          fi
+          git push --force "https://x-access-token:${PAT}@github.com/WHQ25/super-one-relay-public.git" relay-mirror-tmp:main

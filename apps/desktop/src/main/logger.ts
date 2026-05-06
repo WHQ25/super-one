@@ -3,6 +3,12 @@ import { join } from 'path'
 import log from 'electron-log/main.js'
 import { is } from '@electron-toolkit/utils'
 
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EPIPE') throw err
+  })
+}
+
 if (is.dev) {
   log.transports.file.resolvePathFn = () => join(process.cwd(), 'dev.log')
 }

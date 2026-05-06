@@ -28,10 +28,11 @@ export type Messages = {
     empty: string
     settings: string
     remote: {
-      label: string
       connected: string
       disconnected: string
       deviceConnectedToast: string
+      lanActive: string
+      lanInactive: string
     }
     deleteSession: {
       title: string
@@ -864,6 +865,12 @@ export type Messages = {
       relayConnected: string
       relayUnreachable: string
       relayHint: string
+      statusRelay: string
+      statusLan: string
+      statusLanActive: string
+      statusLanInactive: string
+      statusRelayConnected: string
+      statusRelayDisconnected: string
     }
     apps: {
       title: string
@@ -956,10 +963,11 @@ export const en: Messages = {
     empty: 'No projects yet',
     settings: 'Settings',
     remote: {
-      label: 'Remote Control',
       connected: 'Connected',
       disconnected: 'Disconnected',
       deviceConnectedToast: '{{name}} connected',
+      lanActive: 'Active',
+      lanInactive: 'Inactive',
     },
     deleteSession: {
       title: 'Delete Session?',
@@ -1804,6 +1812,12 @@ export const en: Messages = {
       relayConnected: 'Connected',
       relayUnreachable: 'Unreachable',
       relayHint: 'Override the default relay with your own Cloudflare Workers deployment. Leave empty to use the built-in relay.',
+      statusRelay: 'Relay',
+      statusLan: 'LAN',
+      statusLanActive: 'Active',
+      statusLanInactive: 'Inactive',
+      statusRelayConnected: 'Connected',
+      statusRelayDisconnected: 'Disconnected',
     },
     apps: {
       title: 'Mini Apps',

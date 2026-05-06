@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
-import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Pin, Copy, Check, Smartphone, Wifi, Cloud } from 'lucide-react'
+import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Pin, Copy, Check, Smartphone, Wifi, Cloud, Monitor } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -22,6 +22,7 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject, type SidebarTab } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
+import { useRemoteStatus } from '@/hooks/useRemoteStatus'
 
 import { cn } from '@/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -649,12 +650,11 @@ function RemoteStatusIcon() {
   const { t } = useTranslation()
   const remoteEnabled = useAppStore((s) => s.remoteConfig?.enabled ?? false)
   const { navigateTo, setSettingsTab } = useAppStore(useShallow((s) => ({ navigateTo: s.navigateTo, setSettingsTab: s.setSettingsTab })))
-  const [relayConnected, setRelayConnected] = useState(false)
+  const { hostname, relayConnected, lanActive } = useRemoteStatus(remoteEnabled)
   const [onlineDevices, setOnlineDevices] = useState<Array<{ id: string; name: string; transport?: 'lan' | 'relay' }>>([])
 
   useEffect(() => {
     if (!remoteEnabled) {
-      setRelayConnected(false)
       setOnlineDevices([])
       return
     }
@@ -664,20 +664,17 @@ function RemoteStatusIcon() {
       if (cancelled) return
       setOnlineDevices(devices.filter((d) => d.online).map((d) => ({ id: d.id, name: d.name, transport: d.transport })))
     }
-    window.app.getRelayStatus().then((connected) => {
-      if (!cancelled) setRelayConnected(connected)
-    })
     void refreshDevices()
-    const unsubRelay = window.app.onRelayStatusChanged(setRelayConnected)
     const unsubDevice = window.app.onDeviceStatusChanged(() => { void refreshDevices() })
     return () => {
       cancelled = true
-      unsubRelay()
       unsubDevice()
     }
   }, [remoteEnabled])
 
   if (!remoteEnabled) return null
+
+  const reachable = relayConnected || lanActive
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -688,19 +685,33 @@ function RemoteStatusIcon() {
             className="relative rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <Smartphone className="size-3.5" />
-            <span className={cn('absolute top-1 right-1 size-1.5 rounded-full', relayConnected ? 'bg-green-500' : 'bg-red-500')} />
+            <span className={cn('absolute top-1 right-1 size-1.5 rounded-full', reachable ? 'bg-green-500' : 'bg-red-500')} />
           </button>
         </TooltipTrigger>
         <TooltipContent side="top">
-          <div className="flex flex-col gap-1">
-            <div>
-              <span>{t('sidebar.remote.label')}</span>
-              <span className={cn('ml-1.5', relayConnected ? 'text-green-500' : 'text-red-500')}>{relayConnected ? t('sidebar.remote.connected') : t('sidebar.remote.disconnected')}</span>
+          <div className="flex min-w-44 flex-col gap-1.5 text-xs">
+            <div className="flex items-center gap-1.5">
+              <Monitor className="size-3 shrink-0 opacity-60" />
+              <span className="truncate font-mono">{hostname || '—'}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="inline-flex items-center gap-1">
+                <Cloud className={cn('size-3', relayConnected ? 'text-green-500' : 'opacity-40')} />
+                <span className={cn(relayConnected ? 'text-green-500' : 'opacity-60')}>
+                  {relayConnected ? t('sidebar.remote.connected') : t('sidebar.remote.disconnected')}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Wifi className={cn('size-3', lanActive ? 'text-green-500' : 'opacity-40')} />
+                <span className={cn(lanActive ? 'text-green-500' : 'opacity-60')}>
+                  {lanActive ? t('sidebar.remote.lanActive') : t('sidebar.remote.lanInactive')}
+                </span>
+              </span>
             </div>
             {onlineDevices.length > 0 && (
-              <div className="mt-1 flex flex-col gap-0.5">
+              <div className="flex flex-col gap-0.5 border-t border-border/40 pt-1.5">
                 {onlineDevices.map((d) => (
-                  <div key={d.id} className="flex items-center justify-between gap-3 text-xs">
+                  <div key={d.id} className="flex items-center justify-between gap-3">
                     <span>{d.name}</span>
                     {d.transport === 'lan' ? <Wifi className="size-3 text-green-500" /> : <Cloud className="size-3 text-sky-500" />}
                   </div>

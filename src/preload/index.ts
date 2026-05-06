@@ -735,6 +735,10 @@ const appAPI = {
   // Remote control
   getRelayStatus: () =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_GET_RELAY_STATUS) as Promise<boolean>,
+  getLanStatus: () =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_GET_LAN_STATUS) as Promise<boolean>,
+  getHostname: () =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_GET_HOSTNAME) as Promise<string>,
   getRemoteConfig: () =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_GET_CONFIG),
   saveRemoteConfig: (config: RemoteDeviceConfig) =>
@@ -813,6 +817,13 @@ const appAPI = {
     ipcRenderer.on(AgentIpcChannels.REMOTE_RELAY_STATUS, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.REMOTE_RELAY_STATUS, handler)
+    }
+  },
+  onLanStatusChanged: (callback: (active: boolean) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, active: boolean): void => { callback(active) }
+    ipcRenderer.on(AgentIpcChannels.REMOTE_LAN_STATUS, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.REMOTE_LAN_STATUS, handler)
     }
   },
 

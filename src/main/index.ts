@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir } from 'fs/promises'
-import { homedir } from 'os'
+import { homedir, hostname } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { execFileSync, spawn } from 'child_process'
 import { gitRun } from './git-run'
@@ -193,6 +193,9 @@ const remoteCallbacks: RemoteControlCallbacks = {
   },
   onRelayStatusChanged: (connected) => {
     safeSend(AgentIpcChannels.REMOTE_RELAY_STATUS, connected)
+  },
+  onLanStatusChanged: (active) => {
+    safeSend(AgentIpcChannels.REMOTE_LAN_STATUS, active)
   },
   isPairedDevice: (deviceId) => isPairedDevice(deviceId),
 }
@@ -1366,6 +1369,8 @@ function registerIpcHandlers(): void {
     }
   }
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_RELAY_STATUS, () => remoteControlService.isRelayConnected())
+  ipcMain.handle(AgentIpcChannels.REMOTE_GET_LAN_STATUS, () => remoteControlService.isLanActive())
+  ipcMain.handle(AgentIpcChannels.REMOTE_GET_HOSTNAME, () => hostname())
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_CONFIG, readRemoteConfig)
   ipcMain.handle(AgentIpcChannels.REMOTE_SAVE_CONFIG, (_, config: RemoteDeviceConfig) => {
     writeFileSync(remoteConfigPath, JSON.stringify(config))
@@ -1998,20 +2003,29 @@ function performQuit(): void {
   stopWatching()
   stopMcpHttpServer()
   disposeUpdater()
-  remoteControlService.stop().catch(() => {})
-  agentService
-    .dispose()
-    .catch(() => {})
-    .finally(() => {
-      codexService.dispose()
-      closeDb()
-      closeTraceDb()
-      // Give SDK child processes a moment to fully terminate before quitting.
-      // abort() signals the SDK to stop, but the async iterator needs time to
-      // detect the child process exit and release its handles.
-      setTimeout(() => app.quit(), 500)
-    })
+  const remoteStop = Promise.race([
+    remoteControlService.stop(),
+    new Promise<void>((r) => setTimeout(r, 1500)),
+  ]).catch(() => {})
+  Promise.allSettled([remoteStop, agentService.dispose()]).finally(() => {
+    codexService.dispose()
+    closeDb()
+    closeTraceDb()
+    setTimeout(() => app.quit(), 500)
+  })
 }
+
+let signalQuitting = false
+const handleSignalQuit = (sig: NodeJS.Signals): void => {
+  if (signalQuitting) return
+  signalQuitting = true
+  log.info(`[main] received ${sig}, shutting down`)
+  remoteControlService.stop().catch(() => {}).finally(() => process.exit(0))
+  setTimeout(() => process.exit(0), 1500).unref()
+}
+process.once('SIGTERM', () => handleSignalQuit('SIGTERM'))
+process.once('SIGINT', () => handleSignalQuit('SIGINT'))
+process.once('SIGHUP', () => handleSignalQuit('SIGHUP'))
 
 app.on('before-quit', (e) => {
   if (quitting) return

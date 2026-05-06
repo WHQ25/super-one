@@ -1603,9 +1603,12 @@ export const AgentIpcChannels = {
   REMOTE_PAIRING_EXPIRED: 'remote:pairing-expired',
   REMOTE_PAIRING_ALREADY_PAIRED: 'remote:pairing-already-paired',
   REMOTE_GET_RELAY_STATUS: 'remote:get-relay-status',
+  REMOTE_GET_LAN_STATUS: 'remote:get-lan-status',
+  REMOTE_GET_HOSTNAME: 'remote:get-hostname',
   REMOTE_GET_CONFIG: 'remote:get-config',
   REMOTE_SAVE_CONFIG: 'remote:save-config',
   REMOTE_RELAY_STATUS: 'remote:relay-status',
+  REMOTE_LAN_STATUS: 'remote:lan-status',
 
   WIDGET_IFRAME_READY: 'widget:iframe-ready',
 

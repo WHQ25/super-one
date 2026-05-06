@@ -30,10 +30,11 @@ export const zh: Messages = {
     empty: '还没有项目',
     settings: '设置',
     remote: {
-      label: '远程控制',
       connected: '已连接',
       disconnected: '未连接',
       deviceConnectedToast: '{{name}} 已连接',
+      lanActive: '已就绪',
+      lanInactive: '未就绪',
     },
     deleteSession: {
       title: '删除会话？',
@@ -878,6 +879,12 @@ export const zh: Messages = {
       relayConnected: '已连接',
       relayUnreachable: '无法连接',
       relayHint: '使用你自己部署的 Cloudflare Workers 覆盖默认中继。留空则使用内置中继。',
+      statusRelay: 'Relay',
+      statusLan: '局域网',
+      statusLanActive: '已就绪',
+      statusLanInactive: '未就绪',
+      statusRelayConnected: '已连接',
+      statusRelayDisconnected: '未连接',
     },
     apps: {
       title: '小程序',

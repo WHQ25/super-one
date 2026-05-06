@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { QRCodeSVG } from 'qrcode.react'
 import { useTranslation } from 'react-i18next'
+import { Monitor, Cloud, Wifi } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
+import { useRemoteStatus } from '@/hooks/useRemoteStatus'
 import type { PairedDevice } from '../../../shared/agent-types'
 
 type PairingStep = 'idle' | 'waiting_scan' | 'waiting_code'
@@ -22,6 +25,7 @@ export function RemotePage() {
   const [codeError, setCodeError] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [relayStatus, setRelayStatus] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle')
+  const remoteStatus = useRemoteStatus()
   useEffect(() => {
     window.app.listPairedDevices().then(setPairedDevices)
 
@@ -130,6 +134,37 @@ export function RemotePage() {
           {t('resources.remote.subtitle')}
         </p>
       </div>
+
+      <TooltipProvider delayDuration={200}>
+        <div className="flex w-full items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+          <div className="flex min-w-0 items-center gap-2">
+            <Monitor className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate font-mono text-foreground">{remoteStatus.hostname || '—'}</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center">
+                  <Cloud className={cn('size-3.5', remoteStatus.relayConnected ? 'text-green-500' : 'text-muted-foreground/40')} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('resources.remote.statusRelay')}: {remoteStatus.relayConnected ? t('resources.remote.statusRelayConnected') : t('resources.remote.statusRelayDisconnected')}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center">
+                  <Wifi className={cn('size-3.5', remoteStatus.lanActive ? 'text-green-500' : 'text-muted-foreground/40')} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('resources.remote.statusLan')}: {remoteStatus.lanActive ? t('resources.remote.statusLanActive') : t('resources.remote.statusLanInactive')}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      </TooltipProvider>
 
       <div className="rounded-lg border border-border p-4 space-y-4">
         <div className="flex items-center justify-between">

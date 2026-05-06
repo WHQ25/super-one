@@ -3,9 +3,13 @@ import pkg from 'electron-updater'
 const { autoUpdater } = pkg
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
-import { AgentIpcChannels, type UpdateEvent } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type UpdateChannel, type UpdateEvent } from '@superone/shared/agent-types'
 
-declare const __UPDATER_TOKEN__: string
+const CHANNEL_MAP: Record<UpdateChannel, string> = {
+  stable: 'latest',
+  beta: 'beta',
+  alpha: 'alpha',
+}
 
 let win: BrowserWindow | null = null
 let checkInterval: ReturnType<typeof setInterval> | null = null
@@ -13,13 +17,6 @@ let updaterState: UpdateEvent['type'] = 'not-available'
 let menuLabel = 'Check for Updates...'
 let menuEnabled = true
 let onMenuChange: (() => void) | null = null
-
-function safeCheckForUpdates(): Promise<unknown> {
-  if (__UPDATER_TOKEN__) process.env.GH_TOKEN = __UPDATER_TOKEN__
-  return autoUpdater.checkForUpdates().finally(() => {
-    if (__UPDATER_TOKEN__) delete process.env.GH_TOKEN
-  })
-}
 
 function send(event: UpdateEvent): void {
   if (win && !win.isDestroyed()) win.webContents.send(AgentIpcChannels.UPDATER_EVENT, event)
@@ -60,7 +57,7 @@ export function setOnMenuChange(fn: () => void): void {
   onMenuChange = fn
 }
 
-export function initUpdater(mainWindow: BrowserWindow): void {
+export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChannel | null): void {
   win = mainWindow
   const testUpdater = process.env.TEST_UPDATER === '1'
   if (is.dev && !testUpdater) return
@@ -68,6 +65,10 @@ export function initUpdater(mainWindow: BrowserWindow): void {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   if (testUpdater) autoUpdater.forceDevUpdateConfig = true
+  if (channelPref) {
+    autoUpdater.channel = CHANNEL_MAP[channelPref]
+    log.info(`[updater] channel pref applied: ${channelPref} → ${autoUpdater.channel}`)
+  }
   autoUpdater.on('checking-for-update', () => {
     send({ type: 'checking' })
   })
@@ -92,12 +93,12 @@ export function initUpdater(mainWindow: BrowserWindow): void {
     send({ type: 'error', message: err.message })
   })
 
-  safeCheckForUpdates().catch((err) => {
+  autoUpdater.checkForUpdates().catch((err) => {
     log.warn('[updater] Initial check failed:', err.message)
   })
 
   checkInterval = setInterval(() => {
-    safeCheckForUpdates().catch((err) => {
+    autoUpdater.checkForUpdates().catch((err) => {
       log.warn('[updater] Periodic check failed:', err.message)
     })
   }, 4 * 60 * 60 * 1000)
@@ -108,9 +109,20 @@ export function installUpdate(): void {
 }
 
 export function checkForUpdates(): void {
-  safeCheckForUpdates().catch((err) => {
+  autoUpdater.checkForUpdates().catch((err) => {
     log.warn('[updater] Manual check failed:', err.message)
     send({ type: 'error', message: err.message })
+  })
+}
+
+export function setUpdateChannel(channel: UpdateChannel | null): void {
+  if (is.dev && process.env.TEST_UPDATER !== '1') return
+  if (channel) {
+    autoUpdater.channel = CHANNEL_MAP[channel]
+    log.info(`[updater] channel changed to ${channel} → ${autoUpdater.channel}`)
+  }
+  autoUpdater.checkForUpdates().catch((err) => {
+    log.warn('[updater] post-channel-change check failed:', err.message)
   })
 }
 

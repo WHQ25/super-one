@@ -1744,9 +1744,12 @@ export interface RemoteDeviceConfig {
 
 export type Locale = 'en' | 'zh'
 
+export type UpdateChannel = 'alpha' | 'beta' | 'stable'
+
 export interface AppSettings {
   analyticsEnabled: boolean
   locale: Locale | ''
+  updateChannel: UpdateChannel | null
   agentPreference: {
     claude: {
       defaultModel: string
@@ -1769,6 +1772,7 @@ export interface AppSettings {
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
   locale?: Locale | ''
+  updateChannel?: UpdateChannel | null
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>

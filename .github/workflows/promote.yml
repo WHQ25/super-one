@@ -19,6 +19,9 @@ on:
         description: 'Build Linux run ID (leave blank to skip)'
         required: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   promote:
     runs-on: ubuntu-latest
@@ -79,6 +82,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ inputs.release_tag }}"
+          VERSION="${TAG#v}"
+          if [[ "$VERSION" == *-* ]]; then
+            PRERELEASE_FLAG=(--prerelease)
+            echo "Detected prerelease ($VERSION) — will mark release as prerelease"
+          else
+            PRERELEASE_FLAG=()
+            echo "Detected stable release ($VERSION) — release will not be marked prerelease"
+          fi
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "Release $TAG already exists — uploading artifacts (--clobber)"
             gh release upload "$TAG" staging/* --clobber
@@ -86,7 +97,7 @@ jobs:
             echo "Creating new draft release $TAG at ${{ steps.sha.outputs.sha }}"
             gh release create "$TAG" \
               --draft \
-              --prerelease \
+              "${PRERELEASE_FLAG[@]}" \
               --target "${{ steps.sha.outputs.sha }}" \
               --title "$TAG" \
               --notes "Draft — see CHANGELOG.md" \
@@ -101,6 +112,47 @@ jobs:
           gh release view "${{ inputs.release_tag }}" --json url,isDraft,isPrerelease -q '.url, .isDraft, .isPrerelease'
           echo "Assets:"
           gh release view "${{ inputs.release_tag }}" --json assets -q '.assets[].name'
+
+      - name: Restructure staging for R2 (binaries → version subdir, rewrite yml paths)
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          PREFIX="${RELEASE_TAG#v}"
+          PREFIX="v${PREFIX}"
+          echo "Restructuring under prefix: ${PREFIX}/"
+
+          mkdir -p "staging/${PREFIX}"
+          shopt -s nullglob
+          for f in staging/*.dmg staging/*.zip staging/*.exe staging/*.AppImage staging/*.blockmap; do
+            mv "$f" "staging/${PREFIX}/"
+          done
+
+          for yml in staging/*.yml; do
+            [ -f "$yml" ] || continue
+            echo "Rewriting paths in $(basename "$yml")"
+            PREFIX="$PREFIX" yq -i '.files[].url |= strenv(PREFIX) + "/" + .' "$yml"
+            PREFIX="$PREFIX" yq -i '.path |= strenv(PREFIX) + "/" + .' "$yml"
+          done
+
+          echo "--- Final layout ---"
+          find staging -type f | sort
+          echo "--- yml content ---"
+          for yml in staging/*.yml; do echo "=== $yml ==="; cat "$yml"; done
+
+      - name: Configure AWS credentials for R2
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          aws-region: auto
+
+      - name: Sync release artifacts to R2
+        run: |
+          aws s3 sync staging/ s3://super-one-releases/ \
+            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            --no-progress
+          echo "Synced to https://dl.super-one.dev/"
 
       - name: Delete consumed CI artifacts
         env:

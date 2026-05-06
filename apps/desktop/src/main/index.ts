@@ -46,7 +46,7 @@ import {
   type GitFileStatus,
   type FileOpResult,
 } from '@superone/shared/agent-types'
-import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, disposeUpdater } from './updater'
+import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, disposeUpdater, setUpdateChannel } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
@@ -1329,6 +1329,9 @@ function registerIpcHandlers(): void {
     if (result.locale) {
       await applyLocale(result.locale)
     }
+    if (patch?.updateChannel !== undefined) {
+      setUpdateChannel(result.updateChannel)
+    }
     return result
   })
   ipcMain.handle(AgentIpcChannels.APP_SYSTEM_LOCALE, () => getSystemLocale())
@@ -1934,7 +1937,7 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
-  initUpdater(mainWindow!)
+  initUpdater(mainWindow!, readAppSettings().updateChannel)
 
   let devUpdateToggle = false
   function buildAppMenu(): void {

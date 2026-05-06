@@ -11,7 +11,6 @@ export default defineConfig(({ mode }) => {
   return {
   main: {
     define: {
-      __UPDATER_TOKEN__: JSON.stringify(process.env.UPDATER_TOKEN ?? ''),
       __CF_RELAY_URL__: JSON.stringify(env.SO_CF_RELAY_URL ?? ''),
     },
     build: {

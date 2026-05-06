@@ -47,6 +47,7 @@ describe('app-settings-service', () => {
   const defaultSettings = {
     analyticsEnabled: true,
     locale: '',
+    updateChannel: null,
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
@@ -78,6 +79,7 @@ describe('app-settings-service', () => {
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
         locale: '',
+        updateChannel: null,
         agentPreference: {
           claude: {
             defaultModel: 'claude-sonnet-4-6',
@@ -140,6 +142,7 @@ describe('app-settings-service', () => {
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
         locale: '',
+        updateChannel: null,
         agentPreference: {
           claude: defaultClaude,
           codex: {
@@ -231,6 +234,28 @@ describe('app-settings-service', () => {
       }))
       const reloaded = readAppSettings()
       expect(reloaded.agentPreference.claude.disabledSkills).toEqual(['release', 'loop'])
+    })
+
+    it('persists updateChannel round-trip and accepts each valid value', () => {
+      for (const channel of ['alpha', 'beta', 'stable'] as const) {
+        mocks.writeFileSync.mockClear()
+        mocks.readFileSync.mockImplementation(fileNotFound)
+        saveAppSettings({ updateChannel: channel })
+        const written = mocks.writeFileSync.mock.calls[0][1] as string
+        mocks.readFileSync.mockReturnValue(written)
+        expect(readAppSettings().updateChannel).toBe(channel)
+      }
+    })
+
+    it('falls back to null when stored updateChannel is invalid', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ updateChannel: 'nightly' }))
+      expect(readAppSettings().updateChannel).toBeNull()
+    })
+
+    it('resets updateChannel back to null when patch passes null', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ updateChannel: 'alpha' }))
+      const result = saveAppSettings({ updateChannel: null })
+      expect(result.updateChannel).toBeNull()
     })
   })
 })

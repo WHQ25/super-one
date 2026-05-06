@@ -208,11 +208,17 @@ Tables: `projects`, `sessions`, `chat_messages`. Messages stored as JSON blobs.
 `apps/desktop/src/main/updater.ts` wraps `electron-updater` with an IPC push pattern:
 
 - Guarded by `is.dev` — completely skipped in development unless `TEST_UPDATER=1`
-- Private repo auth: `UPDATER_TOKEN` → Vite `define` → `process.env.GH_TOKEN` at runtime (`PrivateGitHubProvider` reads this)
-- Prerelease behavior: version with `-alpha`/`-beta` suffix auto-enables `allowPrerelease`, which prefers releases with `prerelease: true` flag on GitHub. **All alpha/beta releases MUST be marked prerelease on GitHub.**
+- Distribution: artifacts hosted on Cloudflare R2, served via custom domain `https://dl.super-one.dev`. `electron-updater` uses the built-in `GenericProvider` (`publish.provider: generic` in `electron-builder.yml`); no auth tokens needed (bucket is public via custom domain)
+- Channels: electron-builder auto-derives channel from `package.json` version — `0.1.0-alpha.3` → `alpha-mac.yml` / `alpha.yml` / `alpha-linux.yml`; future `1.0.0` → `latest-*.yml`. Channel is embedded in ASAR's `app-update.yml` at build time, so each installed client locks to the channel it was built for
 - Events flow: `autoUpdater` → `webContents.send(UPDATER_EVENT)` → `useAppStore.handleUpdateEvent()` → `<UpdateNotification />`
 
-Dev testing: `TEST_UPDATER=1 UPDATER_TOKEN=<token> bun run dev` (requires `apps/desktop/dev-app-update.yml`)
+Dev testing: `TEST_UPDATER=1 bun run dev` (uses `apps/desktop/dev-app-update.yml`, which points to the alpha channel on `dl.super-one.dev`)
+
+Release flow: builds upload artifacts (dmg/exe/AppImage/blockmap + channel yml) to GitHub Actions artifacts, then `promote.yml` (a) creates a draft GitHub Release with **flat** asset layout (changelog mirror + serves the legacy GitHub-provider clients during the bridge period), then (b) restructures staging into `v${VERSION}/` subdirectory and rewrites `path` / `files[].url` in each yml via `yq`, then (c) `aws s3 sync staging/ s3://super-one-releases/` so R2 ends up as `bucket-root/{alpha,beta,latest}-*.yml` + `bucket-root/v0.1.0-alpha.4/{*.dmg,*.exe,*.AppImage,...}`.
+
+R2 layout rationale: yml stays at bucket root because clients fetch it via fixed URL (can't include `${version}` macro since version is unknown until yml is read); binaries go under `v${VERSION}/` so the bucket root stays scannable as more releases accumulate. The `path:` and `files[].url:` fields in each yml carry the `v${VERSION}/` prefix so electron-updater resolves the correct URL automatically — zero client config.
+
+Bridge mode: alpha clients built before the R2 switch have `provider: github` baked into ASAR's `app-update.yml` and embed `UPDATER_TOKEN` for private GitHub Release auth. They keep working because `promote.yml` still uploads to GitHub Release (flat layout). Once they auto-update to a post-switch build, that build's ASAR has `provider: generic` + `https://dl.super-one.dev`, so subsequent checks go to R2. Long-term policy: keep dual-publish indefinitely; **never** rotate `UPDATER_TOKEN` (legacy clients embed it).
 
 ### Codex Integration (Experimental)
 

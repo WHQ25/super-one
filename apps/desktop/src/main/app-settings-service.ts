@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import type { AppSettings, AppSettingsPatch, EffortLevel, Locale, PermissionMode, SandboxMode } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, EffortLevel, Locale, PermissionMode, SandboxMode, UpdateChannel } from '@superone/shared/agent-types'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 
 export type { AppSettings, AppSettingsPatch }
@@ -12,6 +12,7 @@ type CodexPref = AppSettings['agentPreference']['codex']
 const defaults: AppSettings = {
   analyticsEnabled: true,
   locale: '',
+  updateChannel: null,
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -52,6 +53,10 @@ function isPermissionMode(value: unknown): value is PermissionMode {
 
 function isSandboxMode(value: unknown): value is SandboxMode {
   return value === 'off' || value === 'on' || value === 'auto'
+}
+
+function isUpdateChannel(value: unknown): value is UpdateChannel {
+  return value === 'alpha' || value === 'beta' || value === 'stable'
 }
 
 function isCodexReasoningEffort(value: unknown): value is CodexPref['defaultReasoningEffort'] {
@@ -122,6 +127,7 @@ export function readAppSettings(): AppSettings {
     return {
       analyticsEnabled: typeof data.analyticsEnabled === 'boolean' ? data.analyticsEnabled : defaults.analyticsEnabled,
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
+      updateChannel: data.updateChannel === null || isUpdateChannel(data.updateChannel) ? data.updateChannel : defaults.updateChannel,
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
@@ -131,6 +137,7 @@ export function readAppSettings(): AppSettings {
     return {
       analyticsEnabled: defaults.analyticsEnabled,
       locale: defaults.locale,
+      updateChannel: defaults.updateChannel,
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
@@ -144,6 +151,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
   const merged: AppSettings = {
     analyticsEnabled: patch.analyticsEnabled ?? current.analyticsEnabled,
     locale: patch.locale ?? current.locale,
+    updateChannel: patch.updateChannel === undefined ? current.updateChannel : patch.updateChannel,
     agentPreference: {
       claude: {
         ...current.agentPreference.claude,

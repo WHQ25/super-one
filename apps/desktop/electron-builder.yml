@@ -15,8 +15,8 @@ asarUnpack:
   - "node_modules/@openai/codex*/**"
 
 publish:
-  provider: github
-  private: true
+  provider: generic
+  url: https://dl.super-one.dev
 
 mac:
   target:

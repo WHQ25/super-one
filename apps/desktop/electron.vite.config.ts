@@ -15,10 +15,9 @@ export default defineConfig(({ mode }) => {
       __CF_RELAY_URL__: JSON.stringify(env.SO_CF_RELAY_URL ?? ''),
     },
     build: {
-      externalizeDeps: true
-    },
-    ssr: {
-      noExternal: ['@superone/shared']
+      externalizeDeps: {
+        exclude: ['@superone/shared']
+      }
     }
   },
   preload: {

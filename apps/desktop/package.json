@@ -6,7 +6,7 @@
   "license": "BUSL-1.1",
   "private": true,
   "scripts": {
-    "postinstall": "electron-rebuild -f -w better-sqlite3 && chmod +x node_modules/@anthropic-ai/claude-agent-sdk-*/claude 2>/dev/null; chmod +x node_modules/@openai/codex-*/codex* 2>/dev/null || true",
+    "postinstall": "electron-rebuild -f -w better-sqlite3 --module-dir ../.. && chmod +x ../../node_modules/@anthropic-ai/claude-agent-sdk-*/claude 2>/dev/null; chmod +x ../../node_modules/@openai/codex-*/codex* 2>/dev/null || true",
     "dev": "rm -f dev.log event-trace.db && sqlite3 ~/Library/Application\\ Support/super-one/superone.db 'DELETE FROM global_resource_cache' 2>/dev/null; electron-vite dev",
     "prepare:mac-optional-deps": "bun install --frozen-lockfile --os=darwin --cpu=x64 && bun install --frozen-lockfile --os=darwin --cpu=arm64",
     "prepare:win-optional-deps": "bun install --frozen-lockfile --os=win32 --cpu=x64 && bun install --frozen-lockfile --os=win32 --cpu=arm64",

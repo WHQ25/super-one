@@ -6,46 +6,78 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SuperOne is an meta desktop app built with Electron. It can be a IDE, it also provide a canavs for user to create their own app using coding agent as agentic engine. Inspired by Pencil.dev's MCP Server pattern.
 
+## Monorepo Layout
+
+This repo is a **bun workspaces monorepo** (no turborepo/nx). Linker is hoisted (`bunfig.toml`) so transitive deps remain reachable like a single-package install.
+
+```
+super-one/
+  apps/
+    desktop/         — Electron app (was the entire repo pre-monorepo)
+    web/             — Next.js 16 marketing/docs/demos site (App Router + Turbopack)
+  packages/
+    ui/              — shadcn primitives + OKLch theme CSS, shared by desktop + web
+    shared/          — Neutral types, harness-brand, i18n, miniapp runtime (no Electron deps)
+    tsconfig/        — Shared base/react-library/electron-{node,renderer}/nextjs configs
+```
+
+Workspace package names: `@superone/desktop`, `@superone/web`, `@superone/ui`, `@superone/shared`, `@superone/tsconfig`. All `private: true`.
+
+**Cross-package imports**: code uses `@superone/shared/agent-types`, `@superone/ui/components/ui/button`, etc. Each package's `exports` map governs resolution; Vite/TS pick up `.tsx`/`.ts` source directly (no build step).
+
+Inside a package, prefer relative paths (`./X`, `../lib/utils`) over `@/` aliases to keep the package bundler-agnostic.
+
 ## Commands
 
+All root scripts proxy to a workspace via `bun --filter`. Run them from the repo root.
+
 ```bash
-bun run dev              # Start Electron app with hot reload
+bun run dev              # Start Electron app with hot reload (→ @superone/desktop)
+bun run dev:web          # Start Next.js dev server on :3000 (→ @superone/web)
 bun run build            # Production build (electron-vite only)
 bun run preview          # Preview production build
-bun run test             # Run all tests once
+bun run test             # Run all tests once (desktop + cross-workspace shared/ui tests)
 bun run test:watch       # Run tests in watch mode
-bun run typecheck        # Full type check (main + renderer)
-bun run typecheck:node   # Type check main/preload only
-bun run typecheck:web    # Type check renderer only
+bun run typecheck        # Full type check across all workspaces
+bun run typecheck:node   # Type check main/preload only (desktop)
+bun run typecheck:web    # Type check renderer only (desktop)
 bun run build:app        # Full packaged build (electron-vite + electron-builder)
 bun run build:mac        # macOS package (DMG + ZIP)
 bun run build:win        # Windows package (NSIS)
 bun run build:linux      # Linux package (AppImage)
+bun run storybook        # Start Storybook (collects stories from desktop + packages/ui)
 ```
 
-To run a single test file: `bunx vitest run src/path/to/file.test.ts`
+To run a single test file: `bunx vitest run apps/desktop/src/path/to/file.test.ts` (vitest runs from `apps/desktop` cwd, so paths are relative to that workspace).
 
-**Sandbox note**: `bun run test` (full suite) and any LAN/mDNS tests (`src/main/lan-server.test.ts`, `src/main/lan-advertiser.test.ts`) bind to `0.0.0.0:5353` / `127.0.0.1` and will fail with `EPERM` under the default sandbox. Run them with `dangerouslyDisableSandbox: true` (Bash tool) or outside the sandbox.
+**Sandbox note**: `bun run test` (full suite) and any LAN/mDNS tests (`apps/desktop/src/main/lan-server.test.ts`, `apps/desktop/src/main/lan-advertiser.test.ts`) bind to `0.0.0.0:5353` / `127.0.0.1` and will fail with `EPERM` under the default sandbox. Run them with `dangerouslyDisableSandbox: true` (Bash tool) or outside the sandbox.
 
 ## Architecture
 
-Three-process Electron architecture using **electron-vite**:
+Three-process Electron architecture using **electron-vite**, all under `apps/desktop/`:
 
-- **Main Process** (`src/main/`) — Electron lifecycle, window management, IPC handlers, file system services. Compiled with Node.js target.
-- **Preload** (`src/preload/`) — Secure context bridge exposing `window.electron` API via `@electron-toolkit/preload`. Type declarations in `index.d.ts`.
-- **Renderer** (`src/renderer/`) — React 19 application. Entry point is `src/renderer/index.html` → `src/renderer/src/main.tsx`.
+- **Main Process** (`apps/desktop/src/main/`) — Electron lifecycle, window management, IPC handlers, file system services. Compiled with Node.js target.
+- **Preload** (`apps/desktop/src/preload/`) — Secure context bridge exposing `window.electron` API via `@electron-toolkit/preload`. Type declarations in `index.d.ts`.
+- **Renderer** (`apps/desktop/src/renderer/`) — React 19 application. Entry point is `apps/desktop/src/renderer/index.html` → `apps/desktop/src/renderer/src/main.tsx`.
 
-Build config: `electron.vite.config.ts` with three sections (main, preload, renderer). Each uses `externalizeDepsPlugin()` for main/preload; renderer uses React + Tailwind plugins.
+Build config: `apps/desktop/electron.vite.config.ts` with three sections (main, preload, renderer). Main uses `externalizeDeps` with `exclude: ['@superone/shared']` so the workspace package gets bundled inline (Node ESM can't load TS source at runtime); preload bundles all deps except `electron`; renderer uses React + Tailwind plugins.
 
 ### Path Alias
 
-`@/*` maps to `src/renderer/src/*` (configured in both `electron.vite.config.ts` and `tsconfig.web.json`).
+- **Inside `apps/desktop`**: `@/*` maps to `apps/desktop/src/renderer/src/*` (configured in `electron.vite.config.ts`, `tsconfig.web.json`, `vitest.config.ts`, `.storybook/main.ts`).
+- **Cross-package**: code imports via package names — `@superone/shared/agent-types`, `@superone/ui/components/ui/button`, `@superone/ui/lib/utils`, etc. These resolve through `node_modules/@superone/*` workspace symlinks and each package's `exports` map.
+- **Inside `packages/ui`** (and other packages): use relative paths only (`../lib/utils`, `./button`) — no `@/` alias.
 
 ### TypeScript Setup
 
-- `tsconfig.node.json` — main process + preload (ESNext, no DOM)
-- `tsconfig.web.json` — renderer (ESNext + DOM, has `@/*` path alias)
-- `tsconfig.json` — composite root referencing both
+Each workspace has its own tsconfig. `composite` is **not** used (apps are consumers, not library producers); cross-package imports resolve via `paths` mappings + `exports`.
+
+- `packages/tsconfig/{base,react-library,electron-renderer,electron-node,nextjs}.json` — shared base configs
+- `apps/desktop/tsconfig.node.json` — main + preload (extends `electron-node`)
+- `apps/desktop/tsconfig.web.json` — renderer (extends `electron-renderer`, has `@/*` and `@superone/shared/*` paths)
+- `apps/desktop/tsconfig.json` and root `tsconfig.json` — empty stubs (`files: []`, `include: []`) acting as IDE entry points only
+- `apps/web/tsconfig.json` — extends `nextjs`
+- `packages/{ui,shared}/tsconfig.json` — extend `react-library` / `base`
 
 ### Navigation
 
@@ -74,7 +106,7 @@ Two namespaces exposed via preload:
 - **`window.app`** — Global operations: folder management, git ops (including worktrees), session DB (CRUD), resource discovery, Claude setup/install, auto-update, Codex integration, plugin/skill/MCP/agent management, window state
 - **`window.miniapp`** — Mini-app lifecycle: `list()`, `open()`, `close()`, `install()`, `uninstall()`, `pack()`, `getInstallMeta()`, tool/fs bridging, dev app detection
 
-All IPC channels are defined as constants in `AgentIpcChannels` (`src/shared/agent-types.ts`), grouped by namespace prefix (`app:`, `agent:`, `codex:`, `plugins:`, `skills:`, `mcp:`, `miniapp:`, `sessions:`, `updater:`).
+All IPC channels are defined as constants in `AgentIpcChannels` (`packages/shared/src/agent-types.ts`), grouped by namespace prefix (`app:`, `agent:`, `codex:`, `plugins:`, `skills:`, `mcp:`, `miniapp:`, `sessions:`, `updater:`).
 
 ### Remote Control (Mobile) Architecture
 
@@ -86,7 +118,7 @@ Session ownership is a **first-class property of the `Session` class itself**, n
 
 `Session.send()` self-guards: when `providerOrigin === 'local'` and the session is owned remotely or has remote subscribers, it throws `SessionLockedError`. Lock checks live inside the session, not in IPC handler `if`-walls.
 
-Modules under `src/main/remote/`:
+Modules under `apps/desktop/src/main/remote/`:
 
 | Module | Responsibility |
 |---|---|
@@ -105,9 +137,13 @@ Codex and Claude remote turns share a single `ensureRemoteOwnership(deviceId, se
 
 ### Component Structure
 
+shadcn/ui primitives live in `packages/ui` (shared by desktop + web). All other components are app-specific and live under `apps/desktop`:
+
 ```
-src/renderer/src/components/
-├── ui/           — shadcn/ui primitives (New York style) + Lucide icons
+packages/ui/src/components/ui/  — shadcn/ui primitives (New York style) + Lucide icons,
+                                  consumed via `@superone/ui/components/ui/<name>`
+
+apps/desktop/src/renderer/src/components/
 ├── chat/         — ChatPanel, ChatContent, ChatMessage, ChatInput, ToolBlock, SubagentBlock
 │   ├── mention-node.ts     — Tiptap @mention extension
 │   ├── slash-decoration.ts — Tiptap /command decoration
@@ -118,6 +154,8 @@ src/renderer/src/components/
 ├── AppSidebar    — Session list, folder tree, pending interaction badges
 └── *Page.tsx     — Settings pages (Agents, Skills, MCP, Plugins), Startup, Setup
 ```
+
+When adding a new shadcn primitive: run `bunx shadcn add <name>` from `packages/ui/` (its `components.json` is the single source of truth). Stories for primitives go alongside (e.g. `packages/ui/src/components/ui/button.stories.tsx`); Storybook's `stories` glob covers both packages/ui and apps/desktop.
 
 ### Key Dependencies
 
@@ -136,7 +174,7 @@ src/renderer/src/components/
 | `electron-updater` | Auto-update via GitHub Releases |
 | `electron-builder` | App packaging (macOS/Windows/Linux) |
 | `@openai/codex-sdk` | Codex AI integration (experimental) |
-| `electron-log` | Structured logging (`src/main/logger.ts`) |
+| `electron-log` | Structured logging (`apps/desktop/src/main/logger.ts`) |
 | `diff` | Diff computation for file rewind |
 
 ### Persistence (SQLite)
@@ -149,7 +187,7 @@ Tables: `projects`, `sessions`, `chat_messages`. Messages stored as JSON blobs.
 
 ### Shared Types
 
-`src/shared/agent-types.ts` — IPC-safe types (no SDK imports):
+`packages/shared/src/agent-types.ts` — IPC-safe types (no SDK imports):
 
 - `ChatMessage`, `ContentBlock` (text | thinking | tool_use | tool_result | image)
 - `AgentEvent` (20+ event union: message_start, content_delta, permission_request, etc.)
@@ -161,18 +199,18 @@ Tables: `projects`, `sessions`, `chat_messages`. Messages stored as JSON blobs.
 
 ### Auto-Update
 
-`src/main/updater.ts` wraps `electron-updater` with an IPC push pattern:
+`apps/desktop/src/main/updater.ts` wraps `electron-updater` with an IPC push pattern:
 
 - Guarded by `is.dev` — completely skipped in development unless `TEST_UPDATER=1`
 - Private repo auth: `UPDATER_TOKEN` → Vite `define` → `process.env.GH_TOKEN` at runtime (`PrivateGitHubProvider` reads this)
 - Prerelease behavior: version with `-alpha`/`-beta` suffix auto-enables `allowPrerelease`, which prefers releases with `prerelease: true` flag on GitHub. **All alpha/beta releases MUST be marked prerelease on GitHub.**
 - Events flow: `autoUpdater` → `webContents.send(UPDATER_EVENT)` → `useAppStore.handleUpdateEvent()` → `<UpdateNotification />`
 
-Dev testing: `TEST_UPDATER=1 UPDATER_TOKEN=<token> bun run dev` (requires `dev-app-update.yml` in project root)
+Dev testing: `TEST_UPDATER=1 UPDATER_TOKEN=<token> bun run dev` (requires `apps/desktop/dev-app-update.yml`)
 
 ### Codex Integration (Experimental)
 
-`src/main/codex/codex-experiment-service.ts` provides an alternative AI provider alongside Claude:
+`apps/desktop/src/main/codex/codex-experiment-service.ts` provides an alternative AI provider alongside Claude:
 
 - Scoped per project like Claude sessions
 - Supports `run`, `review`, `compact`, `steer`, `interrupt`
@@ -182,9 +220,9 @@ Dev testing: `TEST_UPDATER=1 UPDATER_TOKEN=<token> bun run dev` (requires `dev-a
 
 ### Build & Packaging
 
-Configured via `electron-builder.yml` (electron-vite natively supports this file):
+Configured via `apps/desktop/electron-builder.yml` (electron-vite natively supports this file):
 
-- Output: `dist/` directory
+- Output: `apps/desktop/dist/` directory
 - `asarUnpack: "**/*.node"` — required for `better-sqlite3` native module
 - `publish.provider: github` — electron-updater reads from GitHub Releases
 - macOS: DMG + ZIP (universal). ZIP target required for auto-update. Code signing env vars commented out for now
@@ -193,28 +231,29 @@ Configured via `electron-builder.yml` (electron-vite natively supports this file
 
 ### CI/CD & Release
 
-`.github/workflows/release.yml` — triggered on `push tags: v*`:
+`.github/workflows/build-{mac,win,linux}.yml` — manual `workflow_dispatch` per platform; `promote.yml` collects artifacts into a draft GitHub release:
 
 - Three parallel jobs: macOS / Windows / Linux
-- Flow: checkout → setup-bun → `bun install --frozen-lockfile` → `bun run build:{platform} -- --publish always`
+- Flow: checkout → setup-bun → `bun install --frozen-lockfile` → `bun run build:{platform} -- --publish never` → `actions/upload-artifact@v4` from `apps/desktop/dist/*`
+- Promote: `actions/download-artifact@v4` → `gh release create/upload`. The `upload-artifact` longest-common-prefix strip means downloaded files land flat at `staging/*` despite source paths under `apps/desktop/dist/`
 
 Versioning: prerelease iterations use `-alpha.N` suffix (e.g. `0.1.0-alpha.1` → `0.1.0-alpha.2`). Patch number is reserved for stable releases (`0.1.0` → `0.1.1`).
 
 Release steps:
 
 ```bash
-# 1. Bump version in package.json
+# 1. Bump version in BOTH apps/desktop/package.json (the published app) and root package.json (kept in sync for visibility)
 # 2. Commit and tag
 git commit -am "chore(release): bump version to 0.1.0-alpha.3"
 git tag v0.1.0-alpha.3
 git push origin main --tags
-# 3. Wait for CI, then publish
+# 3. Trigger build-{mac,win,linux}.yml workflow_dispatch, then promote.yml with the run IDs
 gh release edit v0.1.0-alpha.3 --draft=false --prerelease  # alpha/beta must use --prerelease
 ```
 
 ## Styling
 
-- **Theme**: Hermès-inspired warm cream + orange. Colors defined in OKLch color space (not hex/hsl) in `src/renderer/src/styles/index.css`
+- **Theme**: Hermès-inspired warm cream + orange. Colors defined in OKLch color space (not hex/hsl) in `packages/ui/src/styles/theme.css` (`:root` + `.dark` + `@theme inline`). Apps import via `@import "@superone/ui/styles/theme.css"` and `@import "@superone/ui/styles/base.css"`. Desktop's `apps/desktop/src/renderer/src/styles/index.css` adds Electron-specific extras (animations, scrollbar, chat-md, tiptap)
 - **Dark mode**: `.dark` class toggle on `<html>`, CSS variables auto-switch
 - **Tailwind v4**: Import-based (`@import "tailwindcss"`), no config file, `@theme inline` block for design tokens
 - **Component library**: shadcn/ui (New York style, `components.json`), Radix UI primitives
@@ -227,10 +266,10 @@ Light-mode brand hue is user-customizable per harness (Claude default 42° / Cod
 
 **Architecture**:
 
-- **Single writer**: `src/renderer/src/hooks/useHarnessTheme.ts` is the **only** place that writes brand CSS variables. Mounted once at `App.tsx` top level. Watches `<html>.classList` via MutationObserver (not `useTheme()`, to avoid duplicate listener mount when both call the hook).
-- **Constants**: `src/shared/harness-brand.ts` exports `HARNESS_DEFAULT_BRAND_HUE`, `clampBrandHue` (0-360 wrap, doubles as CSS-injection防御), `brandHueToOklch`. Always go through these — never hardcode an `oklch(...)` string with a user-supplied hue.
+- **Single writer**: `apps/desktop/src/renderer/src/hooks/useHarnessTheme.ts` is the **only** place that writes brand CSS variables. Mounted once at `App.tsx` top level. Watches `<html>.classList` via MutationObserver (not `useTheme()`, to avoid duplicate listener mount when both call the hook).
+- **Constants**: `packages/shared/src/harness-brand.ts` exports `HARNESS_DEFAULT_BRAND_HUE`, `clampBrandHue` (0-360 wrap, doubles as CSS-injection防御), `brandHueToOklch`. Always go through these — never hardcode an `oklch(...)` string with a user-supplied hue.
 - **Persistence**: `agentPreference.{claude,codex}.brandHue: number | null` in `app-settings.json`. `null` = use harness default. Reflected in `useAppStore.brandHues` (loaded once at app boot via `loadBrandHues`).
-- **Token override scope**: 4 accent tokens (`--primary`, `--ring`, `--sidebar-primary`, `--sidebar-ring`) at high C (0.20), plus 11 surface tokens (`--background`, `--card`, `--popover`, `--secondary`, `--muted`, `--accent`, `--border`, `--input`, `--sidebar`, `--sidebar-accent`, `--sidebar-border`), plus 8 dark-text foreground tokens (`--foreground`, `--card-foreground`, `--popover-foreground`, `--secondary-foreground`, `--muted-foreground`, `--accent-foreground`, `--sidebar-foreground`, `--sidebar-accent-foreground`) — all at the L/C values from `index.css`. **Excluded** from hue control: `--primary-foreground` / `--sidebar-primary-foreground` (white text on brand button — must stay neutral for contrast) and `--destructive-foreground` (semantic). The hook also sets `<html data-harness="claude|codex">` for future scoped CSS hooks.
+- **Token override scope**: 4 accent tokens (`--primary`, `--ring`, `--sidebar-primary`, `--sidebar-ring`) at high C (0.20), plus 11 surface tokens (`--background`, `--card`, `--popover`, `--secondary`, `--muted`, `--accent`, `--border`, `--input`, `--sidebar`, `--sidebar-accent`, `--sidebar-border`), plus 8 dark-text foreground tokens (`--foreground`, `--card-foreground`, `--popover-foreground`, `--secondary-foreground`, `--muted-foreground`, `--accent-foreground`, `--sidebar-foreground`, `--sidebar-accent-foreground`) — all at the L/C values from `packages/ui/src/styles/theme.css`. **Excluded** from hue control: `--primary-foreground` / `--sidebar-primary-foreground` (white text on brand button — must stay neutral for contrast) and `--destructive-foreground` (semantic). The hook also sets `<html data-harness="claude|codex">` for future scoped CSS hooks.
 - **Dark-mode contract**: Dark mode **never** reads the user's `brandHue`. `useHarnessTheme` calls `removeProperty()` for every override token in dark mode, letting `:root.dark` defaults win. The palette icon also hides itself (`BrandColorPopover` returns `null` when `.dark`).
 
 **Rules for adapting an element to brand color** (when extending coverage):
@@ -255,7 +294,7 @@ RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate bun run dev
 
 ### Event Trace (SQLite)
 
-`src/main/agent/event-trace.ts` — dev-only SQLite trace for debugging data flow across layers. Auto-creates `event-trace.db` in project root (cleaned on each `bun run dev`).
+`apps/desktop/src/main/agent/event-trace.ts` — dev-only SQLite trace for debugging data flow across layers. Auto-creates `event-trace.db` in `apps/desktop/` (the `bun run dev` cwd; cleaned on each run).
 
 **Writing traces** (main process, synchronous):
 ```typescript
@@ -294,7 +333,7 @@ sqlite3 event-trace.db "SELECT ts, type, data FROM events WHERE source='agent.sd
 
 ### Log File
 
-In development mode, `electron-log` writes to `dev.log` in the project root (configured in `src/main/logger.ts`). The dev script auto-deletes the previous `dev.log` on each run to keep it small. When debugging main process issues, read this file to inspect logs instead of guessing. The log format is `[date time] [level] text`.
+In development mode, `electron-log` writes to `apps/desktop/dev.log` (relative to the dev cwd; configured in `apps/desktop/src/main/logger.ts`). The dev script auto-deletes the previous `dev.log` on each run to keep it small. When debugging main process issues, read this file to inspect logs instead of guessing. The log format is `[date time] [level] text`.
 
 For packaged builds (`build:mac-dev`), logs are written to `~/Library/Logs/super-one/main.log` (macOS default `electron-log` location).
 
@@ -312,11 +351,12 @@ Follow **Test-Driven Development** with an **integration-first** philosophy — 
 
 - **Framework**: Vitest with globals enabled
 - **Environment**: `node` by default, `jsdom` for `.test.tsx` files (auto-matched)
-- **Setup file**: `vitest.setup.ts` (imports `@testing-library/jest-dom/vitest`)
+- **Setup file**: `apps/desktop/vitest.setup.ts` (imports `@testing-library/jest-dom/vitest`, polyfills ResizeObserver, sets up mocked `window.app`/`window.agent` proxies)
+- **Cross-workspace include**: `apps/desktop/vitest.config.ts` adds `../../packages/{shared,ui}/src/**/*.{test,spec}.*` so shared/ui tests run in the same suite
 - **Directory layout**:
-  - Unit + component-level integration: co-located as `*.test.ts` / `*.test.tsx`
-  - Cross-layer / E2E integration: `src/test/integration/`, named by scenario (e.g. `permission-flow.test.ts`)
-  - Shared fixtures: `src/test/fixtures/` (extract when used in 2+ files)
+  - Unit + component-level integration: co-located as `*.test.ts` / `*.test.tsx` next to source (in any workspace)
+  - Cross-layer / E2E integration: `apps/desktop/src/test/integration/`, named by scenario (e.g. `permission-flow.test.ts`)
+  - Shared fixtures: `apps/desktop/src/test/fixtures/` (extract when used in 2+ files)
 
 ### Layers — prefer higher (more integration)
 
@@ -337,9 +377,9 @@ Follow **Test-Driven Development** with an **integration-first** philosophy — 
 
 ### Good examples to follow
 
-- `src/main/session/session.test.ts` — `FakeBackend` + real `Session`; scenarios like "switch cwd during streaming defers rebuild to next send", "bypass mode boundary triggers backend rebuild"
-- `src/renderer/src/stores/chat-store.test.ts` — real Zustand store + mocked `window.agent`; scenarios like "respondToPlanApproval triggers setPermissionMode IPC when approved"
-- `src/main/session/isolation.integration.test.ts` — multi-session isolation scenarios with fake backends
+- `apps/desktop/src/main/session/session.test.ts` — `FakeBackend` + real `Session`; scenarios like "switch cwd during streaming defers rebuild to next send", "bypass mode boundary triggers backend rebuild"
+- `apps/desktop/src/renderer/src/stores/chat-store.test.ts` — real Zustand store + mocked `window.agent`; scenarios like "respondToPlanApproval triggers setPermissionMode IPC when approved"
+- `apps/desktop/src/main/session/isolation.integration.test.ts` — multi-session isolation scenarios with fake backends
 
 ### Mini-App Platform
 
@@ -349,14 +389,14 @@ Mini-apps are sandboxed web apps (HTML/CSS/JS) that run in iframes and are contr
 
 | Module | Path | Purpose |
 |--------|------|---------|
-| MCP Server | `src/main/mcp/superone-mcp-server.ts` | Built-in MCP tools (`read_miniapp_guide`, `list_apps`, `setup_mini_app_dev`, `pack_mini_app`) + dynamic tool registration per app. Guide content in `src/main/mcp/guides/` |
-| Service | `src/main/miniapp/miniapp-service.ts` | App discovery, manifest parsing (Zod validated), filesystem operations |
-| Schema | `src/main/miniapp/miniapp-schema.ts` | Zod v4 manifest validation schema |
-| Packager | `src/main/miniapp/miniapp-packager.ts` | `.s1app` packaging (zip + integrity), install/uninstall, SHA-256 verification |
-| API Runtime | `src/shared/miniapp-api-runtime.js` | Shared `window.superone.*` API logic (transport-agnostic). Single source of truth for both bridge and preload |
-| Bridge | `src/main/miniapp/miniapp-bridge.ts` | Inlines API runtime (`?raw`) + postMessage transport → `<script>` tag for iframe |
-| Preload | `src/preload/miniapp-preload.ts` | Imports API runtime + ipcRenderer transport → `contextBridge` for webview |
-| Overlay | `src/renderer/src/components/miniapp/MiniAppOverlayPortal.tsx` | Host-rendered toast/tooltip/context menu for sandboxed mini-apps |
+| MCP Server | `apps/desktop/src/main/mcp/superone-mcp-server.ts` | Built-in MCP tools (`read_miniapp_guide`, `list_apps`, `setup_mini_app_dev`, `pack_mini_app`) + dynamic tool registration per app. Guide content in `apps/desktop/src/main/mcp/guides/` |
+| Service | `apps/desktop/src/main/miniapp/miniapp-service.ts` | App discovery, manifest parsing (Zod validated), filesystem operations |
+| Schema | `apps/desktop/src/main/miniapp/miniapp-schema.ts` | Zod v4 manifest validation schema |
+| Packager | `apps/desktop/src/main/miniapp/miniapp-packager.ts` | `.s1app` packaging (zip + integrity), install/uninstall, SHA-256 verification |
+| API Runtime | `packages/shared/src/miniapp-api-runtime.js` | Shared `window.superone.*` API logic (transport-agnostic). Single source of truth for both bridge and preload |
+| Bridge | `apps/desktop/src/main/miniapp/miniapp-bridge.ts` | Inlines API runtime (`?raw`) + postMessage transport → `<script>` tag for iframe |
+| Preload | `apps/desktop/src/preload/miniapp-preload.ts` | Imports API runtime + ipcRenderer transport → `contextBridge` for webview |
+| Overlay | `apps/desktop/src/renderer/src/components/miniapp/MiniAppOverlayPortal.tsx` | Host-rendered toast/tooltip/context menu for sandboxed mini-apps |
 
 **Installation flow:** `.s1app` file (zip) → extract to temp → validate manifest (Zod) → verify integrity (SHA-256) → copy to `~/.superone/apps/<appId>/` → write `install.json` metadata. Users can drag-and-drop `.s1app` files onto the Apps panel in the sidebar.
 
@@ -364,15 +404,15 @@ Mini-apps are sandboxed web apps (HTML/CSS/JS) that run in iframes and are contr
 
 **Adding a new mini-app bridge API:**
 
-1. `src/shared/miniapp-api-runtime.js` — Add the method to `createSuperoneApi()`. Use `transport.send()` for fire-and-forget, `transport.request()` for request-response.
-2. `src/shared/miniapp-api-runtime.d.ts` — Add TypeScript signature to `SuperoneApi` interface.
-3. `src/main/miniapp/miniapp-templates.ts` — Update `generateSuperoneDts()` to include the new API in the React template's type declarations.
-4. `src/shared/miniapp-types.ts` — If a new message type is added, append it to `MiniAppBridgeMessageType`.
-5. If the API needs host-side handling: add a case in `src/renderer/src/hooks/miniapp-message-handler.ts`.
-6. If the API needs main process handling: add a handler in `src/main/miniapp/miniapp-service.ts` or `src/main/index.ts`.
-7. If the API needs a new IPC response channel: add `ipcRenderer.on(channel, dispatchResponse)` in `src/preload/miniapp-preload.ts`.
-8. Update the relevant guide in `src/main/mcp/guides/api/`.
-9. Update `examples/miniapp/hello/index.html` to demo the new API.
+1. `packages/shared/src/miniapp-api-runtime.js` — Add the method to `createSuperoneApi()`. Use `transport.send()` for fire-and-forget, `transport.request()` for request-response.
+2. `packages/shared/src/miniapp-api-runtime.d.ts` — Add TypeScript signature to `SuperoneApi` interface.
+3. `apps/desktop/src/main/miniapp/miniapp-templates.ts` — Update `generateSuperoneDts()` to include the new API in the React template's type declarations.
+4. `packages/shared/src/miniapp-types.ts` — If a new message type is added, append it to `MiniAppBridgeMessageType`.
+5. If the API needs host-side handling: add a case in `apps/desktop/src/renderer/src/hooks/miniapp-message-handler.ts`.
+6. If the API needs main process handling: add a handler in `apps/desktop/src/main/miniapp/miniapp-service.ts` or `apps/desktop/src/main/index.ts`.
+7. If the API needs a new IPC response channel: add `ipcRenderer.on(channel, dispatchResponse)` in `apps/desktop/src/preload/miniapp-preload.ts`.
+8. Update the relevant guide in `apps/desktop/src/main/mcp/guides/api/`.
+9. Update `apps/desktop/examples/miniapp/hello/index.html` to demo the new API.
 
 Bridge and preload share the same runtime — **no need to update API logic in two places**.
 

@@ -10,10 +10,12 @@ arguments: "[alpha|beta|public] [major|feature|patch]"
 Automate the SuperOne release pipeline. The pipeline has three **independently retryable** phases — build, promote, publish — orchestrated via GitHub Actions workflow_dispatch:
 
 - `build-mac.yml` / `build-win.yml` / `build-linux.yml` — each builds one platform, uploads artifacts to Actions storage (30-day retention). No release side effects.
-- `promote.yml` — downloads artifacts from specified build runs and assembles a **draft** GitHub release with the chosen tag name. Does NOT create a git tag yet.
+- `promote.yml` — downloads artifacts, **dual-publishes** them: (a) creates a **draft** GitHub Release with flat asset layout (legacy auto-update path; legacy alpha clients embed `UPDATER_TOKEN` and pull from there); (b) restructures into `v${VERSION}/` subdirectory and `aws s3 sync`s to Cloudflare R2 bucket `super-one-releases` served at `https://dl.super-one.dev` (current auto-update source for post-switch clients + first-download URL).
 - Final `gh release edit --draft=false --prerelease` — flips the draft to published; GitHub then materializes the tag on `target_commitish`.
 
 Tags are created by GitHub at publish time, never pushed from local. A failing build or bad artifact can be re-run without burning a version number or force-pushing a tag.
+
+**Channel** is auto-derived by electron-builder from the version string: `-alpha.N` → channel `alpha` (yml files `alpha-mac.yml` / `alpha.yml` / `alpha-linux.yml`); `-beta.N` → `beta`; `-rc.N` → `rc`; otherwise → `latest`. Each channel's "current pointer" yml is overwritten on each release; binaries under `v${VERSION}/` are append-only.
 
 ## Arguments
 
@@ -97,11 +99,16 @@ gh workflow run promote.yml --ref main \
 
 Promote downloads each platform's artifact, then either creates a new draft release (with `--draft --prerelease`, tag name set) or uploads to an existing one with `--clobber`. Idempotent — safe to re-run.
 
-### Step 6: Monitor promote + verify draft
+### Step 6: Monitor promote + verify draft + verify R2 sync
 
 1. Poll `gh run view <promote-run-id>` until complete.
-2. `gh release view v<new-version> --json isDraft,isPrerelease,assets -q '.isDraft, .isPrerelease, (.assets | length), (.assets[].name)'` — expect `isDraft=true`, `isPrerelease=true`, and exactly the set of artifacts expected (typically 14 for full mac+win+linux: 4 dmg/zip + 4 blockmap + 1 exe + 1 exe blockmap + 1 AppImage + 3 `latest-*.yml`).
-3. If the assertions pass, proceed to publish without prompting. If they fail, stop and surface the mismatch.
+2. **GitHub Release assertion**: `gh release view v<new-version> --json isDraft,isPrerelease,assets -q '.isDraft, .isPrerelease, (.assets | length), (.assets[].name)'` — expect `isDraft=true`, `isPrerelease=true` (alpha/beta/rc), and the channel-prefixed yml files in the asset list. Channel is derived from the new version: `<channel>-mac.yml` / `<channel>.yml` / `<channel>-linux.yml` where channel is `alpha` / `beta` / `rc` / `latest`. Full mac+win+linux is typically ~14 assets: 4 dmg/zip + 4 blockmap + 1 exe + 1 exe blockmap + 1 AppImage + 3 channel yml.
+3. **R2 sync assertion**: confirm the R2 bucket also has the artifacts:
+   ```bash
+   curl -fsSL "https://dl.super-one.dev/<channel>-mac.yml" | head -20
+   ```
+   Expect `version: <new-version>`, and each `path:` / `files[].url:` field prefixed with `v<new-version>/`. The `Restructure staging for R2` step in promote.yml uses `yq` to rewrite these fields; verifying the prefix confirms that step ran. If the yml is 404 or version doesn't match, R2 sync failed — see Recovery Patterns.
+4. If both assertions pass, proceed to publish without prompting. If they fail, stop and surface the mismatch.
 
 ### Step 7: Publish
 
@@ -112,9 +119,9 @@ NOTES=$(awk '/^## \[<new-version>\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGEL
 gh release edit v<new-version> --draft=false --prerelease --notes "$NOTES"
 ```
 
-**Alpha/beta MUST use `--prerelease`** — without it, `electron-updater`'s `allowPrerelease` resolution picks the wrong release and breaks auto-update for existing pre-release users (documented failure mode from `v0.21.2-alpha`).
+**Alpha/beta/rc tags MUST use `--prerelease`** at publish time. With R2 + GenericProvider, this flag no longer affects auto-update (channel is determined by the yml filename on R2, which electron-builder derives from the version string), but it still controls GitHub Release UI classification and keeps the GitHub Releases list consistent with the bundled CHANGELOG. promote.yml already auto-derives the same flag for the draft creation step, so this is the only manual moment where you confirm it.
 
-For `public` (future): omit `--prerelease`.
+For `public` (future, version like `1.0.0` without semver prerelease suffix): omit `--prerelease`.
 
 Publishing materializes the tag on `target_commitish` (the SHA supplied to promote). Run `git fetch origin --tags` afterwards so the local repo has the new tag.
 
@@ -127,7 +134,9 @@ Show the user the final release URL and the tag SHA. Mention `git fetch origin -
 | Failure | Action |
 |---|---|
 | Build workflow fails on one platform | Fix on main, re-trigger that platform only, reuse the other two platforms' existing run IDs in promote |
-| Promote workflow fails mid-upload | Re-trigger promote with the same tag — `--clobber` replaces any partial assets |
+| Promote workflow fails mid-upload (GitHub side) | Re-trigger promote with the same tag — `--clobber` replaces any partial assets |
+| Promote workflow fails on R2 sync step | The GitHub Release upload happens before the R2 sync step in promote.yml, so the GitHub side can be intact while R2 is empty. Re-trigger promote with the same tag — `aws s3 sync` is idempotent (same key = update); the GitHub upload step uses `--clobber` |
+| R2 yml has stale paths (no `v${VERSION}/` prefix) | The `Restructure staging for R2` step in promote.yml didn't run or yq failed. Check the promote run log for the `Rewriting paths in ...` lines. Re-trigger promote |
 | Draft release has wrong tag or SHA | `gh release delete v<new-version> --cleanup-tag --yes`, then re-run promote |
 | Already published and later found broken | Leave the broken release as-is (alpha users get it and can report), ship a new patch version; don't rewrite history |
 
@@ -135,5 +144,7 @@ Show the user the final release URL and the tag SHA. Mention `git fetch origin -
 
 - Local git never creates or force-pushes tags for releases. GitHub owns tag creation at publish time.
 - `CHANGELOG.md` entries describe only **verified** behavior — no "may fix" or speculative claims.
-- Alpha/beta releases are always marked `isPrerelease=true` in GitHub, otherwise `electron-updater` version resolution breaks for existing pre-release users.
+- Alpha/beta/rc releases are always marked `isPrerelease=true` in GitHub for UI classification consistency. (R2 + GenericProvider auto-update no longer depends on this flag — it's driven by the channel-suffixed yml filename.)
 - `bun.lock` is never modified by the release flow.
+- **Dual-publish is permanent**: `promote.yml` always uploads to both GitHub Release (flat layout) and R2 (`v${VERSION}/` subdirectory). GitHub Release is the legacy path for clients built before the R2 switch, R2 is the source of truth for current/future clients. **Never** delete the GitHub Release upload step.
+- **Never rotate `UPDATER_TOKEN`** the GitHub PAT secret. Legacy alpha clients embed it in their ASAR for `PrivateGitHubProvider` auth; rotating the token bricks their auto-update path. The secret is no longer consumed by any build workflow but **must** remain valid in GitHub Secrets indefinitely.

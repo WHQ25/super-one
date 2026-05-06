@@ -151,7 +151,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   return (
     <div>
       <ContextMenu>
-        <ContextMenuTrigger asChild disabled={folder.missing}>
+        <ContextMenuTrigger asChild>
           <div
             onClick={() => !folder.missing && onToggleExpand(folder.path)}
             className={cn(
@@ -216,14 +216,18 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-48">
-          <ContextMenuItem
-            onClick={() => onOpenHistory(folder.path)}
-            className="text-xs"
-          >
-            <History className="size-3.5" />
-            {t('sidebar.contextMenu.sessionHistory')}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
+          {!folder.missing && (
+            <>
+              <ContextMenuItem
+                onClick={() => onOpenHistory(folder.path)}
+                className="text-xs"
+              >
+                <History className="size-3.5" />
+                {t('sidebar.contextMenu.sessionHistory')}
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          )}
           <ContextMenuItem
             variant="destructive"
             onClick={() => onRemoveProject(folder)}

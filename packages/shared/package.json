@@ -1,0 +1,18 @@
+{
+  "name": "@superone/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./miniapp-api-runtime": {
+      "types": "./src/miniapp-api-runtime.d.ts",
+      "default": "./src/miniapp-api-runtime.js"
+    },
+    "./i18n": "./src/i18n/index.ts",
+    "./i18n/*": "./src/i18n/*.ts",
+    "./generative-ui/*": "./src/generative-ui/*.ts",
+    "./*.js": "./src/*.js",
+    "./*.d.ts": "./src/*.d.ts",
+    "./*": "./src/*.ts"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "extends": "../../packages/tsconfig/electron-node.json",
+  "compilerOptions": {
+    "paths": {
+      "@superone/shared/*": ["../../packages/shared/src/*"]
+    }
+  },
+  "include": [
+    "src/main/**/*.ts",
+    "src/main/**/*.d.ts",
+    "src/preload/**/*.ts",
+    "src/preload/**/*.d.ts",
+    "electron.vite.config.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ]
+}

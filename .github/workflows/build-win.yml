@@ -31,8 +31,8 @@ jobs:
         with:
           name: dist-win
           path: |
-            dist/*.exe
-            dist/*.blockmap
-            dist/latest.yml
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.blockmap
+            apps/desktop/dist/latest.yml
           retention-days: 30
           if-no-files-found: error

@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: read
+      actions: write  # write needed to delete artifacts after promote
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,3 +101,24 @@ jobs:
           gh release view "${{ inputs.release_tag }}" --json url,isDraft,isPrerelease -q '.url, .isDraft, .isPrerelease'
           echo "Assets:"
           gh release view "${{ inputs.release_tag }}" --json assets -q '.assets[].name'
+
+      - name: Delete consumed CI artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          cleanup_run_artifacts() {
+            local run_id=$1
+            [ -z "$run_id" ] && return
+            echo "Cleaning artifacts from run $run_id"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
+              --jq '.artifacts[] | "\(.id) \(.name) \(.size_in_bytes)"' \
+              | while read -r artifact_id artifact_name artifact_size; do
+                echo "  deleting $artifact_name ($artifact_id, $artifact_size bytes)"
+                gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" || \
+                  echo "  (delete failed for $artifact_id — continuing)"
+              done
+          }
+          cleanup_run_artifacts "${{ inputs.mac_run_id }}"
+          cleanup_run_artifacts "${{ inputs.win_run_id }}"
+          cleanup_run_artifacts "${{ inputs.linux_run_id }}"

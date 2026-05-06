@@ -1,0 +1,14 @@
+{
+  "extends": "../../packages/tsconfig/electron-renderer.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/renderer/src/*"],
+      "@superone/shared/*": ["../../packages/shared/src/*"]
+    }
+  },
+  "include": [
+    "src/renderer/src/**/*.ts",
+    "src/renderer/src/**/*.tsx",
+    "src/preload/index.d.ts"
+  ]
+}

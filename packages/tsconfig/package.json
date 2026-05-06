@@ -1,0 +1,12 @@
+{
+  "name": "@superone/tsconfig",
+  "version": "0.0.0",
+  "private": true,
+  "files": [
+    "base.json",
+    "react-library.json",
+    "electron-renderer.json",
+    "electron-node.json",
+    "nextjs.json"
+  ]
+}

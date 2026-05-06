@@ -496,6 +496,7 @@ export interface RemoteControlCallbacks {
   onPairingConfirmed?: (info: { mobileDeviceId: string; deviceName: string }) => void
   onPairingAlreadyPaired?: (info: { deviceName: string }) => void
   onRelayStatusChanged?: (connected: boolean) => void
+  onLanStatusChanged?: (active: boolean) => void
   isPairedDevice?: (deviceId: string) => boolean
 }
 
@@ -530,6 +531,7 @@ export class RemoteControlService {
   private pendingThinking: { messageId: string; text: string; parentToolUseId: string | null; targets?: string[] } | null = null
 
   private relayUrl = ''
+  private lastLanActive = false
 
   private lanFrameSeq = 0
 
@@ -689,6 +691,7 @@ export class RemoteControlService {
     } catch (err) {
       log.error('[RemoteControl] Failed to start LAN server:', err)
     }
+    this.emitLanStatus()
   }
 
   private async startLanAdvertiser(port: number): Promise<void> {
@@ -696,14 +699,15 @@ export class RemoteControlService {
     try {
       const roomId = await computeRoomId(this.keys.channelKeyHex)
       const advertiser = new LanAdvertiser()
-      advertiser.publish({
+      this.lanAdvertiser = advertiser
+      await advertiser.publish({
         name: `superone-${roomId.substring(0, 8)}`,
         port,
         txt: { roomId, hostName: hostname() },
       })
-      this.lanAdvertiser = advertiser
     } catch (err) {
       log.error('[RemoteControl] Failed to start LAN advertiser:', err)
+      this.lanAdvertiser = null
     }
   }
 
@@ -718,10 +722,16 @@ export class RemoteControlService {
   }
 
   private async stopLanServer(): Promise<void> {
-    this.lanAdvertiser?.unpublish()
+    const advertiser = this.lanAdvertiser
     this.lanAdvertiser = null
+    if (advertiser) {
+      await advertiser.unpublish().catch((err) => {
+        log.error('[RemoteControl] LAN advertiser unpublish failed:', err)
+      })
+    }
     const server = this.lanServer
     this.lanServer = null
+    this.emitLanStatus()
     if (!server) return
     for (const [id, info] of Array.from(this.connectedDevices)) {
       if (info.transports.has('lan')) this.markDeviceOffline(id, 'lan')
@@ -732,6 +742,17 @@ export class RemoteControlService {
 
   isRelayConnected(): boolean {
     return this.relayWs !== null && this.relayWs.readyState === WebSocket.OPEN
+  }
+
+  isLanActive(): boolean {
+    return this.lanServer !== null && this.lanAdvertiser?.isPublishing() === true
+  }
+
+  private emitLanStatus(): void {
+    const active = this.isLanActive()
+    if (active === this.lastLanActive) return
+    this.lastLanActive = active
+    this.callbacks.onLanStatusChanged?.(active)
   }
 
   async stop(): Promise<void> {
@@ -1027,7 +1048,13 @@ export class RemoteControlService {
           this.flushPendingThinking()
         }
         if (this.pendingText) this.flushPendingText(true)
-        if (!this.pendingThinking) this.pendingThinking = { messageId: msgId, text: '', parentToolUseId: parentId, targets: targetDeviceIds }
+        if (!this.pendingThinking) {
+          this.pendingThinking = { messageId: msgId, text: '', parentToolUseId: parentId, targets: targetDeviceIds }
+          const startDelta = { type: 'thinking' as const, thinking: '', parentToolUseId: parentId }
+          const startEv = { type: 'content_delta' as const, messageId: msgId, delta: startDelta } as unknown as AgentEvent
+          trace('remote.out', startEv.type, startEv, msgId)
+          this.queueSend([startEv], targetDeviceIds)
+        }
         this.pendingThinking.text += event.delta.thinking
         const pending = this.pendingThinking.text
         const breakIdx = pending.lastIndexOf('\n\n')

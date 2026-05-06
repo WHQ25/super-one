@@ -1032,7 +1032,12 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
           if (session.pendingQuestion?.requestId === event.requestId) return { pendingQuestion: null }
           return {}
         case 'plan_approval':
-          if (session.pendingPlanApproval?.requestId === event.requestId) return { pendingPlanApproval: null }
+          if (session.pendingPlanApproval?.requestId === event.requestId) {
+            return {
+              pendingPlanApproval: null,
+              planApprovalOutcome: { approved: !!event.approved, ...(event.feedback ? { feedback: event.feedback } : {}) },
+            }
+          }
           return {}
       }
       return {}

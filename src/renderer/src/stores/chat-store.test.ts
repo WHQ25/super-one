@@ -4528,6 +4528,53 @@ describe('remote session interaction routing', () => {
     expect(after._sessions['bg-agent-1'].pendingPermissions[0].requestId).toBe('r2')
   })
 
+  it('mobile-driven plan_approval rejection clears prompt and stamps planApprovalOutcome on the remote session', () => {
+    setupRemoteSession()
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'plan_approval',
+      sessionId: 'remote-1',
+      request: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
+    }))
+
+    expect(useChatStore.getState().projectSessions['/test']._sessions['remote-1'].pendingPlanApproval?.requestId).toBe('p1')
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'interaction_resolved',
+      interactionType: 'plan_approval',
+      sessionId: 'remote-1',
+      requestId: 'p1',
+      approved: false,
+      feedback: 'not yet',
+    } as never))
+
+    const after = useChatStore.getState().projectSessions['/test']._sessions['remote-1']
+    expect(after.pendingPlanApproval).toBeNull()
+    expect(after.planApprovalOutcome).toEqual({ approved: false, feedback: 'not yet' })
+  })
+
+  it('mobile-driven plan_approval approval stamps planApprovalOutcome with approved=true', () => {
+    setupRemoteSession()
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'plan_approval',
+      sessionId: 'remote-1',
+      request: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
+    }))
+
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'interaction_resolved',
+      interactionType: 'plan_approval',
+      sessionId: 'remote-1',
+      requestId: 'p1',
+      approved: true,
+    } as never))
+
+    const after = useChatStore.getState().projectSessions['/test']._sessions['remote-1']
+    expect(after.pendingPlanApproval).toBeNull()
+    expect(after.planApprovalOutcome).toEqual({ approved: true })
+  })
+
   it('marks the lazily-created remote session as codex when harnessId=codex on remote_session_start', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({

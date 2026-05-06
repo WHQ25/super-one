@@ -574,7 +574,7 @@ export class AgentService {
         const agent = this.findSessionBySid(projectPath, command.sessionId)
         if (agent) {
           agent.respondToPlanApproval(command.requestId, command.approved, command.feedback)
-          this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'plan_approval', requestId: command.requestId, projectPath, sessionId: command.sessionId })
+          this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'plan_approval', requestId: command.requestId, approved: command.approved, feedback: command.feedback, projectPath, sessionId: command.sessionId })
         } else {
           log.warn('[AgentService] respond_plan_approval: no agent for session %s', command.sessionId)
         }

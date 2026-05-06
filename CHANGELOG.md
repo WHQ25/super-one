@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.28.1-alpha] - 2026-05-06
+
+### Changed
+
+- **Auto-update switched to Cloudflare R2** (`https://dl.super-one.dev`). Replaces the previous private GitHub Releases path; clients no longer carry an embedded `UPDATER_TOKEN`. Per-version binaries live under `v${VERSION}/`; channel pointer files (`alpha-mac.yml` / `beta-mac.yml` / `latest-mac.yml`) at bucket root. Existing alpha clients keep receiving updates via the legacy GitHub Releases path until they auto-upgrade once to this build, after which they follow R2 — no manual reinstall required.
+- **Update channel preference scaffold**: app settings now persist `updateChannel` (`alpha` | `beta` | `stable` | `null` to follow build) and apply it to `autoUpdater.channel` at startup and on save. UI not yet exposed; set via devtools (`window.app.appSettings.save({ updateChannel: 'beta' })`) or by editing `app-settings.json`. Downgrade protection comes free from electron-updater's default `allowDowngrade=false` — switching to a more stable channel won't install an older version, you stay put until that channel catches up.
+
+### Fixed
+
+- **Sidebar: missing project folder can now be removed**. When a project folder's path no longer exists on disk, the right-click menu no longer disables itself — it now exposes just the Remove Project entry, giving you an exit path instead of a stuck row.
+
+### CI
+
+- **Monorepo conversion**: repo restructured to bun workspaces (`apps/desktop` + `apps/web` + `apps/relay` + `packages/{ui,shared,tsconfig}`). Cross-package imports use workspace package names. `apps/relay` is mirrored to a public `super-one-relay-public` repo via `git subtree` for self-hosters.
+- **promote.yml dual-publishes**: GitHub Release (flat) for legacy clients + R2 (`v${VERSION}/` subdirectory) for current clients. Auto-derives `--prerelease` from the semver tag.
+- **Workflows**: dropped `UPDATER_TOKEN` env from build steps; broadened upload-artifact yml glob to include channel-prefixed files (was hard-coded to `latest-*.yml`); set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` on all workflows to silence Node 20 deprecation warnings.
+
 ## [0.28.0-alpha] - 2026-05-06
 
 ### Added

@@ -31,8 +31,8 @@ jobs:
         with:
           name: dist-linux
           path: |
-            dist/*.AppImage
-            dist/*.blockmap
-            dist/latest-linux.yml
+            apps/desktop/dist/*.AppImage
+            apps/desktop/dist/*.blockmap
+            apps/desktop/dist/latest-linux.yml
           retention-days: 30
           if-no-files-found: error

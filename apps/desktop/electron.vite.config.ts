@@ -16,6 +16,9 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       externalizeDeps: true
+    },
+    ssr: {
+      noExternal: ['@superone/shared']
     }
   },
   preload: {

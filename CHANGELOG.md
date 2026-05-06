@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.28.2-alpha] - 2026-05-06
+
+### Fixed
+
+- **Renderer no longer black-screens after the v0.28.1-alpha update.** The activity-panel store was reached via both a static import (from `App.tsx` and others) and a dynamic `import('./activity-panel')`, so Rollup carved it into its own chunk despite the `INEFFECTIVE_DYNAMIC_IMPORT` warning. The resulting cycle (main bundle ↔ activity-panel chunk) ran the chunk's top-level `create()(persist(...))` before zustand's `create` was assigned in the main bundle, leaving the binding undefined and crashing the renderer at startup. Both stores (`activity-panel`, `source-control`) are now statically imported, the chunk split point is gone, and the cycle is broken.
+- **App menu and userData path restored.** After the monorepo conversion, `app.getName()` was inheriting `@superone/desktop` from the workspace-scoped package name, so the menu showed `About @superone/desktop` and userData drifted to `~/Library/Application Support/@superone/desktop/`. The runtime name is pinned to `SuperOne` and userData is locked to `~/Library/Application Support/super-one/`, so existing data is found in place.
+- **Main process no longer dies on EPIPE during shutdown.** stdout/stderr writes that race the parent close are now swallowed.
+
+### CI
+
+- **promote.yml**: bypass `aws-actions/configure-aws-credentials` for the R2 sync step. The action's default credential validation hits AWS STS (`sts.auto.amazonaws.com`), which doesn't exist on Cloudflare R2; injecting `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` directly avoids the NXDOMAIN failure.
+
 ## [0.28.1-alpha] - 2026-05-06
 
 ### Changed

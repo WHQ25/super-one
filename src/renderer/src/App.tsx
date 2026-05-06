@@ -28,7 +28,7 @@ import { useHarnessTheme } from '@/hooks/useHarnessTheme'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
-import { useActiveSession } from '@/stores/chat'
+import { useActiveSession, extractSessionTitle } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
@@ -244,16 +244,7 @@ function App(): React.JSX.Element {
   }, [])
 
   const folderName = currentFolder?.split('/').pop() ?? null
-  const sessionTitle = useActiveSession((s) => {
-    if (s.messages.length === 0) return null
-    const firstUser = s.messages.find((m) => m.role === 'user')
-    if (!firstUser) return null
-    return firstUser.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { text: string }).text)
-      .join(' ')
-      .slice(0, 100) || null
-  })
+  const sessionTitle = useActiveSession((s) => extractSessionTitle(s.messages))
 
   if (view === 'loading') {
     return <div className="h-screen bg-background" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />

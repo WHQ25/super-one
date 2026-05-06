@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, useEffect } from 'react'
+import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -8,7 +8,6 @@ import { ArrowUp, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
-import { useAppStore } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -32,28 +31,16 @@ import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { ReviewPanel } from './ReviewPanel'
 import { StopButton } from './StopButton'
 
-export interface ChatInputHandle {
-  send: () => void
-}
-
 export const chatInputAPI: {
   insertMention: ((kind: MentionKind, value: string, displayName: string) => void) | null
 } = { insertMention: null }
 
-interface ChatInputProps {
-  compact?: boolean
-}
-
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
-  function ChatInput({ compact }, ref) {
+export function ChatInput() {
     const { t } = useTranslation()
-    const { activeProject, isOpen } = useChatStore(useShallow((s) => ({
-      activeProject: s.activeProject,
-      isOpen: s.isOpen,
-    })))
+    const activeProject = useChatStore((s) => s.activeProject)
     const {
       setText, sendMessage, editQueuedMessage,
-      interrupt, toggleOpen, addAttachment, removeAttachment, clearAttachments,
+      interrupt, addAttachment, removeAttachment, clearAttachments,
       addMention, removeMention, dismissCommandPopup, setShowReviewPanel,
       toggleMiniAppContext, clearMiniAppContext,
       removeUserSelectionAt, clearUserSelections,
@@ -63,7 +50,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       sendMessage: s.sendMessage,
       editQueuedMessage: s.editQueuedMessage,
       interrupt: s.interrupt,
-      toggleOpen: s.toggleOpen,
       addAttachment: s.addAttachment,
       removeAttachment: s.removeAttachment,
       clearAttachments: s.clearAttachments,
@@ -115,7 +101,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       s.slashCommandOutput?.mode === 'popup' ? s.slashCommandOutput : null
     )
     const fileInputRef = useRef<HTMLInputElement>(null)
-    const compactInputRef = useRef<HTMLInputElement>(null)
 
     const [slashIndex, setSlashIndex] = useState(-1)
     const [slashDismissed, setSlashDismissed] = useState(false)
@@ -431,8 +416,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       sendMessage(fullText, segments)
     }, [canSend, sendMessage, serializeAndClear])
 
-    useImperativeHandle(ref, () => ({ send: handleSend }), [handleSend])
-
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {
         const isComposing = 'nativeEvent' in e ? e.nativeEvent.isComposing : e.isComposing
@@ -451,12 +434,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         }
         if (e.key === 'Escape' && commandPopup) {
           dismissCommandPopup()
-          return true
-        }
-
-        if (e.key === 'Enter' && e.shiftKey && !isOpen) {
-          e.preventDefault()
-          toggleOpen()
           return true
         }
 
@@ -584,7 +561,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         return false
       },
-      [handleSend, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, isOpen, toggleOpen, attachments, removeAttachment, commandPopup, dismissCommandPopup, addDirActive, setText, showReviewPanel, setShowReviewPanel]
+      [handleSend, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, attachments, removeAttachment, commandPopup, dismissCommandPopup, addDirActive, setText, showReviewPanel, setShowReviewPanel]
     )
 
     handleKeyDownRef.current = handleKeyDownCore
@@ -854,33 +831,25 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     }, [text, editor, activeSessionId])
 
     useEffect(() => {
-      if (!compact && isOpen && editor && !showReviewPanel) {
+      if (editor && !showReviewPanel) {
         editor.commands.focus('end')
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [compact, isOpen, editor, showReviewPanel, activeSessionId])
+    }, [editor, showReviewPanel, activeSessionId])
 
     useEffect(() => {
       if (!chatInputFocusNonce) return
-      if (compact) {
-        compactInputRef.current?.focus()
-        return
-      }
       if (editor && !showReviewPanel) {
         editor.commands.focus('end')
       }
-    }, [chatInputFocusNonce, compact, editor, showReviewPanel])
+    }, [chatInputFocusNonce, editor, showReviewPanel])
 
     useEffect(() => {
       if (!chatInputRestoreFocusNonce) return
-      if (compact) {
-        compactInputRef.current?.focus()
-        return
-      }
       if (editor && !showReviewPanel) {
         editor.commands.focus()
       }
-    }, [chatInputRestoreFocusNonce, compact, editor, showReviewPanel])
+    }, [chatInputRestoreFocusNonce, editor, showReviewPanel])
 
     useEffect(() => {
       if (showReviewPanel && editor) {
@@ -929,40 +898,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       return () => window.removeEventListener('keydown', onKeyDown)
     }, [promptSuggestion, isStreaming, hasPendingInteraction])
 
-    if (compact) {
-      return (
-        <input
-          ref={compactInputRef}
-          data-chat-input-editor="true"
-          type="text"
-          value={text}
-          onChange={(e) => {
-            const val = e.target.value
-            setText(val)
-            if (val.endsWith('@') && !isOpen) {
-              setMentionActive(true)
-              setMentionIndex(0)
-              toggleOpen()
-            }
-          }}
-          onKeyDown={handleKeyDownCore}
-          placeholder={placeholderText}
-          className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none"
-        />
-      )
-    }
-
-    const isCoding = useAppStore.getState().layoutMode === 'coding'
-
     return (
       <>
-        {activeProviderForResources === 'claude' && <ChatInputDirsHint isCoding={isCoding} />}
+        {activeProviderForResources === 'claude' && <ChatInputDirsHint />}
       <div
         className={cn(
-          'relative',
-          isCoding
-            ? 'mx-3 mb-1 rounded-xl border border-border px-4 py-3'
-            : 'border-t border-border px-3 py-2',
+          'relative mx-3 mb-1 rounded-xl border border-border px-4 py-3',
           isDragging && 'ring-2 ring-inset ring-blue-500/50'
         )}
         onDragEnter={handleDragEnter}
@@ -971,10 +912,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         onDrop={handleDrop}
       >
         {matchingCommands.length > 0 && !slashDismissed && (
-          <div className={cn(
-            'absolute bottom-full left-0 right-0 z-10 flex max-h-64 flex-col overflow-hidden border border-border bg-card p-1.5',
-            isCoding ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg'
-          )}>
+          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-card p-1.5">
             <div className="min-h-0 flex-1 overflow-y-auto">
               {matchingCommands.map((cmd, i) => (
                 <button
@@ -1016,10 +954,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         )}
 
         {commandPopup && (
-          <div className={cn(
-            'absolute bottom-full left-0 right-0 z-10 flex max-h-64 flex-col overflow-hidden border border-border bg-card',
-            isCoding ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg'
-          )}>
+          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-card">
             <div className="flex items-center justify-between px-3 py-1.5">
               <span className="text-[11px] font-medium text-muted-foreground">/{commandPopup.command}</span>
               <button
@@ -1046,10 +981,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             onPathCommit={handleAddDirCommit}
             onAddViaPicker={handleAddDirPicker}
             onRemoveDir={handleAddDirRemove}
-            rounded={isCoding}
           />
         )}
-        {showReviewPanel && <ReviewPanel isCoding={isCoding} />}
+        {showReviewPanel && <ReviewPanel />}
 
         {mentionInfoRef.current && mentionActive && matchingCommands.length === 0 && !addDirActive && (
           <MentionPopup
@@ -1060,7 +994,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             onSetSelectedIndex={setMentionIndex}
             onClose={() => { setMentionActive(false); setMentionIndex(0); mentionInfoRef.current = null }}
             showAgents={showAgentMentions}
-            rounded={isCoding}
           />
         )}
 
@@ -1102,17 +1035,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           <div className="flex items-center gap-1.5">
             <ContextUsage />
             {isStreaming && (
-              <StopButton onInterrupt={interrupt} rounded={isCoding} />
+              <StopButton onInterrupt={interrupt} />
             )}
             <Button
               size="icon-xs"
               variant="ghost"
               onClick={handleSend}
               disabled={!canSend}
-              className={cn(
-                'text-muted-foreground hover:text-foreground disabled:opacity-30',
-                isCoding && 'size-7 rounded-full border border-border'
-              )}
+              className="size-7 rounded-full border border-border text-muted-foreground hover:text-foreground disabled:opacity-30"
             >
               <ArrowUp className="size-3.5" />
             </Button>
@@ -1128,4 +1058,3 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       </>
     )
   }
-)

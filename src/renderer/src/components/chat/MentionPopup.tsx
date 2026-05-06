@@ -20,7 +20,6 @@ interface MentionPopupProps {
   onSetSelectedIndex: (index: number) => void
   onClose: () => void
   showAgents?: boolean
-  rounded?: boolean
 }
 
 type FlatItem =
@@ -55,7 +54,7 @@ function getSelectPath(item: FlatItem): string {
 }
 
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
-  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, showAgents = true, rounded }, ref) {
+  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, showAgents = true }, ref) {
     const activeProject = useChatStore((s) => s.activeProject)
     const agents = useActiveSession((s) => s.agents)
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
@@ -168,7 +167,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     if (searchCompleted && flatItems.length === 0) return null
 
     return (
-      <div className={cn("absolute bottom-full left-0 right-0 z-10 max-h-72 overflow-hidden border border-border bg-card flex flex-col", rounded ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg')}>
+      <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-card flex flex-col">
         <div className="overflow-y-auto p-1 flex-1 min-h-0">
           {(breadcrumbs.length > 0 || (isBrowseMode && projectName)) && (
             <div className="flex items-center gap-0.5 px-2 py-1 text-[10px] text-muted-foreground">

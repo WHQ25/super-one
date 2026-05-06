@@ -13,7 +13,6 @@ import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
 import { SlashCommandOverlay } from './SlashCommandOverlay'
 import { TodoPopup } from './TodoPopup'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
-import { SessionHistory } from './SessionHistory'
 import { PlanFullscreenContext } from './codex-item-renderer'
 import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
@@ -24,14 +23,12 @@ interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
   showScrollButton?: boolean
   scrollToBottom?: () => void
-  /** When true, skip showHistory branch (history displayed externally, e.g. in sidebar) */
-  externalHistory?: boolean
 }
 
-export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, externalHistory = false }: ChatContentProps) {
+export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom }: ChatContentProps) {
   const {
     messages, isCompacting, rateLimitInfo, apiRetry, pendingPlanApproval,
-    showHistory, historySessionId, hasActiveSession, worktreeRemoved,
+    historySessionId, hasActiveSession, worktreeRemoved,
     sessionStatus, lastAssistantMessageId, queuedMessages,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
@@ -39,7 +36,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     rateLimitInfo: s.rateLimitInfo,
     apiRetry: s.apiRetry,
     pendingPlanApproval: s.pendingPlanApproval,
-    showHistory: s.showHistory,
     historySessionId: s._activeSessionId,
     hasActiveSession: !!s.session,
     worktreeRemoved: s._worktreeRemoved,
@@ -170,8 +166,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             }
           }}
         />
-      ) : !externalHistory && showHistory ? (
-        <SessionHistory />
       ) : pendingPlanApproval ? (
         <PlanApprovalPrompt />
       ) : (
@@ -277,7 +271,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                 <AskUserQuestionPrompt />
                 <TodoPopup />
                 <ChatInput />
-                {externalHistory && <ChatStatusBar />}
+                <ChatStatusBar />
               </>
             )}
           </div>

@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 const STOP_COLOR = '#E24B4A'
 
@@ -8,10 +7,9 @@ const DEAD_ZONE = 100
 
 interface StopButtonProps {
   onInterrupt: () => void
-  rounded?: boolean
 }
 
-export function StopButton({ onInterrupt, rounded }: StopButtonProps) {
+export function StopButton({ onInterrupt }: StopButtonProps) {
   const [progress, setProgress] = useState(0)
   const startTimeRef = useRef<number | null>(null)
   const rafRef = useRef<number>(0)
@@ -70,7 +68,7 @@ export function StopButton({ onInterrupt, rounded }: StopButtonProps) {
   }, [startHold, endHold])
 
   const isHolding = progress > 0
-  const size = rounded ? 28 : 24
+  const size = 28
   const r = size / 2 - 1
   const circumference = 2 * Math.PI * r
 
@@ -84,10 +82,7 @@ export function StopButton({ onInterrupt, rounded }: StopButtonProps) {
       onClick={() => {
         if (!triggeredRef.current) onInterrupt()
       }}
-      className={cn(
-        'relative text-muted-foreground hover:text-foreground',
-        rounded && 'size-7 rounded-full border border-border'
-      )}
+      className="relative size-7 rounded-full border border-border text-muted-foreground hover:text-foreground"
     >
       {isHolding && (
         <svg

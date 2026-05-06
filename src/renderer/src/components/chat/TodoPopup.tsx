@@ -1,8 +1,6 @@
 import { useEffect, useCallback, useMemo } from 'react'
 import type { ChatMessage, CodexTodoListItem } from '../../../../shared/agent-types'
 import { useChatStore, useActiveSession } from '@/stores/chat'
-import { useAppStore } from '@/stores/app'
-import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/ui/kbd'
 import { TodoListPanel } from './TodoListPanel'
 
@@ -28,7 +26,6 @@ export function TodoPopup() {
   const showTodos = useActiveSession((s) => s.showTodos)
   const todosUserDismissed = useActiveSession((s) => s._todosUserDismissed)
   const toggleTodos = useChatStore((s) => s.toggleTodos)
-  const isCoding = useAppStore((s) => s.layoutMode) === 'coding'
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -107,11 +104,7 @@ export function TodoPopup() {
       expanded={showTodos}
       onToggle={toggleTodos}
       trailing={<Kbd className="ml-auto">{showTodos ? 'esc' : '⌃T'}</Kbd>}
-      className={cn(
-        isCoding
-          ? 'mx-3 mb-1 rounded-lg border border-border'
-          : 'border-t border-border',
-      )}
+      className="mx-3 mb-1 rounded-lg border border-border"
     />
   )
 }

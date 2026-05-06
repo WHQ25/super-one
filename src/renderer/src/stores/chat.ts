@@ -8,7 +8,7 @@ import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus,
 import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '../../../shared/event-seq-utils'
 import { perfEvent } from '@/lib/perf-trace'
 
-type Corner = 'br' | 'bl' | 'tr' | 'tl'
+type Corner = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
 export type ChatProvider = 'claude' | 'codex'
 export const DEFAULT_PROVIDER: ChatProvider = 'claude'
 const SESSIONS_PAGE_SIZE = 30
@@ -169,7 +169,6 @@ export interface ProjectState {
   sessions: SessionHistoryEntry[]
   sessionsPage: number
   sessionsHasMore: boolean
-  showHistory: boolean
   hasUnseenActivity: boolean
   hasPendingInteraction: boolean
   unseenCompletedSessions: Set<string>
@@ -302,7 +301,6 @@ export function createDefaultProjectState(): ProjectState {
     sessions: [],
     sessionsPage: 0,
     sessionsHasMore: true,
-    showHistory: false,
     hasUnseenActivity: false,
     hasPendingInteraction: false,
     unseenCompletedSessions: new Set(),
@@ -448,7 +446,6 @@ export interface ChatStore {
   // Session history
   fetchSessions: () => Promise<void>
   fetchSessionsPage: () => Promise<void>
-  toggleHistory: () => void
   switchSession: (sessionId: string) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
 
@@ -1429,14 +1426,13 @@ function _createLocalCodexSessionId(): string {
   return `${CODEX_LOCAL_SESSION_PREFIX}${ts}_${rand}`
 }
 
-/** Extract a title from the first user message for DB storage. */
-function _extractTitle(messages: ChatMessage[]): string | undefined {
+export function extractSessionTitle(messages: ChatMessage[]): string | null {
   const firstUserMsg = messages.find((m) => m.role === 'user')
   return firstUserMsg?.content
     .filter((b) => b.type === 'text')
     .map((b) => (b as { text: string }).text)
     .join(' ')
-    .slice(0, 100) || undefined
+    .slice(0, 100) || null
 }
 
 function _getWorktreeBranch(_projectPath: string, session: PerSessionState): string | undefined {
@@ -4283,15 +4279,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } catch (err) { console.warn('[chat] fetchSessionsPage failed:', err) }
   },
 
-  toggleHistory: () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const project = getProject(get())
-    const willShow = !project.showHistory
-    if (willShow) get().fetchSessions()
-    set((s) => updateProjectState(s, activeProject, () => ({ showHistory: willShow })))
-  },
-
   renameSession: async (sessionId, title) => {
     const { activeProject } = get()
     if (!activeProject) return
@@ -4355,7 +4342,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             [activeProject]: {
               ...proj,
               _activeSessionId: sessionId,
-              showHistory: false,
               _sessions: {
                 ...proj._sessions,
                 [sessionId]: patched,
@@ -4469,7 +4455,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             ...proj,
             _activeSessionId: sessionId,
             _sessions: { ...proj._sessions, [sessionId]: restoredSession },
-            showHistory: false,
           },
         },
       }

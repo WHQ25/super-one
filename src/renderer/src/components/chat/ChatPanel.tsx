@@ -1,11 +1,12 @@
-import { useRef, useCallback, useEffect, useState, memo } from 'react'
-import { useChatStore, useActiveSession } from '@/stores/chat'
-import { Button } from '@/components/ui/button'
-import { ChevronUp, ChevronDown, Plus, ArrowUp, Square, Clock } from 'lucide-react'
-import { ChatInput, type ChatInputHandle } from './ChatInput'
+import { useRef, useCallback, useEffect, useState, useLayoutEffect, memo } from 'react'
+import { motion } from 'motion/react'
+import { useChatStore, useActiveSession, extractSessionTitle } from '@/stores/chat'
+import { ChevronDown, Plus } from 'lucide-react'
 import { ChatContent } from './ChatContent'
+import { CollapsedChatPanelView, COLLAPSED_SIZE, COLLAPSED_PENDING_MAX_W } from './CollapsedChatPanelView'
 import { useChatScroll } from '@/hooks/useChatScroll'
 import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
+import { getPendingReason } from '@/components/sidebar/session-state-utils'
 import { cn } from '@/lib/utils'
 
 const OFFSET = 16
@@ -14,143 +15,223 @@ const TOP_OFFSET = TITLEBAR_H + 8
 const DEFAULT_PANEL_W = 360
 const MIN_PANEL_W = 360
 const MAX_PANEL_W = 800
-const COLLAPSED_H = 44
+const HEADER_H = 36
 const DEFAULT_EXPANDED_H = 620
 const MIN_EXPANDED_H = 580
+const COLLAPSED_PENDING_PADDING = 54
+const SIZE_ANIMATION_DURATION = 0.24
+const SIZE_EASE = [0.32, 0.72, 0, 1] as const
 const maxExpandedH = () => Math.floor(window.innerHeight * 0.9)
 
-type Corner = 'br' | 'bl' | 'tr' | 'tl'
+type Anchor = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
 
-/** CSS position properties for corner-anchored mode (responds to window resize) */
-function cornerStyle(corner: Corner): React.CSSProperties {
-  return {
-    top: corner.startsWith('t') ? TOP_OFFSET : undefined,
-    bottom: corner.startsWith('b') ? OFFSET : undefined,
-    left: corner.endsWith('l') ? OFFSET : undefined,
-    right: corner.endsWith('r') ? OFFSET : undefined,
+/** Compute panel top-left position for a given anchor + size + viewport. */
+function anchorPosition(anchor: Anchor, panelW: number, panelH: number, winW: number, winH: number): { x: number; y: number } {
+  switch (anchor) {
+    case 'tl': return { x: OFFSET, y: TOP_OFFSET }
+    case 'tr': return { x: winW - OFFSET - panelW, y: TOP_OFFSET }
+    case 'bl': return { x: OFFSET, y: winH - OFFSET - panelH }
+    case 'br': return { x: winW - OFFSET - panelW, y: winH - OFFSET - panelH }
+    case 'tm': return { x: (winW - panelW) / 2, y: TOP_OFFSET }
+    case 'bm': return { x: (winW - panelW) / 2, y: winH - OFFSET - panelH }
+    case 'lm': return { x: OFFSET, y: (winH - panelH) / 2 }
+    case 'rm': return { x: winW - OFFSET - panelW, y: (winH - panelH) / 2 }
   }
 }
 
-/** Convert a corner to absolute top/left (for drag start calculation) */
-function cornerToXY(corner: Corner, panelW: number, panelH: number): { x: number; y: number } {
+/** Pick nearest anchor by Euclidean distance from panel center to where panel center would sit at each anchor. */
+function nearestAnchor(panelCenterX: number, panelCenterY: number, panelW: number, panelH: number): Anchor {
   const w = window.innerWidth
   const h = window.innerHeight
-  return {
-    x: corner.endsWith('l') ? OFFSET : w - panelW - OFFSET,
-    y: corner.startsWith('t') ? TOP_OFFSET : h - panelH - OFFSET,
+  const halfW = panelW / 2
+  const halfH = panelH / 2
+  const targets: Array<[Anchor, number, number]> = [
+    ['tl', OFFSET + halfW, TOP_OFFSET + halfH],
+    ['tr', w - OFFSET - halfW, TOP_OFFSET + halfH],
+    ['bl', OFFSET + halfW, h - OFFSET - halfH],
+    ['br', w - OFFSET - halfW, h - OFFSET - halfH],
+    ['tm', w / 2, TOP_OFFSET + halfH],
+    ['bm', w / 2, h - OFFSET - halfH],
+    ['lm', OFFSET + halfW, h / 2],
+    ['rm', w - OFFSET - halfW, h / 2],
+  ]
+  let best: Anchor = 'br'
+  let bestDist = Infinity
+  for (const [anchor, ax, ay] of targets) {
+    const dx = panelCenterX - ax
+    const dy = panelCenterY - ay
+    const d = dx * dx + dy * dy
+    if (d < bestDist) {
+      bestDist = d
+      best = anchor
+    }
   }
-}
-
-function nearestCorner(x: number, y: number): Corner {
-  const w = window.innerWidth
-  const h = window.innerHeight
-  const isTop = y < h / 2
-  const isLeft = x < w / 2
-  return `${isTop ? 't' : 'b'}${isLeft ? 'l' : 'r'}` as Corner
+  return best
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
+type ResizeEdge = 'top' | 'bottom' | 'left' | 'right'
+
 export const ChatPanel = memo(function ChatPanel() {
   const isOpen = useChatStore((s) => s.isOpen)
-  const corner = useChatStore((s) => s.corner)
+  const corner = useChatStore((s) => s.corner) as Anchor
   const setCorner = useChatStore((s) => s.setCorner)
   const toggleOpen = useChatStore((s) => s.toggleOpen)
-  const status = useActiveSession((s) => s.status)
+  const sessionStatus = useActiveSession((s) => s.status)
+  const sessionTitle = useActiveSession((s) => extractSessionTitle(s.messages))
+  const pendingPermissions = useActiveSession((s) => s.pendingPermissions)
+  const pendingQuestion = useActiveSession((s) => s.pendingQuestion)
+  const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
+  const isUnseen = useChatStore((s) => {
+    const proj = s.activeProject ? s.projectSessions[s.activeProject] : null
+    if (!proj) return false
+    const sid = proj._activeSessionId
+    return sid ? proj.unseenCompletedSessions.has(sid) : false
+  })
   const resetSession = useChatStore((s) => s.resetSession)
-  const interrupt = useChatStore((s) => s.interrupt)
-  const toggleHistory = useChatStore((s) => s.toggleHistory)
+
+  const isRunning = sessionStatus === 'streaming' || sessionStatus === 'background'
+  const pendingReason = getPendingReason(pendingPermissions, pendingQuestion, pendingPlanApproval)
+
+  // Clear unseen flag when user opens panel
+  useEffect(() => {
+    if (!isOpen) return
+    const state = useChatStore.getState()
+    if (!state.activeProject) return
+    const proj = state.projectSessions[state.activeProject]
+    if (!proj?._activeSessionId) return
+    if (!proj.unseenCompletedSessions.has(proj._activeSessionId)) return
+    useChatStore.setState((s) => {
+      const p = s.activeProject ? s.projectSessions[s.activeProject] : null
+      if (!p?._activeSessionId) return {}
+      const next = new Set(p.unseenCompletedSessions)
+      next.delete(p._activeSessionId)
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          [s.activeProject!]: { ...p, unseenCompletedSessions: next },
+        },
+      }
+    })
+  }, [isOpen])
 
   const scrollViewportRef = useRef<HTMLDivElement>(null)
-  const compactInputRef = useRef<ChatInputHandle>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const measureRef = useRef<HTMLSpanElement>(null)
 
   const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
   useChatKeyboardShortcuts()
 
-  // Panel dimensions (user-resizable)
+  // Panel dimensions
   const [expandedH, setExpandedH] = useState(() => Math.min(DEFAULT_EXPANDED_H, maxExpandedH()))
   const [panelW, setPanelW] = useState(DEFAULT_PANEL_W)
 
-  // Clamp panel height when window resizes
+  // Window size — drives anchor position re-computation
+  const [winSize, setWinSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }))
   useEffect(() => {
-    const handleResize = () => {
+    const handler = () => {
+      setWinSize({ w: window.innerWidth, h: window.innerHeight })
       setExpandedH((h) => clamp(h, MIN_EXPANDED_H, maxExpandedH()))
     }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
   }, [])
 
-  // Drag state: null = not dragging (use corner CSS), {x,y} = absolute top/left
-  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
-  const dragRef = useRef<{
-    startX: number
-    startY: number
-    panelStartX: number
-    panelStartY: number
-    dragging: boolean
-  }>({ startX: 0, startY: 0, panelStartX: 0, panelStartY: 0, dragging: false })
+  // Measure pending reason text natural width
+  const [pendingTextW, setPendingTextW] = useState(0)
+  useLayoutEffect(() => {
+    if (!pendingReason) return
+    const w = measureRef.current?.getBoundingClientRect().width ?? 0
+    setPendingTextW(w)
+  }, [pendingReason])
 
-  // Resize state
+  // Override position during drag / midpoint resize.
+  // null → use anchor-computed rest position.
+  const [freezePos, setFreezePos] = useState<{ x: number; y: number } | null>(null)
+  const dragRef = useRef<{ dragging: boolean }>({ dragging: false })
+
   const [isResizing, setIsResizing] = useState(false)
 
-  const panelH = isOpen ? expandedH : COLLAPSED_H
-  const isAtTop = corner.startsWith('t')
+  // Track when expansion animation finishes — controls when ChatContent fades in
+  const [expansionComplete, setExpansionComplete] = useState(isOpen)
+  useEffect(() => {
+    if (!isOpen) setExpansionComplete(false)
+  }, [isOpen])
 
-  // --- Drag handlers ---
+  // Compute target dimensions
+  const collapsedW = pendingReason
+    ? Math.min(COLLAPSED_PENDING_PADDING + pendingTextW, COLLAPSED_PENDING_MAX_W)
+    : COLLAPSED_SIZE
+  const targetW = isOpen ? panelW : collapsedW
+  const targetH = isOpen ? expandedH : COLLAPSED_SIZE
+  const targetRadius = isOpen ? 16 : COLLAPSED_SIZE / 2
+
+  // Position: freezePos overrides; otherwise compute from anchor
+  const restPos = anchorPosition(corner, targetW, targetH, winSize.w, winSize.h)
+  const pos = freezePos ?? restPos
+
+  // Which edges are anchored (cannot be resized) — affects which resize handles render
+  const topAnchored = corner === 'tl' || corner === 'tr' || corner === 'tm'
+  const bottomAnchored = corner === 'bl' || corner === 'br' || corner === 'bm'
+  const leftAnchored = corner === 'tl' || corner === 'bl' || corner === 'lm'
+  const rightAnchored = corner === 'tr' || corner === 'br' || corner === 'rm'
+
+  // --- Drag handler (shared by header + collapsed icon) ---
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      const panelXY = cornerToXY(corner, panelW, panelH)
-      let nextDragPos = panelXY
+      const rect = panelRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const startMouseX = e.clientX
+      const startMouseY = e.clientY
+      const startX = rect.left
+      const startY = rect.top
+      const w = rect.width
+      const h = rect.height
+      let dragging = false
       let raf = 0
+      let nextPos = { x: startX, y: startY }
+
       const flush = () => {
         raf = 0
-        setDragPos(nextDragPos)
-      }
-      dragRef.current = {
-        startX: e.clientX,
-        startY: e.clientY,
-        panelStartX: panelXY.x,
-        panelStartY: panelXY.y,
-        dragging: false,
+        setFreezePos(nextPos)
       }
 
-      const handleMouseMove = (ev: MouseEvent) => {
-        const dx = ev.clientX - dragRef.current.startX
-        const dy = ev.clientY - dragRef.current.startY
-        if (!dragRef.current.dragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+      const handleMove = (ev: MouseEvent) => {
+        const dx = ev.clientX - startMouseX
+        const dy = ev.clientY - startMouseY
+        if (!dragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+          dragging = true
           dragRef.current.dragging = true
+          setFreezePos({ x: startX, y: startY })
         }
-        if (dragRef.current.dragging) {
-          nextDragPos = {
-            x: dragRef.current.panelStartX + dx,
-            y: dragRef.current.panelStartY + dy,
-          }
+        if (dragging) {
+          nextPos = { x: startX + dx, y: startY + dy }
           if (raf === 0) raf = requestAnimationFrame(flush)
         }
       }
 
-      const handleMouseUp = (ev: MouseEvent) => {
-        window.removeEventListener('mousemove', handleMouseMove)
-        window.removeEventListener('mouseup', handleMouseUp)
+      const handleUp = (ev: MouseEvent) => {
+        window.removeEventListener('mousemove', handleMove)
+        window.removeEventListener('mouseup', handleUp)
         cancelAnimationFrame(raf)
-        raf = 0
-        if (dragRef.current.dragging) {
-          const cx = dragRef.current.panelStartX + (ev.clientX - dragRef.current.startX) + panelW / 2
-          const cy = dragRef.current.panelStartY + (ev.clientY - dragRef.current.startY) + panelH / 2
-          setCorner(nearestCorner(cx, cy))
+        if (dragging) {
+          const cx = startX + (ev.clientX - startMouseX) + w / 2
+          const cy = startY + (ev.clientY - startMouseY) + h / 2
+          setCorner(nearestAnchor(cx, cy, w, h))
         }
-        setDragPos(null)
+        setFreezePos(null)
         requestAnimationFrame(() => {
           dragRef.current.dragging = false
         })
       }
 
-      window.addEventListener('mousemove', handleMouseMove)
-      window.addEventListener('mouseup', handleMouseUp)
+      window.addEventListener('mousemove', handleMove)
+      window.addEventListener('mouseup', handleUp)
     },
-    [corner, panelW, panelH, setCorner]
+    [setCorner]
   )
 
   const handleToggle = useCallback(
@@ -163,192 +244,182 @@ export const ChatPanel = memo(function ChatPanel() {
     [toggleOpen]
   )
 
-  // --- Resize handlers ---
-  const isAtLeft = corner.endsWith('l')
-
-  const handleResizeYMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  // --- Resize handler (one per edge) ---
+  const handleResizeStart = useCallback(
+    (edge: ResizeEdge) => (e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      const startY = e.clientY
-      const startH = expandedH
-      let nextH = startH
-      let raf = 0
-      const flush = () => {
-        raf = 0
-        setExpandedH(nextH)
-      }
+      const rect = panelRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const startMouseX = e.clientX
+      const startMouseY = e.clientY
+      const startW = rect.width
+      const startH = rect.height
+      const startX = rect.left
+      const startY = rect.top
+      setFreezePos({ x: startX, y: startY })
       setIsResizing(true)
 
-      const handleMouseMove = (ev: MouseEvent) => {
-        const dy = ev.clientY - startY
-        const newH = isAtTop ? startH + dy : startH - dy
-        nextH = clamp(newH, MIN_EXPANDED_H, maxExpandedH())
-        if (raf === 0) raf = requestAnimationFrame(flush)
-      }
-
-      const handleMouseUp = (ev: MouseEvent) => {
-        window.removeEventListener('mousemove', handleMouseMove)
-        window.removeEventListener('mouseup', handleMouseUp)
-        cancelAnimationFrame(raf)
-        const dy = ev.clientY - startY
-        const finalH = isAtTop ? startH + dy : startH - dy
-        setExpandedH(clamp(finalH, MIN_EXPANDED_H, maxExpandedH()))
-        setIsResizing(false)
-      }
-
-      window.addEventListener('mousemove', handleMouseMove)
-      window.addEventListener('mouseup', handleMouseUp)
-    },
-    [expandedH, isAtTop]
-  )
-
-  const handleResizeXMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      const startX = e.clientX
-      const startW = panelW
-      let nextW = startW
       let raf = 0
+      let nextW = startW
+      let nextH = startH
+      let nextX = startX
+      let nextY = startY
       const flush = () => {
         raf = 0
         setPanelW(nextW)
+        setExpandedH(nextH)
+        setFreezePos({ x: nextX, y: nextY })
       }
-      setIsResizing(true)
 
-      const handleMouseMove = (ev: MouseEvent) => {
-        const dx = ev.clientX - startX
-        const newW = isAtLeft ? startW + dx : startW - dx
-        nextW = clamp(newW, MIN_PANEL_W, MAX_PANEL_W)
+      const handleMove = (ev: MouseEvent) => {
+        const dx = ev.clientX - startMouseX
+        const dy = ev.clientY - startMouseY
+        switch (edge) {
+          case 'top':
+            nextH = clamp(startH - dy, MIN_EXPANDED_H, maxExpandedH())
+            nextY = startY + (startH - nextH)
+            break
+          case 'bottom':
+            nextH = clamp(startH + dy, MIN_EXPANDED_H, maxExpandedH())
+            break
+          case 'left':
+            nextW = clamp(startW - dx, MIN_PANEL_W, MAX_PANEL_W)
+            nextX = startX + (startW - nextW)
+            break
+          case 'right':
+            nextW = clamp(startW + dx, MIN_PANEL_W, MAX_PANEL_W)
+            break
+        }
         if (raf === 0) raf = requestAnimationFrame(flush)
       }
 
-      const handleMouseUp = (ev: MouseEvent) => {
-        window.removeEventListener('mousemove', handleMouseMove)
-        window.removeEventListener('mouseup', handleMouseUp)
+      const handleUp = () => {
+        window.removeEventListener('mousemove', handleMove)
+        window.removeEventListener('mouseup', handleUp)
         cancelAnimationFrame(raf)
-        const dx = ev.clientX - startX
-        const finalW = isAtLeft ? startW + dx : startW - dx
-        setPanelW(clamp(finalW, MIN_PANEL_W, MAX_PANEL_W))
+        // Commit final values
+        setPanelW(nextW)
+        setExpandedH(nextH)
         setIsResizing(false)
+        setFreezePos(null)  // triggers smooth animate back to anchor's natural position
       }
 
-      window.addEventListener('mousemove', handleMouseMove)
-      window.addEventListener('mouseup', handleMouseUp)
+      window.addEventListener('mousemove', handleMove)
+      window.addEventListener('mouseup', handleUp)
     },
-    [panelW, isAtLeft]
+    []
   )
 
-  // --- Position logic ---
-  const isDragging = dragPos !== null
-  const noTransition = isDragging || isResizing
+  const isDragging = freezePos !== null && !isResizing && dragRef.current.dragging
+  const noTransitionForFreeze = isDragging || isResizing
 
-  // When dragging: use absolute top/left. When resting: use corner CSS (auto-responsive).
-  const positionStyle: React.CSSProperties = isDragging
-    ? { top: dragPos.y, left: dragPos.x }
-    : cornerStyle(corner)
-
-  // Resize handles: vertical (top/bottom edge) + horizontal (left/right edge)
+  // Resize handles render — only when expanded; one per non-anchored edge
   const resizeHandles = isOpen && (
     <>
-      <div
-        onMouseDown={handleResizeYMouseDown}
-        className={cn(
-          'absolute left-0 right-0 z-10 h-1.5 cursor-ns-resize',
-          isAtTop ? 'bottom-0' : 'top-0'
-        )}
-      />
-      <div
-        onMouseDown={handleResizeXMouseDown}
-        className={cn(
-          'absolute top-0 bottom-0 z-10 w-1.5 cursor-ew-resize',
-          isAtLeft ? 'right-0' : 'left-0'
-        )}
-      />
+      {!topAnchored && (
+        <div
+          onMouseDown={handleResizeStart('top')}
+          className="absolute left-0 right-0 top-0 z-10 h-1.5 cursor-ns-resize"
+        />
+      )}
+      {!bottomAnchored && (
+        <div
+          onMouseDown={handleResizeStart('bottom')}
+          className="absolute left-0 right-0 bottom-0 z-10 h-1.5 cursor-ns-resize"
+        />
+      )}
+      {!leftAnchored && (
+        <div
+          onMouseDown={handleResizeStart('left')}
+          className="absolute top-0 bottom-0 left-0 z-10 w-1.5 cursor-ew-resize"
+        />
+      )}
+      {!rightAnchored && (
+        <div
+          onMouseDown={handleResizeStart('right')}
+          className="absolute top-0 bottom-0 right-0 z-10 w-1.5 cursor-ew-resize"
+        />
+      )}
     </>
   )
 
   return (
-    <div
-      style={{
-        ...positionStyle,
-        width: panelW,
-        height: panelH,
-        borderRadius: isOpen ? 16 : COLLAPSED_H / 2,
-        position: 'fixed',
-      }}
-      className={cn(
-        '@container z-50 flex flex-col overflow-hidden border border-border shadow-2xl',
-        !noTransition && 'transition-[top,right,bottom,left,width,height,border-radius] duration-200 ease-out'
-      )}
-    >
-      {resizeHandles}
-
-      {/* Header / pill bar — draggable area */}
-      <div
-        className={cn(
-          'flex shrink-0 items-center gap-2 bg-background px-3 py-2',
-          isDragging ? 'cursor-grabbing' : 'cursor-grab'
-        )}
-        style={{ height: COLLAPSED_H }}
-        onMouseDown={handleMouseDown}
-      >
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          onClick={handleToggle}
-          className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
+    <>
+      {/* Off-screen text measurement node */}
+      {pendingReason && !isOpen && (
+        <span
+          ref={measureRef}
+          aria-hidden
+          className="invisible fixed -left-[9999px] -top-[9999px] whitespace-nowrap text-xs"
         >
-          {isOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
-        </Button>
+          {pendingReason}
+        </span>
+      )}
+      <motion.div
+        ref={panelRef}
+        style={{ position: 'fixed', top: 0, left: 0 }}
+        animate={{ x: pos.x, y: pos.y, width: targetW, height: targetH, borderRadius: targetRadius }}
+        initial={{ x: pos.x, y: pos.y, width: targetW, height: targetH, borderRadius: targetRadius }}
+        transition={noTransitionForFreeze
+          ? { duration: 0 }
+          : { duration: SIZE_ANIMATION_DURATION, ease: SIZE_EASE }}
+        onAnimationComplete={() => {
+          if (isOpen) setExpansionComplete(true)
+        }}
+        className={cn(
+          '@container z-50 flex flex-col overflow-hidden border border-border shadow-2xl',
+          isResizing && 'will-change-[width,height]',
+        )}
+      >
+        {resizeHandles}
 
         {isOpen ? (
-          <>
-            <div className="flex-1" />
-            <div
-              onClick={toggleHistory}
-              className="shrink-0 cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Clock className="size-4" />
-            </div>
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              onClick={() => resetSession()}
-              className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
-            >
-              <Plus className="size-4" />
-            </Button>
-          </>
-        ) : (
-          <>
-            <ChatInput compact ref={compactInputRef} />
-            {status === 'streaming' ? (
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                onClick={() => interrupt()}
-                className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
-              >
-                <Square className="size-3" />
-              </Button>
-            ) : (
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                onClick={() => compactInputRef.current?.send()}
-                className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
-              >
-                <ArrowUp className="size-3.5" />
-              </Button>
+          <div
+            className={cn(
+              'flex shrink-0 select-none items-center gap-2 bg-card px-3 pt-[2px]',
+              isDragging ? 'cursor-grabbing' : 'cursor-grab'
             )}
-          </>
+            style={{ height: HEADER_H }}
+            onMouseDown={handleMouseDown}
+          >
+            <button
+              onClick={handleToggle}
+              className="shrink-0 rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ChevronDown className="size-3.5" />
+            </button>
+            <span className="min-w-0 flex-1 truncate pr-3 text-xs text-muted-foreground">
+              {sessionTitle ?? 'New Session'}
+            </span>
+            <button
+              onClick={() => resetSession()}
+              className="shrink-0 rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>
+        ) : (
+          <CollapsedChatPanelView
+            pendingReason={pendingReason}
+            isRunning={isRunning}
+            isUnseen={isUnseen}
+            isDragging={isDragging}
+            onClick={handleToggle}
+            onMouseDown={handleMouseDown}
+          />
         )}
-      </div>
 
-      {/* Expanded content — hidden by overflow when collapsed */}
-      <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} />
-    </div>
+        <motion.div
+          className="@container relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card"
+          animate={{ opacity: isOpen && expansionComplete ? 1 : 0 }}
+          initial={{ opacity: isOpen ? 1 : 0 }}
+          transition={{ duration: 0.12 }}
+        >
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
+          <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} />
+        </motion.div>
+      </motion.div>
+    </>
   )
 })

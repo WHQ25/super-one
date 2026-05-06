@@ -14,7 +14,7 @@ import type { SessionHistoryEntry } from '../../../../shared/agent-types'
 
 interface SessionHistoryProps {
   showBackButton?: boolean
-  onClose?: () => void
+  onClose: () => void
 }
 
 export function SessionHistory({ showBackButton = true, onClose }: SessionHistoryProps) {
@@ -25,7 +25,6 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
   const fetchSessions = useChatStore((s) => s.fetchSessions)
   const fetchSessionsPage = useChatStore((s) => s.fetchSessionsPage)
   const resetSession = useChatStore((s) => s.resetSession)
-  const toggleHistory = useChatStore((s) => s.toggleHistory)
   const activeProject = useChatStore((s) => s.activeProject)
   const currentSessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId)
 
@@ -47,13 +46,13 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
         if (editingSessionId) {
           setEditingSessionId(null)
         } else {
-          toggleHistory()
+          onClose()
         }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [showBackButton, toggleHistory, editingSessionId])
+  }, [showBackButton, onClose, editingSessionId])
 
   const handleResume = (entry: SessionHistoryEntry) => {
     if (editingSessionId) return
@@ -143,12 +142,11 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2">
-        {showBackButton && (
-          <Button size="icon-xs" variant="ghost" onClick={toggleHistory} className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground">
+        {showBackButton ? (
+          <Button size="icon-xs" variant="ghost" onClick={onClose} className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground">
             <ArrowLeft className="size-4" />
           </Button>
-        )}
-        {!showBackButton && onClose && (
+        ) : (
           <span className="shrink-0 text-xs font-medium text-foreground/80">Sessions</span>
         )}
         <div className="flex flex-1 items-center gap-1.5 rounded-md border border-border/50 px-2 py-1">
@@ -181,7 +179,7 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {!showBackButton && onClose && (
+        {!showBackButton && (
           <Button size="icon-xs" variant="ghost" onClick={onClose} className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground">
             <X className="size-4" />
           </Button>

@@ -2,12 +2,7 @@ import { Folder } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useActiveSession } from '@/stores/chat'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 import { shortenPath } from '@/lib/path-utils'
-
-interface ChatInputDirsHintProps {
-  isCoding: boolean
-}
 
 type DirScope = 'user' | 'project' | 'session'
 
@@ -17,7 +12,7 @@ function basename(p: string): string {
   return parts[parts.length - 1] || p
 }
 
-export function ChatInputDirsHint({ isCoding }: ChatInputDirsHintProps) {
+export function ChatInputDirsHint() {
   const { t } = useTranslation()
   const userDirs = useActiveSession((s) => s.userAdditionalDirs)
   const projectDirs = useActiveSession((s) => s.projectAdditionalDirs)
@@ -37,12 +32,7 @@ export function ChatInputDirsHint({ isCoding }: ChatInputDirsHintProps) {
   if (entries.length === 0) return null
   return (
     <TooltipProvider delayDuration={300}>
-      <div className={cn(
-        'flex items-center gap-1 overflow-x-auto',
-        isCoding
-          ? 'mx-3 mb-1 rounded-xl border border-border p-1'
-          : 'border-t border-border p-1'
-      )}>
+      <div className="mx-3 mb-1 flex items-center gap-1 overflow-x-auto rounded-xl border border-border p-1">
         <span className="ml-1 mr-0.5 shrink-0 text-[11px] text-muted-foreground/70">{t('chat.additionalDirs.label')}</span>
         {entries.map(({ dir, scope }) => (
           <Tooltip key={dir}>

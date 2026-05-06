@@ -26,7 +26,7 @@ function HighlightText({ text, indices }: { text: string; indices: number[] }) {
   return <>{parts}</>
 }
 
-export function ReviewPanel({ isCoding }: { isCoding: boolean }) {
+export function ReviewPanel() {
   const setShowReviewPanel = useChatStore((s) => s.setShowReviewPanel)
   const startCodexReview = useChatStore((s) => s.startCodexReview)
   const activeProject = useChatStore((s) => s.activeProject)
@@ -159,10 +159,7 @@ export function ReviewPanel({ isCoding }: { isCoding: boolean }) {
     <div
       ref={panelRef}
       tabIndex={-1}
-      className={cn(
-        'absolute bottom-full left-0 right-0 z-10 flex max-h-80 flex-col overflow-hidden border border-border bg-card outline-none',
-        isCoding ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg'
-      )}
+      className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-80 flex-col overflow-hidden rounded-xl border border-border bg-card outline-none"
       onKeyDown={handleKeyDown}
     >
       <div className="flex items-center justify-between px-3 py-1.5">

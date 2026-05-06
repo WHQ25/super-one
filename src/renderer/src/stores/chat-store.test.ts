@@ -1813,7 +1813,6 @@ describe('switchSession Case B (from DB)', () => {
     expect(after._sessions['db-session'].sessionProvider).toBe('claude')
     expect(after._sessions['db-session'].selectedModel).toBe('claude-sonnet-4-6')
     expect(after._sessions['db-session'].selectedEffort).toBe('medium')
-    expect(after.showHistory).toBe(false)
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
   })
 
@@ -3986,7 +3985,6 @@ describe('createDefaultProjectState', () => {
     expect(state.sessions).toEqual([])
     expect(state.sessionsPage).toBe(0)
     expect(state.sessionsHasMore).toBe(true)
-    expect(state.showHistory).toBe(false)
     expect(state.hasUnseenActivity).toBe(false)
     expect(state.hasPendingInteraction).toBe(false)
     expect(state.unseenCompletedSessions).toEqual(new Set())

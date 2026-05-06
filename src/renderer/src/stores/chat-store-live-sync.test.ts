@@ -447,7 +447,6 @@ function projectExtras() {
     sessions: [],
     sessionsPage: 0,
     sessionsHasMore: false,
-    showHistory: false,
     hasUnseenActivity: false,
     hasPendingInteraction: false,
     unseenCompletedSessions: new Set<string>(),

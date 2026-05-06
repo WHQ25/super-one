@@ -9,7 +9,6 @@ interface FakeSessionState {
   rateLimitInfo: null
   apiRetry: null
   pendingPlanApproval: null
-  showHistory: boolean
   _activeSessionId: string | null
   session: unknown
   _worktreeRemoved: boolean
@@ -25,7 +24,6 @@ const hoisted = vi.hoisted(() => {
     rateLimitInfo: null,
     apiRetry: null,
     pendingPlanApproval: null,
-    showHistory: false,
     _activeSessionId: 'sid-1',
     session: { sessionId: 'sid-1' },
     _worktreeRemoved: false,
@@ -80,7 +78,6 @@ vi.mock('./AskUserQuestionPrompt', () => ({ AskUserQuestionPrompt: () => <div da
 vi.mock('./SlashCommandOverlay', () => ({ SlashCommandOverlay: () => <div data-testid="slash-overlay" /> }))
 vi.mock('./TodoPopup', () => ({ TodoPopup: () => <div data-testid="todo-popup" /> }))
 vi.mock('./PlanApprovalPrompt', () => ({ PlanApprovalPrompt: () => <div data-testid="plan-approval" /> }))
-vi.mock('./SessionHistory', () => ({ SessionHistory: () => <div data-testid="session-history" /> }))
 vi.mock('./CodexPlanFullscreenView', () => ({ CodexPlanFullscreenView: () => <div data-testid="codex-plan-fullscreen" /> }))
 vi.mock('./codex-item-renderer', () => ({
   PlanFullscreenContext: { Provider: ({ children }: { children: React.ReactNode }) => <>{children}</> },

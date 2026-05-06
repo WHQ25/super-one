@@ -22,7 +22,6 @@ interface AddDirPopupProps {
   onPathCommit: (absolutePath: string, scope: 'project' | 'session') => void
   onAddViaPicker: (scope: 'project' | 'session') => void
   onRemoveDir: (path: string, scope: 'project' | 'session') => void
-  rounded?: boolean
 }
 
 type Scope = 'project' | 'session'
@@ -86,7 +85,7 @@ function joinPath(parent: string, name: string, isDir: boolean): string {
 }
 
 export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
-  function AddDirPopup({ argsText, selectedIndex, onSetSelectedIndex, onScopeFill, onPathNavigate, onPathCommit, onAddViaPicker, onRemoveDir, rounded }, ref) {
+  function AddDirPopup({ argsText, selectedIndex, onSetSelectedIndex, onScopeFill, onPathNavigate, onPathCommit, onAddViaPicker, onRemoveDir }, ref) {
     const activeProject = useChatStore((s) => s.activeProject)
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
     const projectSharedDirs = useActiveSession((s) => s.projectSharedDirs)
@@ -201,12 +200,7 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
     )
 
     return (
-      <div
-        className={cn(
-          'absolute bottom-full left-0 right-0 z-10 max-h-72 overflow-hidden border border-border bg-card flex flex-col',
-          rounded ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg'
-        )}
-      >
+      <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-card flex flex-col">
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-border shrink-0">
           <span className="text-[11px] font-medium text-muted-foreground">/add-dir</span>
           {phase.kind === 'path' && absolutePath && (

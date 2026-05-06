@@ -15,13 +15,16 @@ super-one/
   apps/
     desktop/         — Electron app (was the entire repo pre-monorepo)
     web/             — Next.js 16 marketing/docs/demos site (App Router + Turbopack)
+    relay/           — Cloudflare Workers (Durable Objects) — mobile↔desktop relay protocol
   packages/
     ui/              — shadcn primitives + OKLch theme CSS, shared by desktop + web
     shared/          — Neutral types, harness-brand, i18n, miniapp runtime (no Electron deps)
     tsconfig/        — Shared base/react-library/electron-{node,renderer}/nextjs configs
 ```
 
-Workspace package names: `@superone/desktop`, `@superone/web`, `@superone/ui`, `@superone/shared`, `@superone/tsconfig`. All `private: true`.
+Workspace package names: `@superone/desktop`, `@superone/web`, `@superone/relay`, `@superone/ui`, `@superone/shared`, `@superone/tsconfig`. All `private: true`.
+
+**Self-host relay**: `apps/relay/` is intended to be self-hostable by users. Currently the repo is private; when going public the plan is to set up a `git subtree` mirror to a public repo via GitHub Action so self-hosters can clone just the relay subtree. Until then, distribute by sharing wrangler.toml + source bundle directly.
 
 **Cross-package imports**: code uses `@superone/shared/agent-types`, `@superone/ui/components/ui/button`, etc. Each package's `exports` map governs resolution; Vite/TS pick up `.tsx`/`.ts` source directly (no build step).
 
@@ -34,6 +37,9 @@ All root scripts proxy to a workspace via `bun --filter`. Run them from the repo
 ```bash
 bun run dev              # Start Electron app with hot reload (→ @superone/desktop)
 bun run dev:web          # Start Next.js dev server on :3000 (→ @superone/web)
+bun run dev:relay        # Start wrangler dev for Cloudflare Worker relay (→ @superone/relay)
+bun run deploy:relay     # wrangler deploy the relay (→ @superone/relay)
+bun run test:relay       # Run relay vitest suite
 bun run build            # Production build (electron-vite only)
 bun run preview          # Preview production build
 bun run test             # Run all tests once (desktop + cross-workspace shared/ui tests)

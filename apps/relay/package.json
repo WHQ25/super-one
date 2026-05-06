@@ -1,0 +1,20 @@
+{
+  "name": "@superone/relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --ip 0.0.0.0",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "secrets:push": "grep '^R2_' .env > .r2-secrets.tmp && wrangler secret bulk .r2-secrets.tmp; rm -f .r2-secrets.tmp"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241230.0",
+    "wrangler": "4"
+  }
+}

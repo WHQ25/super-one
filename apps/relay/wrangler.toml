@@ -1,0 +1,17 @@
+name = "super-one-relay"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[durable_objects]
+bindings = [
+  { name = "RELAY_SESSION", class_name = "RelaySession" },
+  { name = "PAIRING_SESSION", class_name = "PairingSession" },
+]
+
+[[r2_buckets]]
+binding = "FILE_STAGING"
+bucket_name = "super-one-file-staging"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelaySession", "PairingSession"]

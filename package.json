@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "bun --filter @superone/desktop dev",
     "dev:web": "bun --filter @superone/web dev",
+    "dev:relay": "bun --filter @superone/relay dev",
+    "deploy:relay": "bun --filter @superone/relay deploy",
+    "test:relay": "bun --filter @superone/relay test",
     "build": "bun --filter @superone/desktop build",
     "build:app": "bun --filter @superone/desktop build:app",
     "build:mac": "bun --filter @superone/desktop build:mac",

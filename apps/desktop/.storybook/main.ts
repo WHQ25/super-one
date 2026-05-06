@@ -6,7 +6,10 @@ import tailwindcss from '@tailwindcss/vite'
 const here = dirname(fileURLToPath(import.meta.url))
 
 const config: StorybookConfig = {
-  stories: ['../src/renderer/src/**/*.stories.@(ts|tsx|mdx)'],
+  stories: [
+    '../src/renderer/src/**/*.stories.@(ts|tsx|mdx)',
+    '../../../packages/ui/src/**/*.stories.@(ts|tsx|mdx)',
+  ],
   framework: {
     name: '@storybook/react-vite',
     options: {},
@@ -14,6 +17,9 @@ const config: StorybookConfig = {
   typescript: {
     check: false,
     reactDocgen: 'react-docgen-typescript',
+    reactDocgenTypescriptOptions: {
+      tsconfigPath: resolve(here, '../tsconfig.web.json'),
+    },
   },
   viteFinal: async (cfg) => {
     cfg.resolve = cfg.resolve ?? {}

@@ -4,7 +4,7 @@ import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import '../src/renderer/src/styles/index.css'
 import { installIpcMocks } from './mock-ipc'
-import { resources } from '../src/shared/i18n'
+import { resources } from '@superone/shared/i18n'
 
 const sbOverrideStyle = document.createElement('style')
 sbOverrideStyle.textContent = 'html, body { overflow: auto !important; }'
@@ -16,8 +16,8 @@ import {
   useChatStore,
 } from '../src/renderer/src/stores/chat'
 import { useHarnessTheme } from '../src/renderer/src/hooks/useHarnessTheme'
-import { clampBrandHue, brandHueToOklch } from '../src/shared/harness-brand'
-import type { HarnessId } from '../src/shared/session-types'
+import { clampBrandHue, brandHueToOklch } from '@superone/shared/harness-brand'
+import type { HarnessId } from '@superone/shared/session-types'
 
 installIpcMocks()
 

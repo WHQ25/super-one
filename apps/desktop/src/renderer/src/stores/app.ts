@@ -12,6 +12,8 @@ import {
   type TokenOverrides,
 } from '@superone/shared/harness-brand'
 import { useFileTreeStore } from './file-tree'
+import { useActivityPanelStore } from './activity-panel'
+import { useSourceControlStore } from './source-control'
 import { perfEvent } from '@/lib/perf-trace'
 import { disposeHighlightCache } from '@/lib/highlight-cache'
 
@@ -627,10 +629,6 @@ let _prevFolder = useAppStore.getState().currentFolder
 useAppStore.subscribe((state) => {
   if (state.currentFolder === _prevFolder) return
   _prevFolder = state.currentFolder
-  import('./activity-panel').then(({ useActivityPanelStore }) => {
-    useActivityPanelStore.getState().setShowPanel(false)
-  })
-  import('./source-control').then(({ useSourceControlStore }) => {
-    useSourceControlStore.getState().reset()
-  })
+  useActivityPanelStore.getState().setShowPanel(false)
+  useSourceControlStore.getState().reset()
 })

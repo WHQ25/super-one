@@ -80,10 +80,14 @@ protocol.registerSchemesAsPrivileged([
 
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport')
 
+app.setName('SuperOne')
 if (is.dev) {
   app.setPath('userData', join(process.cwd(), '.dev-data'))
-} else if (process.env.SUPERONE_INSTANCE) {
-  app.setPath('userData', join(app.getPath('userData'), `instance-${process.env.SUPERONE_INSTANCE}`))
+} else {
+  const baseUserData = join(app.getPath('appData'), 'super-one')
+  app.setPath('userData', process.env.SUPERONE_INSTANCE
+    ? join(baseUserData, `instance-${process.env.SUPERONE_INSTANCE}`)
+    : baseUserData)
 }
 
 const agentService = new AgentService()

@@ -716,7 +716,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       const existingIdx = session.messages.findIndex((m) => m.id === event.message.id)
       const nextMessages = existingIdx === -1
         ? [...session.messages, event.message]
-        : session.messages.map((m, i) => (i === existingIdx ? { ...m, ...event.message } : m))
+        : session.messages
       return {
         messages: nextMessages,
         promptSuggestion: null,

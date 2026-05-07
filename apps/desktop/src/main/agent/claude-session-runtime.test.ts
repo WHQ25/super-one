@@ -213,6 +213,41 @@ describe('applyClaudeEventToRuntime task events', () => {
   })
 })
 
+describe('message_start is an idempotent upsert', () => {
+  it('keeps the existing message intact when a duplicate-id message_start arrives (stub must not overwrite accumulated content)', () => {
+    const completed: ChatMessage = {
+      id: 'msg-1',
+      role: 'assistant',
+      status: 'complete',
+      content: [
+        { type: 'text', text: 'finished reply' },
+        { type: 'tool_use', toolName: 'Read', toolUseId: 'tu-1', input: '{}' },
+      ],
+      createdAt: '2024-01-01T00:00:00.000Z',
+      providerId: 'claude',
+      metadata: { durationMs: 57000, costUsd: 0.01 },
+    }
+    let rt = createClaudeRuntime('/test', 'sess-1', { messages: [completed] })
+
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'message_start',
+      message: {
+        id: 'msg-1',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: '2024-01-01T00:01:00.000Z',
+        providerId: 'claude',
+      },
+    } as AgentEvent)
+
+    const after = rt.messages.find((m) => m.id === 'msg-1')!
+    expect(after.content).toEqual(completed.content)
+    expect(after.status).toBe('complete')
+    expect(after.metadata).toEqual({ durationMs: 57000, costUsd: 0.01 })
+  })
+})
+
 describe('extractResultText', () => {
   it('extracts last assistant text from JSONL', () => {
     const jsonl = [

@@ -4028,6 +4028,37 @@ describe('handleAgentEvent supplemental', () => {
       const session = getActiveDraftSession('/test')!
       expect(session.lastAssistantMessageId).toBeNull()
     })
+
+    it('is an idempotent upsert: a duplicate-id message_start must not overwrite accumulated content/metadata', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-dup', role: 'assistant', content: [], status: 'streaming', createdAt: '2024-01-01', providerId: 'claude' } as never,
+      }))
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-dup',
+        delta: { type: 'text', text: 'finished reply' },
+      }))
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_complete',
+        messageId: 'msg-dup',
+        metadata: { durationMs: 57000, costUsd: 0.01 } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-dup', role: 'assistant', content: [], status: 'streaming', createdAt: '2024-01-01', providerId: 'claude' } as never,
+      }))
+
+      const session = getActiveDraftSession('/test')!
+      const msg = session.messages.find((m) => m.id === 'msg-dup')!
+      expect(msg.content).toHaveLength(1)
+      expect(msg.content[0]).toMatchObject({ type: 'text', text: 'finished reply' })
+      expect(msg.status).toBe('complete')
+      expect(msg.metadata?.durationMs).toBe(57000)
+    })
   })
 
   describe('content_delta', () => {

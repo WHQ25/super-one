@@ -103,7 +103,7 @@ function mergeMessages(savedMessages: ChatMessage[], runtimeMessages: ChatMessag
 function upsertMessage(messages: ChatMessage[], next: ChatMessage): ChatMessage[] {
   const idx = messages.findIndex((message) => message.id === next.id)
   if (idx === -1) return [...messages, next]
-  return messages.map((message, index) => (index === idx ? next : message))
+  return messages
 }
 
 export function createClaudeRuntime(

@@ -24,7 +24,8 @@ function makeEntries(names: string[]): FileTreeEntry[] {
     name,
     path: name,
     isDirectory: false,
-    gitStatus: null,
+    gitIndex: null,
+    gitWorktree: null,
   }))
 }
 
@@ -72,7 +73,7 @@ describe('fetchTree', () => {
 
   it('should reset expandedDirs when switching projects', async () => {
     listDirMock.mockResolvedValueOnce([
-      { name: 'src', path: 'src', isDirectory: true, gitStatus: null },
+      { name: 'src', path: 'src', isDirectory: true, gitIndex: null, gitWorktree: null },
     ])
     await useFileTreeStore.getState().fetchTree('/projA')
 

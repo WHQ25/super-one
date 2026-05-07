@@ -860,23 +860,57 @@ function registerIpcHandlers(): void {
 
   const SKIP_DIRS = new Set(['.git'])
 
-  const GIT_STATUS_PRIORITY: Record<string, number> = { D: 4, M: 3, A: 2, '?': 1 }
+  const GIT_STATUS_PRIORITY: Record<string, number> = { U: 6, D: 5, R: 4, C: 4, M: 3, A: 2, '?': 1 }
 
-  function worstGitStatus(children: FileTreeEntry[]): GitFileStatus | null {
+  const IGNORED_PAIR: GitStatusPair = { index: null, worktree: '!' }
+  const EMPTY_PAIR: GitStatusPair = { index: null, worktree: null }
+
+  function isPairIgnored(p: GitStatusPair | undefined): boolean {
+    return p?.index === '!' || p?.worktree === '!'
+  }
+
+  function worstColumn(values: (GitFileStatus | null | undefined)[]): GitFileStatus | null {
     let worst: GitFileStatus | null = null
     let worstPri = 0
-    for (const child of children) {
-      const s = child.gitStatus
-      if (!s) continue
+    for (const s of values) {
+      if (!s || s === '!') continue
       const pri = GIT_STATUS_PRIORITY[s] ?? 0
       if (pri > worstPri) { worst = s; worstPri = pri }
     }
     return worst
   }
 
+  function worstChildPair(children: FileTreeEntry[]): GitStatusPair {
+    return {
+      index: worstColumn(children.map((c) => c.gitIndex ?? null)),
+      worktree: worstColumn(children.map((c) => c.gitWorktree ?? null)),
+    }
+  }
+
+  function dirStatusPair(statusMap: Map<string, GitStatusPair>, dirRelPath: string): GitStatusPair {
+    const prefix = dirRelPath + '/'
+    let worstIdx: GitFileStatus | null = null
+    let worstIdxPri = 0
+    let worstWt: GitFileStatus | null = null
+    let worstWtPri = 0
+    for (const [path, pair] of statusMap) {
+      if (!path.startsWith(prefix)) continue
+      if (isPairIgnored(pair)) continue
+      if (pair.index) {
+        const pri = GIT_STATUS_PRIORITY[pair.index] ?? 0
+        if (pri > worstIdxPri) { worstIdx = pair.index; worstIdxPri = pri }
+      }
+      if (pair.worktree) {
+        const pri = GIT_STATUS_PRIORITY[pair.worktree] ?? 0
+        if (pri > worstWtPri) { worstWt = pair.worktree; worstWtPri = pri }
+      }
+    }
+    return { index: worstIdx, worktree: worstWt }
+  }
+
   ipcMain.handle(AgentIpcChannels.GIT_FILE_TREE, async (_event, folderPath: string) => {
     try {
-      let statusMap = new Map<string, GitFileStatus>()
+      let statusMap = new Map<string, GitStatusPair>()
       let ignoredDirs = new Set<string>()
       try {
         const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
@@ -902,23 +936,27 @@ function registerIpcHandlers(): void {
 
           const fullPath = join(dir, entry.name)
           const relPath = relative(folderPath, fullPath)
-          const isIgnored = parentIgnored || ignoredDirs.has(relPath) || statusMap.get(relPath) === '!'
+          const isIgnored = parentIgnored || ignoredDirs.has(relPath) || isPairIgnored(statusMap.get(relPath))
 
           if (entry.isDirectory()) {
             const children = await walk(fullPath, isIgnored)
+            const pair = isIgnored ? IGNORED_PAIR : worstChildPair(children)
             result.push({
               name: entry.name,
               path: relPath,
               isDirectory: true,
               children,
-              gitStatus: isIgnored ? '!' : worstGitStatus(children),
+              gitIndex: pair.index,
+              gitWorktree: pair.worktree,
             })
           } else {
+            const pair = isIgnored ? IGNORED_PAIR : (statusMap.get(relPath) ?? EMPTY_PAIR)
             result.push({
               name: entry.name,
               path: relPath,
               isDirectory: false,
-              gitStatus: isIgnored ? '!' : (statusMap.get(relPath) ?? null),
+              gitIndex: pair.index,
+              gitWorktree: pair.worktree,
             })
           }
         }
@@ -932,8 +970,8 @@ function registerIpcHandlers(): void {
   })
 
   const GIT_STATUS_CACHE_TTL_MS = 1500
-  const gitStatusSnapshotCache = new Map<string, { at: number; statusMap: Map<string, GitFileStatus>; ignoredDirs: Set<string> }>()
-  const gitStatusInFlight = new Map<string, Promise<{ statusMap: Map<string, GitFileStatus>; ignoredDirs: Set<string> }>>()
+  const gitStatusSnapshotCache = new Map<string, { at: number; statusMap: Map<string, GitStatusPair>; ignoredDirs: Set<string> }>()
+  const gitStatusInFlight = new Map<string, Promise<{ statusMap: Map<string, GitStatusPair>; ignoredDirs: Set<string> }>>()
 
   async function getGitStatusMap(folderPath: string) {
     const now = Date.now()
@@ -945,7 +983,7 @@ function registerIpcHandlers(): void {
     if (inFlight) return inFlight
 
     const promise = (async () => {
-      let statusMap = new Map<string, GitFileStatus>()
+      let statusMap = new Map<string, GitStatusPair>()
       let ignoredDirs = new Set<string>()
       try {
         const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
@@ -969,19 +1007,6 @@ function registerIpcHandlers(): void {
     }
   }
 
-  function dirGitStatus(statusMap: Map<string, GitFileStatus>, dirRelPath: string): GitFileStatus | null {
-    const prefix = dirRelPath + '/'
-    let worst: GitFileStatus | null = null
-    let worstPri = 0
-    for (const [path, status] of statusMap) {
-      if (path.startsWith(prefix) && status !== '!') {
-        const pri = GIT_STATUS_PRIORITY[status] ?? 0
-        if (pri > worstPri) { worst = status; worstPri = pri }
-      }
-    }
-    return worst
-  }
-
   ipcMain.handle(AgentIpcChannels.GIT_LIST_DIR, async (_event, folderPath: string, dirRelPath: string) => {
     try {
       const { statusMap, ignoredDirs } = await getGitStatusMap(folderPath)
@@ -997,22 +1022,26 @@ function registerIpcHandlers(): void {
       for (const entry of sorted) {
         if (SKIP_DIRS.has(entry.name) || entry.name === '.DS_Store') continue
         const relPath = dirRelPath ? dirRelPath + '/' + entry.name : entry.name
-        const isIgnored = ignoredDirs.has(relPath) || statusMap.get(relPath) === '!'
+        const isIgnored = ignoredDirs.has(relPath) || isPairIgnored(statusMap.get(relPath))
 
         if (entry.isDirectory()) {
+          const pair = isIgnored ? IGNORED_PAIR : dirStatusPair(statusMap, relPath)
           result.push({
             name: entry.name,
             path: relPath,
             isDirectory: true,
             children: undefined,
-            gitStatus: isIgnored ? '!' : dirGitStatus(statusMap, relPath),
+            gitIndex: pair.index,
+            gitWorktree: pair.worktree,
           })
         } else {
+          const pair = isIgnored ? IGNORED_PAIR : (statusMap.get(relPath) ?? EMPTY_PAIR)
           result.push({
             name: entry.name,
             path: relPath,
             isDirectory: false,
-            gitStatus: isIgnored ? '!' : (statusMap.get(relPath) ?? null),
+            gitIndex: pair.index,
+            gitWorktree: pair.worktree,
           })
         }
       }

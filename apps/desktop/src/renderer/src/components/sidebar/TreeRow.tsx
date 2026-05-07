@@ -15,20 +15,34 @@ import { useSourceControlStore } from '@/stores/source-control'
 import { openFileTab, openNewFileTab } from '@/components/activity/activity-panel-api'
 import type { GitFileStatus } from '@superone/shared/agent-types'
 
-const STATUS_COLOR: Record<string, string> = {
-  M: 'text-yellow-600 dark:text-yellow-400',
-  A: 'text-green-600 dark:text-green-400',
-  D: 'text-red-600 dark:text-red-400',
-  R: 'text-blue-600 dark:text-blue-400',
-  C: 'text-blue-600 dark:text-blue-400',
-  '?': 'text-sidebar-foreground/50',
-  U: 'text-orange-600 dark:text-orange-400',
+const STATUS_COLOR: Record<GitFileStatus, string> = {
+  M: 'text-amber-700 dark:text-amber-400',
+  A: 'text-emerald-700 dark:text-emerald-400',
+  D: 'text-rose-700 dark:text-rose-400',
+  R: 'text-cyan-700 dark:text-cyan-400',
+  C: 'text-cyan-700 dark:text-cyan-400',
+  U: 'text-orange-700 dark:text-orange-400',
+  '?': 'text-emerald-700 dark:text-emerald-400',
   '!': 'text-sidebar-foreground/30',
 }
 
-export function getStatusColor(status: GitFileStatus | null | undefined): string {
-  if (!status) return 'text-sidebar-foreground'
-  return STATUS_COLOR[status] ?? 'text-sidebar-foreground'
+export function getStatusClass(
+  index: GitFileStatus | null | undefined,
+  worktree: GitFileStatus | null | undefined,
+): string {
+  if (index === '!' || worktree === '!') return STATUS_COLOR['!']
+
+  const hasIndex = index != null
+  const hasWorktree = worktree != null
+  if (!hasIndex && !hasWorktree) return 'text-sidebar-foreground'
+
+  const display = (hasIndex ? index : worktree) as GitFileStatus
+  const base = STATUS_COLOR[display] ?? 'text-sidebar-foreground'
+
+  if (hasIndex && hasWorktree) return `${base} italic`
+  if (hasIndex) return base
+  if (display === '?') return base
+  return `${base} opacity-60`
 }
 
 function InlineRenameInput({
@@ -105,7 +119,7 @@ export const TreeRow = memo(function TreeRow({
   const copyFilesIn = useFileTreeStore((s) => s.copyFilesIn)
   const moveFilesIn = useFileTreeStore((s) => s.moveFilesIn)
   const setDragOverPath = useFileTreeStore((s) => s.setDragOverPath)
-  const colorClass = getStatusColor(item.gitStatus)
+  const colorClass = getStatusClass(item.gitIndex, item.gitWorktree)
 
   const targetDir = getTargetDir(item.path, item.isDirectory)
 
@@ -267,7 +281,7 @@ export const TreeRow = memo(function TreeRow({
         !item.isDirectory && isSelected && 'bg-sidebar-accent',
         isDropTarget && 'bg-sidebar-accent',
       )}
-      style={{ paddingLeft: `${item.depth * 16 + 8}px` }}
+      style={{ paddingLeft: `${item.depth * 8 + 8}px` }}
     >
       {item.isDirectory ? (
         <ChevronRight className={cn(
@@ -332,7 +346,8 @@ export const TreeRow = memo(function TreeRow({
 }, (prev, next) =>
   prev.item.path === next.item.path &&
   prev.item.isExpanded === next.item.isExpanded &&
-  prev.item.gitStatus === next.item.gitStatus &&
+  prev.item.gitIndex === next.item.gitIndex &&
+  prev.item.gitWorktree === next.item.gitWorktree &&
   prev.item.hasChildren === next.item.hasChildren &&
   prev.isSelected === next.isSelected &&
   prev.isRenaming === next.isRenaming &&

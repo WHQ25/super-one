@@ -13,7 +13,8 @@ export interface VisibleItem {
   path: string
   name: string
   isDirectory: boolean
-  gitStatus: GitFileStatus | null | undefined
+  gitIndex: GitFileStatus | null | undefined
+  gitWorktree: GitFileStatus | null | undefined
   depth: number
   isExpanded: boolean
   isLoading: boolean
@@ -54,7 +55,7 @@ function entriesToNodes(
   for (const entry of entries) {
     paths.push(entry.path)
     target.set(entry.path, {
-      entry: { name: entry.name, path: entry.path, isDirectory: entry.isDirectory, gitStatus: entry.gitStatus },
+      entry: { name: entry.name, path: entry.path, isDirectory: entry.isDirectory, gitIndex: entry.gitIndex, gitWorktree: entry.gitWorktree },
       depth,
       parentPath,
       childPaths: [],
@@ -84,7 +85,8 @@ function computeVisible(
         path,
         name: node.entry.name,
         isDirectory: node.entry.isDirectory,
-        gitStatus: node.entry.gitStatus,
+        gitIndex: node.entry.gitIndex,
+        gitWorktree: node.entry.gitWorktree,
         depth: node.depth,
         isExpanded,
         isLoading,
@@ -119,12 +121,12 @@ function mergeEntries(
     childPaths.push(entry.path)
     const existing = nodes.get(entry.path)
     if (existing) {
-      existing.entry = { name: entry.name, path: entry.path, isDirectory: entry.isDirectory, gitStatus: entry.gitStatus }
+      existing.entry = { name: entry.name, path: entry.path, isDirectory: entry.isDirectory, gitIndex: entry.gitIndex, gitWorktree: entry.gitWorktree }
       existing.depth = depth
       existing.parentPath = parentPath
     } else {
       nodes.set(entry.path, {
-        entry: { name: entry.name, path: entry.path, isDirectory: entry.isDirectory, gitStatus: entry.gitStatus },
+        entry: { name: entry.name, path: entry.path, isDirectory: entry.isDirectory, gitIndex: entry.gitIndex, gitWorktree: entry.gitWorktree },
         depth,
         parentPath,
         childPaths: [],

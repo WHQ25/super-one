@@ -241,7 +241,7 @@ interface AppAPI {
   getGitStatusFiles(folderPath: string): Promise<GitStatusFile[]>
   getGitLog(folderPath: string, query?: string): Promise<GitLogEntry[]>
   getGitDiffFile(folderPath: string, filePath: string, staged: boolean): Promise<GitFileDiff>
-  getGitReadFile(folderPath: string, filePath: string): Promise<GitFileContent>
+  readProjectFile(folderPath: string, filePath: string): Promise<GitFileContent>
   getFileTree(folderPath: string): Promise<FileTreeEntry[]>
   listDir(folderPath: string, dirRelPath: string): Promise<FileTreeEntry[]>
 

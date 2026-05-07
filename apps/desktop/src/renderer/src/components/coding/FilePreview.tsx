@@ -38,7 +38,7 @@ function useOwnFileData(filePath: string | undefined) {
     let cancelled = false
     Promise.all([
       window.app.getGitDiffFile(currentFolder, filePath, false),
-      window.app.getGitReadFile(currentFolder, filePath),
+      window.app.readProjectFile(currentFolder, filePath),
     ]).then(([d, c]) => {
       if (cancelled) return
       setDiff(d)
@@ -78,6 +78,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const isAudioFile = AUDIO_EXTS.has(ext)
   const hasDiff = !!fileDiff?.diff
   const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile
+  const isUnpreviewable = fileContent?.language === 'binary' || fileContent?.language === 'too-large'
   const fullFilePath = selectedFile.startsWith('/') ? selectedFile : `${currentFolder}/${selectedFile}`
 
   const resolvedContent = useMemo(() => {
@@ -100,13 +101,14 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const previewRehypePlugins = useMemo(() => [defaultRehypePlugins.raw], [])
 
   const tabs = useMemo(() => {
+    if (isUnpreviewable) return []
     if (isBinaryPreview) return [{ key: 'preview' as TabKey, label: 'Preview' }]
     const t: { key: TabKey; label: string }[] = []
     if (hasDiff) t.push({ key: 'changes', label: 'Changes' })
     t.push({ key: 'file', label: 'File' })
     if (isMd || isSvgFile) t.push({ key: 'preview', label: 'Preview' })
     return t
-  }, [hasDiff, isMd, isBinaryPreview, isSvgFile])
+  }, [hasDiff, isMd, isBinaryPreview, isSvgFile, isUnpreviewable])
 
   const effectiveTab = tabs.find((t) => t.key === activeTab) ? activeTab : tabs[0]?.key ?? 'file'
   const handleTabChange = useCallback((v: string) => {
@@ -174,42 +176,53 @@ export function FilePreview({ filePath }: FilePreviewProps) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto" style={zoom !== 1 ? { zoom } : undefined}>
-        {isMd && (
-          <FileSelectionContextMenuZone
-            filePath={fullFilePath}
-            fileContent={fileContent?.content ?? null}
-            className={effectiveTab === 'file' ? 'size-full' : 'hidden'}
-          >
-            <MarkdownEditor content={fileContent?.content ?? ''} filePath={selectedFile} onDirtyChange={handleDirtyChange} onContentChange={handleContentChange} />
-          </FileSelectionContextMenuZone>
+        {isUnpreviewable ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+            <FileX2 className="size-8 opacity-30" />
+            <span className="text-xs">
+              {fileContent?.language === 'too-large' ? 'File too large to preview' : 'Binary file — preview not supported'}
+            </span>
+          </div>
+        ) : (
+          <>
+            {isMd && (
+              <FileSelectionContextMenuZone
+                filePath={fullFilePath}
+                fileContent={fileContent?.content ?? null}
+                className={effectiveTab === 'file' ? 'size-full' : 'hidden'}
+              >
+                <MarkdownEditor content={fileContent?.content ?? ''} filePath={selectedFile} onDirtyChange={handleDirtyChange} onContentChange={handleContentChange} />
+              </FileSelectionContextMenuZone>
+            )}
+            {effectiveTab === 'changes' && hasDiff ? (
+              <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
+                <FileDiffView filePath={selectedFile} diff={fileDiff?.diff ?? ''} content={fileContent?.content ?? ''} />
+              </FileSelectionContextMenuZone>
+            ) : effectiveTab === 'preview' && isBinImg ? (
+              <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
+            ) : effectiveTab === 'preview' && isPdfFile ? (
+              <PdfPreview url={toLocalFileUrl(fullFilePath)} className="h-full" />
+            ) : effectiveTab === 'preview' && isVideoFile ? (
+              <div className="flex h-full items-center justify-center p-4">
+                <video src={toMediaUrl(fullFilePath)} controls preload="auto" className="max-h-full max-w-full" />
+              </div>
+            ) : effectiveTab === 'preview' && isAudioFile ? (
+              <div className="flex h-full items-center justify-center p-4">
+                <audio src={toMediaUrl(fullFilePath)} controls preload="auto" />
+              </div>
+            ) : effectiveTab === 'preview' && isSvgFile ? (
+              <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
+            ) : effectiveTab === 'preview' && isMd ? (
+              <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
+                <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
+              </FileSelectionContextMenuZone>
+            ) : !isMd ? (
+              <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
+                <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />
+              </FileSelectionContextMenuZone>
+            ) : null}
+          </>
         )}
-        {effectiveTab === 'changes' && hasDiff ? (
-          <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
-            <FileDiffView filePath={selectedFile} diff={fileDiff?.diff ?? ''} content={fileContent?.content ?? ''} />
-          </FileSelectionContextMenuZone>
-        ) : effectiveTab === 'preview' && isBinImg ? (
-          <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
-        ) : effectiveTab === 'preview' && isPdfFile ? (
-          <PdfPreview url={toLocalFileUrl(fullFilePath)} className="h-full" />
-        ) : effectiveTab === 'preview' && isVideoFile ? (
-          <div className="flex h-full items-center justify-center p-4">
-            <video src={toMediaUrl(fullFilePath)} controls preload="auto" className="max-h-full max-w-full" />
-          </div>
-        ) : effectiveTab === 'preview' && isAudioFile ? (
-          <div className="flex h-full items-center justify-center p-4">
-            <audio src={toMediaUrl(fullFilePath)} controls preload="auto" />
-          </div>
-        ) : effectiveTab === 'preview' && isSvgFile ? (
-          <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
-        ) : effectiveTab === 'preview' && isMd ? (
-          <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
-            <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
-          </FileSelectionContextMenuZone>
-        ) : !isMd ? (
-          <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
-            <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />
-          </FileSelectionContextMenuZone>
-        ) : null}
       </div>
     </div>
   )

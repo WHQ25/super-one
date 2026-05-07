@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, session, shell } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir } from 'fs/promises'
+import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir, open } from 'fs/promises'
 import { homedir, hostname } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { execFileSync, spawn } from 'child_process'
@@ -893,8 +893,25 @@ function registerIpcHandlers(): void {
   const PDF_EXTS = new Set(['.pdf'])
   const VIDEO_EXTS = new Set(['.mp4', '.webm', '.ogg', '.mov'])
   const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'])
+  const BINARY_SNIFF_BYTES = 8192
+  const MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024
 
-  ipcMain.handle(AgentIpcChannels.GIT_READ_FILE, async (_event, folderPath: string, filePath: string) => {
+  async function detectTextOrBinary(fullPath: string): Promise<'text' | 'binary' | 'too-large'> {
+    const st = await stat(fullPath)
+    if (st.size > MAX_TEXT_FILE_BYTES) return 'too-large'
+    if (st.size === 0) return 'text'
+    const fd = await open(fullPath, 'r')
+    try {
+      const sniffSize = Math.min(BINARY_SNIFF_BYTES, st.size)
+      const buf = Buffer.alloc(sniffSize)
+      await fd.read(buf, 0, sniffSize, 0)
+      return buf.includes(0) ? 'binary' : 'text'
+    } finally {
+      await fd.close()
+    }
+  }
+
+  ipcMain.handle(AgentIpcChannels.READ_PROJECT_FILE, async (_event, folderPath: string, filePath: string) => {
     try {
       const ext = extname(filePath).toLowerCase()
       if (BINARY_IMAGE_EXTS.has(ext)) return { path: filePath, content: '', language: 'image' }
@@ -905,6 +922,9 @@ function registerIpcHandlers(): void {
       if (!isAbsolute(filePath) && !isPathWithinAllowed(fullPath, [folderPath])) {
         return { path: filePath, content: '', language: 'text' }
       }
+      const kind = await detectTextOrBinary(fullPath)
+      if (kind === 'binary') return { path: filePath, content: '', language: 'binary' }
+      if (kind === 'too-large') return { path: filePath, content: '', language: 'too-large' }
       const content = await readFile(fullPath, 'utf-8')
       if (ext === '.svg') return { path: filePath, content, language: 'svg' }
       const language = EXT_LANG[ext] ?? 'text'

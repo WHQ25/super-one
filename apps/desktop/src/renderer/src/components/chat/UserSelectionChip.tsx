@@ -61,7 +61,7 @@ function useFullFileContent(filePath: string, currentFolder: string | null): str
       : null
     if (!relPath) return
     let cancelled = false
-    window.app.getGitReadFile?.(currentFolder, relPath).then((r) => {
+    window.app.readProjectFile?.(currentFolder, relPath).then((r) => {
       if (!cancelled && r?.content != null) setContent(r.content)
     }).catch(() => {})
     return () => { cancelled = true }

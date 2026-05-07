@@ -5,13 +5,13 @@ let resolveContent: (v: { content: string }) => void
 
 const mockGetGitStatusFiles = vi.fn().mockResolvedValue([])
 const mockGetGitDiffFile = vi.fn(() => new Promise<{ diff: string }>((r) => { resolveDiff = r }))
-const mockGetGitReadFile = vi.fn(() => new Promise<{ content: string }>((r) => { resolveContent = r }))
+const mockReadProjectFile = vi.fn(() => new Promise<{ content: string }>((r) => { resolveContent = r }))
 
 vi.stubGlobal('window', {
   app: {
     getGitStatusFiles: mockGetGitStatusFiles,
     getGitDiffFile: mockGetGitDiffFile,
-    getGitReadFile: mockGetGitReadFile,
+    readProjectFile: mockReadProjectFile,
   },
 })
 
@@ -34,7 +34,7 @@ beforeEach(() => {
   resetStore()
   vi.clearAllMocks()
   mockGetGitDiffFile.mockImplementation(() => new Promise<{ diff: string }>((r) => { resolveDiff = r }))
-  mockGetGitReadFile.mockImplementation(() => new Promise<{ content: string }>((r) => { resolveContent = r }))
+  mockReadProjectFile.mockImplementation(() => new Promise<{ content: string }>((r) => { resolveContent = r }))
 })
 
 describe('selectFile', () => {
@@ -136,7 +136,7 @@ describe('selectFile', () => {
     await promise
 
     expect(mockGetGitDiffFile).toHaveBeenCalledWith('/project', 'README.md', false)
-    expect(mockGetGitReadFile).toHaveBeenCalledWith('/project', 'README.md')
+    expect(mockReadProjectFile).toHaveBeenCalledWith('/project', 'README.md')
     expect(store.getState().activeTab).toBe('file')
   })
 })

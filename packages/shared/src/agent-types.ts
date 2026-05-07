@@ -1531,7 +1531,7 @@ export const AgentIpcChannels = {
   CLIPBOARD_READ: 'app:clipboard-read',
   CLIPBOARD_WRITE: 'app:clipboard-write',
   GIT_DIFF_FILE: 'app:git-diff-file',
-  GIT_READ_FILE: 'app:git-read-file',
+  READ_PROJECT_FILE: 'app:read-project-file',
   SAVE_FILE: 'app:save-file',
   READ_FILE_AS_DATA_URI: 'app:read-file-as-data-uri',
   SAVE_FILE_AS: 'app:save-file-as',

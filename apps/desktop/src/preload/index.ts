@@ -703,8 +703,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_LOG, folderPath, query),
   getGitDiffFile: (folderPath: string, filePath: string, staged: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_DIFF_FILE, folderPath, filePath, staged),
-  getGitReadFile: (folderPath: string, filePath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.GIT_READ_FILE, folderPath, filePath),
+  readProjectFile: (folderPath: string, filePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_FILE, folderPath, filePath),
   getFileTree: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_FILE_TREE, folderPath),
   listDir: (folderPath: string, dirRelPath: string) =>

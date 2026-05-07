@@ -49,7 +49,7 @@ export const useSourceControlStore = create<SourceControlState>((set, get) => ({
     try {
       const [diff, content] = await Promise.all([
         window.app.getGitDiffFile(projectPath, targetPath, file?.staged ?? false),
-        window.app.getGitReadFile(projectPath, targetPath),
+        window.app.readProjectFile(projectPath, targetPath),
       ])
       if (get().selectedFile !== targetPath) return
       const isMd = /\.(?:md|mdx|markdown)$/i.test(targetPath)

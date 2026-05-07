@@ -7,9 +7,10 @@ arguments: "[alpha|beta|public] [major|feature|patch]"
 
 # Release Skill
 
-Automate the SuperOne release pipeline. The pipeline has three **independently retryable** phases — build, promote, publish — orchestrated via GitHub Actions workflow_dispatch:
+Automate the SuperOne release pipeline. The pipeline has four **independently retryable** phases — build, relay deploy, promote, publish — orchestrated via GitHub Actions workflow_dispatch:
 
 - `build-mac.yml` / `build-win.yml` / `build-linux.yml` — each builds one platform, uploads artifacts to Actions storage (30-day retention). No release side effects.
+- `deploy-relay.yml` — runs `bunx wrangler deploy` against `apps/relay/` to push the Cloudflare Worker (relay) to production. Authenticated by the repo `CLOUDFLARE_API_TOKEN` secret, so this **must** run inside Actions, never from a local terminal (the local shell typically lacks the token, and skill permissions block credential-discovery anyway). Independent of the build/promote chain — triggered in parallel with builds at Step 3.
 - `promote.yml` — downloads artifacts, **dual-publishes** them: (a) creates a **draft** GitHub Release with flat asset layout (legacy auto-update path; legacy alpha clients embed `UPDATER_TOKEN` and pull from there); (b) restructures into `v${VERSION}/` subdirectory and `aws s3 sync`s to Cloudflare R2 bucket `super-one-releases` served at `https://dl.super-one.dev` (current auto-update source for post-switch clients + first-download URL).
 - Final `gh release edit --draft=false --prerelease` — flips the draft to published; GitHub then materializes the tag on `target_commitish`.
 
@@ -27,7 +28,7 @@ Tags are created by GitHub at publish time, never pushed from local. A failing b
 
 ## Workflow
 
-### Step 1: Confirm version + CHANGELOG (single turn)
+### Step 1: Confirm version + CHANGELOG + relay-deploy decision (single turn)
 
 This is the **only** human checkpoint in the pipeline. Do all of the following **in one response** and ask for a single combined confirmation:
 
@@ -35,50 +36,72 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
 2. Parse args; default to `alpha` + `patch`. Reject `beta` / `public` (not yet supported) and stop.
 3. Calculate the new version string.
 4. `git log --oneline --no-decorate v<previous-version>..HEAD` to enumerate commits since the last release tag.
-5. Draft the CHANGELOG entry:
+5. **Decide whether relay deploys this release**: run `git diff --quiet v<previous-version>..HEAD -- apps/relay/`. Non-empty diff → relay will be deployed and `apps/relay/package.json` will jump to the new version (skipping any intermediate versions where it wasn't deployed). Empty diff → relay is left alone.
+6. Draft the CHANGELOG entry:
    - Drop noise (`chore(release): bump version`, purely internal refactors with no user impact).
    - Group by type — **Added** (feat), **Fixed** (fix), **Changed** (refactor affecting user behavior, dep upgrades with user impact), **Performance** (perf), **Tests** (test), **CI** (ci). Omit empty groups.
    - Concise, human-readable bullets. Combine related commits. No unverified claims ("may fix X") — only statements you can defend.
-6. Show the user **both** in one message:
+7. Show the user **all** of this in one message:
    - `Current: X.Y.Z-alpha → New: A.B.C-alpha`
+   - `Relay deploy: yes (apps/relay/package.json: <previous-relay-version> → <new-version>)` **or** `Relay deploy: no (no apps/relay/ diff since v<previous-version>)`
    - The full drafted CHANGELOG entry (as the literal block that will be inserted)
-7. Ask for one combined confirmation / edits.
+8. Ask for one combined confirmation / edits.
 
 After this confirmation, **everything below runs without further prompting** unless an actual error occurs. Do not ask the user to confirm before push, before build, before promote, or before publish.
 
 ### Step 2: Bump version, write CHANGELOG, commit, push
 
 1. Insert `## [<new-version>] - <YYYY-MM-DD>` at the top of `CHANGELOG.md`, right after the header block, with the confirmed entry.
-2. Update `package.json` `version` to the new value. Do NOT modify `bun.lock` (version bumps don't touch deps).
-3. `git add package.json CHANGELOG.md && git commit -m "chore(release): bump version to <new-version>"`
-4. **Do NOT create a local git tag**. Tag creation is deferred to GitHub at publish time.
-5. `git push origin main` (no `--tags`). No confirmation needed — already covered by Step 1.
+2. Update `version` in **both** `package.json` (root) and `apps/desktop/package.json` to the new value — these always lockstep.
+3. **If Step 1 decided relay deploys this release**: also update `apps/relay/package.json` `version` to the same new value. The relay version skips intermediate releases where it had no diff, so this jump may be larger than a single semver step (e.g. `0.29.1-alpha` → `0.35.0-alpha`). That's intentional — it preserves the invariant that `apps/relay/package.json` reflects the version actually deployed to Cloudflare.
+4. Do NOT modify `bun.lock` (version bumps don't touch deps).
+5. Stage and commit in one shot:
+   ```bash
+   # Always:
+   git add package.json apps/desktop/package.json CHANGELOG.md
+   # Conditionally (relay deploy yes):
+   git add apps/relay/package.json
+   git commit -m "chore(release): bump version to <new-version>"
+   ```
+6. **Do NOT create a local git tag**. Tag creation is deferred to GitHub at publish time.
+7. `git push origin main` (no `--tags`). No confirmation needed — already covered by Step 1.
 
-### Step 3: Trigger per-platform builds
+### Step 3: Trigger per-platform builds (+ relay deploy if Step 1 said yes)
 
-For each platform that should be built (default: all three), fire `workflow_dispatch`:
+Always fire the three platform builds. **If Step 1 decided relay deploys this release** (i.e. you bumped `apps/relay/package.json` in Step 2), also fire `deploy-relay.yml`. Both dispatches checkout the same `main` HEAD that contains the just-pushed release commit, so build artifacts and the deployed Worker map to the same source tree.
 
 ```bash
-gh workflow run build-mac.yml   --ref main
-gh workflow run build-win.yml   --ref main
-gh workflow run build-linux.yml --ref main
+gh workflow run build-mac.yml    --ref main
+gh workflow run build-win.yml    --ref main
+gh workflow run build-linux.yml  --ref main
+
+# Only if Step 1 said relay deploys this release:
+gh workflow run deploy-relay.yml --ref main \
+  -f message="v<new-version> (commit $(git rev-parse --short HEAD))"
 ```
 
-Record each run's URL / ID. Each build:
+Do NOT re-run the diff check here — Step 2's release commit always modifies `apps/relay/package.json` when relay deploys, so a fresh `git diff v<previous>..HEAD -- apps/relay/` would always be non-empty after Step 2 and lose the original signal. Carry the boolean from Step 1.
 
-- Checks out the requested ref (`main` by default)
-- Runs `bun run build:<os> -- --publish never` → electron-builder produces `dist/` but uploads nowhere
-- `actions/upload-artifact@v4` → artifacts `dist-mac` / `dist-win` / `dist-linux` attached to the run (30-day retention)
+Record each dispatched run's URL / ID.
 
-### Step 4: Monitor builds
+- Each build checks out the requested ref (`main` by default), runs `bun run build:<os> -- --publish never` → electron-builder produces `dist/` but uploads nowhere → `actions/upload-artifact@v4` → artifacts `dist-mac` / `dist-win` / `dist-linux` attached to the run (30-day retention).
+- `deploy-relay.yml` checks out the same ref, runs `bunx wrangler deploy --message "<message>"` against `apps/relay/`, authenticated via the `CLOUDFLARE_API_TOKEN` repo secret. The `--message` value shows up in the Cloudflare dashboard's Version History so you can map version IDs back to git commits.
+- **Diff scope used in Step 1**: `apps/relay/` is a self-contained Cloudflare Worker — its source does not import from `packages/shared` or any other workspace, so changes elsewhere in the monorepo never require a relay redeploy. If you later add such an import, expand the Step 1 diff path accordingly.
+- **Manual override**: to force a relay deploy even when no source diff exists (e.g. after a rollback at the Cloudflare layer), do it outside this skill via `gh workflow run deploy-relay.yml ...` directly. Do not bump `apps/relay/package.json` for it — that field is reserved for "version actually deployed during a release", not for ad-hoc redeploys.
 
-Poll `gh run view <id> --json status,conclusion` for each run. macOS is the longest (~15 min, signing + notarization); Linux and Windows usually finish in 3-6 min.
+### Step 4: Monitor builds (+ relay deploy if dispatched)
 
-If any build fails:
+Poll `gh run view <id> --json status,conclusion` for each dispatched run. Typical durations:
+
+- **macOS build**: longest (~15 min, signing + notarization)
+- **Linux / Windows builds**: 3-6 min
+- **Relay deploy** (if dispatched): 2-3 min (small Worker, no native deps)
+
+If any run fails:
 
 - Inspect `gh run view <id> --log-failed | tail -40` to identify the root cause.
-- Fix on `main`, push, and re-trigger ONLY that platform's workflow. The other two platforms' successful artifacts remain valid — `promote.yml` will pull each from its own run ID.
-- Do NOT proceed to promote until all three builds are green (or the user explicitly asks for a partial promote).
+- Fix on `main`, push, and re-trigger ONLY that workflow. The successful run IDs from the other runs remain valid — `promote.yml` will pull each platform's artifact from its own run ID, and a re-deployed relay just supersedes the prior Cloudflare Version.
+- Do NOT proceed to promote until all three builds are green (relay deploy can be in any state — promote does not depend on it).
 
 ### Step 5: Trigger promote
 
@@ -134,6 +157,7 @@ Show the user the final release URL and the tag SHA. Mention `git fetch origin -
 | Failure | Action |
 |---|---|
 | Build workflow fails on one platform | Fix on main, re-trigger that platform only, reuse the other two platforms' existing run IDs in promote |
+| `deploy-relay.yml` fails | Inspect `gh run view <id> --log-failed`. Most common cause: `CLOUDFLARE_API_TOKEN` repo secret missing, expired, or scoped wrong (needs `Account: Workers Scripts:Edit` + `Account:Read`). Fix the secret in repo Settings → Secrets, then re-run the workflow — wrangler deploys are idempotent so the new run just supersedes the prior partial state. Build/promote/publish are independent and can proceed regardless |
 | Promote workflow fails mid-upload (GitHub side) | Re-trigger promote with the same tag — `--clobber` replaces any partial assets |
 | Promote workflow fails on R2 sync step | The GitHub Release upload happens before the R2 sync step in promote.yml, so the GitHub side can be intact while R2 is empty. Re-trigger promote with the same tag — `aws s3 sync` is idempotent (same key = update); the GitHub upload step uses `--clobber` |
 | Promote fails with `getaddrinfo ENOTFOUND sts.<region>.amazonaws.com` | Do **NOT** use `aws-actions/configure-aws-credentials@v4` for R2 — its default STS credential validation tries to call AWS STS, which doesn't apply to Cloudflare R2 (region `auto` produces `sts.auto.amazonaws.com` NXDOMAIN). promote.yml injects R2 creds as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` env vars directly on the sync step, no action wrapper. If you see this error, someone re-introduced the action — remove it |
@@ -149,3 +173,6 @@ Show the user the final release URL and the tag SHA. Mention `git fetch origin -
 - `bun.lock` is never modified by the release flow.
 - **Dual-publish is permanent**: `promote.yml` always uploads to both GitHub Release (flat layout) and R2 (`v${VERSION}/` subdirectory). GitHub Release is the legacy path for clients built before the R2 switch, R2 is the source of truth for current/future clients. **Never** delete the GitHub Release upload step.
 - **Never rotate `UPDATER_TOKEN`** the GitHub PAT secret. Legacy alpha clients embed it in their ASAR for `PrivateGitHubProvider` auth; rotating the token bricks their auto-update path. The secret is no longer consumed by any build workflow but **must** remain valid in GitHub Secrets indefinitely.
+- **Relay deploys go through `deploy-relay.yml`, never local terminal.** The `CLOUDFLARE_API_TOKEN` lives only in GitHub repo secrets. Local `bun run deploy:relay` will fail in non-interactive shells, and skill permissions deliberately block credential discovery from shell rc files. Always dispatch the workflow.
+- **Relay deploy is conditional on actual diff.** Only dispatch `deploy-relay.yml` when `git diff v<previous>..HEAD -- apps/relay/` is non-empty. No-op deploys just clutter Cloudflare's Version History with duplicate Version IDs and obscure the real protocol-changing deploys you'd want to roll back to.
+- **`apps/relay/package.json` version skips intermediate releases.** It is bumped only on releases where relay actually deploys, and it jumps straight to the current release version. So the relay version may go `0.29.1-alpha → 0.35.0-alpha` if the six intermediate releases between them had no `apps/relay/` diff. This is what keeps `apps/relay/package.json` truthful: its version always matches the version actually running on Cloudflare for this commit lineage. **Never** lockstep-bump it just because the root or desktop version moved.

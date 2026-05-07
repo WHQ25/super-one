@@ -7,9 +7,15 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { useChatStore } from '@/stores/chat'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
+import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import type { Automation, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { getPendingReason, getSessionTitle, isLiveSession } from './session-state-utils'
 import { AutomationDialog } from '../AutomationDialog'
+
+function SessionStatusSpinner({ lastEventAt }: { lastEventAt: number }) {
+  const level = useStallLevel(true, lastEventAt)
+  return <Loader2 className={cn('size-3 animate-spin', getStallColor(level, 'text-sidebar-foreground/70'))} />
+}
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
 
@@ -336,7 +342,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                             </button>
                             <span className="pointer-events-none group-hover/session:opacity-0 transition-opacity">
                               {isRunning
-                                ? <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
+                                ? <SessionStatusSpinner lastEventAt={sessionEntry?.lastEventAt ?? 0} />
                                 : isBackground
                                   ? <SquareActivity className="size-3 animate-pulse text-sidebar-foreground/70" />
                                   : isUnseen

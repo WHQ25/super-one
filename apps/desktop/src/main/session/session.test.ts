@@ -551,6 +551,19 @@ describe('Session event forwarding', () => {
     expect(session.snapshot.providerSessionId).toBe('sdk-xyz')
   })
 
+  it('records lastEventAt in snapshot when an event is forwarded', () => {
+    const { session, backend } = makeSession()
+    expect(session.snapshot.lastEventAt).toBe(0)
+
+    const before = Date.now()
+    backend.emit({ type: 'status_change', status: 'streaming' })
+    const after = Date.now()
+
+    expect(session.snapshot.lastEventAt).toBeGreaterThanOrEqual(before)
+    expect(session.snapshot.lastEventAt).toBeLessThanOrEqual(after)
+    expect(session.lastEventAt).toBe(session.snapshot.lastEventAt)
+  })
+
   it('traces every emitted event via agent.emit with currentMessageId fallback', () => {
     const { session, backend } = makeSession()
     traceMock.mockClear()

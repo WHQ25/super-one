@@ -56,4 +56,13 @@ describe('getStallColor', () => {
   it('should return text-muted-foreground for normal', () => {
     expect(getStallColor('normal')).toBe('text-muted-foreground')
   })
+
+  it('should use custom normalColor for normal level', () => {
+    expect(getStallColor('normal', 'text-sidebar-foreground/70')).toBe('text-sidebar-foreground/70')
+  })
+
+  it('should ignore custom normalColor for warning/critical', () => {
+    expect(getStallColor('warning', 'text-sidebar-foreground/70')).toBe('text-amber-500')
+    expect(getStallColor('critical', 'text-sidebar-foreground/70')).toBe('text-red-500')
+  })
 })

@@ -111,7 +111,10 @@ export class Session implements SessionContract {
   private _currentMessageId: string | null = null
   private _providerSessionId: string | null = null
   private _lastUserMessageAt: number | null = null
+  private _lastEventAt = 0
   private _needsRebuild = false
+
+  get lastEventAt(): number { return this._lastEventAt }
 
   private _messages: ChatMessage[] = []
   private _totalCostUsd = 0
@@ -281,6 +284,7 @@ export class Session implements SessionContract {
       currentMessageId: this._currentMessageId,
       createdAt: this.createdAt,
       lastUserMessageAt: this._lastUserMessageAt,
+      lastEventAt: this._lastEventAt,
       messages: this._messages,
       totalCostUsd: this._totalCostUsd,
       contextTokens: this._contextTokens,
@@ -799,6 +803,7 @@ export class Session implements SessionContract {
   }
 
   private forwardEvent(event: AgentEvent): AgentEvent {
+    this._lastEventAt = Date.now()
     if (event.type === 'permission_request') {
       log.info('[Session.forwardEvent] permission_request sessionId=%s listeners=%d requestId=%s', this.id, this.eventListeners.size, event.request.requestId)
     }

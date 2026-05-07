@@ -21,6 +21,7 @@ export interface SessionSnapshot {
   readonly currentMessageId: string | null
   readonly createdAt: number
   readonly lastUserMessageAt: number | null
+  readonly lastEventAt: number
   readonly messages: ReadonlyArray<ChatMessage>
   readonly totalCostUsd: number
   readonly contextTokens: number

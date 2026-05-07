@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useChatStore } from '@/stores/chat'
 
 export type StallLevel = 'normal' | 'warning' | 'critical'
@@ -14,10 +14,10 @@ export function getStallLevel(lastEventAt: number): StallLevel {
   return 'normal'
 }
 
-export function getStallColor(level: StallLevel): string {
+export function getStallColor(level: StallLevel, normalColor = 'text-muted-foreground'): string {
   if (level === 'critical') return 'text-red-500'
   if (level === 'warning') return 'text-amber-500'
-  return 'text-muted-foreground'
+  return normalColor
 }
 
 function readActiveLastEventAt(): number {
@@ -27,15 +27,20 @@ function readActiveLastEventAt(): number {
   return session?.lastEventAt ?? 0
 }
 
-export function useStallLevel(active: boolean): StallLevel {
+export function useStallLevel(active: boolean, lastEventAt?: number): StallLevel {
   const [level, setLevel] = useState<StallLevel>('normal')
+  const lastEventAtRef = useRef(lastEventAt)
+  lastEventAtRef.current = lastEventAt
 
   useEffect(() => {
     if (!active) {
       setLevel('normal')
       return
     }
-    const tick = (): void => setLevel(getStallLevel(readActiveLastEventAt()))
+    const tick = (): void => {
+      const ts = lastEventAtRef.current !== undefined ? lastEventAtRef.current : readActiveLastEventAt()
+      setLevel(getStallLevel(ts))
+    }
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)

@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.29.1-alpha] - 2026-05-07
+
+### Added
+
+- **Mobile leaves chat cleanly when the desktop quits.** Quitting SuperOne now broadcasts a new `desktop_shutdown` frame over both relay and LAN before tearing down sockets. Mobile clients disconnect, pop back to the device list, and show a "Desktop has quit." snackbar — replacing the silent exponential-backoff reconnect loop that previously fired on every desktop quit. The relay durable object also resets its event buffer and ACK sequence state on this signal, so the next desktop boot starts a fresh session instead of trying to replay stale events.
+- **Sidebar session spinner ages with the session.** The running-session spinner in the sidebar now mirrors the chat footer's stall indicator, fading from neutral → amber after 60s of no activity → red after 120s. Each session's `lastEventAt` is recorded on the backend `Session` and surfaced through `SessionSnapshot`, so a stalled session is visually obvious without opening its chat.
+
+### Fixed
+
+- **Coding panel no longer crashes when previewing binary or large files.** Previewing a `.tgz` (or any binary outside the image/pdf/video/audio allowlist) used to ship a multi-MB UTF-8-decoded string through IPC and OOM the renderer. The preview handler now sniffs for NUL bytes in the first 8 KB and short-circuits files larger than 5 MB; a placeholder card replaces the diff view in those cases. (Renamed `app:git-read-file` → `app:read-project-file` along the way — the handler never touched git, just read the working tree.)
+- **Chat content no longer clips horizontally when the chat panel shrinks.** Long non-breaking elements (code blocks, URLs) were cut off because Radix `ScrollArea` wraps children in `display: table; min-width: 100%`, which sizes to children's max-content and refuses to shrink. The wrapper is now forced to block layout so it tracks the viewport width.
+- **Resolving a prompt in the mini-window now updates the main window too.** The IPC handlers for permission, question, dismiss-question and plan-approval responses used to mutate only the calling renderer's store, leaving the other window's pending state stale. They now broadcast `interaction_resolved` to every `BrowserWindow` via `safeSend`, matching the mobile path.
+
 ## [0.29.0-alpha] - 2026-05-07
 
 ### Added

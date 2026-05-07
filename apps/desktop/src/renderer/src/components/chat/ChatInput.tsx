@@ -899,8 +899,6 @@ export function ChatInput() {
     }, [promptSuggestion, isStreaming, hasPendingInteraction])
 
     return (
-      <>
-        {activeProviderForResources === 'claude' && <ChatInputDirsHint />}
       <div
         className={cn(
           'relative mx-3 mb-1 rounded-xl border border-border px-4 py-3',
@@ -911,6 +909,7 @@ export function ChatInput() {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
+        {activeProviderForResources === 'claude' && <ChatInputDirsHint />}
         {matchingCommands.length > 0 && !slashDismissed && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-card p-1.5">
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1055,6 +1054,5 @@ export function ChatInput() {
           </div>
         )}
       </div>
-      </>
     )
   }

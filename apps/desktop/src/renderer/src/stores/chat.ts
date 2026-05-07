@@ -147,6 +147,7 @@ export interface PerSessionState {
   _worktreePath: string | null
   _worktreeRemoved: boolean
   additionalDirs: string[]
+  additionalDirsDirty: boolean
   apiRetry: { attempt: number; maxRetries: number; delayMs: number } | null
   lastEventAt: number
   queuedMessages: ChatMessage[]
@@ -242,6 +243,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     _worktreePath: null,
     _worktreeRemoved: false,
     additionalDirs: [],
+    additionalDirsDirty: false,
     apiRetry: null,
     lastEventAt: 0,
     queuedMessages: [],
@@ -3264,6 +3266,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         miniAppContexts: {},
         userSelections: [],
         codexPlanRejectHintActive: false,
+        additionalDirsDirty: false,
         ...(isCompactSlash ? { _pendingCompactUserId: userMessageId } : {}),
         ...(effectiveProvider === 'claude' && !isQueuedSend ? { awaitingAssistantReply: true } : {}),
       })),
@@ -3343,6 +3346,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ...approvedSession,
           selectedCodexCollaborationMode: 'default',
           codexPlanRejectHintActive: false,
+          additionalDirsDirty: false,
           messages: [...(approvedSession.messages ?? sess.messages), userMessage],
         }
       }),
@@ -3402,6 +3406,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         return {
           ...rejectedSession,
           codexPlanRejectHintActive: false,
+          additionalDirsDirty: false,
           messages: [...(rejectedSession.messages ?? sess.messages), userMessage],
         }
       }),
@@ -4556,7 +4561,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const sess = getActivePerSession(s)
         const proj = getProject(s, activeProject)
         if (sess.additionalDirs.includes(path) || proj.projectAdditionalDirs.includes(path)) return {}
-        return updateActivePerSession(s, () => ({ additionalDirs: [...sess.additionalDirs, path] }))
+        return updateActivePerSession(s, () => ({
+          additionalDirs: [...sess.additionalDirs, path],
+          additionalDirsDirty: true,
+        }))
       })
     } else {
       set((s) => {
@@ -4566,10 +4574,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         window.agent.addProjectAdditionalDir(activeProject, path).catch(() => {})
         const nextLocal = [...proj.projectLocalDirs, path]
         const nextMerged = Array.from(new Set([...proj.projectSharedDirs, ...nextLocal]))
-        return updateProjectState(s, activeProject, () => ({
+        const merged = { ...s, ...updateProjectState(s, activeProject, () => ({
           projectLocalDirs: nextLocal,
           projectAdditionalDirs: nextMerged,
-        }))
+        })) } as ChatStore
+        return updateActivePerSession(merged, () => ({ additionalDirsDirty: true }))
       })
     }
   },
@@ -4580,6 +4589,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (scope === 'session') {
       set((s) => updateActivePerSession(s, (sess) => ({
         additionalDirs: sess.additionalDirs.filter((d) => d !== path),
+        additionalDirsDirty: true,
       })))
     } else {
       set((s) => {
@@ -4588,10 +4598,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         window.agent.removeProjectAdditionalDir(activeProject, path).catch(() => {})
         const nextLocal = proj.projectLocalDirs.filter((d) => d !== path)
         const nextMerged = Array.from(new Set([...proj.projectSharedDirs, ...nextLocal]))
-        return updateProjectState(s, activeProject, () => ({
+        const merged = { ...s, ...updateProjectState(s, activeProject, () => ({
           projectLocalDirs: nextLocal,
           projectAdditionalDirs: nextMerged,
-        }))
+        })) } as ChatStore
+        return updateActivePerSession(merged, () => ({ additionalDirsDirty: true }))
       })
     }
   },

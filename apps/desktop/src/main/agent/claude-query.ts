@@ -216,6 +216,8 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
         if (latestId && latestId !== turnMessageId) {
           turnMessageId = latestId
           messageId = turnMessageId
+          resultSeen = false
+          turnUserEchoSeen = false
         }
       }
 

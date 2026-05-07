@@ -586,6 +586,42 @@ describe('createSessionQuery', () => {
     expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
   })
 
+  it('does not emit a phantom message_start when backend opens a new turn after the previous turn finished', async () => {
+    state.messages = [
+      { type: 'user', message: { role: 'user', content: 'msg 1' }, parent_tool_use_id: null },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'reply 1' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+      { type: 'user', message: { role: 'user', content: 'msg 2' }, parent_tool_use_id: null },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'reply 2' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    let currentId = 'msg-X'
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => {
+        events.push(event as unknown as Record<string, unknown>)
+        if ((event as { type: string }).type === 'message_complete' && currentId === 'msg-X') {
+          currentId = 'msg-Y'
+        }
+      },
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      (id) => { currentId = id },
+    )
+    await handle.iterationDone
+
+    const messageStarts = events.filter((e) => e.type === 'message_start')
+    expect(messageStarts).toHaveLength(0)
+
+    const completes = events.filter((e) => e.type === 'message_complete')
+    expect(completes.map((c) => c.messageId)).toEqual(['msg-X', 'msg-Y'])
+  })
+
   it('first replay user echo does not trigger queued turn detection even when consumedTags is non-empty', async () => {
     state.messages = [
       { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'thinking...' } } },

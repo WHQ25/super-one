@@ -119,6 +119,28 @@ describe('RelaySession', () => {
     expect(mobileWs.send).not.toHaveBeenCalledWith(JSON.stringify({ type: 'reset' }))
   })
 
+  it('broadcasts desktop_shutdown to all mobiles and resets buffer/seq state', async () => {
+    const mobile2 = createMockWebSocket()
+    state.acceptWebSocket(mobile2, ['mobile:dev-2'])
+    for (let i = 0; i < 3; i++) {
+      await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'event', data: `e${i}` }))
+    }
+    mobileWs.send.mockClear()
+    mobile2.send.mockClear()
+
+    await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'desktop_shutdown' }))
+
+    const payload = JSON.stringify({ type: 'desktop_shutdown' })
+    expect(mobileWs.send).toHaveBeenCalledWith(payload)
+    expect(mobile2.send).toHaveBeenCalledWith(payload)
+    expect(state._kv.get('seq')).toBe(0)
+    expect(state._kv.get('forcedDropSeq')).toBe(0)
+
+    mobileWs.send.mockClear()
+    await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'event', data: 'after' }))
+    expect(mobileWs.send).toHaveBeenLastCalledWith(JSON.stringify({ type: 'event', seq: 1, data: 'after' }))
+  })
+
   it('sends peer_disconnected to all mobiles when desktop closes', async () => {
     await session.webSocketClose(desktopWs as any)
     expect(mobileWs.send).toHaveBeenCalledWith(JSON.stringify({ type: 'peer_disconnected' }))

@@ -763,6 +763,7 @@ export class RemoteControlService {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+    await this.broadcastShutdown()
     if (this.relayWs) {
       this.relayWs.close(1000, 'stopping')
       this.relayWs = null
@@ -773,6 +774,34 @@ export class RemoteControlService {
     this.fileTokenSigner = null
     this.lanFrameSeq = 0
     this.releasePowerLock()
+  }
+
+  private async broadcastShutdown(): Promise<void> {
+    const tasks: Promise<void>[] = []
+    const relay = this.relayWs
+    if (relay && relay.readyState === WebSocket.OPEN) {
+      tasks.push(
+        new Promise<void>((resolve) => {
+          try {
+            relay.send(JSON.stringify({ type: 'desktop_shutdown' }), (err) => {
+              if (err) log.warn('[RemoteControl] relay desktop_shutdown send failed:', err.message)
+              resolve()
+            })
+          } catch (err) {
+            log.warn('[RemoteControl] relay desktop_shutdown threw:', err)
+            resolve()
+          }
+        }),
+      )
+    }
+    if (this.lanServer) {
+      tasks.push(this.lanServer.broadcastShutdown().catch(() => {}))
+    }
+    if (tasks.length === 0) return
+    await Promise.race([
+      Promise.all(tasks),
+      new Promise<void>((resolve) => setTimeout(resolve, 500)),
+    ])
   }
 
   private async connectRelay(): Promise<void> {

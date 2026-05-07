@@ -146,6 +146,24 @@ export class LanServer {
     }
   }
 
+  async broadcastShutdown(): Promise<void> {
+    const targets = this.registeredTargets()
+    if (targets.length === 0) return
+    const frame = JSON.stringify({ type: 'desktop_shutdown' })
+    await Promise.all(
+      targets.map(
+        (ws) =>
+          new Promise<void>((resolve) => {
+            try {
+              ws.send(frame, () => resolve())
+            } catch {
+              resolve()
+            }
+          }),
+      ),
+    )
+  }
+
   private registeredTargets(filter?: Set<string> | null): WebSocket[] {
     const targets: WebSocket[] = []
     for (const [ws, state] of this.clients) {

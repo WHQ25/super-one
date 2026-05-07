@@ -86,6 +86,30 @@ describe('LanServer', () => {
     await new Promise<void>((r) => client!.once('close', () => r()))
   })
 
+  it('broadcasts desktop_shutdown to every registered LAN client', async () => {
+    const { aesKey } = await makeKeys()
+    server = new LanServer({
+      getAesKey: () => aesKey,
+      isPairedDevice: () => true,
+      onCommand: vi.fn(),
+      hostName: 'test-host',
+    })
+    const { port } = await server.start({ host: '127.0.0.1' })
+
+    client = new WebSocket(`ws://127.0.0.1:${port}/ws?role=mobile`)
+    await new Promise<void>((r, reject) => {
+      client!.once('open', () => r())
+      client!.once('error', reject)
+    })
+    client.send(JSON.stringify({ type: 'register', deviceName: 'iPhone', mobileDeviceId: 'dev-1' }))
+    await nextFrame(client, (f) => f.type === 'handshake')
+
+    const shutdownPromise = nextFrame(client, (f) => f.type === 'desktop_shutdown')
+    await server.broadcastShutdown()
+    const frame = await shutdownPromise
+    expect(frame).toEqual({ type: 'desktop_shutdown' })
+  })
+
   it('decrypts command frames and passes them to onCommand', async () => {
     const { aesKey } = await makeKeys()
     const onCommand = vi.fn()

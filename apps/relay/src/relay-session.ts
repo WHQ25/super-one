@@ -16,6 +16,7 @@ type RelayFrame =
   | { type: 'register'; deviceName: string; mobileDeviceId: string }
   | { type: 'handshake'; hostName: string }
   | { type: 'kicked'; mobileDeviceId: string }
+  | { type: 'desktop_shutdown' }
   | { type: 'response'; requestId: string; data: string; mobileDeviceId?: string }
   | { type: 'response_chunk'; requestId: string; index: number; total: number; data: string; mobileDeviceId?: string }
   | { type: 'ack'; seq: number }
@@ -201,6 +202,19 @@ export class RelaySession implements DurableObject {
       case 'kicked': {
         const target = this.getMobileByDeviceId(frame.mobileDeviceId)
         target?.send(JSON.stringify(frame))
+        break
+      }
+      case 'desktop_shutdown': {
+        const payload = JSON.stringify(frame)
+        for (const mobile of this.getAllMobiles()) {
+          mobile.send(payload)
+        }
+        this.buffer = []
+        this.seq = 0
+        this.deviceAckedSeq.clear()
+        this.forcedDropSeq = 0
+        void this.state.storage.put(SEQ_KEY, 0)
+        void this.state.storage.put(FORCED_DROP_KEY, 0)
         break
       }
       case 'response':

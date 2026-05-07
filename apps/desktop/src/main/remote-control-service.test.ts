@@ -574,6 +574,58 @@ describe('RemoteControlService LAN frame seq', () => {
     expect(frames[2].seq).toBe(3)
   })
 
+  it('broadcasts desktop_shutdown to LAN clients before tearing down so mobiles can return to device list instead of reconnecting', async () => {
+    const { WebSocket } = await import('ws')
+    const { webcrypto } = await import('node:crypto')
+    const { bytesToHex } = await import('./remote-control-crypto')
+
+    const masterSecret = bytesToHex(webcrypto.getRandomValues(new Uint8Array(32)).buffer)
+    const deviceId = 'mobile-test'
+
+    service = new RemoteControlService('ws://127.0.0.1:1', {
+      onCommand: vi.fn(),
+      isPairedDevice: () => true,
+    })
+    await service.start({
+      enabled: true,
+      masterSecret,
+      deviceId: 'desktop-test',
+      preventSleep: false,
+      relayUrl: 'ws://127.0.0.1:1',
+    })
+
+    const port = service.getLanPort()
+    client = new WebSocket(`ws://127.0.0.1:${port}/ws?role=mobile`)
+    await new Promise<void>((r) => client!.once('open', () => r()))
+    client.send(JSON.stringify({ type: 'register', deviceName: 'tester', mobileDeviceId: deviceId }))
+
+    await new Promise<void>((r) => {
+      const onMsg = (raw: import('ws').RawData) => {
+        try {
+          const f = JSON.parse(raw.toString())
+          if (f.type === 'handshake') { client!.off('message', onMsg); r() }
+        } catch { /* ignore */ }
+      }
+      client!.on('message', onMsg)
+    })
+
+    const shutdownPromise = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('desktop_shutdown timeout')), 1500)
+      client!.on('message', (raw) => {
+        try {
+          const f = JSON.parse(raw.toString())
+          if (f.type === 'desktop_shutdown') { clearTimeout(timer); resolve(f) }
+        } catch { /* ignore */ }
+      })
+    })
+
+    await service.stop()
+    const frame = await shutdownPromise
+    expect(frame).toEqual({ type: 'desktop_shutdown' })
+
+    service = null
+  })
+
   it('resets LAN frame seq on stop so a fresh start begins at 1', async () => {
     const { WebSocket } = await import('ws')
     const { webcrypto } = await import('node:crypto')

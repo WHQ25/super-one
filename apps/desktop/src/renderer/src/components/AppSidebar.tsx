@@ -397,7 +397,7 @@ export const AppSidebar = memo(function AppSidebar() {
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {isMac && !isFullscreen && <div className="w-[66px] shrink-0" />}
-        <LayoutToggle />
+        {isMac && <LayoutToggle />}
       </div>
 
       {/* New session button */}

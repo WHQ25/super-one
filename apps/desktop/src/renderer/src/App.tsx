@@ -321,7 +321,7 @@ function App(): React.JSX.Element {
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', !isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'w-[66px]' : 'w-0')} />}
-          {layoutMode === 'coding' && !showSidebar && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
+          {layoutMode === 'coding' && (!isMac || !showSidebar) && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
           <span className="max-w-[200px] truncate text-xs text-muted-foreground">
             {layoutMode === 'coding' ? (sessionTitle ?? 'New Session') : folderName}
           </span>

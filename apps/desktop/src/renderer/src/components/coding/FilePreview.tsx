@@ -175,9 +175,13 @@ export function FilePreview({ filePath }: FilePreviewProps) {
 
       <div className="min-h-0 flex-1 overflow-auto" style={zoom !== 1 ? { zoom } : undefined}>
         {isMd && (
-          <div className={effectiveTab === 'file' ? 'size-full' : 'hidden'}>
+          <FileSelectionContextMenuZone
+            filePath={fullFilePath}
+            fileContent={fileContent?.content ?? null}
+            className={effectiveTab === 'file' ? 'size-full' : 'hidden'}
+          >
             <MarkdownEditor content={fileContent?.content ?? ''} filePath={selectedFile} onDirtyChange={handleDirtyChange} onContentChange={handleContentChange} />
-          </div>
+          </FileSelectionContextMenuZone>
         )}
         {effectiveTab === 'changes' && hasDiff ? (
           <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
@@ -198,7 +202,9 @@ export function FilePreview({ filePath }: FilePreviewProps) {
         ) : effectiveTab === 'preview' && isSvgFile ? (
           <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
         ) : effectiveTab === 'preview' && isMd ? (
-          <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
+          <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
+            <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
+          </FileSelectionContextMenuZone>
         ) : !isMd ? (
           <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
             <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />

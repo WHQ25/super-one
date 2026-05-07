@@ -89,6 +89,38 @@ export interface CapturedFileSelection {
   quoteText: string
 }
 
+function captureByContentSearch(
+  filePath: string,
+  selectedText: string,
+  fileContent?: string | null,
+): CapturedFileSelection | null {
+  if (!selectedText) return null
+  const plain: CapturedFileSelection = { copyText: selectedText, quoteText: selectedText }
+  if (!fileContent) return plain
+
+  const firstIdx = fileContent.indexOf(selectedText)
+  if (firstIdx < 0) return plain
+  if (fileContent.indexOf(selectedText, firstIdx + 1) >= 0) return plain
+
+  const before = fileContent.slice(0, firstIdx)
+  const matchEnd = firstIdx + selectedText.length
+  const beforeEnd = fileContent.slice(0, matchEnd)
+  const startLine = before.split('\n').length
+  const endLine = beforeEnd.split('\n').length
+  const startCol = before.length - (before.lastIndexOf('\n') + 1)
+  const endCol = beforeEnd.length - (beforeEnd.lastIndexOf('\n') + 1)
+
+  const lineNums: number[] = []
+  for (let n = startLine; n <= endLine; n++) lineNums.push(n)
+  const compressed = compressLineRanges(lineNums)
+  if (!compressed) return plain
+
+  const fileLines = fileContent.split('\n')
+  const body = fileLines.slice(startLine - 1, endLine).join('\n')
+  const prefix = formatFilePrefix(filePath, compressed, startCol, endCol, false)
+  return { copyText: selectedText, quoteText: `${prefix}\n${body}` }
+}
+
 export function captureFileSelection(filePath: string, selection: Selection | null, fileContent?: string | null): CapturedFileSelection | null {
   if (!selection || selection.rangeCount === 0) return null
   const fallbackText = selection.toString().trim()
@@ -97,8 +129,7 @@ export function captureFileSelection(filePath: string, selection: Selection | nu
   const endRow = findRowAncestor(range.endContainer)
 
   if (!startRow || !endRow) {
-    if (!fallbackText) return null
-    return { copyText: fallbackText, quoteText: fallbackText }
+    return captureByContentSearch(filePath, fallbackText, fileContent)
   }
 
   const rows: Element[] = []
@@ -109,8 +140,7 @@ export function captureFileSelection(filePath: string, selection: Selection | nu
     cur = cur.nextElementSibling
   }
   if (rows[rows.length - 1] !== endRow) {
-    if (!fallbackText) return null
-    return { copyText: fallbackText, quoteText: fallbackText }
+    return captureByContentSearch(filePath, fallbackText, fileContent)
   }
 
   const fileLines = fileContent != null ? fileContent.split('\n') : null

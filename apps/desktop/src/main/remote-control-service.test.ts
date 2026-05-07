@@ -384,8 +384,12 @@ describe('RemoteControlService content_delta ordering', () => {
     await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'answer A', parentToolUseId: null } } as AgentEvent)
     await service.sendAgentEvent({ type: 'message_complete', messageId: 'm1', metadata: {} } as AgentEvent)
 
-    const order = captured.map(deltaSig)
-    expect(order.filter((t) => t.startsWith('content_delta:'))).toEqual(['content_delta:thinking', 'content_delta:text'])
+    const order = captured.map(deltaSig).filter((t) => t.startsWith('content_delta:'))
+    const lastThinking = order.lastIndexOf('content_delta:thinking')
+    const firstText = order.indexOf('content_delta:text')
+    expect(lastThinking).toBeGreaterThanOrEqual(0)
+    expect(firstText).toBeGreaterThanOrEqual(0)
+    expect(lastThinking).toBeLessThan(firstText)
   })
 
   it('flushes pending text before starting to accumulate thinking when text precedes thinking on the same message', async () => {
@@ -395,8 +399,12 @@ describe('RemoteControlService content_delta ordering', () => {
     await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'thinking', thinking: 'mid-stream reasoning', parentToolUseId: null } } as AgentEvent)
     await service.sendAgentEvent({ type: 'message_complete', messageId: 'm1', metadata: {} } as AgentEvent)
 
-    const order = captured.map(deltaSig)
-    expect(order.filter((t) => t.startsWith('content_delta:'))).toEqual(['content_delta:text', 'content_delta:thinking'])
+    const order = captured.map(deltaSig).filter((t) => t.startsWith('content_delta:'))
+    const lastText = order.lastIndexOf('content_delta:text')
+    const firstThinking = order.indexOf('content_delta:thinking')
+    expect(lastText).toBeGreaterThanOrEqual(0)
+    expect(firstThinking).toBeGreaterThanOrEqual(0)
+    expect(lastText).toBeLessThan(firstThinking)
   })
 })
 

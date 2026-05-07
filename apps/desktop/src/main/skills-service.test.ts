@@ -88,6 +88,7 @@ description: A test skill
         displayName: 'My Skill',
         scope: 'user',
         description: 'A test skill',
+        argumentHint: '',
         hasConfig: false,
       },
     ])

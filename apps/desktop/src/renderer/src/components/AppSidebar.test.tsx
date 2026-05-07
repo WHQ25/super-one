@@ -120,7 +120,7 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuItem: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => <button onClick={onClick}>{children}</button>,
 }))
 
-vi.mock('@/components/ui/context-menu', () => ({
+vi.mock('@superone/ui/components/ui/context-menu', () => ({
   ContextMenu: ({ children }: { children: ReactNode }) => <>{children}</>,
   ContextMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
   ContextMenuContent: ({ children }: { children: ReactNode }) => <>{children}</>,

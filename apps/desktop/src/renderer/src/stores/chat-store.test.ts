@@ -4335,23 +4335,23 @@ describe('handleAgentEvent supplemental', () => {
 })
 
 describe('cyclePermissionMode', () => {
-  it('skips auto when ineligible: default → acceptEdits → plan → default', async () => {
+  it('skips auto when ineligible: default → plan → acceptEdits → default', async () => {
     setupProject('/test')
 
     const session = getActiveDraftSession('/test')!
     expect(session.permissionMode).toBe('default')
 
     await useChatStore.getState().cyclePermissionMode()
-    expect(getActiveDraftSession('/test')!.permissionMode).toBe('acceptEdits')
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
 
     await useChatStore.getState().cyclePermissionMode()
-    expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('acceptEdits')
 
     await useChatStore.getState().cyclePermissionMode()
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('default')
   })
 
-  it('includes auto when account + model qualify: default → acceptEdits → auto → plan → default', async () => {
+  it('includes auto when account + model qualify: default → plan → auto → acceptEdits → default', async () => {
     setupProject('/test')
     setClaude({
       account: { subscriptionType: 'max', apiProvider: 'firstParty' },
@@ -4362,13 +4362,13 @@ describe('cyclePermissionMode', () => {
     patchDraftSession('/test', { selectedModel: 'claude-opus-4-7' })
 
     await useChatStore.getState().cyclePermissionMode()
-    expect(getActiveDraftSession('/test')!.permissionMode).toBe('acceptEdits')
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
 
     await useChatStore.getState().cyclePermissionMode()
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('auto')
 
     await useChatStore.getState().cyclePermissionMode()
-    expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('acceptEdits')
 
     await useChatStore.getState().cyclePermissionMode()
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('default')

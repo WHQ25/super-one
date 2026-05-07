@@ -44,6 +44,7 @@ const mockWindowAgent = {
   respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
   setPermissionMode: vi.fn().mockResolvedValue(undefined),
   setSessionSettings: vi.fn().mockResolvedValue(undefined),
+  broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
 }
 
@@ -3389,7 +3390,7 @@ describe('switchSession Case B codex usage restore', () => {
     expect(session.contextTokens).toBe(139481)
     expect(session.contextWindow).toBe(258400)
     expect(session.codexUsageSnapshot?.lastCachedInputTokens).toBe(69376)
-    expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
+    expect(mockWindowApp.resumeSession).toHaveBeenCalled()
   })
 })
 
@@ -3541,7 +3542,7 @@ describe('resetSession codex handling', () => {
 })
 
 describe('switchSession Case A codex worktree', () => {
-  it('handles worktree for codex sessions and skips resumeSession', async () => {
+  it('handles worktree for codex sessions and resumes (so main process can hydrate as live session)', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     const codexWtSid = 'codex_local_wt'
@@ -3569,7 +3570,7 @@ describe('switchSession Case A codex worktree', () => {
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe(codexWtSid)
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', '/test/.worktrees/feat')
-    expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
+    expect(mockWindowApp.resumeSession).toHaveBeenCalled()
   })
 })
 
@@ -4408,6 +4409,210 @@ describe('setSelectedModel auto-mode downgrade', () => {
     useChatStore.getState().setSelectedModel('claude-sonnet-4-6')
 
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('auto')
+  })
+})
+
+describe('agent_setting_change patch broadcast', () => {
+  function makeActiveSession(path: string, sid: string, sessionPatch: Record<string, unknown> = {}) {
+    setupProject(path)
+    const proj = useChatStore.getState().projectSessions[path]
+    useChatStore.setState({
+      projectSessions: {
+        ...useChatStore.getState().projectSessions,
+        [path]: {
+          ...proj,
+          _activeSessionId: sid,
+          _sessions: {
+            ...proj._sessions,
+            [sid]: { ...createDefaultPerSessionState(), ...sessionPatch },
+          },
+        },
+      },
+    })
+  }
+
+  it('applies claude model + effort patch to active session', () => {
+    makeActiveSession('/test', 'sess-1')
+    useChatStore.getState().handleAgentEvent({
+      type: 'agent_setting_change',
+      projectPath: '/test',
+      sessionId: 'sess-1',
+      patch: { selectedModel: 'claude-opus-4-7', selectedEffort: 'high' },
+    } as never)
+    const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-1']
+    expect(sess.selectedModel).toBe('claude-opus-4-7')
+    expect(sess.selectedEffort).toBe('high')
+    expect(sess.modelUserChosen).toBe(true)
+    expect(sess.effortUserChosen).toBe(true)
+  })
+
+  it('applies codex model + effort patch (different fields than claude)', () => {
+    makeActiveSession('/test', 'sess-codex', { sessionProvider: 'codex' })
+    useChatStore.getState().handleAgentEvent({
+      type: 'agent_setting_change',
+      projectPath: '/test',
+      sessionId: 'sess-codex',
+      patch: { selectedCodexModel: 'gpt-5', selectedCodexReasoningEffort: 'high' },
+    } as never)
+    const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-codex']
+    expect(sess.selectedCodexModel).toBe('gpt-5')
+    expect(sess.selectedCodexReasoningEffort).toBe('high')
+    expect(sess.codexModelUserChosen).toBe(true)
+    expect(sess.codexReasoningEffortUserChosen).toBe(true)
+  })
+
+  it('applies codex permissionPreset patch', () => {
+    makeActiveSession('/test', 'sess-codex', { sessionProvider: 'codex' })
+    useChatStore.getState().handleAgentEvent({
+      type: 'agent_setting_change',
+      projectPath: '/test',
+      sessionId: 'sess-codex',
+      patch: { selectedCodexPermissionPreset: 'full-access' },
+    } as never)
+    const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-codex']
+    expect(sess.selectedCodexPermissionPreset).toBe('full-access')
+  })
+
+  it('applies codex collaborationMode patch and clears plan-reject hint', () => {
+    makeActiveSession('/test', 'sess-codex', { sessionProvider: 'codex', codexPlanRejectHintActive: true })
+    useChatStore.getState().handleAgentEvent({
+      type: 'agent_setting_change',
+      projectPath: '/test',
+      sessionId: 'sess-codex',
+      patch: { selectedCodexCollaborationMode: 'plan' },
+    } as never)
+    const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-codex']
+    expect(sess.selectedCodexCollaborationMode).toBe('plan')
+    expect(sess.codexPlanRejectHintActive).toBe(false)
+  })
+
+  it('applies permissionMode patch (shared field)', () => {
+    makeActiveSession('/test', 'sess-1')
+    useChatStore.getState().handleAgentEvent({
+      type: 'agent_setting_change',
+      projectPath: '/test',
+      sessionId: 'sess-1',
+      patch: { permissionMode: 'plan' },
+    } as never)
+    const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-1']
+    expect(sess.permissionMode).toBe('plan')
+  })
+
+  it('routes sandboxInfo patch to project state, not session', () => {
+    makeActiveSession('/test', 'sess-1')
+    useChatStore.getState().handleAgentEvent({
+      type: 'agent_setting_change',
+      projectPath: '/test',
+      sessionId: 'sess-1',
+      patch: { sandboxInfo: { enabled: false, autoAllowBash: false } },
+    } as never)
+    const proj = useChatStore.getState().projectSessions['/test']
+    expect(proj.sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
+  })
+
+  it('back-compat: legacy fields selectedModel/selectedEffort still work without patch', () => {
+    makeActiveSession('/test', 'sess-1')
+    useChatStore.getState().handleAgentEvent({
+      type: 'agent_setting_change',
+      projectPath: '/test',
+      sessionId: 'sess-1',
+      selectedModel: 'claude-haiku-4-5',
+      selectedEffort: 'low',
+    } as never)
+    const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-1']
+    expect(sess.selectedModel).toBe('claude-haiku-4-5')
+    expect(sess.selectedEffort).toBe('low')
+  })
+
+  it('combines multiple patch fields atomically', () => {
+    makeActiveSession('/test', 'sess-codex', { sessionProvider: 'codex' })
+    useChatStore.getState().handleAgentEvent({
+      type: 'agent_setting_change',
+      projectPath: '/test',
+      sessionId: 'sess-codex',
+      patch: {
+        selectedCodexModel: 'gpt-5',
+        selectedCodexCollaborationMode: 'plan',
+        permissionMode: 'plan',
+      },
+    } as never)
+    const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-codex']
+    expect(sess.selectedCodexModel).toBe('gpt-5')
+    expect(sess.selectedCodexCollaborationMode).toBe('plan')
+    expect(sess.permissionMode).toBe('plan')
+  })
+})
+
+describe('codex setters broadcast via window.agent.broadcastSessionSetting', () => {
+  function setupCodexSession(path: string, sid: string) {
+    setupProject(path)
+    const proj = useChatStore.getState().projectSessions[path]
+    useChatStore.setState({
+      projectSessions: {
+        ...useChatStore.getState().projectSessions,
+        [path]: {
+          ...proj,
+          _activeSessionId: sid,
+          codexModels: [
+            {
+              id: 'gpt-5',
+              name: 'GPT-5',
+              description: '',
+              defaultReasoningEffort: 'medium',
+              supportedReasoningEfforts: [
+                { value: 'low', label: 'Low' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'high', label: 'High' },
+              ],
+            },
+          ] as never,
+          _sessions: {
+            ...proj._sessions,
+            [sid]: { ...createDefaultPerSessionState(), sessionProvider: 'codex' },
+          },
+        },
+      },
+    })
+  }
+
+  it('setSelectedCodexModel broadcasts model + effort patch', () => {
+    setupCodexSession('/test', 'sess-codex')
+    useChatStore.getState().setSelectedCodexModel('gpt-5')
+    expect(mockWindowAgent.broadcastSessionSetting).toHaveBeenCalledWith(
+      'sess-codex',
+      expect.objectContaining({ selectedCodexModel: 'gpt-5' }),
+    )
+  })
+
+  it('setSelectedCodexReasoningEffort broadcasts effort patch', () => {
+    setupCodexSession('/test', 'sess-codex')
+    useChatStore.getState().setSelectedCodexModel('gpt-5')
+    mockWindowAgent.broadcastSessionSetting.mockClear()
+    useChatStore.getState().setSelectedCodexReasoningEffort('high')
+    expect(mockWindowAgent.broadcastSessionSetting).toHaveBeenCalledWith(
+      'sess-codex',
+      expect.objectContaining({ selectedCodexReasoningEffort: 'high' }),
+    )
+  })
+
+  it('setSelectedCodexPermissionPreset broadcasts preset patch', () => {
+    setupCodexSession('/test', 'sess-codex')
+    mockWindowAgent.broadcastSessionSetting.mockClear()
+    useChatStore.getState().setSelectedCodexPermissionPreset('full-access')
+    expect(mockWindowAgent.broadcastSessionSetting).toHaveBeenCalledWith(
+      'sess-codex',
+      { selectedCodexPermissionPreset: 'full-access' },
+    )
+  })
+
+  it('setSelectedCodexCollaborationMode broadcasts mode patch', () => {
+    setupCodexSession('/test', 'sess-codex')
+    mockWindowAgent.broadcastSessionSetting.mockClear()
+    useChatStore.getState().setSelectedCodexCollaborationMode('plan')
+    expect(mockWindowAgent.broadcastSessionSetting).toHaveBeenCalledWith(
+      'sess-codex',
+      { selectedCodexCollaborationMode: 'plan' },
+    )
   })
 })
 

@@ -139,7 +139,9 @@ export function ChatStatusBar() {
   const messages = useActiveSession((s) => s.messages)
   const sessionStatus = useActiveSession((s) => s.status)
   const taskProgress = useActiveSession((s) => s.taskProgress)
+  const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
+  const activeProvider = sessionProvider ?? preferredProvider
   const [compactIndicators, setCompactIndicators] = useState(false)
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [branches, setBranches] = useState<string[]>([])
@@ -218,7 +220,7 @@ export function ChatStatusBar() {
     dirty?.files,
     dirty?.insertions,
     dirty?.deletions,
-    preferredProvider,
+    activeProvider,
     worktreeBaseBranch,
     wtState?.pendingBaseBranch,
     wtState?.activePath,
@@ -445,10 +447,10 @@ export function ChatStatusBar() {
 
         <div className="h-3 w-px bg-border" />
 
-        {preferredProvider === 'claude' ? (
-          <PermissionModeSelector compact={compactIndicators} />
-        ) : (
+        {activeProvider === 'codex' ? (
           <CodexPermissionSelector compact={compactIndicators} />
+        ) : (
+          <PermissionModeSelector compact={compactIndicators} />
         )}
 
         <div className="flex-1" />
@@ -480,7 +482,7 @@ export function ChatStatusBar() {
           </>
         )}
 
-        {preferredProvider === 'claude' && (
+        {activeProvider !== 'codex' && (
           <>
             {(bashActivities.length > 0 || agentActivities.length > 0) && <div className="h-3 w-px bg-border" />}
             <SandboxModeSelector compact={compactIndicators} />

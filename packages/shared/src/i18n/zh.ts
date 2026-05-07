@@ -68,6 +68,7 @@ export const zh: Messages = {
       copySessionId: '复制会话 ID',
       copyWorkingDirectory: '复制工作目录',
       openFolder: '打开文件夹',
+      openInMiniWindow: '在迷你窗口中打开',
       sessionIdCopiedToast: '已复制会话 ID',
       sessionIdNotReadyToast: '会话 ID 尚未就绪 — 已复制内部 ID',
       workingDirCopiedToast: '已复制工作目录',

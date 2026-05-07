@@ -671,7 +671,7 @@ export type AgentEventBase =
   | { type: 'status_change'; status: AgentStatus }
   | { type: 'permission_request'; request: PermissionRequest }
   | { type: 'permission_mode_change'; mode: PermissionMode }
-  | { type: 'agent_setting_change'; selectedModel?: string | null; selectedEffort?: EffortLevel | null }
+  | { type: 'agent_setting_change'; selectedModel?: string | null; selectedEffort?: EffortLevel | null; patch?: SessionSettingsPatch }
   | { type: 'provider_changed'; harnessId: 'claude' | 'codex'; provider: RemoteActiveProvider | null }
   | { type: 'session_init'; session: SessionInfo }
   | { type: 'ask_user_question'; request: AskUserQuestionRequest }
@@ -716,6 +716,28 @@ export type AgentStatus = 'idle' | 'streaming' | 'background' | 'error'
 // --- Renderer → Main requests ---
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/**
+ * Harness-agnostic per-session settings patch broadcast across all renderer windows
+ * via the `agent_setting_change` event. Each key is optional; missing keys are not touched.
+ *
+ * Reducer applies it as `set({ ...session, ...patch })`. To add a new harness setting,
+ * extend this interface with the new field — no event-type change required, no router code,
+ * the broadcast bus is generic.
+ */
+export interface SessionSettingsPatch {
+  // Claude
+  selectedModel?: string | null
+  selectedEffort?: EffortLevel | null
+  // Codex
+  selectedCodexModel?: string | null
+  selectedCodexReasoningEffort?: CodexReasoningEffort | null
+  selectedCodexPermissionPreset?: CodexPermissionPreset | null
+  selectedCodexCollaborationMode?: CodexCollaborationMode | null
+  // Shared
+  permissionMode?: PermissionMode
+  sandboxInfo?: SandboxInfo
+}
 
 export interface SendMessageRequest {
   content: string
@@ -1498,6 +1520,12 @@ export const AgentIpcChannels = {
   GET_FULLSCREEN: 'app:get-fullscreen',
   FULLSCREEN_CHANGED: 'app:fullscreen-changed',
   SET_MIN_WINDOW_SIZE: 'app:set-min-window-size',
+  OPEN_SESSION_WINDOW: 'app:open-session-window',
+  SET_WINDOW_ALWAYS_ON_TOP: 'app:set-window-always-on-top',
+  GET_THEME: 'app:get-theme',
+  SET_THEME: 'app:set-theme',
+  THEME_CHANGED: 'app:theme-changed',
+  BROADCAST_SESSION_SETTING: 'agent:broadcast-session-setting',
   RECENT_FOLDERS_CHANGED: 'app:recent-folders-changed',
   OPEN_EXTERNAL_LINK: 'app:open-external-link',
   CLIPBOARD_READ: 'app:clipboard-read',

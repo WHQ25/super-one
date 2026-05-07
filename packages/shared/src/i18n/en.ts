@@ -66,6 +66,7 @@ export type Messages = {
       copySessionId: string
       copyWorkingDirectory: string
       openFolder: string
+      openInMiniWindow: string
       sessionIdCopiedToast: string
       sessionIdNotReadyToast: string
       workingDirCopiedToast: string
@@ -1001,6 +1002,7 @@ export const en: Messages = {
       copySessionId: 'Copy Session ID',
       copyWorkingDirectory: 'Copy Working Directory',
       openFolder: 'Open Folder',
+      openInMiniWindow: 'Open in Mini Window',
       sessionIdCopiedToast: 'Session ID Copied',
       sessionIdNotReadyToast: 'Session ID not ready — copied internal id',
       workingDirCopiedToast: 'Working Directory Copied',

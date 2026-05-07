@@ -217,6 +217,7 @@ export interface Session {
   getCurrentSandboxInfo(): SandboxInfo
   setModel(model: string): Promise<void>
   setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null }): void
+  broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch): void
   getSelectedModel(): string | undefined
   getSelectedEffort(): SendMessageRequest['effort']
   respondToPermission(

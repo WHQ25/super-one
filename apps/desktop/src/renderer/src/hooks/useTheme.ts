@@ -7,5 +7,20 @@ export function useTheme() {
     document.documentElement.classList.toggle('dark', dark)
   }, [dark])
 
-  return { dark, toggle: () => setDark((d) => !d) }
+  useEffect(() => {
+    let cancelled = false
+    void window.app.getTheme().then((next) => { if (!cancelled) setDark(next) }).catch(() => {})
+    const cleanup = window.app.onThemeChange((next) => setDark(next))
+    return () => { cancelled = true; cleanup() }
+  }, [])
+
+  const toggle = (): void => {
+    setDark((prev) => {
+      const next = !prev
+      void window.app.setTheme(next).catch(() => {})
+      return next
+    })
+  }
+
+  return { dark, toggle }
 }

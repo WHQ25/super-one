@@ -34,6 +34,9 @@ const agentAPI = {
   setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null }) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_SETTINGS, projectPath, settings),
 
+  broadcastSessionSetting: (sessionId: string, patch: import('@superone/shared/agent-types').SessionSettingsPatch) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROADCAST_SESSION_SETTING, sessionId, patch) as Promise<void>,
+
   answerQuestion: (sessionId: string, requestId: string, answers: Record<string, string>, annotations?: Record<string, { preview?: string; notes?: string }>) =>
     ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, sessionId, requestId, answers, annotations),
 
@@ -654,6 +657,17 @@ const appAPI = {
   },
   setMinWindowSize: (width: number, height: number) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_MIN_WINDOW_SIZE, width, height) as Promise<void>,
+  openSessionWindow: (projectPath: string, sessionId: string, title?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.OPEN_SESSION_WINDOW, projectPath, sessionId, title) as Promise<void>,
+  setWindowAlwaysOnTop: (value: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.SET_WINDOW_ALWAYS_ON_TOP, value) as Promise<boolean>,
+  getTheme: () => ipcRenderer.invoke(AgentIpcChannels.GET_THEME) as Promise<boolean>,
+  setTheme: (dark: boolean) => ipcRenderer.invoke(AgentIpcChannels.SET_THEME, dark) as Promise<void>,
+  onThemeChange: (callback: (dark: boolean) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, dark: boolean): void => callback(dark)
+    ipcRenderer.on(AgentIpcChannels.THEME_CHANGED, handler)
+    return () => { ipcRenderer.removeListener(AgentIpcChannels.THEME_CHANGED, handler) }
+  },
 
   // Git
   getGitInfo: (folderPath: string) =>

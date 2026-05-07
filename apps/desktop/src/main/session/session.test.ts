@@ -1456,7 +1456,7 @@ describe('Session ownership', () => {
     }
   })
 
-  it('local-origin send does NOT forward user_message_appended (renderer already has optimistic insert)', async () => {
+  it('local-origin send forwards user_message_appended so other windows stay in sync (sender dedups by id)', async () => {
     const { session, backend } = makeSession()
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
     session.on((e) => events.push(e))
@@ -1464,7 +1464,73 @@ describe('Session ownership', () => {
     await new Promise((r) => setTimeout(r, 0))
     backend.resolveSend?.()
     await sendPromise
-    expect(events.find((e) => e.type === 'user_message_appended')).toBeUndefined()
+    const userEvent = events.find((e) => e.type === 'user_message_appended')
+    expect(userEvent).toBeDefined()
+    if (userEvent && userEvent.type === 'user_message_appended') {
+      expect(userEvent.message.role).toBe('user')
+    }
+  })
+
+  it('setPermissionMode emits both permission_mode_change AND agent_setting_change patch (multi-window broadcast)', async () => {
+    const { session } = makeSession()
+    const events: import('@superone/shared/agent-types').AgentEvent[] = []
+    session.on((e) => events.push(e))
+    await session.setPermissionMode('plan')
+    const legacyEvent = events.find((e) => e.type === 'permission_mode_change')
+    const patchEvent = events.find((e) => e.type === 'agent_setting_change')
+    expect(legacyEvent).toBeDefined()
+    expect(patchEvent).toBeDefined()
+    if (patchEvent && patchEvent.type === 'agent_setting_change') {
+      expect(patchEvent.patch?.permissionMode).toBe('plan')
+    }
+  })
+
+  it('setSelectedSettings emits agent_setting_change with both legacy and patch fields', async () => {
+    const { session } = makeSession()
+    const events: import('@superone/shared/agent-types').AgentEvent[] = []
+    session.on((e) => events.push(e))
+    session.setSelectedSettings({ model: 'claude-opus-4-7', effort: 'high' })
+    const settingEvent = events.find((e) => e.type === 'agent_setting_change')
+    expect(settingEvent).toBeDefined()
+    if (settingEvent && settingEvent.type === 'agent_setting_change') {
+      expect(settingEvent.selectedModel).toBe('claude-opus-4-7')
+      expect(settingEvent.selectedEffort).toBe('high')
+      expect(settingEvent.patch?.selectedModel).toBe('claude-opus-4-7')
+      expect(settingEvent.patch?.selectedEffort).toBe('high')
+    }
+  })
+
+  it('setSandboxMode emits agent_setting_change patch with sandboxInfo (broadcast for cross-window)', async () => {
+    const { session } = makeSession()
+    const events: import('@superone/shared/agent-types').AgentEvent[] = []
+    session.on((e) => events.push(e))
+    await session.setSandboxMode('off')
+    const patchEvent = events.find((e) => e.type === 'agent_setting_change')
+    expect(patchEvent).toBeDefined()
+    if (patchEvent && patchEvent.type === 'agent_setting_change') {
+      expect(patchEvent.patch?.sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
+    }
+  })
+
+  it('broadcastSettingsPatch forwards arbitrary patch fields (harness-agnostic transport)', async () => {
+    const { session } = makeSession()
+    const events: import('@superone/shared/agent-types').AgentEvent[] = []
+    session.on((e) => events.push(e))
+    session.broadcastSettingsPatch({ selectedCodexModel: 'gpt-5', selectedCodexCollaborationMode: 'plan' })
+    const patchEvent = events.find((e) => e.type === 'agent_setting_change')
+    expect(patchEvent).toBeDefined()
+    if (patchEvent && patchEvent.type === 'agent_setting_change') {
+      expect(patchEvent.patch?.selectedCodexModel).toBe('gpt-5')
+      expect(patchEvent.patch?.selectedCodexCollaborationMode).toBe('plan')
+    }
+  })
+
+  it('broadcastSettingsPatch with empty patch is a no-op', async () => {
+    const { session } = makeSession()
+    const events: import('@superone/shared/agent-types').AgentEvent[] = []
+    session.on((e) => events.push(e))
+    session.broadcastSettingsPatch({})
+    expect(events.find((e) => e.type === 'agent_setting_change')).toBeUndefined()
   })
 
   it('dispose clears subscribers, releases owner, emits closed event', async () => {

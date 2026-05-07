@@ -207,6 +207,12 @@ const remoteCallbacks: RemoteControlCallbacks = {
 declare const __CF_RELAY_URL__: string
 const remoteControlService = new RemoteControlService(__CF_RELAY_URL__, remoteCallbacks)
 let mainWindow: BrowserWindow | null = null
+const allWindows = new Set<BrowserWindow>()
+const sessionWindows = new Map<string, BrowserWindow>()
+let currentDarkTheme = true
+
+const sessionWindowKey = (projectPath: string, sessionId: string): string =>
+  `${projectPath}::${sessionId}`
 
 function getMainWindow(): BrowserWindow {
   if (!mainWindow) throw new Error('Main window not created yet')
@@ -214,7 +220,9 @@ function getMainWindow(): BrowserWindow {
 }
 
 function safeSend(channel: string, ...args: unknown[]): void {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args)
+  for (const win of allWindows) {
+    if (!win.isDestroyed()) win.webContents.send(channel, ...args)
+  }
 }
 
 new PresenceCoordinator(sessionManager, {
@@ -271,7 +279,10 @@ function createWindow(): void {
   automationService.start()
   setBashOutputWindow(mainWindow)
 
+  allWindows.add(mainWindow)
   mainWindow.on('closed', () => {
+    if (mainWindow) allWindows.delete(mainWindow)
+    mainWindow = null
     unwatchAllBashOutputs()
   })
 
@@ -291,6 +302,61 @@ function createWindow(): void {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+function createSessionWindow(projectPath: string, sessionId: string, title?: string): void {
+  const key = sessionWindowKey(projectPath, sessionId)
+  const existing = sessionWindows.get(key)
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore()
+    existing.focus()
+    return
+  }
+
+  const win = new BrowserWindow({
+    width: 380,
+    height: 640,
+    minWidth: 380,
+    minHeight: 480,
+    title: title ?? 'Session',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 12, y: 12 },
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: true,
+      zoomFactor: 1,
+    },
+  })
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  win.webContents.on('before-input-event', (_e, input) => {
+    if (!is.dev) {
+      if ((input.control || input.meta) && input.key.toLowerCase() === 'r') {
+        _e.preventDefault()
+        return
+      }
+      if (input.key === 'F5') _e.preventDefault()
+    }
+  })
+
+  allWindows.add(win)
+  sessionWindows.set(key, win)
+  win.on('closed', () => {
+    allWindows.delete(win)
+    if (sessionWindows.get(key) === win) sessionWindows.delete(key)
+  })
+
+  const titleQuery = title ? `&title=${encodeURIComponent(title)}` : ''
+  const query = `?mode=miniwindow&project=${encodeURIComponent(projectPath)}&session=${encodeURIComponent(sessionId)}${titleQuery}`
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/${query}`)
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'), { search: query.slice(1) })
   }
 }
 
@@ -1457,6 +1523,36 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.GET_FULLSCREEN, () => getMainWindow().isFullScreen())
+
+  ipcMain.handle(AgentIpcChannels.OPEN_SESSION_WINDOW, (_e, projectPath: string, sessionId: string, title?: string) => {
+    if (!projectPath || !sessionId) return
+    createSessionWindow(projectPath, sessionId, title)
+  })
+
+  ipcMain.handle(AgentIpcChannels.SET_WINDOW_ALWAYS_ON_TOP, (_e, value: boolean): boolean => {
+    const win = BrowserWindow.fromWebContents(_e.sender)
+    if (!win || win.isDestroyed()) return false
+    win.setAlwaysOnTop(value)
+    return win.isAlwaysOnTop()
+  })
+
+  ipcMain.handle(AgentIpcChannels.GET_THEME, (): boolean => currentDarkTheme)
+
+  ipcMain.handle(AgentIpcChannels.SET_THEME, (_e, dark: boolean): void => {
+    if (currentDarkTheme === dark) return
+    currentDarkTheme = dark
+    safeSend(AgentIpcChannels.THEME_CHANGED, dark)
+  })
+
+  ipcMain.handle(AgentIpcChannels.BROADCAST_SESSION_SETTING, (_e, sessionId: string, patch: import('@superone/shared/agent-types').SessionSettingsPatch): void => {
+    if (!sessionId || !patch || Object.keys(patch).length === 0) return
+    const session = sessionManager.getSession(sessionId)
+    if (session) {
+      session.broadcastSettingsPatch(patch)
+      return
+    }
+    safeSend(AgentIpcChannels.EVENT, { type: 'agent_setting_change', sessionId, patch })
+  })
 
   ipcMain.handle(AgentIpcChannels.SET_MIN_WINDOW_SIZE, (_e, width: number, height: number) => {
     const win = getMainWindow()

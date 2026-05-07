@@ -1024,6 +1024,47 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     case 'permission_mode_change':
       return { permissionMode: event.mode }
 
+    case 'agent_setting_change': {
+      const patch: Partial<PerSessionState> = {}
+      const eventPatch = event.patch ?? {}
+      const merged = {
+        selectedModel: eventPatch.selectedModel ?? event.selectedModel,
+        selectedEffort: eventPatch.selectedEffort ?? event.selectedEffort,
+        selectedCodexModel: eventPatch.selectedCodexModel,
+        selectedCodexReasoningEffort: eventPatch.selectedCodexReasoningEffort,
+        selectedCodexPermissionPreset: eventPatch.selectedCodexPermissionPreset,
+        selectedCodexCollaborationMode: eventPatch.selectedCodexCollaborationMode,
+        permissionMode: eventPatch.permissionMode,
+      }
+      if (merged.selectedModel !== undefined) {
+        patch.selectedModel = merged.selectedModel ?? ''
+        patch.modelUserChosen = true
+      }
+      if (merged.selectedEffort !== undefined) {
+        patch.selectedEffort = merged.selectedEffort ?? undefined
+        patch.effortUserChosen = true
+      }
+      if (merged.selectedCodexModel !== undefined) {
+        patch.selectedCodexModel = merged.selectedCodexModel ?? ''
+        patch.codexModelUserChosen = true
+      }
+      if (merged.selectedCodexReasoningEffort !== undefined) {
+        patch.selectedCodexReasoningEffort = merged.selectedCodexReasoningEffort ?? undefined
+        patch.codexReasoningEffortUserChosen = true
+      }
+      if (merged.selectedCodexPermissionPreset != null) {
+        patch.selectedCodexPermissionPreset = merged.selectedCodexPermissionPreset
+      }
+      if (merged.selectedCodexCollaborationMode != null) {
+        patch.selectedCodexCollaborationMode = merged.selectedCodexCollaborationMode
+        patch.codexPlanRejectHintActive = false
+      }
+      if (merged.permissionMode !== undefined) {
+        patch.permissionMode = merged.permissionMode
+      }
+      return patch
+    }
+
     case 'interaction_resolved':
       switch (event.interactionType) {
         case 'permission':
@@ -2540,6 +2581,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const projectPath = event.projectPath
     const eventSessionId = event.sessionId
     if (!projectPath) return
+    if (event.type === 'agent_setting_change' && event.patch?.sandboxInfo) {
+      const next = event.patch.sandboxInfo
+      set((s) => updateProjectState(s, projectPath, () => ({ sandboxInfo: next })))
+    }
     let hydrateSessionId: string | null = null
 
     set((s) => {
@@ -2877,6 +2922,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             ? prevSession.awaitingAssistantReply
             : false,
           sessionProvider: provider,
+          preferredProvider: provider,
           permissionMode: entry.permissionMode,
           lastAssistantMessageId: entry.snapshot.currentMessageId ?? prevSession.lastAssistantMessageId,
           _worktreePath: entry.snapshot.worktreePath ?? prevSession._worktreePath,
@@ -2948,11 +2994,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })
     if (targetSid) {
       const targetSession = targetProject?._sessions[targetSid]
-      if (targetSession?.sessionProvider !== 'codex') {
-        try {
-          await window.app.resumeSession(projectPath, targetSid, _getSessionCwd(projectPath, targetSession))
-        } catch (err) { console.warn('[chat] resumeSession failed:', err) }
-      }
+      try {
+        await window.app.resumeSession(projectPath, targetSid, _getSessionCwd(projectPath, targetSession))
+      } catch (err) { console.warn('[chat] resumeSession failed:', err) }
     }
     const switchedProject = get().projectSessions[projectPath]
     const switchedSid = switchedProject?._activeSessionId
@@ -3757,6 +3801,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       codexModelUserChosen: true,
       codexReasoningEffortUserChosen: false,
     })))
+    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
+    if (sid) {
+      void window.agent.broadcastSessionSetting(sid, {
+        selectedCodexModel: model,
+        selectedCodexReasoningEffort: selectedEffort ?? null,
+      })
+    }
   },
 
   setSelectedCodexReasoningEffort: (effort) => {
@@ -3771,6 +3822,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       selectedCodexReasoningEffort: selectedEffort,
       codexReasoningEffortUserChosen: true,
     })))
+    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
+    if (sid) {
+      void window.agent.broadcastSessionSetting(sid, {
+        selectedCodexReasoningEffort: selectedEffort ?? null,
+      })
+    }
   },
 
   setSelectedCodexPermissionPreset: (preset) => {
@@ -3779,6 +3836,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateActivePerSession(s,() => ({
       selectedCodexPermissionPreset: preset,
     })))
+    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
+    if (sid) {
+      void window.agent.broadcastSessionSetting(sid, { selectedCodexPermissionPreset: preset })
+    }
   },
 
   setSelectedCodexCollaborationMode: (mode) => {
@@ -3790,7 +3851,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       selectedCodexCollaborationMode: mode,
       codexPlanRejectHintActive: false,
     })))
-    if (sessionId) window.app.codexCollaborationModeChange(activeProject, sessionId, mode)
+    if (sessionId) {
+      window.app.codexCollaborationModeChange(activeProject, sessionId, mode)
+      void window.agent.broadcastSessionSetting(sessionId, { selectedCodexCollaborationMode: mode })
+    }
   },
 
   refreshCodexModels: async (force = false) => {
@@ -4382,12 +4446,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      if (targetSession.sessionProvider !== 'codex') {
-        try {
-          await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, runtimeSession))
-        } catch (err) {
-          console.warn('[chat] resumeSession failed:', err)
-        }
+      try {
+        await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, runtimeSession))
+      } catch (err) {
+        console.warn('[chat] resumeSession failed:', err)
       }
       return
     }
@@ -4476,13 +4538,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       useAppStore.getState().setActiveWorktree(activeProject, null)
     }
 
-    if (restoredSession.sessionProvider !== 'codex') {
-      try {
-        await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, getProject(get())._sessions[sessionId]))
-      } catch (err) {
-        console.warn('[chat] resumeSession failed:', err)
-      }
-    } else {
+    try {
+      await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, getProject(get())._sessions[sessionId]))
+    } catch (err) {
+      console.warn('[chat] resumeSession failed:', err)
+    }
+    if (restoredSession.sessionProvider === 'codex') {
       triggerPrewarm(get(), activeProject)
     }
   },

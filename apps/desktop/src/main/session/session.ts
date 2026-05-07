@@ -374,6 +374,7 @@ export class Session implements SessionContract {
     }
     this.permissionMode = mode
     this.forwardEvent({ type: 'permission_mode_change', mode })
+    this.forwardEvent({ type: 'agent_setting_change', patch: { permissionMode: mode } } as AgentEvent)
     if (!this.backendStarted) {
       trace('permission.flow', 'session_setMode_skip_backend', { sid: this.id, reason: 'backend_not_started' })
       return
@@ -421,6 +422,7 @@ export class Session implements SessionContract {
         log.warn('[Session] backend.setSandbox failed:', err)
       }
     }
+    this.forwardEvent({ type: 'agent_setting_change', patch: { sandboxInfo: next } } as AgentEvent)
     return this.sandboxInfo
   }
 
@@ -428,6 +430,18 @@ export class Session implements SessionContract {
     this.assertNotDisposed()
     this.model = model
     if (this.backendStarted) await this.backend.setModel(model)
+  }
+
+  /**
+   * Broadcast a generic settings patch to all listeners (multi-window sync).
+   *
+   * Used for harness-specific settings that aren't owned by Session itself
+   * (e.g. codex collaborationMode/permissionPreset live in the renderer store).
+   * Main process here is just a transport bus — the patch is forwarded as-is.
+   */
+  broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch): void {
+    if (!patch || Object.keys(patch).length === 0) return
+    this.forwardEvent({ type: 'agent_setting_change', patch } as AgentEvent)
   }
 
   setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null }): void {
@@ -450,6 +464,7 @@ export class Session implements SessionContract {
       type: 'agent_setting_change',
       selectedModel: this.model ?? null,
       selectedEffort: this.effort ?? null,
+      patch: { selectedModel: this.model ?? null, selectedEffort: this.effort ?? null },
     })
   }
 
@@ -915,7 +930,7 @@ export class Session implements SessionContract {
     }
     this._lastUserMessageAt = Date.now()
     this.notifyStateChange()
-    if (wasNew && providerOrigin === 'remote') {
+    if (wasNew) {
       this.forwardEvent({ type: 'user_message_appended', message: userMsg } as AgentEvent)
     }
   }

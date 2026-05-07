@@ -270,11 +270,12 @@ export async function createAppServerConnection(
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: process.platform === 'win32',
-        windowsHide: process.platform === 'win32',
+        windowsHide: true,
       })
     : spawn(getNodeRuntime().executable ?? process.execPath, [codexScript, 'app-server', '--listen', 'stdio://'], {
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       })
 
   const stdout = child.stdout

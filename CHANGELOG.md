@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.29.2-alpha] - 2026-05-08
+
+### Added
+
+- **Explicit "Init Git" button replaces silent auto-init.** Adding a folder no longer secretly runs `git init` on it. Non-git projects now show a fixed "local" indicator plus a new "Init Git" button in the chat status bar; clicking it initializes the repo via a new `GIT_INIT` IPC and the status bar refreshes into its normal git UI.
+
+### Fixed
+
+- **Windows sidebar toggle no longer disappears into the sidebar header.** The dockview refactor had silently undone the macOS-only guard from a prior fix, so on Windows the toggle icon sat alone in the 44px header row that exists purely to clear macOS traffic lights. The sidebar-header toggle is now `isMac`-guarded again, and the main-area header always shows it on Windows regardless of sidebar state. macOS rendering is byte-for-byte unchanged.
+- **Codex no longer flashes a console window on Windows.** The bundled-package spawn branch for `@openai/codex` was missing `windowsHide`, briefly opening a black console window when launching Codex. Both spawn paths now set `windowsHide: true` so Windows tags the children with `CREATE_NO_WINDOW` and skips the visible console.
+
 ## [0.29.1-alpha] - 2026-05-07
 
 ### Added

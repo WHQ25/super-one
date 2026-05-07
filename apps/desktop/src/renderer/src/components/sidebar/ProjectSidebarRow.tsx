@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-import { Bot, CalendarClock, ChevronDown, ChevronRight, ChevronUp, CircleCheck, Copy, ExternalLink, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, Pin, Play, Smartphone, SquareActivity, SquarePen, Trash2 } from 'lucide-react'
+import { Bot, CalendarClock, ChevronDown, ChevronRight, ChevronUp, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, PictureInPicture2, Pin, Play, Smartphone, SquareActivity, SquarePen, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@superone/ui/components/ui/context-menu'
 import { useChatStore } from '@/stores/chat'
@@ -379,18 +379,19 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                           {session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin')}
                         </ContextMenuItem>
                         <ContextMenuItem
-                          onClick={() => window.app.openSessionWindow(folder.path, session.sessionId, session.title)}
-                          className="text-xs"
-                        >
-                          <ExternalLink className="size-3.5" />
-                          {t('sidebar.contextMenu.openInMiniWindow')}
-                        </ContextMenuItem>
-                        <ContextMenuItem
                           onClick={() => onHideSession(session.sessionId, true, folder.path)}
                           className="text-xs"
                         >
                           <EyeOff className="size-3.5" />
                           {t('sidebar.contextMenu.hide')}
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          onClick={() => window.app.openSessionWindow(folder.path, session.sessionId, session.title)}
+                          className="text-xs"
+                        >
+                          <PictureInPicture2 className="size-3.5" />
+                          {t('sidebar.contextMenu.openInMiniWindow')}
                         </ContextMenuItem>
                         <ContextMenuSeparator />
                         <ContextMenuItem

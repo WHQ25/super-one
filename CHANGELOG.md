@@ -4,6 +4,27 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.29.0-alpha] - 2026-05-07
+
+### Added
+
+- **Mini-window: pop a session out into its own floating window.** Right-click a session in the sidebar → *Open in Mini Window* spawns a lightweight, optionally always-on-top BrowserWindow that runs the same chat content in real-time sync with the main window. Title pin/unpin lives in the window header. Built on a new multi-window broadcast layer (`safeSend` fans out to every BrowserWindow; harness-agnostic session resume; a generic `SessionSettingsPatch` channel that replaces per-setting IPC) — so future detached-chat or secondary-renderer features inherit the same plumbing.
+- **Selection context menu in the coding markdown editor and preview**, matching the rest of the file-preview surfaces.
+- **File tree distinguishes staged vs unstaged.** Git status splits into separate index (X) and worktree (Y) columns: staged files render in a saturated VS Code-style palette (amber/emerald/rose/cyan/orange), unstaged-only files dim to opacity-60, and partially-staged files (`MM`, `AM`) italicize so the divergence is visible at a glance. Untracked stays fully saturated. Per-depth indent halved from 16px to 8px so deep trees stay readable in the narrow sidebar.
+- **Per-app SQLite database API for mini-apps.** Bridges the host's `better-sqlite3` to mini-apps via the existing fs/git IPC pattern so DB files live at `<install-slot>/data` under host ownership — backup/uninstall stay directory operations and AI agents can read mini-app state directly. Surface is intentionally minimal (`query` / `exec` / `batch` / `pragma`) with SQL-keyword + PRAGMA whitelisting and `trusted_schema=OFF`. The mini-app db guide gained concrete decision criteria (local vs remote), gotcha-aware type mapping (boolean/Date are not native), constraint-error recipes, indexing + `EXPLAIN QUERY PLAN`, persistence semantics across upgrades, and recipes for cursor pagination, FTS5, parent/child cascade, and state reset.
+
+### Fixed
+
+- **Phantom empty assistant message after a backend-initiated new turn.** `iterateMessages` was leaking `resultSeen` / `turnUserEchoSeen` across turns, so when the backend opened a fresh turn the queued-turn branch fired again and emitted a stray `message_start`. Turn-boundary state now resets, so no more empty bubble with a running-indicator footer above the real reply.
+- **`message_start` reducers no longer clobber an existing message.** A duplicate `message_start` (e.g. a Codex backend reusing an externally supplied `assistantMessageId`) used to merge a stub `content=[]` over the accumulated message. It's now a pure create-if-missing upsert in both the main-runtime upsert path and the renderer reducer.
+- **Brand-hue changes weren't reaching mini windows.** The main process now broadcasts `APP_SETTINGS_CHANGED` after every save (mirroring the dark-mode sync pattern); each window mirrors brand slices into its store so `useHarnessTheme` reacts live across all windows.
+
+### Changed
+
+- **Permission-mode cycle reordered to `default → plan → auto → acceptEdits`** so the most common steps come first.
+- **Coding layout toggle icons** swapped to `PanelLeftOpen` / `PanelRightOpen` so the affordance reads as "push the chat toward this side" rather than a static panel silhouette.
+- **Sidebar session menu**: *Open in Mini Window* moved below *Hide* as its own divider-separated group and uses the `PictureInPicture2` icon — the action spawns a floating window, not a navigation.
+
 ## [0.28.3-alpha] - 2026-05-07
 
 ### Fixed

@@ -1432,6 +1432,7 @@ function registerIpcHandlers(): void {
     if (patch?.updateChannel !== undefined) {
       setUpdateChannel(result.updateChannel)
     }
+    safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, result)
     return result
   })
   ipcMain.handle(AgentIpcChannels.APP_SYSTEM_LOCALE, () => getSystemLocale())

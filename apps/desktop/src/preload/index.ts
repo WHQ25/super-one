@@ -585,6 +585,15 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_GET),
   saveAppSettings: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
+  onAppSettingsChange: (callback: (settings: unknown) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, settings: unknown): void => {
+      callback(settings)
+    }
+    ipcRenderer.on(AgentIpcChannels.APP_SETTINGS_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.APP_SETTINGS_CHANGED, handler)
+    }
+  },
   getSystemLocale: () =>
     ipcRenderer.invoke(AgentIpcChannels.APP_SYSTEM_LOCALE) as Promise<string>,
   onLocaleChanged: (callback: (locale: 'en' | 'zh') => void) => {

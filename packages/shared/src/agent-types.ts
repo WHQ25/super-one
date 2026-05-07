@@ -1569,6 +1569,7 @@ export const AgentIpcChannels = {
   SET_FAST_MODE: 'app:set-fast-mode',
   APP_SETTINGS_GET: 'app:settings-get',
   APP_SETTINGS_SAVE: 'app:settings-save',
+  APP_SETTINGS_CHANGED: 'app:settings-changed',
   APP_SYSTEM_LOCALE: 'app:system-locale',
   APP_LOCALE_CHANGED: 'app:locale-changed',
 

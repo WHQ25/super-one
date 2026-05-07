@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { RecentFolder, RemoteDeviceConfig, SetupEvent, SettingsProvider, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
+import type { AppSettings, RecentFolder, RemoteDeviceConfig, SetupEvent, SettingsProvider, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
 import type { HarnessId } from '@superone/shared/session-types'
 import {
   clampA,
@@ -621,6 +621,21 @@ export function useHasRealProject(): boolean {
 if (typeof window !== 'undefined') {
   window.app?.onRecentFoldersChanged?.(() => {
     useAppStore.getState().fetchRecentFolders()
+  })
+
+  // Sync brand hues / token overrides across BrowserWindows. Main process
+  // broadcasts the latest AppSettings after every save; each window mirrors
+  // the brand-related slices into its local store so useHarnessTheme reacts.
+  window.app?.onAppSettingsChange?.((settings: AppSettings) => {
+    const claude = settings.agentPreference.claude
+    const codex = settings.agentPreference.codex
+    useAppStore.setState({
+      brandHues: { claude: claude.brandHue, codex: codex.brandHue },
+      tokenOverrides: {
+        claude: claude.tokenOverrides ?? {},
+        codex: codex.tokenOverrides ?? {},
+      },
+    })
   })
 }
 

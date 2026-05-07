@@ -190,6 +190,7 @@ interface AppAPI {
   setFastMode(enabled: boolean): Promise<void>
   getAppSettings(): Promise<AppSettings>
   saveAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
+  onAppSettingsChange(callback: (settings: AppSettings) => void): () => void
   getSystemLocale(): Promise<string>
   onLocaleChanged(callback: (locale: Locale) => void): () => void
 

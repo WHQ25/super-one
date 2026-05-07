@@ -6,7 +6,7 @@ import type { AutoModeEligibility } from '@/lib/auto-mode-eligibility'
 /** Ordered list of permission modes — used for cycling via Shift+Tab.
  *  bypassPermissions and dontAsk are intentionally excluded: they are reachable
  *  only by explicit click to raise the operational friction for high-risk modes. */
-export const PERMISSION_MODES: PermissionMode[] = ['default', 'acceptEdits', 'auto', 'plan']
+export const PERMISSION_MODES: PermissionMode[] = ['default', 'plan', 'auto', 'acceptEdits']
 
 export interface PermissionModeDescriptor {
   id: PermissionMode
@@ -27,12 +27,12 @@ export const modes: PermissionModeDescriptor[] = [
     hoverBg: 'hover:bg-muted',
   },
   {
-    id: 'acceptEdits',
-    label: 'Accept Edits',
-    description: 'Auto-accept file edit operations',
-    icon: <FastForward className="size-3" />,
-    color: 'text-purple-600 dark:text-purple-400',
-    hoverBg: 'hover:bg-purple-500/10',
+    id: 'plan',
+    label: 'Plan Mode',
+    description: 'Planning only, no actual execution',
+    icon: <PenLine className="size-3" />,
+    color: 'text-blue-600 dark:text-blue-400',
+    hoverBg: 'hover:bg-blue-500/10',
   },
   {
     id: 'auto',
@@ -43,12 +43,12 @@ export const modes: PermissionModeDescriptor[] = [
     hoverBg: 'hover:bg-amber-500/10',
   },
   {
-    id: 'plan',
-    label: 'Plan Mode',
-    description: 'Planning only, no actual execution',
-    icon: <PenLine className="size-3" />,
-    color: 'text-blue-600 dark:text-blue-400',
-    hoverBg: 'hover:bg-blue-500/10',
+    id: 'acceptEdits',
+    label: 'Accept Edits',
+    description: 'Auto-accept file edit operations',
+    icon: <FastForward className="size-3" />,
+    color: 'text-purple-600 dark:text-purple-400',
+    hoverBg: 'hover:bg-purple-500/10',
   },
   {
     id: 'dontAsk',

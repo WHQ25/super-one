@@ -74,7 +74,7 @@ vi.mock('@/components/ui/button', () => ({
 }))
 vi.mock('@/components/ui/kbd', () => ({ Kbd: ({ children }: { children?: ReactNode }) => <span>{children}</span> }))
 vi.mock('@/components/chat/PermissionModeList', () => ({
-  PERMISSION_MODES: ['default', 'acceptEdits', 'auto', 'plan'],
+  PERMISSION_MODES: ['default', 'plan', 'auto', 'acceptEdits'],
 }))
 
 vi.mock('lucide-react', () => {

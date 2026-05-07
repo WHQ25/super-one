@@ -1,4 +1,4 @@
-import { PanelLeft, PanelLeftDashed, PanelRight } from 'lucide-react'
+import { PanelLeft, PanelLeftDashed, PanelLeftOpen, PanelRightOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
@@ -42,7 +42,7 @@ export function LayoutToggle() {
                 onClick={toggleSide}
                 className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
-                {side === 'left' ? <PanelLeft className="size-3.5" /> : <PanelRight className="size-3.5" />}
+                {side === 'left' ? <PanelRightOpen className="size-3.5" /> : <PanelLeftOpen className="size-3.5" />}
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" sideOffset={4}>

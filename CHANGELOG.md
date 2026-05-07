@@ -25,6 +25,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Coding layout toggle icons** swapped to `PanelLeftOpen` / `PanelRightOpen` so the affordance reads as "push the chat toward this side" rather than a static panel silhouette.
 - **Sidebar session menu**: *Open in Mini Window* moved below *Hide* as its own divider-separated group and uses the `PictureInPicture2` icon — the action spawns a floating window, not a navigation.
 
+### CI
+
+- **`build-{mac,win,linux}.yml` artifact retention shortened from 30 days to 1 day.** Stale `dist-*` artifacts from validation builds or unfinished promotes were accumulating fast enough to exhaust the GitHub Actions storage quota. `promote.yml` already deletes the three artifacts it consumes; the 1-day retention is a safety net for orphaned builds that never reached promote.
+
 ## [0.28.3-alpha] - 2026-05-07
 
 ### Fixed

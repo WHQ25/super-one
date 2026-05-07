@@ -39,5 +39,5 @@ jobs:
             apps/desktop/dist/*.zip
             apps/desktop/dist/*.blockmap
             apps/desktop/dist/*-mac.yml
-          retention-days: 30
+          retention-days: 1
           if-no-files-found: error

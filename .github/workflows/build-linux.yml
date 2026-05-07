@@ -33,5 +33,5 @@ jobs:
             apps/desktop/dist/*.AppImage
             apps/desktop/dist/*.blockmap
             apps/desktop/dist/*-linux.yml
-          retention-days: 30
+          retention-days: 1
           if-no-files-found: error

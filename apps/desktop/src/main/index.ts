@@ -273,6 +273,7 @@ function createWindow(): void {
 
   // Update agentService's window reference for event forwarding
   agentService.setMainWindow(mainWindow)
+  agentService.setBroadcastFn((event) => safeSend(AgentIpcChannels.EVENT, event))
   agentService.setSessionManager(sessionManager)
   automationService.setMainWindow(mainWindow)
   automationService.setAgentService(agentService)

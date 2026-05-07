@@ -78,12 +78,22 @@ export class AgentService {
     this.deviceRegistry = reg
   }
 
+  setBroadcastFn(fn: (event: AgentEvent) => void): void {
+    this.broadcastFn = fn
+  }
+
+  private broadcastFn: ((event: AgentEvent) => void) | null = null
+
   private broadcastEventToRenderer(event: AgentEvent): void {
     trace('remote.debug', 'broadcastEventToRenderer', { type: event.type, projectPath: event.projectPath, sessionId: event.sessionId, messageId: 'messageId' in event ? event.messageId : undefined })
     if (event.type === 'permission_request') {
       const alive = !!this.mainWindow && !this.mainWindow.isDestroyed()
       log.info('[broadcast] permission_request requestId=%s toolName=%s sessionId=%s projectPath=%s windowAlive=%s',
         event.request.requestId, event.request.toolName, event.sessionId ?? '(none)', event.projectPath ?? '(none)', alive)
+    }
+    if (this.broadcastFn) {
+      this.broadcastFn(event)
+      return
     }
     this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.EVENT, event)
   }
@@ -1324,7 +1334,9 @@ export class AgentService {
       this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
       trace('permission.flow', 'ipc_response', { projectPath: session.snapshot.projectPath, sessionId, allow, alwaysAllow, reason, decision, formAnswers }, requestId)
-      return session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
+      const result = session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
+      this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'permission', requestId, projectPath: session.snapshot.projectPath, sessionId })
+      return result
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
@@ -1352,6 +1364,7 @@ export class AgentService {
       this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'question_answered', { requestId, answers, sessionId })
       session.respondToQuestion(requestId, answers, annotations)
+      this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'question', requestId, projectPath: session.snapshot.projectPath, sessionId })
     })
 
     ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, sessionId: string, requestId: string) => {
@@ -1360,6 +1373,7 @@ export class AgentService {
       this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'question_dismissed', { requestId, sessionId })
       session.dismissQuestion(requestId)
+      this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'question', requestId, projectPath: session.snapshot.projectPath, sessionId })
     })
 
     ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, sessionId: string, requestId: string, approved: boolean, feedback?: string) => {
@@ -1368,6 +1382,7 @@ export class AgentService {
       this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback, sessionId })
       session.respondToPlanApproval(requestId, approved, feedback)
+      this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'plan_approval', requestId, approved, feedback, projectPath: session.snapshot.projectPath, sessionId })
     })
 
     ipcMain.handle(AgentIpcChannels.CREATE_SESSION, async (_event, projectPath: string) => {

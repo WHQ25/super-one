@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import { GitBranch, ChevronDown, Check, Circle, Plus, SquareTerminal, Bot } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { GitBranch, GitBranchPlus, ChevronDown, Check, Circle, Plus, SquareTerminal, Bot } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import {
@@ -132,6 +134,7 @@ export function collectBackgroundActivities(
 }
 
 export function ChatStatusBar() {
+  const { t } = useTranslation()
   const barRef = useRef<HTMLDivElement>(null)
   const fullModeRequiredWidthRef = useRef(0)
   const currentFolder = useAppStore((s) => s.currentFolder)
@@ -144,6 +147,8 @@ export function ChatStatusBar() {
   const activeProvider = sessionProvider ?? preferredProvider
   const [compactIndicators, setCompactIndicators] = useState(false)
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
+  const [isGitRepo, setIsGitRepo] = useState<boolean | null>(null)
+  const [initing, setIniting] = useState(false)
   const [branches, setBranches] = useState<string[]>([])
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [bashOpen, setBashOpen] = useState(false)
@@ -158,17 +163,24 @@ export function ChatStatusBar() {
 
   const refreshGitInfo = useCallback(async () => {
     if (!currentFolder) return
-    const info = await window.app.getGitInfo(currentFolder)
+    const [info, repo] = await Promise.all([
+      window.app.getGitInfo(currentFolder),
+      window.app.getGitIsRepo(currentFolder),
+    ])
     if (info) setGitInfo(info)
+    setIsGitRepo(repo)
   }, [currentFolder])
 
   useEffect(() => {
-    if (!currentFolder) { setGitInfo(null); return }
+    if (!currentFolder) { setGitInfo(null); setIsGitRepo(null); return }
 
     let cancelled = false
     const fetch = () => {
       window.app.getGitInfo(currentFolder).then((info) => {
         if (!cancelled) setGitInfo(info)
+      })
+      window.app.getGitIsRepo(currentFolder).then((repo) => {
+        if (!cancelled) setIsGitRepo(repo)
       })
     }
     fetch()
@@ -224,6 +236,7 @@ export function ChatStatusBar() {
     worktreeBaseBranch,
     wtState?.pendingBaseBranch,
     wtState?.activePath,
+    isGitRepo,
   ])
 
   const openPopover = useCallback((open: boolean) => {
@@ -261,6 +274,20 @@ export function ChatStatusBar() {
       setFailedCheckout({ branch: name, error: result.error })
     }
   }, [currentFolder, refreshGitInfo])
+
+  const handleGitInit = useCallback(async () => {
+    if (!currentFolder || initing) return
+    setIniting(true)
+    const result = await window.app.gitInit(currentFolder)
+    setIniting(false)
+    if (result.ok) {
+      toast.success(t('chat.git.initSuccess'))
+      setIsGitRepo(true)
+      await refreshGitInfo()
+    } else {
+      toast.error(t('chat.git.initFailed', { error: result.error ?? '' }))
+    }
+  }, [currentFolder, initing, refreshGitInfo, t])
 
   const lowerSearch = search.toLowerCase()
   const currentMatch = gitInfo?.branch.toLowerCase().includes(lowerSearch)
@@ -349,7 +376,7 @@ export function ChatStatusBar() {
             )}
           </AnimatePresence>
         </div>
-        {gitInfo && <WorkDirIndicator compact={compactIndicators} />}
+        {currentFolder && <WorkDirIndicator compact={compactIndicators} isGitRepo={isGitRepo} />}
 
         {gitInfo && !isInWorktree && !worktreeBaseBranch && (
           <>
@@ -442,6 +469,21 @@ export function ChatStatusBar() {
                 </Command>
               </PopoverContent>
             </Popover>
+          </>
+        )}
+
+        {isGitRepo === false && !isInWorktree && !worktreeBaseBranch && (
+          <>
+            <div className="h-3 w-px bg-border" />
+            <button
+              onClick={handleGitInit}
+              disabled={initing}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              title={t('chat.git.initHint')}
+            >
+              <GitBranchPlus className="size-3" />
+              {!compactIndicators && <span>{t('chat.git.init')}</span>}
+            </button>
           </>
         )}
 

@@ -230,6 +230,8 @@ interface AppAPI {
 
   // Git
   getGitInfo(folderPath: string): Promise<GitInfo | null>
+  getGitIsRepo(folderPath: string): Promise<boolean>
+  gitInit(folderPath: string): Promise<GitResult>
   getGitBranches(folderPath: string): Promise<string[]>
   switchGitBranch(folderPath: string, branch: string): Promise<GitResult>
   createBranch(folderPath: string, branch: string): Promise<GitResult>

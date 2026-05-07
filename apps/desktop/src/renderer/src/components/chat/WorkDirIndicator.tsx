@@ -10,6 +10,7 @@ const fmt = (n: number) => n.toLocaleString()
 
 interface WorkDirIndicatorProps {
   compact?: boolean
+  isGitRepo?: boolean | null
 }
 
 interface WtMeta {
@@ -19,7 +20,7 @@ interface WtMeta {
   isDetached: boolean
 }
 
-export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
+export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicatorProps) {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const worktrees = useAppStore((s) => s._worktrees)
@@ -39,12 +40,13 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
 
   useEffect(() => {
     if (!currentFolder) { setWorktreeInfo(null); return }
+    if (isGitRepo === false) { setWorktreeInfo(null); return }
     let cancelled = false
     window.app.getWorktreeInfo(currentFolder).then((info) => {
       if (!cancelled) setWorktreeInfo(info)
     })
     return () => { cancelled = true }
-  }, [currentFolder])
+  }, [currentFolder, isGitRepo])
 
   const loadPopoverData = useCallback(async () => {
     if (!currentFolder) return
@@ -156,6 +158,21 @@ export function WorkDirIndicator({ compact = false }: WorkDirIndicatorProps) {
     if (!lowerSearch) return branches
     return branches.filter((b) => b.toLowerCase().includes(lowerSearch))
   }, [branches, lowerSearch])
+
+  if (isGitRepo === false) {
+    return (
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={t('tooltips.local')}>
+        {compact ? (
+          <Monitor className="size-3" />
+        ) : (
+          <span className="flex max-w-72 items-center gap-0.5 truncate">
+            <Monitor className="inline size-3 align-middle" />
+            <span className="ml-1">{t('tooltips.local')}</span>
+          </span>
+        )}
+      </div>
+    )
+  }
 
   if (!worktreeInfo) return null
 

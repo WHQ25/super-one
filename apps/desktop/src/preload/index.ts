@@ -681,6 +681,10 @@ const appAPI = {
   // Git
   getGitInfo: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_INFO, folderPath),
+  getGitIsRepo: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_IS_REPO, folderPath),
+  gitInit: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_INIT, folderPath),
   getGitBranches: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_LIST_BRANCHES, folderPath),
   switchGitBranch: (folderPath: string, branch: string) =>

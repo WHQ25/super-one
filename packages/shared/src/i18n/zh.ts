@@ -405,6 +405,12 @@ export const zh: Messages = {
       triggerActiveBranch: 'Worktree <branch></branch> {{name}}',
       triggerActiveDetached: 'Worktree <commit></commit>{{hash}}',
     },
+    git: {
+      init: '初始化 Git',
+      initHint: '在当前文件夹初始化 git 仓库',
+      initSuccess: '已初始化 git 仓库',
+      initFailed: 'Git 初始化失败：{{error}}',
+    },
     permission: {
       sandboxNetwork: '沙盒网络',
       allowSandboxNetwork: '允许沙盒网络访问',

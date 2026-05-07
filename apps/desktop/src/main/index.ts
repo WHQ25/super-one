@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir, open } from 'fs/promises'
 import { homedir, hostname } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
-import { execFileSync, spawn } from 'child_process'
+import { spawn } from 'child_process'
 import { gitRun } from './git-run'
 import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
@@ -475,13 +475,6 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.OPEN_FOLDER, async (_event, folderPath: string) => {
     if (!existsSync(folderPath)) return false
-    if (!existsSync(join(folderPath, '.git'))) {
-      try {
-        execFileSync('git', ['init'], { cwd: folderPath })
-      } catch (err) {
-        log.warn('[OPEN_FOLDER] git init failed for %s: %s', folderPath, err instanceof Error ? err.message : String(err))
-      }
-    }
     addRecentFolder(folderPath)
     await agentService.openFolder(folderPath)
     codexService.prewarmAppServerConnection(folderPath)
@@ -762,6 +755,23 @@ function registerIpcHandlers(): void {
       }
     } catch {
       return null
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_IS_REPO, (_event, folderPath: string) => {
+    return existsSync(join(folderPath, '.git'))
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_INIT, async (_event, folderPath: string) => {
+    if (!existsSync(folderPath)) return { ok: false, error: 'Folder does not exist' }
+    if (existsSync(join(folderPath, '.git'))) return { ok: true }
+    try {
+      await gitRun(folderPath, ['init'])
+      return { ok: true }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      log.warn('[GIT_INIT] failed for %s: %s', folderPath, error)
+      return { ok: false, error }
     }
   })
 

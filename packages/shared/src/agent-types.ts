@@ -1495,6 +1495,8 @@ export const AgentIpcChannels = {
 
   // Git
   GIT_INFO: 'app:git-info',
+  GIT_IS_REPO: 'app:git-is-repo',
+  GIT_INIT: 'app:git-init',
   GIT_LIST_BRANCHES: 'app:git-list-branches',
   GIT_SWITCH_BRANCH: 'app:git-switch-branch',
   GIT_CREATE_BRANCH: 'app:git-create-branch',

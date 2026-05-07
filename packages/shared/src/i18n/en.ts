@@ -391,6 +391,12 @@ export type Messages = {
       triggerActiveBranch: string
       triggerActiveDetached: string
     }
+    git: {
+      init: string
+      initHint: string
+      initSuccess: string
+      initFailed: string
+    }
     permission: {
       sandboxNetwork: string
       allowSandboxNetwork: string
@@ -1338,6 +1344,12 @@ export const en: Messages = {
       triggerCreateBranch: 'Create worktree branch <branch></branch> {{name}}',
       triggerActiveBranch: 'Worktree <branch></branch> {{name}}',
       triggerActiveDetached: 'Worktree <commit></commit>{{hash}}',
+    },
+    git: {
+      init: 'Init Git',
+      initHint: 'Initialize a new git repository in this folder',
+      initSuccess: 'Git repository initialized',
+      initFailed: 'Git init failed: {{error}}',
     },
     permission: {
       sandboxNetwork: 'Sandbox Network',

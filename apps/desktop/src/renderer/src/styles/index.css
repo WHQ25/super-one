@@ -78,6 +78,18 @@ body {
   contain-intrinsic-size: auto 200px;
 }
 
+/* Radix ScrollArea wraps children in `display: table; min-width: 100%`. That
+   table layout sizes to children's max-content, so when the viewport shrinks
+   the wrapper keeps its old (wider) size and content gets clipped horizontally
+   by the viewport's overflow. Force block layout so the wrapper follows the
+   viewport width. Scoped to chat only — other ScrollArea usages don't trigger
+   this because their content widths are constrained. */
+.chat-scroll-area [data-slot="scroll-area-viewport"] > div {
+  display: block !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
 /* =============================================
    Chat markdown styling (scoped to .chat-md)
    Uses Streamdown's data-streamdown attributes

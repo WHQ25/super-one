@@ -175,7 +175,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             {messages.length === 0 && !hasActiveSession ? (
               <ChatSuggestions />
             ) : (
-              <ScrollArea key={historySessionId ?? 'default'} className="h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
+              <ScrollArea key={historySessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
                 <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
                   {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
                   {renderedMessages.map((msg) => {

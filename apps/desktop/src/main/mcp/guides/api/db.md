@@ -1,46 +1,27 @@
 # superone.db — Local SQLite Database
 
-Each mini-app gets its own SQLite database file managed by the host. Use this for **app state, user preferences, local caches, and offline-capable data**. For complex queries, cross-device sync, or multi-user collaboration, connect directly to a remote database (Supabase, Turso, PlanetScale, Firebase, etc.) — `fetch()` is allowed when you declare the domain in `permissions.network`.
+Each mini-app gets its own SQLite database file managed by the host. Use this for **app state, user preferences, local caches, and offline data**. The DB file lives at `<install-slot>/data/main.db` and survives rebuilds and pack/install cycles. Uninstalling the app deletes the DB.
 
-The DB file lives at `<install-slot>/data/main.db` and survives rebuilds and pack/install cycles. Uninstalling the app deletes the DB.
+No `permissions` declaration is required — `superone.db` always points at the app's own private DB. Two mini-apps cannot read each other's databases.
 
-No `permissions` declaration is required for `superone.db` — it always points at the app's own private DB.
+## When to use local DB vs remote DB
 
-## Querying
+Pick **local DB (this API)** when ALL of these are true:
+- Data is per-user, per-machine — no cross-device sync
+- No multi-user collaboration
+- Single-app data ownership — no other app needs to read it
 
-```js
-const rows = await superone.db.query('SELECT * FROM notes ORDER BY id DESC LIMIT 10')
-// → Array of plain objects: [{ id: 3, content: '...', created_at: 1700... }, ...]
-```
+Pick a **remote DB** (Supabase, Turso, PlanetScale, Firestore — any HTTPS DB; declare the domain in `permissions.network` and `fetch()` directly) when ANY of these are true:
+- Cross-device sync is required (notes that follow the user)
+- Multiple users edit the same data
+- Custom SQL functions / aggregates / FTS tokenizers are needed (see "Not supported")
+- Streaming / pagination over millions of rows
+- Complex transactional logic that doesn't fit a single SQL statement
 
-Parameter binding (use this — never concatenate user input into SQL):
-
-```js
-// Positional (?)
-await superone.db.query('SELECT * FROM notes WHERE id = ?', [42])
-
-// Named (@name or :name)
-await superone.db.query(
-  'SELECT * FROM notes WHERE created_at > @since',
-  { since: Date.now() - 86400000 }
-)
-```
-
-## Writing
+## Quick start
 
 ```js
-const result = await superone.db.exec(
-  'INSERT INTO notes (content, created_at) VALUES (?, ?)',
-  ['hello', Date.now()]
-)
-// → { changes: 1, lastInsertRowid: 1 }
-```
-
-`exec` is for any single statement that does not return rows: `INSERT`, `UPDATE`, `DELETE`, `CREATE TABLE`, `CREATE INDEX`, etc.
-
-## Schema setup
-
-```js
+// Idempotent setup — safe to run on every app load
 await superone.db.exec(`
   CREATE TABLE IF NOT EXISTS notes (
     id INTEGER PRIMARY KEY,
@@ -49,74 +30,234 @@ await superone.db.exec(`
   )
 `)
 await superone.db.exec('CREATE INDEX IF NOT EXISTS notes_created ON notes(created_at)')
+
+// Insert
+const { lastInsertRowid } = await superone.db.exec(
+  'INSERT INTO notes (content, created_at) VALUES (?, ?)',
+  ['hello', Date.now()]
+)
+
+// Query
+const rows = await superone.db.query(
+  'SELECT id, content, created_at FROM notes ORDER BY created_at DESC LIMIT 20'
+)
 ```
 
-Run schema setup once near app startup (CREATE IF NOT EXISTS is idempotent).
+## API surface
 
-## Atomic batches (replaces transactions)
+| Method | When to use | Returns |
+|---|---|---|
+| `db.query(sql, params?)` | `SELECT` | `T[]` of plain row objects |
+| `db.exec(sql, params?)` | `INSERT` / `UPDATE` / `DELETE` / DDL | `{ changes, lastInsertRowid }` |
+| `db.batch(stmts)` | Multiple writes that must be atomic | `Array<{ changes, lastInsertRowid }>` |
+| `db.pragma(name, value?)` | Read or set whitelisted PRAGMAs | depends on pragma |
 
-`batch()` runs an array of statements inside a single SQLite transaction — all succeed or all roll back.
+## Parameter binding
+
+**Always use parameters — never concatenate user input into SQL.**
 
 ```js
-await superone.db.batch([
-  { sql: 'UPDATE accounts SET balance = balance - ? WHERE id = ?', params: [100, 1] },
-  { sql: 'UPDATE accounts SET balance = balance + ? WHERE id = ?', params: [100, 2] },
-])
-// → [{ changes: 1, lastInsertRowid: 0 }, { changes: 1, lastInsertRowid: 0 }]
+// Positional
+await superone.db.query('SELECT * FROM notes WHERE id = ?', [42])
+
+// Named (@name and :name both work)
+await superone.db.query(
+  'SELECT * FROM notes WHERE created_at > @since AND tag = @tag',
+  { since: Date.now() - 86400000, tag: 'work' }
+)
 ```
 
-`db.transaction(fn)` is **not** available because the function would have to run synchronously inside main process's SQLite call stack while living in the iframe — physically impossible across processes. Use `batch()` instead, or move conditional logic into SQL itself (`WHERE` constraints, `CASE`, sub-queries).
+## Schema migrations
 
-## Schema migrations with PRAGMA
-
-Use `user_version` to track migrations:
+Use `user_version` to track schema versions:
 
 ```js
-const [{ user_version: version }] = await superone.db.pragma('user_version')
+async function migrate() {
+  const [{ user_version: version }] = await superone.db.pragma('user_version')
 
-if (version < 1) {
-  await superone.db.exec('CREATE TABLE notes (id INTEGER PRIMARY KEY, content TEXT)')
-  await superone.db.pragma('user_version', 1)
+  if (version < 1) {
+    await superone.db.exec('CREATE TABLE notes (id INTEGER PRIMARY KEY, content TEXT)')
+    await superone.db.pragma('user_version', 1)
+  }
+  if (version < 2) {
+    await superone.db.exec('ALTER TABLE notes ADD COLUMN tags TEXT')
+    await superone.db.pragma('user_version', 2)
+  }
 }
-if (version < 2) {
-  await superone.db.exec('ALTER TABLE notes ADD COLUMN tags TEXT')
-  await superone.db.pragma('user_version', 2)
-}
+await migrate()
 ```
 
-Set `user_version` via the dedicated `pragma()` call rather than mixing `PRAGMA user_version = N` into a `batch()` — the value-form is the supported path; raw `PRAGMA` text in `exec`/`batch` works for some pragmas but not all, and `PRAGMA` strings are not bound parameters.
+Set `user_version` via the dedicated `pragma()` call, **not** via `PRAGMA user_version = N` inside `exec` or `batch`.
 
 Allowed PRAGMAs: `journal_mode`, `synchronous`, `user_version`, `foreign_keys`, `cache_size`, `temp_store`, `wal_checkpoint`, `table_info`, `table_list`, `index_list`, `index_info`, `page_count`, `page_size`. Other PRAGMAs are rejected.
 
-## What is NOT supported
+## Atomic batches (the substitute for `transaction(fn)`)
 
-The following are **structurally** unavailable in mini-apps (not a policy choice — IPC limits):
-
-- `db.transaction(fn)` — use `batch()`
-- Custom SQL functions (`db.function`), aggregates, virtual tables — the JS callback would need to run synchronously inside main process's SQLite call stack
-- Custom FTS5 tokenizers — same reason
-- Streaming cursors (`stmt.iterate`) — use `LIMIT/OFFSET` pagination
-- Loading SQLite extensions (`db.loadExtension`) — security
-- `ATTACH DATABASE` / `DETACH DATABASE` — security (would let one app read another's DB)
-- Custom DB file paths — host always picks the path under your install slot
-
-If your app genuinely needs custom UDFs, FTS tokenizers, streaming cursors, or 100k+ row analytics, the right answer is **a remote database** (Postgres + Supabase, Turso, etc.), not local SQLite.
-
-## Binary data
-
-`Uint8Array` and `ArrayBuffer` parameters are passed through as SQLite BLOBs:
+`batch()` runs an array of statements inside a single SQLite transaction. All succeed and commit together, or any error rolls everything back.
 
 ```js
-const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47 /* ... */])
-await superone.db.exec('INSERT INTO files (name, blob) VALUES (?, ?)', ['logo.png', png])
-
-const [row] = await superone.db.query('SELECT blob FROM files WHERE name = ?', ['logo.png'])
-// row.blob is a Uint8Array on the iframe side
+await superone.db.batch([
+  { sql: 'INSERT INTO orders (item, qty) VALUES (?, ?)', params: ['sku-1', 2] },
+  { sql: 'UPDATE inventory SET stock = stock - ? WHERE sku = ?', params: [2, 'sku-1'] },
+])
 ```
+
+`db.transaction(fn)` is **not** available — IPC can't run a renderer-side function synchronously inside main process's SQLite call stack. For control flow that depends on intermediate results, push the condition into SQL itself (see "Conditional update" recipe) or do `query` → branch in JS → `batch` (only for non-concurrent code paths).
+
+## Indexing
+
+SQLite is fast on indexed columns and slow on full-table scans. Add an index on:
+- Columns used in `WHERE` clauses
+- Columns used in `ORDER BY` (especially with `LIMIT`)
+- Foreign key columns
+
+```js
+await superone.db.exec('CREATE INDEX IF NOT EXISTS notes_user_created ON notes(user_id, created_at)')
+```
+
+Composite indexes work left-to-right: `(user_id, created_at)` accelerates queries filtering by `user_id` alone, or by `user_id` AND `created_at`, but **not** by `created_at` alone.
+
+## Verifying queries with EXPLAIN QUERY PLAN
+
+To check whether a query uses indexes, prefix it with `EXPLAIN QUERY PLAN`:
+
+```js
+const plan = await superone.db.query(
+  'EXPLAIN QUERY PLAN SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC',
+  [42]
+)
+console.log(plan)
+// Look for "USING INDEX <name>" — good. "SCAN TABLE notes" — bad (full scan).
+```
+
+## JS ↔ SQLite type mapping
+
+| JS value | SQLite column | Read back as |
+|---|---|---|
+| `number` (int) | `INTEGER` | `number` |
+| `number` (float) | `REAL` | `number` |
+| `string` | `TEXT` | `string` |
+| `null` / `undefined` | `NULL` | `null` |
+| `Uint8Array` / `ArrayBuffer` | `BLOB` | `Uint8Array` (after IPC) |
+| `boolean` | ⚠️ **not native** | — |
+| `Date` | ⚠️ **not native** | — |
+
+### Booleans
+
+SQLite has no boolean type. Convert explicitly:
+
+```js
+// Store
+await superone.db.exec('INSERT INTO tasks (done) VALUES (?)', [task.done ? 1 : 0])
+
+// Query — column comes back as 0 or 1 number, convert if needed
+const rows = await superone.db.query('SELECT done FROM tasks WHERE id = ?', [id])
+const done = !!rows[0].done
+```
+
+### Dates
+
+Two valid patterns — pick one and be consistent within an app:
+
+```js
+// Pattern A: epoch milliseconds (recommended — easy to compare/sort, smaller index)
+'created_at INTEGER NOT NULL'   // store: Date.now()    read: new Date(row.created_at)
+
+// Pattern B: ISO 8601 string (human-readable in sqlite3 CLI, slightly slower comparisons)
+'created_at TEXT NOT NULL'      // store: new Date().toISOString()    read: new Date(row.created_at)
+```
+
+### JSON columns
+
+For semi-structured fields, store JSON as TEXT and parse in JS:
+
+```js
+await superone.db.exec(
+  'INSERT INTO documents (id, meta) VALUES (?, ?)',
+  [docId, JSON.stringify({ tags: ['todo', 'urgent'], priority: 3 })]
+)
+
+const [row] = await superone.db.query('SELECT meta FROM documents WHERE id = ?', [docId])
+const meta = JSON.parse(row.meta)
+```
+
+SQLite has built-in JSON functions (`json_extract`, `json_array`, etc.) you can use in WHERE clauses:
+
+```js
+await superone.db.query(
+  "SELECT * FROM documents WHERE json_extract(meta, '$.priority') > ?",
+  [2]
+)
+```
+
+## Error handling
+
+Errors from `query` / `exec` / `batch` reject the Promise with an `Error` whose `message` contains the SQLite error.
+
+| Error message contains | Meaning | Typical handling |
+|---|---|---|
+| `UNIQUE constraint failed` | Inserted a duplicate value into a UNIQUE column | Show "already exists" in UI |
+| `FOREIGN KEY constraint failed` | Referenced a non-existent parent row | Validate parent ID before insert |
+| `NOT NULL constraint failed` | Missing required column | Form validation |
+| `no such table` | Table doesn't exist (skipped migration?) | Re-run migration |
+| `no such column` | Column doesn't exist (schema mismatch) | Check version and migrate |
+| `forbidden` | App tried `ATTACH`/`DETACH`/`LOAD_EXTENSION` | Remove the keyword |
+
+```js
+try {
+  await superone.db.exec('INSERT INTO users (email) VALUES (?)', [email])
+} catch (err) {
+  if (err.message.includes('UNIQUE constraint failed')) {
+    superone.ui.toast('That email is already registered', 'error')
+  } else {
+    superone.ui.toast('Failed: ' + err.message, 'error')
+  }
+}
+```
+
+## Persistence semantics
+
+| Action | Does DB survive? |
+|---|---|
+| Mini-app close and reopen | ✅ |
+| SuperOne quit and restart | ✅ |
+| Mini-app rebuild (dev mode) | ✅ |
+| `.s1app` upgrade install (drag-drop newer version) | ✅ |
+| Mini-app uninstall | ❌ deleted |
+| User manually deletes `<install-slot>/data/` | ❌ deleted |
+
+The `data/` directory is preserved across upgrade installs by design — the user's notes/state shouldn't disappear when an app updates.
+
+## Concurrency model
+
+Each mini-app's DB is accessed only by that mini-app's iframe (single-process, single-writer). You **don't** need:
+- Retry logic for `SQLITE_BUSY`
+- Locking primitives
+- Connection pooling
+
+Multiple concurrent `db.query` / `db.exec` calls from the same app are serialized inside main process automatically — no race conditions on the JS side.
+
+## What is NOT supported (and why)
+
+These are unavailable for **structural** reasons (cross-process IPC limits), not policy:
+
+| API | Why unavailable |
+|---|---|
+| `db.transaction(fn)` | `fn` lives in iframe; SQLite calls it synchronously inside main; cross-process sync = deadlock. **Use `batch()`.** |
+| `db.function(name, fn)` (custom UDF) | Same reason as transaction(fn). |
+| `db.aggregate(name, ...)` | Same. |
+| `db.table(name, ...)` (custom virtual table) | Same. |
+| Custom FTS5 tokenizer | Same — tokenizer is a JS callback. |
+| `Statement.iterate()` (cursor) | Would need a stateful cursor session protocol — not built. **Use `LIMIT/OFFSET` pagination.** |
+| `db.loadExtension()` | Loads native code — defeats sandbox. |
+| `ATTACH DATABASE` / `DETACH DATABASE` | Could read another app's DB. |
+| Custom DB file path | Host always picks the path. |
+
+If you need any of these, the right answer is a remote DB — local SQLite is the wrong tool.
 
 ## Recipes
 
-### Counter / KV-style state
+### KV-style state
 
 ```js
 await superone.db.exec(`
@@ -141,15 +282,30 @@ async function setKv(key, value) {
 ```js
 async function listNotes(page, pageSize) {
   return superone.db.query(
-    'SELECT * FROM notes ORDER BY id DESC LIMIT ? OFFSET ?',
+    'SELECT id, content, created_at FROM notes ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?',
     [pageSize, page * pageSize]
   )
 }
 ```
 
-### Conditional update — express the condition in SQL itself
+The secondary `ORDER BY id DESC` ensures stable ordering when multiple rows share the same `created_at`.
 
-`batch` cannot branch on intermediate results, and "compensate after the fact" breaks atomicity. Push the condition into SQL so the whole effect is one atomic statement:
+### Cursor-style infinite scroll (better than OFFSET for large tables)
+
+OFFSET gets slow on big tables (SQLite must scan and discard the skipped rows). For infinite scroll, paginate by the last-seen cursor:
+
+```js
+async function loadMoreNotes(lastCreatedAt, pageSize) {
+  return superone.db.query(
+    'SELECT id, content, created_at FROM notes WHERE created_at < ? ORDER BY created_at DESC LIMIT ?',
+    [lastCreatedAt ?? Number.MAX_SAFE_INTEGER, pageSize]
+  )
+}
+```
+
+### Conditional update — express the condition in SQL
+
+Don't try to "check then act" in two calls — race-prone. Push the condition into the SQL itself:
 
 ```js
 const result = await superone.db.exec(
@@ -162,9 +318,82 @@ const result = await superone.db.exec(
 if (result.changes === 0) throw new Error('insufficient balance')
 ```
 
-For genuinely complex transactional logic (multi-step business rules, cross-table invariants), prefer a remote DB with full transaction support over twisting SQL into a single statement.
+### Parent + children with foreign keys (kanban-style)
 
-## TypeScript Types
+```js
+await superone.db.batch([
+  { sql: `CREATE TABLE IF NOT EXISTS lists (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            position INTEGER NOT NULL
+          )` },
+  { sql: `CREATE TABLE IF NOT EXISTS cards (
+            id INTEGER PRIMARY KEY,
+            list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            position INTEGER NOT NULL
+          )` },
+  { sql: 'CREATE INDEX IF NOT EXISTS cards_list ON cards(list_id, position)' },
+])
+```
+
+`foreign_keys` is enabled by default — `ON DELETE CASCADE` will actually fire.
+
+### Full-text search (built-in FTS5)
+
+SQLite ships with FTS5 — works out of the box. Custom tokenizers don't (see "Not supported").
+
+```js
+await superone.db.exec(`
+  CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts
+    USING fts5(content, content='notes', content_rowid='id')
+`)
+// keep FTS in sync via triggers, or rebuild periodically:
+await superone.db.exec(`INSERT INTO notes_fts(notes_fts) VALUES ('rebuild')`)
+
+const hits = await superone.db.query(
+  'SELECT id, content FROM notes WHERE id IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?) LIMIT 50',
+  [searchTerm]
+)
+```
+
+For Chinese/Japanese/Korean text, FTS5's default tokenizer splits poorly — pre-tokenize on the JS side and store the tokenized form in a separate column, OR fall back to `LIKE '%...%'` (slow on large tables).
+
+### Reset all app state
+
+```js
+await superone.db.batch([
+  { sql: 'DELETE FROM notes' },
+  { sql: 'DELETE FROM tags' },
+  { sql: 'DELETE FROM kv' },
+])
+```
+
+To reset auto-increment IDs as well:
+
+```js
+await superone.db.exec("DELETE FROM sqlite_sequence WHERE name IN ('notes', 'tags')")
+```
+
+## Inspecting the DB during development
+
+The DB file is a real SQLite file at:
+
+```
+~/.superone/apps/<appId>/data/main.db                          # user-scope app
+<projectDir>/.superone/apps/<appId>/data/main.db               # project-scope dev app
+```
+
+Open it from a terminal:
+
+```bash
+sqlite3 ~/.superone/apps/your-app/data/main.db
+> .tables
+> .schema notes
+> SELECT * FROM notes LIMIT 10;
+```
+
+## TypeScript types
 
 ```ts
 interface SuperOneDbRunResult {

@@ -1076,6 +1076,24 @@ export class AgentService {
         await this.handleReadDesktopFile(command, respond, source)
         break
       }
+      case 'list_providers': {
+        try {
+          await respond?.(command.requestId, { providers: getAllProviders() })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'set_session_api_provider_id': {
+        const session = this.sessionManager?.getSession(command.sessionId)
+        if (!session) break
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          log.warn('[AgentService] %s', this.buildSessionAccessError(command.projectPath, command.sessionId))
+          break
+        }
+        session.setApiProviderId(command.apiProviderId)
+        break
+      }
     }
   }
 

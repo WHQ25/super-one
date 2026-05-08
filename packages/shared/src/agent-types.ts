@@ -1739,6 +1739,8 @@ export type RemoteCommand =
   | { type: 'remove_project_additional_dir'; requestId: string; projectPath: string; dir: string }
   | { type: 'set_session_additional_dirs'; requestId: string; projectPath: string; sessionId: string; dirs: string[] }
   | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number }
+  | { type: 'list_providers'; requestId: string }
+  | { type: 'set_session_api_provider_id'; projectPath: string; sessionId: string; apiProviderId: string | null }
 
 export interface ReadDesktopFileResponse {
   ok: true

@@ -750,7 +750,7 @@ export function ProviderDialog({
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-                <Button onClick={handleSubmit}>{editProvider ? t('resources.providerDialog.save') : t('resources.providers.connect')}</Button>
+                <Button onClick={handleSubmit}>{editProvider ? t('resources.providerDialog.save') : t('resources.providers.add')}</Button>
               </div>
             </DialogFooter>
           </>

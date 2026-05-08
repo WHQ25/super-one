@@ -76,6 +76,10 @@ export function getActiveProviderRaw(agentType: string = 'claude'): ApiProvider 
   return getDb().prepare(`SELECT * FROM api_providers WHERE ${col} = 1`).get() as ApiProvider | undefined
 }
 
+export function getProviderByIdRaw(id: string): ApiProvider | undefined {
+  return getDb().prepare('SELECT * FROM api_providers WHERE id = ?').get(id) as ApiProvider | undefined
+}
+
 export function createProvider(data: CreateProviderRequest): ApiProvider {
   const now = new Date().toISOString()
   const id = randomUUID()

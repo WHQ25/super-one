@@ -737,6 +737,10 @@ export interface SessionSettingsPatch {
   // Shared
   permissionMode?: PermissionMode
   sandboxInfo?: SandboxInfo
+  /** Per-session ApiProvider override; null = follow global default. */
+  apiProviderId?: string | null
+  /** Session-scoped resolved provider (icon/forcedEffort/modelEnv). Mobile clients use this directly. */
+  apiProvider?: RemoteActiveProvider | null
 }
 
 export interface SendMessageRequest {
@@ -759,6 +763,8 @@ export interface SendMessageRequest {
   contexts?: ChatMessageContext[]
   /** User-selected quote chips attached to this user message, displayed in the bubble and persisted. */
   userSelections?: string[]
+  /** Per-session ApiProvider override (chosen via /provider). null/undefined = follow global default. */
+  apiProviderId?: string | null
 }
 
 export interface CodexSendExtras {
@@ -1401,6 +1407,7 @@ export const AgentIpcChannels = {
   SET_PERMISSION_MODE: 'agent:set-permission-mode',
   SET_SANDBOX_MODE: 'agent:set-sandbox-mode',
   SET_SESSION_SETTINGS: 'agent:set-session-settings',
+  SET_SESSION_API_PROVIDER: 'agent:set-session-api-provider',
   ANSWER_QUESTION: 'agent:answer-question',
   DISMISS_QUESTION: 'agent:dismiss-question',
   RESPOND_PLAN_APPROVAL: 'agent:respond-plan-approval',

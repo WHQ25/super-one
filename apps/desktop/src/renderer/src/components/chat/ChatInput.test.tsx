@@ -242,6 +242,10 @@ vi.mock('./ModelSelector', () => ({
   ModelSelector: () => null,
 }))
 
+vi.mock('./ProviderSlashPopup', () => ({
+  ProviderSlashPopup: () => null,
+}))
+
 vi.mock('./DirManagerPanel', () => ({
   DirManagerPanel: () => null,
 }))

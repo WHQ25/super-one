@@ -12,7 +12,7 @@ import { ProviderDialog } from './ProviderDialog'
 import { ProviderLabel } from './ProviderLabel'
 
 
-function ConnectButton({ isActive, onClick, label }: { isActive: boolean; onClick: () => void; label?: string }) {
+function DefaultButton({ isActive, onClick, label }: { isActive: boolean; onClick: () => void; label?: string }) {
   const { t } = useTranslation()
   return (
     <Button
@@ -22,7 +22,7 @@ function ConnectButton({ isActive, onClick, label }: { isActive: boolean; onClic
       onClick={(e) => { e.stopPropagation(); if (!isActive) onClick() }}
     >
       {label && <span className="mr-1 text-[10px] text-muted-foreground">{label}</span>}
-      {isActive ? t('resources.providers.connected') : t('resources.providers.connect')} {isActive && <Check className="size-3.5" />}
+      {isActive ? t('resources.providers.default') : t('resources.providers.setDefault')} {isActive && <Check className="size-3.5" />}
     </Button>
   )
 }
@@ -79,7 +79,7 @@ function ProviderRow({
             </Tooltip>
           </TooltipProvider>
         )}
-        <ConnectButton isActive={isActive} onClick={onActivate} />
+        <DefaultButton isActive={isActive} onClick={onActivate} />
       </div>
     </div>
   )
@@ -177,7 +177,7 @@ export function ProvidersPage() {
               <p className="text-xs text-muted-foreground">{defaultDesc}</p>
             </div>
           </div>
-          <ConnectButton
+          <DefaultButton
             isActive={!activeProvider}
             onClick={() => deactivateAllProviders(settingsProvider)}
           />

@@ -16,6 +16,7 @@ import {
 } from './ModelSelectorLists'
 import type { AgentProviderConfig, EffortLevel } from '@superone/shared/agent-types'
 import { parseProviderModelEnv } from '@superone/shared/agent-types'
+import { selectEffectiveApiProvider } from '@/lib/effective-api-provider'
 
 const EFFORT_LABELS: Record<EffortLevel, string> = {
   low: 'Low',
@@ -38,6 +39,7 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
   const codexModelsLoading = useActiveSession((s) => s.codexModelsLoading)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
+  const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
   const availableModels = useChatStore(selectClaudeModels)
   const setSelectedModel = useChatStore((s) => s.setSelectedModel)
   const setSelectedEffort = useChatStore((s) => s.setSelectedEffort)
@@ -51,8 +53,8 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
   const fetchProviders = useSettingsStore((s) => s.fetchProviders)
   useEffect(() => { void fetchProviders() }, [fetchProviders])
   const activeApiProvider = useMemo(
-    () => providers.find((p) => p.is_active_claude === 1) ?? null,
-    [providers],
+    () => selectEffectiveApiProvider(providers, activeProvider, sessionApiProviderId),
+    [providers, activeProvider, sessionApiProviderId],
   )
   const activeModelEnv = useMemo(() => {
     if (!activeApiProvider) return null

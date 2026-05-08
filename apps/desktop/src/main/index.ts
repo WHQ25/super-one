@@ -54,7 +54,7 @@ import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as 
 import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
-import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw } from './database'
+import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw, getProviderByIdRaw } from './database'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
@@ -96,9 +96,20 @@ const codexService = new CodexExperimentService()
 const codexPluginsService = new CodexPluginsService(codexService)
 setCodexServiceFactory(() => codexService)
 const automationService = new AutomationService()
-function resolveBaseProviderConfig(provider: SessionProvider): unknown {
+function resolveApiProviderForSession(harnessId: SessionProvider['harnessId'], apiProviderId: string | null) {
+  if (apiProviderId) {
+    const explicit = getProviderByIdRaw(apiProviderId)
+    if (explicit) {
+      const supported = JSON.parse(explicit.supported_agents || '["claude"]') as string[]
+      if (Array.isArray(supported) && supported.includes(harnessId)) return explicit
+    }
+  }
+  return getActiveProviderRaw(harnessId)
+}
+
+function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: string | null = null): unknown {
   if (!provider.isBase) return provider.config
-  const activeApiProvider = getActiveProviderRaw(provider.harnessId)
+  const activeApiProvider = resolveApiProviderForSession(provider.harnessId, apiProviderId)
   if (!activeApiProvider) return provider.config
   const env = buildProviderEnv(activeApiProvider, provider.harnessId)
   const { ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, ...extraEnv } = env
@@ -124,6 +135,7 @@ const sessionManager = new SessionManagerImpl({
         isWorktree: snapshot.isWorktree,
         worktreePath: snapshot.worktreePath,
         gitBranch: snapshot.gitBranch,
+        apiProviderId: snapshot.apiProviderId,
       })
     } catch (err) {
       log.warn('[sessionManager] saveSessionStateBySid failed:', err)
@@ -148,9 +160,14 @@ const sessionManager = new SessionManagerImpl({
       contextTokens: loaded.record.contextTokens,
       worktreePath: loaded.record.worktreePath,
       gitBranch: loaded.record.gitBranch,
+      apiProviderId: loaded.record.apiProviderId,
     }
   },
-  getActiveProvider: (harnessId) => buildRemoteActiveProvider(getActiveProviderRaw(harnessId), harnessId),
+  getActiveProvider: (harnessId, apiProviderId) => buildRemoteActiveProvider(
+    resolveApiProviderForSession(harnessId, apiProviderId ?? null),
+    harnessId,
+  ),
+  getActiveDefaultApiProviderId: (harnessId) => getActiveProviderRaw(harnessId)?.id ?? null,
   onBeforeInterrupt: () => {
     clearAllGates()
     clearAllPendingMiniAppCalls()

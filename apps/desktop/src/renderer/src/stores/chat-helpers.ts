@@ -31,6 +31,9 @@ export function buildSlashCommands(
   if (!seen.has('add-dir')) {
     extra.push({ name: 'add-dir', description: 'Manage additional working directories', argumentHint: '[project|session] [dir]', isSkill: false })
   }
+  if (!seen.has('provider')) {
+    extra.push({ name: 'provider', description: 'Choose API provider for this session', argumentHint: '', isSkill: false })
+  }
   return [...tagged, ...extra]
 }
 

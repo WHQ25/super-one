@@ -30,6 +30,7 @@ export interface SessionSnapshot {
   readonly worktreePath: string | null
   readonly gitBranch: string | null
   readonly worktreeMissing: boolean
+  readonly apiProviderId: string | null
 }
 
 export interface LiveSessionSnapshot {

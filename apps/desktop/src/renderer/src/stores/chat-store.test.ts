@@ -44,6 +44,7 @@ const mockWindowAgent = {
   respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
   setPermissionMode: vi.fn().mockResolvedValue(undefined),
   setSessionSettings: vi.fn().mockResolvedValue(undefined),
+  setSessionApiProvider: vi.fn().mockResolvedValue(undefined),
   broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
 }
@@ -1334,6 +1335,76 @@ describe('Claude /clear command interception', () => {
   })
 })
 
+describe('/provider slash command + setSessionApiProviderId', () => {
+  it('intercepts /provider and opens the popup without sending to SDK', async () => {
+    mockWindowAgent.sendMessage.mockClear()
+    setupProject('/test')
+
+    await useChatStore.getState().sendMessage('/provider')
+
+    expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
+    const popup = getActiveDraftSession('/test')!.slashCommandOutput
+    expect(popup).toMatchObject({ command: 'provider', mode: 'popup' })
+  })
+
+  it('intercepts /provider under codex provider too (universal command)', async () => {
+    mockWindowApp.codexRun.mockClear()
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const codexSid = 'codex_local_provider_test'
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: codexSid,
+          _sessions: {
+            [codexSid]: {
+              ...createDefaultPerSessionState(),
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+            },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().sendMessage('/provider')
+
+    expect(mockWindowApp.codexRun).not.toHaveBeenCalled()
+    const popup = useChatStore.getState().projectSessions['/test']._sessions[codexSid].slashCommandOutput
+    expect(popup).toMatchObject({ command: 'provider', mode: 'popup' })
+  })
+
+  it('setSessionApiProviderId updates the active session and dispatches IPC', async () => {
+    mockWindowAgent.setSessionApiProvider.mockClear()
+    setupProject('/test')
+    const sid = useChatStore.getState().projectSessions['/test']._activeSessionId!
+
+    await useChatStore.getState().setSessionApiProviderId('deepseek-id')
+
+    expect(mockWindowAgent.setSessionApiProvider).toHaveBeenCalledWith(sid, 'deepseek-id')
+    const session = useChatStore.getState().projectSessions['/test']._sessions[sid]
+    expect(session.apiProviderId).toBe('deepseek-id')
+    expect(session.slashCommandOutput).toBeNull()
+  })
+
+  it('agent_setting_change with apiProviderId patch updates store', () => {
+    setupProject('/test')
+    const sid = useChatStore.getState().projectSessions['/test']._activeSessionId!
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'agent_setting_change',
+      patch: { apiProviderId: 'openrouter-id' },
+      sessionId: sid,
+      projectPath: '/test',
+    } as never)
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[sid]
+    expect(session.apiProviderId).toBe('openrouter-id')
+  })
+})
+
 describe('init_ready updates session fields', () => {
   it('sets cwd on the active session and updates project metadata', () => {
     setupProject('/test')
@@ -1891,6 +1962,39 @@ describe('switchSession Case B (from DB)', () => {
     await useChatStore.getState().switchSession('order-session')
 
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'order-session', '/test')
+  })
+
+  it('restores per-session apiProviderId from DB so reopening a session after main-window close keeps the third-party provider', async () => {
+    setupProject('/test')
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      gitBranch: null,
+      provider: 'claude',
+      apiProviderId: 'deepseek-id',
+    })
+
+    await useChatStore.getState().switchSession('saved-session')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['saved-session'].apiProviderId).toBe('deepseek-id')
+  })
+
+  it('falls back to null apiProviderId when DB row has none (back-compat with pre-feature sessions)', async () => {
+    setupProject('/test')
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      gitBranch: null,
+      provider: 'claude',
+    })
+
+    await useChatStore.getState().switchSession('legacy-session')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['legacy-session'].apiProviderId).toBeNull()
   })
 })
 

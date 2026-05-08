@@ -5,6 +5,7 @@ import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useActiveSession, useChatStore, type ChatProvider } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
+import { selectEffectiveApiProvider } from '@/lib/effective-api-provider'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import {
   DropdownMenu,
@@ -118,14 +119,13 @@ function ProviderSelector() {
 function ActiveProviderHint() {
   const { t } = useTranslation()
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
+  const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
   const providers = useSettingsStore((s) => s.providers)
   const fetchProviders = useSettingsStore((s) => s.fetchProviders)
 
   useEffect(() => { fetchProviders() }, [fetchProviders])
 
-  const activeProvider = providers.find((p) =>
-    preferredProvider === 'claude' ? p.is_active_claude === 1 : p.is_active_codex === 1
-  )
+  const activeProvider = selectEffectiveApiProvider(providers, preferredProvider, sessionApiProviderId)
 
   if (!activeProvider) return null
 

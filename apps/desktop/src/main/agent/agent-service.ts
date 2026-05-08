@@ -1214,29 +1214,41 @@ export class AgentService {
   private getOrCreateActiveSession(
     projectPath: string,
     requestedSid?: string,
-    hint?: { worktreePath?: string | null; gitBranch?: string | null },
+    hint?: { worktreePath?: string | null; gitBranch?: string | null; apiProviderId?: string | null },
   ): import('../session/types').Session {
     const mgr = this.requireSessionManager()
     const activeCwd = mgr.getActiveSession(projectPath)?.cwd
     const cwd = hint?.worktreePath ?? activeCwd
     const gitBranch = hint?.gitBranch ?? null
+    // Renderer carries `null` when "not yet chosen" — only treat the hint as authoritative
+    // when it's a concrete id. A null hint must NOT overwrite a session that already snapped
+    // its provider during a previous send.
+    const apiProviderHint = hint?.apiProviderId ?? null
+    const shouldApplyHint = (existing: import('../session/types').Session): boolean =>
+      apiProviderHint !== null && existing.snapshot.apiProviderId !== apiProviderHint
     if (requestedSid) {
       const existing = mgr.getSession(requestedSid)
       if (existing) {
         mgr.setActiveSession(projectPath, requestedSid)
+        if (shouldApplyHint(existing)) existing.setApiProviderId(apiProviderHint)
         return existing
       }
       try {
-        return mgr.resumeSession(requestedSid)
+        const resumed = mgr.resumeSession(requestedSid)
+        if (shouldApplyHint(resumed)) resumed.setApiProviderId(apiProviderHint)
+        return resumed
       } catch {
         const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
-        return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', id: requestedSid, gitBranch, permissionMode, sandboxMode })
+        return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', id: requestedSid, gitBranch, permissionMode, sandboxMode, apiProviderId: apiProviderHint })
       }
     }
     const active = mgr.getActiveSession(projectPath)
-    if (active) return active
+    if (active) {
+      if (shouldApplyHint(active)) active.setApiProviderId(apiProviderHint)
+      return active
+    }
     const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
-    return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', gitBranch, permissionMode, sandboxMode })
+    return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', gitBranch, permissionMode, sandboxMode, apiProviderId: apiProviderHint })
   }
 
   private async getOrCreatePrewarmSession(
@@ -1296,6 +1308,7 @@ export class AgentService {
       const session = this.getOrCreateActiveSession(projectPath, request.sessionId, {
         worktreePath: request.worktreePath,
         gitBranch: request.gitBranch,
+        ...(request.apiProviderId !== undefined ? { apiProviderId: request.apiProviderId } : {}),
       })
       trace('session.lifecycle', 'ipc_sendMessage', {
         projectPath,
@@ -1356,6 +1369,20 @@ export class AgentService {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return
       session.setSelectedSettings(settings)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SET_SESSION_API_PROVIDER, (_event, sessionId: string, apiProviderId: string | null) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (session) {
+        this.throwIfRemoteLocked(session.snapshot.projectPath)
+        session.setApiProviderId(apiProviderId)
+        return
+      }
+      this.broadcastEventToRenderer({
+        type: 'agent_setting_change',
+        sessionId,
+        patch: { apiProviderId },
+      } as AgentEvent)
     })
 
     ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
@@ -1994,6 +2021,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
     ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)
     ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_SETTINGS)
+    ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_API_PROVIDER)
     ipcMain.removeHandler(AgentIpcChannels.SET_SANDBOX_MODE)
     ipcMain.removeHandler(AgentIpcChannels.ANSWER_QUESTION)
     ipcMain.removeHandler(AgentIpcChannels.DISMISS_QUESTION)

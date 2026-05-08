@@ -14,6 +14,7 @@ interface AgentAPI {
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
   setSandboxMode(projectPath: string, mode: SandboxMode): Promise<SandboxInfo>
   setSessionSettings(projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null }): Promise<void>
+  setSessionApiProvider(sessionId: string, apiProviderId: string | null): Promise<void>
   broadcastSessionSetting(sessionId: string, patch: SessionSettingsPatch): Promise<void>
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>
   dismissQuestion(sessionId: string, requestId: string): Promise<void>

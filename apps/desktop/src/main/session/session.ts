@@ -68,12 +68,15 @@ export interface SessionConstructorOptions {
   initialMessages?: ChatMessage[]
   initialTotalCostUsd?: number
   initialContextTokens?: number
+  apiProviderId?: string | null
   homedir?: string
   getProjectResources?: (cwd: string) => ProjectResources
   invalidateProjectResources?: (cwd: string) => void
   onStateChange?: (snapshot: SessionStateChange) => void
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
-  getActiveProvider?: (harnessId: HarnessId) => RemoteActiveProvider | null
+  getActiveProvider?: (harnessId: HarnessId, apiProviderId?: string | null) => RemoteActiveProvider | null
+  resolveProviderConfigForApiProvider?: (apiProviderId: string | null) => unknown
+  getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
   onBeforeInterrupt?: () => void
 }
 
@@ -128,13 +131,16 @@ export class Session implements SessionContract {
   private effort: SendMessageRequest['effort']
   private model: string | undefined
   private additionalDirectories: string[]
+  private _apiProviderId: string | null = null
 
   private homedir: string
   private getProjectResources?: (cwd: string) => ProjectResources
   private invalidateProjectResources?: (cwd: string) => void
   private onStateChange?: (snapshot: SessionStateChange) => void
   private onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
-  private getActiveProvider?: (harnessId: HarnessId) => RemoteActiveProvider | null
+  private getActiveProvider?: (harnessId: HarnessId, apiProviderId?: string | null) => RemoteActiveProvider | null
+  private resolveProviderConfigForApiProvider?: (apiProviderId: string | null) => unknown
+  private getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
   private onBeforeInterrupt?: () => void
 
   private abortController: AbortController | null = null
@@ -239,12 +245,15 @@ export class Session implements SessionContract {
     this._contextTokens = opts.initialContextTokens ?? 0
     this._gitBranch = opts.gitBranch ?? null
     this._missingWorktreePath = opts.missingWorktreePath ?? null
+    this._apiProviderId = opts.apiProviderId ?? null
     this.homedir = opts.homedir ?? ''
     this.getProjectResources = opts.getProjectResources
     this.invalidateProjectResources = opts.invalidateProjectResources
     this.onStateChange = opts.onStateChange
     this.onProviderSessionIdChange = opts.onProviderSessionIdChange
     this.getActiveProvider = opts.getActiveProvider
+    this.resolveProviderConfigForApiProvider = opts.resolveProviderConfigForApiProvider
+    this.getActiveDefaultApiProviderId = opts.getActiveDefaultApiProviderId
     this.onBeforeInterrupt = opts.onBeforeInterrupt
 
     this.unsubs.push(this.backend.onEvent((e) => this.forwardEvent(e)))
@@ -293,7 +302,70 @@ export class Session implements SessionContract {
       worktreePath: isWorktree ? this._cwd : null,
       gitBranch: this._gitBranch,
       worktreeMissing: this._missingWorktreePath !== null,
+      apiProviderId: this._apiProviderId,
     }
+  }
+
+  getApiProviderId(): string | null {
+    return this._apiProviderId
+  }
+
+  setApiProviderId(apiProviderId: string | null): void {
+    this.assertNotDisposed()
+    if (this._apiProviderId === apiProviderId) return
+    this._apiProviderId = apiProviderId
+    if (this.resolveProviderConfigForApiProvider) {
+      this.providerConfig = this.resolveProviderConfigForApiProvider(apiProviderId)
+    }
+    this._needsRebuild = true
+    this.notifyStateChange()
+    const resolvedProvider = this.getActiveProvider?.(this.harnessId, apiProviderId) ?? null
+    this.forwardEvent({
+      type: 'agent_setting_change',
+      patch: { apiProviderId, apiProvider: resolvedProvider },
+    } as AgentEvent)
+  }
+
+  /**
+   * Persist the effective ApiProvider id when the session is currently following the
+   * global default (i.e. _apiProviderId === null). Called on every send so that next
+   * resume picks up "the provider that was actually used last time" instead of
+   * re-resolving against a possibly-changed global default.
+   *
+   * Re-resolves providerConfig against the snapped id and triggers a rebuild only when
+   * the resolved config actually differs (covers prewarm-then-default-changed: session
+   * was constructed under the old default, then user flipped the global default before
+   * sending the first message).
+   *
+   * Broadcasts agent_setting_change so renderer state and any peer windows flip from
+   * null → real id atomically — keeping UI's `selectEffectiveApiProvider` aligned with
+   * main and immune to subsequent global-default changes.
+   */
+  private snapEffectiveApiProviderId(): void {
+    if (this._apiProviderId !== null) return
+    if (!this.getActiveDefaultApiProviderId) return
+    const id = this.getActiveDefaultApiProviderId(this.harnessId)
+    if (!id) return
+    this._apiProviderId = id
+    if (this.resolveProviderConfigForApiProvider) {
+      const nextConfig = this.resolveProviderConfigForApiProvider(id)
+      let changed = false
+      try {
+        changed = JSON.stringify(this.providerConfig) !== JSON.stringify(nextConfig)
+      } catch {
+        changed = true
+      }
+      if (changed) {
+        this.providerConfig = nextConfig
+        this._needsRebuild = true
+      }
+    }
+    this.notifyStateChange()
+    const resolvedProvider = this.getActiveProvider?.(this.harnessId, id) ?? null
+    this.forwardEvent({
+      type: 'agent_setting_change',
+      patch: { apiProviderId: id, apiProvider: resolvedProvider },
+    } as AgentEvent)
   }
 
   async send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void> {
@@ -304,6 +376,13 @@ export class Session implements SessionContract {
       this.assertNotDisposed()
       if (!this.backendStarted) {
         log.warn('[Session] queued send before backend start sid=%s — promoting to normal send', this.id)
+      } else if (this._needsRebuild) {
+        // A pending rebuild (e.g. /provider switched mid-stream, sandbox boundary crossed,
+        // additional dirs changed) must apply BEFORE this queued message reaches the backend.
+        // Falling through to the normal sendChain ensures the rebuild fires when the current
+        // streaming finishes and only then this request is sent — matches the UX promise
+        // "will switch after current response".
+        log.info('[Session] queued send promoted to normal send sid=%s (pending rebuild)', this.id)
       } else {
         if (request.clientMessageId) {
           this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin })
@@ -325,6 +404,7 @@ export class Session implements SessionContract {
       if (request.model !== undefined) this.model = request.model
       if (request.additionalDirs !== undefined) this.additionalDirectories = request.additionalDirs
       this.appendUserMessage(request, providerOrigin)
+      this.snapEffectiveApiProviderId()
       const needsRebuild = this._needsRebuild
       if (this.backendStarted && (effortChanged || dirsChanged || needsRebuild)) {
         log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s needsRebuild=%s', this.id, effortChanged, dirsChanged, needsRebuild)
@@ -695,7 +775,7 @@ export class Session implements SessionContract {
     if (this.harnessId !== 'claude') return
     if (!this.getProjectResources) return
     const resources = this.getProjectResources(this._cwd)
-    const activeProvider = this.getActiveProvider?.(this.harnessId) ?? null
+    const activeProvider = this.getActiveProvider?.(this.harnessId, this._apiProviderId) ?? null
     const event: AgentEvent = {
       type: 'init_ready',
       skills: resources.skills,
@@ -957,6 +1037,7 @@ export class Session implements SessionContract {
         worktreePath: isWorktree ? this._cwd : null,
         gitBranch: this._gitBranch,
         worktreeMissing: this._missingWorktreePath !== null,
+        apiProviderId: this._apiProviderId,
       })
     } catch (err) {
       log.warn('[Session] onStateChange hook error:', err)

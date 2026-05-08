@@ -470,6 +470,12 @@ export type Messages = {
       reviewDesc: string
       compactDesc: string
       planDesc: string
+      providerDesc: string
+    }
+    providerPopup: {
+      title: string
+      addProvider: string
+      willSwitchAfterStreaming: string
     }
     slashCommand: {
       skillBadge: string
@@ -508,8 +514,8 @@ export type Messages = {
       subtitleClaude: string
       subtitleCodex: string
       add: string
-      connect: string
-      connected: string
+      setDefault: string
+      default: string
       defaultLabelClaude: string
       defaultLabelCodex: string
       defaultDescClaude: string
@@ -1424,6 +1430,12 @@ export const en: Messages = {
       reviewDesc: 'Review code changes',
       compactDesc: 'Compact thread context',
       planDesc: 'Enter plan mode',
+      providerDesc: 'Choose API provider for this session',
+    },
+    providerPopup: {
+      title: 'Choose a provider for this session',
+      addProvider: 'Add new provider…',
+      willSwitchAfterStreaming: 'Will switch after current response',
     },
     slashCommand: {
       skillBadge: 'skill',
@@ -1462,14 +1474,14 @@ export const en: Messages = {
       subtitleClaude: 'Configure third-party Anthropic-compatible API providers',
       subtitleCodex: 'Configure third-party OpenAI-compatible API providers for Codex',
       add: 'Add Provider',
-      connect: 'Connect',
-      connected: 'Connected',
+      setDefault: 'Set as default',
+      default: 'Default',
       defaultLabelClaude: 'Claude Code (Default)',
       defaultLabelCodex: 'Codex (Default)',
       defaultDescClaude: 'Uses system environment / Claude CLI auth',
       defaultDescCodex: 'Uses Codex session auth (ChatGPT login or API key)',
       empty: 'No third-party providers configured',
-      emptyHint: 'Click "Add Provider" to connect a third-party API',
+      emptyHint: 'Click "Add Provider" to add a third-party API',
       updateAvailable: 'Sync from preset',
     },
     providerDialog: {

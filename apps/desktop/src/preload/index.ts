@@ -34,6 +34,9 @@ const agentAPI = {
   setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null }) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_SETTINGS, projectPath, settings),
 
+  setSessionApiProvider: (sessionId: string, apiProviderId: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_API_PROVIDER, sessionId, apiProviderId) as Promise<void>,
+
   broadcastSessionSetting: (sessionId: string, patch: import('@superone/shared/agent-types').SessionSettingsPatch) =>
     ipcRenderer.invoke(AgentIpcChannels.BROADCAST_SESSION_SETTING, sessionId, patch) as Promise<void>,
 

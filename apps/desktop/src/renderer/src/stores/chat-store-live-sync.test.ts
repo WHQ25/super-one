@@ -198,6 +198,7 @@ function makeSnapshotEntry(overrides: Partial<{
   contextTokens: number
   pendingInteractions: AgentEvent[]
   replayEvents: AgentEvent[]
+  apiProviderId: string | null
 }> = {}) {
   return {
     sid: overrides.sid ?? 'sid-1',
@@ -225,6 +226,7 @@ function makeSnapshotEntry(overrides: Partial<{
       worktreePath: null,
       gitBranch: null,
       worktreeMissing: false,
+      apiProviderId: overrides.apiProviderId ?? null,
     },
     pendingInteractions: overrides.pendingInteractions ?? [],
     replayEvents: overrides.replayEvents ?? [],
@@ -327,6 +329,26 @@ describe('syncLiveSnapshots', () => {
   it('swallows IPC errors gracefully', async () => {
     mockGetLiveSnapshots.mockRejectedValueOnce(new Error('boom'))
     await expect(useChatStore.getState().syncLiveSnapshots()).resolves.toBeUndefined()
+  })
+
+  it('carries snapshot apiProviderId into PerSessionState so mini-window picks up the per-session provider override', async () => {
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({ messages: [makeMessage('m1', 'hi', 1)], apiProviderId: 'provider-xyz' }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+    const session = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(session.apiProviderId).toBe('provider-xyz')
+  })
+
+  it('falls back to null apiProviderId when the snapshot is on the global default', async () => {
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({ messages: [makeMessage('m1', 'hi', 1)], apiProviderId: null }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+    const session = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(session.apiProviderId).toBeNull()
   })
 })
 

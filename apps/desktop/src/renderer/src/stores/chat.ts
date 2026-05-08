@@ -20,6 +20,9 @@ const CLAUDE_INTERCEPTED_COMMANDS: Record<string, () => Promise<void>> = {
   clear: async () => {
     await useChatStore.getState().resetSession()
   },
+  provider: async () => {
+    useChatStore.getState().openProviderPopup()
+  },
 }
 
 export const CLAUDE_INTERCEPTED_COMMAND_NAMES: ReadonlySet<string> =
@@ -156,6 +159,8 @@ export interface PerSessionState {
   miniAppContexts: Record<string, MiniAppContextSlot>
   userSelections: string[]
   _historyHydrated: boolean
+  /** Per-session ApiProvider override; null = follow global default. Wired via /provider slash. */
+  apiProviderId: string | null
 }
 
 export interface ProjectState {
@@ -254,6 +259,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     miniAppContexts: {},
     userSelections: [],
     _historyHydrated: true,
+    apiProviderId: null,
   }
 }
 
@@ -418,6 +424,10 @@ export interface ChatStore {
   refreshCodexModels: (force?: boolean) => Promise<void>
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void
+
+  // Per-session ApiProvider override (driven by /provider slash command)
+  setSessionApiProviderId: (apiProviderId: string | null) => Promise<void>
+  openProviderPopup: () => void
 
   // Attachment actions
   addAttachment: (attachment: ImageAttachment) => void
@@ -1067,6 +1077,9 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       if (merged.permissionMode !== undefined) {
         patch.permissionMode = merged.permissionMode
       }
+      if (Object.prototype.hasOwnProperty.call(eventPatch, 'apiProviderId')) {
+        patch.apiProviderId = eventPatch.apiProviderId ?? null
+      }
       return patch
     }
 
@@ -1502,6 +1515,7 @@ type PersistedSessionState = {
   gitBranch: string | null
   worktreePath: string | null
   provider: string
+  apiProviderId?: string | null
 }
 
 function _mergePersistedMessages(savedMessages: ChatMessage[], runtimeMessages: ChatMessage[]): ChatMessage[] {
@@ -1529,6 +1543,7 @@ function _mergePersistedSessionState(session: PerSessionState, saved: PersistedS
     _worktreeBaseBranch: session._worktreeBaseBranch ?? saved.gitBranch,
     _worktreePath: session._worktreePath ?? saved.worktreePath,
     lastAssistantMessageId: mergedMessages.findLast((message) => message.role === 'assistant')?.id ?? session.lastAssistantMessageId,
+    apiProviderId: session.apiProviderId ?? saved.apiProviderId ?? null,
     _historyHydrated: true,
   }
 }
@@ -2933,6 +2948,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           _worktreePath: entry.snapshot.worktreePath ?? prevSession._worktreePath,
           _worktreeBaseBranch: entry.snapshot.gitBranch ?? prevSession._worktreeBaseBranch,
           _worktreeRemoved: entry.snapshot.worktreeMissing,
+          apiProviderId: entry.snapshot.apiProviderId ?? prevSession.apiProviderId ?? null,
           _historyHydrated: true,
         }
         const nextSessions = { ...prevProject._sessions, [entry.sid]: mergedSession }
@@ -3228,6 +3244,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     }
 
+    {
+      const providerMatch = rawContent.match(/^\/provider$/)
+      if (providerMatch) {
+        set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
+        useChatStore.getState().openProviderPopup()
+        return
+      }
+    }
+
     if (effectiveProvider === 'claude') {
       const m = rawContent.match(/^\/(\S+)$/)
       if (m && CLAUDE_INTERCEPTED_COMMANDS[m[1]]) {
@@ -3321,6 +3346,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         userMessageContent: userContent,
         contexts: messageContexts,
         userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
+        // null = "renderer hasn't chosen — main keeps existing snap or runs its own snap".
+        // Only assert a concrete id so we don't accidentally clear a session's pinned provider.
+        ...(session.apiProviderId ? { apiProviderId: session.apiProviderId } : {}),
         ...(isQueuedSend ? { priority: 'next' as const } : {}),
       })
     } catch (err) {
@@ -4235,6 +4263,31 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => updateActivePerSession(s,() => ({ slashCommandOutput: null })))
   },
 
+  openProviderPopup: () => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateActivePerSession(s, () => ({
+      slashCommandOutput: { command: 'provider', mode: 'popup', content: '' },
+    })))
+  },
+
+  setSessionApiProviderId: async (apiProviderId) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    const project = getProject(get(), activeProject)
+    const sessionId = project._activeSessionId
+    if (!sessionId) return
+    set((s) => updateActivePerSession(s, () => ({
+      apiProviderId,
+      slashCommandOutput: null,
+    })))
+    try {
+      await window.agent.setSessionApiProvider(sessionId, apiProviderId)
+    } catch (err) {
+      console.warn('[chat] setSessionApiProvider failed:', err)
+    }
+  },
+
   toggleTodos: () => {
     const { activeProject } = get()
     if (!activeProject) return
@@ -4475,8 +4528,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     let savedWorktreeBranch: string | null = null
     let savedWorktreePath: string | undefined
     let savedProvider: string | null = null
+    let savedApiProviderId: string | null = null
     try {
-      const saved = await window.app.loadSessionState(sessionId)
+      const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
       if (saved) {
         savedMessages = saved.messages
         savedCost = saved.totalCostUsd
@@ -4484,6 +4538,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         savedWorktreeBranch = saved.gitBranch
         savedProvider = saved.provider
         savedWorktreePath = saved.worktreePath ?? undefined
+        savedApiProviderId = saved.apiProviderId ?? null
       }
     } catch (err) { console.warn('[chat] loadSessionState failed:', err) }
 
@@ -4512,6 +4567,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       preferredProvider: restoredProvider,
       sessionProvider: restoredProvider,
       lastAssistantMessageId: savedMessages.findLast((m) => m.role === 'assistant')?.id ?? null,
+      apiProviderId: savedApiProviderId,
       _historyHydrated: true,
       permissionMode: defaultPermissionMode,
     }

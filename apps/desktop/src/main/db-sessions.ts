@@ -221,12 +221,12 @@ export function saveSessionState(
 /** Load session state from DB */
 export function loadSessionState(
   sessionId: string,
-): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string } | null {
+): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; apiProviderId: string | null } | null {
   const db = getDb()
 
   const session = db.prepare(`
-    SELECT total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider FROM sessions WHERE id = ?
-  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null }) | undefined
+    SELECT total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, api_provider_id FROM sessions WHERE id = ?
+  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; api_provider_id: string | null }) | undefined
 
   if (!session) return null
 
@@ -265,6 +265,7 @@ export function loadSessionState(
     gitBranch: session.git_branch ?? null,
     worktreePath: session.worktree_path ?? null,
     provider: session.provider ?? 'claude',
+    apiProviderId: session.api_provider_id ?? null,
   }
 }
 

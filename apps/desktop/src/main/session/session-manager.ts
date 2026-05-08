@@ -30,6 +30,7 @@ export interface LoadedSessionData {
   contextTokens: number
   worktreePath?: string | null
   gitBranch?: string | null
+  apiProviderId?: string | null
 }
 
 export interface SessionManagerPersistence {
@@ -38,8 +39,9 @@ export interface SessionManagerPersistence {
   onSessionStateChange?: (snapshot: SessionStateChange) => void
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
   loadSession?: (sessionId: string) => LoadedSessionData | null
-  resolveProviderConfig?: (provider: SessionProvider) => unknown
-  getActiveProvider?: (harnessId: HarnessId) => RemoteActiveProvider | null
+  resolveProviderConfig?: (provider: SessionProvider, apiProviderId?: string | null) => unknown
+  getActiveProvider?: (harnessId: HarnessId, apiProviderId?: string | null) => RemoteActiveProvider | null
+  getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
   onBeforeInterrupt?: () => void
 }
 
@@ -141,8 +143,10 @@ export class SessionManagerImpl implements SessionManagerContract {
     const sessionId = opts.id ?? randomUUID()
     const cwd = opts.cwd ?? opts.projectPath
     const backend = harness.createBackend()
-    const providerConfig = this.persistence.resolveProviderConfig
-      ? this.persistence.resolveProviderConfig(provider)
+    const apiProviderId = opts.apiProviderId ?? null
+    const resolveProviderConfig = this.persistence.resolveProviderConfig
+    const providerConfig = resolveProviderConfig
+      ? resolveProviderConfig(provider, apiProviderId)
       : provider.config
     const sandboxInfo = opts.sandboxMode !== undefined
       ? { enabled: opts.sandboxMode !== 'off', autoAllowBash: opts.sandboxMode === 'auto' }
@@ -161,6 +165,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       model: opts.model ?? undefined,
       additionalDirectories: opts.additionalDirectories,
       gitBranch: opts.gitBranch ?? null,
+      apiProviderId,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),
@@ -171,8 +176,12 @@ export class SessionManagerImpl implements SessionManagerContract {
         ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
         : undefined,
       getActiveProvider: this.persistence.getActiveProvider
-        ? (h) => this.persistence.getActiveProvider!(h)
+        ? (h, apiProviderId) => this.persistence.getActiveProvider!(h, apiProviderId)
         : undefined,
+      resolveProviderConfigForApiProvider: resolveProviderConfig
+        ? (id) => resolveProviderConfig(provider, id)
+        : undefined,
+      getActiveDefaultApiProviderId: this.persistence.getActiveDefaultApiProviderId,
       onBeforeInterrupt: this.persistence.onBeforeInterrupt,
     })
 
@@ -223,8 +232,10 @@ export class SessionManagerImpl implements SessionManagerContract {
     if (!harness) throw new Error(`Harness not registered: ${provider.harnessId}`)
 
     const backend = harness.createBackend()
-    const providerConfig = this.persistence.resolveProviderConfig
-      ? this.persistence.resolveProviderConfig(provider)
+    const apiProviderId = data.apiProviderId ?? null
+    const resolveProviderConfig = this.persistence.resolveProviderConfig
+    const providerConfig = resolveProviderConfig
+      ? resolveProviderConfig(provider, apiProviderId)
       : provider.config
     const { cwd: resumedCwd, missingWorktreePath } = resolveResumedCwd(data)
     const sandboxInfo = opts?.sandboxMode !== undefined
@@ -246,6 +257,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       initialContextTokens: data.contextTokens,
       gitBranch: data.gitBranch ?? null,
       missingWorktreePath,
+      apiProviderId,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),
@@ -256,8 +268,12 @@ export class SessionManagerImpl implements SessionManagerContract {
         ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
         : undefined,
       getActiveProvider: this.persistence.getActiveProvider
-        ? (h) => this.persistence.getActiveProvider!(h)
+        ? (h, apiProviderId) => this.persistence.getActiveProvider!(h, apiProviderId)
         : undefined,
+      resolveProviderConfigForApiProvider: resolveProviderConfig
+        ? (id) => resolveProviderConfig(provider, id)
+        : undefined,
+      getActiveDefaultApiProviderId: this.persistence.getActiveDefaultApiProviderId,
       onBeforeInterrupt: this.persistence.onBeforeInterrupt,
     })
 
@@ -285,7 +301,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       if (harnessId && session.snapshot.harnessId !== harnessId) continue
       const provider = getSessionProvider(session.snapshot.providerId)
       if (!provider) continue
-      const nextConfig = resolver ? resolver(provider) : provider.config
+      const nextConfig = resolver
+        ? resolver(provider, session.snapshot.apiProviderId)
+        : provider.config
       try { session.updateProviderConfig(nextConfig) } catch (err) {
         log.debug('[SessionManager] updateProviderConfig failed for sid=%s:', session.id, err)
       }

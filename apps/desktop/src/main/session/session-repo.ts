@@ -45,6 +45,7 @@ export interface SessionRecord {
   contextTokens: number
   createdAt: string
   lastUserMessageAt: string | null
+  apiProviderId: string | null
 }
 
 interface SessionRow {
@@ -63,6 +64,7 @@ interface SessionRow {
   worktree_path: string | null
   is_pinned: number | null
   is_hidden: number | null
+  api_provider_id: string | null
 }
 
 interface MessageRow {
@@ -99,6 +101,7 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
     contextTokens: row.context_tokens ?? 0,
     createdAt: row.created_at,
     lastUserMessageAt: row.last_user_message_at,
+    apiProviderId: row.api_provider_id ?? null,
   }
 }
 
@@ -189,6 +192,7 @@ export interface SaveSessionStateInput {
   isWorktree?: boolean
   worktreePath?: string | null
   gitBranch?: string | null
+  apiProviderId?: string | null
 }
 
 export function saveSessionStateBySid(input: SaveSessionStateInput): void {
@@ -202,13 +206,14 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   const upsertSession = db.prepare(`
     INSERT INTO sessions (
       id, project_id, provider_id, provider, title, created_at, last_user_message_at,
-      is_worktree, git_branch, worktree_path
+      is_worktree, git_branch, worktree_path, api_provider_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       is_worktree = excluded.is_worktree,
       git_branch = excluded.git_branch,
-      worktree_path = excluded.worktree_path
+      worktree_path = excluded.worktree_path,
+      api_provider_id = excluded.api_provider_id
   `)
 
   const upsertMsg = db.prepare(`
@@ -252,6 +257,7 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       input.isWorktree ? 1 : 0,
       input.gitBranch ?? null,
       input.worktreePath ?? null,
+      input.apiProviderId ?? null,
     )
     deleteStale.run(input.sid)
     for (let i = 0; i < input.messages.length; i++) {

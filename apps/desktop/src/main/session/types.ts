@@ -46,6 +46,7 @@ export interface SessionCreateOptions {
   resumeFrom?: string
   title?: string
   gitBranch?: string | null
+  apiProviderId?: string | null
 }
 
 export interface SessionStateChange {
@@ -60,7 +61,10 @@ export interface SessionStateChange {
   worktreePath: string | null
   gitBranch: string | null
   worktreeMissing: boolean
+  apiProviderId: string | null
 }
+
+export type ActiveApiProviderIdGetter = (harnessId: HarnessId) => string | null
 
 export interface BackendStartOptions {
   sessionId: string
@@ -220,6 +224,8 @@ export interface Session {
   broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch): void
   getSelectedModel(): string | undefined
   getSelectedEffort(): SendMessageRequest['effort']
+  setApiProviderId(apiProviderId: string | null): void
+  getApiProviderId(): string | null
   respondToPermission(
     requestId: string,
     allow: boolean,

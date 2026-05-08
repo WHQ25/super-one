@@ -366,6 +366,203 @@ describe('Session state machine', () => {
     await p2
   })
 
+  it('setApiProviderId resolves new provider config and rebuilds backend on next send', async () => {
+    const resolved = vi.fn((id: string | null) => ({ apiKey: id ? `key-${id}` : 'global-key' }))
+    const { session: s, backend: b } = makeSession({
+      providerConfig: { apiKey: 'global-key' },
+      resolveProviderConfigForApiProvider: resolved,
+    })
+
+    const p1 = s.send({ content: 'first' })
+    await new Promise((r) => setTimeout(r, 0))
+    b.resolveSend?.()
+    await p1
+
+    s.setApiProviderId('deepseek')
+    expect(resolved).toHaveBeenCalledWith('deepseek')
+    expect(s.snapshot.apiProviderId).toBe('deepseek')
+
+    const p2 = s.send({ content: 'second' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(b.rebuildCalls).toHaveLength(1)
+    expect(b.rebuildCalls[0]).toMatchObject({ config: { apiKey: 'key-deepseek' } })
+    b.resolveSend?.()
+    await p2
+  })
+
+  it('setApiProviderId emits agent_setting_change with apiProviderId patch', async () => {
+    const events: AgentEvent[] = []
+    session.on((e) => events.push(e))
+    session.setApiProviderId('openrouter')
+    const settingChange = events.find((e) => e.type === 'agent_setting_change')
+    expect(settingChange).toBeTruthy()
+    const patch = settingChange && (settingChange as { patch?: { apiProviderId?: string | null; apiProvider?: unknown } }).patch
+    expect(patch?.apiProviderId).toBe('openrouter')
+    // apiProvider may be null when getActiveProvider isn't injected — the field must be present so mobile can clear stale state
+    expect(patch).toHaveProperty('apiProvider')
+  })
+
+  it('setApiProviderId is no-op when value unchanged (no rebuild)', async () => {
+    const resolved = vi.fn((id: string | null) => ({ apiKey: id ?? 'global' }))
+    const { session: s, backend: b } = makeSession({
+      providerConfig: { apiKey: 'global' },
+      resolveProviderConfigForApiProvider: resolved,
+      apiProviderId: 'pinned',
+    })
+
+    const p1 = s.send({ content: 'first' })
+    await new Promise((r) => setTimeout(r, 0))
+    b.resolveSend?.()
+    await p1
+
+    s.setApiProviderId('pinned')
+    expect(resolved).not.toHaveBeenCalled()
+
+    const p2 = s.send({ content: 'second' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(b.rebuildCalls).toHaveLength(0)
+    b.resolveSend?.()
+    await p2
+  })
+
+  it('first send on a fresh session snaps the global default id and broadcasts agent_setting_change', async () => {
+    const getActiveDefault = vi.fn(() => 'anthropic-id')
+    const { session: s, backend: b } = makeSession({
+      getActiveDefaultApiProviderId: getActiveDefault,
+    })
+    const events: AgentEvent[] = []
+    s.on((e) => events.push(e))
+
+    expect(s.snapshot.apiProviderId).toBeNull()
+
+    const p = s.send({ content: 'first' })
+    await new Promise((r) => setTimeout(r, 0))
+    b.resolveSend?.()
+    await p
+
+    expect(getActiveDefault).toHaveBeenCalledWith('claude')
+    expect(s.snapshot.apiProviderId).toBe('anthropic-id')
+    const settingChange = events.find(
+      (e) => e.type === 'agent_setting_change' && (e as { patch?: { apiProviderId?: string | null } }).patch?.apiProviderId === 'anthropic-id',
+    )
+    expect(settingChange).toBeTruthy()
+    // No rebuild — providerConfig was already resolved against this same default at construct.
+    expect(b.rebuildCalls).toHaveLength(0)
+  })
+
+  it('snap is no-op once apiProviderId is already set (lock-on-first-send)', async () => {
+    const getActiveDefault = vi.fn(() => 'global-default-id')
+    const { session: s, backend: b } = makeSession({
+      apiProviderId: 'pinned-id',
+      getActiveDefaultApiProviderId: getActiveDefault,
+    })
+    const p = s.send({ content: 'first' })
+    await new Promise((r) => setTimeout(r, 0))
+    b.resolveSend?.()
+    await p
+
+    expect(getActiveDefault).not.toHaveBeenCalled()
+    expect(s.snapshot.apiProviderId).toBe('pinned-id')
+  })
+
+  it('snap is skipped when no global default exists (getter returns null)', async () => {
+    const { session: s, backend: b } = makeSession({
+      getActiveDefaultApiProviderId: () => null,
+    })
+    const p = s.send({ content: 'first' })
+    await new Promise((r) => setTimeout(r, 0))
+    b.resolveSend?.()
+    await p
+
+    expect(s.snapshot.apiProviderId).toBeNull()
+  })
+
+  it('snap survives subsequent sends — the second send does NOT re-snap or re-broadcast', async () => {
+    const getActiveDefault = vi.fn(() => 'anthropic-id')
+    const { session: s, backend: b } = makeSession({
+      getActiveDefaultApiProviderId: getActiveDefault,
+    })
+    const events: AgentEvent[] = []
+    s.on((e) => events.push(e))
+
+    const p1 = s.send({ content: 'first' })
+    await new Promise((r) => setTimeout(r, 0))
+    b.resolveSend?.()
+    await p1
+
+    const callsAfterFirst = getActiveDefault.mock.calls.length
+    const settingEventsAfterFirst = events.filter((e) => e.type === 'agent_setting_change').length
+
+    const p2 = s.send({ content: 'second' })
+    await new Promise((r) => setTimeout(r, 0))
+    b.resolveSend?.()
+    await p2
+
+    expect(getActiveDefault.mock.calls.length).toBe(callsAfterFirst)
+    expect(events.filter((e) => e.type === 'agent_setting_change').length).toBe(settingEventsAfterFirst)
+  })
+
+  it('queued send during pending rebuild is promoted to normal sendChain so rebuild applies before backend.send', async () => {
+    const resolved = vi.fn((id: string | null) => ({ apiKey: `key-${id ?? 'global'}` }))
+    const { session: s, backend: b } = makeSession({
+      providerConfig: resolved('old'),
+      resolveProviderConfigForApiProvider: resolved,
+      apiProviderId: 'old',
+    })
+
+    // First send goes through (becomes the streaming turn).
+    const first = s.send({ content: 'first', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(b.sendCalls).toHaveLength(1)
+    expect(b.startOpts).toMatchObject({ config: { apiKey: 'key-old' } })
+
+    // User runs /provider mid-stream → setApiProviderId triggers _needsRebuild
+    s.setApiProviderId('new')
+
+    // Queued send arrives while still streaming
+    const queued = s.send({ content: 'queued', clientMessageId: 'u2', priority: 'next' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    // With the fix: queued is NOT delivered to backend yet — it's waiting on sendChain
+    // for the rebuild to fire after current streaming finishes.
+    expect(b.sendCalls).toHaveLength(1)
+    expect(b.rebuildCalls).toHaveLength(0)
+
+    // Finish first turn → sendChain releases → rebuild fires → backend.send for queued
+    b.resolveSend?.()
+    await first
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(b.rebuildCalls).toHaveLength(1)
+    expect(b.rebuildCalls[0]).toMatchObject({ config: { apiKey: 'key-new' } })
+    expect(b.sendCalls).toHaveLength(2)
+    expect(b.sendCalls[1]).toMatchObject({ clientMessageId: 'u2' })
+
+    b.resolveSend?.()
+    await queued
+  })
+
+  it('snap rebuilds backend if the global default has shifted since session construction (prewarm-then-default-changed)', async () => {
+    let activeId: string | null = 'old-default'
+    const resolved = vi.fn((id: string | null) => ({ apiKey: `key-${id ?? 'global'}` }))
+    const { session: s, backend: b } = makeSession({
+      providerConfig: resolved('old-default'),
+      resolveProviderConfigForApiProvider: resolved,
+      getActiveDefaultApiProviderId: () => activeId,
+    })
+
+    activeId = 'new-default'
+
+    const p = s.send({ content: 'first' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(b.startOpts).toMatchObject({ config: { apiKey: 'key-new-default' } })
+    expect(s.snapshot.apiProviderId).toBe('new-default')
+
+    b.resolveSend?.()
+    await p
+  })
+
   describe('setPermissionMode bypass boundary', () => {
     async function bootAndIdle(s: Session, b: FakeBackend) {
       const p = s.send({ content: 'boot', clientMessageId: 'u0' })

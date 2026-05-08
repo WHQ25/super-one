@@ -224,6 +224,9 @@ export function runDatabaseMigrations(db: Database.Database): void {
   if (!sessionColsAfterSeed.some((c) => c.name === 'provider_session_id')) {
     db.exec('ALTER TABLE sessions ADD COLUMN provider_session_id TEXT')
   }
+  if (!sessionColsAfterSeed.some((c) => c.name === 'api_provider_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN api_provider_id TEXT')
+  }
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider ON sessions(provider_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_provider_session_id ON sessions(provider_session_id)')
 
@@ -317,12 +320,13 @@ export function runDatabaseMigrations(db: Database.Database): void {
         is_automation INTEGER DEFAULT 0,
         automation_id TEXT,
         provider_id TEXT,
-        provider_session_id TEXT
+        provider_session_id TEXT,
+        api_provider_id TEXT
       );
     `)
     db.exec(`
-      INSERT INTO sessions_new (id, project_id, title, created_at, last_user_message_at, total_cost_usd, context_tokens, is_worktree, git_branch, is_pinned, provider, worktree_path, is_hidden, is_automation, automation_id, provider_id, provider_session_id)
-      SELECT id, project_id, title, created_at, last_user_message_at, total_cost_usd, context_tokens, is_worktree, git_branch, is_pinned, provider, worktree_path, is_hidden, is_automation, automation_id, provider_id, provider_session_id
+      INSERT INTO sessions_new (id, project_id, title, created_at, last_user_message_at, total_cost_usd, context_tokens, is_worktree, git_branch, is_pinned, provider, worktree_path, is_hidden, is_automation, automation_id, provider_id, provider_session_id, api_provider_id)
+      SELECT id, project_id, title, created_at, last_user_message_at, total_cost_usd, context_tokens, is_worktree, git_branch, is_pinned, provider, worktree_path, is_hidden, is_automation, automation_id, provider_id, provider_session_id, api_provider_id
       FROM sessions
     `)
     db.exec('DROP TABLE sessions')

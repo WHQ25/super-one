@@ -734,7 +734,7 @@ function registerIpcHandlers(): void {
         const ref = await gitRun(folderPath, ['symbolic-ref', 'HEAD'])
         branch = ref.replace('refs/heads/', '')
       }
-      const status = await gitRun(folderPath, ['status', '--porcelain'])
+      const status = await gitRun(folderPath, ['status', '--porcelain', '-uall'])
       const files = status ? status.split('\n').filter(Boolean).length : 0
       let insertions = 0
       let deletions = 0
@@ -747,6 +747,29 @@ function registerIpcHandlers(): void {
           if (delMatch) deletions = parseInt(delMatch[1])
         } catch {
           /* no HEAD yet or no tracked changes */
+        }
+        try {
+          const untrackedRaw = await gitRun(folderPath, ['ls-files', '--others', '--exclude-standard', '-z'])
+          const untracked = untrackedRaw ? untrackedRaw.split('\0').filter(Boolean) : []
+          for (const rel of untracked) {
+            try {
+              const abs = join(folderPath, rel)
+              const fileStat = await stat(abs)
+              if (!fileStat.isFile()) continue
+              const buf = await readFile(abs)
+              if (buf.includes(0)) continue
+              let count = 0
+              for (let i = 0; i < buf.length; i++) {
+                if (buf[i] === 0x0a) count++
+              }
+              if (buf.length > 0 && buf[buf.length - 1] !== 0x0a) count++
+              insertions += count
+            } catch {
+              /* skip unreadable */
+            }
+          }
+        } catch {
+          /* no untracked or git unavailable */
         }
       }
       return {

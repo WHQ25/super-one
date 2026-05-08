@@ -98,7 +98,7 @@ export async function activateWorktree(
 
   let stashSha: string | undefined
   if (carryLocalChanges) {
-    stashSha = (await gitRun(folderPath, ['stash', 'create'])).trim() || undefined
+    stashSha = (await gitRun(folderPath, ['stash', 'create', '-u'])).trim() || undefined
   }
 
   if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })

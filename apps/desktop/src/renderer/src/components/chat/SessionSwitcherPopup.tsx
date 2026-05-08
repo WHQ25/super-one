@@ -112,6 +112,8 @@ function toSwitcherRow(row: ActiveRow): SwitcherRow {
 }
 
 export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
+  const frozenOrderRef = useRef<string[] | null>(null)
+
   const getItems = useCallback((): { count: number; currentIndex: number } | null => {
     const state = useChatStore.getState()
     const project = state.activeProject ? state.projectSessions[state.activeProject] : null
@@ -121,18 +123,18 @@ export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
     if (rows.length === 0) return null
     const currentIdx = rows.findIndex((r) => r.isCurrent)
     if (rows.length === 1 && currentIdx === 0) return null
+    frozenOrderRef.current = rows.map((r) => r.sessionId)
     return { count: rows.length, currentIndex: currentIdx }
   }, [])
 
   const onCommit = useCallback((targetIndex: number) => {
+    const order = frozenOrderRef.current
+    const targetSid = order ? order[targetIndex] : undefined
+    if (!targetSid) return
     const state = useChatStore.getState()
     const project = state.activeProject ? state.projectSessions[state.activeProject] : null
-    if (!project) return
-    const remoteIds = state.activeProject ? (state.remoteSessions[state.activeProject] ?? []) : []
-    const rows = collectActiveRows(project, remoteIds)
-    const target = rows[targetIndex]
-    if (!target || target.sessionId === project._activeSessionId) return
-    void state.switchSession(target.sessionId)
+    if (!project || targetSid === project._activeSessionId) return
+    void state.switchSession(targetSid)
   }, [])
 
   const { isOpen, selectedIndex } = useCtrlTabSwitcher({
@@ -142,6 +144,10 @@ export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
     claimWhenUnfocused: true,
   })
 
+  useEffect(() => {
+    if (!isOpen) frozenOrderRef.current = null
+  }, [isOpen])
+
   const project = useChatStore((s) => (s.activeProject ? s.projectSessions[s.activeProject] : null))
   const remoteIds = useChatStore((s) => {
     if (!s.activeProject) return EMPTY_REMOTE_IDS
@@ -149,7 +155,16 @@ export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
   })
   const internalRows = useMemo<ActiveRow[]>(() => {
     if (!isOpen || !project) return EMPTY_ROWS
-    return collectActiveRows(project, remoteIds)
+    const fresh = collectActiveRows(project, remoteIds)
+    const order = frozenOrderRef.current
+    if (!order) return fresh
+    const byId = new Map(fresh.map((r) => [r.sessionId, r]))
+    const ordered: ActiveRow[] = []
+    for (const sid of order) {
+      const row = byId.get(sid)
+      if (row) ordered.push(row)
+    }
+    return ordered
   }, [isOpen, project, remoteIds])
   const viewRows = useMemo<SwitcherRow[]>(() => internalRows.map(toSwitcherRow), [internalRows])
 
@@ -202,9 +217,9 @@ export function SessionSwitcherView({ rows, selectedIndex, isOpen, openDelayMs =
                 Switch Between working sessions
               </span>
               <div className="flex shrink-0 items-center gap-1">
-                <Kbd>Ctrl</Kbd>
+                <Kbd>ctrl</Kbd>
                 <span className="text-[11px] text-muted-foreground">+</span>
-                <Kbd>Tab</Kbd>
+                <Kbd>tab</Kbd>
               </div>
             </div>
             <SessionList rows={rows} selectedIndex={selectedIndex} />

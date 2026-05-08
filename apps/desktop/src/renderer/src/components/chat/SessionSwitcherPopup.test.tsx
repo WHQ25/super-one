@@ -1,9 +1,11 @@
 /** @vitest-environment jsdom */
 
+import { useRef } from 'react'
 import { render, act } from '@testing-library/react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { collectActiveRows, SessionSwitcherView, type SwitcherRow } from './SessionSwitcherPopup'
-import { createDefaultPerSessionState, createDefaultProjectState, type ProjectState, type PerSessionState } from '@/stores/chat'
+import { collectActiveRows, SessionSwitcherPopup, SessionSwitcherView, type SwitcherRow } from './SessionSwitcherPopup'
+import { createDefaultPerSessionState, createDefaultProjectState, useChatStore, type ProjectState, type PerSessionState } from '@/stores/chat'
+import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 
 function makeSession(overrides: Partial<PerSessionState>): PerSessionState {
   return { ...createDefaultPerSessionState(), ...overrides }
@@ -215,5 +217,75 @@ describe('SessionSwitcherView open delay', () => {
     const { queryByText } = render(<SessionSwitcherView rows={rows} selectedIndex={1} isOpen openDelayMs={0} />)
 
     expect(queryByText('Switch Between working sessions')).not.toBeNull()
+  })
+})
+
+describe('SessionSwitcherPopup frozen order', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    Element.prototype.scrollIntoView = vi.fn()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    useChatStore.setState({ activeProject: null, projectSessions: {}, remoteSessions: {} })
+  })
+
+  function dbEntry(sessionId: string, title: string): SessionHistoryEntry {
+    return { sessionId, title, lastActiveAt: '0', messageCount: 0 }
+  }
+
+  function Harness() {
+    const ref = useRef<HTMLDivElement>(null)
+    return (
+      <div ref={ref} data-scope>
+        <SessionSwitcherPopup scopeRef={ref} />
+      </div>
+    )
+  }
+
+  function readVisibleOrder(container: HTMLElement): string[] {
+    const rows = container.querySelectorAll<HTMLElement>('[data-row-idx]')
+    return Array.from(rows).map((row) => row.querySelector<HTMLElement>('.truncate')?.textContent?.trim() ?? '')
+  }
+
+  // Relies on SessionSwitcherPopup mounting useCtrlTabSwitcher with claimWhenUnfocused: true,
+  // so jsdom's default body activeElement satisfies the open gate without focusing anything.
+  it('keeps row order frozen after popup opens even when a non-current session lastEventAt jumps', () => {
+    const project: ProjectState = {
+      ...createDefaultProjectState(),
+      _activeSessionId: 's1',
+      _previousSessionId: null,
+      _sessions: {
+        s1: makeSession({ ...liveBackground, lastEventAt: 100 }),
+        s2: makeSession({ ...liveBackground, lastEventAt: 200 }),
+        s3: makeSession({ ...liveBackground, lastEventAt: 300 }),
+      },
+      sessions: [dbEntry('s1', 'one'), dbEntry('s2', 'two'), dbEntry('s3', 'three')],
+    }
+    useChatStore.setState({ activeProject: '/p', projectSessions: { '/p': project }, remoteSessions: {} })
+
+    const { container } = render(<Harness />)
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true, cancelable: true }))
+    })
+    act(() => { vi.advanceTimersByTime(220) })
+
+    const initialOrder = readVisibleOrder(container)
+    expect(initialOrder).toEqual(['three', 'two', 'one'])
+
+    act(() => {
+      const next: ProjectState = {
+        ...project,
+        _sessions: {
+          ...project._sessions,
+          s1: makeSession({ ...liveBackground, lastEventAt: 9999 }),
+        },
+      }
+      useChatStore.setState({ projectSessions: { '/p': next } })
+    })
+
+    expect(readVisibleOrder(container)).toEqual(initialOrder)
   })
 })

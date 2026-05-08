@@ -1220,9 +1220,6 @@ export class AgentService {
     const activeCwd = mgr.getActiveSession(projectPath)?.cwd
     const cwd = hint?.worktreePath ?? activeCwd
     const gitBranch = hint?.gitBranch ?? null
-    // Renderer carries `null` when "not yet chosen" — only treat the hint as authoritative
-    // when it's a concrete id. A null hint must NOT overwrite a session that already snapped
-    // its provider during a previous send.
     const apiProviderHint = hint?.apiProviderId ?? null
     const shouldApplyHint = (existing: import('../session/types').Session): boolean =>
       apiProviderHint !== null && existing.snapshot.apiProviderId !== apiProviderHint
@@ -1373,16 +1370,9 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SET_SESSION_API_PROVIDER, (_event, sessionId: string, apiProviderId: string | null) => {
       const session = this.sessionManager?.getSession(sessionId)
-      if (session) {
-        this.throwIfRemoteLocked(session.snapshot.projectPath)
-        session.setApiProviderId(apiProviderId)
-        return
-      }
-      this.broadcastEventToRenderer({
-        type: 'agent_setting_change',
-        sessionId,
-        patch: { apiProviderId },
-      } as AgentEvent)
+      if (!session) return
+      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      session.setApiProviderId(apiProviderId)
     })
 
     ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {

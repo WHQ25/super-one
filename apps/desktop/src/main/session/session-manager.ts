@@ -40,7 +40,7 @@ export interface SessionManagerPersistence {
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
   loadSession?: (sessionId: string) => LoadedSessionData | null
   resolveProviderConfig?: (provider: SessionProvider, apiProviderId?: string | null) => unknown
-  getActiveProvider?: (harnessId: HarnessId, apiProviderId?: string | null) => RemoteActiveProvider | null
+  getActiveProvider?: (harnessId: HarnessId, apiProviderId: string | null) => RemoteActiveProvider | null
   getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
   onBeforeInterrupt?: () => void
 }
@@ -175,9 +175,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       onProviderSessionIdChange: this.persistence.onProviderSessionIdChange
         ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
         : undefined,
-      getActiveProvider: this.persistence.getActiveProvider
-        ? (h, apiProviderId) => this.persistence.getActiveProvider!(h, apiProviderId)
-        : undefined,
+      getActiveProvider: this.persistence.getActiveProvider,
       resolveProviderConfigForApiProvider: resolveProviderConfig
         ? (id) => resolveProviderConfig(provider, id)
         : undefined,
@@ -267,9 +265,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       onProviderSessionIdChange: this.persistence.onProviderSessionIdChange
         ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
         : undefined,
-      getActiveProvider: this.persistence.getActiveProvider
-        ? (h, apiProviderId) => this.persistence.getActiveProvider!(h, apiProviderId)
-        : undefined,
+      getActiveProvider: this.persistence.getActiveProvider,
       resolveProviderConfigForApiProvider: resolveProviderConfig
         ? (id) => resolveProviderConfig(provider, id)
         : undefined,

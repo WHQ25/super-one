@@ -69,7 +69,7 @@ import { readProjectPreferences, saveProjectPreferences } from './claude-prefere
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n } from './i18n'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
-import { buildRemoteActiveProvider } from '@superone/shared/provider-utils'
+import { buildRemoteActiveProvider, providerSupportsHarness } from '@superone/shared/provider-utils'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
 
@@ -99,10 +99,7 @@ const automationService = new AutomationService()
 function resolveApiProviderForSession(harnessId: SessionProvider['harnessId'], apiProviderId: string | null) {
   if (apiProviderId) {
     const explicit = getProviderByIdRaw(apiProviderId)
-    if (explicit) {
-      const supported = JSON.parse(explicit.supported_agents || '["claude"]') as string[]
-      if (Array.isArray(supported) && supported.includes(harnessId)) return explicit
-    }
+    if (explicit && providerSupportsHarness(explicit, harnessId)) return explicit
   }
   return getActiveProviderRaw(harnessId)
 }

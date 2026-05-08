@@ -737,9 +737,8 @@ export interface SessionSettingsPatch {
   // Shared
   permissionMode?: PermissionMode
   sandboxInfo?: SandboxInfo
-  /** Per-session ApiProvider override; null = follow global default. */
+  /** null = follow global default. */
   apiProviderId?: string | null
-  /** Session-scoped resolved provider (icon/forcedEffort/modelEnv). Mobile clients use this directly. */
   apiProvider?: RemoteActiveProvider | null
 }
 
@@ -763,7 +762,7 @@ export interface SendMessageRequest {
   contexts?: ChatMessageContext[]
   /** User-selected quote chips attached to this user message, displayed in the bubble and persisted. */
   userSelections?: string[]
-  /** Per-session ApiProvider override (chosen via /provider). null/undefined = follow global default. */
+  /** null/undefined = follow global default. */
   apiProviderId?: string | null
 }
 

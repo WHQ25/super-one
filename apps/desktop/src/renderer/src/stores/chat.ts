@@ -159,7 +159,6 @@ export interface PerSessionState {
   miniAppContexts: Record<string, MiniAppContextSlot>
   userSelections: string[]
   _historyHydrated: boolean
-  /** Per-session ApiProvider override; null = follow global default. Wired via /provider slash. */
   apiProviderId: string | null
 }
 
@@ -425,7 +424,6 @@ export interface ChatStore {
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void
 
-  // Per-session ApiProvider override (driven by /provider slash command)
   setSessionApiProviderId: (apiProviderId: string | null) => Promise<void>
   openProviderPopup: () => void
 
@@ -1050,6 +1048,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         selectedCodexPermissionPreset: eventPatch.selectedCodexPermissionPreset,
         selectedCodexCollaborationMode: eventPatch.selectedCodexCollaborationMode,
         permissionMode: eventPatch.permissionMode,
+        apiProviderId: eventPatch.apiProviderId,
       }
       if (merged.selectedModel !== undefined) {
         patch.selectedModel = merged.selectedModel ?? ''
@@ -1077,8 +1076,8 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       if (merged.permissionMode !== undefined) {
         patch.permissionMode = merged.permissionMode
       }
-      if (Object.prototype.hasOwnProperty.call(eventPatch, 'apiProviderId')) {
-        patch.apiProviderId = eventPatch.apiProviderId ?? null
+      if (merged.apiProviderId !== undefined) {
+        patch.apiProviderId = merged.apiProviderId ?? null
       }
       return patch
     }
@@ -3346,8 +3345,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         userMessageContent: userContent,
         contexts: messageContexts,
         userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
-        // null = "renderer hasn't chosen — main keeps existing snap or runs its own snap".
-        // Only assert a concrete id so we don't accidentally clear a session's pinned provider.
         ...(session.apiProviderId ? { apiProviderId: session.apiProviderId } : {}),
         ...(isQueuedSend ? { priority: 'next' as const } : {}),
       })

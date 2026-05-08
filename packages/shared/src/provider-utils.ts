@@ -76,6 +76,18 @@ function parseForcedEffort(extraEnvJson: string | undefined): EffortLevel | 'aut
   }
 }
 
+export function providerSupportsHarness(
+  provider: Pick<ApiProvider, 'supported_agents'>,
+  harness: 'claude' | 'codex',
+): boolean {
+  try {
+    const supported = JSON.parse(provider.supported_agents || '["claude"]') as string[]
+    return Array.isArray(supported) && supported.includes(harness)
+  } catch {
+    return harness === 'claude'
+  }
+}
+
 export function buildRemoteActiveProvider(
   provider: ApiProvider | null | undefined,
   harnessId: 'claude' | 'codex' = 'claude',

@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
 import type { ApiProvider } from '@superone/shared/agent-types'
+import { providerSupportsHarness } from '@superone/shared/provider-utils'
 
 interface ProviderItem {
   id: string | null
@@ -27,16 +28,10 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { void fetchProviders() }, [fetchProviders])
 
-  const filteredProviders = useMemo(() => {
-    return providers.filter((p) => {
-      try {
-        const supported = JSON.parse(p.supported_agents || '["claude"]') as string[]
-        return Array.isArray(supported) && supported.includes(harness)
-      } catch {
-        return harness === 'claude'
-      }
-    })
-  }, [providers, harness])
+  const filteredProviders = useMemo(
+    () => providers.filter((p) => providerSupportsHarness(p, harness)),
+    [providers, harness],
+  )
 
   const items = useMemo<ProviderItem[]>(() => {
     const defaultLabel = harness === 'codex'
@@ -54,6 +49,10 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
     return idx >= 0 ? idx : 0
   })
   const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
+  const setItemRef = (idx: number) => (el: HTMLButtonElement | null) => {
+    if (el) itemRefs.current.set(idx, el)
+    else itemRefs.current.delete(idx)
+  }
 
   useEffect(() => {
     if (selectedIndex >= items.length) setSelectedIndex(items.length - 1)
@@ -110,7 +109,7 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
           return (
             <button
               key={item.id ?? '__default__'}
-              ref={(el) => { if (el) itemRefs.current.set(idx, el); else itemRefs.current.delete(idx) }}
+              ref={setItemRef(idx)}
               type="button"
               onMouseEnter={() => setSelectedIndex(idx)}
               onMouseDown={(e) => { e.preventDefault(); void setSessionApiProviderId(item.id) }}
@@ -118,13 +117,11 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
                 isSelected ? 'bg-accent' : 'hover:bg-muted/50'
               }`}
             >
-              <div className="flex min-w-0 items-center gap-2">
-                {item.provider ? (
-                  <ProviderLabel provider={item.provider} fallback={item.label} size={20} />
-                ) : (
-                  <span className="text-sm text-foreground">{item.label}</span>
-                )}
-              </div>
+              {item.provider ? (
+                <ProviderLabel provider={item.provider} fallback={item.label} size={20} />
+              ) : (
+                <span className="text-sm text-foreground">{item.label}</span>
+              )}
               {isCurrent && <Check className="size-3.5 shrink-0 text-primary" />}
             </button>
           )
@@ -133,7 +130,7 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
         <div className="my-1 border-t border-border" />
 
         <button
-          ref={(el) => { if (el) itemRefs.current.set(items.length, el); else itemRefs.current.delete(items.length) }}
+          ref={setItemRef(items.length)}
           type="button"
           onMouseEnter={() => setSelectedIndex(items.length)}
           onMouseDown={(e) => { e.preventDefault(); openProvidersSettings() }}

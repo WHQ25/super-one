@@ -74,7 +74,7 @@ export interface SessionConstructorOptions {
   invalidateProjectResources?: (cwd: string) => void
   onStateChange?: (snapshot: SessionStateChange) => void
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
-  getActiveProvider?: (harnessId: HarnessId, apiProviderId?: string | null) => RemoteActiveProvider | null
+  getActiveProvider?: (harnessId: HarnessId, apiProviderId: string | null) => RemoteActiveProvider | null
   resolveProviderConfigForApiProvider?: (apiProviderId: string | null) => unknown
   getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
   onBeforeInterrupt?: () => void
@@ -138,7 +138,7 @@ export class Session implements SessionContract {
   private invalidateProjectResources?: (cwd: string) => void
   private onStateChange?: (snapshot: SessionStateChange) => void
   private onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
-  private getActiveProvider?: (harnessId: HarnessId, apiProviderId?: string | null) => RemoteActiveProvider | null
+  private getActiveProvider?: (harnessId: HarnessId, apiProviderId: string | null) => RemoteActiveProvider | null
   private resolveProviderConfigForApiProvider?: (apiProviderId: string | null) => unknown
   private getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
   private onBeforeInterrupt?: () => void
@@ -326,21 +326,6 @@ export class Session implements SessionContract {
     } as AgentEvent)
   }
 
-  /**
-   * Persist the effective ApiProvider id when the session is currently following the
-   * global default (i.e. _apiProviderId === null). Called on every send so that next
-   * resume picks up "the provider that was actually used last time" instead of
-   * re-resolving against a possibly-changed global default.
-   *
-   * Re-resolves providerConfig against the snapped id and triggers a rebuild only when
-   * the resolved config actually differs (covers prewarm-then-default-changed: session
-   * was constructed under the old default, then user flipped the global default before
-   * sending the first message).
-   *
-   * Broadcasts agent_setting_change so renderer state and any peer windows flip from
-   * null → real id atomically — keeping UI's `selectEffectiveApiProvider` aligned with
-   * main and immune to subsequent global-default changes.
-   */
   private snapEffectiveApiProviderId(): void {
     if (this._apiProviderId !== null) return
     if (!this.getActiveDefaultApiProviderId) return
@@ -377,11 +362,6 @@ export class Session implements SessionContract {
       if (!this.backendStarted) {
         log.warn('[Session] queued send before backend start sid=%s — promoting to normal send', this.id)
       } else if (this._needsRebuild) {
-        // A pending rebuild (e.g. /provider switched mid-stream, sandbox boundary crossed,
-        // additional dirs changed) must apply BEFORE this queued message reaches the backend.
-        // Falling through to the normal sendChain ensures the rebuild fires when the current
-        // streaming finishes and only then this request is sent — matches the UX promise
-        // "will switch after current response".
         log.info('[Session] queued send promoted to normal send sid=%s (pending rebuild)', this.id)
       } else {
         if (request.clientMessageId) {

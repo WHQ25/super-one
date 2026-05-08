@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.30.0-alpha] - 2026-05-09
+
+### Added
+
+- **Per-session API provider override via `/provider` slash.** Each session can now pin a third-party `ApiProvider` independent of the global default — type `/provider` in the chat input to pick one. The choice is persisted in the session DB so it survives mini-windows, main-window close+reopen, and process restart. The pinned id snaps in on first send so a later default-provider switch can't silently re-route an in-flight session, and `agent_setting_change` broadcasts keep peer windows in sync. `ModelSelector` and the chat-input hint resolve through a shared `selectEffectiveApiProvider` helper so renderer and main agree without round-tripping.
+
+### Fixed
+
+- **Cmd+W close and dock activate work again with mini windows open.** A File submenu with `{ role: 'close' }` restores macOS Cmd+W on the focused window (main or mini), and `app.on('activate')` now checks `mainWindow` directly so clicking the dock icon recreates the main window even while mini session windows remain open.
+
 ## [0.29.3-alpha] - 2026-05-08
 
 ### Added

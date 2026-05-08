@@ -2165,6 +2165,12 @@ app.whenReady().then(async () => {
           { role: 'quit' },
         ],
       },
+      {
+        label: 'File',
+        submenu: [
+          { role: 'close' },
+        ],
+      },
       { role: 'editMenu' },
       { role: 'viewMenu' },
       { role: 'windowMenu' },
@@ -2175,7 +2181,7 @@ app.whenReady().then(async () => {
   setOnMenuChange(buildAppMenu)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!mainWindow) {
       createWindow()
     }
   })

@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.29.3-alpha] - 2026-05-08
+
+### Added
+
+- **Ctrl+Tab session switcher in coding mode.** Hold Ctrl+Tab to cycle through active sessions (streaming, background, unseen, or pending) with a popup showing sidebar-style status icons and pending-reason chips. Release Ctrl to commit, Esc or window blur cancels. The popup waits 200ms before rendering so a quick tap-and-release commits silently without flashing the modal. The just-left session is slotted right after the current one, matching the macOS Cmd+Tab two-app ping-pong feel — one tap lands you back where you came from.
+
+### Fixed
+
+- **"Local changes" now include untracked files.** The dirty-status indicator and the worktree *carry local changes* option both treated untracked files as not-local, so newly created files surprised users by appearing absent. `GIT_INFO` now uses `status --porcelain -uall` and adds untracked line counts via `ls-files --others --exclude-standard` (skipping non-files and binaries via NUL-byte sniff); the worktree carry path uses `git stash create -u` so newly created files follow into the new worktree.
+- **Additional-dirs hint no longer shifts the chat input around, and reappears after editing directories.** The hint is now an absolute popover above ChatInput instead of a sibling, so its mount/unmount doesn't push the input on project or agent switch. A per-session `additionalDirsDirty` flag also re-surfaces the hint in existing sessions after add/remove dir, then auto-clears on the next send.
+
 ## [0.29.2-alpha] - 2026-05-08
 
 ### Added

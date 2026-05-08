@@ -1734,6 +1734,33 @@ describe('switchSession Case A (in _sessions)', () => {
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
   })
 
+  it('records the outgoing session as _previousSessionId so Ctrl+Tab can bounce back', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'ses-a',
+          _sessions: {
+            'ses-a': createDefaultPerSessionState(),
+            'ses-b': { ...createDefaultPerSessionState(), sessionProvider: 'claude' },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().switchSession('ses-b')
+    const afterFirst = useChatStore.getState().projectSessions['/test']
+    expect(afterFirst._activeSessionId).toBe('ses-b')
+    expect(afterFirst._previousSessionId).toBe('ses-a')
+
+    await useChatStore.getState().switchSession('ses-a')
+    const afterBounce = useChatStore.getState().projectSessions['/test']
+    expect(afterBounce._activeSessionId).toBe('ses-a')
+    expect(afterBounce._previousSessionId).toBe('ses-b')
+  })
+
   it('switches pointer and resumes runtime for non-running target session', async () => {
     setupProject('/test')
     useChatStore.setState({

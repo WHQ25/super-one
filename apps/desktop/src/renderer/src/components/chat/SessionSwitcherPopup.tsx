@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Bot, CalendarClock, CircleCheck, GitFork, Loader2, MessageSquare, Smartphone, SquareActivity } from 'lucide-react'
 import { useChatStore, type PerSessionState, type ProjectState } from '@/stores/chat'
@@ -13,12 +13,13 @@ interface SessionSwitcherPopupProps {
   scopeRef: RefObject<HTMLElement | null>
 }
 
-interface ActiveRow {
+export interface ActiveRow {
   sessionId: string
   title: string
   liveSession: PerSessionState
   dbEntry: SessionHistoryEntry | undefined
   isCurrent: boolean
+  isPrevious: boolean
   isRemote: boolean
   isUnseen: boolean
 }
@@ -29,6 +30,7 @@ export interface SwitcherRow {
   status: AgentStatus
   lastEventAt: number
   isCurrent: boolean
+  isPrevious: boolean
   isUnseen: boolean
   isRemote: boolean
   isAutomation: boolean
@@ -39,28 +41,53 @@ export interface SwitcherRow {
 const EMPTY_ROWS: ActiveRow[] = []
 const EMPTY_REMOTE_IDS: ReadonlyArray<string> = []
 
-function collectActiveRows(project: ProjectState, remoteIds: ReadonlyArray<string>): ActiveRow[] {
+function buildRow(sid: string, data: PerSessionState, dbById: Map<string, SessionHistoryEntry>, remoteSet: Set<string>, activeSid: string | null, previousSid: string | null, isUnseen: boolean): ActiveRow {
+  const dbEntry = dbById.get(sid)
+  const title = getSessionTitle(data.messages) ?? dbEntry?.title ?? 'New session'
+  return {
+    sessionId: sid,
+    title,
+    liveSession: data,
+    dbEntry,
+    isCurrent: sid === activeSid,
+    isPrevious: sid === previousSid && sid !== activeSid,
+    isRemote: remoteSet.has(sid),
+    isUnseen,
+  }
+}
+
+export function collectActiveRows(project: ProjectState, remoteIds: ReadonlyArray<string>): ActiveRow[] {
   const dbById = new Map(project.sessions.map((entry) => [entry.sessionId, entry]))
   const remoteSet = new Set(remoteIds)
   const activeSid = project._activeSessionId
+  const previousSid = project._previousSessionId
   const rows: ActiveRow[] = []
   for (const [sid, data] of Object.entries(project._sessions)) {
     const isUnseen = project.unseenCompletedSessions.has(sid)
     if (!isLiveSession(data, isUnseen)) continue
     if (data.messages.length === 0 && !data._historyHydrated) continue
-    const dbEntry = dbById.get(sid)
-    const title = getSessionTitle(data.messages) ?? dbEntry?.title ?? 'New session'
-    rows.push({
-      sessionId: sid,
-      title,
-      liveSession: data,
-      dbEntry,
-      isCurrent: sid === activeSid,
-      isRemote: remoteSet.has(sid),
-      isUnseen,
-    })
+    rows.push(buildRow(sid, data, dbById, remoteSet, activeSid, previousSid, isUnseen))
   }
   rows.sort((a, b) => b.liveSession.lastEventAt - a.liveSession.lastEventAt)
+
+  // Ensure the previous session is in the list so the user can bounce back even if it's idle.
+  if (previousSid && previousSid !== activeSid) {
+    const previousIdx = rows.findIndex((r) => r.sessionId === previousSid)
+    const previousData = project._sessions[previousSid]
+    if (previousIdx === -1 && previousData && (previousData.messages.length > 0 || previousData._historyHydrated)) {
+      const isUnseen = project.unseenCompletedSessions.has(previousSid)
+      rows.push(buildRow(previousSid, previousData, dbById, remoteSet, activeSid, previousSid, isUnseen))
+    }
+  }
+
+  // Reposition the previous session to the slot right after the current one so Ctrl+Tab lands on it first.
+  const currentIdx = rows.findIndex((r) => r.isCurrent)
+  const previousIdx = rows.findIndex((r) => r.isPrevious)
+  if (previousIdx !== -1 && previousIdx !== currentIdx + 1) {
+    const [previousRow] = rows.splice(previousIdx, 1)
+    const insertAt = currentIdx === -1 ? 0 : currentIdx + 1
+    rows.splice(insertAt, 0, previousRow)
+  }
   return rows
 }
 
@@ -71,6 +98,7 @@ function toSwitcherRow(row: ActiveRow): SwitcherRow {
     status: row.liveSession.status,
     lastEventAt: row.liveSession.lastEventAt,
     isCurrent: row.isCurrent,
+    isPrevious: row.isPrevious,
     isUnseen: row.isUnseen,
     isRemote: row.isRemote,
     isAutomation: !!row.dbEntry?.isAutomation,
@@ -132,12 +160,28 @@ interface SessionSwitcherViewProps {
   rows: SwitcherRow[]
   selectedIndex: number
   isOpen: boolean
+  /** Delay before the popup actually renders. Lets a quick Ctrl+Tab tap commit silently without visual flash. */
+  openDelayMs?: number
 }
 
-export function SessionSwitcherView({ rows, selectedIndex, isOpen }: SessionSwitcherViewProps) {
+export function SessionSwitcherView({ rows, selectedIndex, isOpen, openDelayMs = 200 }: SessionSwitcherViewProps) {
+  const [isVisible, setIsVisible] = useState(false)
+  useEffect(() => {
+    if (!isOpen) {
+      setIsVisible(false)
+      return
+    }
+    if (openDelayMs <= 0) {
+      setIsVisible(true)
+      return
+    }
+    const timer = setTimeout(() => setIsVisible(true), openDelayMs)
+    return () => clearTimeout(timer)
+  }, [isOpen, openDelayMs])
+
   return (
     <AnimatePresence>
-      {isOpen && rows.length > 0 ? (
+      {isVisible && rows.length > 0 ? (
         <motion.div
           key="session-switcher"
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm"
@@ -209,6 +253,8 @@ function SessionRow({ row, idx, isSelected }: { row: SwitcherRow; idx: number; i
         <span className="min-w-0 flex-1 truncate text-[13px]">{row.title}</span>
         {row.isCurrent ? (
           <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">Current</span>
+        ) : row.isPrevious ? (
+          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">Previous</span>
         ) : null}
       </div>
       {row.pendingReason ? (

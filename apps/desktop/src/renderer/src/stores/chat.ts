@@ -160,6 +160,8 @@ export interface PerSessionState {
 
 export interface ProjectState {
   _activeSessionId: string | null
+  /** Most recent session that was active before the current one — used by Ctrl+Tab to bounce back to a non-live session. */
+  _previousSessionId: string | null
   _sessions: Record<string, PerSessionState>
   slashCommands: SlashCommandInfo[]
   _projectSkills: SlashCommandInfo[]
@@ -293,6 +295,7 @@ function applyDefaultModel(session: PerSessionState, models: ModelOption[]): voi
 export function createDefaultProjectState(): ProjectState {
   return {
     _activeSessionId: null,
+    _previousSessionId: null,
     _sessions: {},
     slashCommands: [],
     _projectSkills: [],
@@ -4379,6 +4382,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         toInSessions: !!project._sessions[sessionId],
         knownSids: Object.keys(project._sessions),
       })
+    }
+
+    // Track the outgoing session as "previous" so Ctrl+Tab can bounce back even if it's idle.
+    const prevSid = project._activeSessionId
+    if (prevSid && prevSid !== sessionId) {
+      set((s) => updateProjectState(s, activeProject, () => ({ _previousSessionId: prevSid })))
     }
 
     if (project.unseenCompletedSessions.has(sessionId)) {

@@ -8,6 +8,7 @@ function row(overrides: Partial<SwitcherRow> & { sessionId: string; title: strin
     status: 'idle',
     lastEventAt: NOW,
     isCurrent: false,
+    isPrevious: false,
     isUnseen: false,
     isRemote: false,
     isAutomation: false,
@@ -21,6 +22,7 @@ const meta: Meta<typeof SessionSwitcherView> = {
   title: 'Chat/SessionSwitcher',
   component: SessionSwitcherView,
   parameters: { layout: 'fullscreen' },
+  args: { openDelayMs: 0 },
 }
 export default meta
 
@@ -33,6 +35,32 @@ export const SingleBackgroundFromIdleCurrent: Story = {
     selectedIndex: 0,
     rows: [
       row({ sessionId: 's1', title: 'Refactor session-state-utils into a shared helper', status: 'background' }),
+    ],
+  },
+}
+
+export const BounceBackToIdlePrevious: Story = {
+  name: 'Bounce-back — current is active, previous is idle',
+  args: {
+    isOpen: true,
+    selectedIndex: 1,
+    rows: [
+      row({ sessionId: 's1', title: 'Currently driving — implementing the popup', status: 'background', isCurrent: true }),
+      row({ sessionId: 's2', title: 'Old design discussion I just left', status: 'idle', isPrevious: true }),
+    ],
+  },
+}
+
+export const BounceBackWithMoreActives: Story = {
+  name: 'Bounce-back — previous slotted right after current',
+  args: {
+    isOpen: true,
+    selectedIndex: 1,
+    rows: [
+      row({ sessionId: 's1', title: 'Currently driving (active)', status: 'streaming', isCurrent: true, lastEventAt: NOW }),
+      row({ sessionId: 's2', title: 'Just left this idle session', status: 'idle', isPrevious: true, lastEventAt: NOW - 60_000 }),
+      row({ sessionId: 's3', title: 'Another active session', status: 'background', lastEventAt: NOW - 5_000 }),
+      row({ sessionId: 's4', title: 'Pending plan approval', status: 'idle', pendingReason: 'Review plan' }),
     ],
   },
 }

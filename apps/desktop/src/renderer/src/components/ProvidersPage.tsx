@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Check, Plus, RefreshCw, Server } from 'lucide-react'
+import { Check, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
@@ -170,12 +170,13 @@ export function ProvidersPage() {
 
       <div className="space-y-2">
         <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Server className="size-4 text-muted-foreground" />
-            <div>
-              <span className="text-sm font-medium">{defaultLabel}</span>
-              <p className="text-xs text-muted-foreground">{defaultDesc}</p>
-            </div>
+          <div className="flex items-center gap-3 overflow-hidden">
+            <ProviderLabel
+              presetKey={settingsProvider === 'codex' ? 'default-codex' : 'default-claude'}
+              fallback={defaultLabel}
+              size={28}
+            />
+            <span className="truncate text-xs text-muted-foreground">{defaultDesc}</span>
           </div>
           <DefaultButton
             isActive={!activeProvider}

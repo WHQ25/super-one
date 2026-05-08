@@ -120,7 +120,11 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
               {item.provider ? (
                 <ProviderLabel provider={item.provider} fallback={item.label} size={20} />
               ) : (
-                <span className="text-sm text-foreground">{item.label}</span>
+                <ProviderLabel
+                  presetKey={harness === 'codex' ? 'default-codex' : 'default-claude'}
+                  fallback={item.label}
+                  size={20}
+                />
               )}
               {isCurrent && <Check className="size-3.5 shrink-0 text-primary" />}
             </button>

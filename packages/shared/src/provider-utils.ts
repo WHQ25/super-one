@@ -7,6 +7,8 @@ import {
 } from './agent-types'
 
 export const PRESET_PROVIDER_KEY: Record<string, string> = {
+  'default-claude': 'claude',
+  'default-codex': 'chatgpt',
   'anthropic-official': 'anthropic',
   'openrouter': 'openrouter',
   'glm-cn': 'zhipu',

@@ -22,6 +22,10 @@ const TOOL_VERBS: Record<string, string> = {
   Skill: 'Running',
   Task: 'Spawning',
   TaskOutput: 'Waiting',
+  TaskCreate: 'Adding task',
+  TaskUpdate: 'Updating task',
+  TaskGet: 'Reading task',
+  TaskList: 'Listing tasks',
   AskUserQuestion: 'Asking questions',
   EnterPlanMode: 'Planning',
   ExitPlanMode: 'Reviewing',
@@ -94,6 +98,17 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       return { icon: 'bot', summary: String(input.name ?? input.subagent_type ?? input.description ?? '') }
     case 'TaskOutput':
       return { icon: 'clipboard-list', summary: String(input.task_id ?? '') }
+    case 'TaskCreate':
+      return { icon: 'clipboard-list', summary: String(input.subject ?? '') }
+    case 'TaskUpdate': {
+      const status = input.status ? String(input.status) : 'update'
+      const target = input.subject ?? input.taskId ?? ''
+      return { icon: 'clipboard-list', summary: `${status}: ${target}` }
+    }
+    case 'TaskGet':
+      return { icon: 'clipboard-list', summary: String(input.taskId ?? input.task_id ?? '') }
+    case 'TaskList':
+      return { icon: 'clipboard-list', summary: input.status ? `status: ${input.status}` : '' }
     case 'TodoList': {
       const total = Number(input.total ?? 0)
       const completed = Number(input.completed ?? 0)

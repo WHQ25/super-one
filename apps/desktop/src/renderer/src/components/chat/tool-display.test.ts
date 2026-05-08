@@ -54,6 +54,25 @@ describe('getToolDisplay', () => {
       summary: '',
     })
   })
+
+  it('maps Task tools (TodoWrite successors) to clipboard icon', () => {
+    expect(getToolDisplay('TaskCreate', { subject: 'Write tests' })).toEqual({
+      icon: 'clipboard-list',
+      summary: 'Write tests',
+    })
+    expect(getToolDisplay('TaskUpdate', { taskId: '3', status: 'completed' })).toEqual({
+      icon: 'clipboard-list',
+      summary: 'completed: 3',
+    })
+    expect(getToolDisplay('TaskGet', { taskId: '5' })).toEqual({
+      icon: 'clipboard-list',
+      summary: '5',
+    })
+    expect(getToolDisplay('TaskList', {})).toEqual({
+      icon: 'clipboard-list',
+      summary: '',
+    })
+  })
 })
 
 describe('parseToolInput', () => {

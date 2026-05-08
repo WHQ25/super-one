@@ -353,7 +353,7 @@ For packaged builds (`build:mac-dev`), logs are written to `~/Library/Logs/super
 
 Follow **Test-Driven Development** with an **integration-first** philosophy — the testing trophy, not the pyramid. Most bugs in this Electron app come from cross-layer wire-up (store → IPC → session → backend), not single-function logic errors. Integration tests catch these; unit tests don't.
 
-### TDD Workflow
+### TDD Workflow (ORDER MATTERS)
 
 1. **Red**: Write a failing test at the layer where the bug or feature lives
 2. **Green**: Write the minimum code to make the test pass

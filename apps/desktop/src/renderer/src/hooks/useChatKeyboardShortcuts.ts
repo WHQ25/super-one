@@ -41,4 +41,12 @@ export function useChatKeyboardShortcuts() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [resetSession])
+
+  // Seed the per-project session list so the Ctrl+Tab session switcher has data.
+  const activeProject = useChatStore((s) => s.activeProject)
+  const fetchSessions = useChatStore((s) => s.fetchSessions)
+  useEffect(() => {
+    if (!activeProject) return
+    fetchSessions()
+  }, [activeProject, fetchSessions])
 }

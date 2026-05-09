@@ -4,6 +4,7 @@ import {
   countUnifiedDiffDelta,
   countPrefixedDiffDelta,
   computeLineDelta,
+  computeStreamingEditDelta,
 } from './tool-block-utils'
 
 describe('tryPrettifyJson', () => {
@@ -182,5 +183,60 @@ describe('computeLineDelta', () => {
 
   it('should return null for FileChange with empty diff', () => {
     expect(computeLineDelta('FileChange', { kind: 'modify', diff: '' })).toBeNull()
+  })
+})
+
+describe('computeStreamingEditDelta', () => {
+  it('returns null when new_string is empty', () => {
+    expect(computeStreamingEditDelta('A\nB\nC', '')).toBeNull()
+  })
+
+  it('returns null until the first newline arrives', () => {
+    expect(computeStreamingEditDelta('A\nB\nC', 'A')).toBeNull()
+  })
+
+  it('returns null when only context is matched (nothing confirmed)', () => {
+    expect(computeStreamingEditDelta('A\nB\nC', 'A\n')).toBeNull()
+  })
+
+  it('counts confirmed added/removed within last unchanged anchor', () => {
+    const result = computeStreamingEditDelta('A\nB\nC\nD\nE\nF', 'A\nB\nX\nE\nF\n')
+    expect(result).toEqual({ added: 1, removed: 2 })
+  })
+
+  it('does not over-count tail old as removed when no anchor reaches end', () => {
+    const result = computeStreamingEditDelta('A\nB\nC\nD', 'A\nX\n')
+    expect(result).toEqual({ added: 1, removed: 0 })
+  })
+
+  it('is monotonic non-decreasing as new_string grows', () => {
+    const oldStr = 'A\nB\nC\nD\nE\nF'
+    const stages = ['A\n', 'A\nB\n', 'A\nB\nX\n', 'A\nB\nX\nE\n', 'A\nB\nX\nE\nF\n']
+    let prevAdded = 0
+    let prevRemoved = 0
+    for (const stage of stages) {
+      const result = computeStreamingEditDelta(oldStr, stage) ?? { added: 0, removed: 0 }
+      expect(result.added).toBeGreaterThanOrEqual(prevAdded)
+      expect(result.removed).toBeGreaterThanOrEqual(prevRemoved)
+      prevAdded = result.added
+      prevRemoved = result.removed
+    }
+  })
+
+  it('matches LCS final result when last anchor reaches end of old', () => {
+    const oldStr = 'A\nB\nC\nD\nE\nF'
+    const newStr = 'A\nB\nX\nE\nF\n'
+    const streamingFinal = computeStreamingEditDelta(oldStr, newStr)
+    const lcsFinal = computeLineDelta('Edit', { old_string: oldStr, new_string: newStr })
+    expect(streamingFinal).toEqual(lcsFinal)
+  })
+
+  it('handles repeated lines without spurious large counts (greedy would mis-match)', () => {
+    const oldStr = 'function a() {\n  return 1\n}\nfunction b() {\n  return 2\n}\nfunction c() {\n  return 3\n}'
+    const newStr = 'function a() {\n  return 1\n}\nfunction b() {\n  return 2\n}\nfunction d() {\n  return 4\n}\n'
+    const streamingResult = computeStreamingEditDelta(oldStr, newStr)
+    const finalResult = computeLineDelta('Edit', { old_string: oldStr, new_string: newStr })
+    expect(streamingResult).toEqual({ added: 2, removed: 2 })
+    expect(finalResult).toEqual(streamingResult)
   })
 })

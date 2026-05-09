@@ -123,6 +123,8 @@ const BG_DELETED_MAX = 0.15
 const MARKER_ALPHA_MAX = 0.6
 
 const TYPE_SPEED_MS_PER_CHAR = 10
+const CATCH_UP_FRAMES = 4
+const MAX_CHARS_PER_LINE_PER_FRAME = 6
 
 const MAX_CANVAS_LINES = 40
 
@@ -188,13 +190,14 @@ function advanceAnimations(lines: AnimatedLine[], dt: number): void {
     backlog += Math.max(0, line.textCharsTarget - line.textCharsShown)
   }
 
-  const speedMultiplier = Math.max(1, Math.min(20, backlog / 12))
-  let budget = (dt / TYPE_SPEED_MS_PER_CHAR) * speedMultiplier
+  const naturalBudget = dt / TYPE_SPEED_MS_PER_CHAR
+  const catchUpBudget = backlog / CATCH_UP_FRAMES
+  let budget = Math.max(naturalBudget, catchUpBudget)
   for (const line of lines) {
     if (budget <= 0) break
     const want = line.textCharsTarget - line.textCharsShown
     if (want <= 0) continue
-    const used = Math.min(want, budget)
+    const used = Math.min(want, budget, MAX_CHARS_PER_LINE_PER_FRAME)
     line.textCharsShown += used
     budget -= used
   }
@@ -226,6 +229,7 @@ function renderFrame(
   lines: AnimatedLine[],
   now: number,
   isDark: boolean,
+  inEditPhase: boolean,
 ): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -315,9 +319,21 @@ function renderFrame(
     cursorX = layout.textColX + l.textCharsShown * charWidth
     cursorY = l.y
   } else if (lines.length > 0) {
-    const last = lines[lines.length - 1]
-    cursorX = layout.textColX + last.text.length * charWidth
-    cursorY = last.y
+    if (inEditPhase) {
+      const firstPendingIdx = lines.findIndex((l) => l.kind === 'oldPending')
+      if (firstPendingIdx >= 0) {
+        cursorX = layout.textColX
+        cursorY = lines[firstPendingIdx].y
+      } else {
+        const last = lines[lines.length - 1]
+        cursorX = layout.textColX + last.text.length * charWidth
+        cursorY = last.y
+      }
+    } else {
+      const last = lines[lines.length - 1]
+      cursorX = layout.textColX + last.text.length * charWidth
+      cursorY = last.y
+    }
   }
 
   if (cursorX >= 0 && cursorY >= 0) {
@@ -387,7 +403,11 @@ export function CanvasEditDiff({ params }: CanvasEditDiffProps) {
           tokens: oldTokens?.[i],
         }))
       : buildDisplayLines(events, fullOldLines, oldTokens, newTokens)
-    return all.length > MAX_CANVAS_LINES ? all.slice(-MAX_CANVAS_LINES) : all
+    if (all.length <= MAX_CANVAS_LINES) return all
+    if (!inEditPhase) return all.slice(-MAX_CANVAS_LINES)
+    const half = Math.floor(MAX_CANVAS_LINES / 2)
+    const startIdx = Math.max(0, Math.min(all.length - MAX_CANVAS_LINES, events.length - half))
+    return all.slice(startIdx, startIdx + MAX_CANVAS_LINES)
   }, [inEditPhase, events, fullOldLines, oldTokens, newTokens])
 
   const animatedLinesRef = useRef<AnimatedLine[]>([])
@@ -403,6 +423,9 @@ export function CanvasEditDiff({ params }: CanvasEditDiffProps) {
     animatedLinesRef.current = reconcileLines(animatedLinesRef.current, displayLines)
   }, [displayLines])
 
+  const inEditPhaseRef = useRef(inEditPhase)
+  inEditPhaseRef.current = inEditPhase
+
   useEffect(() => {
     let last = performance.now()
     let rafId = 0
@@ -412,7 +435,7 @@ export function CanvasEditDiff({ params }: CanvasEditDiffProps) {
       advanceAnimations(animatedLinesRef.current, dt)
       const canvas = canvasRef.current
       const container = containerRef.current
-      if (canvas && container) renderFrame(canvas, container, animatedLinesRef.current, now, isDark)
+      if (canvas && container) renderFrame(canvas, container, animatedLinesRef.current, now, isDark, inEditPhaseRef.current)
       rafId = requestAnimationFrame(tick)
     }
     rafId = requestAnimationFrame(tick)

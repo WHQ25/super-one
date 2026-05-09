@@ -94,6 +94,7 @@ vi.mock('./tool-block-utils', () => ({
   countUnifiedDiffDelta: () => null,
   countPrefixedDiffDelta: () => null,
   computeLineDelta: () => null,
+  computeStreamingEditDelta: () => null,
   tryPrettifyJson: () => null,
   parseQAPairs: () => [],
   extractToolError: (text: string) => text,
@@ -103,9 +104,13 @@ vi.mock('./WidgetBlock', () => ({
   WidgetBlock: () => null,
 }))
 
-vi.mock('./CanvasEditDiff', () => ({
-  CanvasEditDiff: () => <div>canvas-edit-diff</div>,
-}))
+vi.mock('./CanvasEditDiff', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./CanvasEditDiff')>()
+  return {
+    ...actual,
+    CanvasEditDiff: () => <div>canvas-edit-diff</div>,
+  }
+})
 
 vi.mock('./InChatMiniAppBlock', () => ({
   InChatMiniAppBlock: () => null,

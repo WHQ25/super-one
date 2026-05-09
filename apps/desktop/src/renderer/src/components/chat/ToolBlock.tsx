@@ -16,9 +16,10 @@ import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, formatRe
 import { codePlugin } from './chat-shared'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
-import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, tryPrettifyJson, parseQAPairs, extractToolError } from './tool-block-utils'
+import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, computeStreamingEditDelta, tryPrettifyJson, parseQAPairs, extractToolError } from './tool-block-utils'
 import { WidgetBlock } from './WidgetBlock'
 import { CanvasEditDiff } from './CanvasEditDiff'
+import { RollingNumber } from './RollingNumber'
 import { parseWidgetResult, parsePartialWidgetInput } from '@superone/shared/generative-ui/types'
 import { parseInChatResult } from '@superone/shared/miniapp-types'
 import { InChatMiniAppBlock } from './InChatMiniAppBlock'
@@ -313,7 +314,14 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     setFeedbackIsBlock(el.scrollWidth > el.clientWidth)
   }, [deniedFeedback])
 
-  const lineDelta = useMemo(() => (!isStreaming && !isDenied && !isError) ? computeLineDelta(toolName, params) : null, [toolName, params, isStreaming, isDenied, isError])
+  const lineDelta = useMemo(() => {
+    if (isDenied || isError) return null
+    if (isStreaming && toolName === 'Edit') {
+      if (!('new_string' in params)) return null
+      return computeStreamingEditDelta(String(params.old_string ?? ''), String(params.new_string ?? ''))
+    }
+    return computeLineDelta(toolName, params)
+  }, [toolName, params, isDenied, isError, isStreaming])
   const hasStreamingDiffContent = DIFF_TOOLS.has(toolName) && isStreaming && (
     toolName === 'Edit'
       ? String(params.new_string ?? '').length > 0 || String(params.old_string ?? '').length > 0
@@ -583,11 +591,19 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         ) : summary ? (
           <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
         ) : null}
-        {lineDelta && (
+        {lineDelta && (lineDelta.added > 0 || lineDelta.removed > 0) && (
           <span className="shrink-0 font-mono text-[11px]">
-            {lineDelta.added > 0 && <span className="text-green-600 dark:text-green-400">+{lineDelta.added}</span>}
+            {lineDelta.added > 0 && (
+              <span className="inline-flex items-baseline text-green-600 dark:text-green-400">
+                +<RollingNumber value={lineDelta.added} />
+              </span>
+            )}
             {lineDelta.added > 0 && lineDelta.removed > 0 && <span className="text-muted-foreground/50"> </span>}
-            {lineDelta.removed > 0 && <span className="text-red-600 dark:text-red-400">-{lineDelta.removed}</span>}
+            {lineDelta.removed > 0 && (
+              <span className="inline-flex items-baseline text-red-600 dark:text-red-400">
+                -<RollingNumber value={lineDelta.removed} />
+              </span>
+            )}
           </span>
         )}
         {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (

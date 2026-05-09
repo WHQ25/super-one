@@ -5,10 +5,15 @@ function countContentLines(text: string): number {
   return splitContentLines(text).length
 }
 
+function ensureTrailingNewline(s: string): string {
+  if (!s) return s
+  return s.endsWith('\n') ? s : s + '\n'
+}
+
 function countEditDelta(oldStr: string, newStr: string): { added: number; removed: number } {
   let added = 0
   let removed = 0
-  for (const change of diffLines(oldStr, newStr)) {
+  for (const change of diffLines(ensureTrailingNewline(oldStr), ensureTrailingNewline(newStr))) {
     if (change.added) added += change.count ?? 0
     else if (change.removed) removed += change.count ?? 0
   }
@@ -45,6 +50,44 @@ export function countPrefixedDiffDelta(diff: string): { added: number; removed: 
     else if (line.startsWith('-') && !line.startsWith('---')) removed++
   }
   return added > 0 || removed > 0 ? { added, removed } : null
+}
+
+let streamingDeltaCache: {
+  oldStr: string
+  committedNew: string
+  result: { added: number; removed: number } | null
+} | null = null
+
+export function computeStreamingEditDelta(oldStr: string, newStr: string): { added: number; removed: number } | null {
+  if (!oldStr && !newStr) return null
+  const lastNewline = newStr.lastIndexOf('\n')
+  if (lastNewline === -1) return null
+  const committedNew = newStr.slice(0, lastNewline + 1)
+  if (!committedNew) return null
+  if (streamingDeltaCache && streamingDeltaCache.oldStr === oldStr && streamingDeltaCache.committedNew === committedNew) {
+    return streamingDeltaCache.result
+  }
+  const changes = diffLines(ensureTrailingNewline(oldStr), committedNew)
+  let oldIdx = 0
+  let unchangedCount = 0
+  let addedCount = 0
+  let lastUnchangedOldEnd = -1
+  for (const c of changes) {
+    const cnt = c.count ?? 0
+    if (c.added) {
+      addedCount += cnt
+    } else if (c.removed) {
+      oldIdx += cnt
+    } else {
+      lastUnchangedOldEnd = oldIdx + cnt - 1
+      unchangedCount += cnt
+      oldIdx += cnt
+    }
+  }
+  const removed = unchangedCount === 0 ? 0 : (lastUnchangedOldEnd + 1) - unchangedCount
+  const result = addedCount > 0 || removed > 0 ? { added: addedCount, removed } : null
+  streamingDeltaCache = { oldStr, committedNew, result }
+  return result
 }
 
 export function computeLineDelta(toolName: string, params: Record<string, unknown>): { added: number; removed: number } | null {

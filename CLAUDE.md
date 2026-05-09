@@ -179,7 +179,7 @@ When adding a new shadcn primitive: run `bunx shadcn add <name>` from `packages/
 | `better-sqlite3` | Session & message persistence (WAL mode) |
 | `electron-updater` | Auto-update via GitHub Releases |
 | `electron-builder` | App packaging (macOS/Windows/Linux) |
-| `@openai/codex-sdk` | Codex AI integration (experimental) |
+| `@openai/codex` | Codex CLI launcher + per-platform native binary (project drives it directly via app-server protocol; not the TS SDK) |
 | `electron-log` | Structured logging (`apps/desktop/src/main/logger.ts`) |
 | `diff` | Diff computation for file rewind |
 

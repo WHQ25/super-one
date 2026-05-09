@@ -4,6 +4,13 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.30.2-alpha] - 2026-05-10
+
+### Added
+
+- **HTML file preview with sandboxed iframe.** `.html` / `.htm` files now show a Preview tab alongside the File tab, mirroring the existing markdown flow. Preview renders through the `local-file://` protocol so relative CSS / JS / image references resolve naturally, and the iframe runs in null origin with `allow-scripts` only — JS executes but cannot access same-origin storage and stays bounded by the existing project-folder path authorization. `LOCAL_FILE_MIME` is also extended with html / css / js / json / wasm / font entries for correct browser parsing.
+- **Streaming Edit/Write/FileChange tool headers animate +M/-N counts with rolling digits.** A new anchor-truncated LCS (`computeStreamingEditDelta`) keeps partial line-add/remove counts monotonic and converging to the final diff during streaming, with trailing-newline normalization fixing jsdiff's half-line miscount. The result is cached per (oldStr, committedNew) so per-frame cost stays negligible at typical Edit sizes. `CanvasEditDiff` also switches to a sliding window around greedy progress and routes the cursor to the next pending row when not actively typewriting.
+
 ## [0.30.1-alpha] - 2026-05-09
 
 ### Added

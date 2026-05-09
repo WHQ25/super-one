@@ -1,0 +1,29 @@
+{
+  "Home": {
+    "title": "SuperOne",
+    "tagline": "A meta desktop app for AI-powered creation",
+    "getStarted": "Get started",
+    "learnMore": "Learn more"
+  },
+  "Nav": {
+    "home": "Home",
+    "demos": "Demos",
+    "docs": "Docs"
+  },
+  "Theme": {
+    "label": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "Locale": {
+    "label": "Language",
+    "en": "English",
+    "zh": "中文"
+  },
+  "BrandHue": {
+    "label": "Brand color",
+    "reset": "Reset",
+    "lightOnly": "Brand color is fixed in dark mode"
+  }
+}

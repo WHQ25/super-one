@@ -1,0 +1,29 @@
+{
+  "Home": {
+    "title": "SuperOne",
+    "tagline": "面向 AI 创作的元桌面应用",
+    "getStarted": "立即开始",
+    "learnMore": "了解更多"
+  },
+  "Nav": {
+    "home": "首页",
+    "demos": "示例",
+    "docs": "文档"
+  },
+  "Theme": {
+    "label": "主题",
+    "system": "跟随系统",
+    "light": "浅色",
+    "dark": "深色"
+  },
+  "Locale": {
+    "label": "语言",
+    "en": "English",
+    "zh": "中文"
+  },
+  "BrandHue": {
+    "label": "品牌色",
+    "reset": "重置",
+    "lightOnly": "深色模式下品牌色已锁定"
+  }
+}

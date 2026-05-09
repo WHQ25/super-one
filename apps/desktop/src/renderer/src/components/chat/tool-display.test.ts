@@ -73,6 +73,17 @@ describe('getToolDisplay', () => {
       summary: '',
     })
   })
+
+  it('omits trailing colon when TaskUpdate has only status', () => {
+    expect(getToolDisplay('TaskUpdate', { status: 'completed' })).toEqual({
+      icon: 'clipboard-list',
+      summary: 'completed',
+    })
+    expect(getToolDisplay('TaskUpdate', {})).toEqual({
+      icon: 'clipboard-list',
+      summary: 'update',
+    })
+  })
 })
 
 describe('parseToolInput', () => {

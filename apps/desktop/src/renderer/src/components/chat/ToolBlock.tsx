@@ -263,7 +263,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     return <DebugToolBlock toolName={toolName} input={input} result={result} status={status} elapsedSeconds={elapsedSeconds} />
   }
 
-  if (toolName === 'TodoWrite') return null
+  if (toolName === 'TodoWrite' || toolName === 'TaskCreate' || toolName === 'TaskUpdate') return null
 
   const isDenied = !!result && result.startsWith('[denied] ')
   const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))

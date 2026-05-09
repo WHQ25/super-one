@@ -103,10 +103,10 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     case 'TaskUpdate': {
       const status = input.status ? String(input.status) : 'update'
       const target = input.subject ?? input.taskId ?? ''
-      return { icon: 'clipboard-list', summary: `${status}: ${target}` }
+      return { icon: 'clipboard-list', summary: target ? `${status}: ${target}` : status }
     }
     case 'TaskGet':
-      return { icon: 'clipboard-list', summary: String(input.taskId ?? input.task_id ?? '') }
+      return { icon: 'clipboard-list', summary: String(input.taskId ?? '') }
     case 'TaskList':
       return { icon: 'clipboard-list', summary: input.status ? `status: ${input.status}` : '' }
     case 'TodoList': {

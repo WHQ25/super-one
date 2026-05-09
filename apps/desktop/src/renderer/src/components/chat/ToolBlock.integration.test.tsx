@@ -156,6 +156,15 @@ describe('ToolBlock diff content lifecycle', () => {
   })
 })
 
+describe('ToolBlock hidden tools', () => {
+  it.each(['TodoWrite', 'TaskCreate', 'TaskUpdate'])('renders nothing for %s', (toolName) => {
+    const { container } = render(
+      <ToolBlock toolName={toolName} input={JSON.stringify({})} status="complete" />,
+    )
+    expect(container.firstChild).toBeNull()
+  })
+})
+
 describe('ToolBlock error auto-collapse', () => {
   it('collapses an expanded edit tool when the result arrives with isError=true', async () => {
     const { rerender } = render(

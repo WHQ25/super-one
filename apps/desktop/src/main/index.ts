@@ -1929,6 +1929,12 @@ app.whenReady().then(async () => {
     pdf: 'application/pdf',
     mp4: 'video/mp4', webm: 'video/webm', ogg: 'video/ogg', mov: 'video/quicktime',
     mp3: 'audio/mpeg', wav: 'audio/wav', flac: 'audio/flac', aac: 'audio/aac', m4a: 'audio/mp4',
+    html: 'text/html', htm: 'text/html',
+    css: 'text/css',
+    js: 'text/javascript', mjs: 'text/javascript',
+    json: 'application/json',
+    wasm: 'application/wasm',
+    woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
   }
 
   protocol.handle('local-file', async (request) => {

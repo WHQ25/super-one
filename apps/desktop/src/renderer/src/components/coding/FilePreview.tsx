@@ -13,6 +13,7 @@ import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
 import { ImagePreview } from './ImagePreview'
 import { MarkdownEditor } from './MarkdownEditor'
+import { HtmlPreview } from './HtmlPreview'
 import { FileSelectionContextMenuZone } from './FileSelectionContextMenuZone'
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown'])
@@ -20,6 +21,7 @@ const BINARY_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', '
 const PDF_EXTS = new Set(['pdf'])
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg', 'mov'])
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg'])
+const HTML_EXTS = new Set(['html', 'htm'])
 
 function getFileExt(fileName: string): string {
   return fileName.split('.').pop()?.toLowerCase() ?? ''
@@ -45,7 +47,9 @@ function useOwnFileData(filePath: string | undefined) {
       setContent(c)
       const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio'
       const isSvg = c.language === 'svg'
-      setTab(isBin ? 'preview' : d.diff ? 'changes' : isSvg ? 'preview' : 'file')
+      const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+      const isHtml = HTML_EXTS.has(ext)
+      setTab(isBin ? 'preview' : d.diff ? 'changes' : (isSvg || isHtml) ? 'preview' : 'file')
     }).catch(() => {
       if (!cancelled) { setDiff(null); setContent(null) }
     })
@@ -76,6 +80,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const isSvgFile = ext === 'svg'
   const isVideoFile = VIDEO_EXTS.has(ext)
   const isAudioFile = AUDIO_EXTS.has(ext)
+  const isHtml = HTML_EXTS.has(ext)
   const hasDiff = !!fileDiff?.diff
   const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile
   const isUnpreviewable = fileContent?.language === 'binary' || fileContent?.language === 'too-large'
@@ -106,9 +111,9 @@ export function FilePreview({ filePath }: FilePreviewProps) {
     const t: { key: TabKey; label: string }[] = []
     if (hasDiff) t.push({ key: 'changes', label: 'Changes' })
     t.push({ key: 'file', label: 'File' })
-    if (isMd || isSvgFile) t.push({ key: 'preview', label: 'Preview' })
+    if (isMd || isSvgFile || isHtml) t.push({ key: 'preview', label: 'Preview' })
     return t
-  }, [hasDiff, isMd, isBinaryPreview, isSvgFile, isUnpreviewable])
+  }, [hasDiff, isMd, isBinaryPreview, isSvgFile, isHtml, isUnpreviewable])
 
   const effectiveTab = tabs.find((t) => t.key === activeTab) ? activeTab : tabs[0]?.key ?? 'file'
   const handleTabChange = useCallback((v: string) => {
@@ -216,6 +221,8 @@ export function FilePreview({ filePath }: FilePreviewProps) {
               <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
                 <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
               </FileSelectionContextMenuZone>
+            ) : effectiveTab === 'preview' && isHtml ? (
+              <HtmlPreview src={toLocalFileUrl(fullFilePath)} />
             ) : !isMd ? (
               <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
                 <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />

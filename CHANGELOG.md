@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.30.1-alpha] - 2026-05-09
+
+### Added
+
+- **Mobile can pick the per-session API provider remotely.** New `list_providers` and `set_session_api_provider_id` remote-control commands mirror the desktop `/provider` slash popup — mobile can list configured `ApiProvider`s and switch a session's pinned provider over relay or LAN. Both commands reuse the existing desktop logic and broadcast `agent_setting_change` so all peers stay in sync.
+- **Default Claude and Codex rows now show official brand marks.** The `default-claude` / `default-codex` preset keys map to Claude / ChatGPT brand entries in the `/provider` popup, providers page, and chat hero hint. The Codex hero icon is rewritten around the official Codex cloud silhouette with layered radial gradients and staggered flow animations, and the "Default" tag is renamed to "Official" (en/zh) to match.
+
+### Fixed
+
+- **TaskCreate/TaskUpdate no longer render redundant cards next to the todo panel.** After the SDK started emitting `TaskCreate` / `TaskUpdate` instead of `TodoWrite`, both flows fed the same todo store but only `TodoWrite` was hidden in `ToolBlock`. The hide list now covers all three, and the trailing `"completed: "` colon is dropped when `TaskUpdate` has no subject.
+- **Ctrl+Tab session switcher no longer reshuffles rows mid-flight.** The popup snapshots the session order on open and uses that frozen list for both rendering and commit, so a session whose `lastEventAt` advances while the popup is up can't slide under the highlighted row or cause Ctrl release to land on a different session than the one selected.
+
+### Changed
+
+- **Bundled Codex CLI upgraded to 0.130.0; dependency switched to direct `@openai/codex`.** The desktop drives the Codex Rust binary through its own app-server protocol implementation and never imports the `@openai/codex-sdk` TypeScript surface, so the indirect SDK dependency is replaced with the direct `@openai/codex` package.
+- **`claude-agent-sdk` upgraded to 0.2.136.** 0.2.136 deprecates `TodoWrite` in favor of `TaskCreate` / `TaskGet` / `TaskUpdate` / `TaskList`. Display metadata (icon + verb + summary) is added for all four `Task*` tools, and the redundant `task_id` snake_case fallback in `TaskGet` is dropped — chat and remote-control already canonicalize on camelCase `taskId`.
+
 ## [0.30.0-alpha] - 2026-05-09
 
 ### Added

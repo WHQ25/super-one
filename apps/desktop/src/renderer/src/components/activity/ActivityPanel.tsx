@@ -21,14 +21,28 @@ interface ActivityPanelProps {
   hidden?: boolean
 }
 
+function ActivityPrefixActions() {
+  const showSidebar = useAppStore((s) => s.showSidebar)
+  const side = useActivityPanelStore((s) => s.side)
+  const isFullscreen = useFullscreen()
+  const isLeftmost = !showSidebar && side === 'left'
+  const isMac = window.app.platform === 'darwin'
+  const needsTrafficLightPadding = isMac && !isFullscreen && isLeftmost
+
+  if (!isLeftmost) return null
+  return (
+    <div className={cn('flex h-full items-center', needsTrafficLightPadding ? 'pl-2' : '')}>
+      {needsTrafficLightPadding && <div className="h-full w-[66px] shrink-0" />}
+      <LayoutToggle />
+    </div>
+  )
+}
+
 export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
   const { showPanel, side, panelWidth, setPanelWidth } = useActivityPanelStore()
   const showSidebar = useAppStore((s) => s.showSidebar)
-  const isFullscreen = useFullscreen()
-  const isMac = window.app.platform === 'darwin'
-  const visible = showPanel && !hidden
   const isLeftmost = !showSidebar && side === 'left'
-  const needsTrafficLightPadding = isMac && !isFullscreen && isLeftmost
+  const visible = showPanel && !hidden
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const apiRef = useRef<DockviewApi | null>(null)
@@ -127,19 +141,14 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
       style={{ width: visible ? panelWidth : 0, order: side === 'left' ? 0 : 2 }}
     >
       <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col rounded-l-2xl bg-background overflow-hidden" style={{ width: panelWidth }}>
-        {isLeftmost && (
-          <div className={cn('flex shrink-0 items-center pt-[2px]', needsTrafficLightPadding ? 'pl-[18px]' : 'pl-2')} style={{ height: needsTrafficLightPadding ? 44 : 36, WebkitAppRegion: 'drag' } as React.CSSProperties}>
-            {needsTrafficLightPadding && <div className="w-[66px] shrink-0" />}
-            <LayoutToggle />
-          </div>
-        )}
         <div className="min-h-0 flex-1" onKeyDown={onKeyDown}>
           <DockviewReact
-            className="dockview-theme-superone"
+            className={cn('dockview-theme-superone', isLeftmost && 'activity-leftmost')}
             onReady={onReady}
             components={activityPanelComponents}
             tabComponents={activityTabComponents}
             watermarkComponent={ActivityWatermark}
+            prefixHeaderActionsComponent={ActivityPrefixActions}
           />
         </div>
       </div>

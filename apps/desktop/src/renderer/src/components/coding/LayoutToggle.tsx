@@ -17,7 +17,7 @@ export function LayoutToggle() {
   const toggleSide = () => useActivityPanelStore.getState().toggleSide()
 
   return (
-    <div className="flex items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+    <div className="mr-2 flex items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>

@@ -53,7 +53,7 @@ import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
-import { getRecentFolders, addRecentFolder, removeRecentFolder } from './recent-folders'
+import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId } from './recent-folders'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw, getProviderByIdRaw } from './database'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
@@ -485,6 +485,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.REMOVE_RECENT_FOLDER, (_event, folderPath: string) => {
     removeRecentFolder(folderPath)
     return getRecentFolders()
+  })
+
+  ipcMain.handle(AgentIpcChannels.GET_PROJECT_ID, (_event, folderPath: string) => {
+    return getProjectId(folderPath)
   })
 
   ipcMain.handle(AgentIpcChannels.OPEN_FOLDER, async (_event, folderPath: string) => {
@@ -1997,11 +2001,13 @@ app.whenReady().then(async () => {
   protocol.handle('superone-app', async (request) => {
     try {
       const url = new URL(request.url)
-      const appId = url.hostname
+      const fullHost = url.hostname
+      const dotIdx = fullHost.indexOf('.')
+      const appId = dotIdx < 0 ? fullHost : fullHost.slice(0, dotIdx)
       const filePath = decodeURIComponent(url.pathname || '/index.html')
 
       const origin = request.headers.get('origin') || ''
-      if (origin.startsWith('superone-app://') && origin !== `superone-app://${appId}`) {
+      if (origin.startsWith('superone-app://') && origin !== `superone-app://${fullHost}`) {
         return new Response('Cross-app access forbidden', { status: 403 })
       }
 
@@ -2061,12 +2067,14 @@ app.whenReady().then(async () => {
   protocol.handle('superone-fs', async (request) => {
     try {
       const url = new URL(request.url)
-      const appId = url.hostname
+      const fullHost = url.hostname
+      const dotIdx = fullHost.indexOf('.')
+      const appId = dotIdx < 0 ? fullHost : fullHost.slice(0, dotIdx)
       const relativePath = decodeURIComponent(url.pathname).replace(/^\//, '')
       if (!relativePath) return new Response('Bad request', { status: 400 })
 
       const origin = request.headers.get('origin') || ''
-      if (origin && origin !== 'null' && origin !== `superone-app://${appId}`) {
+      if (origin && origin !== 'null' && origin !== `superone-app://${fullHost}`) {
         return new Response('Forbidden', { status: 403 })
       }
 

@@ -157,6 +157,9 @@ const appAPI = {
   removeRecentFolder: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.REMOVE_RECENT_FOLDER, folderPath),
 
+  getProjectId: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_PROJECT_ID, folderPath) as Promise<string | null>,
+
   openFolder: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.OPEN_FOLDER, folderPath),
 

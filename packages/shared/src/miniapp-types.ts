@@ -286,7 +286,7 @@ export const MiniAppToolBridgeMsg = {
 
 export function buildToolRendererUrl(
   phase: 'intercept' | 'result',
-  appId: string,
+  host: string,
   templatePath: string,
   callId: string,
   toolName: string,
@@ -294,5 +294,5 @@ export function buildToolRendererUrl(
 ): string {
   const flag = phase === 'intercept' ? '_toolIntercept' : '_toolResult'
   const encodedData = encodeURIComponent(JSON.stringify(data ?? null))
-  return `superone-app://${appId}/${templatePath}?${flag}=1&_toolCallId=${encodeURIComponent(callId)}&_toolName=${encodeURIComponent(toolName)}&_toolData=${encodedData}`
+  return `superone-app://${host}/${templatePath}?${flag}=1&_toolCallId=${encodeURIComponent(callId)}&_toolName=${encodeURIComponent(toolName)}&_toolData=${encodedData}`
 }

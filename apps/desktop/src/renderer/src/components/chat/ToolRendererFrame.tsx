@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStore, type ToolRendererState } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 import { MiniAppToolBridgeMsg, buildToolRendererUrl } from '@superone/shared/miniapp-types'
+import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 
 const DEFAULT_HEIGHT = 160
 
@@ -28,11 +30,12 @@ export function ToolRendererFrame(props: Props) {
   const submit = useChatStore((s) => s.submitToolIntercept)
   const cancel = useChatStore((s) => s.cancelToolIntercept)
 
+  const projectId = useAppStore((s) => s.currentProjectId)
   const src = useMemo(
     () => props.phase === 'intercept'
       ? props.state.templateUrl
-      : buildToolRendererUrl('result', props.appId, props.templatePath, props.callId, props.toolName, props.result),
-    [props],
+      : buildToolRendererUrl('result', buildMiniAppHost(props.appId, projectId), props.templatePath, props.callId, props.toolName, props.result),
+    [props, projectId],
   )
   const expectedCallId = props.phase === 'intercept' ? props.state.callId : props.callId
   const onCloseRef = useRef<(() => void) | undefined>(props.phase === 'result' ? props.onClose : undefined)

@@ -2,11 +2,13 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bug, RotateCw } from 'lucide-react'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useAppStore } from '@/stores/app'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppBridge } from '@/hooks/useMiniAppBridge'
 import { handleMiniAppMessage } from '@/hooks/miniapp-message-handler'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { readThemeVars } from '@/components/miniapp/miniapp-theme'
+import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 
 interface InChatMiniAppBlockProps {
   appId: string
@@ -32,10 +34,12 @@ function InChatIframe({ appId, data }: InChatMiniAppBlockProps) {
 
   useMiniAppBridge({ appId, iframeRef, onReady: handleReady, onResize: handleResize, inChatMode: true })
 
+  const projectId = useAppStore((s) => s.currentProjectId)
+
   return (
     <iframe
       ref={iframeRef}
-      src={`superone-app://${appId}/index.html`}
+      src={`superone-app://${buildMiniAppHost(appId, projectId)}/index.html`}
       sandbox="allow-scripts allow-same-origin"
       className="w-full border-0"
       style={{ height }}
@@ -101,12 +105,14 @@ function InChatWebview({ appId, data, onWebviewRef }: InChatMiniAppBlockProps & 
     wvRef.current?.send('miniapp-theme', { vars: readThemeVars(), isDark })
   }, [isDark])
 
+  const projectId = useAppStore((s) => s.currentProjectId)
+
   if (!preloadPath) return null
 
   return (
     <webview
       ref={webviewCallbackRef}
-      src={`superone-app://${appId}/index.html`}
+      src={`superone-app://${buildMiniAppHost(appId, projectId)}/index.html`}
       preload={`file://${preloadPath}`}
       className="w-full border-0"
       style={{ height: height || undefined, minHeight: height ? undefined : 40 }}

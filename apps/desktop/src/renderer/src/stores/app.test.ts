@@ -50,6 +50,7 @@ const mockWindowApp = {
   activateWorktree: vi.fn().mockResolvedValue({ ok: true, path: '/proj' }),
   selectFolder: vi.fn(),
   getRecentFolders: vi.fn().mockResolvedValue([]),
+  getProjectId: vi.fn().mockResolvedValue(null),
   getStartupData: vi.fn().mockResolvedValue({ cached: { claude: null, codex: null } }),
   connectClaude: vi.fn().mockResolvedValue({ models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }),
   connectCodex: vi.fn().mockResolvedValue({ models: [] }),

@@ -57,6 +57,7 @@ function normalizeRemoteDeviceConfig(config: RemoteDeviceConfig): RemoteDeviceCo
 interface AppState {
   view: AppView
   currentFolder: string | null
+  currentProjectId: string | null
   tmpFolder: string | null
   recentFolders: RecentFolder[]
 
@@ -142,7 +143,8 @@ function prefetchFileTree(folderPath: string): void {
 async function openFolderDirect(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<boolean> {
   const ok = await window.app.openFolder(folderPath)
   if (!ok) return false
-  set({ currentFolder: folderPath })
+  const projectId = await window.app.getProjectId(folderPath)
+  set({ currentFolder: folderPath, currentProjectId: projectId })
   prefetchFileTree(folderPath)
   useAppStore.getState().fetchRecentFolders()
   const { useChatStore } = await import('./chat')
@@ -164,6 +166,7 @@ const defaultWorktreeState: WorktreeState = {
 export const useAppStore = create<AppState>((set, get) => ({
   view: 'loading',
   currentFolder: null,
+  currentProjectId: null,
   tmpFolder: null,
   recentFolders: [],
   _worktrees: {},
@@ -210,7 +213,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!folderPath) return
     const ok = await window.app.addRecentFolder(folderPath)
     if (!ok) return
-    set({ currentFolder: folderPath })
+    const projectId = await window.app.getProjectId(folderPath)
+    set({ currentFolder: folderPath, currentProjectId: projectId })
     prefetchFileTree(folderPath)
     await useAppStore.getState().fetchRecentFolders()
     const { useChatStore } = await import('./chat')
@@ -224,7 +228,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openTmpFolder: async () => {
     const tmpPath = await window.app.openTmpFolder()
-    set({ currentFolder: tmpPath, tmpFolder: tmpPath })
+    const projectId = await window.app.getProjectId(tmpPath)
+    set({ currentFolder: tmpPath, currentProjectId: projectId, tmpFolder: tmpPath })
     prefetchFileTree(tmpPath)
     const { useChatStore } = await import('./chat')
     useChatStore.getState().ensureSession(tmpPath)
@@ -266,7 +271,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   switchToProject: async (folderPath: string) => {
-    set({ currentFolder: folderPath })
+    const projectId = await window.app.getProjectId(folderPath)
+    set({ currentFolder: folderPath, currentProjectId: projectId })
     prefetchFileTree(folderPath)
     const { useChatStore } = await import('./chat')
     useChatStore.getState().ensureSession(folderPath)
@@ -285,7 +291,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         recentFolders: updated,
         _worktrees,
-        ...(wasActive ? { currentFolder: null } : {}),
+        ...(wasActive ? { currentFolder: null, currentProjectId: null } : {}),
       }
     })
     // Clean up chat store in-memory session state

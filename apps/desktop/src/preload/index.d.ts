@@ -56,6 +56,7 @@ interface AppAPI {
   getMediaServerPort(): Promise<number>
   addRecentFolder(folderPath: string): Promise<boolean>
   removeRecentFolder(folderPath: string): Promise<RecentFolder[]>
+  getProjectId(folderPath: string): Promise<string | null>
   openFolder(folderPath: string): Promise<boolean>
   openTmpFolder(): Promise<string>
   closeProject(folderPath: string): Promise<void>

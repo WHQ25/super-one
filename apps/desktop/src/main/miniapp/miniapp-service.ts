@@ -181,7 +181,10 @@ export function appIdFromUrl(url: string): string | null {
   try {
     const u = new URL(url)
     if (u.protocol !== 'superone-app:') return null
-    return u.hostname ? u.hostname.toLowerCase() : null
+    if (!u.hostname) return null
+    const dot = u.hostname.indexOf('.')
+    const appId = dot < 0 ? u.hostname : u.hostname.slice(0, dot)
+    return appId.toLowerCase()
   } catch {
     return null
   }

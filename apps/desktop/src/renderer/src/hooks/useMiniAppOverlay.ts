@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo, useRef, type RefObject, type MutableRefObject } from 'react'
 import type { MiniAppOverlayCallbacks } from './miniapp-message-handler'
 import type { MiniAppTooltipRequest, MiniAppContextMenuRequest, MiniAppPopoverShowRequest } from '@superone/shared/miniapp-types'
+import { buildMiniAppHost } from '@superone/shared/miniapp-host'
+import { useAppStore } from '@/stores/app'
 
 export interface TooltipState {
   rect: DOMRect
@@ -92,7 +94,8 @@ export function useMiniAppOverlay(
 
     const pos = toAbsolute(req.anchorRect.x, req.anchorRect.y)
     const dataParam = req.data != null ? `&_popoverData=${encodeURIComponent(JSON.stringify(req.data))}` : ''
-    const templateUrl = `superone-app://${appId}/${templatePath}?_popover=${req.template}${dataParam}`
+    const projectId = useAppStore.getState().currentProjectId
+    const templateUrl = `superone-app://${buildMiniAppHost(appId, projectId)}/${templatePath}?_popover=${req.template}${dataParam}`
 
     setPopover({
       appId,

@@ -1,8 +1,10 @@
 import { useRef, forwardRef, useImperativeHandle, useMemo } from 'react'
 import { useMiniAppBridge } from '@/hooks/useMiniAppBridge'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useAppStore } from '@/stores/app'
 import type { MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 import { buildMiniAppFrameAttrs } from '@superone/shared/miniapp-frame-attrs'
+import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 
 interface MiniAppFrameProps {
   appId: string
@@ -20,11 +22,14 @@ export const MiniAppFrame = forwardRef<HTMLIFrameElement, MiniAppFrameProps>(
   const mediaEntries = useMiniAppStore((s) => s.apps.find((a) => a.id === appId)?.manifest.permissions?.media)
   const { sandbox, allow } = useMemo(() => buildMiniAppFrameAttrs(mediaEntries?.map((m) => m.kind)), [mediaEntries])
 
+  const projectId = useAppStore((s) => s.currentProjectId)
+  const src = `superone-app://${buildMiniAppHost(appId, projectId)}/index.html`
+
   return (
     <div className={className} style={{ position: 'relative', minWidth: 0 }}>
       <iframe
         ref={iframeRef}
-        src={`superone-app://${appId}/index.html`}
+        src={src}
         sandbox={sandbox}
         allow={allow}
         style={{ position: 'absolute', inset: 0, border: 'none', width: '100%', height: '100%' }}

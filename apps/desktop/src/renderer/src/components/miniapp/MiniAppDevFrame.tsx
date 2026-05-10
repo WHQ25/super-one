@@ -4,6 +4,8 @@ import { useIsDark } from '@/hooks/use-is-dark'
 import { onThemeChange, readThemeVars } from './miniapp-theme'
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 import { useContextConsumedEvent } from '@/hooks/useContextConsumedEvent'
+import { useAppStore } from '@/stores/app'
+import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 
 export interface MiniAppDevFrameHandle {
   reload: () => void
@@ -27,9 +29,10 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
     const initialLocaleRef = useRef(locale)
     const readyRef = useRef(false)
     const [preloadPath, setPreloadPath] = useState<string | null>(null)
+    const projectId = useAppStore((s) => s.currentProjectId)
     const src = useMemo(
-      () => `superone-app://${appId}/index.html?_locale=${encodeURIComponent(initialLocaleRef.current)}`,
-      [appId],
+      () => `superone-app://${buildMiniAppHost(appId, projectId)}/index.html?_locale=${encodeURIComponent(initialLocaleRef.current)}`,
+      [appId, projectId],
     )
 
     useEffect(() => {

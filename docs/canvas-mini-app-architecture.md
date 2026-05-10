@@ -234,18 +234,25 @@ No special SuperOne API needed — just `fetch` with CSP enforcement.
 Mini-app assets are served via the `superone-app://` custom protocol:
 
 ```
-superone-app://<appId>/index.html
-superone-app://<appId>/style.css
-superone-app://<appId>/assets/index.js
+superone-app://<appId>.<projectUuid>/index.html
+superone-app://<appId>.<projectUuid>/style.css
+superone-app://<appId>.<projectUuid>/assets/index.js
 ```
 
-Each app gets a unique `appId` derived from its directory name. The protocol handler:
+The host segment encodes both the app and the current project: `appId` identifies the app's installation; `projectUuid` is the UUID assigned to the active project (`projects.id` in SuperOne's SQLite). When no project is active (e.g. before any folder is opened), `projectUuid` falls back to the all-zero UUID `00000000-0000-0000-0000-000000000000`.
 
-1. Looks up the app's base path from the registry
-2. Resolves the requested file within that path
-3. Validates the path stays within bounds
-4. Injects the bridge script into HTML responses
-5. Sets the CSP header based on the app's manifest
+Embedding `projectUuid` in the host makes each (app, project) pair a distinct origin in Chromium's view, so `localStorage`, `IndexedDB`, `Cookies`, `Cache Storage`, and `BroadcastChannel` are automatically partitioned per-project — no proxy or storage shim required. Switching projects naturally remounts the iframe with a new origin.
+
+The protocol handler:
+
+1. Splits the hostname on the first `.` to recover `appId` (everything after is the project key, used only for origin/cross-origin checks)
+2. Looks up the app's base path from the registry by `appId`
+3. Resolves the requested file within that path
+4. Validates the path stays within bounds
+5. Injects the bridge script into HTML responses
+6. Sets the CSP header based on the app's manifest
+
+Cross-origin requests between mini-apps are blocked when origins differ — this now includes the same `appId` running in different projects (project A's `hello` cannot fetch from project B's `hello`).
 
 ### Security
 
@@ -325,7 +332,7 @@ Note: Many tasks that seem to require Node.js can be achieved indirectly through
 
 1. **Discovery** — SuperOne scans `~/.superone/apps/*/manifest.json` on startup
 2. **Selection** — User picks an app from the canvas app directory
-3. **Launch** — iframe created with `superone-app://<appId>/index.html`, bridge script injected
+3. **Launch** — iframe created with `superone-app://<appId>.<projectUuid>/index.html`, bridge script injected
 4. **Tool registration** — App's `tools` from manifest registered to Canvas MCP Proxy with `<appId>:` namespace prefix → `tools/list_changed` sent to agent
 5. **Interactive** — Bidirectional communication: agent ↔ MCP proxy ↔ postMessage ↔ iframe ↔ superone.* APIs
 6. **Teardown** — User closes app → tools unregistered from MCP proxy → `tools/list_changed` → iframe destroyed

@@ -1380,6 +1380,7 @@ export const AgentIpcChannels = {
   GET_RECENT_FOLDERS: 'app:get-recent-folders',
   ADD_RECENT_FOLDER: 'app:add-recent-folder',
   REMOVE_RECENT_FOLDER: 'app:remove-recent-folder',
+  GET_PROJECT_ID: 'app:get-project-id',
   OPEN_FOLDER: 'app:open-folder',
   OPEN_TMP_FOLDER: 'app:open-tmp-folder',
   CLOSE_PROJECT: 'app:close-project',

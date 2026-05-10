@@ -619,4 +619,12 @@ describe('appIdFromUrl', () => {
   it('lowercases hostname (URL spec)', () => {
     expect(appIdFromUrl('superone-app://Hello/x')).toBe('hello')
   })
+
+  it('extracts appId from a project-scoped host (appId.projectUuid)', () => {
+    expect(appIdFromUrl('superone-app://hello.f3a1b9c2-1234-5678-9abc-def012345678/index.html')).toBe('hello')
+  })
+
+  it('extracts appId from the no-project fallback host', () => {
+    expect(appIdFromUrl('superone-app://hello.00000000-0000-0000-0000-000000000000/index.html')).toBe('hello')
+  })
 })

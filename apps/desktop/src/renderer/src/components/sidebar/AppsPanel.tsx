@@ -5,7 +5,6 @@ import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
-import { openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
@@ -37,6 +36,7 @@ export function AppsPanel() {
 
   const apps = useMiniAppStore(useShallow((s) => s.apps))
   const requestOpenInCanvas = useMiniAppStore((s) => s.requestOpenInCanvas)
+  const openAppInPanel = useMiniAppStore((s) => s.openAppInPanel)
   const previewInstall = useMiniAppStore((s) => s.previewInstall)
 
   const [appSearch, setAppSearch] = useState('')
@@ -143,8 +143,7 @@ export function AppsPanel() {
                 <div
                   key={app.id}
                   onClick={() => {
-                    window.miniapp.open(app.id, currentFolder ?? '')
-                    openMiniAppTab(app.id, app.manifest.name)
+                    openAppInPanel(app, currentFolder ?? '')
                   }}
                   className="group/app flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
                 >

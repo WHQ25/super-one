@@ -17,6 +17,7 @@ import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { MiniAppHostLayer } from '@/components/miniapp/MiniAppHostLayer'
 import { DebugPanel } from '@/components/DebugPanel'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
@@ -373,6 +374,7 @@ function App(): React.JSX.Element {
       </motion.div>
       </div>
       </>
+      <MiniAppHostLayer />
       <UpdateNotification />
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />

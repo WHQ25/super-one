@@ -1,4 +1,4 @@
-import { forwardRef, useRef, useImperativeHandle, useCallback } from 'react'
+import { forwardRef, useRef, useImperativeHandle, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RotateCw, Bug } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
@@ -22,6 +22,7 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
   function MiniAppView({ appId, className }, ref) {
     const { t } = useTranslation()
     const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
+    const isFullscreenActive = useMiniAppStore((s) => s.fullscreenApp?.appId === appId)
     const isDev = app?.manifest.isDev
     const templates = app?.manifest.templates
     const devRef = useRef<MiniAppDevFrameHandle>(null)
@@ -39,6 +40,25 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
     }, [isDev])
 
     useImperativeHandle(ref, () => ({ reload, openDevTools }), [reload, openDevTools])
+
+    useEffect(() => {
+      if (!isFullscreenActive) return
+      const handleKeyDown = (e: KeyboardEvent) => {
+        const isMod = e.metaKey || e.ctrlKey
+        if (isMod && e.key === 'r') {
+          e.preventDefault()
+          e.stopPropagation()
+          reload()
+        }
+        if (isMod && e.shiftKey && e.key === 'i') {
+          e.preventDefault()
+          e.stopPropagation()
+          openDevTools()
+        }
+      }
+      window.addEventListener('keydown', handleKeyDown, true)
+      return () => window.removeEventListener('keydown', handleKeyDown, true)
+    }, [isFullscreenActive, reload, openDevTools])
 
     return (
       <div ref={containerRef} className={cn('relative', className)}>

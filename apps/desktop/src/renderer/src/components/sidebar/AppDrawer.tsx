@@ -6,7 +6,6 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { useChatStore } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
-import { openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
@@ -90,6 +89,7 @@ export function AppDrawer() {
   const refreshApps = useMiniAppStore((s) => s.refreshApps)
   const allApps = useMiniAppStore(useShallow((s) => s.apps))
   const requestOpenInCanvas = useMiniAppStore((s) => s.requestOpenInCanvas)
+  const openAppInPanel = useMiniAppStore((s) => s.openAppInPanel)
   const previewInstall = useMiniAppStore((s) => s.previewInstall)
   const setDraftText = useChatStore((s) => s.setDraftText)
 
@@ -119,9 +119,8 @@ export function AppDrawer() {
 
   const openApp = useCallback((app: MiniAppEntry) => {
     setExpanded(false)
-    window.miniapp.open(app.id, currentFolder ?? '')
-    openMiniAppTab(app.id, app.manifest.name)
-  }, [currentFolder])
+    openAppInPanel(app, currentFolder ?? '')
+  }, [currentFolder, openAppInPanel])
 
   const openAppFullscreen = useCallback((app: MiniAppEntry) => {
     setExpanded(false)

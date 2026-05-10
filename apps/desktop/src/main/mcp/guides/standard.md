@@ -30,15 +30,6 @@ Start with the scaffold from `setup_mini_app_dev`, then edit `manifest.json` to 
 
 For inline rendering of agent tool output inside the chat itself, declare a custom result renderer on the relevant tool — see the `tools` topic.
 
-### Switching Between Panel and Canvas
-
-When `fullscreen: true`, the user can move the app between the activity panel and the canvas at any time via icons in the tab header and the canvas header. **Each switch destroys and re-creates the iframe** — design accordingly:
-
-- Persist user-visible state outside JS memory: `localStorage`, `superone.fs.app` (see `api-fs`), or `superone.db` (see `api-db`). Component state, in-memory variables, and React refs are lost on every switch.
-- Re-establish subscriptions on init: websockets, intervals, and file watchers are torn down with the iframe and must be set up again when the new iframe loads.
-
-Apps with `fullscreen: false` only run in the panel and never undergo this lifecycle.
-
 ## Layout Guidelines
 
 - The iframe scrolls internally — wide content won't stretch the host panel

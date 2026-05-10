@@ -1,7 +1,7 @@
 import type { IDockviewPanelProps } from 'dockview-core'
 import { FilePreview } from '@/components/coding/FilePreview'
 import { SessionHistory } from '@/components/chat/SessionHistory'
-import { MiniAppView } from '@/components/miniapp/MiniAppView'
+import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 
 function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string }>) {
@@ -20,7 +20,7 @@ function SessionHistoryPanel(props: IDockviewPanelProps) {
 }
 
 function MiniAppPanel(props: IDockviewPanelProps<{ appId: string }>) {
-  return <MiniAppView appId={props.params.appId} className="h-full w-full" />
+  return <MiniAppSlot appId={props.params.appId} mode="panel" className="h-full w-full" />
 }
 
 export const activityPanelComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {

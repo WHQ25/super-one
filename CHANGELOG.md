@@ -4,6 +4,21 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.30.3-alpha] - 2026-05-10
+
+### Added
+
+- **ActivityPanel layout now persists per chat session.** Dockview layout + `showPanel` are snapshotted into a per-session map, parked on session switch-out, and restored on switch-in. Same-project new sessions (worktree switch, `/clear`, provider swap) seed from the current dockview; history-session clicks and cross-project switches start empty so they don't inherit unrelated state. Side and width stay app-global.
+- **Mini-app web storage is isolated per project via origin partitioning.** The iframe host now encodes the active project's UUID (`superone-app://<appId>.<projectUuid>/`), so Chromium auto-partitions `localStorage`, `IndexedDB`, cookies, and Cache Storage per (app, project). No storage shim or proxy — purely browser-native origin isolation. A new `GET_PROJECT_ID` IPC exposes `projects.id` to the renderer, and `useAppStore.currentProjectId` is set atomically with `currentFolder` to avoid a `NO_PROJECT` origin race during project switches.
+
+### Fixed
+
+- **ActivityPanel visibility now survives project switches.** The `currentFolder` subscriber in `app.ts` was synchronously resetting `showPanel=false` on every project switch *before* the bridge effect parked the snapshot, so switch-back showed an empty panel even though the dockview layout was correct. Removing the reset lets `activity-view-state` own `showPanel` per session end-to-end; park/restore/flushPending also deep-clone layout via `structuredClone` so per-session entries stay isolated from dockview's live state.
+
+### Changed
+
+- **Mini-app type system unified into a `fullscreen?: boolean` capability flag.** The `MiniAppType` enum (`sidebar` / `panel` / `in-chat` / `fullscreen`) is removed in favor of a single `fullscreen?: boolean` capability. All apps default to panel; fullscreen-capable apps move bidirectionally between panel and canvas via `moveAppToCanvas` / `moveAppToPanel` while keeping a single iframe instance. In-chat apps now render through `tools[].renderer.result`. Dockview tab headers also get chip-style tabs (icon→close on hover, animated Maximize button on active fullscreen-capable tabs), and the canvas gains a header with app icon, return-to-panel, and close buttons.
+
 ## [0.30.2-alpha] - 2026-05-10
 
 ### Added

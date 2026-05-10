@@ -24,8 +24,6 @@ function createSuperoneApi(transport, version, opts) {
   const darkModeListeners = []
   const themeListeners = []
   const localeListeners = []
-  const initCallbacks = []
-  let initData = null
   let currentLocale = (opts && opts.initialLocale) || 'en'
 
   transport.on('miniapp-tool-call', (data) => {
@@ -71,12 +69,6 @@ function createSuperoneApi(transport, version, opts) {
     themeListeners.forEach((cb) => cb(data.vars || {}))
   })
 
-  transport.on('miniapp-inchat-init', (data) => {
-    initData = data.data
-    initCallbacks.forEach((cb) => cb(initData))
-    initCallbacks.length = 0
-  })
-
   transport.on('miniapp-locale', (data) => {
     if (!data || typeof data.locale !== 'string') return
     if (data.locale === currentLocale) return
@@ -98,10 +90,6 @@ function createSuperoneApi(transport, version, opts) {
     version: version || '0.0.0',
     tools: {
       handle(name, callback) { toolHandlers.set(name, callback) },
-    },
-    onInit(callback) {
-      if (initData !== null) callback(initData)
-      else initCallbacks.push(callback)
     },
     db: {
       query(sql, params) {

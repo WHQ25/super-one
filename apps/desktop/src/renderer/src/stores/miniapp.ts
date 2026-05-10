@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
-import { openMiniAppTab } from '@/components/activity/activity-panel-api'
+import { closeMiniAppTab, openMiniAppTab } from '@/components/activity/activity-panel-api'
 import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult } from '@superone/shared/miniapp-types'
 
 interface MiniAppStoreState {
@@ -21,6 +21,8 @@ interface MiniAppStoreState {
   consumePendingOpen: () => string | null
   openFullscreenApp: (entry: MiniAppEntry, projectDir: string) => Promise<void>
   closeFullscreenApp: () => Promise<void>
+  moveAppToCanvas: (appId: string) => void
+  moveAppToPanel: (appId: string) => Promise<void>
 }
 
 export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
@@ -30,16 +32,8 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       await get().refreshApps(dir)
       const entry = get().apps.find((a) => a.id === appId)
       if (!entry) return
-      const type = entry.manifest.type ?? 'panel'
-      if (type === 'sidebar') {
-        useAppStore.getState().setSidebarTab(`miniapp:${entry.id}`)
-      } else if (type === 'fullscreen') {
-        useAppStore.getState().setLayoutMode('canvas')
-        get().requestOpenInCanvas(entry.id)
-      } else if (type === 'panel') {
-        window.miniapp.open(entry.id, projectDir)
-        openMiniAppTab(entry.id, entry.manifest.name)
-      }
+      window.miniapp.open(entry.id, projectDir)
+      openMiniAppTab(entry.id, entry.manifest.name)
     })
   }
 
@@ -102,5 +96,16 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     if (!current) return
     await window.miniapp.close(current.appId)
     set({ fullscreenApp: null })
+    useAppStore.getState().setLayoutMode('coding')
+  },
+  moveAppToCanvas: (appId: string) => {
+    closeMiniAppTab(appId)
+    useAppStore.getState().setLayoutMode('canvas')
+    set({ pendingOpenAppId: appId })
+  },
+  moveAppToPanel: async (appId: string) => {
+    const entry = get().apps.find((a) => a.id === appId)
+    await get().closeFullscreenApp()
+    if (entry) openMiniAppTab(entry.id, entry.manifest.name)
   },
 }})

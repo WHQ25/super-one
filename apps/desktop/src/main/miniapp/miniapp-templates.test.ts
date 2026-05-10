@@ -134,33 +134,6 @@ describe('generateReactFiles', () => {
   })
 })
 
-describe('generateVanillaFiles (in-chat)', () => {
-  function makeInChatOpts(): TemplateOptions {
-    const manifest: MiniAppManifest = {
-      appId: 'daily-report',
-      name: 'Daily Report',
-      type: 'in-chat',
-      inChatToolName: 'render_report',
-      inputSchema: { type: 'object', properties: { title: { type: 'string' } } },
-    }
-    return { name: 'Daily Report', manifest }
-  }
-
-  it('generates in-chat template with onInit', () => {
-    const files = generateVanillaFiles(makeInChatOpts())
-    expect(files).toHaveLength(2)
-    const html = files[1].content
-    expect(html).toContain('superone.onInit')
-    expect(html).not.toContain('superone.tools.handle')
-  })
-
-  it('uses transparent background', () => {
-    const files = generateVanillaFiles(makeInChatOpts())
-    const html = files[1].content
-    expect(html).toContain('background: transparent')
-  })
-})
-
 describe('generateSuperoneDts', () => {
   const dts = generateSuperoneDts()
 
@@ -173,9 +146,6 @@ describe('generateSuperoneDts', () => {
     expect(dts).toContain('handle(name: string')
   })
 
-  it('covers onInit API', () => {
-    expect(dts).toContain('onInit(callback:')
-  })
 
   it('covers fs API', () => {
     expect(dts).toContain('readFile(path: string): Promise<string>')

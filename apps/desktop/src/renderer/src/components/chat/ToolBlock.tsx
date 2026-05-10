@@ -21,8 +21,6 @@ import { WidgetBlock } from './WidgetBlock'
 import { CanvasEditDiff } from './CanvasEditDiff'
 import { RollingNumber } from './RollingNumber'
 import { parseWidgetResult, parsePartialWidgetInput } from '@superone/shared/generative-ui/types'
-import { parseInChatResult } from '@superone/shared/miniapp-types'
-import { InChatMiniAppBlock } from './InChatMiniAppBlock'
 import { ToolRendererFrame } from './ToolRendererFrame'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -32,7 +30,6 @@ function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
 }
 
-const INCHAT_TOOL_PREFIX = 'inchat__'
 const SUPERONE_SERVER = 'superone'
 
 function CompactToolRow({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
@@ -243,9 +240,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   const display = useMemo(() => getToolDisplay(toolName, params, cwd, homedir), [toolName, params, cwd, homedir])
   const mcpInfo = parseMcpToolName(toolName)
   const isMcp = mcpInfo !== null
-  const inchatToolName = mcpInfo?.serverName === SUPERONE_SERVER && mcpInfo.mcpToolName.startsWith(INCHAT_TOOL_PREFIX)
-    ? mcpInfo.mcpToolName.slice(INCHAT_TOOL_PREFIX.length) : null
-  const inchatApp = useMiniAppStore((s) => inchatToolName ? s.apps.find((a) => a.manifest.inChatToolName === inchatToolName) : undefined)
   const mcpMeta = useSettingsStore((s) => s.mcpMeta)
   const mcpLibrary = useSettingsStore((s) => s.mcpLibrary)
   const mcpIconSrc = isMcp
@@ -377,7 +371,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     )
   }
 
-  if (mcpInfo?.serverName === SUPERONE_SERVER && !mcpInfo.mcpToolName.startsWith(INCHAT_TOOL_PREFIX)) {
+  if (mcpInfo?.serverName === SUPERONE_SERVER) {
     const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string }> = {
       read_miniapp_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide') },
     }
@@ -509,22 +503,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
       <CompactToolRow icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}>
         <span className="font-medium text-foreground">
           {isStreaming ? <>{t('chat.toolBlock.generatingWidget')}</> : t('chat.toolBlock.generateWidget')}
-        </span>
-      </CompactToolRow>
-    )
-  }
-
-  if (inchatToolName) {
-    if (result) {
-      const inchat = parseInChatResult(result)
-      if (inchat) return <InChatMiniAppBlock appId={inchat.appId} data={inchat.data} />
-    }
-    const appName = inchatApp?.manifest.name ?? inchatToolName.replace(/_/g, ' ')
-    const runningText = inchatApp?.manifest.runningText
-    return (
-      <CompactToolRow icon={inchatApp ? <MiniAppIcon appId={inchatApp.id} className="size-3.5 shrink-0" /> : <ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}>
-        <span className="font-medium text-foreground">
-          {isStreaming ? (runningText ?? <>{appName}…</>) : appName}
         </span>
       </CompactToolRow>
     )

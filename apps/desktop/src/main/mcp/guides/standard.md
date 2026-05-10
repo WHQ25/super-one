@@ -1,6 +1,6 @@
-# Standard App Guide (panel / sidebar / fullscreen)
+# Standard App Guide
 
-Standard apps are persistent interactive apps opened by the user on the canvas. The agent communicates with them via MCP tool calls declared in `manifest.json`.
+Mini-apps are persistent interactive apps. They open by default as a tab in the right-hand activity panel. Set `fullscreen: true` in the manifest to also expose a full-screen canvas entry. The agent communicates with the app via MCP tool calls declared in `manifest.json`.
 
 ## Manifest
 
@@ -20,24 +20,23 @@ Start with the scaffold from `setup_mini_app_dev`, then edit `manifest.json` to 
 | `version` | Semver (required for packaging as `.s1app`) |
 | `author` | `{ name, email?, url? }` |
 | `logo` | App icon (PNG). See `icon` topic. |
-| `type` | `panel` (default), `sidebar`, or `fullscreen` |
+| `fullscreen` | `true` to also offer a canvas full-screen entry. Default `false` (panel only). |
 | `description` | Short description shown in app catalog |
 
-### Display Types
+### Where the App Opens
 
-| Type | Where | Width | Notes |
-|------|-------|-------|-------|
-| `panel` | Activity Panel (right) | 320–800px, resizable | Default. Design for ~400px min width. |
-| `sidebar` | Left sidebar | ~240–280px | Very narrow — use vertical layouts. |
-| `fullscreen` | Full canvas area | Window width minus sidebar | Most space available. |
+- **Activity panel tab** (always available, default size 320–800px wide, resizable). Design for ~400px min width.
+- **Canvas full-screen** (only when `fullscreen: true`): occupies the full window minus the sidebar. Useful for dashboards, editors, and large visualizations.
+
+For inline rendering of agent tool output inside the chat itself, declare a custom result renderer on the relevant tool — see the `tools` topic.
 
 ## Layout Guidelines
 
 - The iframe scrolls internally — wide content won't stretch the host panel
 - Use `width: 100%`, `max-width`, or Flexbox/Grid for responsive layouts
-- **Sidebar apps**: very narrow (~240px) — prefer stacked/vertical layouts
-- **Panel apps**: design for ~400px min width, user can resize up to 800px
+- Design for ~400px min width when running in the panel; the user can resize up to 800px
 - Wide content (tables, charts): use `overflow-x: auto` on container
+- For fullscreen apps, the layout can spread freely; still scroll internally rather than relying on browser scroll
 
 ## Related Topics
 

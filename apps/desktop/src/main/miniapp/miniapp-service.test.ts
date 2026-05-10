@@ -336,14 +336,14 @@ describe('createMiniApp', () => {
     expect(result.entry.manifest.permissions).toBeUndefined()
   })
 
-  it('sets type and description in manifest', async () => {
+  it('sets fullscreen and description in manifest', async () => {
     const result = await createMiniApp({
       name: 'Test', slug: 'test',
       directory: '/projects/p/packages/test',
       projectDir: '/projects/p', scope: 'project',
-      type: 'sidebar', description: 'A test app',
+      fullscreen: true, description: 'A test app',
     })
-    expect(result.entry.manifest.type).toBe('sidebar')
+    expect(result.entry.manifest.fullscreen).toBe(true)
     expect(result.entry.manifest.description).toBe('A test app')
   })
 

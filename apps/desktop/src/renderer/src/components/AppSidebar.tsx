@@ -34,7 +34,6 @@ import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm
 import { openHistoryTab } from '@/components/activity/activity-panel-api'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { MiniAppView } from '@/components/miniapp/MiniAppView'
 import { AppDrawer } from '@/components/sidebar/AppDrawer'
 import { BrandColorPopover } from '@/components/sidebar/BrandColorPopover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
@@ -66,20 +65,6 @@ export const AppSidebar = memo(function AppSidebar() {
 
   const fetchApps = useMiniAppStore((s) => s.fetchApps)
   useEffect(() => { fetchApps(currentFolder ?? undefined) }, [fetchApps, currentFolder])
-
-  const [mountedMiniApps, setMountedMiniApps] = useState<Set<string>>(new Set())
-  const openedMiniAppIds = useRef<Set<string>>(new Set())
-  const activeMiniAppId = sidebarTab.startsWith('miniapp:') ? sidebarTab.slice(8) : null
-
-  if (activeMiniAppId && !mountedMiniApps.has(activeMiniAppId)) {
-    setMountedMiniApps((prev) => new Set(prev).add(activeMiniAppId))
-  }
-
-  useEffect(() => {
-    if (!activeMiniAppId || openedMiniAppIds.current.has(activeMiniAppId)) return
-    openedMiniAppIds.current.add(activeMiniAppId)
-    window.miniapp.open(activeMiniAppId, currentFolder ?? '')
-  }, [activeMiniAppId, currentFolder])
 
   const sidebarTabs: SidebarTab[] = ['sessions', 'files']
   useEffect(() => {
@@ -453,12 +438,6 @@ export const AppSidebar = memo(function AppSidebar() {
           ))}
         </div>
       )}
-
-      {[...mountedMiniApps].map((appId) => (
-        <div key={appId} className={cn('mt-1 min-h-0 flex-1', sidebarTab !== `miniapp:${appId}` && 'hidden')}>
-          <MiniAppView appId={appId} className="h-full w-full" />
-        </div>
-      ))}
 
       {filesMounted && (
         <div className={cn('min-h-0 flex-1', sidebarTab !== 'files' && 'hidden')}>

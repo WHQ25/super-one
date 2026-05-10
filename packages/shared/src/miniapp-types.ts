@@ -19,8 +19,6 @@ export interface MiniAppMediaEntry {
   reason: string
 }
 
-export type MiniAppType = 'sidebar' | 'panel' | 'in-chat' | 'fullscreen'
-
 export interface MiniAppAuthor {
   name: string
   email?: string
@@ -35,14 +33,11 @@ export interface MiniAppManifest {
   description?: string
   logo?: string
   isDev?: boolean
-  type?: MiniAppType
+  fullscreen?: boolean
   permissions?: MiniAppPermissions
   toolSlug?: string
   tools?: MiniAppToolDefinition[]
-  inChatToolName?: string
-  inChatToolDescription?: string
   runningText?: string
-  inputSchema?: Record<string, unknown>
   templates?: Record<string, string>
 }
 
@@ -182,22 +177,6 @@ export interface MiniAppFsWatchEvent {
   path: string
 }
 
-export interface InChatMiniAppResult {
-  __inchat: true
-  appId: string
-  data: Record<string, unknown>
-}
-
-export function parseInChatResult(resultText: string): InChatMiniAppResult | null {
-  try {
-    const parsed = JSON.parse(resultText)
-    if (parsed && parsed.__inchat === true && parsed.appId && parsed.data) {
-      return parsed as InChatMiniAppResult
-    }
-  } catch {}
-  return null
-}
-
 export type MiniAppToastType = 'success' | 'error' | 'info' | 'warning'
 
 export interface MiniAppTooltipRequest {
@@ -256,7 +235,6 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-db-response'
   | 'miniapp-sendPrompt'
   | 'miniapp-ready'
-  | 'miniapp-inchat-init'
   | 'miniapp-resize'
   | 'miniapp-ui-toast'
   | 'miniapp-ui-tooltip-show'

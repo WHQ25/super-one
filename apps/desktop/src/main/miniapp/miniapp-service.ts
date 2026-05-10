@@ -295,7 +295,7 @@ export interface CreateMiniAppOptions {
   scope?: CreateMiniAppScope
   projectDir?: string
   template?: CreateMiniAppTemplate
-  type?: MiniAppManifest['type']
+  fullscreen?: boolean
   description?: string
 }
 
@@ -347,7 +347,7 @@ export async function createMiniApp(opts: CreateMiniAppOptions): Promise<CreateM
     appId,
     name: opts.name,
     isDev: true,
-    ...(opts.type && { type: opts.type }),
+    ...(opts.fullscreen && { fullscreen: true }),
     ...(opts.description && { description: opts.description }),
   }
 

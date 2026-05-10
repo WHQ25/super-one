@@ -37,7 +37,7 @@ function AppCard({ app, onClick }: { app: MiniAppEntry; onClick: () => void }) {
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium truncate">{app.manifest.name}</p>
           {app.manifest.isDev && <span className="text-[10px] px-1 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400">dev</span>}
-          {app.manifest.type && <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground">{app.manifest.type}</span>}
+          {app.manifest.fullscreen && <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground">fullscreen</span>}
         </div>
         <p className="text-xs text-muted-foreground truncate">
           {toolCount > 0 ? t('resources.apps.toolCount', { count: toolCount }) : t('resources.apps.noTools')}
@@ -120,7 +120,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-semibold">{manifest.name}</h2>
             {manifest.isDev && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium">dev</span>}
-            {manifest.type && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">{manifest.type}</span>}
+            {manifest.fullscreen && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">fullscreen</span>}
           </div>
           {manifest.description && (
             <p className="mt-0.5 text-sm text-muted-foreground">{manifest.description}</p>

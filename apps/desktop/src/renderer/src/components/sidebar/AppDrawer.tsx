@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, type DragEvent } from 'react'
-import { Blocks, ChevronDown, ChevronRight, PackagePlus, Plus, Store } from 'lucide-react'
+import { Blocks, ChevronDown, ChevronRight, Maximize, PackagePlus, Plus, Store } from 'lucide-react'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -35,17 +35,9 @@ function getS1AppPaths(e: DragEvent): string[] {
   return paths
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  sidebar: 'Sidebar',
-  panel: 'Panel',
-  'in-chat': 'In-Chat',
-  fullscreen: 'Fullscreen',
-}
-
-function SortableAppRow({ app, index, onClick }: { app: MiniAppEntry; index: number; onClick: () => void }) {
+function SortableAppRow({ app, index, onClick, onOpenFullscreen }: { app: MiniAppEntry; index: number; onClick: () => void; onOpenFullscreen?: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: app.id })
   const style = { transform: CSS.Transform.toString(transform ? { ...transform, x: 0 } : null), transition }
-  const typeLabel = TYPE_LABELS[app.manifest.type ?? 'panel'] ?? 'Panel'
   const [hovered, setHovered] = useState(false)
 
   return (
@@ -67,35 +59,25 @@ function SortableAppRow({ app, index, onClick }: { app: MiniAppEntry; index: num
         <span className="flex items-center gap-1.5 text-[13px]">
           <span className="truncate">{app.manifest.name}</span>
           {app.manifest.isDev && <span className="inline-flex h-4 shrink-0 items-center rounded bg-orange-500/15 px-1 text-[10px] leading-none text-orange-500">Dev</span>}
-          <span className="inline-flex h-4 shrink-0 items-center rounded bg-sidebar-accent px-1 text-[10px] leading-none text-sidebar-foreground/50">{typeLabel}</span>
           {index <= 9 && <span className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sidebar-accent text-[10px] leading-none text-sidebar-foreground/60">{index < 9 ? index + 1 : 0}</span>}
         </span>
         {app.manifest.description && (
           <MarqueeText className="text-[11px] text-sidebar-foreground/50" hovered={hovered}>{app.manifest.description}</MarqueeText>
         )}
       </div>
-    </div>
-  )
-}
-
-function InChatAppRow({ app }: { app: MiniAppEntry }) {
-  const [hovered, setHovered] = useState(false)
-  return (
-    <div
-      className="flex items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <MiniAppIcon appId={app.id} className="size-6 shrink-0" />
-      <div className="flex w-0 flex-1 flex-col overflow-hidden">
-        <span className="flex items-center gap-1.5 text-[13px]">
-          <span className="truncate">{app.manifest.name}</span>
-          {app.manifest.isDev && <span className="inline-flex h-4 shrink-0 items-center rounded bg-orange-500/15 px-1 text-[10px] leading-none text-orange-500">Dev</span>}
-        </span>
-        {app.manifest.description && (
-          <MarqueeText className="text-[11px] text-sidebar-foreground/50" hovered={hovered}>{app.manifest.description}</MarqueeText>
-        )}
-      </div>
+      {onOpenFullscreen && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenFullscreen()
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="ml-1 shrink-0 rounded p-1 text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent-foreground/10 hover:text-sidebar-foreground/80 group-hover/sapp:opacity-100"
+          title="Open in canvas"
+        >
+          <Maximize className="size-3.5" />
+        </button>
+      )}
     </div>
   )
 }
@@ -103,13 +85,10 @@ function InChatAppRow({ app }: { app: MiniAppEntry }) {
 export function AppDrawer() {
   const [expanded, setExpanded] = useState(false)
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const setSidebarTab = useAppStore((s) => s.setSidebarTab)
   const setLayoutMode = useAppStore((s) => s.setLayoutMode)
 
   const refreshApps = useMiniAppStore((s) => s.refreshApps)
   const allApps = useMiniAppStore(useShallow((s) => s.apps))
-  const canvasApps = useMemo(() => allApps.filter((a) => a.manifest.type !== 'in-chat'), [allApps])
-  const inChatApps = useMemo(() => allApps.filter((a) => a.manifest.type === 'in-chat'), [allApps])
   const requestOpenInCanvas = useMiniAppStore((s) => s.requestOpenInCanvas)
   const previewInstall = useMiniAppStore((s) => s.previewInstall)
   const setDraftText = useChatStore((s) => s.setDraftText)
@@ -124,10 +103,10 @@ export function AppDrawer() {
 
   const [appOrder, setAppOrder] = useState<string[]>([])
   const orderedApps = useMemo(() => {
-    if (appOrder.length === 0) return canvasApps
+    if (appOrder.length === 0) return allApps
     const orderMap = new Map(appOrder.map((id, i) => [id, i]))
-    return [...canvasApps].sort((a, b) => (orderMap.get(a.id) ?? Infinity) - (orderMap.get(b.id) ?? Infinity))
-  }, [canvasApps, appOrder])
+    return [...allApps].sort((a, b) => (orderMap.get(a.id) ?? Infinity) - (orderMap.get(b.id) ?? Infinity))
+  }, [allApps, appOrder])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
@@ -140,17 +119,15 @@ export function AppDrawer() {
 
   const openApp = useCallback((app: MiniAppEntry) => {
     setExpanded(false)
-    const type = app.manifest.type ?? 'panel'
-    if (type === 'sidebar') {
-      setSidebarTab(`miniapp:${app.id}`)
-    } else if (type === 'fullscreen') {
-      setLayoutMode('canvas')
-      requestOpenInCanvas(app.id)
-    } else {
-      window.miniapp.open(app.id, currentFolder ?? '')
-      openMiniAppTab(app.id, app.manifest.name)
-    }
-  }, [currentFolder, setSidebarTab, setLayoutMode, requestOpenInCanvas])
+    window.miniapp.open(app.id, currentFolder ?? '')
+    openMiniAppTab(app.id, app.manifest.name)
+  }, [currentFolder])
+
+  const openAppFullscreen = useCallback((app: MiniAppEntry) => {
+    setExpanded(false)
+    setLayoutMode('canvas')
+    requestOpenInCanvas(app.id)
+  }, [setLayoutMode, requestOpenInCanvas])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -316,21 +293,18 @@ export function AppDrawer() {
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                       <SortableContext items={orderedApps.map((a) => a.id)} strategy={verticalListSortingStrategy}>
                         {orderedApps.map((app, i) => (
-                          <SortableAppRow key={app.id} app={app} index={i} onClick={() => openApp(app)} />
+                          <SortableAppRow
+                            key={app.id}
+                            app={app}
+                            index={i}
+                            onClick={() => openApp(app)}
+                            onOpenFullscreen={app.manifest.fullscreen ? () => openAppFullscreen(app) : undefined}
+                          />
                         ))}
                       </SortableContext>
                     </DndContext>
                   </div>
                 </ScrollArea>
-
-                {inChatApps.length > 0 && (
-                  <div className="px-1 py-1">
-                    <span className="px-2 py-1 text-[10px] font-medium text-sidebar-foreground/40">In-Chat</span>
-                    {inChatApps.map((app) => (
-                      <InChatAppRow key={app.id} app={app} />
-                    ))}
-                  </div>
-                )}
 
                 <div className="flex gap-1 px-1 pb-1">
                   <button

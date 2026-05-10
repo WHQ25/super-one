@@ -328,7 +328,7 @@ describe('setup_mini_app_dev tool handler', () => {
     mockCreateMiniApp.mockResolvedValueOnce({
       entry: {
         id: 'weather-1abc',
-        manifest: { appId: 'weather-1abc', name: 'Weather', type: 'panel' },
+        manifest: { appId: 'weather-1abc', name: 'Weather' },
         installDir: '/proj/.superone/apps/weather-1abc',
         distDir: '/proj/packages/weather/dist',
       },
@@ -417,15 +417,14 @@ describe('setup_mini_app_dev tool handler', () => {
     expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_DEV_APP_READY)).toBeUndefined()
   })
 
-  it('still notifies dev-app-ready for an in-chat scaffold (no separate UI window opens, but list refreshes)', async () => {
+  it('notifies dev-app-ready for a fullscreen scaffold so the list refreshes', async () => {
     mockCreateMiniApp.mockResolvedValueOnce({
       entry: {
         id: 'card-y',
         manifest: {
           appId: 'card-y',
           name: 'Card',
-          type: 'in-chat',
-          inChat: { toolName: 'render_card', description: 'Render a card', inputSchema: { type: 'object', properties: {} } },
+          fullscreen: true,
         },
         installDir: '/proj/.superone/apps/card-y',
         distDir: '/proj/packages/card/dist',
@@ -442,7 +441,7 @@ describe('setup_mini_app_dev tool handler', () => {
       scope: 'project',
       projectDir: '/proj',
       template: 'react',
-      type: 'in-chat',
+      fullscreen: true,
     })
 
     const payload = JSON.parse(result.content[0].text)

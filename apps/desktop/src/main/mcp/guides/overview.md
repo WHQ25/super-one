@@ -1,9 +1,8 @@
 # Mini-App Development Guide
 
-A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe and can be controlled by any AI agent through MCP tools. Two categories:
+A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe and can be controlled by any AI agent through MCP tools.
 
-- **Standard apps** (`panel`, `sidebar`, `fullscreen`): Persistent interactive apps. The agent interacts via tool calls declared in `tools[]`. Read the `standard` topic for full guide.
-- **In-chat apps** (`in-chat`): Data-driven rendering inline in chat messages. The agent passes structured data via `superone.onInit(data)`. Read the `inchat` topic for full guide.
+Every app is a single kind: it always opens as a tab in the activity panel. Set `fullscreen: true` in the manifest if it should also be openable in the canvas full-screen view. Apps can declare `tools[]` so the agent can drive them, and any tool can attach a custom result renderer (`tools[].renderer.result`) to render its output inline in the chat — read the `tools` topic for both. Read the `standard` topic for the basic structure of an interactive app.
 
 ## Architecture
 
@@ -18,33 +17,19 @@ A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe a
 **Before writing any code, confirm the following with the user:**
 
 1. **Clarify requirements** — Ask the user what the app should do. Confirm the core features and scope. Don't assume — ask.
-2. **Confirm app type** — Suggest a type (`panel`, `sidebar`, `fullscreen`, or `in-chat`) and explain why. Get user approval.
+2. **Confirm fullscreen** — Should the app also be openable in the canvas full-screen view (`fullscreen: true`), or panel-only (default)? Get user approval.
 3. **Suggest template** — Recommend `vanilla` or `react` with reasoning (see "Choosing a Template" below). Get user approval.
-4. **Design tools carefully** — Tools are called by the agent, not the user. Only declare tools when the app genuinely needs the agent to push data or trigger actions. Consider whether the app can achieve the functionality on its own using bridge APIs (`superone.git.*`, `superone.fs.*`, etc.) before adding agent-facing tools. Present any proposed tool design to the user and get approval before implementing. See the `tools` topic for details.
+4. **Design tools carefully** — Tools are called by the agent, not the user. Only declare tools when the app genuinely needs the agent to push data or trigger actions. Consider whether the app can achieve the functionality on its own using bridge APIs (`superone.git.*`, `superone.fs.*`, etc.) before adding agent-facing tools. If a tool's output should render inline in chat with a custom UI, declare `renderer.result.template` for that tool. Present any proposed tool design to the user and get approval before implementing. See the `tools` topic for details.
 
 Do NOT skip these steps. Do NOT start coding before the user confirms the plan.
 
 **After confirmation, build the app:**
 
 1. Confirm with the user **where** the mini-app source should live (`directory`) and **who** should see it (`scope`: `project` or `user`). See "Where the App Lives" below.
-2. Call `setup_mini_app_dev` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, type, description). It scaffolds files at `directory` and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
-3. Read the type-specific guide for next steps:
-   - `panel`, `sidebar`, `fullscreen` → read **`standard`** topic
-   - `in-chat` → read **`inchat`** topic
+2. Call `setup_mini_app_dev` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, fullscreen, description). It scaffolds files at `directory` and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
+3. Read **`standard`** for the basic app structure, then **`tools`** for declaring agent-facing tools and custom inline renderers.
 4. Edit `manifest.json` to add tools, permissions, etc.
 5. Write app code
-
-## Choosing a Type
-
-Use **standard app** when:
-- The app needs persistent UI (user opens it, interacts over time)
-- The agent needs bidirectional tool call communication
-- Examples: code editor, file browser, kanban board, API tester
-
-Use **in-chat app** when:
-- The app renders structured data inline in chat (no persistent window)
-- The agent provides all data upfront, the app just renders it
-- Examples: daily report, news cards, image gallery, data table, chart
 
 ## Do You Need Tools?
 
@@ -60,9 +45,9 @@ Example: a Git Graph app can call `superone.git.log()` and `superone.git.branche
 **You likely DO need tools when:**
 - The agent needs to push context-specific data that the app cannot obtain on its own (e.g., analysis results, generated content)
 - The agent needs to trigger a specific app action as part of a multi-step workflow
-- The app is a rendering surface for agent-generated content (in-chat apps always need this)
+- The app is a rendering surface for agent-generated content (declare `renderer.result.template` on the tool to render inline in chat)
 
-Example: a Kanban board app needs a `create_task` tool so the agent can add tasks based on conversation context. A code coverage dashboard needs a `render_report` tool so the agent can push test results after running tests.
+Example: a Kanban board app needs a `create_task` tool so the agent can add tasks based on conversation context. A code coverage dashboard needs a `render_report` tool with `renderer.result.template` so the agent can push test results and the chat shows the styled report inline.
 
 When in doubt, start without tools. They can always be added later.
 

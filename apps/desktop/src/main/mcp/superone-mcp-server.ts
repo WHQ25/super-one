@@ -7,14 +7,13 @@ import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { BrowserWindow } from 'electron'
 import log from '../logger'
-import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest, MiniAppManifest } from '@superone/shared/miniapp-types'
+import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { createMiniApp, cacheAppEntry } from '../miniapp/miniapp-service'
 import { packApp, getPreapprovedByPath } from '../miniapp/miniapp-packager'
 import { generateSuperoneDts } from '../miniapp/miniapp-templates'
 import overviewMd from './guides/overview.md?raw'
 import standardMd from './guides/standard.md?raw'
-import inchatMd from './guides/inchat.md?raw'
 import permissionsMd from './guides/permissions.md?raw'
 import apiFsMd from './guides/api/fs.md?raw'
 import apiGitMd from './guides/api/git.md?raw'
@@ -32,7 +31,6 @@ import toolsMd from './guides/tools.md?raw'
 const MINIAPP_GUIDES: Record<string, string> = {
   overview: overviewMd,
   standard: standardMd,
-  inchat: inchatMd,
   permissions: permissionsMd,
   'api-fs': apiFsMd,
   'api-git': apiGitMd,
@@ -79,22 +77,11 @@ const pendingIntercepts = new Map<string, PendingIntercept>()
 const appReadyGates = new Map<string, GateEntry>()
 const preapprovedTools = new Set<string>()
 
-interface InChatAppDef {
-  appId: string
-  inChatToolName: string
-  description: string
-  inputSchema: Record<string, unknown>
-}
-const inchatAppDefs = new Map<string, InChatAppDef>()
-const inchatToolNames = new Map<string, string>()
-
 let getMainWindow: (() => BrowserWindow | null) | null = null
 
 interface HttpSyncCallbacks {
   syncAppTools: (appId: string, toolSlug: string, tools: MiniAppToolDefinition[]) => void
   unsyncAppTools: (appId: string, toolSlug: string) => void
-  syncInChatApp: (manifest: MiniAppManifest) => void
-  unsyncInChatApp: (appId: string) => void
 }
 
 let httpSync: HttpSyncCallbacks | null = null
@@ -162,7 +149,7 @@ export function registerSuperoneTools(server: McpServer): void {
     'IMPORTANT: After reading the overview, confirm requirements, app type, template, and tool design with the user BEFORE writing any code.',
     {
       topic: z.enum(MINIAPP_GUIDE_TOPICS).describe(
-        'Which guide topic to read. Read overview first, then the type-specific guide, then load other topics as needed: overview (architecture, workflow — always read first), standard (panel/sidebar/fullscreen: tools, handlers, layout), inchat (in-chat: onInit, inputSchema, layout), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-db (per-app SQLite: query/exec/batch/pragma), api-theme (CSS vars, dark mode), api-locale (user language: en/zh), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
+        'Which guide topic to read. Read overview first, then load other topics as needed: overview (architecture, workflow — always read first), standard (basic app structure: tools, handlers, layout), tools (declaring agent-facing tools, intercept renderers, custom inline result renderers), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-db (per-app SQLite: query/exec/batch/pragma), api-theme (CSS vars, dark mode), api-locale (user language: en/zh), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
       ),
     },
     async ({ topic }) => ({
@@ -178,7 +165,7 @@ The user picks where the mini-app project lives (any directory, including a subd
 
 Use scope="project" (default) for an app intended for the current project. Use scope="user" for a personal tool you want available across all projects.
 
-After scaffolding, edit manifest.json in the directory to add tools, permissions, or in-chat config. To switch a registered dev app to its production version (after installing a packed .s1app), set "enabled": false in .s1-dev.json.`,
+After scaffolding, edit manifest.json in the directory to add tools, permissions, or templates. To switch a registered dev app to its production version (after installing a packed .s1app), set "enabled": false in .s1-dev.json.`,
     {
       name: z.string().describe('Display name for the mini-app'),
       slug: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).describe('URL-safe lowercase identifier (e.g. "weather-app"). Used to build the appId. Must be lowercase alphanumeric with hyphens.'),
@@ -186,16 +173,13 @@ After scaffolding, edit manifest.json in the directory to add tools, permissions
       scope: z.enum(['project', 'user']).optional().describe('project (default): app visible only in the given project; .s1-dev.json is committable. user: app visible across every project on this machine.'),
       projectDir: z.string().optional().describe('Absolute path to the project directory. Required when scope="project".'),
       template: z.enum(['vanilla', 'react']).optional().describe('vanilla (default): single index.html, no build needed. react: React + TypeScript + Tailwind, requires `bun run build` after scaffold.'),
-      type: z.enum(['sidebar', 'panel', 'in-chat', 'fullscreen']).optional().describe('Where the app appears: panel (resizable, default), sidebar (narrow left panel), in-chat (inline in chat messages, data-driven rendering), fullscreen (full canvas)'),
+      fullscreen: z.boolean().optional().describe('Whether the app can be opened in the canvas full-screen view. Default false (panel only). All apps default to opening as a tab in the activity panel.'),
       description: z.string().optional().describe('Short description of what the app does'),
     },
-    async ({ name: appName, slug, directory, scope, projectDir, template, type, description }) => {
+    async ({ name: appName, slug, directory, scope, projectDir, template, fullscreen, description }) => {
       try {
-        const result = await createMiniApp({ name: appName, slug, directory, scope, projectDir, template, type, description })
+        const result = await createMiniApp({ name: appName, slug, directory, scope, projectDir, template, fullscreen, description })
         cacheAppEntry(result.entry)
-        if (result.entry.manifest.type === 'in-chat') {
-          registerInChatApp(result.entry.manifest)
-        }
         if (projectDir) notifyDevAppReady(projectDir, result.entry.id)
         return {
           content: [{
@@ -267,9 +251,6 @@ export function getSuperoneMcpServer(): McpSdkServerConfigWithInstance {
   registeredTools.clear()
   for (const [appId, { toolSlug, tools }] of appToolDefs) {
     registerToolsOnServer(appId, toolSlug, tools)
-  }
-  for (const [, def] of inchatAppDefs) {
-    registerInChatToolOnServer(def)
   }
 
   return { type: 'sdk' as const, name: 'superone', instance: mcpServer } as unknown as McpSdkServerConfigWithInstance
@@ -575,82 +556,3 @@ export function getAppToolDefs(): Map<string, { toolSlug: string; tools: MiniApp
   return appToolDefs
 }
 
-export function getInChatAppDefs(): Map<string, InChatAppDef> {
-  return inchatAppDefs
-}
-
-export type { InChatAppDef }
-
-function registerInChatToolOnServer(def: InChatAppDef): void {
-  const namespacedName = `inchat__${def.inChatToolName}`
-
-  if (registeredTools.has(namespacedName)) {
-    const existingAppId = inchatToolNames.get(def.inChatToolName)
-    if (existingAppId && existingAppId !== def.appId) {
-      log.warn('[superone-mcp] in-chat toolName conflict: %s (owned by %s, skipping %s)', def.inChatToolName, existingAppId, def.appId)
-    }
-    return
-  }
-
-  const zodShape = jsonSchemaToZodShape(def.inputSchema)
-  const registered = mcpServer!.registerTool(
-    namespacedName,
-    {
-      description: def.description,
-      inputSchema: zodShape,
-    },
-    async (args: Record<string, unknown>) => {
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({
-          __inchat: true,
-          appId: def.appId,
-          data: args,
-        })}],
-      }
-    },
-  )
-
-  registeredTools.set(namespacedName, registered)
-  inchatToolNames.set(def.inChatToolName, def.appId)
-  log.info('[superone-mcp] registered in-chat tool: %s (app: %s)', namespacedName, def.appId)
-}
-
-export function registerInChatApp(manifest: MiniAppManifest): void {
-  if (manifest.type !== 'in-chat' || !manifest.inChatToolName || !manifest.inputSchema) return
-
-  const def: InChatAppDef = {
-    appId: manifest.appId,
-    inChatToolName: manifest.inChatToolName,
-    description: manifest.inChatToolDescription || manifest.description || manifest.name,
-    inputSchema: manifest.inputSchema,
-  }
-  inchatAppDefs.set(manifest.appId, def)
-
-  httpSync?.syncInChatApp(manifest)
-
-  if (!mcpServer) {
-    log.info('[superone-mcp] no active session; in-chat app cached for %s', manifest.appId)
-    return
-  }
-
-  registerInChatToolOnServer(def)
-  mcpServer.sendToolListChanged()
-}
-
-export function unregisterInChatApp(appId: string): void {
-  const def = inchatAppDefs.get(appId)
-  if (!def) return
-
-  inchatAppDefs.delete(appId)
-  const namespacedName = `inchat__${def.inChatToolName}`
-  const tool = registeredTools.get(namespacedName)
-  if (tool) {
-    tool.remove()
-    registeredTools.delete(namespacedName)
-    inchatToolNames.delete(def.inChatToolName)
-    log.info('[superone-mcp] unregistered in-chat tool: %s', namespacedName)
-  }
-  mcpServer?.sendToolListChanged()
-
-  httpSync?.unsyncInChatApp(appId)
-}

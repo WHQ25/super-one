@@ -49,7 +49,6 @@ const eventChannels = [
   'miniapp-git-head-change',
   'miniapp-theme',
   'miniapp-locale',
-  'miniapp-inchat-init',
 ] as const
 
 for (const ch of eventChannels) {

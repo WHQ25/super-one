@@ -11,12 +11,9 @@ export interface TemplateOptions {
 }
 
 export function generateVanillaFiles(opts: TemplateOptions): GeneratedFile[] {
-  const html = opts.manifest.type === 'in-chat'
-    ? generateInChatVanillaHtml(opts.name)
-    : generateVanillaHtml(opts.name)
   return [
     { path: 'manifest.json', content: JSON.stringify(opts.manifest, null, 2) },
-    { path: 'index.html', content: html },
+    { path: 'index.html', content: generateVanillaHtml(opts.name) },
   ]
 }
 
@@ -93,43 +90,6 @@ function generateVanillaHtml(name: string): string {
 <body>
   <h1>${name}</h1>
   <div id="output"></div>
-</body>
-</html>`
-}
-
-function generateInChatVanillaHtml(name: string): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>${name}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: system-ui, sans-serif;
-      padding: 16px;
-      background: transparent;
-      color: var(--foreground, #1c1917);
-    }
-    .card {
-      background: var(--card, #fff);
-      border: 1px solid var(--border, #e7e5e4);
-      border-radius: 8px;
-      padding: 16px;
-    }
-    h2 { font-size: 16px; margin-bottom: 12px; }
-    pre { font-size: 12px; white-space: pre-wrap; word-break: break-word; }
-  </style>
-</head>
-<body>
-  <div id="root"></div>
-  <script>
-    superone.onInit(function(data) {
-      var root = document.getElementById('root');
-      root.innerHTML = '<div class="card"><h2>${name}</h2><pre>' +
-        JSON.stringify(data, null, 2) + '</pre></div>';
-    });
-  </script>
 </body>
 </html>`
 }
@@ -392,7 +352,6 @@ interface SuperOne {
   tools: {
     handle(name: string, callback: (args: Record<string, unknown>) => unknown | Promise<unknown>): void
   }
-  onInit(callback: (data: Record<string, unknown>) => void): void
   db: {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[] | Record<string, unknown>): Promise<T[]>
     exec(sql: string, params?: unknown[] | Record<string, unknown>): Promise<{ changes: number; lastInsertRowid: number }>

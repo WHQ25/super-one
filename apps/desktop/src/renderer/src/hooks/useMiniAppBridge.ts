@@ -12,11 +12,10 @@ export interface MiniAppBridgeOptions {
   iframeRef: RefObject<HTMLIFrameElement | null>
   onReady?: () => void
   onResize?: (height: number) => void
-  inChatMode?: boolean
   overlay?: MiniAppOverlayCallbacks
 }
 
-export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMode, overlay }: MiniAppBridgeOptions) {
+export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, overlay }: MiniAppBridgeOptions) {
   const isDark = useIsDark()
   const isDarkRef = useRef(isDark)
   isDarkRef.current = isDark
@@ -80,27 +79,24 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
   }, [locale, sendToFrame])
 
   useEffect(() => {
-    if (inChatMode) return
     const cleanup = window.miniapp.onGitHeadChangeEvent((event) => {
       if (event.appId !== appId) return
       sendToFrame({ type: 'miniapp-git-head-change' })
     })
     return cleanup
-  }, [appId, sendToFrame, inChatMode])
+  }, [appId, sendToFrame])
 
   useEffect(() => {
-    if (inChatMode) return
     const cleanup = window.miniapp.onFsWatchEvent((event) => {
       if (event.appId !== appId) return
       sendToFrame({ type: 'miniapp-fs-watch-event', watchId: event.watchId, eventType: event.type, path: event.path })
     })
     return cleanup
-  }, [appId, sendToFrame, inChatMode])
+  }, [appId, sendToFrame])
 
-  useContextConsumedEvent(appId, sendToFrame, inChatMode)
+  useContextConsumedEvent(appId, sendToFrame)
 
   useEffect(() => {
-    if (inChatMode) return
     const cleanup = window.miniapp.onToolCall((call: MiniAppToolCallRequest) => {
       if (call.appId !== appId) return
       window.app.trace?.('miniapp.tool', 'forward_to_iframe', { appId, toolName: call.toolName }, call.callId)
@@ -112,7 +108,7 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, inChatMo
       })
     })
     return cleanup
-  }, [appId, sendToFrame, inChatMode])
+  }, [appId, sendToFrame])
 
   return { sendToFrame, readyRef }
 }

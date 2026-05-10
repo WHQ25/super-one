@@ -4,7 +4,7 @@ Mini-apps can declare a `logo` field in `manifest.json` to display a custom icon
 
 ## `logo` — App Icon
 
-Displayed at original colors in the app drawer, sidebar tabs, and canvas headers.
+Displayed at original colors in the app drawer, activity panel tabs, and canvas headers.
 
 ### Requirements
 
@@ -19,8 +19,7 @@ Displayed at original colors in the app drawer, sidebar tabs, and canvas headers
 ```json
 {
   "name": "DB Browser",
-  "logo": "logo.png",
-  "type": "panel"
+  "logo": "logo.png"
 }
 ```
 

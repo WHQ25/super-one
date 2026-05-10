@@ -1,6 +1,6 @@
 .dockview-theme-superone {
   --dv-tabs-and-actions-container-font-size: 12px;
-  --dv-tabs-and-actions-container-height: 32px;
+  --dv-tabs-and-actions-container-height: 46px;
   --dv-tab-font-size: 12px;
   --dv-border-radius: 0px;
   --dv-tab-margin: 0;
@@ -18,12 +18,12 @@
   --dv-paneview-active-outline-color: var(--primary);
 
   --dv-group-view-background-color: var(--background);
-  --dv-activegroup-visiblepanel-tab-background-color: var(--background);
-  --dv-inactivegroup-visiblepanel-tab-background-color: var(--background);
+  --dv-activegroup-visiblepanel-tab-background-color: transparent;
+  --dv-inactivegroup-visiblepanel-tab-background-color: transparent;
 
-  --dv-tabs-and-actions-container-background-color: var(--muted);
-  --dv-activegroup-hiddenpanel-tab-background-color: var(--muted);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--muted);
+  --dv-tabs-and-actions-container-background-color: var(--background);
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
 
   --dv-icon-hover-background-color: var(--accent);
 
@@ -43,9 +43,7 @@
 }
 
 .dark .dockview-theme-superone {
-  --dv-tabs-and-actions-container-background-color: var(--sidebar);
-  --dv-activegroup-hiddenpanel-tab-background-color: var(--sidebar);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--sidebar);
+  --dv-tabs-and-actions-container-background-color: var(--background);
   --dv-floating-box-shadow: 0 4px 12px oklch(0 0 0 / 0.3);
 }
 
@@ -54,13 +52,45 @@
   outline: none !important;
 }
 
-.dockview-theme-superone .dv-tab.dv-active-tab {
-  border-left: 1px solid var(--dv-tab-divider-color);
-  border-right: 1px solid var(--dv-tab-divider-color);
+.dockview-theme-superone .dv-tabs-and-actions-container {
+  padding: 10px;
+  height: 46px;
+  min-height: 46px;
+  box-sizing: border-box;
+  align-items: center;
 }
 
-.dockview-theme-superone .dv-tab.dv-active-tab:first-child {
-  border-left: none;
+.dockview-theme-superone .dv-tabs-container {
+  align-items: center;
+  height: 100%;
+  gap: 4px;
+}
+
+.dockview-theme-superone .dv-tab {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  height: auto;
+  min-height: 0;
+}
+
+.dockview-theme-superone .dv-tabs-overflow-container {
+  padding: 6px;
+  gap: 2px;
+  border-radius: 8px;
+}
+
+.dockview-theme-superone .dv-tabs-overflow-container .dv-tab {
+  align-self: stretch;
+}
+
+.dockview-theme-superone .dv-tabs-overflow-container .dv-tab > div {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.dockview-theme-superone .dv-tabs-overflow-container .dv-tab:not(:last-child) {
+  border-bottom: none;
 }
 
 .dockview-theme-superone.single-group .dv-void-container {

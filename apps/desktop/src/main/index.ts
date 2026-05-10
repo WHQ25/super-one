@@ -15,7 +15,7 @@ import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, registerInChatApp, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearAllPendingCalls as clearAllPendingMiniAppCalls } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearAllPendingCalls as clearAllPendingMiniAppCalls } from './mcp/superone-mcp-server'
 import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
@@ -1758,10 +1758,6 @@ function registerIpcHandlers(): void {
     for (const app of apps) {
       cacheAppEntry(app)
       setAppMediaPermissions(app.id, app.manifest)
-      if (app.manifest.type === 'in-chat') {
-        registerInChatApp(app.manifest)
-        if (projectDir) setAppFsPermissions(app.id, app.manifest, projectDir, app.installDir)
-      }
     }
     return apps
   })

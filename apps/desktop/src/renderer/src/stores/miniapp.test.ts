@@ -3,8 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 
-const { mockSetSidebarTab, mockSetLayoutMode, mockOpenMiniAppTab } = vi.hoisted(() => ({
-  mockSetSidebarTab: vi.fn(),
+const { mockSetLayoutMode, mockOpenMiniAppTab } = vi.hoisted(() => ({
   mockSetLayoutMode: vi.fn(),
   mockOpenMiniAppTab: vi.fn(),
 }))
@@ -12,7 +11,6 @@ const { mockSetSidebarTab, mockSetLayoutMode, mockOpenMiniAppTab } = vi.hoisted(
 vi.mock('./app', () => ({
   useAppStore: {
     getState: () => ({
-      setSidebarTab: mockSetSidebarTab,
       setLayoutMode: mockSetLayoutMode,
     }),
   },
@@ -44,18 +42,17 @@ const mockMiniapp = {
   globalThis as unknown as typeof window
 ;(window as unknown as { miniapp: typeof mockMiniapp }).miniapp = mockMiniapp
 
-function entry(id: string, type: 'panel' | 'sidebar' | 'fullscreen'): MiniAppEntry {
+function entry(id: string, fullscreen?: boolean): MiniAppEntry {
   return {
     id,
     installDir: `/install/${id}`,
-    manifest: { appId: id, name: `App ${id}`, type },
+    manifest: { appId: id, name: `App ${id}`, ...(fullscreen && { fullscreen: true }) },
   }
 }
 
 const APPS: MiniAppEntry[] = [
-  entry('panel-app', 'panel'),
-  entry('sidebar-app', 'sidebar'),
-  entry('fullscreen-app', 'fullscreen'),
+  entry('panel-app'),
+  entry('fullscreen-app', true),
 ]
 
 let useMiniAppStore: typeof import('./miniapp').useMiniAppStore
@@ -84,28 +81,16 @@ describe('miniapp store onDevAppReady routing', () => {
     expect(mockMiniapp.open).toHaveBeenCalledWith('panel-app', '/proj')
     expect(mockOpenMiniAppTab).toHaveBeenCalledTimes(1)
     expect(mockOpenMiniAppTab).toHaveBeenCalledWith('panel-app', 'App panel-app')
-    expect(mockSetSidebarTab).not.toHaveBeenCalled()
     expect(mockSetLayoutMode).not.toHaveBeenCalled()
   })
 
-  it('routes a sidebar app to setSidebarTab and nothing else', async () => {
-    await capturedHandler!('/proj', 'sidebar-app')
-
-    expect(mockSetSidebarTab).toHaveBeenCalledTimes(1)
-    expect(mockSetSidebarTab).toHaveBeenCalledWith('miniapp:sidebar-app')
-    expect(mockMiniapp.open).not.toHaveBeenCalled()
-    expect(mockOpenMiniAppTab).not.toHaveBeenCalled()
-    expect(mockSetLayoutMode).not.toHaveBeenCalled()
-  })
-
-  it('routes a fullscreen app to canvas mode + requestOpenInCanvas', async () => {
+  it('also opens a fullscreen-capable app in the panel by default (fullscreen is a capability, not a default mode)', async () => {
     await capturedHandler!('/proj', 'fullscreen-app')
 
-    expect(mockSetLayoutMode).toHaveBeenCalledWith('canvas')
-    expect(useMiniAppStore.getState().pendingOpenAppId).toBe('fullscreen-app')
-    expect(mockMiniapp.open).not.toHaveBeenCalled()
-    expect(mockOpenMiniAppTab).not.toHaveBeenCalled()
-    expect(mockSetSidebarTab).not.toHaveBeenCalled()
+    expect(mockMiniapp.open).toHaveBeenCalledWith('fullscreen-app', '/proj')
+    expect(mockOpenMiniAppTab).toHaveBeenCalledWith('fullscreen-app', 'App fullscreen-app')
+    expect(mockSetLayoutMode).not.toHaveBeenCalled()
+    expect(useMiniAppStore.getState().pendingOpenAppId).toBeNull()
   })
 
   it('does nothing when the signaled appId is not in the refreshed list', async () => {
@@ -113,12 +98,11 @@ describe('miniapp store onDevAppReady routing', () => {
 
     expect(mockMiniapp.open).not.toHaveBeenCalled()
     expect(mockOpenMiniAppTab).not.toHaveBeenCalled()
-    expect(mockSetSidebarTab).not.toHaveBeenCalled()
     expect(mockSetLayoutMode).not.toHaveBeenCalled()
   })
 
   it('refreshes apps before routing so a freshly-scaffolded appId is found', async () => {
-    const fresh = entry('fresh-app', 'panel')
+    const fresh = entry('fresh-app')
     mockMiniapp.list.mockResolvedValueOnce([...APPS, fresh])
 
     await capturedHandler!('/proj', 'fresh-app')
@@ -129,13 +113,10 @@ describe('miniapp store onDevAppReady routing', () => {
   })
 
   it('signaling one app among many opens exactly one (regression: old code opened all dev apps)', async () => {
-    await capturedHandler!('/proj', 'sidebar-app')
+    await capturedHandler!('/proj', 'fullscreen-app')
 
-    const totalOpenSideEffects =
-      mockMiniapp.open.mock.calls.length +
-      mockSetSidebarTab.mock.calls.length +
-      mockSetLayoutMode.mock.calls.length
-    expect(totalOpenSideEffects).toBe(1)
+    expect(mockMiniapp.open).toHaveBeenCalledTimes(1)
+    expect(mockOpenMiniAppTab).toHaveBeenCalledTimes(1)
   })
 
   it('falls back to provided projectDir when _lastProjectDir is undefined', async () => {
@@ -150,16 +131,16 @@ describe('miniapp store onDevAppReady routing', () => {
     expect(mockMiniapp.list).toHaveBeenCalledWith('/fallback-proj')
   })
 
-  it('defaults missing manifest.type to panel', async () => {
-    const noType: MiniAppEntry = {
-      id: 'no-type-app',
-      installDir: '/install/no-type-app',
-      manifest: { appId: 'no-type-app', name: 'No Type' },
+  it('defaults a manifest without fullscreen to panel routing', async () => {
+    const noFlag: MiniAppEntry = {
+      id: 'no-flag-app',
+      installDir: '/install/no-flag-app',
+      manifest: { appId: 'no-flag-app', name: 'No Flag' },
     }
-    mockMiniapp.list.mockResolvedValueOnce([noType])
+    mockMiniapp.list.mockResolvedValueOnce([noFlag])
 
-    await capturedHandler!('/proj', 'no-type-app')
+    await capturedHandler!('/proj', 'no-flag-app')
 
-    expect(mockMiniapp.open).toHaveBeenCalledWith('no-type-app', '/proj')
+    expect(mockMiniapp.open).toHaveBeenCalledWith('no-flag-app', '/proj')
   })
 })

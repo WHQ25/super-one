@@ -76,33 +76,18 @@ export const manifestSchema = z.object({
   description: z.string().optional(),
   logo: z.string().optional(),
   isDev: z.boolean().optional(),
-  type: z.enum(['sidebar', 'panel', 'in-chat', 'fullscreen']).optional(),
+  fullscreen: z.boolean().optional(),
   permissions: permissionsSchema.optional(),
   toolSlug: z.string().min(1).regex(TOOL_NAME_RE, { message: 'toolSlug must be lowercase alphanumeric with underscores' }).optional(),
   tools: z.array(toolDefinitionSchema).optional(),
-  inChatToolName: z.string().min(1).regex(TOOL_NAME_RE, { message: 'toolName must be lowercase alphanumeric with underscores' }).optional(),
-  inChatToolDescription: z.string().optional(),
   runningText: z.string().optional(),
-  inputSchema: toolInputSchemaSchema.optional(),
   templates: z.record(
     z.string().min(1).regex(/^[a-z0-9_-]+$/, { message: 'Template name must be lowercase alphanumeric with hyphens or underscores' }),
     z.string().min(1),
   ).optional(),
 }).refine(
   (m) => {
-    if (m.type !== 'in-chat') return true
-    return !!m.inChatToolName && !!m.inputSchema
-  },
-  { message: 'in-chat apps require toolName and inputSchema' },
-).refine(
-  (m) => {
-    if (m.type !== 'in-chat') return true
-    return !m.tools || m.tools.length === 0
-  },
-  { message: 'in-chat apps must not declare tools[]' },
-).refine(
-  (m) => {
-    if (m.type === 'in-chat' || !m.tools || m.tools.length === 0) return true
+    if (!m.tools || m.tools.length === 0) return true
     return !!m.toolSlug
   },
   { message: 'apps with tools require toolSlug' },

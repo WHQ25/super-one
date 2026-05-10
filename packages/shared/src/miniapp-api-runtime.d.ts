@@ -42,7 +42,6 @@ export type ToolRendererApi = ToolInterceptApi | ToolResultApi
 export interface SuperoneApi {
   version: string
   tools: { handle(name: string, callback: (args: Record<string, unknown>) => unknown): void }
-  onInit(callback: (data: Record<string, unknown>) => void): void
   db: {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[] | Record<string, unknown>): Promise<T[]>
     exec(sql: string, params?: unknown[] | Record<string, unknown>): Promise<{ changes: number; lastInsertRowid: number }>

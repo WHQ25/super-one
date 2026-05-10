@@ -144,3 +144,10 @@ export function openMiniAppTab(appId: string, label: string) {
     })
   })
 }
+
+export function closeMiniAppTab(appId: string) {
+  if (!dockApi) return
+  const panelId = `miniapp-${appId}`
+  const existing = dockApi.panels.find((p) => p.id === panelId)
+  if (existing) existing.api.close()
+}

@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback, type DragEvent } from 'react'
-import { Search, GripVertical, PackagePlus } from 'lucide-react'
+import { useState, useCallback, type DragEvent } from 'react'
+import { Maximize, PackagePlus, Search } from 'lucide-react'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -9,45 +9,8 @@ import { openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
-import type { MiniAppEntry } from '@superone/shared/miniapp-types'
-import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 
 const S1APP_EXT = '.s1app'
-
-function SortableSidebarApp({ app, index, onOpen }: { app: MiniAppEntry; index: number; onOpen: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: app.id })
-  const style = { transform: CSS.Transform.toString(transform), transition }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        'group/sapp flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent',
-        isDragging && 'z-10 opacity-80 shadow-sm',
-      )}
-      onClick={onOpen}
-    >
-      <MiniAppIcon appId={app.id} className="size-7 shrink-0" />
-      <div className="flex min-w-0 flex-col">
-        <span className="flex items-center gap-1.5 text-[13px]">
-          <span className="truncate">{app.manifest.name}</span>
-          {index <= 9 && <span className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sidebar-accent text-[10px] leading-none text-sidebar-foreground/60">{index < 9 ? index + 1 : 0}</span>}
-        </span>
-        {app.manifest.description && <MarqueeText className="text-[11px] text-sidebar-foreground/50">{app.manifest.description}</MarqueeText>}
-      </div>
-      <div
-        {...attributes}
-        {...listeners}
-        className="ml-auto shrink-0 cursor-grab rounded p-0.5 text-sidebar-foreground/30 opacity-0 transition-opacity hover:text-sidebar-foreground/60 group-hover/sapp:opacity-100 active:cursor-grabbing"
-      >
-        <GripVertical className="size-3.5" />
-      </div>
-    </div>
-  )
-}
 
 function isS1AppFile(e: DragEvent): boolean {
   const items = e.dataTransfer.items
@@ -70,35 +33,16 @@ function getS1AppPaths(e: DragEvent): string[] {
 
 export function AppsPanel() {
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const setSidebarTab = useAppStore((s) => s.setSidebarTab)
-
-  const sidebarApps = useMiniAppStore(useShallow((s) => s.apps.filter((a) => a.manifest.type === 'sidebar')))
-  const panelApps = useMiniAppStore(useShallow((s) => s.apps.filter((a) => !a.manifest.type || a.manifest.type === 'panel')))
-  const fullscreenApps = useMiniAppStore(useShallow((s) => s.apps.filter((a) => a.manifest.type === 'fullscreen')))
-  const requestOpenInCanvas = useMiniAppStore((s) => s.requestOpenInCanvas)
   const setLayoutMode = useAppStore((s) => s.setLayoutMode)
+
+  const apps = useMiniAppStore(useShallow((s) => s.apps))
+  const requestOpenInCanvas = useMiniAppStore((s) => s.requestOpenInCanvas)
   const previewInstall = useMiniAppStore((s) => s.previewInstall)
 
   const [appSearch, setAppSearch] = useState('')
-  const filteredPanelApps = appSearch
-    ? panelApps.filter((a) => a.manifest.name.toLowerCase().includes(appSearch.toLowerCase()))
-    : panelApps
-
-  const [sidebarAppOrder, setSidebarAppOrder] = useState<string[]>([])
-  const orderedSidebarApps = useMemo(() => {
-    if (sidebarAppOrder.length === 0) return sidebarApps
-    const orderMap = new Map(sidebarAppOrder.map((id, i) => [id, i]))
-    return [...sidebarApps].sort((a, b) => (orderMap.get(a.id) ?? Infinity) - (orderMap.get(b.id) ?? Infinity))
-  }, [sidebarApps, sidebarAppOrder])
-
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const ids = orderedSidebarApps.map((a) => a.id)
-    const oldIdx = ids.indexOf(active.id as string)
-    const newIdx = ids.indexOf(over.id as string)
-    setSidebarAppOrder(arrayMove(ids, oldIdx, newIdx))
-  }, [orderedSidebarApps])
+  const filteredApps = appSearch
+    ? apps.filter((a) => a.manifest.name.toLowerCase().includes(appSearch.toLowerCase()))
+    : apps
 
   const [isDragOver, setIsDragOver] = useState(false)
   const [installStatus, setInstallStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -193,67 +137,39 @@ export function AppsPanel() {
               <span className="text-xs font-medium text-orange-600 dark:text-orange-400">Drop .s1app to install</span>
             </div>
           )}
-          {sidebarApps.length > 0 && (
-            <>
-              <span className="px-1 py-1.5 text-xs font-medium text-sidebar-foreground/70">Sidebar</span>
-              <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={orderedSidebarApps.map((a) => a.id)} strategy={verticalListSortingStrategy}>
-                  <div className="mb-2 flex flex-col">
-                    {orderedSidebarApps.map((app, i) => (
-                      <SortableSidebarApp key={app.id} app={app} index={i} onOpen={() => setSidebarTab(`miniapp:${app.id}`)} />
-                    ))}
+          {filteredApps.length > 0 ? (
+            <div className="flex flex-col">
+              {filteredApps.map((app) => (
+                <div
+                  key={app.id}
+                  onClick={() => {
+                    window.miniapp.open(app.id, currentFolder ?? '')
+                    openMiniAppTab(app.id, app.manifest.name)
+                  }}
+                  className="group/app flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
+                >
+                  <MiniAppIcon appId={app.id} className="size-7 shrink-0" />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-[13px]">{app.manifest.name}</span>
+                    {app.manifest.description && <MarqueeText className="text-[11px] text-sidebar-foreground/50">{app.manifest.description}</MarqueeText>}
                   </div>
-                </SortableContext>
-              </DndContext>
-            </>
-          )}
-          {filteredPanelApps.length > 0 && (
-            <>
-              <span className="px-1 py-1.5 text-xs font-medium text-sidebar-foreground/70">Apps</span>
-              <div className="flex flex-col">
-                {filteredPanelApps.map((app) => (
-                  <button
-                    key={app.id}
-                    onClick={() => {
-                      window.miniapp.open(app.id, currentFolder ?? '')
-                      openMiniAppTab(app.id, app.manifest.name)
-                    }}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
-                  >
-                    <MiniAppIcon appId={app.id} className="size-7 shrink-0" />
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate text-[13px]">{app.manifest.name}</span>
-                      {app.manifest.description && <MarqueeText className="text-[11px] text-sidebar-foreground/50">{app.manifest.description}</MarqueeText>}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-          {fullscreenApps.length > 0 && (
-            <>
-              <span className="px-1 py-1.5 text-xs font-medium text-sidebar-foreground/70">Fullscreen</span>
-              <div className="flex flex-col">
-                {fullscreenApps.map((app) => (
-                  <button
-                    key={app.id}
-                    onClick={() => {
-                      setLayoutMode('canvas')
-                      requestOpenInCanvas(app.id)
-                    }}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
-                  >
-                    <MiniAppIcon appId={app.id} className="size-7 shrink-0" />
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate text-[13px]">{app.manifest.name}</span>
-                      {app.manifest.description && <MarqueeText className="text-[11px] text-sidebar-foreground/50">{app.manifest.description}</MarqueeText>}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-          {sidebarApps.length === 0 && filteredPanelApps.length === 0 && fullscreenApps.length === 0 && (
+                  {app.manifest.fullscreen && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setLayoutMode('canvas')
+                        requestOpenInCanvas(app.id)
+                      }}
+                      className="ml-1 shrink-0 rounded p-1 text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent-foreground/10 hover:text-sidebar-foreground/80 group-hover/app:opacity-100"
+                      title="Open in canvas"
+                    >
+                      <Maximize className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-xs text-sidebar-foreground/70">
               <PackagePlus className="size-6 text-sidebar-foreground/30" />
               {appSearch ? 'No matching apps' : 'Drop .s1app file to install'}

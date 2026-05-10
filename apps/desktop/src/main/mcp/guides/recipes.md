@@ -29,9 +29,9 @@ window.addEventListener('load', function() {
 })
 ```
 
-## Responsive Layout (Panel vs Sidebar)
+## Responsive Layout (Panel vs Fullscreen)
 
-Panel apps get ~400–800px; sidebar apps get ~240px. Use CSS to adapt:
+Apps run in the activity panel by default (~400–800px wide, resizable). Apps with `fullscreen: true` may also open at the full window width. Use CSS to adapt:
 
 ```css
 .container { padding: 16px; }

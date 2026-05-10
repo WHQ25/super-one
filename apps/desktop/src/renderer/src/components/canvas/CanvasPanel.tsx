@@ -3,16 +3,14 @@ import { useTranslation } from 'react-i18next'
 import { MiniAppView, type MiniAppViewHandle } from '@/components/miniapp/MiniAppView'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { X } from 'lucide-react'
 
 export const CanvasPanel = memo(function CanvasPanel() {
   const { t } = useTranslation()
   const apps = useMiniAppStore((s) => s.apps)
-  const fullscreenApps = apps.filter((a) => a.manifest.type === 'fullscreen')
+  const fullscreenApps = apps.filter((a) => a.manifest.fullscreen === true)
   const fetchApps = useMiniAppStore((s) => s.fetchApps)
   const openApp = useMiniAppStore((s) => s.fullscreenApp)
   const openFullscreenApp = useMiniAppStore((s) => s.openFullscreenApp)
-  const closeFullscreenApp = useMiniAppStore((s) => s.closeFullscreenApp)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const devFrameRef = useRef<MiniAppViewHandle>(null)
 
@@ -61,13 +59,6 @@ export const CanvasPanel = memo(function CanvasPanel() {
 
   return (
     <div className="relative h-full">
-      <button
-        onClick={closeFullscreenApp}
-        className="absolute right-3 top-3 z-20 rounded-md bg-black/60 p-1 text-white/70 backdrop-blur-sm transition-opacity hover:text-white"
-        title={t('tooltips.close')}
-      >
-        <X className="size-4" />
-      </button>
       <MiniAppView
         ref={devFrameRef}
         appId={openApp.appId}

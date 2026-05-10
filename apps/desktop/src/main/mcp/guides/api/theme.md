@@ -40,9 +40,8 @@ const unsub = superone.onDarkModeChange((isDark) => {
 
 ## Tips
 
-- In-chat apps should use `background: transparent` on `<body>` to blend with chat
-- Standard apps can use `var(--background)` for a solid background matching the host
-- Sidebar apps should use the `--sidebar-*` variables for consistency
+- For tool result renderers that render inline in chat (`tools[].renderer.result`), use `background: transparent` on `<body>` to blend with the surrounding message
+- Standard apps opened in the activity panel or canvas can use `var(--background)` for a solid background matching the host
 
 ## Example: Updating a Chart on Theme Change
 

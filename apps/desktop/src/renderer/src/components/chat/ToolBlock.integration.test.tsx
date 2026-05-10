@@ -112,10 +112,6 @@ vi.mock('./CanvasEditDiff', async (importOriginal) => {
   }
 })
 
-vi.mock('./InChatMiniAppBlock', () => ({
-  InChatMiniAppBlock: () => null,
-}))
-
 vi.mock('./ToolRendererFrame', () => ({
   ToolRendererFrame: () => null,
 }))

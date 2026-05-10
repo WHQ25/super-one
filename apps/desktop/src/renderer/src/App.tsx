@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react'
-import { Sun, Moon, Code, Paintbrush, Smartphone } from 'lucide-react'
+import { Sun, Moon, X, Smartphone, Minimize2 } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -16,6 +16,7 @@ import { UpdateNotification } from '@/components/UpdateNotification'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
+import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DebugPanel } from '@/components/DebugPanel'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
@@ -25,9 +26,9 @@ import { usePerfSampler } from '@/hooks/usePerfSampler'
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
 import { useHarnessTheme } from '@/hooks/useHarnessTheme'
-import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useActiveSession, extractSessionTitle, useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
@@ -50,7 +51,7 @@ function App(): React.JSX.Element {
   useHarnessTheme()
   const theme = useTheme()
   const { t } = useTranslation()
-  const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode, setLayoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode, setLayoutMode: s.setLayoutMode })))
+  const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode })))
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
   const isFullscreen = useFullscreen()
@@ -337,28 +338,15 @@ function App(): React.JSX.Element {
         >
           {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', !isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'w-[66px]' : 'w-0')} />}
           {layoutMode === 'coding' && (!isMac || !showSidebar) && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
-          <span className="max-w-[200px] truncate text-xs text-muted-foreground">
-            {layoutMode === 'coding' ? (sessionTitle ?? 'New Session') : folderName}
-          </span>
+          <HeaderTitle layoutMode={layoutMode} sessionTitle={sessionTitle} folderName={folderName} />
 
           <div className="flex-1" />
 
-          {/* Mode switch + theme */}
+          {/* Mini-app controls + theme */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <MiniAppMediaIndicator />
-            <Tabs
-              value={layoutMode}
-              onValueChange={(v) => setLayoutMode(v as 'canvas' | 'coding')}
-            >
-              <TabsList>
-                <TabsTrigger value="canvas" className="px-1.5">
-                  <Paintbrush className="size-3.5" />
-                </TabsTrigger>
-                <TabsTrigger value="coding" className="px-1.5">
-                  <Code className="size-3.5" />
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <CanvasReturnToPanelButton />
+            <CanvasCloseButton />
             <button
               onClick={theme.toggle}
               className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
@@ -390,6 +378,54 @@ function App(): React.JSX.Element {
       <MiniAppClipboardGuard />
       {import.meta.env.DEV && <DebugPanel />}
     </div>
+  )
+}
+
+function CanvasCloseButton() {
+  const layoutMode = useAppStore((s) => s.layoutMode)
+  const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
+  const closeFullscreenApp = useMiniAppStore((s) => s.closeFullscreenApp)
+  if (layoutMode !== 'canvas' || !fullscreenApp) return null
+  return (
+    <button
+      onClick={() => closeFullscreenApp()}
+      className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+      title="Close mini-app"
+    >
+      <X className="size-3.5" />
+    </button>
+  )
+}
+
+function CanvasReturnToPanelButton() {
+  const layoutMode = useAppStore((s) => s.layoutMode)
+  const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
+  const moveAppToPanel = useMiniAppStore((s) => s.moveAppToPanel)
+  if (layoutMode !== 'canvas' || !fullscreenApp) return null
+  return (
+    <button
+      onClick={() => moveAppToPanel(fullscreenApp.entry.id)}
+      className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+      title="Return to panel"
+    >
+      <Minimize2 className="size-3.5" />
+    </button>
+  )
+}
+
+function HeaderTitle({ layoutMode, sessionTitle, folderName }: { layoutMode: 'canvas' | 'coding'; sessionTitle: string | null | undefined; folderName: string | null | undefined }) {
+  const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
+  if (layoutMode === 'canvas' && fullscreenApp) {
+    return (
+      <span className="flex max-w-[220px] items-center gap-1.5 text-xs text-muted-foreground">
+        <MiniAppIcon appId={fullscreenApp.entry.id} className="size-3.5 shrink-0" />
+        <span className="truncate">{fullscreenApp.entry.manifest.name}</span>
+      </span>
+    )
+  }
+  const text = layoutMode === 'coding' ? (sessionTitle ?? 'New Session') : (folderName ?? '')
+  return (
+    <span className="max-w-[200px] truncate text-xs text-muted-foreground">{text}</span>
   )
 }
 

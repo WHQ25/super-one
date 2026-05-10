@@ -48,7 +48,7 @@ interface MiniAppStoreState {
   previewInstall: (s1appPath: string) => Promise<MiniAppPreviewResult>
   confirmInstall: (installDir?: string, preapprovedTools?: string[]) => Promise<MiniAppInstallResult>
   cancelInstall: () => Promise<void>
-  uninstallApp: (appId: string) => Promise<void>
+  uninstallApp: (appId: string, installDir?: string) => Promise<void>
 
   requestOpenInCanvas: (appId: string) => void
   consumePendingOpen: () => string | null
@@ -128,11 +128,11 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       set({ pendingInstall: null })
       await window.miniapp.cancelInstall(pending.tempDir)
     },
-    uninstallApp: async (appId: string) => {
+    uninstallApp: async (appId: string, installDir?: string) => {
       if (get().openApps[appId]) {
         await get().closeApp(appId)
       }
-      await window.miniapp.uninstall(appId)
+      await window.miniapp.uninstall(appId, installDir)
       await get().refreshApps(get()._lastProjectDir)
     },
     requestOpenInCanvas: (appId: string) => set({ pendingOpenAppId: appId }),

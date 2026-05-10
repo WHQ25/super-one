@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { join } from 'path'
 import { mkdtemp, writeFile, mkdir, rm, readFile, stat } from 'fs/promises'
 import { tmpdir } from 'os'
-import { generateIntegrity, verifyIntegrity, confirmInstall, packApp, previewApp } from './miniapp-packager'
+import { generateIntegrity, verifyIntegrity, confirmInstall, packApp, previewApp, uninstallApp } from './miniapp-packager'
 
 vi.mock('electron', () => ({
   app: {
@@ -250,6 +250,42 @@ describe('pack/preview round-trip with many entries', () => {
     const corrupt = join(outDir, 'corrupt.s1app')
     await writeFile(corrupt, Buffer.from('not a zip archive, just plain bytes'))
     await expect(previewApp(corrupt)).rejects.toThrow()
+  })
+})
+
+describe('uninstallApp', () => {
+  let installRoot: string
+  const appId = 'project-scope-app'
+
+  beforeEach(async () => {
+    installRoot = await mkdtemp(join(tmpdir(), 's1-uninstall-root-'))
+  })
+
+  afterEach(async () => {
+    await rm(installRoot, { recursive: true, force: true }).catch(() => {})
+  })
+
+  async function dirExists(p: string): Promise<boolean> {
+    try {
+      return (await stat(p)).isDirectory()
+    } catch {
+      return false
+    }
+  }
+
+  it('removes a project-scope install when given its installDir', async () => {
+    const targetDir = join(installRoot, appId)
+    await mkdir(targetDir, { recursive: true })
+    await writeFile(join(targetDir, 'manifest.json'), JSON.stringify({ appId, name: 'P', version: '1.0.0' }))
+
+    await uninstallApp(appId, targetDir)
+
+    expect(await dirExists(targetDir)).toBe(false)
+  })
+
+  it('throws "App not installed" when the given installDir is missing', async () => {
+    const missing = join(installRoot, 'never-installed')
+    await expect(uninstallApp(appId, missing)).rejects.toThrow(/App not installed/)
   })
 })
 

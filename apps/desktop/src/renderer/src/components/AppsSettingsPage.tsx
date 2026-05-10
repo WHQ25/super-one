@@ -88,7 +88,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
 
   const handleUninstall = async () => {
     try {
-      await uninstallApp(app.id)
+      await uninstallApp(app.id, app.installDir)
       onBack()
       toast.success(t('resources.apps.uninstalled', { name: app.manifest.name }))
     } catch (err) {

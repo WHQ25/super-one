@@ -303,7 +303,16 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     await useMiniAppStore.getState().uninstallApp('panel-app')
 
     expect(mockMiniapp.close).not.toHaveBeenCalled()
-    expect(mockMiniapp.uninstall).toHaveBeenCalledWith('panel-app')
+    expect(mockMiniapp.uninstall).toHaveBeenCalledWith('panel-app', undefined)
+  })
+
+  it('uninstallApp forwards installDir so a project-scope app can be removed', async () => {
+    mockMiniapp.uninstall.mockClear()
+    const projectInstallDir = '/proj/.superone/apps/panel-app'
+
+    await useMiniAppStore.getState().uninstallApp('panel-app', projectInstallDir)
+
+    expect(mockMiniapp.uninstall).toHaveBeenCalledWith('panel-app', projectInstallDir)
   })
 
   it('handlePanelRemoved suppresses close during a migration (consumes _migratingApps)', async () => {

@@ -961,8 +961,8 @@ const miniappAPI = {
   cancelInstall: (tempDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CANCEL_INSTALL, tempDir) as Promise<void>,
 
-  uninstall: (appId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_UNINSTALL, appId) as Promise<void>,
+  uninstall: (appId: string, installDir?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_UNINSTALL, appId, installDir) as Promise<void>,
 
   pack: (appDir: string, outputDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_PACK, appDir, outputDir),

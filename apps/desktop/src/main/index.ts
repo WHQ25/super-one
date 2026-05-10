@@ -1854,8 +1854,8 @@ function registerIpcHandlers(): void {
     return cancelInstall(tempDir)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_UNINSTALL, async (_e, appId: string) => {
-    return uninstallApp(appId)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_UNINSTALL, async (_e, appId: string, installDir?: string) => {
+    return uninstallApp(appId, installDir)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_PACK, async (_e, appDir: string, outputDir: string) => {

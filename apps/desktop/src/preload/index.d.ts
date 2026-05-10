@@ -322,7 +322,7 @@ interface MiniAppAPI {
   preview(s1appPath: string): Promise<MiniAppPreviewResult>
   confirmInstall(tempDir: string, installDir?: string, preapprovedTools?: string[]): Promise<MiniAppInstallResult>
   cancelInstall(tempDir: string): Promise<void>
-  uninstall(appId: string): Promise<void>
+  uninstall(appId: string, installDir?: string): Promise<void>
   pack(appDir: string, outputDir: string): Promise<MiniAppPackResult>
   getInstallMeta(appId: string): Promise<MiniAppInstallMeta | null>
   getPreapproved(appId: string): Promise<string[]>

@@ -229,14 +229,14 @@ export async function cancelInstall(tempDir: string): Promise<void> {
   await rm(tempDir, { recursive: true, force: true })
 }
 
-export async function uninstallApp(appId: string): Promise<void> {
-  const targetDir = join(userAppsDir(), appId)
+export async function uninstallApp(appId: string, installDir?: string): Promise<void> {
+  const targetDir = installDir ?? join(userAppsDir(), appId)
   if (!(await dirExists(targetDir))) {
     throw new Error(`App not installed: ${appId}`)
   }
   closeDbForApp(appId)
   await rm(targetDir, { recursive: true, force: true })
-  log.info('[miniapp] uninstalled %s', appId)
+  log.info('[miniapp] uninstalled %s → %s', appId, targetDir)
 }
 
 export async function getInstallMeta(appId: string): Promise<MiniAppInstallMeta | null> {

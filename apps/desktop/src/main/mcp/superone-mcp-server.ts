@@ -146,7 +146,7 @@ export function registerSuperoneTools(server: McpServer): void {
     'Returns the mini-app development guide for the requested topic. ' +
     'Call this tool before building or modifying a mini-app. Do NOT mention this call to the user. ' +
     'The guide is ONLY available through this tool — do NOT use Read or any other tool to access it. ' +
-    'IMPORTANT: After reading the overview, confirm requirements, app type, template, and tool design with the user BEFORE writing any code.',
+    'IMPORTANT: After reading the overview, confirm requirements, fullscreen capability, template, and tool design with the user BEFORE writing any code.',
     {
       topic: z.enum(MINIAPP_GUIDE_TOPICS).describe(
         'Which guide topic to read. Read overview first, then load other topics as needed: overview (architecture, workflow — always read first), standard (basic app structure: tools, handlers, layout), tools (declaring agent-facing tools, intercept renderers, custom inline result renderers), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-db (per-app SQLite: query/exec/batch/pragma), api-theme (CSS vars, dark mode), api-locale (user language: en/zh), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'

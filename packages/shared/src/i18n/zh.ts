@@ -915,6 +915,7 @@ export const zh: Messages = {
       permissions: '权限',
       uninstallTitle: '卸载',
       uninstallDescription: '删除该小程序及其所有数据。此操作不可撤销。',
+      uninstallDevDescription: '注销该开发模式小程序并清空它的数据目录。源代码不会被删除。',
       confirmQuestion: '确定要卸载吗？',
       confirm: '确认',
       uninstall: '卸载小程序',

@@ -230,29 +230,29 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
         )}
 
         {/* Uninstall */}
-        {!manifest.isDev && (
-          <div className="rounded-lg border border-destructive/30 bg-card p-4">
-            <h3 className="mb-1 text-sm font-medium text-destructive">{t('resources.apps.uninstallTitle')}</h3>
-            <p className="mb-3 text-xs text-muted-foreground">
-              {t('resources.apps.uninstallDescription')}
-            </p>
-            {confirmDelete ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t('resources.apps.confirmQuestion')}</span>
-                <Button size="sm" variant="destructive" onClick={handleUninstall}>
-                  <Trash2 className="mr-1 size-3" />
-                  {t('resources.apps.confirm')}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
-              </div>
-            ) : (
-              <Button size="sm" variant="destructive" onClick={() => setConfirmDelete(true)}>
+        <div className="rounded-lg border border-destructive/30 bg-card p-4">
+          <h3 className="mb-1 text-sm font-medium text-destructive">{t('resources.apps.uninstallTitle')}</h3>
+          <p className="mb-3 text-xs text-muted-foreground">
+            {manifest.isDev
+              ? t('resources.apps.uninstallDevDescription')
+              : t('resources.apps.uninstallDescription')}
+          </p>
+          {confirmDelete ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{t('resources.apps.confirmQuestion')}</span>
+              <Button size="sm" variant="destructive" onClick={handleUninstall}>
                 <Trash2 className="mr-1 size-3" />
-                {t('resources.apps.uninstall')}
+                {t('resources.apps.confirm')}
               </Button>
-            )}
-          </div>
-        )}
+              <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
+            </div>
+          ) : (
+            <Button size="sm" variant="destructive" onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="mr-1 size-3" />
+              {t('resources.apps.uninstall')}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )

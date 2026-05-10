@@ -267,6 +267,27 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     expect(useMiniAppStore.getState().openApps['panel-app']).toBeUndefined()
   })
 
+  it('uninstallApp closes an open instance first so MINIAPP_CLOSE fires before delete', async () => {
+    const app = entry('panel-app')
+    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+    const callOrder: string[] = []
+    mockMiniapp.close.mockImplementationOnce(async () => { callOrder.push('close') })
+    mockMiniapp.uninstall.mockImplementationOnce(async () => { callOrder.push('uninstall') })
+
+    await useMiniAppStore.getState().uninstallApp('panel-app')
+
+    expect(callOrder).toEqual(['close', 'uninstall'])
+    expect(useMiniAppStore.getState().openApps['panel-app']).toBeUndefined()
+  })
+
+  it('uninstallApp skips the close step when the app is not currently open', async () => {
+    mockMiniapp.close.mockClear()
+    await useMiniAppStore.getState().uninstallApp('panel-app')
+
+    expect(mockMiniapp.close).not.toHaveBeenCalled()
+    expect(mockMiniapp.uninstall).toHaveBeenCalledWith('panel-app')
+  })
+
   it('handlePanelRemoved suppresses close during a migration (consumes _migratingApps)', async () => {
     const app = entry('fullscreen-app', true)
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')

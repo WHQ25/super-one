@@ -901,6 +901,7 @@ export type Messages = {
       permissions: string
       uninstallTitle: string
       uninstallDescription: string
+      uninstallDevDescription: string
       confirmQuestion: string
       confirm: string
       uninstall: string
@@ -1861,6 +1862,7 @@ export const en: Messages = {
       permissions: 'Permissions',
       uninstallTitle: 'Uninstall',
       uninstallDescription: 'Remove this app and all its data. This cannot be undone.',
+      uninstallDevDescription: 'Unregister this dev app and remove its data. Your source code stays on disk.',
       confirmQuestion: 'Are you sure?',
       confirm: 'Confirm',
       uninstall: 'Uninstall App',

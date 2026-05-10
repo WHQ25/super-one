@@ -117,6 +117,9 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       await window.miniapp.cancelInstall(pending.tempDir)
     },
     uninstallApp: async (appId: string) => {
+      if (get().openApps[appId]) {
+        await get().closeApp(appId)
+      }
       await window.miniapp.uninstall(appId)
       await get().refreshApps(get()._lastProjectDir)
     },

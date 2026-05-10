@@ -72,6 +72,33 @@ describe('activity-view-state', () => {
     expect(stored).toEqual({ layout, showPanel: true })
   })
 
+  it('park stores an isolated copy that survives later mutation of the live layout', () => {
+    mockIsDockReady.mockReturnValue(true)
+    const liveLayout = makeLayout('foo')
+    mockGetDockSnapshot.mockReturnValue(liveLayout)
+
+    useActivityViewStateStore.getState().park('sess-A')
+    ;(liveLayout as unknown as { activeGroup: string }).activeGroup = 'mutated-after-park'
+
+    const stored = useActivityViewStateStore.getState().perSession['sess-A']
+    expect((stored.layout as unknown as { activeGroup: string }).activeGroup).toBe('g1')
+  })
+
+  it('restore hands fromJSON an isolated copy that does not let dockview mutate perSession', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('foo'))
+    useActivityViewStateStore.getState().park('sess-A')
+
+    mockApplyDockSnapshot.mockClear()
+    useActivityViewStateStore.getState().restore('sess-A')
+
+    const handed = mockApplyDockSnapshot.mock.calls[0][0]
+    ;(handed as unknown as { activeGroup: string }).activeGroup = 'mutated-by-fromJSON'
+
+    const stored = useActivityViewStateStore.getState().perSession['sess-A']
+    expect((stored.layout as unknown as { activeGroup: string }).activeGroup).toBe('g1')
+  })
+
   it('park is a no-op when dock is not ready', () => {
     mockIsDockReady.mockReturnValue(false)
     useActivityViewStateStore.getState().park('sess-A')

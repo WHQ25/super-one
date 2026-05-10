@@ -33,7 +33,10 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
     const layout = getDockSnapshot()
     const showPanel = useActivityPanelStore.getState().showPanel
     set((s) => ({
-      perSession: { ...s.perSession, [sessionId]: { layout, showPanel } },
+      perSession: {
+        ...s.perSession,
+        [sessionId]: { layout: layout ? structuredClone(layout) : null, showPanel },
+      },
     }))
   },
 
@@ -43,7 +46,8 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
       return
     }
     set({ pendingRestore: null })
-    applyState(get().perSession[sessionId])
+    const target = get().perSession[sessionId]
+    applyState(target ? { layout: target.layout ? structuredClone(target.layout) : null, showPanel: target.showPanel } : undefined)
   },
 
   seedFromCurrent: (sessionId) => {
@@ -73,7 +77,8 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
     if (!state.pendingRestore) return
     const sid = state.pendingRestore
     set({ pendingRestore: null })
-    applyState(state.perSession[sid])
+    const target = state.perSession[sid]
+    applyState(target ? { layout: target.layout ? structuredClone(target.layout) : null, showPanel: target.showPanel } : undefined)
   },
 
   _resetForTest: () => set({ perSession: {}, pendingRestore: null }),

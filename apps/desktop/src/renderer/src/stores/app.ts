@@ -639,11 +639,11 @@ if (typeof window !== 'undefined') {
   })
 }
 
-// NOTE: file-tree reset is handled by fetchTree (called from FileTree useEffect on currentFolder change)
+// NOTE: file-tree reset is handled by fetchTree (called from FileTree useEffect on currentFolder change).
+// ActivityPanel showPanel is managed per-session by activity-view-state — do not reset here.
 let _prevFolder = useAppStore.getState().currentFolder
 useAppStore.subscribe((state) => {
   if (state.currentFolder === _prevFolder) return
   _prevFolder = state.currentFolder
-  useActivityPanelStore.getState().setShowPanel(false)
   useSourceControlStore.getState().reset()
 })

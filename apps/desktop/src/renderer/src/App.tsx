@@ -360,17 +360,15 @@ function App(): React.JSX.Element {
             <CodingLayout />
           </div>
         ) : (
-          <>
-            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-              <CanvasPanel />
-            </div>
-            <ChatPanel />
-          </>
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <CanvasPanel />
+          </div>
         )}
       </motion.div>
       </div>
       </>
       <MiniAppHostLayer />
+      {layoutMode === 'canvas' && <ChatPanel />}
       <UpdateNotification />
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />

@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useState, useLayoutEffect, memo } from 'react'
-import { motion } from 'motion/react'
+import { motion, useMotionValue, animate } from 'motion/react'
 import { useChatStore, useActiveSession, extractSessionTitle } from '@/stores/chat'
 import { ChevronDown, Plus } from 'lucide-react'
 import { ChatContent } from './ChatContent'
@@ -75,6 +75,26 @@ function clamp(value: number, min: number, max: number): number {
 
 type ResizeEdge = 'top' | 'bottom' | 'left' | 'right'
 
+/** Insert a full-viewport transparent overlay so the cursor can't enter an underlying
+ *  iframe (mini-app) during a drag/resize — iframes intercept mouse events and would
+ *  break the window-level mousemove listener. */
+function createDragCapture(cursor: string) {
+  let el: HTMLDivElement | null = null
+  return {
+    acquire() {
+      if (el) return
+      el = document.createElement('div')
+      el.style.cssText = `position:fixed;inset:0;z-index:2147483647;cursor:${cursor}`
+      document.body.appendChild(el)
+    },
+    release() {
+      if (!el) return
+      el.remove()
+      el = null
+    },
+  }
+}
+
 export const ChatPanel = memo(function ChatPanel() {
   const isOpen = useChatStore((s) => s.isOpen)
   const corner = useChatStore((s) => s.corner) as Anchor
@@ -148,12 +168,15 @@ export const ChatPanel = memo(function ChatPanel() {
     setPendingTextW(w)
   }, [pendingReason])
 
-  // Override position during drag / midpoint resize.
-  // null → use anchor-computed rest position.
-  const [freezePos, setFreezePos] = useState<{ x: number; y: number } | null>(null)
   const dragRef = useRef<{ dragging: boolean }>({ dragging: false })
-
+  const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
+
+  // Motion values for position — bypass React state so drag/resize don't trigger re-renders
+  const mvX = useMotionValue(0)
+  const mvY = useMotionValue(0)
+  const positionAnimRef = useRef<{ stop: () => void } | null>(null)
+  const hasInitPosRef = useRef(false)
 
   // Track when expansion animation finishes — controls when ChatContent fades in
   const [expansionComplete, setExpansionComplete] = useState(isOpen)
@@ -169,9 +192,24 @@ export const ChatPanel = memo(function ChatPanel() {
   const targetH = isOpen ? expandedH : COLLAPSED_SIZE
   const targetRadius = isOpen ? 16 : COLLAPSED_SIZE / 2
 
-  // Position: freezePos overrides; otherwise compute from anchor
-  const restPos = anchorPosition(corner, targetW, targetH, winSize.w, winSize.h)
-  const pos = freezePos ?? restPos
+  // Sync motion-value position to anchor rest whenever anchor/size/window changes.
+  // Skipped during drag/resize — those write to motion values directly.
+  // isDragging is in deps (not just dragRef) so the snap-back animation runs
+  // when the user releases — corner changes during drag, then isDragging flips false.
+  useLayoutEffect(() => {
+    if (isDragging || isResizing) return
+    const rest = anchorPosition(corner, targetW, targetH, winSize.w, winSize.h)
+    positionAnimRef.current?.stop()
+    if (!hasInitPosRef.current) {
+      hasInitPosRef.current = true
+      mvX.set(rest.x)
+      mvY.set(rest.y)
+      return
+    }
+    const ax = animate(mvX, rest.x, { duration: SIZE_ANIMATION_DURATION, ease: SIZE_EASE })
+    const ay = animate(mvY, rest.y, { duration: SIZE_ANIMATION_DURATION, ease: SIZE_EASE })
+    positionAnimRef.current = { stop: () => { ax.stop(); ay.stop() } }
+  }, [corner, targetW, targetH, winSize.w, winSize.h, isDragging, isResizing, mvX, mvY])
 
   // Which edges are anchored (cannot be resized) — affects which resize handles render
   const topAnchored = corner === 'tl' || corner === 'tr' || corner === 'tm'
@@ -180,6 +218,7 @@ export const ChatPanel = memo(function ChatPanel() {
   const rightAnchored = corner === 'tr' || corner === 'br' || corner === 'rm'
 
   // --- Drag handler (shared by header + collapsed icon) ---
+  // Writes directly to motion values — no React re-render per frame.
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       const rect = panelRef.current?.getBoundingClientRect()
@@ -191,13 +230,7 @@ export const ChatPanel = memo(function ChatPanel() {
       const w = rect.width
       const h = rect.height
       let dragging = false
-      let raf = 0
-      let nextPos = { x: startX, y: startY }
-
-      const flush = () => {
-        raf = 0
-        setFreezePos(nextPos)
-      }
+      const capture = createDragCapture('grabbing')
 
       const handleMove = (ev: MouseEvent) => {
         const dx = ev.clientX - startMouseX
@@ -205,24 +238,27 @@ export const ChatPanel = memo(function ChatPanel() {
         if (!dragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
           dragging = true
           dragRef.current.dragging = true
-          setFreezePos({ x: startX, y: startY })
+          positionAnimRef.current?.stop()
+          setIsDragging(true)
+          capture.acquire()
         }
         if (dragging) {
-          nextPos = { x: startX + dx, y: startY + dy }
-          if (raf === 0) raf = requestAnimationFrame(flush)
+          mvX.set(startX + dx)
+          mvY.set(startY + dy)
         }
       }
 
       const handleUp = (ev: MouseEvent) => {
         window.removeEventListener('mousemove', handleMove)
         window.removeEventListener('mouseup', handleUp)
-        cancelAnimationFrame(raf)
+        capture.release()
         if (dragging) {
           const cx = startX + (ev.clientX - startMouseX) + w / 2
           const cy = startY + (ev.clientY - startMouseY) + h / 2
           setCorner(nearestAnchor(cx, cy, w, h))
         }
-        setFreezePos(null)
+        setIsDragging(false)
+        // dragRef stays true for one frame so the synthetic click after mouseup doesn't toggle
         requestAnimationFrame(() => {
           dragRef.current.dragging = false
         })
@@ -231,7 +267,7 @@ export const ChatPanel = memo(function ChatPanel() {
       window.addEventListener('mousemove', handleMove)
       window.addEventListener('mouseup', handleUp)
     },
-    [setCorner]
+    [setCorner, mvX, mvY]
   )
 
   const handleToggle = useCallback(
@@ -257,8 +293,13 @@ export const ChatPanel = memo(function ChatPanel() {
       const startH = rect.height
       const startX = rect.left
       const startY = rect.top
-      setFreezePos({ x: startX, y: startY })
+      positionAnimRef.current?.stop()
+      mvX.set(startX)
+      mvY.set(startY)
       setIsResizing(true)
+      const cursor = edge === 'top' || edge === 'bottom' ? 'ns-resize' : 'ew-resize'
+      const capture = createDragCapture(cursor)
+      capture.acquire()
 
       let raf = 0
       let nextW = startW
@@ -269,7 +310,8 @@ export const ChatPanel = memo(function ChatPanel() {
         raf = 0
         setPanelW(nextW)
         setExpandedH(nextH)
-        setFreezePos({ x: nextX, y: nextY })
+        mvX.set(nextX)
+        mvY.set(nextY)
       }
 
       const handleMove = (ev: MouseEvent) => {
@@ -297,21 +339,20 @@ export const ChatPanel = memo(function ChatPanel() {
       const handleUp = () => {
         window.removeEventListener('mousemove', handleMove)
         window.removeEventListener('mouseup', handleUp)
+        capture.release()
         cancelAnimationFrame(raf)
-        // Commit final values
         setPanelW(nextW)
         setExpandedH(nextH)
         setIsResizing(false)
-        setFreezePos(null)  // triggers smooth animate back to anchor's natural position
+        // anchor-sync effect animates back to rest position
       }
 
       window.addEventListener('mousemove', handleMove)
       window.addEventListener('mouseup', handleUp)
     },
-    []
+    [mvX, mvY]
   )
 
-  const isDragging = freezePos !== null && !isResizing && dragRef.current.dragging
   const noTransitionForFreeze = isDragging || isResizing
 
   // Resize handles render — only when expanded; one per non-anchored edge
@@ -358,9 +399,9 @@ export const ChatPanel = memo(function ChatPanel() {
       )}
       <motion.div
         ref={panelRef}
-        style={{ position: 'fixed', top: 0, left: 0 }}
-        animate={{ x: pos.x, y: pos.y, width: targetW, height: targetH, borderRadius: targetRadius }}
-        initial={{ x: pos.x, y: pos.y, width: targetW, height: targetH, borderRadius: targetRadius }}
+        style={{ position: 'fixed', top: 0, left: 0, x: mvX, y: mvY }}
+        animate={{ width: targetW, height: targetH, borderRadius: targetRadius }}
+        initial={{ width: targetW, height: targetH, borderRadius: targetRadius }}
         transition={noTransitionForFreeze
           ? { duration: 0 }
           : { duration: SIZE_ANIMATION_DURATION, ease: SIZE_EASE }}

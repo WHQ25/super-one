@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
+import { useActivityViewStateStore } from './activity-view-state'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode } from './chat-helpers'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
@@ -3547,9 +3548,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }
     })
+    useActivityViewStateStore.getState().clearForSession(sessionId)
   },
 
   resetSessionForWorktreeSwitch: (projectPath: string, opts?: { wtPath?: string; gitBranch?: string | null }) => {
+    const draftId = createSessionId()
     set((s) => {
       const proj = getProject(s, projectPath)
       const newSession = createDefaultPerSessionState()
@@ -3564,17 +3567,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return {
         projectSessions: {
           ...s.projectSessions,
-          [projectPath]: (() => {
-            const draftId = createSessionId()
-            return {
-              ...proj,
-              _activeSessionId: draftId,
-              _sessions: { ...proj._sessions, [draftId]: newSession },
-            }
-          })(),
+          [projectPath]: {
+            ...proj,
+            _activeSessionId: draftId,
+            _sessions: { ...proj._sessions, [draftId]: newSession },
+          },
         },
       }
     })
+    useActivityViewStateStore.getState().seedFromCurrent(draftId)
     triggerPrewarm(get(), projectPath)
   },
 
@@ -3621,6 +3622,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }
     })
+    useActivityViewStateStore.getState().seedFromCurrent(newSessionId)
 
     let unlock!: () => void
     _resetSessionLock = new Promise<void>((r) => { unlock = r })
@@ -3993,12 +3995,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       triggerPrewarm(get(), activeProject)
       return
     }
+    const proj0 = getProject(get(), activeProject)
+    const currentSid0 = proj0._activeSessionId
+    const currentSess0 = currentSid0 ? proj0._sessions[currentSid0] : null
+    const willReplaceSid = !!currentSess0 && currentSess0.messages.length === 0
+    const nextSid = willReplaceSid
+      ? (provider === 'codex' ? _createLocalCodexSessionId() : createSessionId())
+      : null
     set((s) => {
       const proj = getProject(s, activeProject)
       const currentSid = proj._activeSessionId
       const currentSess = currentSid ? proj._sessions[currentSid] : null
-      if (currentSess && currentSess.messages.length === 0) {
-        const nextSid = provider === 'codex' ? _createLocalCodexSessionId() : createSessionId()
+      if (currentSess && nextSid) {
         const nextSessions = { ...proj._sessions }
         if (currentSid) delete nextSessions[currentSid]
         nextSessions[nextSid] = {
@@ -4020,6 +4028,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       return updateActivePerSession(s, () => ({ preferredProvider: provider, sessionProvider: provider, slashCommandOutput: null }))
     })
+    if (nextSid) useActivityViewStateStore.getState().seedFromCurrent(nextSid)
     if (provider === 'codex') {
       const project = getProject(get(), activeProject)
       const session = getActivePerSession(get())

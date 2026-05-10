@@ -28,7 +28,8 @@ import { useHarnessTheme } from '@/hooks/useHarnessTheme'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
-import { useActiveSession, extractSessionTitle } from '@/stores/chat'
+import { useActivityViewStateStore } from '@/stores/activity-view-state'
+import { useActiveSession, extractSessionTitle, useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
@@ -75,6 +76,20 @@ function App(): React.JSX.Element {
       })
     }
   }, [view])
+
+  const activeSessionId = useChatStore((s) => {
+    const proj = s.activeProject
+    return proj ? s.projectSessions[proj]?._activeSessionId ?? null : null
+  })
+  const prevSessionIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = prevSessionIdRef.current
+    if (prev === activeSessionId) return
+    const view = useActivityViewStateStore.getState()
+    if (prev) view.park(prev)
+    if (activeSessionId) view.restore(activeSessionId)
+    prevSessionIdRef.current = activeSessionId
+  }, [activeSessionId])
 
   useEffect(() => {
     return window.app.onUpdateEvent((event) => {

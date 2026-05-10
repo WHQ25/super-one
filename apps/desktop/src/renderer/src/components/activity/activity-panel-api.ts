@@ -1,9 +1,10 @@
-import type { DockviewApi, AddPanelPositionOptions } from 'dockview-core'
+import type { DockviewApi, AddPanelPositionOptions, SerializedDockview } from 'dockview-core'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { normalizeFileLinkTarget } from '@/lib/file-link'
 
 let dockApi: DockviewApi | null = null
 let pendingAction: (() => void) | null = null
+let onDockReadyCb: (() => void) | null = null
 
 export function setDockApi(api: DockviewApi | null) {
   dockApi = api
@@ -12,10 +13,30 @@ export function setDockApi(api: DockviewApi | null) {
     pendingAction = null
     action()
   }
+  if (api) onDockReadyCb?.()
 }
 
 export function getDockApi() {
   return dockApi
+}
+
+export function setOnDockReady(cb: (() => void) | null) {
+  onDockReadyCb = cb
+}
+
+export function getDockSnapshot(): SerializedDockview | null {
+  return dockApi?.toJSON() ?? null
+}
+
+export function applyDockSnapshot(json: SerializedDockview | null): boolean {
+  if (!dockApi) return false
+  if (json) dockApi.fromJSON(json)
+  else dockApi.clear()
+  return true
+}
+
+export function isDockReady(): boolean {
+  return dockApi !== null
 }
 
 function ensureVisible() {

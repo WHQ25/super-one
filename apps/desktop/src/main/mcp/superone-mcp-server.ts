@@ -13,7 +13,7 @@ import { createMiniApp, cacheAppEntry } from '../miniapp/miniapp-service'
 import { packApp, getPreapprovedByPath } from '../miniapp/miniapp-packager'
 import { generateSuperoneDts } from '../miniapp/miniapp-templates'
 import overviewMd from './guides/overview.md?raw'
-import standardMd from './guides/standard.md?raw'
+import manifestMd from './guides/manifest.md?raw'
 import permissionsMd from './guides/permissions.md?raw'
 import apiFsMd from './guides/api/fs.md?raw'
 import apiGitMd from './guides/api/git.md?raw'
@@ -30,7 +30,7 @@ import toolsMd from './guides/tools.md?raw'
 
 const MINIAPP_GUIDES: Record<string, string> = {
   overview: overviewMd,
-  standard: standardMd,
+  manifest: manifestMd,
   permissions: permissionsMd,
   'api-fs': apiFsMd,
   'api-git': apiGitMd,
@@ -149,7 +149,7 @@ export function registerSuperoneTools(server: McpServer): void {
     'IMPORTANT: After reading the overview, confirm requirements, fullscreen capability, template, and tool design with the user BEFORE writing any code.',
     {
       topic: z.enum(MINIAPP_GUIDE_TOPICS).describe(
-        'Which guide topic to read. Read overview first, then load other topics as needed: overview (architecture, workflow — always read first), standard (basic app structure: tools, handlers, layout), tools (declaring agent-facing tools, intercept renderers, custom inline result renderers), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-db (per-app SQLite: query/exec/batch/pragma), api-theme (CSS vars, dark mode), api-locale (user language: en/zh), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
+        'Which guide topic to read. Read overview first, then load other topics as needed: overview (architecture, workflow — always read first), manifest (manifest fields and panel layout reference), tools (declaring agent-facing tools, intercept renderers, custom inline result renderers), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-db (per-app SQLite: query/exec/batch/pragma), api-theme (CSS vars, dark mode), api-locale (user language: en/zh), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
       ),
     },
     async ({ topic }) => ({

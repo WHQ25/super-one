@@ -1,19 +1,19 @@
-# Standard App Guide
+# Mini-App Manifest
 
-Mini-apps are persistent interactive apps. They open by default as a tab in the right-hand activity panel. Set `fullscreen: true` in the manifest to also expose a full-screen canvas entry. The agent communicates with the app via MCP tool calls declared in `manifest.json`.
-
-## Manifest
+Every mini-app is described by a `manifest.json` file at its root. This is where you declare its identity, tool surface, permissions, and UI behavior. Mini-apps open by default as a tab in the activity panel; set `fullscreen: true` to also expose a full-screen canvas entry.
 
 Start with the scaffold from `setup_mini_app_dev`, then edit `manifest.json` to add tools and other fields.
 
-### Required Fields
+## Fields
+
+### Required
 
 | Field | Description |
 |-------|-------------|
 | `appId` | Unique ID. `^[a-z0-9][a-z0-9_-]*$` |
 | `name` | Display name in app catalog |
 
-### Optional Fields
+### Optional
 
 | Field | Description |
 |-------|-------------|

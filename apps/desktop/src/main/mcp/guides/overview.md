@@ -2,7 +2,7 @@
 
 A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe and can be controlled by any AI agent through MCP tools.
 
-Every app opens as a tab in the activity panel by default. Set `fullscreen: true` in the manifest if it should also be openable in the canvas full-screen view (the user can switch between panel and canvas at runtime). Apps can declare `tools[]` so the agent can drive them, and any tool can attach a custom result renderer (`tools[].renderer.result`) to render its output inline in the chat — read the `tools` topic for both. Read the `standard` topic for the basic structure of an interactive app.
+Every app opens as a tab in the activity panel by default. Set `fullscreen: true` in the manifest if it should also be openable in the canvas full-screen view (the user can switch between panel and canvas at runtime). Apps can declare `tools[]` so the agent can drive them, and any tool can attach a custom result renderer (`tools[].renderer.result`) to render its output inline in the chat — read the `tools` topic for both. Read the `manifest` topic for the full list of manifest fields and panel layout guidance.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ Do NOT skip these steps. Do NOT start coding before the user confirms the plan.
 
 1. Confirm with the user **where** the mini-app source should live (`directory`) and **who** should see it (`scope`: `project` or `user`). See "Where the App Lives" below.
 2. Call `setup_mini_app_dev` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, fullscreen, description). It scaffolds files at `directory` and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
-3. Read **`standard`** for the basic app structure, then **`tools`** for declaring agent-facing tools and custom inline renderers.
+3. Read **`manifest`** for manifest fields and panel layout, then **`tools`** for declaring agent-facing tools and custom inline renderers.
 4. Edit `manifest.json` to add tools, permissions, etc.
 5. Write app code
 

@@ -38,16 +38,20 @@ vi.mock('../miniapp/miniapp-packager', () => ({
   getPreapprovedByPath: vi.fn(() => []),
 }))
 vi.mock('./guides/overview.md?raw', () => ({ default: 'overview' }))
-vi.mock('./guides/standard.md?raw', () => ({ default: 'standard' }))
-vi.mock('./guides/inchat.md?raw', () => ({ default: 'inchat' }))
+vi.mock('./guides/manifest.md?raw', () => ({ default: 'manifest' }))
 vi.mock('./guides/permissions.md?raw', () => ({ default: 'permissions' }))
 vi.mock('./guides/api/fs.md?raw', () => ({ default: 'fs' }))
 vi.mock('./guides/api/git.md?raw', () => ({ default: 'git' }))
 vi.mock('./guides/api/db.md?raw', () => ({ default: 'db' }))
 vi.mock('./guides/api/theme.md?raw', () => ({ default: 'theme' }))
+vi.mock('./guides/api/locale.md?raw', () => ({ default: 'locale' }))
 vi.mock('./guides/api/agent.md?raw', () => ({ default: 'agent' }))
+vi.mock('./guides/api/system.md?raw', () => ({ default: 'system' }))
+vi.mock('./guides/api/ui.md?raw', () => ({ default: 'ui' }))
 vi.mock('./guides/packaging.md?raw', () => ({ default: 'packaging' }))
 vi.mock('./guides/icon.md?raw', () => ({ default: 'icon' }))
+vi.mock('./guides/recipes.md?raw', () => ({ default: 'recipes' }))
+vi.mock('./guides/tools.md?raw', () => ({ default: 'tools' }))
 
 import {
   getSuperoneMcpServer,

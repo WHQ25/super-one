@@ -6,6 +6,7 @@
   "author": { "name": "SuperOne", "url": "https://github.com/WHQ25/super-one" },
   "description": "A simple greeting app",
   "logo": "logo.png",
+  "preferWidth": 500,
   "toolSlug": "hello",
   "permissions": {
     "fs": [{ "scope": "project", "path": ".", "access": "readwrite", "reason": "Read and write project files" }],

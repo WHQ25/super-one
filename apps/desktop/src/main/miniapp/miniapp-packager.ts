@@ -1,11 +1,11 @@
 import { createHash } from 'crypto'
-import { createReadStream, createWriteStream } from 'fs'
+import { createWriteStream } from 'fs'
 import { readdir, readFile, writeFile, rm, stat, mkdir, cp } from 'fs/promises'
 import { basename, dirname, join, relative } from 'path'
 import archiver from 'archiver'
-import { Extract as unzipExtract } from 'unzipper'
 import { app } from 'electron'
 import log from '../logger'
+import { extractZip } from '../zip-utils'
 import { parseManifest } from './miniapp-schema'
 import { closeDbForApp } from './miniapp-db'
 import type { MiniAppInstallMeta, MiniAppInstallResult, MiniAppIntegrity, MiniAppManifest, MiniAppPackResult, MiniAppPreviewResult } from '@superone/shared/miniapp-types'
@@ -131,15 +131,9 @@ export async function packApp(appDir: string, outputDir: string): Promise<MiniAp
 
 export async function previewApp(s1appPath: string): Promise<MiniAppPreviewResult> {
   const tmpDir = join(app.getPath('temp'), `s1app-install-${Date.now()}`)
-  await mkdir(tmpDir, { recursive: true })
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      createReadStream(s1appPath)
-        .pipe(unzipExtract({ path: tmpDir }))
-        .on('close', resolve)
-        .on('error', reject)
-    })
+    await extractZip(s1appPath, tmpDir)
 
     const raw = await readFile(join(tmpDir, 'manifest.json'), 'utf-8')
     const parsed = parseManifest(JSON.parse(raw))

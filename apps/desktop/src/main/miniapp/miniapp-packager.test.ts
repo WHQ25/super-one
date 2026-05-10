@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { join } from 'path'
 import { mkdtemp, writeFile, mkdir, rm, readFile, stat } from 'fs/promises'
 import { tmpdir } from 'os'
-import { generateIntegrity, verifyIntegrity, confirmInstall } from './miniapp-packager'
+import { generateIntegrity, verifyIntegrity, confirmInstall, packApp, previewApp } from './miniapp-packager'
 
 vi.mock('electron', () => ({
   app: {
@@ -197,5 +197,90 @@ describe('confirmInstall preservation', () => {
     expect(await dirExists(targetDir)).toBe(true)
     const idx = await readFile(join(targetDir, 'index.html'), 'utf-8')
     expect(idx).toBe('<html>v2</html>')
+  })
+})
+
+describe('pack/preview round-trip with many entries', () => {
+  let appDir: string
+  let outDir: string
+
+  beforeEach(async () => {
+    appDir = await mkdtemp(join(tmpdir(), 's1-many-src-'))
+    outDir = await mkdtemp(join(tmpdir(), 's1-many-out-'))
+  })
+
+  afterEach(async () => {
+    await rm(appDir, { recursive: true, force: true }).catch(() => {})
+    await rm(outDir, { recursive: true, force: true }).catch(() => {})
+  })
+
+  it('previewApp recovers manifest from a .s1app containing 200+ entries', async () => {
+    await writeFile(
+      join(appDir, 'manifest.json'),
+      JSON.stringify({ appId: 'many', name: 'Many', version: '0.1.0' }),
+    )
+    await writeFile(join(appDir, 'index.html'), '<html></html>')
+    const assetsDir = join(appDir, 'assets')
+    await mkdir(assetsDir, { recursive: true })
+    for (let i = 0; i < 250; i++) {
+      await writeFile(join(assetsDir, `f${i}.txt`), `payload-${i}-`.repeat(20))
+    }
+
+    const { outputPath, fileCount } = await packApp(appDir, outDir)
+    expect(fileCount).toBeGreaterThan(200)
+
+    const preview = await previewApp(outputPath)
+    try {
+      expect(preview.manifest.appId).toBe('many')
+      expect(preview.manifest.version).toBe('0.1.0')
+      const integrity = JSON.parse(
+        await readFile(join(preview.tempDir, 'integrity.json'), 'utf-8'),
+      )
+      expect(Object.keys(integrity.files).length).toBeGreaterThan(200)
+    } finally {
+      await rm(preview.tempDir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
+  it('previewApp rejects on missing zip file', async () => {
+    await expect(previewApp(join(outDir, 'does-not-exist.s1app'))).rejects.toThrow()
+  })
+
+  it('previewApp rejects on corrupt zip file', async () => {
+    const corrupt = join(outDir, 'corrupt.s1app')
+    await writeFile(corrupt, Buffer.from('not a zip archive, just plain bytes'))
+    await expect(previewApp(corrupt)).rejects.toThrow()
+  })
+})
+
+describe('isUnsafeZipEntryPath', () => {
+  it('accepts normal nested paths', async () => {
+    const { isUnsafeZipEntryPath } = await import('../zip-utils')
+    expect(isUnsafeZipEntryPath('manifest.json', '/dest')).toBe(false)
+    expect(isUnsafeZipEntryPath('assets/index.js', '/dest')).toBe(false)
+    expect(isUnsafeZipEntryPath('a/b/c/d.txt', '/dest')).toBe(false)
+  })
+
+  it('rejects entries that escape via ../', async () => {
+    const { isUnsafeZipEntryPath } = await import('../zip-utils')
+    expect(isUnsafeZipEntryPath('../escaped.txt', '/dest')).toBe(true)
+    expect(isUnsafeZipEntryPath('../../further.txt', '/dest')).toBe(true)
+    expect(isUnsafeZipEntryPath('a/../../escape.txt', '/dest')).toBe(true)
+  })
+
+  it('treats absolute-looking entry names as sandboxed (path.join behavior)', async () => {
+    const { isUnsafeZipEntryPath } = await import('../zip-utils')
+    expect(isUnsafeZipEntryPath('/etc/passwd', '/dest')).toBe(false)
+  })
+
+  it('rejects prefix-confusion attacks (/dest vs /dest-sibling)', async () => {
+    const { isUnsafeZipEntryPath } = await import('../zip-utils')
+    expect(isUnsafeZipEntryPath('../dest-sibling/leak.txt', '/dest')).toBe(true)
+  })
+
+  it('rejects entry that resolves exactly to destination root', async () => {
+    const { isUnsafeZipEntryPath } = await import('../zip-utils')
+    expect(isUnsafeZipEntryPath('.', '/dest')).toBe(true)
+    expect(isUnsafeZipEntryPath('', '/dest')).toBe(true)
   })
 })

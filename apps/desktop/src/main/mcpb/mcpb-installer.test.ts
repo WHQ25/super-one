@@ -470,6 +470,37 @@ describe('mcpb installer', () => {
       expect(list[0].iconDataUrl).toMatch(/^data:image\/png;base64,/)
     })
   })
+
+  describe('large bundle round-trip', () => {
+    it('previewMcpbBundle recovers manifest from a .mcpb containing 250+ entries', async () => {
+      const files: Record<string, string> = {}
+      for (let i = 0; i < 250; i++) {
+        files[`assets/f${i}.txt`] = `payload-${i}-`.repeat(20)
+      }
+      files['server/index.js'] = 'console.log("hi")'
+      const file = await buildBundle(bundleDir, { manifest: nodeManifest(), files })
+
+      const preview = await previewMcpbBundle(file, { rootDir: installRoot, tempBaseDir: workDir })
+      expect(preview.manifest.name).toBe('demo-server')
+      expect(preview.manifest.version).toBe('1.0.0')
+    })
+  })
+
+  describe('extract error paths', () => {
+    it('rejects when zip file does not exist', async () => {
+      await expect(
+        previewMcpbBundle(join(bundleDir, 'nope.mcpb'), { rootDir: installRoot, tempBaseDir: workDir }),
+      ).rejects.toThrow()
+    })
+
+    it('rejects when zip file is corrupt', async () => {
+      const corrupt = join(bundleDir, 'corrupt.mcpb')
+      await writeFile(corrupt, Buffer.from('not a real zip file, just garbage bytes'))
+      await expect(
+        previewMcpbBundle(corrupt, { rootDir: installRoot, tempBaseDir: workDir }),
+      ).rejects.toThrow()
+    })
+  })
 })
 
 async function readDirSafe(dir: string): Promise<string[]> {

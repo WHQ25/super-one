@@ -1,12 +1,11 @@
 import { createHash } from 'crypto'
-import { createReadStream } from 'fs'
 import { existsSync } from 'fs'
 import { mkdir, mkdtemp, rm, readFile, writeFile, readdir, cp } from 'fs/promises'
 import { tmpdir, homedir } from 'os'
 import { join, relative, resolve, sep } from 'path'
-import { Extract as unzipExtract } from 'unzipper'
 import { app, shell } from 'electron'
 import log from '../logger'
+import { extractZip } from '../zip-utils'
 import { saveMcpConfig, deleteMcpConfig } from '../mcp-config-service'
 import { saveCodexMcpConfig, deleteCodexMcpConfig } from '../codex-config-service'
 import { addBundleLibraryEntry } from '../mcp-library-service'
@@ -69,16 +68,6 @@ function sha256Hex(input: string | Buffer): string {
   const h = createHash('sha256')
   h.update(input)
   return h.digest('hex')
-}
-
-async function unzipTo(sourceFile: string, destDir: string): Promise<void> {
-  await mkdir(destDir, { recursive: true })
-  await new Promise<void>((resolve, reject) => {
-    createReadStream(sourceFile)
-      .pipe(unzipExtract({ path: destDir }))
-      .on('close', resolve)
-      .on('error', reject)
-  })
 }
 
 async function readManifestFromDir(
@@ -146,7 +135,7 @@ export async function previewMcpbBundle(
 ): Promise<McpbPreview> {
   const tmpDir = await mkdtemp(join(paths.tempBaseDir, 'mcpb-preview-'))
   try {
-    await unzipTo(filePath, tmpDir)
+    await extractZip(filePath, tmpDir)
     const { manifest, manifestHash } = await readManifestFromDir(tmpDir)
     assertSafeInstallDir(paths.rootDir, manifest.name, manifest.version)
 
@@ -197,7 +186,7 @@ export async function installMcpbBundle(
   const tmpDir = await mkdtemp(join(paths.tempBaseDir, 'mcpb-install-'))
   let installed = false
   try {
-    await unzipTo(req.filePath, tmpDir)
+    await extractZip(req.filePath, tmpDir)
     const { manifest, manifestHash } = await readManifestFromDir(tmpDir)
     assertSafeInstallDir(paths.rootDir, manifest.name, manifest.version)
 

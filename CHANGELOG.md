@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.30.4-alpha] - 2026-05-11
+
+### Added
+
+- **Mini-app manifests can declare `preferWidth` for initial panel width.** Setting `preferWidth` (360–2000px) makes the activity panel open at that width when there's room beside the sidebar (clamped to fit, skipped if remaining width falls below `MIN_AP`). User resizes are preserved — `preferWidth` only sets the initial width and does not snap back, and re-opening an already-open app keeps the current width. `LAYOUT` constants moved out of `App.tsx` into `lib/layout-constants.ts` so the mini-app store can read `MIN_MAIN`/`MIN_AP` without a circular import.
+- **Dev mini-apps can now be uninstalled from the settings detail page.** The uninstall section in `AppDetailPage` is no longer gated on production apps. Uninstalling a dev app only removes its install slot (`~/.superone/apps/<appId>/`) — the dev pointer and `data/` directory — your source tree outside the slot is untouched. A dev-specific description spells out the scope, and `uninstallApp` now closes a currently-mounted iframe (`MINIAPP_CLOSE` + remove from `openApps`) before deleting the install dir to avoid a ghost iframe pointing at an empty directory.
+
+### Fixed
+
+- **Mini-app iframe state survives panel↔canvas switches.** Iframes were previously torn down on every migration, blowing away JS state, subscriptions, and registered fs permissions — apps reading project files after a switch hit "no project context" because `allowedDirectories` had been cleared. All open mini-app iframes now live in a persistent host layer at the `App.tsx` root, positioned via fixed-layer absolute coordinates that follow a `MiniAppSlot` placeholder in either panel or canvas. `MINIAPP_OPEN`/`CLOSE` is decoupled from UI placement, with a `_migratingApps` set suppressing Dockview's `onDidRemovePanel` close path during migration. DOM node identity is preserved across panel→canvas→panel cycles.
+- **`.s1app` / `.mcpb` install no longer silently loses trailing entries.** Streaming `unzipper.Extract` was dropping the last files on archives with 100+ entries (`close` fires before final writers flush) — a `.s1app` with `manifest.json` near the end would `ENOENT` on install. Switched to random-access `Open.file()` + per-entry `extract()` via a shared `extractZip` helper, plus zip-slip defense via `path.relative` (unzipper's upstream `indexOf` check is vulnerable to prefix confusion).
+
+### Changed
+
+- **Mini-app developer guide topic renamed `standard` → `manifest`.** After mini-apps unified into a single type with a `fullscreen` capability flag, the `standard` topic name lost its semantic distinction. The MCP `read_miniapp_guide` tool now exposes the topic as `manifest`, matching its content (manifest schema reference + panel layout guidance).
+
 ## [0.30.3-alpha] - 2026-05-10
 
 ### Added

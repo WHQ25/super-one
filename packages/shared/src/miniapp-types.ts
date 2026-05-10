@@ -34,6 +34,7 @@ export interface MiniAppManifest {
   logo?: string
   isDev?: boolean
   fullscreen?: boolean
+  preferWidth?: number
   permissions?: MiniAppPermissions
   toolSlug?: string
   tools?: MiniAppToolDefinition[]

@@ -21,6 +21,7 @@ Start with the scaffold from `setup_mini_app_dev`, then edit `manifest.json` to 
 | `author` | `{ name, email?, url? }` |
 | `logo` | App icon (PNG). See `icon` topic. |
 | `fullscreen` | `true` to also offer a canvas full-screen entry. Default `false` (panel only). |
+| `preferWidth` | Preferred activity panel width in pixels (360–2000). Applied when the app is opened, if there's enough room; otherwise clamped to fit. The user can resize freely afterwards — preferWidth only sets the initial size. |
 | `description` | Short description shown in app catalog |
 
 ### Where the App Opens

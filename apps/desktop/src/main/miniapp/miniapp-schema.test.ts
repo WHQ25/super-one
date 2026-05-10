@@ -103,6 +103,26 @@ describe('parseManifest', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('should accept preferWidth in valid range', () => {
+    const result = parseManifest({ ...validManifest, preferWidth: 480 })
+    expect(result.ok).toBe(true)
+  })
+
+  it('should reject preferWidth below MIN_AP (360)', () => {
+    const result = parseManifest({ ...validManifest, preferWidth: 200 })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject preferWidth above max (2000)', () => {
+    const result = parseManifest({ ...validManifest, preferWidth: 5000 })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject non-integer preferWidth', () => {
+    const result = parseManifest({ ...validManifest, preferWidth: 480.5 })
+    expect(result.ok).toBe(false)
+  })
+
   it('should reject invalid author email', () => {
     const result = parseManifest({
       ...validManifest,

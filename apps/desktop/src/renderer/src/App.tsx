@@ -37,13 +37,9 @@ import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
 import { initAnalytics } from '@/lib/analytics'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
+import { LAYOUT } from '@/lib/layout-constants'
 
-export const LAYOUT = {
-  MIN_MAIN: 400,
-  MIN_SIDEBAR: 320,
-  MAX_SIDEBAR: 500,
-  MIN_AP: 360,
-} as const
+export { LAYOUT }
 
 function App(): React.JSX.Element {
   useAgentEvents()

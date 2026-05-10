@@ -3,17 +3,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 
-const { mockSetLayoutMode, mockOpenMiniAppTab, mockCloseMiniAppTab } = vi.hoisted(() => ({
+const { mockSetLayoutMode, mockOpenMiniAppTab, mockCloseMiniAppTab, mockSetPanelWidth, appStateRef } = vi.hoisted(() => ({
   mockSetLayoutMode: vi.fn(),
   mockOpenMiniAppTab: vi.fn(),
   mockCloseMiniAppTab: vi.fn(),
+  mockSetPanelWidth: vi.fn(),
+  appStateRef: { showSidebar: true, sidebarWidth: 320 } as { showSidebar: boolean; sidebarWidth: number },
 }))
 
 vi.mock('./app', () => ({
   useAppStore: {
     getState: () => ({
       setLayoutMode: mockSetLayoutMode,
+      showSidebar: appStateRef.showSidebar,
+      sidebarWidth: appStateRef.sidebarWidth,
     }),
+  },
+}))
+
+vi.mock('./activity-panel', () => ({
+  useActivityPanelStore: {
+    getState: () => ({ setPanelWidth: mockSetPanelWidth }),
   },
 }))
 
@@ -44,11 +54,16 @@ const mockMiniapp = {
   globalThis as unknown as typeof window
 ;(window as unknown as { miniapp: typeof mockMiniapp }).miniapp = mockMiniapp
 
-function entry(id: string, fullscreen?: boolean): MiniAppEntry {
+function entry(id: string, fullscreen?: boolean, preferWidth?: number): MiniAppEntry {
   return {
     id,
     installDir: `/install/${id}`,
-    manifest: { appId: id, name: `App ${id}`, ...(fullscreen && { fullscreen: true }) },
+    manifest: {
+      appId: id,
+      name: `App ${id}`,
+      ...(fullscreen && { fullscreen: true }),
+      ...(preferWidth != null && { preferWidth }),
+    },
   }
 }
 
@@ -62,6 +77,9 @@ let useMiniAppStore: typeof import('./miniapp').useMiniAppStore
 beforeEach(async () => {
   vi.clearAllMocks()
   capturedHandler = null
+  appStateRef.showSidebar = true
+  appStateRef.sidebarWidth = 320
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 })
   mockMiniapp.list.mockResolvedValue(APPS)
 
   vi.resetModules()
@@ -302,6 +320,65 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     expect(useMiniAppStore.getState()._migratingApps.has('fullscreen-app')).toBe(false)
     expect(mockMiniapp.close).not.toHaveBeenCalled()
     expect(useMiniAppStore.getState().openApps['fullscreen-app']).toBeDefined()
+  })
+})
+
+describe('miniapp store preferWidth', () => {
+  it('applies preferWidth to activity panel when fits', async () => {
+    const app = entry('panel-app', false, 480)
+    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+
+    expect(mockSetPanelWidth).toHaveBeenCalledTimes(1)
+    expect(mockSetPanelWidth).toHaveBeenCalledWith(480)
+  })
+
+  it('clamps preferWidth to available space when room is tight', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1100 })
+    appStateRef.sidebarWidth = 320
+    const app = entry('panel-app', false, 800)
+
+    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+
+    expect(mockSetPanelWidth).toHaveBeenCalledTimes(1)
+    expect(mockSetPanelWidth).toHaveBeenCalledWith(380)
+  })
+
+  it('skips applying when there is no room (max < MIN_AP)', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 700 })
+    appStateRef.sidebarWidth = 320
+    const app = entry('panel-app', false, 480)
+
+    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+
+    expect(mockSetPanelWidth).not.toHaveBeenCalled()
+  })
+
+  it('does not apply preferWidth when re-opening an already-open app (focus only)', async () => {
+    const app = entry('panel-app', false, 480)
+    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+    expect(mockSetPanelWidth).toHaveBeenCalledTimes(1)
+    mockSetPanelWidth.mockClear()
+
+    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+
+    expect(mockSetPanelWidth).not.toHaveBeenCalled()
+  })
+
+  it('does not call setPanelWidth when preferWidth is unset', async () => {
+    const app = entry('panel-app')
+    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+
+    expect(mockSetPanelWidth).not.toHaveBeenCalled()
+  })
+
+  it('uses extra room when sidebar is hidden', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1000 })
+    appStateRef.showSidebar = false
+    const app = entry('panel-app', false, 800)
+
+    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+
+    expect(mockSetPanelWidth).toHaveBeenCalledWith(600)
   })
 })
 

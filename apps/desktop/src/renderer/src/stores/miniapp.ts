@@ -1,7 +1,19 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
+import { useActivityPanelStore } from './activity-panel'
 import { closeMiniAppTab, openMiniAppTab } from '@/components/activity/activity-panel-api'
+import { LAYOUT } from '@/lib/layout-constants'
 import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult } from '@superone/shared/miniapp-types'
+
+function applyPreferWidth(preferWidth: number): void {
+  if (typeof window === 'undefined') return
+  const appState = useAppStore.getState()
+  const sidebarReserved = appState.showSidebar ? appState.sidebarWidth : 0
+  const maxAp = window.innerWidth - sidebarReserved - LAYOUT.MIN_MAIN
+  if (maxAp < LAYOUT.MIN_AP) return
+  const clamped = Math.max(LAYOUT.MIN_AP, Math.min(preferWidth, maxAp))
+  useActivityPanelStore.getState().setPanelWidth(clamped)
+}
 
 interface OpenAppEntry {
   entry: MiniAppEntry
@@ -143,6 +155,9 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
           [entry.id]: { entry, projectDir, presentation: 'panel' },
         },
       }))
+      if (entry.manifest.preferWidth) {
+        applyPreferWidth(entry.manifest.preferWidth)
+      }
       openMiniAppTab(entry.id, entry.manifest.name)
     },
 

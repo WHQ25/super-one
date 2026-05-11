@@ -67,7 +67,11 @@ import {
   unregisterAppTemplates,
   submitToolIntercept,
   cancelToolIntercept,
+  setToolSyncCallbacks,
+  clearProjectPendingCalls,
+  executeAppTool,
 } from './superone-mcp-server'
+import { executeSuperoneMcpTool, listSuperoneMcpTools } from './superone-mcp-tool-surface'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
 
@@ -95,6 +99,7 @@ beforeEach(() => {
   unregisterAppTools(PROJ_A, 'shared-app')
   unregisterAppTools(PROJ_B, 'test-app')
   unregisterAppTools(PROJ_B, 'shared-app')
+  setToolSyncCallbacks(null)
   disposeSuperoneMcpServer(PROJ_A)
   disposeSuperoneMcpServer(PROJ_B)
   getSuperoneMcpServer(PROJ_A)
@@ -203,6 +208,143 @@ describe('tool handler rejects closed app', () => {
   })
 })
 
+describe('stdio SuperOne MCP tool surface', () => {
+  const sentMessages: Array<{ channel: string; args: unknown[] }> = []
+  const mockWebContents = { send: (channel: string, ...args: unknown[]) => sentMessages.push({ channel, args }) }
+  const mockWin = { webContents: mockWebContents, isDestroyed: () => false } as unknown as import('electron').BrowserWindow
+
+  beforeEach(() => {
+    sentMessages.length = 0
+    initSuperoneMcpServer(() => mockWin)
+    getSuperoneMcpServer(PROJ_A)
+  })
+
+  it('lists built-in tools and only the dynamic tools for the requested project', () => {
+    getSuperoneMcpServer(PROJ_B)
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('a_tool'))
+    registerAppTools(PROJ_B, 'other-app', 'other', makeTools('b_tool'))
+
+    const names = listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)
+
+    expect(names).toContain('read_miniapp_guide')
+    expect(names).toContain('myapp__a_tool')
+    expect(names).not.toContain('other__b_tool')
+  })
+
+  it('notifies stdio clients when project tools change', () => {
+    const toolsChanged = vi.fn()
+    setToolSyncCallbacks({ toolsChanged })
+
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('a_tool'))
+    unregisterAppTools(PROJ_A, 'test-app')
+
+    expect(toolsChanged).toHaveBeenCalledWith(PROJ_A)
+    expect(toolsChanged).toHaveBeenCalledTimes(2)
+  })
+
+  it('executes dynamic tools through the shared dispatcher scoped to projectDir', async () => {
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    notifyAppReady(PROJ_A, 'test-app')
+
+    const pending = executeSuperoneMcpTool(PROJ_A, 'myapp__do_thing', { x: 'hello' })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const callReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!.args[0] as MiniAppToolCallRequest
+    expect(callReq.projectDir).toBe(PROJ_A)
+    expect(callReq.toolName).toBe('do_thing')
+    expect(callReq.arguments).toEqual({ x: 'hello' })
+
+    resolveToolCall(callReq.callId, { ok: true })
+    const result = await pending
+    expect(result.content[0].text).toContain('"ok":true')
+  })
+})
+
+describe('clearProjectPendingCalls — cross-project isolation', () => {
+  const sentMessages: Array<{ channel: string; args: unknown[] }> = []
+  const mockWebContents = { send: (channel: string, ...args: unknown[]) => sentMessages.push({ channel, args }) }
+  const mockWin = { webContents: mockWebContents, isDestroyed: () => false } as unknown as import('electron').BrowserWindow
+
+  beforeEach(() => {
+    sentMessages.length = 0
+    initSuperoneMcpServer(() => mockWin)
+    getSuperoneMcpServer(PROJ_A)
+    getSuperoneMcpServer(PROJ_B)
+  })
+
+  it('rejects only same-project pending calls when one project interrupts', async () => {
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_B, 'test-app', 'myapp', makeTools('do_thing'))
+    notifyAppReady(PROJ_A, 'test-app')
+    notifyAppReady(PROJ_B, 'test-app')
+
+    const pendingA = executeAppTool(PROJ_A, 'test-app', 'do_thing', { x: 'a' })
+    const pendingB = executeAppTool(PROJ_B, 'test-app', 'do_thing', { x: 'b' })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const callsByProject = sentMessages
+      .filter((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
+      .map((m) => m.args[0] as MiniAppToolCallRequest)
+    const callA = callsByProject.find((c) => c.projectDir === PROJ_A)!
+    const callB = callsByProject.find((c) => c.projectDir === PROJ_B)!
+    expect(callA).toBeTruthy()
+    expect(callB).toBeTruthy()
+
+    clearProjectPendingCalls(PROJ_A)
+
+    await expect(pendingA).rejects.toThrow(/Pending calls cleared/)
+
+    resolveToolCall(callB.callId, { still: 'alive' })
+    await expect(pendingB).resolves.toMatchObject({ still: 'alive' })
+  })
+
+  it('emits MINIAPP_TOOL_INTERCEPT_CLEAR with only this project\'s callIds', async () => {
+    const interceptTool = [{
+      name: 'confirm_action',
+      description: 'requires intercept',
+      inputSchema: { type: 'object', properties: { x: { type: 'string' } } },
+      renderer: { intercept: { template: 'popovers/confirm' } },
+    }]
+    registerAppTools(PROJ_A, 'test-app', 'myapp', interceptTool)
+    registerAppTools(PROJ_B, 'test-app', 'myapp', interceptTool)
+    registerAppTemplates(PROJ_A, 'test-app', { 'popovers/confirm': 'popovers/confirm.html' })
+    registerAppTemplates(PROJ_B, 'test-app', { 'popovers/confirm': 'popovers/confirm.html' })
+    notifyAppReady(PROJ_A, 'test-app')
+    notifyAppReady(PROJ_B, 'test-app')
+
+    const pendingA = executeAppTool(PROJ_A, 'test-app', 'confirm_action', { x: 'a' })
+    const pendingB = executeAppTool(PROJ_B, 'test-app', 'confirm_action', { x: 'b' })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const opens = sentMessages
+      .filter((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)
+      .map((m) => m.args[0] as MiniAppToolInterceptOpenRequest)
+    const openA = opens.find((o) => o.projectDir === PROJ_A)!
+    const openB = opens.find((o) => o.projectDir === PROJ_B)!
+    expect(openA).toBeTruthy()
+    expect(openB).toBeTruthy()
+
+    sentMessages.length = 0
+    clearProjectPendingCalls(PROJ_A)
+
+    const clearMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CLEAR)
+    expect(clearMsg).toBeTruthy()
+    expect(clearMsg!.args[0]).toBe(PROJ_A)
+    expect(clearMsg!.args[1]).toEqual([openA.callId])
+    expect((clearMsg!.args[1] as string[])).not.toContain(openB.callId)
+
+    await expect(pendingA).rejects.toThrow(/Pending calls cleared/)
+
+    submitToolIntercept(openB.callId, { user: 'ok' })
+    await new Promise((r) => setTimeout(r, 10))
+    const followUp = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
+    expect(followUp).toBeTruthy()
+    const followCall = followUp!.args[0] as MiniAppToolCallRequest
+    resolveToolCall(followCall.callId, { still: 'alive' })
+    await expect(pendingB).resolves.toBeTruthy()
+  })
+})
+
 describe('isToolPreapproved', () => {
   it('returns false for non-superone tools', () => {
     expect(isToolPreapproved('some_random_tool')).toBe(false)
@@ -253,7 +395,7 @@ describe('executeAppTool with renderer.intercept', () => {
     notifyAppReady(PROJ_A, 'test-app')
   })
 
-  it('submit path: merges agent + user input, dispatches MINIAPP_TOOL_CALL with projectDir+callerCwd', async () => {
+  it('submit path: merges agent + user input, dispatches MINIAPP_TOOL_CALL with projectDir', async () => {
     const handler = getLastHandler('myapp__confirm_action')
     const pending = handler({ agent_field: 'from_agent' })
 
@@ -265,7 +407,6 @@ describe('executeAppTool with renderer.intercept', () => {
     expect(openReq.agentInput).toEqual({ agent_field: 'from_agent' })
     expect(openReq.templatePath).toBe('popovers/confirm.html')
     expect(openReq.projectDir).toBe(PROJ_A)
-    expect(openReq.callerCwd).toBe(PROJ_A)
 
     submitToolIntercept(openReq.callId, { user_field: 'from_user' })
 
@@ -276,7 +417,6 @@ describe('executeAppTool with renderer.intercept', () => {
     const callReq = callMsg!.args[0] as MiniAppToolCallRequest
     expect(callReq.arguments).toEqual({ agent_field: 'from_agent', user_field: 'from_user' })
     expect(callReq.projectDir).toBe(PROJ_A)
-    expect(callReq.callerCwd).toBe(PROJ_A)
 
     resolveToolCall(callReq.callId, { ok: true })
     const result = await pending

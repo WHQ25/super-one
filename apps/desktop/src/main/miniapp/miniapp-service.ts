@@ -21,10 +21,14 @@ export interface AllowedDir {
   access: MiniAppFsAccess
 }
 
+function appKey(projectDir: string, appId: string): string {
+  return `${projectDir}::${appId}`
+}
+
 const allowedDirs = new Map<string, AllowedDir[]>()
 
 let watchIdCounter = 0
-const activeWatchers = new Map<number, { appId: string; controller: AbortController }>()
+const activeWatchers = new Map<number, { projectDir: string; appId: string; controller: AbortController }>()
 
 type WatchEventCallback = (event: MiniAppFsWatchEvent) => void
 let watchEventCallback: WatchEventCallback | null = null
@@ -33,15 +37,15 @@ export function onFsWatchEvent(cb: WatchEventCallback): void {
   watchEventCallback = cb
 }
 
-export function startWatch(appId: string, watchPath: string): number {
-  const dirs = allowedDirs.get(appId)
+export function startWatch(projectDir: string, appId: string, watchPath: string): number {
+  const dirs = allowedDirs.get(appKey(projectDir, appId))
   if (!dirs?.length) throw new Error(`No allowed directories for app: ${appId}`)
 
   const { resolved } = resolveSafePathMulti(dirs, watchPath)
 
   const watchId = ++watchIdCounter
   const controller = new AbortController()
-  activeWatchers.set(watchId, { appId, controller })
+  activeWatchers.set(watchId, { projectDir, appId, controller })
 
   ;(async () => {
     try {
@@ -83,9 +87,9 @@ export function stopWatch(watchId: number): void {
   }
 }
 
-function clearWatchersForApp(appId: string): void {
+function clearWatchersForApp(projectDir: string, appId: string): void {
   for (const [id, entry] of activeWatchers) {
-    if (entry.appId === appId) {
+    if (entry.projectDir === projectDir && entry.appId === appId) {
       entry.controller.abort()
       activeWatchers.delete(id)
     }
@@ -107,7 +111,7 @@ export function resolveSafePathMulti(dirs: AllowedDir[], relativePath: string): 
   throw new Error(`Path not within allowed directories: ${relativePath}`)
 }
 
-type GitHeadChangeCallback = (event: { appId: string }) => void
+type GitHeadChangeCallback = (event: { projectDir: string; appId: string }) => void
 let gitHeadChangeCallback: GitHeadChangeCallback | null = null
 const gitHeadWatchers = new Map<string, FSWatcher>()
 
@@ -115,44 +119,53 @@ export function onGitHeadChangeEvent(cb: GitHeadChangeCallback): void {
   gitHeadChangeCallback = cb
 }
 
-function startGitHeadWatch(appId: string, workingDir: string): void {
-  if (gitHeadWatchers.has(appId)) return
+function startGitHeadWatch(projectDir: string, appId: string, workingDir: string): void {
+  const k = appKey(projectDir, appId)
+  if (gitHeadWatchers.has(k)) return
   const headPath = join(workingDir, '.git', 'HEAD')
   let timer: ReturnType<typeof setTimeout> | null = null
   try {
     const watcher = watchSync(headPath, () => {
       if (timer) clearTimeout(timer)
-      timer = setTimeout(() => gitHeadChangeCallback?.({ appId }), 100)
+      timer = setTimeout(() => gitHeadChangeCallback?.({ projectDir, appId }), 100)
     })
     watcher.on('error', () => {
       watcher.close()
-      gitHeadWatchers.delete(appId)
+      gitHeadWatchers.delete(k)
     })
-    gitHeadWatchers.set(appId, watcher)
+    gitHeadWatchers.set(k, watcher)
   } catch { /* not a git repo */ }
 }
 
-function stopGitHeadWatch(appId: string): void {
-  const watcher = gitHeadWatchers.get(appId)
+function stopGitHeadWatch(projectDir: string, appId: string): void {
+  const k = appKey(projectDir, appId)
+  const watcher = gitHeadWatchers.get(k)
   if (watcher) {
     watcher.close()
-    gitHeadWatchers.delete(appId)
+    gitHeadWatchers.delete(k)
   }
 }
 
-export function getAllowedDirs(appId: string): AllowedDir[] | undefined {
-  return allowedDirs.get(appId)
+export function getAllowedDirs(projectDir: string, appId: string): AllowedDir[] | undefined {
+  return allowedDirs.get(appKey(projectDir, appId))
 }
 
-export function setAllowedDirectories(appId: string, dirs: AllowedDir[]): void {
-  allowedDirs.set(appId, dirs)
+export function setAllowedDirectories(projectDir: string, appId: string, dirs: AllowedDir[]): void {
+  allowedDirs.set(appKey(projectDir, appId), dirs)
 }
 
-export function clearAllowedDirectories(appId: string): void {
-  clearWatchersForApp(appId)
-  stopGitHeadWatch(appId)
-  closeDbForApp(appId)
-  allowedDirs.delete(appId)
+export function clearAllowedDirectories(projectDir: string, appId: string): void {
+  clearWatchersForApp(projectDir, appId)
+  stopGitHeadWatch(projectDir, appId)
+  allowedDirs.delete(appKey(projectDir, appId))
+  let stillOpenSomewhere = false
+  for (const otherKey of allowedDirs.keys()) {
+    if (otherKey.endsWith(`::${appId}`)) {
+      stillOpenSomewhere = true
+      break
+    }
+  }
+  if (!stillOpenSomewhere) closeDbForApp(appId)
 }
 
 const allowedMedia = new Map<string, Set<MiniAppMediaKind>>()
@@ -440,11 +453,12 @@ export function validatePath(basePath: string, requestedPath: string): string | 
 const WRITE_OPS: Set<MiniAppFsOp> = new Set(['writeFile', 'deleteFile', 'rename', 'mkdir'])
 
 export async function handleFsRequest(
+  projectDir: string,
   appId: string,
   op: MiniAppFsOp,
   args: Record<string, unknown>,
 ): Promise<unknown> {
-  const dirs = allowedDirs.get(appId)
+  const dirs = allowedDirs.get(appKey(projectDir, appId))
   if (!dirs?.length) throw new Error(`No allowed directories for app: ${appId}`)
 
   const safe = (p: string) => {
@@ -525,20 +539,21 @@ export async function handleFsRequest(
   }
 }
 
-export function getGitDirectory(appId: string): string | undefined {
-  const dirs = allowedDirs.get(appId)
+export function getGitDirectory(projectDir: string, appId: string): string | undefined {
+  const dirs = allowedDirs.get(appKey(projectDir, appId))
   return dirs?.[0]?.path
 }
 
 export async function handleGitRequest(
+  projectDir: string,
   appId: string,
   op: MiniAppGitOp,
   args: Record<string, unknown>,
 ): Promise<unknown> {
-  const workingDir = getGitDirectory(appId)
+  const workingDir = getGitDirectory(projectDir, appId)
   if (!workingDir) throw new Error(`No allowed directories for app: ${appId}`)
 
-  startGitHeadWatch(appId, workingDir)
+  startGitHeadWatch(projectDir, appId, workingDir)
 
   switch (op) {
     case 'info': {

@@ -18,6 +18,7 @@ export function handleMiniAppMessage(
   type: string,
   data: Record<string, unknown>,
   appId: string,
+  projectDir: string,
   send: (msg: unknown) => void,
   overlay?: MiniAppOverlayCallbacks,
 ): boolean {
@@ -33,13 +34,13 @@ export function handleMiniAppMessage(
       return true
     case 'miniapp-fs-request':
       window.miniapp
-        .fsRequest((data.appId as string) ?? appId, data.op as string, data.args as Record<string, unknown>)
+        .fsRequest(projectDir, (data.appId as string) ?? appId, data.op as string, data.args as Record<string, unknown>)
         .then((result) => { send({ type: 'miniapp-fs-response', id: data.id, result }) })
         .catch((err: unknown) => { send({ type: 'miniapp-fs-response', id: data.id, error: (err as Error).message }) })
       return true
     case 'miniapp-git-request':
       window.miniapp
-        .gitRequest(appId, data.op as string, data.args as Record<string, unknown>)
+        .gitRequest(projectDir, appId, data.op as string, data.args as Record<string, unknown>)
         .then((result) => { send({ type: 'miniapp-git-response', id: data.id, result }) })
         .catch((err: unknown) => { send({ type: 'miniapp-git-response', id: data.id, error: (err as Error).message }) })
       return true
@@ -51,7 +52,7 @@ export function handleMiniAppMessage(
       return true
     case 'miniapp-fs-watch':
       window.miniapp
-        .fsWatch(appId, data.path as string)
+        .fsWatch(projectDir, appId, data.path as string)
         .then((watchId) => { send({ type: 'miniapp-fs-watch-ack', id: data.id, watchId }) })
         .catch((err: unknown) => { send({ type: 'miniapp-fs-watch-ack', id: data.id, error: (err as Error).message }) })
       return true
@@ -60,7 +61,7 @@ export function handleMiniAppMessage(
       return true
     case 'miniapp-open-folder':
       if (typeof data.path === 'string') {
-        window.miniapp.fsRequest(appId, 'showInFolder', { path: data.path })
+        window.miniapp.fsRequest(projectDir, appId, 'showInFolder', { path: data.path })
       }
       return true
     case 'miniapp-open-external-link':

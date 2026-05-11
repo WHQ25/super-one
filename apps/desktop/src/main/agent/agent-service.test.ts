@@ -171,7 +171,7 @@ vi.mock('child_process', async (importOriginal) => {
 vi.mock('../remote-control-service', () => ({}))
 
 vi.mock('../mcp/superone-mcp-server', () => ({
-  clearAllPendingCalls: vi.fn(),
+  clearProjectPendingCalls: vi.fn(),
 }))
 
 vi.mock('./resolve-cli', () => ({

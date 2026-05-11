@@ -18,6 +18,7 @@ export interface ContextMenuState {
 
 export interface PopoverState {
   appId: string
+  projectDir: string
   template: string
   templateUrl: string
   anchorRect: DOMRect
@@ -32,6 +33,7 @@ export interface PopoverState {
 export function useMiniAppOverlay(
   containerRef: RefObject<HTMLElement | null>,
   appId?: string,
+  projectDir?: string,
   templates?: Record<string, string>,
 ) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
@@ -82,7 +84,7 @@ export function useMiniAppOverlay(
   }, [])
 
   const onPopoverShow = useCallback((req: MiniAppPopoverShowRequest, send: (data: unknown) => void) => {
-    if (!appId || !templates) return
+    if (!appId || !projectDir || !templates) return
     const templatePath = templates[req.template]
     if (!templatePath) return
 
@@ -99,6 +101,7 @@ export function useMiniAppOverlay(
 
     setPopover({
       appId,
+      projectDir,
       template: req.template,
       templateUrl,
       anchorRect: new DOMRect(pos.x, pos.y, req.anchorRect.width, req.anchorRect.height),
@@ -109,7 +112,7 @@ export function useMiniAppOverlay(
       sendToMain: (msg) => send(msg),
       iframeSendRef: popoverIframeSendRef,
     })
-  }, [appId, templates, toAbsolute])
+  }, [appId, projectDir, templates, toAbsolute])
 
   const onPopoverMsg = useCallback((data: unknown) => {
     popoverIframeSendRef.current?.({ type: 'miniapp-popover-msg', data })

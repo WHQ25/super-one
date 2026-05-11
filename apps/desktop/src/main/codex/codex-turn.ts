@@ -45,6 +45,7 @@ import type {
   ImageAttachment,
   PermissionRequest,
 } from '@superone/shared/agent-types'
+import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 
 export interface CodexRunStreamCallbacks {
   onThreadStarted?: (threadId: string) => void
@@ -924,17 +925,23 @@ export function resolveCwd(session: CodexSession, projectPath: string, requested
 }
 
 function buildThreadConfig(
+  projectPath: string,
   permissionProfile: {
     sandboxMode: CodexSandboxMode
     networkAccessEnabled: boolean
   },
 ): Record<string, unknown> | undefined {
-  if (permissionProfile.sandboxMode !== 'workspace-write') return undefined
-  return {
-    sandbox_workspace_write: {
+  const config: Record<string, unknown> = {}
+  if (permissionProfile.sandboxMode === 'workspace-write') {
+    config.sandbox_workspace_write = {
       network_access: permissionProfile.networkAccessEnabled,
-    },
+    }
   }
+  const superoneMcpConfig = getCodexSuperoneMcpConfig(projectPath)
+  if (superoneMcpConfig) {
+    config.mcp_servers = { superone: superoneMcpConfig }
+  }
+  return Object.keys(config).length > 0 ? config : undefined
 }
 
 function buildTurnSandboxPolicy(
@@ -968,10 +975,11 @@ function buildTurnSandboxPolicy(
 export async function resolveThread(
   connection: AppServerConnection,
   session: CodexSession,
+  projectPath: string,
   cwd: string,
   permissionProfile: ReturnType<typeof resolvePermissionProfile>,
 ): Promise<string> {
-  const threadConfig = buildThreadConfig(permissionProfile)
+  const threadConfig = buildThreadConfig(projectPath, permissionProfile)
   if (session.threadId && session.threadReady) {
     trace('codex.thread', 'reuse_ready', {
       threadId: session.threadId,
@@ -1120,7 +1128,7 @@ export async function prewarmCodexSession(
   cwd: string,
 ): Promise<string> {
   const permissionProfile = resolvePermissionProfile(session.permissionPreset)
-  const threadId = await resolveThread(handle.connection, session, cwd, permissionProfile)
+  const threadId = await resolveThread(handle.connection, session, session.projectPath, cwd, permissionProfile)
   await drainPrewarmNotifications(handle.connection, session)
   return threadId
 }
@@ -1683,7 +1691,7 @@ export async function runCodexTurn(
     )
 
     const streamed = await withSessionConnection(session, auth, controller.signal, async (connection) => {
-      const resolvedThreadId = await resolveThread(connection, session, effectiveCwd, permissionProfile)
+      const resolvedThreadId = await resolveThread(connection, session, projectPath, effectiveCwd, permissionProfile)
 
       const turnStartResult = await connection.request(
         'turn/start',
@@ -1774,7 +1782,7 @@ export async function reviewCodexTurn(
     const effectiveCwd = resolveCwd(session, projectPath, request.cwd)
 
     const streamed = await withSessionConnection(session, auth, controller.signal, async (connection) => {
-      const resolvedThreadId = await resolveThread(connection, session, effectiveCwd, permissionProfile)
+      const resolvedThreadId = await resolveThread(connection, session, projectPath, effectiveCwd, permissionProfile)
 
       await connection.request('review/start', compactRecord({
         threadId: resolvedThreadId,
@@ -1823,7 +1831,7 @@ export async function compactCodexTurn(
     const effectiveCwd = resolveCwd(session, projectPath, request.cwd)
 
     const streamed = await withSessionConnection(session, auth, controller.signal, async (connection) => {
-      const resolvedThreadId = await resolveThread(connection, session, effectiveCwd, permissionProfile)
+      const resolvedThreadId = await resolveThread(connection, session, projectPath, effectiveCwd, permissionProfile)
 
       await connection.request('thread/compact/start', { threadId: resolvedThreadId })
 

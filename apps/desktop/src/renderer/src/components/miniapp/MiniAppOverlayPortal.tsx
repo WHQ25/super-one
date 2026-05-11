@@ -264,7 +264,7 @@ function OverlayPopover({
         return
       }
 
-      handleMiniAppMessage(data.type, data, state.appId, sendToIframe)
+      handleMiniAppMessage(data.type, data, state.appId, state.projectDir, sendToIframe)
     }
 
     window.addEventListener('message', handleMessage)

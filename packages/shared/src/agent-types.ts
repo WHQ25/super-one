@@ -1660,7 +1660,7 @@ export const AgentIpcChannels = {
   MINIAPP_TOOL_INTERCEPT_OPEN: 'miniapp:tool-intercept-open',
   MINIAPP_TOOL_INTERCEPT_SUBMIT: 'miniapp:tool-intercept-submit',
   MINIAPP_TOOL_INTERCEPT_CANCEL: 'miniapp:tool-intercept-cancel',
-  MINIAPP_TOOL_INTERCEPT_CLEAR_ALL: 'miniapp:tool-intercept-clear-all',
+  MINIAPP_TOOL_INTERCEPT_CLEAR: 'miniapp:tool-intercept-clear',
   MINIAPP_FS_REQUEST: 'miniapp:fs-request',
   MINIAPP_FS_WATCH: 'miniapp:fs-watch',
   MINIAPP_FS_UNWATCH: 'miniapp:fs-unwatch',

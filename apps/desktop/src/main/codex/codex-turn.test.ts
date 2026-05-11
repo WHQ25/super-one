@@ -59,7 +59,7 @@ describe('resolveThread fallback', () => {
         .mockResolvedValueOnce({ thread: { id: 'new-thread-1' } }),
     } as never
 
-    const result = await resolveThread(mockConnection, session, '/project', permissionProfile as never)
+    const result = await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
 
     expect(result).toBe('new-thread-1')
     expect(session.threadId).toBe('new-thread-1')
@@ -75,7 +75,7 @@ describe('resolveThread fallback', () => {
       request: vi.fn().mockResolvedValueOnce({ thread: { id: 'valid-thread' } }),
     } as never
 
-    const result = await resolveThread(mockConnection, session, '/project', permissionProfile as never)
+    const result = await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
 
     expect(result).toBe('valid-thread')
     expect(session.threadReady).toBe(true)
@@ -89,7 +89,7 @@ describe('resolveThread fallback', () => {
       request: vi.fn().mockResolvedValueOnce({ thread: { id: 'fresh-thread' } }),
     } as never
 
-    const result = await resolveThread(mockConnection, session, '/project', permissionProfile as never)
+    const result = await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
 
     expect(result).toBe('fresh-thread')
     expect(session.threadReady).toBe(true)
@@ -104,7 +104,7 @@ describe('resolveThread fallback', () => {
       request: vi.fn(),
     } as never
 
-    const result = await resolveThread(mockConnection, session, '/project', permissionProfile as never)
+    const result = await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
 
     expect(result).toBe('ready-thread')
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).not.toHaveBeenCalled()

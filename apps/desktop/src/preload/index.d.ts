@@ -268,7 +268,7 @@ interface AppAPI {
   submitToolIntercept(callId: string, userInput: Record<string, unknown>): Promise<void>
   cancelToolIntercept(callId: string, reason?: string): Promise<void>
   onToolInterceptOpen(callback: (req: MiniAppToolInterceptOpenRequest) => void): () => void
-  onToolInterceptClearAll(callback: () => void): () => void
+  onToolInterceptClear(callback: (projectDir: string, callIds: string[]) => void): () => void
 
   // Remote control
   getRelayStatus(): Promise<boolean>
@@ -307,11 +307,11 @@ interface MiniAppAPI {
   open(appId: string, projectDir: string): Promise<void>
   close(appId: string, projectDir: string): Promise<void>
   toolResult(callId: string, result: unknown, error?: string): Promise<void>
-  fsRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
-  gitRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
+  fsRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
+  gitRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   dbRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
-  onGitHeadChangeEvent(callback: (event: { appId: string }) => void): () => void
-  fsWatch(appId: string, path: string): Promise<number>
+  onGitHeadChangeEvent(callback: (event: { projectDir: string; appId: string }) => void): () => void
+  fsWatch(projectDir: string, appId: string, path: string): Promise<number>
   fsUnwatch(watchId: number): Promise<void>
   onFsWatchEvent(callback: (event: MiniAppFsWatchEvent) => void): () => void
   iframeReady(appId: string, projectDir: string): Promise<void>

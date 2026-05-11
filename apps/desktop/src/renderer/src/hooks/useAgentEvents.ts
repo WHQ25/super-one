@@ -69,8 +69,8 @@ export function useAgentEvents(): void {
   }, [])
 
   useEffect(() => {
-    const cleanup = window.app.onToolInterceptClearAll?.(() => {
-      useChatStore.getState().clearAllToolIntercepts()
+    const cleanup = window.app.onToolInterceptClear?.((_projectDir, callIds) => {
+      useChatStore.getState().clearToolIntercepts(callIds)
     })
     return cleanup
   }, [])

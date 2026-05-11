@@ -50,3 +50,10 @@ export function getProjectId(folderPath: string): string | null {
   const row = db.prepare('SELECT id FROM projects WHERE path = ?').get(folderPath) as { id: string } | undefined
   return row?.id ?? null
 }
+
+/** Get project path by ID, or null if not found */
+export function getProjectPathById(projectId: string): string | null {
+  const db = getDb()
+  const row = db.prepare('SELECT path FROM projects WHERE id = ?').get(projectId) as { path: string } | undefined
+  return row?.path ?? null
+}

@@ -354,7 +354,7 @@ export interface ChatStore {
   openToolIntercept: (state: ToolRendererState) => void
   submitToolIntercept: (callId: string, userInput: Record<string, unknown>) => void
   cancelToolIntercept: (callId: string, reason?: string) => void
-  clearAllToolIntercepts: () => void
+  clearToolIntercepts: (callIds: string[]) => void
 
   // Global UI state (not per-session)
   isOpen: boolean
@@ -2499,7 +2499,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     window.app.cancelToolIntercept?.(callId, reason)
   },
 
-  clearAllToolIntercepts: () => set({ toolRenderers: {} }),
+  clearToolIntercepts: (callIds: string[]) => set((s) => {
+    if (callIds.length === 0) return s
+    const next = { ...s.toolRenderers }
+    for (const id of callIds) delete next[id]
+    return { toolRenderers: next }
+  }),
 
   isOpen: false,
   corner: 'br',

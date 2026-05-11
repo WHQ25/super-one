@@ -3,7 +3,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { getGuidelines, AVAILABLE_MODULES } from './guidelines'
 import { checkCdnViolations } from '@superone/shared/generative-ui/cdn-allowlist'
-import { waitForWidgetReady } from './widget-gate'
 
 const MODULE_ENUM = z.enum(AVAILABLE_MODULES as [string, ...string[]])
 
@@ -59,6 +58,7 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
         })
       }
       if (!opts?.skipWidgetGate) {
+        const { waitForWidgetReady } = await import('./widget-gate')
         await waitForWidgetReady(title)
       }
       return { content }

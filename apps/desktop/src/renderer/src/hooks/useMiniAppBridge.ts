@@ -34,7 +34,7 @@ export function useMiniAppBridge({ appId, projectDir, iframeRef, onReady, onResi
       const data = e.data
       if (!data?.type) return
 
-      if (handleMiniAppMessage(data.type, data, appId, sendToFrame, overlay)) return
+      if (handleMiniAppMessage(data.type, data, appId, projectDir, sendToFrame, overlay)) return
 
       switch (data.type) {
         case 'miniapp-resize':
@@ -108,7 +108,6 @@ export function useMiniAppBridge({ appId, projectDir, iframeRef, onReady, onResi
         toolName: call.toolName,
         arguments: call.arguments,
         projectDir: call.projectDir,
-        callerCwd: call.callerCwd,
       })
     })
     return cleanup

@@ -1,0 +1,234 @@
+import net, { type Socket } from 'net'
+import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { registerWidgetTools } from '../generative-ui/mcp-server'
+import { jsonSchemaToZodShape } from './json-schema-zod'
+import {
+  SUPERONE_MCP_IPC_ENDPOINT_ENV,
+  SUPERONE_MCP_IPC_TOKEN_ENV,
+  SUPERONE_MCP_PROJECT_DIR_ENV,
+} from './superone-mcp-stdio-env'
+import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
+
+type RequestId = number
+
+interface IpcRequest {
+  id: RequestId
+  method: string
+  token: string
+  params: Record<string, unknown>
+}
+
+interface IpcResponse {
+  id?: RequestId
+  result?: unknown
+  error?: { message?: string }
+  method?: string
+  params?: Record<string, unknown>
+}
+
+interface PendingRequest {
+  resolve: (value: unknown) => void
+  reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout>
+}
+
+interface SuperoneMcpToolResult {
+  content: Array<{ type: 'text'; text: string }>
+  [key: string]: unknown
+}
+
+class SuperoneIpcClient {
+  private socket: Socket | null = null
+  private buffer = ''
+  private seq = 1
+  private readonly pending = new Map<RequestId, PendingRequest>()
+  onToolsChanged: (() => void) | null = null
+  onClose: (() => void) | null = null
+
+  constructor(
+    private readonly endpoint: string,
+    private readonly token: string,
+    private readonly projectDir: string,
+  ) {}
+
+  connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const socket = net.createConnection(this.endpoint)
+      this.socket = socket
+      socket.setEncoding('utf8')
+      socket.once('connect', resolve)
+      socket.once('error', reject)
+      socket.on('data', (chunk: string) => this.handleData(chunk))
+      socket.on('close', () => {
+        this.rejectAll(new Error('SuperOne MCP bridge connection closed'))
+        this.onClose?.()
+      })
+      socket.on('error', (err) => this.rejectAll(err instanceof Error ? err : new Error(String(err))))
+    })
+  }
+
+  listTools(): Promise<SuperoneMcpToolDescriptor[]> {
+    return this.request<{ tools: SuperoneMcpToolDescriptor[] }>('tools/list', {
+      projectDir: this.projectDir,
+    }).then((result) => Array.isArray(result.tools) ? result.tools : [])
+  }
+
+  callTool(name: string, args: Record<string, unknown>): Promise<SuperoneMcpToolResult> {
+    return this.request<SuperoneMcpToolResult>('tools/call', {
+      projectDir: this.projectDir,
+      name,
+      arguments: args,
+    })
+  }
+
+  private request<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    if (!this.socket) return Promise.reject(new Error('SuperOne MCP bridge is not connected'))
+    const id = this.seq++
+    const payload: IpcRequest = { id, method, token: this.token, params }
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`SuperOne MCP bridge request timed out: ${method}`))
+      }, 65_000)
+      this.pending.set(id, {
+        resolve: (value) => resolve(value as T),
+        reject,
+        timer,
+      })
+      this.socket!.write(`${JSON.stringify(payload)}\n`)
+    })
+  }
+
+  private handleData(chunk: string): void {
+    this.buffer += chunk
+    let index = this.buffer.indexOf('\n')
+    while (index >= 0) {
+      const line = this.buffer.slice(0, index).trim()
+      this.buffer = this.buffer.slice(index + 1)
+      if (line) {
+        try {
+          this.handleMessage(JSON.parse(line) as IpcResponse)
+        } catch (err) {
+          console.error('[superone-mcp-stdio-bridge] invalid ipc message:', err)
+        }
+      }
+      index = this.buffer.indexOf('\n')
+    }
+  }
+
+  private handleMessage(message: IpcResponse): void {
+    if (typeof message.id === 'number') {
+      const pending = this.pending.get(message.id)
+      if (!pending) return
+      clearTimeout(pending.timer)
+      this.pending.delete(message.id)
+      if (message.error) {
+        pending.reject(new Error(message.error.message ?? 'SuperOne MCP bridge request failed'))
+      } else {
+        pending.resolve(message.result)
+      }
+      return
+    }
+
+    if (message.method === 'tools/changed') {
+      this.onToolsChanged?.()
+    }
+  }
+
+  private rejectAll(error: Error): void {
+    for (const [id, pending] of this.pending) {
+      clearTimeout(pending.timer)
+      pending.reject(error)
+      this.pending.delete(id)
+    }
+  }
+}
+
+function requiredEnv(name: string): string {
+  const value = process.env[name]
+  if (!value) throw new Error(`Missing ${name}`)
+  return value
+}
+
+function toolSignature(tool: SuperoneMcpToolDescriptor): string {
+  return JSON.stringify([tool.description, tool.inputSchema])
+}
+
+async function main(): Promise<void> {
+  const projectDir = requiredEnv(SUPERONE_MCP_PROJECT_DIR_ENV)
+  const ipc = new SuperoneIpcClient(
+    requiredEnv(SUPERONE_MCP_IPC_ENDPOINT_ENV),
+    requiredEnv(SUPERONE_MCP_IPC_TOKEN_ENV),
+    projectDir,
+  )
+
+  await ipc.connect()
+
+  const server = new McpServer({ name: 'superone', version: '1.0.0' })
+  registerWidgetTools(server, { skipWidgetGate: true })
+
+  const registeredTools = new Map<string, RegisteredTool>()
+  const toolSignatures = new Map<string, string>()
+  let connected = false
+
+  const registerTool = (tool: SuperoneMcpToolDescriptor) => {
+    const registered = server.registerTool(
+      tool.name,
+      { description: tool.description, inputSchema: jsonSchemaToZodShape(tool.inputSchema) },
+      async (args: Record<string, unknown>) => {
+        try {
+          return await ipc.callTool(tool.name, args)
+        } catch (err) {
+          return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }
+        }
+      },
+    )
+    registeredTools.set(tool.name, registered)
+    toolSignatures.set(tool.name, toolSignature(tool))
+  }
+
+  const refreshTools = async (notify: boolean) => {
+    const tools = await ipc.listTools()
+    const nextNames = new Set(tools.map((tool) => tool.name))
+
+    for (const [name, tool] of registeredTools) {
+      if (!nextNames.has(name)) {
+        tool.remove()
+        registeredTools.delete(name)
+        toolSignatures.delete(name)
+      }
+    }
+
+    for (const tool of tools) {
+      const signature = toolSignature(tool)
+      const existing = registeredTools.get(tool.name)
+      if (existing && toolSignatures.get(tool.name) === signature) continue
+      if (existing) existing.remove()
+      registerTool(tool)
+    }
+
+    if (notify && connected) {
+      await server.sendToolListChanged()
+    }
+  }
+
+  ipc.onToolsChanged = () => {
+    refreshTools(true).catch((err) => {
+      console.error('[superone-mcp-stdio-bridge] failed to refresh tools:', err)
+    })
+  }
+
+  ipc.onClose = () => {
+    process.exit(0)
+  }
+
+  await refreshTools(false)
+  await server.connect(new StdioServerTransport())
+  connected = true
+}
+
+main().catch((err) => {
+  console.error('[superone-mcp-stdio-bridge] startup failed:', err)
+  process.exit(1)
+})

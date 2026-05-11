@@ -66,7 +66,7 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
         const { channel, args } = event
         const data = args[0] as Record<string, unknown>
 
-        if (handleMiniAppMessage(channel, data, appId, wvSend, overlay)) return
+        if (handleMiniAppMessage(channel, data, appId, projectDir, wvSend, overlay)) return
 
         switch (channel) {
           case 'miniapp-ready':
@@ -135,7 +135,6 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
           toolName: call.toolName,
           arguments: call.arguments,
           projectDir: call.projectDir,
-          callerCwd: call.callerCwd,
         })
       })
       return cleanup

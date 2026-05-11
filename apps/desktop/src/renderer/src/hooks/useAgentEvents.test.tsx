@@ -11,7 +11,7 @@ vi.mock('@/stores/chat', () => ({
   useChatStore: Object.assign(
     (selector: (s: unknown) => unknown) => selector({ handleAgentEvent }),
     {
-      getState: () => ({ syncLiveSnapshots, handleAgentEvent, openToolIntercept: vi.fn(), clearAllToolIntercepts: vi.fn() }),
+      getState: () => ({ syncLiveSnapshots, handleAgentEvent, openToolIntercept: vi.fn(), clearToolIntercepts: vi.fn() }),
       setState: vi.fn(),
     },
   ),

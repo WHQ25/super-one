@@ -15,8 +15,8 @@ import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearAllPendingCalls as clearAllPendingMiniAppCalls, disposeSuperoneMcpServer } from './mcp/superone-mcp-server'
-import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearProjectPendingCalls as clearProjectPendingMiniAppCalls, disposeSuperoneMcpServer } from './mcp/superone-mcp-server'
+import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
 import { fixPath } from './agent/resolve-cli'
@@ -53,7 +53,7 @@ import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
-import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId } from './recent-folders'
+import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw, getProviderByIdRaw } from './database'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
@@ -165,9 +165,9 @@ const sessionManager = new SessionManagerImpl({
     harnessId,
   ),
   getActiveDefaultApiProviderId: (harnessId) => getActiveProviderRaw(harnessId)?.id ?? null,
-  onBeforeInterrupt: () => {
+  onBeforeInterrupt: (projectPath) => {
     clearAllGates()
-    clearAllPendingMiniAppCalls()
+    clearProjectPendingMiniAppCalls(projectPath)
   },
 })
 sessionManager.onAny((_sid, event) => {
@@ -387,7 +387,7 @@ function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Arr
       default: return []
     }
   })
-  setAllowedDirectories(appId, dirs)
+  setAllowedDirectories(projectDir, appId, dirs)
 }
 
 function setAppMediaPermissions(appId: string, manifest: { permissions?: { media?: Array<{ kind: import('@superone/shared/miniapp-types').MiniAppMediaKind; reason: string }> } }): void {
@@ -1744,7 +1744,7 @@ function registerIpcHandlers(): void {
   })
 
   initSuperoneMcpServer(() => mainWindow)
-  startMcpHttpServer(() => mainWindow).catch((err) => log.error('[mcp-http] failed to start:', err))
+  startSuperoneMcpStdioBridge().catch((err) => log.error('[mcp-stdio-ipc] failed to start:', err))
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async (_e, projectDir?: string) => {
     const apps = await discoverApps()
@@ -1779,7 +1779,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string, projectDir: string) => {
     unregisterAppTools(projectDir, appId)
     unregisterAppTemplates(projectDir, appId)
-    clearAllowedDirectories(appId)
+    clearAllowedDirectories(projectDir, appId)
     clearAllowedMedia(appId)
     agentService.markProjectNeedsRebuild(projectDir)
   })
@@ -1800,12 +1800,12 @@ function registerIpcHandlers(): void {
     cancelToolIntercept(callId, reason)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_FS_REQUEST, async (_e, appId: string, op: string, args: Record<string, unknown>) => {
-    return handleFsRequest(appId, op as any, args)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_FS_REQUEST, async (_e, projectDir: string, appId: string, op: string, args: Record<string, unknown>) => {
+    return handleFsRequest(projectDir, appId, op as any, args)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_FS_WATCH, (_e, appId: string, path: string) => {
-    return startWatch(appId, path)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_FS_WATCH, (_e, projectDir: string, appId: string, path: string) => {
+    return startWatch(projectDir, appId, path)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_FS_UNWATCH, (_e, watchId: number) => {
@@ -1816,8 +1816,8 @@ function registerIpcHandlers(): void {
     mainWindow?.webContents.send(AgentIpcChannels.MINIAPP_FS_WATCH_EVENT, event)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_GIT_REQUEST, async (_e, appId: string, op: string, args: Record<string, unknown>) => {
-    return handleGitRequest(appId, op as any, args)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_GIT_REQUEST, async (_e, projectDir: string, appId: string, op: string, args: Record<string, unknown>) => {
+    return handleGitRequest(projectDir, appId, op as any, args)
   })
 
   onGitHeadChangeEvent((event) => {
@@ -2066,6 +2066,7 @@ app.whenReady().then(async () => {
       const fullHost = url.hostname
       const dotIdx = fullHost.indexOf('.')
       const appId = dotIdx < 0 ? fullHost : fullHost.slice(0, dotIdx)
+      const projectId = dotIdx < 0 ? null : fullHost.slice(dotIdx + 1)
       const relativePath = decodeURIComponent(url.pathname).replace(/^\//, '')
       if (!relativePath) return new Response('Bad request', { status: 400 })
 
@@ -2074,7 +2075,10 @@ app.whenReady().then(async () => {
         return new Response('Forbidden', { status: 403 })
       }
 
-      const dirs = getAllowedDirs(appId)
+      const projectDir = projectId ? getProjectPathById(projectId) : null
+      if (!projectDir) return new Response('Unknown project', { status: 403 })
+
+      const dirs = getAllowedDirs(projectDir, appId)
       if (!dirs?.length) return new Response('No allowed directories', { status: 403 })
 
       const { resolved, access: dirAccess } = resolveSafePathMulti(dirs, relativePath)
@@ -2223,7 +2227,7 @@ function performQuit(): void {
   quitting = true
   automationService.stop()
   stopWatching()
-  stopMcpHttpServer()
+  stopSuperoneMcpStdioBridge()
   disposeUpdater()
   const remoteStop = Promise.race([
     remoteControlService.stop(),

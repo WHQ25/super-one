@@ -759,10 +759,10 @@ const appAPI = {
     ipcRenderer.on(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN, handler)
     return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN, handler)
   },
-  onToolInterceptClearAll: (callback: () => void) => {
-    const handler = () => callback()
-    ipcRenderer.on(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CLEAR_ALL, handler)
-    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CLEAR_ALL, handler)
+  onToolInterceptClear: (callback: (projectDir: string, callIds: string[]) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, projectDir: string, callIds: string[]) => callback(projectDir, callIds)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CLEAR, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CLEAR, handler)
   },
 
   // Remote control
@@ -903,23 +903,23 @@ const miniappAPI = {
   toolResult: (callId: string, result: unknown, error?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_TOOL_RESULT, callId, result, error),
 
-  fsRequest: (appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_REQUEST, appId, op, args),
+  fsRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_REQUEST, projectDir, appId, op, args),
 
-  gitRequest: (appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GIT_REQUEST, appId, op, args),
+  gitRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GIT_REQUEST, projectDir, appId, op, args),
 
   dbRequest: (appId: string, op: string, args: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DB_REQUEST, appId, op, args),
 
-  onGitHeadChangeEvent: (callback: (event: { appId: string }) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, event: { appId: string }) => callback(event)
+  onGitHeadChangeEvent: (callback: (event: { projectDir: string; appId: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { projectDir: string; appId: string }) => callback(event)
     ipcRenderer.on(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, handler)
     return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, handler)
   },
 
-  fsWatch: (appId: string, path: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_WATCH, appId, path) as Promise<number>,
+  fsWatch: (projectDir: string, appId: string, path: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_WATCH, projectDir, appId, path) as Promise<number>,
 
   fsUnwatch: (watchId: number) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_UNWATCH, watchId),

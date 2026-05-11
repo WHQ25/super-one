@@ -102,7 +102,6 @@ export interface MiniAppToolCallRequest {
   callId: string
   appId: string
   projectDir: string
-  callerCwd: string
   toolName: string
   arguments: Record<string, unknown>
 }
@@ -111,7 +110,6 @@ export interface MiniAppToolInterceptOpenRequest {
   callId: string
   appId: string
   projectDir: string
-  callerCwd: string
   toolSlug: string
   toolName: string
   agentInput: Record<string, unknown>

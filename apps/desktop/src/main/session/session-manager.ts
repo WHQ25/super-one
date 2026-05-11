@@ -42,7 +42,7 @@ export interface SessionManagerPersistence {
   resolveProviderConfig?: (provider: SessionProvider, apiProviderId?: string | null) => unknown
   getActiveProvider?: (harnessId: HarnessId, apiProviderId: string | null) => RemoteActiveProvider | null
   getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
-  onBeforeInterrupt?: () => void
+  onBeforeInterrupt?: (projectPath: string) => void
 }
 
 function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorktreePath: string | null } {
@@ -182,7 +182,9 @@ export class SessionManagerImpl implements SessionManagerContract {
         ? (id) => resolveProviderConfig(provider, id)
         : undefined,
       getActiveDefaultApiProviderId: this.persistence.getActiveDefaultApiProviderId,
-      onBeforeInterrupt: this.persistence.onBeforeInterrupt,
+      onBeforeInterrupt: this.persistence.onBeforeInterrupt
+        ? () => this.persistence.onBeforeInterrupt!(opts.projectPath)
+        : undefined,
     })
 
     this.registerSession(session, opts.projectPath)
@@ -272,7 +274,9 @@ export class SessionManagerImpl implements SessionManagerContract {
         ? (id) => resolveProviderConfig(provider, id)
         : undefined,
       getActiveDefaultApiProviderId: this.persistence.getActiveDefaultApiProviderId,
-      onBeforeInterrupt: this.persistence.onBeforeInterrupt,
+      onBeforeInterrupt: this.persistence.onBeforeInterrupt
+        ? () => this.persistence.onBeforeInterrupt!(data.projectPath)
+        : undefined,
     })
 
     this.registerSession(session, data.projectPath)

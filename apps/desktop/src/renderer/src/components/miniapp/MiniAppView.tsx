@@ -30,7 +30,7 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
     const devRef = useRef<MiniAppDevFrameHandle>(null)
     const iframeRef = useRef<HTMLIFrameElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
-    const { tooltip, contextMenu, dismissContextMenu, popover, closePopover, overlayCallbacks } = useMiniAppOverlay(containerRef, appId, templates)
+    const { tooltip, contextMenu, dismissContextMenu, popover, closePopover, overlayCallbacks } = useMiniAppOverlay(containerRef, appId, projectDir, templates)
 
     const reload = useCallback(() => {
       if (isDev) devRef.current?.reload()

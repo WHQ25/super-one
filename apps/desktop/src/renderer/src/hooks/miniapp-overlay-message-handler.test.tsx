@@ -37,7 +37,7 @@ describe('miniapp-ui-toast', () => {
   it('calls toast.success for success type', () => {
     const result = handleMiniAppMessage('miniapp-ui-toast', {
       message: 'Done!', toastType: 'success',
-    }, 'app1', send)
+    }, 'app1', '/proj', send)
     expect(result).toBe(true)
     expect(toast.success).toHaveBeenCalledWith('Done!')
   })
@@ -45,28 +45,28 @@ describe('miniapp-ui-toast', () => {
   it('calls toast.error for error type', () => {
     handleMiniAppMessage('miniapp-ui-toast', {
       message: 'Failed', toastType: 'error',
-    }, 'app1', send)
+    }, 'app1', '/proj', send)
     expect(toast.error).toHaveBeenCalledWith('Failed')
   })
 
   it('calls toast.warning for warning type', () => {
     handleMiniAppMessage('miniapp-ui-toast', {
       message: 'Careful', toastType: 'warning',
-    }, 'app1', send)
+    }, 'app1', '/proj', send)
     expect(toast.warning).toHaveBeenCalledWith('Careful')
   })
 
   it('calls toast.info for info type', () => {
     handleMiniAppMessage('miniapp-ui-toast', {
       message: 'FYI', toastType: 'info',
-    }, 'app1', send)
+    }, 'app1', '/proj', send)
     expect(toast.info).toHaveBeenCalledWith('FYI')
   })
 
   it('defaults to toast.info for unknown type', () => {
     handleMiniAppMessage('miniapp-ui-toast', {
       message: 'Hello', toastType: 'unknown',
-    }, 'app1', send)
+    }, 'app1', '/proj', send)
     expect(toast.info).toHaveBeenCalledWith('Hello')
   })
 })
@@ -79,7 +79,7 @@ describe('miniapp-ui-tooltip', () => {
     const anchorRect = { x: 10, y: 20, width: 100, height: 30 }
     const result = handleMiniAppMessage('miniapp-ui-tooltip-show', {
       anchorRect, text: 'Tip', side: 'bottom',
-    }, 'app1', send, overlay)
+    }, 'app1', '/proj', send, overlay)
     expect(result).toBe(true)
     expect(overlay.onTooltip).toHaveBeenCalledWith({
       anchorRect, text: 'Tip', side: 'bottom',
@@ -88,7 +88,7 @@ describe('miniapp-ui-tooltip', () => {
 
   it('calls onTooltip with null for tooltip-hide', () => {
     const overlay: MiniAppOverlayCallbacks = { onTooltip: vi.fn() }
-    const result = handleMiniAppMessage('miniapp-ui-tooltip-hide', {}, 'app1', send, overlay)
+    const result = handleMiniAppMessage('miniapp-ui-tooltip-hide', {}, 'app1', '/proj', send, overlay)
     expect(result).toBe(true)
     expect(overlay.onTooltip).toHaveBeenCalledWith(null)
   })
@@ -96,8 +96,8 @@ describe('miniapp-ui-tooltip', () => {
   it('returns true even without overlay callbacks', () => {
     expect(handleMiniAppMessage('miniapp-ui-tooltip-show', {
       anchorRect: { x: 0, y: 0, width: 0, height: 0 }, text: 'x',
-    }, 'app1', send)).toBe(true)
-    expect(handleMiniAppMessage('miniapp-ui-tooltip-hide', {}, 'app1', send)).toBe(true)
+    }, 'app1', '/proj', send)).toBe(true)
+    expect(handleMiniAppMessage('miniapp-ui-tooltip-hide', {}, 'app1', '/proj', send)).toBe(true)
   })
 })
 
@@ -111,7 +111,7 @@ describe('miniapp-ui-contextmenu', () => {
     const items = [{ id: 'edit', label: 'Edit' }]
     const result = handleMiniAppMessage('miniapp-ui-contextmenu', {
       id: 42, position: { x: 100, y: 200 }, items,
-    }, 'app1', send, overlay)
+    }, 'app1', '/proj', send, overlay)
     expect(result).toBe(true)
     expect(overlay.onContextMenu).toHaveBeenCalledWith(
       { position: { x: 100, y: 200 }, items },
@@ -128,7 +128,7 @@ describe('miniapp-ui-contextmenu', () => {
     }
     handleMiniAppMessage('miniapp-ui-contextmenu', {
       id: 7, position: { x: 0, y: 0 }, items: [],
-    }, 'app1', send, overlay)
+    }, 'app1', '/proj', send, overlay)
     expect(send).toHaveBeenCalledWith({
       type: 'miniapp-ui-contextmenu-result', id: 7, itemId: null,
     })
@@ -137,7 +137,7 @@ describe('miniapp-ui-contextmenu', () => {
   it('sends null immediately when no overlay callback', () => {
     handleMiniAppMessage('miniapp-ui-contextmenu', {
       id: 99, position: { x: 0, y: 0 }, items: [],
-    }, 'app1', send)
+    }, 'app1', '/proj', send)
     expect(send).toHaveBeenCalledWith({
       type: 'miniapp-ui-contextmenu-result', id: 99, itemId: null,
     })

@@ -23,7 +23,7 @@ vi.mock('../git-run', () => ({ gitRun: vi.fn() }))
 vi.mock('../path-security', () => ({ sanitizeGitRef: vi.fn((s: string) => s) }))
 vi.mock('../git-status-utils', () => ({ parseGitStatusFiles: vi.fn(() => []) }))
 
-import { discoverProjectApps, detectStandaloneApp, createMiniApp, getProjectAppsDir, setAllowedDirectories, handleFsRequest, resolveAppEntry, setAllowedMedia, isMediaAllowed, clearAllowedMedia, getAllowedMedia, appIdFromUrl } from './miniapp-service'
+import { discoverProjectApps, detectStandaloneApp, createMiniApp, getProjectAppsDir, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, resolveAppEntry, setAllowedMedia, isMediaAllowed, clearAllowedMedia, getAllowedMedia, appIdFromUrl } from './miniapp-service'
 
 function mockManifest(appId: string, name: string) {
   return { appId, name, tools: [] }
@@ -523,26 +523,65 @@ describe('.superone directory protection', () => {
   })
 
   it('blocks project scope from accessing .superone', async () => {
-    setAllowedDirectories('test-app', [{ path: '/projects/my-app', access: 'read' }])
+    setAllowedDirectories('/projects/my-app', 'test-app', [{ path: '/projects/my-app', access: 'read' }])
     mockReadFile.mockResolvedValue('secret')
     await expect(
-      handleFsRequest('test-app', 'readFile', { path: '.superone/apps/other/manifest.json' })
+      handleFsRequest('/projects/my-app', 'test-app', 'readFile', { path: '.superone/apps/other/manifest.json' })
     ).rejects.toThrow('.superone is a protected directory')
   })
 
   it('blocks user scope from accessing .superone', async () => {
-    setAllowedDirectories('test-app', [{ path: '/mock-home', access: 'read' }])
+    setAllowedDirectories('/projects/my-app', 'test-app', [{ path: '/mock-home', access: 'read' }])
     mockReadFile.mockResolvedValue('secret')
     await expect(
-      handleFsRequest('test-app', 'readFile', { path: '.superone/apps/other/data/file.txt' })
+      handleFsRequest('/projects/my-app', 'test-app', 'readFile', { path: '.superone/apps/other/data/file.txt' })
     ).rejects.toThrow('.superone is a protected directory')
   })
 
   it('allows app scope data dir within .superone', async () => {
-    setAllowedDirectories('test-app', [{ path: '/projects/my-app/.superone/apps/test-app/data', access: 'readwrite' }])
+    setAllowedDirectories('/projects/my-app', 'test-app', [{ path: '/projects/my-app/.superone/apps/test-app/data', access: 'readwrite' }])
     mockReadFile.mockResolvedValue('ok')
-    const result = await handleFsRequest('test-app', 'readFile', { path: 'test.txt' })
+    const result = await handleFsRequest('/projects/my-app', 'test-app', 'readFile', { path: 'test.txt' })
     expect(result).toBe('ok')
+  })
+})
+
+describe('fs permissions cross-project isolation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockWriteFile.mockResolvedValue(undefined)
+    clearAllowedDirectories('/proj-A', 'notes-app')
+    clearAllowedDirectories('/proj-B', 'notes-app')
+  })
+
+  it('reads from project A use /proj-A/notes even after the same mini-app opens in project B', async () => {
+    setAllowedDirectories('/proj-A', 'notes-app', [{ path: '/proj-A/notes', access: 'readwrite' }])
+    setAllowedDirectories('/proj-B', 'notes-app', [{ path: '/proj-B/notes', access: 'readwrite' }])
+    mockReadFile.mockImplementation((path: string) => Promise.resolve(`content-at-${path}`))
+
+    const readA = await handleFsRequest('/proj-A', 'notes-app', 'readFile', { path: 'today.md' })
+    expect(readA).toBe('content-at-/proj-A/notes/today.md')
+
+    const readB = await handleFsRequest('/proj-B', 'notes-app', 'readFile', { path: 'today.md' })
+    expect(readB).toBe('content-at-/proj-B/notes/today.md')
+  })
+
+  it('writes from project A land in /proj-A/notes even after the same mini-app opens in project B', async () => {
+    setAllowedDirectories('/proj-A', 'notes-app', [{ path: '/proj-A/notes', access: 'readwrite' }])
+    setAllowedDirectories('/proj-B', 'notes-app', [{ path: '/proj-B/notes', access: 'readwrite' }])
+
+    await handleFsRequest('/proj-A', 'notes-app', 'writeFile', { path: 'summary.md', content: 'A' })
+    const writeA = mockWriteFile.mock.calls.at(-1)!
+    expect(writeA[0]).toBe('/proj-A/notes/summary.md')
+
+    await handleFsRequest('/proj-B', 'notes-app', 'writeFile', { path: 'summary.md', content: 'B' })
+    const writeB = mockWriteFile.mock.calls.at(-1)!
+    expect(writeB[0]).toBe('/proj-B/notes/summary.md')
+  })
+
+  it('rejects fs request for a project that never opened the mini-app', async () => {
+    setAllowedDirectories('/proj-A', 'notes-app', [{ path: '/proj-A/notes', access: 'readwrite' }])
+    await expect(handleFsRequest('/proj-B', 'notes-app', 'readFile', { path: 'today.md' })).rejects.toThrow(/No allowed directories/)
   })
 })
 

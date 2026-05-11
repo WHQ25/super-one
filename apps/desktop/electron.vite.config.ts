@@ -5,6 +5,18 @@ import { resolve } from 'path'
 import { readFileSync } from 'fs'
 
 const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf-8'))
+const mainExternalDeps = [
+  ...Object.keys(pkg.dependencies ?? {}).filter((dep) => dep !== '@superone/shared'),
+  'electron',
+]
+const mainExternal = [
+  ...mainExternalDeps,
+  new RegExp(`^(${mainExternalDeps.map(escapeRegExp).join('|')})/.+`),
+]
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -14,8 +26,17 @@ export default defineConfig(({ mode }) => {
       __CF_RELAY_URL__: JSON.stringify(env.SO_CF_RELAY_URL ?? ''),
     },
     build: {
-      externalizeDeps: {
-        exclude: ['@superone/shared']
+      externalizeDeps: false,
+      rollupOptions: {
+        external: mainExternal,
+        input: {
+          index: resolve('src/main/index.ts'),
+          'superone-mcp-stdio-bridge': resolve('src/main/mcp/superone-mcp-stdio-bridge.ts'),
+        },
+        output: {
+          format: 'es',
+          entryFileNames: '[name].js'
+        }
       }
     }
   },

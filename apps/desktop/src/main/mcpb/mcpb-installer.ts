@@ -12,7 +12,7 @@ import { addBundleLibraryEntry } from '../mcp-library-service'
 import type { McpbProvider } from '@superone/shared/mcpb-types'
 import { parseMcpbManifest } from './mcpb-manifest-schema'
 import { checkRuntimeAvailable, resolveMcpbServer } from './mcpb-runtime'
-import { writeSecrets, clearSecrets } from './mcpb-secrets'
+import { writeSecrets } from './mcpb-secrets'
 import type {
   McpbInstallMeta,
   McpbInstallRequest,
@@ -292,10 +292,7 @@ export async function uninstallMcpbBundle(
     otherDeleteFn(resolvedMeta.name, 'user', '')
   }
 
-  await clearSecrets(existing.dir)
-  await rm(existing.dir, { recursive: true, force: true })
-
-  log.info('[mcpb] uninstalled %s', name)
+  log.info('[mcpb] uninstalled %s (install dir preserved for fast re-install)', name)
 }
 
 export async function listInstalledMcpb(

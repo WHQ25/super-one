@@ -380,7 +380,7 @@ describe('mcpb installer', () => {
   })
 
   describe('uninstallMcpbBundle', () => {
-    it('removes install dir and calls deleteMcpConfig with stored scope/cwd', async () => {
+    it('keeps install dir intact and calls deleteMcpConfig with stored scope/cwd', async () => {
       const file = await buildBundle(bundleDir, { manifest: nodeManifest() })
       const preview = await previewMcpbBundle(file, { rootDir: installRoot, tempBaseDir: workDir })
       const result = await installMcpbBundle({
@@ -395,8 +395,31 @@ describe('mcpb installer', () => {
 
       await uninstallMcpbBundle('demo-server', { rootDir: installRoot, tempBaseDir: workDir })
 
-      expect(existsSync(result.installDir)).toBe(false)
+      expect(existsSync(result.installDir)).toBe(true)
       expect(deleteMcpConfigMock).toHaveBeenCalledWith('demo-server', 'project', '/Users/me/project')
+    })
+
+    it('preserves encrypted secrets.bin so re-install does not require re-entering sensitive user_config', async () => {
+      const manifest = nodeManifest({
+        user_config: {
+          API_KEY: { type: 'string', title: 'API key', required: true, sensitive: true, multiple: false },
+        },
+      })
+      const file = await buildBundle(bundleDir, { manifest })
+      const preview = await previewMcpbBundle(file, { rootDir: installRoot, tempBaseDir: workDir })
+      const result = await installMcpbBundle({
+        filePath: file,
+        provider: 'claude',
+        scope: 'user',
+        userConfig: { API_KEY: 'sk-secret' },
+        expectedManifestHash: preview.manifestHash,
+      }, { rootDir: installRoot, tempBaseDir: workDir })
+
+      expect(existsSync(join(result.installDir, 'secrets.bin'))).toBe(true)
+
+      await uninstallMcpbBundle('demo-server', { rootDir: installRoot, tempBaseDir: workDir })
+
+      expect(existsSync(join(result.installDir, 'secrets.bin'))).toBe(true)
     })
 
     it('is a no-op when bundle is not installed', async () => {

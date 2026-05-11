@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useTranslation, Trans } from 'react-i18next'
-import { GitBranch, ChevronDown, Check, Monitor, GitCommit } from 'lucide-react'
+import { GitBranch, ChevronDown, Check, Monitor, GitCommit, Circle } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useActiveSession } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
@@ -37,6 +37,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const [mainDirty, setMainDirty] = useState<GitDirtyStatus | undefined>()
   const [wtMetas, setWtMetas] = useState<Record<string, WtMeta>>({})
   const [checkedOutBranches, setCheckedOutBranches] = useState<Set<string>>(new Set())
+  const [activeDirty, setActiveDirty] = useState<GitDirtyStatus | undefined>()
 
   useEffect(() => {
     if (!currentFolder) { setWorktreeInfo(null); return }
@@ -47,6 +48,24 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     })
     return () => { cancelled = true }
   }, [currentFolder, isGitRepo])
+
+  const activePath = wtState?.activePath ?? null
+
+  useEffect(() => {
+    if (!activePath) { setActiveDirty(undefined); return }
+    let cancelled = false
+    const fetch = () => {
+      window.app.getGitInfo(activePath).then((info) => {
+        if (!cancelled) setActiveDirty(info?.dirty)
+      }).catch(() => {})
+    }
+    fetch()
+    const interval = setInterval(fetch, 5000)
+    const unsub = window.app.onGitHeadChange((evt) => {
+      if (evt.folderPath === activePath) fetch()
+    })
+    return () => { cancelled = true; clearInterval(interval); unsub() }
+  }, [activePath])
 
   const loadPopoverData = useCallback(async () => {
     if (!currentFolder) return
@@ -285,15 +304,58 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
         ? t('chat.worktree.detachAtHeading')
         : t('chat.worktree.createFromHeading')
 
+  const showDirty = isActive && !!activeDirty
+  const dirtyDot = showDirty ? (
+    <Circle className={`size-1.5 ${activeDirty!.files > 0 ? 'fill-amber-500 text-amber-500' : 'fill-muted-foreground/40 text-muted-foreground/40'}`} />
+  ) : null
+
   if (isOldSession) {
     return (
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={titleText}>
-        {compact ? (
-          <CompactIcon className="size-3" />
-        ) : (
-          <span className="flex max-w-72 items-center gap-0.5 truncate">{renderFullLabel()}</span>
-        )}
-      </div>
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <PopoverTrigger asChild>
+          <button
+            className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
+            title={titleText}
+          >
+            {compact ? (
+              <CompactIcon className="size-3" />
+            ) : (
+              <span className="flex max-w-72 items-center gap-0.5 truncate">{renderFullLabel()}</span>
+            )}
+            {dirtyDot}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-1" align="start">
+          <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs">
+            {activeIsDetached ? (
+              <GitCommit className="size-3 shrink-0 text-muted-foreground" />
+            ) : (
+              <GitBranch className="size-3 shrink-0 text-muted-foreground" />
+            )}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate">
+                {activeIsDetached
+                  ? activeShortHead
+                  : (activeEntry?.branch ?? activeBaseBranch ?? '')}
+              </span>
+              {activeDirty && (
+                <span className="text-[10px] text-muted-foreground">
+                  {activeDirty.files > 0 ? (
+                    <>
+                      uncommitted: {fmt(activeDirty.files)} {activeDirty.files === 1 ? 'file' : 'files'}
+                      {activeDirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(activeDirty.insertions)}</span>}
+                      {activeDirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(activeDirty.deletions)}</span>}
+                    </>
+                  ) : (
+                    'clean'
+                  )}
+                </span>
+              )}
+            </div>
+            <Check className="size-3 shrink-0 text-foreground" />
+          </div>
+        </PopoverContent>
+      </Popover>
     )
   }
 

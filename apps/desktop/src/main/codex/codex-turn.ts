@@ -821,8 +821,8 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
           toolName: miniAppToolName,
           toolUseId: requestId,
           input: {},
-          allowAlwaysAllow: supportsAlwaysPersist,
-          supportsAlwaysPersist,
+          allowAlwaysAllow: false,
+          supportsAlwaysPersist: false,
         },
       }
     }

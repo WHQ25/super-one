@@ -9,7 +9,12 @@ import { NO_PROJECT_KEY } from '@superone/shared/miniapp-host'
 import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult } from '@superone/shared/miniapp-types'
 
 function activeSessionId(projectDir: string): string {
-  const proj = useChatStore.getState().projectSessions[projectDir]
+  const chat = useChatStore.getState()
+  let proj = chat.projectSessions[projectDir]
+  if (!proj?._activeSessionId && projectDir) {
+    chat.ensureSession(projectDir)
+    proj = useChatStore.getState().projectSessions[projectDir]
+  }
   return proj?._activeSessionId ?? ''
 }
 
@@ -86,6 +91,38 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       const entry = get().apps.find((a) => a.id === appId)
       if (!entry) return
       await get().openAppInPanel(entry, projectDir)
+    })
+  }
+
+  if (typeof window !== 'undefined') {
+    queueMicrotask(() => {
+      if (typeof useChatStore?.getState !== 'function') return
+      const lastActiveSids = new Map<string, string>()
+      for (const [projectDir, proj] of Object.entries(useChatStore.getState().projectSessions)) {
+        if (proj._activeSessionId) lastActiveSids.set(projectDir, proj._activeSessionId)
+      }
+      useChatStore.subscribe((state) => {
+        const openApps = get().openApps
+        for (const [projectDir, proj] of Object.entries(state.projectSessions)) {
+          const newSid = proj._activeSessionId ?? ''
+          const oldSid = lastActiveSids.get(projectDir) ?? ''
+          if (newSid === oldSid) continue
+          lastActiveSids.set(projectDir, newSid)
+          if (!newSid) continue
+          const projectOpenApps = Object.values(openApps).filter((o) => o.projectDir === projectDir)
+          if (projectOpenApps.length === 0) continue
+          void (async () => {
+            for (const open of projectOpenApps) {
+              try {
+                await window.miniapp.open(open.entry.id, projectDir, newSid)
+                if (oldSid) await window.miniapp.close(open.entry.id, projectDir, oldSid)
+              } catch (err) {
+                console.error('[miniapp] rekey failed', { appId: open.entry.id, projectDir, oldSid, newSid, err })
+              }
+            }
+          })()
+        }
+      })
     })
   }
 

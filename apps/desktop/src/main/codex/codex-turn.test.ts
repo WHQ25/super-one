@@ -260,8 +260,8 @@ describe('mapApprovalRequest superone mini-app tool elicitation', () => {
     if (parsed?.responseKind !== 'elicitation') return
     expect(parsed.formFields).toEqual([])
     expect(parsed.request.toolName).toBe('mcp__superone__excalidraw__clear_canvas')
-    expect(parsed.request.allowAlwaysAllow).toBe(true)
-    expect(parsed.request.supportsAlwaysPersist).toBe(true)
+    expect(parsed.request.allowAlwaysAllow).toBe(false)
+    expect(parsed.request.supportsAlwaysPersist).toBe(false)
     expect(parsed.request.requestKind).toBeUndefined()
     expect(parsed.request.message).toBeUndefined()
   })

@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.30.6-alpha] - 2026-05-11
+
+### Added
+
+- **`/mcp` slash command shows per-session MCP status.** Settings only shows what's connectable per config; the new popup mirrors what the active session actually loaded (icons, status, tool count), falling back to probe-from-config when no session is attached. A read-only `mcp:meta-cache` IPC lets the popup render server icons without re-probing, and `saveMcpConfig` now nudges the active session to re-enable + reconnect the server on save so re-installs from the Library view take effect immediately instead of staying disabled.
+
+### Fixed
+
+- **Project-scope MCP servers from `.mcp.json` are authorized on save.** Writing the entry to `.mcp.json` alone left the Claude SDK treating it as unauthorized via the `enabledMcpjsonServers` allow-list in `~/.claude.json`, so the server showed "disabled" status right after a fresh install + new session. `saveMcpConfig` now also adds the name to `enabledMcpjsonServers` (and removes it from `disabledMcpjsonServers`) for project scope.
+- **MCPB uninstall preserves the unpacked bundle so re-install from Library works.** Uninstall previously `rm -rf`'d the install dir and cleared secrets, leaving the library entry pointing at a missing path; re-installing via the Library view (which only writes mcp config, not bundle files) then produced a broken server that crashed with "connection closed". Uninstall is now a deconfigure — only the mcp config entry is removed; the unpacked bundle and encrypted secrets stay on disk. `installMcpbBundle` still GCs old versions on upgrade, so this doesn't grow unbounded.
+- **Mini-app tool registration follows per-session holders instead of a project-wide instance.** Closing an app while another session still referenced its dock panel left the instance in the project-wide `openApps` map; the `useChatStore.subscribe` rekey block then re-opened it on any subsequent active-session switch, silently re-attaching tools the user had already closed. `OpenAppEntry` now carries `holderSessions: Set<sid>` and the iframe stays alive iff at least one session still holds it; `openAppInPanel` / `openFullscreenApp` add the active sid, `closeApp` removes it (destroying the instance only when the set empties), and the rekey segment in `useChatStore.subscribe` is removed so session switches no longer trigger any open/close IPC. Uninstall closes every holder session, not just the active one.
+
 ## [0.30.5-alpha] - 2026-05-11
 
 ### Added

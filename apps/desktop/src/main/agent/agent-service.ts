@@ -1192,6 +1192,10 @@ export class AgentService {
     this.sessionManager?.markAllNeedsRebuild(harnessId)
   }
 
+  markProjectNeedsRebuild(projectPath: string, harnessId?: 'claude' | 'codex'): void {
+    this.sessionManager?.markProjectNeedsRebuild(projectPath, harnessId)
+  }
+
 
   private findSessionBySid(projectPath: string, sessionId: string): import('../session/types').Session | undefined {
     const session = this.sessionManager?.getSession(sessionId)

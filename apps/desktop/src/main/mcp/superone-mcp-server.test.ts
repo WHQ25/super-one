@@ -55,6 +55,7 @@ vi.mock('./guides/tools.md?raw', () => ({ default: 'tools' }))
 
 import {
   getSuperoneMcpServer,
+  disposeSuperoneMcpServer,
   registerAppTools,
   unregisterAppTools,
   isToolPreapproved,
@@ -68,7 +69,10 @@ import {
   cancelToolIntercept,
 } from './superone-mcp-server'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import type { MiniAppToolDefinition } from '@superone/shared/miniapp-types'
+import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
+
+const PROJ_A = '/proj-a'
+const PROJ_B = '/proj-b'
 
 function makeTools(...names: string[]): MiniAppToolDefinition[] {
   return names.map((n) => ({
@@ -86,14 +90,19 @@ function getLastHandler(toolName: string): Function {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  unregisterAppTools('test-app')
-  unregisterAppTools('other-app')
-  getSuperoneMcpServer()
+  unregisterAppTools(PROJ_A, 'test-app')
+  unregisterAppTools(PROJ_A, 'other-app')
+  unregisterAppTools(PROJ_A, 'shared-app')
+  unregisterAppTools(PROJ_B, 'test-app')
+  unregisterAppTools(PROJ_B, 'shared-app')
+  disposeSuperoneMcpServer(PROJ_A)
+  disposeSuperoneMcpServer(PROJ_B)
+  getSuperoneMcpServer(PROJ_A)
 })
 
 describe('registerAppTools / unregisterAppTools', () => {
-  it('registers tools on active server', () => {
-    registerAppTools('test-app', 'myapp', makeTools('do_thing'))
+  it('registers tools on the project server', () => {
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
 
     expect(mockRegisterTool).toHaveBeenCalledWith(
       'myapp__do_thing',
@@ -104,32 +113,32 @@ describe('registerAppTools / unregisterAppTools', () => {
   })
 
   it('unregisters tools and calls sendToolListChanged', () => {
-    registerAppTools('test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     mockRemove.mockClear()
     mockSendToolListChanged.mockClear()
 
-    unregisterAppTools('test-app')
+    unregisterAppTools(PROJ_A, 'test-app')
 
     expect(mockRemove).toHaveBeenCalled()
     expect(mockSendToolListChanged).toHaveBeenCalled()
   })
 
   it('skips duplicate tool registration', () => {
-    registerAppTools('test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     const countAfterFirst = mockRegisterTool.mock.calls.filter((c) => c[0] === 'myapp__do_thing').length
 
-    registerAppTools('test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     const countAfterSecond = mockRegisterTool.mock.calls.filter((c) => c[0] === 'myapp__do_thing').length
 
     expect(countAfterSecond).toBe(countAfterFirst)
   })
 
-  it('caches tools when no active server', () => {
-    unregisterAppTools('test-app')
+  it('caches tools when no active server, attaches them on next getSuperoneMcpServer(projectPath)', () => {
+    disposeSuperoneMcpServer(PROJ_A)
 
-    registerAppTools('test-app', 'myapp', makeTools('cached_tool'))
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('cached_tool'))
 
-    getSuperoneMcpServer()
+    getSuperoneMcpServer(PROJ_A)
 
     expect(mockRegisterTool).toHaveBeenCalledWith(
       'myapp__cached_tool',
@@ -139,32 +148,57 @@ describe('registerAppTools / unregisterAppTools', () => {
   })
 })
 
+describe('multi-project tool routing', () => {
+  it('keeps tool registrations isolated between projects', () => {
+    getSuperoneMcpServer(PROJ_B)
+    registerAppTools(PROJ_A, 'shared-app', 'shared', makeTools('a_only'))
+    registerAppTools(PROJ_B, 'shared-app', 'shared', makeTools('b_only'))
+
+    const aOnlyCall = mockRegisterTool.mock.calls.find((c) => c[0] === 'shared__a_only')
+    const bOnlyCall = mockRegisterTool.mock.calls.find((c) => c[0] === 'shared__b_only')
+    expect(aOnlyCall).toBeTruthy()
+    expect(bOnlyCall).toBeTruthy()
+  })
+
+  it('unregistering one project does not affect the other', () => {
+    getSuperoneMcpServer(PROJ_B)
+    registerAppTools(PROJ_A, 'shared-app', 'shared', makeTools('common'))
+    registerAppTools(PROJ_B, 'shared-app', 'shared', makeTools('common'))
+
+    mockRemove.mockClear()
+    unregisterAppTools(PROJ_A, 'shared-app')
+
+    // Only PROJ_A's registration is removed
+    expect(mockRemove).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('tool handler rejects closed app', () => {
   it('returns error when app has been unregistered', async () => {
-    registerAppTools('test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     const handler = getLastHandler('myapp__do_thing')
 
-    unregisterAppTools('test-app')
+    unregisterAppTools(PROJ_A, 'test-app')
 
     const result = await handler({ x: 'hello' })
-    expect(result.content[0].text).toContain('has been closed')
+    expect(result.content[0].text).toContain('is not open')
   })
 
   it('works again after re-registering', async () => {
-    registerAppTools('test-app', 'myapp', makeTools('do_thing'))
-    unregisterAppTools('test-app')
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    unregisterAppTools(PROJ_A, 'test-app')
 
-    getSuperoneMcpServer()
-    registerAppTools('test-app', 'myapp', makeTools('do_thing'))
-    notifyAppReady('test-app')
+    getSuperoneMcpServer(PROJ_A)
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    notifyAppReady(PROJ_A, 'test-app')
     const handler = getLastHandler('myapp__do_thing')
 
     const result = await handler({ x: 'hello' }).catch((e: Error) => e)
     if (result?.content) {
-      expect(result.content[0].text).not.toContain('has been closed')
+      expect(result.content[0].text).not.toContain('is not open')
     } else {
       expect(result).toBeInstanceOf(Error)
-      expect(result.message).not.toContain('has been closed')
+      expect(result.message).not.toContain('is not open')
     }
   })
 })
@@ -175,7 +209,7 @@ describe('isToolPreapproved', () => {
   })
 
   it('returns false when tool is not preapproved', () => {
-    registerAppTools('test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     expect(isToolPreapproved('mcp__superone__myapp__do_thing')).toBe(false)
   })
 })
@@ -214,12 +248,12 @@ describe('executeAppTool with renderer.intercept', () => {
   beforeEach(() => {
     sentMessages.length = 0
     initSuperoneMcpServer(() => mockWin)
-    registerAppTools('test-app', 'myapp', [makeInterceptTool('confirm_action')])
-    registerAppTemplates('test-app', { confirm: 'popovers/confirm.html' })
-    notifyAppReady('test-app')
+    registerAppTools(PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action')])
+    registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
+    notifyAppReady(PROJ_A, 'test-app')
   })
 
-  it('submit path: merges agent + user input and dispatches MINIAPP_TOOL_CALL', async () => {
+  it('submit path: merges agent + user input, dispatches MINIAPP_TOOL_CALL with projectDir+callerCwd', async () => {
     const handler = getLastHandler('myapp__confirm_action')
     const pending = handler({ agent_field: 'from_agent' })
 
@@ -227,9 +261,11 @@ describe('executeAppTool with renderer.intercept', () => {
 
     const openMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)
     expect(openMsg).toBeTruthy()
-    const openReq = openMsg!.args[0] as { callId: string; agentInput: Record<string, unknown>; templatePath: string }
+    const openReq = openMsg!.args[0] as MiniAppToolInterceptOpenRequest
     expect(openReq.agentInput).toEqual({ agent_field: 'from_agent' })
     expect(openReq.templatePath).toBe('popovers/confirm.html')
+    expect(openReq.projectDir).toBe(PROJ_A)
+    expect(openReq.callerCwd).toBe(PROJ_A)
 
     submitToolIntercept(openReq.callId, { user_field: 'from_user' })
 
@@ -237,11 +273,12 @@ describe('executeAppTool with renderer.intercept', () => {
 
     const callMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
     expect(callMsg).toBeTruthy()
-    const callReq = callMsg!.args[0] as { arguments: Record<string, unknown> }
+    const callReq = callMsg!.args[0] as MiniAppToolCallRequest
     expect(callReq.arguments).toEqual({ agent_field: 'from_agent', user_field: 'from_user' })
+    expect(callReq.projectDir).toBe(PROJ_A)
+    expect(callReq.callerCwd).toBe(PROJ_A)
 
-    const resolveId = (callMsg!.args[0] as { callId: string }).callId
-    resolveToolCall(resolveId, { ok: true })
+    resolveToolCall(callReq.callId, { ok: true })
     const result = await pending
     expect(result.content[0].text).toContain('"ok":true')
   })
@@ -259,10 +296,10 @@ describe('executeAppTool with renderer.intercept', () => {
   })
 
   it('cancel with onCancel=resolve-empty: tool returns cancelled payload', async () => {
-    unregisterAppTools('test-app')
-    registerAppTools('test-app', 'myapp', [makeInterceptTool('confirm_action', { onCancel: 'resolve-empty' })])
-    registerAppTemplates('test-app', { confirm: 'popovers/confirm.html' })
-    notifyAppReady('test-app')
+    unregisterAppTools(PROJ_A, 'test-app')
+    registerAppTools(PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { onCancel: 'resolve-empty' })])
+    registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
+    notifyAppReady(PROJ_A, 'test-app')
 
     const handler = getLastHandler('myapp__confirm_action')
     const pending = handler({ agent_field: 'x' })
@@ -277,10 +314,10 @@ describe('executeAppTool with renderer.intercept', () => {
   })
 
   it('inputMerge=replace: user input overrides agent input entirely', async () => {
-    unregisterAppTools('test-app')
-    registerAppTools('test-app', 'myapp', [makeInterceptTool('confirm_action', { inputMerge: 'replace' })])
-    registerAppTemplates('test-app', { confirm: 'popovers/confirm.html' })
-    notifyAppReady('test-app')
+    unregisterAppTools(PROJ_A, 'test-app')
+    registerAppTools(PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { inputMerge: 'replace' })])
+    registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
+    notifyAppReady(PROJ_A, 'test-app')
 
     const handler = getLastHandler('myapp__confirm_action')
     const pending = handler({ agent_field: 'from_agent' })
@@ -298,7 +335,7 @@ describe('executeAppTool with renderer.intercept', () => {
   })
 
   it('missing template: handler errors out immediately', async () => {
-    unregisterAppTemplates('test-app')
+    unregisterAppTemplates(PROJ_A, 'test-app')
     const handler = getLastHandler('myapp__confirm_action')
     const result = await handler({ agent_field: 'x' })
     expect(result.content[0].text).toContain('[Error]')
@@ -325,7 +362,7 @@ describe('setup_mini_app_dev tool handler', () => {
   beforeEach(() => {
     sentMessages.length = 0
     initSuperoneMcpServer(() => mockWin)
-    getSuperoneMcpServer()
+    getSuperoneMcpServer(PROJ_A)
   })
 
   it('returns status=created and notifies dev-app-ready with the new appId', async () => {
@@ -419,40 +456,5 @@ describe('setup_mini_app_dev tool handler', () => {
     expect(payload.status).toBe('created')
     expect(payload.scope).toBe('user')
     expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_DEV_APP_READY)).toBeUndefined()
-  })
-
-  it('notifies dev-app-ready for a fullscreen scaffold so the list refreshes', async () => {
-    mockCreateMiniApp.mockResolvedValueOnce({
-      entry: {
-        id: 'card-y',
-        manifest: {
-          appId: 'card-y',
-          name: 'Card',
-          fullscreen: true,
-        },
-        installDir: '/proj/.superone/apps/card-y',
-        distDir: '/proj/packages/card/dist',
-      },
-      appPath: '/proj/packages/card',
-      buildRequired: true,
-    })
-    const handler = getBuiltInHandler('setup_mini_app_dev')
-
-    const result = await handler({
-      name: 'Card',
-      slug: 'card',
-      directory: '/proj/packages/card',
-      scope: 'project',
-      projectDir: '/proj',
-      template: 'react',
-      fullscreen: true,
-    })
-
-    const payload = JSON.parse(result.content[0].text)
-    expect(payload.status).toBe('created')
-
-    const readyMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_DEV_APP_READY)
-    expect(readyMsg).toBeTruthy()
-    expect(readyMsg!.args).toEqual(['/proj', 'card-y'])
   })
 })

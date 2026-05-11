@@ -230,7 +230,7 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     expect(state.openApps[keyB]?.projectId).toBe('B')
   })
 
-  it('closing one project-instance keeps the other instance alive and does not call MINIAPP_CLOSE until the last instance closes', async () => {
+  it('closing one project-instance fires MINIAPP_CLOSE for that project-dir only', async () => {
     appStateRef.currentProjectId = 'A'
     await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-A')
     appStateRef.currentProjectId = 'B'
@@ -241,17 +241,18 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     const keyB = makeInstanceKey('panel-app', 'B')
 
     await useMiniAppStore.getState().closeApp(keyA)
-    expect(mockMiniapp.close).not.toHaveBeenCalled()
+    expect(mockMiniapp.close).toHaveBeenCalledTimes(1)
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj-A')
     expect(useMiniAppStore.getState().openApps[keyA]).toBeUndefined()
     expect(useMiniAppStore.getState().openApps[keyB]).toBeDefined()
 
+    mockMiniapp.close.mockClear()
     await useMiniAppStore.getState().closeApp(keyB)
-    expect(mockMiniapp.close).toHaveBeenCalledTimes(1)
-    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app')
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj-B')
     expect(useMiniAppStore.getState().openApps[keyB]).toBeUndefined()
   })
 
-  it('opening a second project-instance reuses the existing main-process registration (no second MINIAPP_OPEN)', async () => {
+  it('opening a second project-instance fires its own MINIAPP_OPEN (per-projectDir registration)', async () => {
     appStateRef.currentProjectId = 'A'
     await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-A')
     mockMiniapp.open.mockClear()
@@ -259,7 +260,8 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     appStateRef.currentProjectId = 'B'
     await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-B')
 
-    expect(mockMiniapp.open).not.toHaveBeenCalled()
+    expect(mockMiniapp.open).toHaveBeenCalledTimes(1)
+    expect(mockMiniapp.open).toHaveBeenCalledWith('panel-app', '/proj-B')
   })
 
   it('opening an already-open instance focuses the tab without re-opening', async () => {
@@ -333,7 +335,7 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     expect(open?.presentation).toBe('panel')
   })
 
-  it('closeApp removes the instance and triggers MINIAPP_CLOSE when it is the last instance', async () => {
+  it('closeApp removes the instance and triggers MINIAPP_CLOSE with its projectDir', async () => {
     const app = entry('panel-app')
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
     const key = makeInstanceKey('panel-app', 'proj-id-1')
@@ -342,7 +344,7 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
 
     await useMiniAppStore.getState().closeApp(key)
 
-    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app')
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj')
     expect(mockCloseMiniAppTab).toHaveBeenCalledWith(key)
     expect(useMiniAppStore.getState().openApps[key]).toBeUndefined()
   })
@@ -375,7 +377,7 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     mockMiniapp.close.mockClear()
     await useMiniAppStore.getState().closeApp(key)
 
-    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app')
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj')
     expect(useMiniAppStore.getState().openApps[key]).toBeUndefined()
   })
 
@@ -403,8 +405,10 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
 
     await useMiniAppStore.getState().uninstallApp('panel-app')
 
-    expect(callOrder).toEqual(['close', 'uninstall'])
-    expect(mockMiniapp.close).toHaveBeenCalledTimes(1)
+    expect(callOrder).toEqual(['close', 'close', 'uninstall'])
+    expect(mockMiniapp.close).toHaveBeenCalledTimes(2)
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj-A')
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj-B')
     expect(useMiniAppStore.getState().openApps[makeInstanceKey('panel-app', 'A')]).toBeUndefined()
     expect(useMiniAppStore.getState().openApps[makeInstanceKey('panel-app', 'B')]).toBeUndefined()
   })

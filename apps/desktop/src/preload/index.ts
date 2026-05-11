@@ -897,8 +897,8 @@ const miniappAPI = {
   open: (appId: string, projectDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_OPEN, appId, projectDir),
 
-  close: (appId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CLOSE, appId),
+  close: (appId: string, projectDir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CLOSE, appId, projectDir),
 
   toolResult: (callId: string, result: unknown, error?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_TOOL_RESULT, callId, result, error),
@@ -930,8 +930,8 @@ const miniappAPI = {
     return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_FS_WATCH_EVENT, handler)
   },
 
-  iframeReady: (appId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_IFRAME_READY, appId),
+  iframeReady: (appId: string, projectDir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_IFRAME_READY, appId, projectDir),
 
   onToolCall: (callback: (call: MiniAppToolCallRequest) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, call: MiniAppToolCallRequest) => callback(call)

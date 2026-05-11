@@ -87,6 +87,8 @@ export class SessionManagerImpl implements SessionManagerContract {
     const cwds = new Set(targets.map((t) => t.cwd))
     cwds.add(projectPath)
     for (const cwd of cwds) this.projectResources.invalidate(cwd)
+    const { disposeSuperoneMcpServer } = await import('../mcp/superone-mcp-server')
+    disposeSuperoneMcpServer(projectPath)
   }
 
   forEachSession(fn: (session: SessionContract) => void): void {
@@ -292,9 +294,24 @@ export class SessionManagerImpl implements SessionManagerContract {
   }
 
   markAllNeedsRebuild(harnessId?: SessionProvider['harnessId']): void {
+    this._markNeedsRebuild((session) => {
+      if (harnessId && session.snapshot.harnessId !== harnessId) return false
+      return true
+    })
+  }
+
+  markProjectNeedsRebuild(projectPath: string, harnessId?: SessionProvider['harnessId']): void {
+    this._markNeedsRebuild((session) => {
+      if (session.projectPath !== projectPath) return false
+      if (harnessId && session.snapshot.harnessId !== harnessId) return false
+      return true
+    })
+  }
+
+  private _markNeedsRebuild(filter: (session: Session) => boolean): void {
     const resolver = this.persistence.resolveProviderConfig
     for (const session of this.sessions.values()) {
-      if (harnessId && session.snapshot.harnessId !== harnessId) continue
+      if (!filter(session)) continue
       const provider = getSessionProvider(session.snapshot.providerId)
       if (!provider) continue
       const nextConfig = resolver

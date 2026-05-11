@@ -97,6 +97,7 @@ export class ClaudeBackend implements SessionBackend {
       enabledSkills = all.filter((n) => !disabled.includes(n))
     }
     return {
+      projectPath: opts.projectPath,
       cwd: opts.cwd,
       model: opts.model ?? config.model,
       effort: opts.effort,

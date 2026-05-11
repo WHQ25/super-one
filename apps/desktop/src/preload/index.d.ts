@@ -305,7 +305,7 @@ interface AppAPI {
 interface MiniAppAPI {
   list(projectDir?: string): Promise<MiniAppEntry[]>
   open(appId: string, projectDir: string): Promise<void>
-  close(appId: string): Promise<void>
+  close(appId: string, projectDir: string): Promise<void>
   toolResult(callId: string, result: unknown, error?: string): Promise<void>
   fsRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   gitRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
@@ -314,7 +314,7 @@ interface MiniAppAPI {
   fsWatch(appId: string, path: string): Promise<number>
   fsUnwatch(watchId: number): Promise<void>
   onFsWatchEvent(callback: (event: MiniAppFsWatchEvent) => void): () => void
-  iframeReady(appId: string): Promise<void>
+  iframeReady(appId: string, projectDir: string): Promise<void>
   onToolCall(callback: (call: MiniAppToolCallRequest) => void): () => void
   getPreloadPath(): Promise<string>
   detectDev(projectDir: string): Promise<MiniAppEntry[]>

@@ -15,12 +15,13 @@ export interface MiniAppDevFrameHandle {
 interface MiniAppDevFrameProps {
   instanceKey: string
   appId: string
+  projectDir: string
   className?: string
   overlay?: MiniAppOverlayCallbacks
 }
 
 export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrameProps>(
-  function MiniAppDevFrame({ instanceKey, appId, className, overlay }, ref) {
+  function MiniAppDevFrame({ instanceKey, appId, projectDir, className, overlay }, ref) {
     const webviewRef = useRef<Electron.WebviewTag>(null)
     const isDark = useIsDark()
     const isDarkRef = useRef(isDark)
@@ -70,7 +71,7 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
         switch (channel) {
           case 'miniapp-ready':
             readyRef.current = true
-            window.miniapp.iframeReady(appId)
+            window.miniapp.iframeReady(appId, projectDir)
             wv.send('miniapp-theme', { vars: readThemeVars(), isDark: isDarkRef.current })
             break
         }
@@ -84,7 +85,7 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
         wv.removeEventListener('ipc-message', handleIpcMessage)
         wv.removeEventListener('context-menu', suppressContextMenu)
       }
-    }, [appId, preloadPath, overlay])
+    }, [appId, projectDir, preloadPath, overlay])
 
     useEffect(() => {
       if (!readyRef.current) return
@@ -128,14 +129,17 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
     useEffect(() => {
       const cleanup = window.miniapp.onToolCall((call) => {
         if (call.appId !== appId) return
+        if (call.projectDir !== projectDir) return
         webviewRef.current?.send('miniapp-tool-call', {
           callId: call.callId,
           toolName: call.toolName,
           arguments: call.arguments,
+          projectDir: call.projectDir,
+          callerCwd: call.callerCwd,
         })
       })
       return cleanup
-    }, [appId])
+    }, [appId, projectDir])
 
     if (!preloadPath) return null
 

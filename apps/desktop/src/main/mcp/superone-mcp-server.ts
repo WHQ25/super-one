@@ -62,11 +62,28 @@ interface GateEntry {
 
 const TOOL_CALL_TIMEOUT_MS = 60_000
 
-let mcpServer: McpServer | null = null
-const registeredTools = new Map<string, RegisteredTool>()
-const pendingCalls = new Map<string, PendingCall>()
-const appToolDefs = new Map<string, { toolSlug: string; tools: MiniAppToolDefinition[] }>()
+interface ProjectServerState {
+  server: McpServer
+  registeredTools: Map<string, RegisteredTool>
+}
+
+interface AppToolEntry {
+  projectDir: string
+  appId: string
+  toolSlug: string
+  tools: MiniAppToolDefinition[]
+}
+
+function makeAppKey(projectDir: string, appId: string): string {
+  return `${projectDir}::${appId}`
+}
+
+const projectServers = new Map<string, ProjectServerState>()
+const appToolDefs = new Map<string, AppToolEntry>()
 const appTemplates = new Map<string, Record<string, string>>()
+const appReadyGates = new Map<string, GateEntry>()
+const preapprovedTools = new Set<string>()
+const pendingCalls = new Map<string, PendingCall>()
 
 interface PendingIntercept {
   resolve: (userInput: Record<string, unknown>) => void
@@ -74,14 +91,12 @@ interface PendingIntercept {
   timer: ReturnType<typeof setTimeout> | null
 }
 const pendingIntercepts = new Map<string, PendingIntercept>()
-const appReadyGates = new Map<string, GateEntry>()
-const preapprovedTools = new Set<string>()
 
 let getMainWindow: (() => BrowserWindow | null) | null = null
 
 interface HttpSyncCallbacks {
-  syncAppTools: (appId: string, toolSlug: string, tools: MiniAppToolDefinition[]) => void
-  unsyncAppTools: (appId: string, toolSlug: string) => void
+  syncAppTools: (projectDir: string, appId: string, toolSlug: string, tools: MiniAppToolDefinition[]) => void
+  unsyncAppTools: (projectDir: string, appId: string, toolSlug: string) => void
 }
 
 let httpSync: HttpSyncCallbacks | null = null
@@ -244,78 +259,106 @@ After scaffolding, edit manifest.json in the directory to add tools, permissions
   )
 }
 
-export function getSuperoneMcpServer(): McpSdkServerConfigWithInstance {
-  mcpServer = new McpServer({ name: 'superone', version: '1.0.0' })
-  registerSuperoneTools(mcpServer)
-
-  registeredTools.clear()
-  for (const [appId, { toolSlug, tools }] of appToolDefs) {
-    registerToolsOnServer(appId, toolSlug, tools)
+export function getSuperoneMcpServer(projectPath: string): McpSdkServerConfigWithInstance {
+  const existing = projectServers.get(projectPath)
+  if (existing) {
+    return { type: 'sdk' as const, name: 'superone', instance: existing.server } as unknown as McpSdkServerConfigWithInstance
   }
 
-  return { type: 'sdk' as const, name: 'superone', instance: mcpServer } as unknown as McpSdkServerConfigWithInstance
+  const server = new McpServer({ name: 'superone', version: '1.0.0' })
+  registerSuperoneTools(server)
+  const state: ProjectServerState = { server, registeredTools: new Map() }
+  projectServers.set(projectPath, state)
+
+  for (const entry of appToolDefs.values()) {
+    if (entry.projectDir === projectPath) {
+      registerToolsOnState(state, entry.projectDir, entry.appId, entry.toolSlug, entry.tools)
+    }
+  }
+
+  log.debug('[superone-mcp] created server for projectPath=%s', projectPath)
+  return { type: 'sdk' as const, name: 'superone', instance: server } as unknown as McpSdkServerConfigWithInstance
 }
 
-function registerToolsOnServer(appId: string, toolSlug: string, tools: MiniAppToolDefinition[]): void {
-  log.debug('[superone-mcp] registerToolsOnServer appId=%s toolSlug=%s toolCount=%d existingCount=%d', appId, toolSlug, tools.length, registeredTools.size)
+export function disposeSuperoneMcpServer(projectPath: string): void {
+  projectServers.delete(projectPath)
+  log.debug('[superone-mcp] disposed server for projectPath=%s', projectPath)
+}
+
+function registerToolsOnState(
+  state: ProjectServerState,
+  projectDir: string,
+  appId: string,
+  toolSlug: string,
+  tools: MiniAppToolDefinition[],
+): void {
   for (const t of tools) {
     const namespacedName = `${toolSlug}__${t.name}`
-
-    if (registeredTools.has(namespacedName)) {
-      log.debug('[superone-mcp] skipping already-registered tool: %s', namespacedName)
-      continue
-    }
+    if (state.registeredTools.has(namespacedName)) continue
 
     const zodShape = jsonSchemaToZodShape(t.inputSchema)
-    const registered = mcpServer!.registerTool(
+    const registered = state.server.registerTool(
       namespacedName,
-      {
-        description: t.description,
-        inputSchema: zodShape,
-      },
+      { description: t.description, inputSchema: zodShape },
       async (args: Record<string, unknown>) => {
         try {
-          const result = await executeAppTool(appId, t.name, args)
+          const result = await executeAppTool(projectDir, appId, t.name, args, projectDir)
           return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
         } catch (err) {
           return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }
         }
       },
     )
-
-    registeredTools.set(namespacedName, registered)
-    log.info('[superone-mcp] registered tool: %s', namespacedName)
+    state.registeredTools.set(namespacedName, registered)
+    log.info('[superone-mcp] registered tool %s for projectPath=%s', namespacedName, projectDir)
   }
 }
 
-export function registerAppTools(appId: string, toolSlug: string, tools: MiniAppToolDefinition[]): void {
-  log.debug('[superone-mcp] registerAppTools appId=%s toolSlug=%s tools=%d mcpServer=%s connected=%s', appId, toolSlug, tools.length, !!mcpServer, mcpServer?.isConnected?.() ?? 'N/A')
-  appToolDefs.set(appId, { toolSlug, tools })
+export function registerAppTools(
+  projectDir: string,
+  appId: string,
+  toolSlug: string,
+  tools: MiniAppToolDefinition[],
+): void {
+  const key = makeAppKey(projectDir, appId)
+  log.debug('[superone-mcp] registerAppTools projectDir=%s appId=%s toolSlug=%s tools=%d', projectDir, appId, toolSlug, tools.length)
+  appToolDefs.set(key, { projectDir, appId, toolSlug, tools })
 
-  httpSync?.syncAppTools(appId, toolSlug, tools)
+  httpSync?.syncAppTools(projectDir, appId, toolSlug, tools)
 
-  if (!mcpServer) {
-    log.info('[superone-mcp] no active session; tools cached for %s', appId)
+  const state = projectServers.get(projectDir)
+  if (!state) {
+    log.info('[superone-mcp] no active server for projectDir=%s; tools cached for %s', projectDir, appId)
     return
   }
 
-  registerToolsOnServer(appId, toolSlug, tools)
-  mcpServer.sendToolListChanged()
-  log.debug('[superone-mcp] sendToolListChanged called, registeredCount=%d', registeredTools.size)
+  registerToolsOnState(state, projectDir, appId, toolSlug, tools)
+  state.server.sendToolListChanged()
 }
 
-export async function loadPreapprovedTools(appId: string, toolSlug: string, basePath: string): Promise<void> {
+export async function loadPreapprovedTools(
+  appId: string,
+  toolSlug: string,
+  basePath: string,
+): Promise<void> {
   const tools = await getPreapprovedByPath(basePath)
   for (const t of tools) {
     preapprovedTools.add(`${toolSlug}__${t}`)
   }
+  void appId
 }
 
 export function updatePreapprovedTools(appId: string, tools: string[]): void {
-  const entry = appToolDefs.get(appId)
-  if (!entry) return
-  const prefix = `${entry.toolSlug}__`
-  for (const name of preapprovedTools) {
+  let toolSlug: string | null = null
+  for (const entry of appToolDefs.values()) {
+    if (entry.appId === appId) {
+      toolSlug = entry.toolSlug
+      break
+    }
+  }
+  if (!toolSlug) toolSlug = appId
+  const prefix = `${toolSlug}__`
+  for (const name of [...preapprovedTools]) {
     if (name.startsWith(prefix)) preapprovedTools.delete(name)
   }
   for (const t of tools) {
@@ -331,24 +374,41 @@ export function isToolPreapproved(toolName: string): boolean {
   return preapprovedTools.has(namespacedName)
 }
 
-export function unregisterAppTools(appId: string): void {
-  const entry = appToolDefs.get(appId)
-  log.debug('[superone-mcp] unregisterAppTools appId=%s entry=%s registeredBefore=%s', appId, !!entry, [...registeredTools.keys()].join(','))
+export function unregisterAppTools(projectDir: string, appId: string): void {
+  const key = makeAppKey(projectDir, appId)
+  const entry = appToolDefs.get(key)
   const toolSlug = entry?.toolSlug ?? appId
-  appToolDefs.delete(appId)
+  appToolDefs.delete(key)
+
   const prefix = `${toolSlug}__`
-  for (const [name, tool] of registeredTools) {
-    if (name.startsWith(prefix)) {
-      tool.remove()
-      registeredTools.delete(name)
-      log.info('[superone-mcp] unregistered tool: %s', name)
+  const state = projectServers.get(projectDir)
+  if (state) {
+    for (const [name, tool] of state.registeredTools) {
+      if (name.startsWith(prefix)) {
+        tool.remove()
+        state.registeredTools.delete(name)
+        log.info('[superone-mcp] unregistered tool %s for projectPath=%s', name, projectDir)
+      }
+    }
+    state.server.sendToolListChanged()
+  }
+
+  appReadyGates.delete(key)
+
+  let stillOpen = false
+  for (const e of appToolDefs.values()) {
+    if (e.appId === appId) {
+      stillOpen = true
+      break
     }
   }
-  appReadyGates.delete(appId)
-  log.debug('[superone-mcp] registeredAfterUnregister=%s', [...registeredTools.keys()].join(','))
-  mcpServer?.sendToolListChanged()
+  if (!stillOpen) {
+    for (const name of [...preapprovedTools]) {
+      if (name.startsWith(prefix)) preapprovedTools.delete(name)
+    }
+  }
 
-  httpSync?.unsyncAppTools(appId, toolSlug)
+  httpSync?.unsyncAppTools(projectDir, appId, toolSlug)
 }
 
 export function resolveToolCall(callId: string, result: unknown): void {
@@ -375,27 +435,29 @@ export function rejectToolCall(callId: string, error: string): void {
   }
 }
 
-export function notifyAppReady(appId: string): void {
-  const entry = appReadyGates.get(appId)
+export function notifyAppReady(projectDir: string, appId: string): void {
+  const key = makeAppKey(projectDir, appId)
+  const entry = appReadyGates.get(key)
   if (entry?.resolve) {
     const elapsed = Date.now() - entry.startMs
-    log.info('[superone-mcp] app ready: %s (%dms)', appId, elapsed)
-    appReadyGates.delete(appId)
+    log.info('[superone-mcp] app ready: %s @ %s (%dms)', appId, projectDir, elapsed)
+    appReadyGates.delete(key)
     entry.resolve()
   } else {
-    log.info('[superone-mcp] app ready (early): %s', appId)
-    appReadyGates.set(appId, { startMs: Date.now(), ready: true })
+    log.info('[superone-mcp] app ready (early): %s @ %s', appId, projectDir)
+    appReadyGates.set(key, { startMs: Date.now(), ready: true })
   }
 }
 
-function waitForAppReady(appId: string): Promise<void> {
-  const existing = appReadyGates.get(appId)
+function waitForAppReady(projectDir: string, appId: string): Promise<void> {
+  const key = makeAppKey(projectDir, appId)
+  const existing = appReadyGates.get(key)
   if (existing?.ready) {
     return Promise.resolve()
   }
   const startMs = existing?.startMs ?? Date.now()
   return new Promise<void>((resolve) => {
-    appReadyGates.set(appId, { resolve, startMs, ready: false })
+    appReadyGates.set(key, { resolve, startMs, ready: false })
   })
 }
 
@@ -419,16 +481,17 @@ export function clearAllPendingCalls(): void {
   }
 }
 
-export function registerAppTemplates(appId: string, templates: Record<string, string> | undefined): void {
+export function registerAppTemplates(projectDir: string, appId: string, templates: Record<string, string> | undefined): void {
+  const key = makeAppKey(projectDir, appId)
   if (templates && Object.keys(templates).length > 0) {
-    appTemplates.set(appId, templates)
+    appTemplates.set(key, templates)
   } else {
-    appTemplates.delete(appId)
+    appTemplates.delete(key)
   }
 }
 
-export function unregisterAppTemplates(appId: string): void {
-  appTemplates.delete(appId)
+export function unregisterAppTemplates(projectDir: string, appId: string): void {
+  appTemplates.delete(makeAppKey(projectDir, appId))
 }
 
 function mergeInterceptInput(
@@ -484,12 +547,19 @@ export function cancelToolIntercept(callId: string, reason?: string): void {
   settleIntercept(callId, { error: new Error(reason ?? 'user_cancelled') })
 }
 
-function sendToolCall(callId: string, appId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
-  const request: MiniAppToolCallRequest = { callId, appId, toolName, arguments: args }
+function sendToolCall(
+  callId: string,
+  projectDir: string,
+  appId: string,
+  callerCwd: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  const request: MiniAppToolCallRequest = { callId, appId, projectDir, callerCwd, toolName, arguments: args }
   return new Promise<unknown>((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingCalls.delete(callId)
-      log.warn('[superone-mcp] tool call timeout callId=%s appId=%s toolName=%s', callId, appId, toolName)
+      log.warn('[superone-mcp] tool call timeout callId=%s projectDir=%s appId=%s toolName=%s', callId, projectDir, appId, toolName)
       reject(new Error(`Tool call timeout after ${TOOL_CALL_TIMEOUT_MS}ms: ${toolName}`))
     }, TOOL_CALL_TIMEOUT_MS)
 
@@ -503,20 +573,26 @@ function sendToolCall(callId: string, appId: string, toolName: string, args: Rec
       return
     }
 
-    log.debug('[superone-mcp] tool call dispatched callId=%s appId=%s toolName=%s', callId, appId, toolName)
+    log.debug('[superone-mcp] tool call dispatched callId=%s projectDir=%s appId=%s toolName=%s', callId, projectDir, appId, toolName)
     win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_CALL, request)
   })
 }
 
-export async function executeAppTool(appId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
-  const defsEntry = appToolDefs.get(appId)
+export async function executeAppTool(
+  projectDir: string,
+  appId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  callerCwd: string,
+): Promise<unknown> {
+  const key = makeAppKey(projectDir, appId)
+  const defsEntry = appToolDefs.get(key)
   if (!defsEntry) {
-    throw new Error(`App "${appId}" has been closed. This tool is no longer available.`)
+    throw new Error(`App "${appId}" is not open in project "${projectDir}". This tool is no longer available.`)
   }
 
-  log.debug('[superone-mcp] executeAppTool begin appId=%s toolName=%s readyEntry=%s', appId, toolName, appReadyGates.has(appId) ? JSON.stringify({ ready: appReadyGates.get(appId)?.ready }) : 'none')
-  await waitForAppReady(appId)
-  log.debug('[superone-mcp] executeAppTool ready appId=%s toolName=%s', appId, toolName)
+  log.debug('[superone-mcp] executeAppTool begin projectDir=%s appId=%s toolName=%s', projectDir, appId, toolName)
+  await waitForAppReady(projectDir, appId)
 
   const toolDef = defsEntry.tools.find((t) => t.name === toolName)
   const intercept = toolDef?.renderer?.intercept
@@ -524,7 +600,7 @@ export async function executeAppTool(appId: string, toolName: string, args: Reco
 
   let finalInput = args
   if (intercept) {
-    const templates = appTemplates.get(appId)
+    const templates = appTemplates.get(key)
     const templatePath = templates?.[intercept.template]
     if (!templatePath) {
       throw new Error(`Template "${intercept.template}" not found in manifest.templates`)
@@ -534,6 +610,8 @@ export async function executeAppTool(appId: string, toolName: string, args: Reco
       const userInput = await openInterceptRenderer({
         callId,
         appId,
+        projectDir,
+        callerCwd,
         toolSlug: defsEntry.toolSlug,
         toolName,
         agentInput: args,
@@ -549,10 +627,9 @@ export async function executeAppTool(appId: string, toolName: string, args: Reco
     }
   }
 
-  return sendToolCall(callId, appId, toolName, finalInput)
+  return sendToolCall(callId, projectDir, appId, callerCwd, toolName, finalInput)
 }
 
-export function getAppToolDefs(): Map<string, { toolSlug: string; tools: MiniAppToolDefinition[] }> {
+export function getAppToolDefs(): Map<string, AppToolEntry> {
   return appToolDefs
 }
-

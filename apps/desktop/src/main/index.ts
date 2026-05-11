@@ -15,7 +15,7 @@ import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearAllPendingCalls as clearAllPendingMiniAppCalls } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearAllPendingCalls as clearAllPendingMiniAppCalls, disposeSuperoneMcpServer } from './mcp/superone-mcp-server'
 import { startMcpHttpServer, stopMcpHttpServer } from './mcp/superone-mcp-http'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
@@ -1770,18 +1770,18 @@ function registerIpcHandlers(): void {
     setAppFsPermissions(appId, manifest, projectDir, installDir)
     setAppMediaPermissions(appId, manifest)
     const toolSlug = manifest.toolSlug ?? appId
-    registerAppTools(appId, toolSlug, manifest.tools ?? [])
-    registerAppTemplates(appId, manifest.templates)
+    registerAppTools(projectDir, appId, toolSlug, manifest.tools ?? [])
+    registerAppTemplates(projectDir, appId, manifest.templates)
     loadPreapprovedTools(appId, toolSlug, basePath)
-    if (manifest.tools?.length) agentService.markAllNeedsRebuild()
+    if (manifest.tools?.length) agentService.markProjectNeedsRebuild(projectDir)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string) => {
-    unregisterAppTools(appId)
-    unregisterAppTemplates(appId)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string, projectDir: string) => {
+    unregisterAppTools(projectDir, appId)
+    unregisterAppTemplates(projectDir, appId)
     clearAllowedDirectories(appId)
     clearAllowedMedia(appId)
-    agentService.markAllNeedsRebuild()
+    agentService.markProjectNeedsRebuild(projectDir)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_TOOL_RESULT, (_e, callId: string, result: unknown, error?: string) => {
@@ -1828,8 +1828,8 @@ function registerIpcHandlers(): void {
     return handleDbRequest(appId, op as any, args)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_IFRAME_READY, (_e, appId: string) => {
-    notifyMiniAppReady(appId)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_IFRAME_READY, (_e, appId: string, projectDir: string) => {
+    notifyMiniAppReady(projectDir, appId)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_GET_PRELOAD_PATH, () => {

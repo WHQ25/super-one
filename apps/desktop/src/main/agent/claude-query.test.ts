@@ -55,6 +55,7 @@ beforeEach(() => {
 describe('buildClaudeOptions permissionMode', () => {
   it("passes permissionMode: 'auto' through to SDK options without enabling dangerous skip", () => {
     const options = buildClaudeOptions({
+      projectPath: '/repo',
       cwd: '/repo',
       permissionMode: 'auto',
     })
@@ -63,10 +64,10 @@ describe('buildClaudeOptions permissionMode', () => {
   })
 
   it("enables allowDangerouslySkipPermissions only for 'bypassPermissions'", () => {
-    expect(buildClaudeOptions({ cwd: '/repo', permissionMode: 'bypassPermissions' }).allowDangerouslySkipPermissions).toBe(true)
-    expect(buildClaudeOptions({ cwd: '/repo', permissionMode: 'default' }).allowDangerouslySkipPermissions).toBe(false)
-    expect(buildClaudeOptions({ cwd: '/repo', permissionMode: 'dontAsk' }).allowDangerouslySkipPermissions).toBe(false)
-    expect(buildClaudeOptions({ cwd: '/repo', permissionMode: 'plan' }).allowDangerouslySkipPermissions).toBe(false)
+    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'bypassPermissions' }).allowDangerouslySkipPermissions).toBe(true)
+    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'default' }).allowDangerouslySkipPermissions).toBe(false)
+    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'dontAsk' }).allowDangerouslySkipPermissions).toBe(false)
+    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'plan' }).allowDangerouslySkipPermissions).toBe(false)
   })
 })
 

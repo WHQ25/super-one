@@ -9,13 +9,14 @@ import type { MiniAppToolCallRequest } from '@superone/shared/miniapp-types'
 
 export interface MiniAppBridgeOptions {
   appId: string
+  projectDir: string
   iframeRef: RefObject<HTMLIFrameElement | null>
   onReady?: () => void
   onResize?: (height: number) => void
   overlay?: MiniAppOverlayCallbacks
 }
 
-export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, overlay }: MiniAppBridgeOptions) {
+export function useMiniAppBridge({ appId, projectDir, iframeRef, onReady, onResize, overlay }: MiniAppBridgeOptions) {
   const isDark = useIsDark()
   const isDarkRef = useRef(isDark)
   isDarkRef.current = isDark
@@ -43,13 +44,13 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, overlay 
           break
         case 'miniapp-ready':
           readyRef.current = true
-          window.miniapp.iframeReady(appId)
+          window.miniapp.iframeReady(appId, projectDir)
           sendToFrame({ type: 'miniapp-theme', vars: readThemeVars(), isDark: isDarkRef.current })
           onReady?.()
           break
       }
     },
-    [appId, sendToFrame, onReady, onResize, iframeRef, overlay],
+    [appId, projectDir, sendToFrame, onReady, onResize, iframeRef, overlay],
   )
 
   useEffect(() => {
@@ -99,16 +100,19 @@ export function useMiniAppBridge({ appId, iframeRef, onReady, onResize, overlay 
   useEffect(() => {
     const cleanup = window.miniapp.onToolCall((call: MiniAppToolCallRequest) => {
       if (call.appId !== appId) return
-      window.app.trace?.('miniapp.tool', 'forward_to_iframe', { appId, toolName: call.toolName }, call.callId)
+      if (call.projectDir !== projectDir) return
+      window.app.trace?.('miniapp.tool', 'forward_to_iframe', { appId, projectDir, toolName: call.toolName }, call.callId)
       sendToFrame({
         type: 'miniapp-tool-call',
         callId: call.callId,
         toolName: call.toolName,
         arguments: call.arguments,
+        projectDir: call.projectDir,
+        callerCwd: call.callerCwd,
       })
     })
     return cleanup
-  }, [appId, sendToFrame])
+  }, [appId, projectDir, sendToFrame])
 
   return { sendToFrame, readyRef }
 }

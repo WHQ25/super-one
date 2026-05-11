@@ -10,6 +10,7 @@ import { resolveSdkClaudeBinary } from './claude-binary'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
 
 export interface SessionQueryOptions {
+  projectPath: string
   cwd: string
   model?: string
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -65,7 +66,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
       }
     },
     systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_PROMPT_APPEND },
-    mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': getSuperoneMcpServer() },
+    mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': getSuperoneMcpServer(opts.projectPath) },
     ...(opts.enabledSkills ? { skills: opts.enabledSkills } : {}),
   }
 }

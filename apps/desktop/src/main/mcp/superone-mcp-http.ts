@@ -15,10 +15,19 @@ import {
 import { registerWidgetTools } from '../generative-ui/mcp-server'
 import { writeCodexMcpConfig, removeCodexMcpConfig } from './codex-mcp-config'
 
+// NOTE: HTTP MCP serves external agents (codex CLI) that can't share the in-process SDK MCP server.
+// Mini-app tools are routed per-(projectDir, appId) — the HTTP client MUST declare its projectDir
+// via the `?projectDir=` query string when initializing a session, otherwise no mini-app tools
+// will be exposed (built-in superone + widget tools remain available).
+//
+// TODO: replace this HTTP transport with a per-codex-spawn stdio bridge so projectDir can be passed
+// via env at spawn time instead of relying on the codex client to construct the URL query.
+
 interface HttpSession {
   transport: StreamableHTTPServerTransport
   server: McpServer
   registeredTools: Map<string, RegisteredTool>
+  projectDir: string | null
 }
 
 let httpServer: Server | null = null
@@ -27,6 +36,7 @@ const sessions = new Map<string, HttpSession>()
 
 function registerDynamicToolOnSession(
   session: HttpSession,
+  projectDir: string,
   appId: string,
   toolSlug: string,
   t: MiniAppToolDefinition,
@@ -40,7 +50,7 @@ function registerDynamicToolOnSession(
     { description: t.description, inputSchema: zodShape },
     async (args: Record<string, unknown>) => {
       try {
-        const result = await executeAppTool(appId, t.name, args)
+        const result = await executeAppTool(projectDir, appId, t.name, args, projectDir)
         return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
       } catch (err) {
         return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }
@@ -58,10 +68,23 @@ function createSessionServer(): McpServer {
 }
 
 function populateSessionDynamicTools(session: HttpSession): void {
-  for (const [appId, { toolSlug, tools }] of getAppToolDefs()) {
-    for (const t of tools) {
-      registerDynamicToolOnSession(session, appId, toolSlug, t)
+  if (!session.projectDir) return
+  for (const entry of getAppToolDefs().values()) {
+    if (entry.projectDir !== session.projectDir) continue
+    for (const t of entry.tools) {
+      registerDynamicToolOnSession(session, entry.projectDir, entry.appId, entry.toolSlug, t)
     }
+  }
+}
+
+function parseProjectDirFromUrl(url: string | undefined): string | null {
+  if (!url) return null
+  try {
+    const parsed = new URL(url, 'http://localhost')
+    const pd = parsed.searchParams.get('projectDir')
+    return pd && pd.length > 0 ? pd : null
+  } catch {
+    return null
   }
 }
 
@@ -87,6 +110,7 @@ export async function startMcpHttpServer(_windowGetter: () => BrowserWindow | nu
           if (sessionId && sessions.has(sessionId)) {
             await sessions.get(sessionId)!.transport.handleRequest(req, res)
           } else {
+            const projectDir = parseProjectDirFromUrl(req.url)
             const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() })
             const server = createSessionServer()
             await server.connect(transport)
@@ -95,6 +119,10 @@ export async function startMcpHttpServer(_windowGetter: () => BrowserWindow | nu
               transport,
               server,
               registeredTools: new Map(),
+              projectDir,
+            }
+            if (!projectDir) {
+              log.warn('[mcp-http] new session has no projectDir — mini-app tools will not be exposed')
             }
             populateSessionDynamicTools(session)
 
@@ -113,7 +141,7 @@ export async function startMcpHttpServer(_windowGetter: () => BrowserWindow | nu
             const sid = transport.sessionId
             if (sid && !closed) {
               sessions.set(sid, session)
-              log.info('[mcp-http] new session: %s', sid)
+              log.info('[mcp-http] new session: %s projectDir=%s', sid, projectDir ?? 'none')
             }
           }
         } else if (req.method === 'GET') {
@@ -180,18 +208,20 @@ export function getMcpHttpPort(): number {
   return port
 }
 
-function syncAppTools(appId: string, toolSlug: string, tools: MiniAppToolDefinition[]): void {
+function syncAppTools(projectDir: string, appId: string, toolSlug: string, tools: MiniAppToolDefinition[]): void {
   for (const [, session] of sessions) {
+    if (session.projectDir !== projectDir) continue
     for (const t of tools) {
-      registerDynamicToolOnSession(session, appId, toolSlug, t)
+      registerDynamicToolOnSession(session, projectDir, appId, toolSlug, t)
     }
     session.server.sendToolListChanged()
   }
 }
 
-function unsyncAppTools(_appId: string, toolSlug: string): void {
+function unsyncAppTools(projectDir: string, _appId: string, toolSlug: string): void {
   const prefix = `${toolSlug}__`
   for (const [, session] of sessions) {
+    if (session.projectDir !== projectDir) continue
     for (const [name, tool] of session.registeredTools) {
       if (name.startsWith(prefix)) {
         tool.remove()

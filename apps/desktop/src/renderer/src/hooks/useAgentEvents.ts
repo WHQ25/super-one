@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { useMiniAppStore } from '@/stores/miniapp'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { buildToolRendererUrl } from '@superone/shared/miniapp-types'
 import { buildMiniAppHost } from '@superone/shared/miniapp-host'
@@ -45,7 +46,11 @@ export function useAgentEvents(): void {
 
   useEffect(() => {
     const cleanup = window.app.onToolInterceptOpen?.((req) => {
-      const projectId = useAppStore.getState().currentProjectId
+      const openApps = useMiniAppStore.getState().openApps
+      const instance = Object.values(openApps).find(
+        (v) => v.entry.id === req.appId && v.projectDir === req.projectDir,
+      )
+      const projectId = instance?.projectId ?? useAppStore.getState().currentProjectId
       const host = buildMiniAppHost(req.appId, projectId)
       const templateUrl = buildToolRendererUrl('intercept', host, req.templatePath, req.callId, req.toolName, req.agentInput ?? {})
       const toolUseId = findToolUseIdForIntercept(req.toolSlug, req.toolName)

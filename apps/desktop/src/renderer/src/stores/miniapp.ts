@@ -90,13 +90,6 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     return next
   }
 
-  function hasOtherInstanceOfApp(openApps: Record<string, OpenAppEntry>, instanceKey: string, appId: string): boolean {
-    for (const [k, v] of Object.entries(openApps)) {
-      if (k !== instanceKey && v.entry.id === appId) return true
-    }
-    return false
-  }
-
   return {
     apps: [],
     loaded: false,
@@ -140,22 +133,23 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       await window.miniapp.cancelInstall(pending.tempDir)
     },
     uninstallApp: async (appId: string, installDir?: string) => {
-      const openInstanceKeys = Object.entries(get().openApps)
+      const openInstances = Object.entries(get().openApps)
         .filter(([, v]) => v.entry.id === appId)
-        .map(([k]) => k)
-      if (openInstanceKeys.length > 0) {
-        await window.miniapp.close(appId)
-        for (const key of openInstanceKeys) {
+      if (openInstances.length > 0) {
+        for (const [, v] of openInstances) {
+          await window.miniapp.close(appId, v.projectDir)
+        }
+        for (const [key] of openInstances) {
           closeMiniAppTab(key)
         }
         set((s) => {
           const nextOpenApps = { ...s.openApps }
           const nextSlots = { ...s.slots }
-          for (const key of openInstanceKeys) {
+          for (const [key] of openInstances) {
             delete nextOpenApps[key]
             delete nextSlots[key]
           }
-          const fullscreenCleared = s.fullscreenApp && openInstanceKeys.includes(s.fullscreenApp.instanceKey)
+          const fullscreenCleared = s.fullscreenApp && openInstances.some(([k]) => k === s.fullscreenApp?.instanceKey)
           return {
             openApps: nextOpenApps,
             slots: nextSlots,
@@ -181,10 +175,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
         openMiniAppTab(instanceKey, entry.id, entry.manifest.name)
         return
       }
-      const isFirstInstanceOfApp = !hasOtherInstanceOfApp(get().openApps, instanceKey, entry.id)
-      if (isFirstInstanceOfApp) {
-        await window.miniapp.open(entry.id, projectDir)
-      }
+      await window.miniapp.open(entry.id, projectDir)
       set((s) => ({
         openApps: {
           ...s.openApps,
@@ -205,8 +196,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       if (currentCanvas && currentCanvas.instanceKey !== instanceKey) {
         await get().closeApp(currentCanvas.instanceKey)
       }
-      const isFirstInstanceOfApp = !existing && !hasOtherInstanceOfApp(get().openApps, instanceKey, entry.id)
-      if (isFirstInstanceOfApp) {
+      if (!existing) {
         await window.miniapp.open(entry.id, projectDir)
       }
       set((s) => ({
@@ -222,6 +212,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       const open = get().openApps[instanceKey]
       if (!open) return
       const appId = open.entry.id
+      const projectDir = open.projectDir
       const wasCanvas = open.presentation === 'canvas'
 
       if (!wasCanvas) {
@@ -237,10 +228,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
         return
       }
 
-      const isLastInstanceOfApp = !hasOtherInstanceOfApp(get().openApps, instanceKey, appId)
-      if (isLastInstanceOfApp) {
-        await window.miniapp.close(appId)
-      }
+      await window.miniapp.close(appId, projectDir)
       set((s) => ({
         openApps: withoutKey(s.openApps, instanceKey),
         slots: withoutKey(s.slots, instanceKey),

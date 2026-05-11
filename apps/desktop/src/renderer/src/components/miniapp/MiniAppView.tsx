@@ -23,6 +23,7 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
   function MiniAppView({ instanceKey, appId, className }, ref) {
     const { t } = useTranslation()
     const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
+    const projectDir = useMiniAppStore((s) => s.openApps[instanceKey]?.projectDir ?? '')
     const isFullscreenActive = useMiniAppStore((s) => s.fullscreenApp?.instanceKey === instanceKey)
     const isDev = app?.manifest.isDev
     const templates = app?.manifest.templates
@@ -82,8 +83,8 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
           </div>
         )}
         {isDev
-          ? <MiniAppDevFrame ref={devRef} instanceKey={instanceKey} appId={appId} className="h-full w-full" overlay={overlayCallbacks} />
-          : <MiniAppFrame ref={iframeRef} instanceKey={instanceKey} appId={appId} className="h-full w-full" overlay={overlayCallbacks} />
+          ? <MiniAppDevFrame ref={devRef} instanceKey={instanceKey} appId={appId} projectDir={projectDir} className="h-full w-full" overlay={overlayCallbacks} />
+          : <MiniAppFrame ref={iframeRef} instanceKey={instanceKey} appId={appId} projectDir={projectDir} className="h-full w-full" overlay={overlayCallbacks} />
         }
         <MiniAppOverlayPortal
           tooltip={tooltip}

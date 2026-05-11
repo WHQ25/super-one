@@ -5,7 +5,6 @@ import type { DockviewReadyEvent, DockviewApi } from 'dockview-core'
 import 'dockview/dist/styles/dockview.css'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
-import { useMiniAppStore } from '@/stores/miniapp'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { LAYOUT } from '@/lib/layout-constants'
@@ -69,11 +68,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     apiRef.current = event.api
     setDockApi(event.api)
 
-    const d1 = event.api.onDidRemovePanel((panel) => {
-      if (panel.id.startsWith('miniapp-')) {
-        const appId = panel.id.slice('miniapp-'.length)
-        useMiniAppStore.getState().handlePanelRemoved(appId)
-      }
+    const d1 = event.api.onDidRemovePanel(() => {
       if (event.api.panels.length === 0) {
         useActivityPanelStore.getState().setShowPanel(false)
       }

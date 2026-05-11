@@ -3,7 +3,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { MiniAppView } from './MiniAppView'
 
 export function MiniAppHostLayer() {
-  const openAppIds = useMiniAppStore(useShallow((s) => Object.keys(s.openApps)))
+  const openInstanceKeys = useMiniAppStore(useShallow((s) => Object.keys(s.openApps)))
 
   return (
     <div
@@ -15,20 +15,24 @@ export function MiniAppHostLayer() {
         zIndex: 30,
       }}
     >
-      {openAppIds.map((appId) => (
-        <PersistentMiniAppContainer key={appId} appId={appId} />
+      {openInstanceKeys.map((instanceKey) => (
+        <PersistentMiniAppContainer key={instanceKey} instanceKey={instanceKey} />
       ))}
     </div>
   )
 }
 
-function PersistentMiniAppContainer({ appId }: { appId: string }) {
-  const slot = useMiniAppStore((s) => s.slots[appId])
+function PersistentMiniAppContainer({ instanceKey }: { instanceKey: string }) {
+  const slot = useMiniAppStore((s) => s.slots[instanceKey])
+  const appId = useMiniAppStore((s) => s.openApps[instanceKey]?.entry.id)
   const visible = slot != null && slot.width > 0 && slot.height > 0
+
+  if (!appId) return null
 
   return (
     <div
       data-miniapp-host=""
+      data-instance-key={instanceKey}
       data-app-id={appId}
       style={{
         position: 'absolute',
@@ -41,7 +45,7 @@ function PersistentMiniAppContainer({ appId }: { appId: string }) {
         overflow: 'hidden',
       }}
     >
-      <MiniAppView appId={appId} className="h-full w-full" />
+      <MiniAppView instanceKey={instanceKey} appId={appId} className="h-full w-full" />
     </div>
   )
 }

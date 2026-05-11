@@ -4,7 +4,7 @@ import { useIsDark } from '@/hooks/use-is-dark'
 import { onThemeChange, readThemeVars } from './miniapp-theme'
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 import { useContextConsumedEvent } from '@/hooks/useContextConsumedEvent'
-import { useAppStore } from '@/stores/app'
+import { useMiniAppStore } from '@/stores/miniapp'
 import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 
 export interface MiniAppDevFrameHandle {
@@ -13,13 +13,14 @@ export interface MiniAppDevFrameHandle {
 }
 
 interface MiniAppDevFrameProps {
+  instanceKey: string
   appId: string
   className?: string
   overlay?: MiniAppOverlayCallbacks
 }
 
 export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrameProps>(
-  function MiniAppDevFrame({ appId, className, overlay }, ref) {
+  function MiniAppDevFrame({ instanceKey, appId, className, overlay }, ref) {
     const webviewRef = useRef<Electron.WebviewTag>(null)
     const isDark = useIsDark()
     const isDarkRef = useRef(isDark)
@@ -29,7 +30,7 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
     const initialLocaleRef = useRef(locale)
     const readyRef = useRef(false)
     const [preloadPath, setPreloadPath] = useState<string | null>(null)
-    const projectId = useAppStore((s) => s.currentProjectId)
+    const projectId = useMiniAppStore((s) => s.openApps[instanceKey]?.projectId ?? null)
     const src = useMemo(
       () => `superone-app://${buildMiniAppHost(appId, projectId)}/index.html?_locale=${encodeURIComponent(initialLocaleRef.current)}`,
       [appId, projectId],

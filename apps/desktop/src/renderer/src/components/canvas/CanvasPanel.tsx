@@ -39,7 +39,7 @@ export const CanvasPanel = memo(function CanvasPanel() {
 
   return (
     <div className="relative h-full">
-      <MiniAppSlot appId={openApp.appId} mode="canvas" className="h-full w-full" />
+      <MiniAppSlot instanceKey={openApp.instanceKey} mode="canvas" className="h-full w-full" />
     </div>
   )
 })

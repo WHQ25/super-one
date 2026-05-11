@@ -58,16 +58,17 @@ export function FilePreviewTab(props: IDockviewPanelHeaderProps<{ filePath: stri
   )
 }
 
-export function MiniAppTab(props: IDockviewPanelHeaderProps<{ appId: string }>) {
-  const appId = props.params.appId
+export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: string; appId: string }>) {
+  const { instanceKey, appId } = props.params
   const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
   const moveAppToCanvas = useMiniAppStore((s) => s.moveAppToCanvas)
+  const closeApp = useMiniAppStore((s) => s.closeApp)
   const canFullscreen = app?.manifest.fullscreen === true
   const active = useIsActive(props.api)
 
   return (
     <div className={tabChipClass(active)}>
-      <HoverCloseSlot onClose={() => props.api.close()}>
+      <HoverCloseSlot onClose={() => { void closeApp(instanceKey) }}>
         <MiniAppIcon appId={appId} className="size-3.5 shrink-0" />
       </HoverCloseSlot>
       <span className="truncate text-xs">{props.api.title}</span>
@@ -80,7 +81,7 @@ export function MiniAppTab(props: IDockviewPanelHeaderProps<{ appId: string }>) 
             opacity: active ? 1 : 0,
           }}
           transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-          onClick={(e) => { e.stopPropagation(); moveAppToCanvas(appId) }}
+          onClick={(e) => { e.stopPropagation(); moveAppToCanvas(instanceKey) }}
           className="flex h-4 shrink-0 items-center justify-center overflow-hidden rounded text-foreground/60 hover:text-foreground"
           title="Open in fullscreen"
         >

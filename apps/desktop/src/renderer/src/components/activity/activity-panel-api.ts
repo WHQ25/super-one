@@ -39,6 +39,15 @@ export function isDockReady(): boolean {
   return dockApi !== null
 }
 
+export function closeGhostMiniAppPanels(isAlive: (instanceKey: string) => boolean): void {
+  if (!dockApi) return
+  for (const panel of [...dockApi.panels]) {
+    if (!panel.id.startsWith('miniapp-')) continue
+    const instanceKey = panel.id.slice('miniapp-'.length)
+    if (!isAlive(instanceKey)) panel.api.close()
+  }
+}
+
 function ensureVisible() {
   const store = useActivityPanelStore.getState()
   if (!store.showPanel) store.setShowPanel(true)
@@ -125,11 +134,11 @@ export function openHistoryTab() {
   })
 }
 
-export function openMiniAppTab(appId: string, label: string) {
+export function openMiniAppTab(instanceKey: string, appId: string, label: string) {
   ensureVisible()
   execOrDefer(() => {
     if (!dockApi) return
-    const panelId = `miniapp-${appId}`
+    const panelId = `miniapp-${instanceKey}`
     const existing = dockApi.panels.find((p) => p.id === panelId)
     if (existing) {
       existing.api.setActive()
@@ -140,14 +149,14 @@ export function openMiniAppTab(appId: string, label: string) {
       component: 'miniapp',
       tabComponent: 'miniapp-tab',
       title: label,
-      params: { appId },
+      params: { instanceKey, appId },
     })
   })
 }
 
-export function closeMiniAppTab(appId: string) {
+export function closeMiniAppTab(instanceKey: string) {
   if (!dockApi) return
-  const panelId = `miniapp-${appId}`
+  const panelId = `miniapp-${instanceKey}`
   const existing = dockApi.panels.find((p) => p.id === panelId)
   if (existing) existing.api.close()
 }

@@ -2,12 +2,12 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useMiniAppStore } from '@/stores/miniapp'
 
 interface MiniAppSlotProps {
-  appId: string
+  instanceKey: string
   mode: 'panel' | 'canvas'
   className?: string
 }
 
-export function MiniAppSlot({ appId, mode, className }: MiniAppSlotProps) {
+export function MiniAppSlot({ instanceKey, mode, className }: MiniAppSlotProps) {
   const ref = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
@@ -23,7 +23,7 @@ export function MiniAppSlot({ appId, mode, className }: MiniAppSlotProps) {
       rafId = requestAnimationFrame(() => {
         rafId = 0
         const rect = el.getBoundingClientRect()
-        updateSlot(appId, mode, rect)
+        updateSlot(instanceKey, mode, rect)
       })
     }
 
@@ -41,9 +41,9 @@ export function MiniAppSlot({ appId, mode, className }: MiniAppSlotProps) {
       ro.disconnect()
       window.removeEventListener('resize', onWindowChange)
       window.removeEventListener('scroll', onWindowChange, true)
-      unregisterSlot(appId, mode)
+      unregisterSlot(instanceKey, mode)
     }
-  }, [appId, mode])
+  }, [instanceKey, mode])
 
   useEffect(() => {
     const el = ref.current
@@ -55,13 +55,13 @@ export function MiniAppSlot({ appId, mode, className }: MiniAppSlotProps) {
       const cur = el.getBoundingClientRect()
       if (cur.left !== last.left || cur.top !== last.top || cur.width !== last.width || cur.height !== last.height) {
         last = cur
-        updateSlot(appId, mode, cur)
+        updateSlot(instanceKey, mode, cur)
       }
       rafId = requestAnimationFrame(tick)
     }
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
-  }, [appId, mode])
+  }, [instanceKey, mode])
 
   return <div ref={ref} className={className} />
 }

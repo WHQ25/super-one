@@ -9,12 +9,16 @@ const {
   mockIsDockReady,
   mockSetOnDockReady,
   mockSetShowPanel,
+  mockCloseGhostMiniAppPanels,
+  openAppsRef,
 } = vi.hoisted(() => ({
   mockApplyDockSnapshot: vi.fn(),
   mockGetDockSnapshot: vi.fn<() => SerializedDockview | null>(),
   mockIsDockReady: vi.fn<() => boolean>(),
   mockSetOnDockReady: vi.fn<(cb: (() => void) | null) => void>(),
   mockSetShowPanel: vi.fn(),
+  mockCloseGhostMiniAppPanels: vi.fn<(isAlive: (appId: string) => boolean) => void>(),
+  openAppsRef: { value: {} as Record<string, unknown> },
 }))
 
 vi.mock('@/components/activity/activity-panel-api', () => ({
@@ -22,6 +26,13 @@ vi.mock('@/components/activity/activity-panel-api', () => ({
   getDockSnapshot: mockGetDockSnapshot,
   isDockReady: mockIsDockReady,
   setOnDockReady: mockSetOnDockReady,
+  closeGhostMiniAppPanels: mockCloseGhostMiniAppPanels,
+}))
+
+vi.mock('./miniapp', () => ({
+  useMiniAppStore: {
+    getState: () => ({ openApps: openAppsRef.value }),
+  },
 }))
 
 let mockShowPanel = false
@@ -38,6 +49,7 @@ vi.mock('./activity-panel', () => ({
 }))
 
 let useActivityViewStateStore: typeof import('./activity-view-state').useActivityViewStateStore
+let isInstanceReferencedInSavedSessions: typeof import('./activity-view-state').isInstanceReferencedInSavedSessions
 
 function makeLayout(panelId: string): SerializedDockview {
   return {
@@ -54,8 +66,10 @@ beforeEach(async () => {
   mockIsDockReady.mockReset()
   mockSetOnDockReady.mockReset()
   mockSetShowPanel.mockReset()
+  mockCloseGhostMiniAppPanels.mockReset()
   mockShowPanel = false
-  ;({ useActivityViewStateStore } = await import('./activity-view-state'))
+  openAppsRef.value = {}
+  ;({ useActivityViewStateStore, isInstanceReferencedInSavedSessions } = await import('./activity-view-state'))
   useActivityViewStateStore.getState()._resetForTest()
 })
 
@@ -222,5 +236,94 @@ describe('activity-view-state', () => {
     expect(mockSetOnDockReady).toHaveBeenCalledTimes(1)
     const cb = mockSetOnDockReady.mock.calls[0][0]
     expect(cb).toBeInstanceOf(Function)
+  })
+
+  it('restore closes ghost miniapp panels whose instanceKey is no longer in openApps (regression: black-screen after cross-session close)', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('miniapp-X:proj-1'))
+    openAppsRef.value = { 'X:proj-1': {} }
+    useActivityViewStateStore.getState().park('sess-A')
+
+    openAppsRef.value = {}
+    mockCloseGhostMiniAppPanels.mockClear()
+
+    useActivityViewStateStore.getState().restore('sess-A')
+
+    expect(mockCloseGhostMiniAppPanels).toHaveBeenCalledTimes(1)
+    const isAlive = mockCloseGhostMiniAppPanels.mock.calls[0][0]
+    expect(isAlive('X:proj-1')).toBe(false)
+  })
+
+  it('restore keeps miniapp panels whose instanceKey is still alive in openApps', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('miniapp-Y:proj-1'))
+    openAppsRef.value = { 'Y:proj-1': {} }
+    useActivityViewStateStore.getState().park('sess-A')
+
+    mockCloseGhostMiniAppPanels.mockClear()
+    useActivityViewStateStore.getState().restore('sess-A')
+
+    const isAlive = mockCloseGhostMiniAppPanels.mock.calls[0][0]
+    expect(isAlive('Y:proj-1')).toBe(true)
+  })
+
+  it('isInstanceReferencedInSavedSessions returns true when any parked layout has a matching miniapp panel id', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('miniapp-X:proj-1'))
+    useActivityViewStateStore.getState().park('sess-A')
+
+    expect(isInstanceReferencedInSavedSessions('X:proj-1')).toBe(true)
+    expect(isInstanceReferencedInSavedSessions('Y:proj-1')).toBe(false)
+  })
+
+  it('isInstanceReferencedInSavedSessions returns false when all sessions have been cleared', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('miniapp-X:proj-1'))
+    useActivityViewStateStore.getState().park('sess-A')
+    useActivityViewStateStore.getState().clearForSession('sess-A')
+
+    expect(isInstanceReferencedInSavedSessions('X:proj-1')).toBe(false)
+  })
+
+  it('isInstanceReferencedInSavedSessions excludes the current session’s stale snapshot (regression: iframe not destroyed when closing in current session after another session was parked)', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('miniapp-X:proj-1'))
+    // sess-A was parked once with the panel — but sess-A is now the active session and the user just closed the panel.
+    useActivityViewStateStore.getState().park('sess-A')
+    useActivityViewStateStore.getState().restore('sess-A')
+
+    expect(useActivityViewStateStore.getState()._currentSessionId).toBe('sess-A')
+    // Stale snapshot of sess-A still has the panel, but since sess-A is current, it must not count as a reference.
+    expect(isInstanceReferencedInSavedSessions('X:proj-1')).toBe(false)
+  })
+
+  it('isInstanceReferencedInSavedSessions still flags another session’s parked layout even when current session has the same instance', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('miniapp-X:proj-1'))
+    useActivityViewStateStore.getState().park('sess-A')
+    useActivityViewStateStore.getState().park('sess-B')
+    useActivityViewStateStore.getState().restore('sess-B')
+
+    // Current is sess-B. sess-A still references the panel.
+    expect(isInstanceReferencedInSavedSessions('X:proj-1')).toBe(true)
+  })
+
+  it('flushPending also runs ghost cleanup once dock becomes ready', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('miniapp-Z:proj-1'))
+    openAppsRef.value = { 'Z:proj-1': {} }
+    useActivityViewStateStore.getState().park('sess-A')
+
+    mockIsDockReady.mockReturnValue(false)
+    useActivityViewStateStore.getState().restore('sess-A')
+    expect(mockCloseGhostMiniAppPanels).not.toHaveBeenCalled()
+
+    openAppsRef.value = {}
+    mockIsDockReady.mockReturnValue(true)
+    useActivityViewStateStore.getState().flushPending()
+
+    expect(mockCloseGhostMiniAppPanels).toHaveBeenCalledTimes(1)
+    const isAlive = mockCloseGhostMiniAppPanels.mock.calls[0][0]
+    expect(isAlive('Z:proj-1')).toBe(false)
   })
 })

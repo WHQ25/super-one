@@ -1,9 +1,15 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { useActivityPanelStore } from './activity-panel'
+import { isInstanceReferencedInSavedSessions } from './activity-view-state'
 import { closeMiniAppTab, openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { LAYOUT } from '@/lib/layout-constants'
+import { NO_PROJECT_KEY } from '@superone/shared/miniapp-host'
 import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult } from '@superone/shared/miniapp-types'
+
+export function makeInstanceKey(appId: string, projectId: string | null): string {
+  return `${appId}:${projectId ?? NO_PROJECT_KEY}`
+}
 
 function applyPreferWidth(preferWidth: number): void {
   if (typeof window === 'undefined') return
@@ -15,9 +21,11 @@ function applyPreferWidth(preferWidth: number): void {
   useActivityPanelStore.getState().setPanelWidth(clamped)
 }
 
-interface OpenAppEntry {
+export interface OpenAppEntry {
+  instanceKey: string
   entry: MiniAppEntry
   projectDir: string
+  projectId: string | null
   presentation: 'panel' | 'canvas'
 }
 
@@ -39,9 +47,8 @@ interface MiniAppStoreState {
 
   openApps: Record<string, OpenAppEntry>
   slots: Record<string, MiniAppSlot>
-  _migratingApps: Set<string>
 
-  fullscreenApp: { appId: string; entry: MiniAppEntry } | null
+  fullscreenApp: { instanceKey: string; entry: MiniAppEntry } | null
 
   fetchApps: (projectDir?: string) => Promise<void>
   refreshApps: (projectDir?: string) => Promise<void>
@@ -55,16 +62,14 @@ interface MiniAppStoreState {
 
   openAppInPanel: (entry: MiniAppEntry, projectDir: string) => Promise<void>
   openFullscreenApp: (entry: MiniAppEntry, projectDir: string) => Promise<void>
-  closeApp: (appId: string) => Promise<void>
+  closeApp: (instanceKey: string) => Promise<void>
   closeFullscreenApp: () => Promise<void>
 
-  moveAppToCanvas: (appId: string) => void
-  moveAppToPanel: (appId: string) => void
+  moveAppToCanvas: (instanceKey: string) => void
+  moveAppToPanel: (instanceKey: string) => void
 
-  updateSlot: (appId: string, mode: 'panel' | 'canvas', rect: DOMRectReadOnly) => void
-  unregisterSlot: (appId: string, mode: 'panel' | 'canvas') => void
-
-  handlePanelRemoved: (appId: string) => void
+  updateSlot: (instanceKey: string, mode: 'panel' | 'canvas', rect: DOMRectReadOnly) => void
+  unregisterSlot: (instanceKey: string, mode: 'panel' | 'canvas') => void
 }
 
 export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
@@ -85,6 +90,13 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     return next
   }
 
+  function hasOtherInstanceOfApp(openApps: Record<string, OpenAppEntry>, instanceKey: string, appId: string): boolean {
+    for (const [k, v] of Object.entries(openApps)) {
+      if (k !== instanceKey && v.entry.id === appId) return true
+    }
+    return false
+  }
+
   return {
     apps: [],
     loaded: false,
@@ -95,7 +107,6 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
 
     openApps: {},
     slots: {},
-    _migratingApps: new Set<string>(),
 
     fullscreenApp: null,
 
@@ -129,8 +140,28 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       await window.miniapp.cancelInstall(pending.tempDir)
     },
     uninstallApp: async (appId: string, installDir?: string) => {
-      if (get().openApps[appId]) {
-        await get().closeApp(appId)
+      const openInstanceKeys = Object.entries(get().openApps)
+        .filter(([, v]) => v.entry.id === appId)
+        .map(([k]) => k)
+      if (openInstanceKeys.length > 0) {
+        await window.miniapp.close(appId)
+        for (const key of openInstanceKeys) {
+          closeMiniAppTab(key)
+        }
+        set((s) => {
+          const nextOpenApps = { ...s.openApps }
+          const nextSlots = { ...s.slots }
+          for (const key of openInstanceKeys) {
+            delete nextOpenApps[key]
+            delete nextSlots[key]
+          }
+          const fullscreenCleared = s.fullscreenApp && openInstanceKeys.includes(s.fullscreenApp.instanceKey)
+          return {
+            openApps: nextOpenApps,
+            slots: nextSlots,
+            fullscreenApp: fullscreenCleared ? null : s.fullscreenApp,
+          }
+        })
       }
       await window.miniapp.uninstall(appId, installDir)
       await get().refreshApps(get()._lastProjectDir)
@@ -143,122 +174,131 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     },
 
     openAppInPanel: async (entry: MiniAppEntry, projectDir: string) => {
-      const existing = get().openApps[entry.id]
+      const projectId = useAppStore.getState().currentProjectId
+      const instanceKey = makeInstanceKey(entry.id, projectId)
+      const existing = get().openApps[instanceKey]
       if (existing) {
-        openMiniAppTab(entry.id, entry.manifest.name)
+        openMiniAppTab(instanceKey, entry.id, entry.manifest.name)
         return
       }
-      await window.miniapp.open(entry.id, projectDir)
-      set((s) => ({
-        openApps: {
-          ...s.openApps,
-          [entry.id]: { entry, projectDir, presentation: 'panel' },
-        },
-      }))
-      if (entry.manifest.preferWidth) {
-        applyPreferWidth(entry.manifest.preferWidth)
-      }
-      openMiniAppTab(entry.id, entry.manifest.name)
-    },
-
-    openFullscreenApp: async (entry: MiniAppEntry, projectDir: string) => {
-      const existing = get().openApps[entry.id]
-      const currentCanvas = get().fullscreenApp
-      if (currentCanvas && currentCanvas.appId !== entry.id) {
-        await get().closeApp(currentCanvas.appId)
-      }
-      if (!existing) {
+      const isFirstInstanceOfApp = !hasOtherInstanceOfApp(get().openApps, instanceKey, entry.id)
+      if (isFirstInstanceOfApp) {
         await window.miniapp.open(entry.id, projectDir)
       }
       set((s) => ({
         openApps: {
           ...s.openApps,
-          [entry.id]: { entry, projectDir, presentation: 'canvas' },
+          [instanceKey]: { instanceKey, entry, projectDir, projectId, presentation: 'panel' },
         },
-        fullscreenApp: { appId: entry.id, entry },
+      }))
+      if (entry.manifest.preferWidth) {
+        applyPreferWidth(entry.manifest.preferWidth)
+      }
+      openMiniAppTab(instanceKey, entry.id, entry.manifest.name)
+    },
+
+    openFullscreenApp: async (entry: MiniAppEntry, projectDir: string) => {
+      const projectId = useAppStore.getState().currentProjectId
+      const instanceKey = makeInstanceKey(entry.id, projectId)
+      const existing = get().openApps[instanceKey]
+      const currentCanvas = get().fullscreenApp
+      if (currentCanvas && currentCanvas.instanceKey !== instanceKey) {
+        await get().closeApp(currentCanvas.instanceKey)
+      }
+      const isFirstInstanceOfApp = !existing && !hasOtherInstanceOfApp(get().openApps, instanceKey, entry.id)
+      if (isFirstInstanceOfApp) {
+        await window.miniapp.open(entry.id, projectDir)
+      }
+      set((s) => ({
+        openApps: {
+          ...s.openApps,
+          [instanceKey]: { instanceKey, entry, projectDir, projectId, presentation: 'canvas' },
+        },
+        fullscreenApp: { instanceKey, entry },
       }))
     },
 
-    closeApp: async (appId: string) => {
-      const open = get().openApps[appId]
+    closeApp: async (instanceKey: string) => {
+      const open = get().openApps[instanceKey]
       if (!open) return
-      await window.miniapp.close(appId)
-      set((s) => ({
-        openApps: withoutKey(s.openApps, appId),
-        slots: withoutKey(s.slots, appId),
-        fullscreenApp: s.fullscreenApp?.appId === appId ? null : s.fullscreenApp,
-      }))
-      if (open.presentation === 'panel') {
-        closeMiniAppTab(appId)
-      } else {
-        useAppStore.getState().setLayoutMode('coding')
+      const appId = open.entry.id
+      const wasCanvas = open.presentation === 'canvas'
+
+      if (!wasCanvas) {
+        closeMiniAppTab(instanceKey)
       }
+
+      if (isInstanceReferencedInSavedSessions(instanceKey)) {
+        set((s) => ({
+          slots: withoutKey(s.slots, instanceKey),
+          fullscreenApp: s.fullscreenApp?.instanceKey === instanceKey ? null : s.fullscreenApp,
+        }))
+        if (wasCanvas) useAppStore.getState().setLayoutMode('coding')
+        return
+      }
+
+      const isLastInstanceOfApp = !hasOtherInstanceOfApp(get().openApps, instanceKey, appId)
+      if (isLastInstanceOfApp) {
+        await window.miniapp.close(appId)
+      }
+      set((s) => ({
+        openApps: withoutKey(s.openApps, instanceKey),
+        slots: withoutKey(s.slots, instanceKey),
+        fullscreenApp: s.fullscreenApp?.instanceKey === instanceKey ? null : s.fullscreenApp,
+      }))
+      if (wasCanvas) useAppStore.getState().setLayoutMode('coding')
     },
 
     closeFullscreenApp: async () => {
       const current = get().fullscreenApp
       if (!current) return
-      await get().closeApp(current.appId)
+      await get().closeApp(current.instanceKey)
     },
 
-    moveAppToCanvas: (appId: string) => {
-      const open = get().openApps[appId]
+    moveAppToCanvas: (instanceKey: string) => {
+      const open = get().openApps[instanceKey]
       if (!open) return
-      set((s) => ({ _migratingApps: new Set([...s._migratingApps, appId]) }))
-      closeMiniAppTab(appId)
+      closeMiniAppTab(instanceKey)
       set((s) => ({
         openApps: {
           ...s.openApps,
-          [appId]: { ...open, presentation: 'canvas' },
+          [instanceKey]: { ...open, presentation: 'canvas' },
         },
-        fullscreenApp: { appId, entry: open.entry },
+        fullscreenApp: { instanceKey, entry: open.entry },
       }))
       useAppStore.getState().setLayoutMode('canvas')
     },
 
-    moveAppToPanel: (appId: string) => {
-      const open = get().openApps[appId]
+    moveAppToPanel: (instanceKey: string) => {
+      const open = get().openApps[instanceKey]
       if (!open) return
       set((s) => ({
         openApps: {
           ...s.openApps,
-          [appId]: { ...open, presentation: 'panel' },
+          [instanceKey]: { ...open, presentation: 'panel' },
         },
-        fullscreenApp: s.fullscreenApp?.appId === appId ? null : s.fullscreenApp,
+        fullscreenApp: s.fullscreenApp?.instanceKey === instanceKey ? null : s.fullscreenApp,
       }))
       useAppStore.getState().setLayoutMode('coding')
-      openMiniAppTab(appId, open.entry.manifest.name)
+      openMiniAppTab(instanceKey, open.entry.id, open.entry.manifest.name)
     },
 
-    updateSlot: (appId: string, mode: 'panel' | 'canvas', rect: DOMRectReadOnly) => {
-      const prev = get().slots[appId]
+    updateSlot: (instanceKey: string, mode: 'panel' | 'canvas', rect: DOMRectReadOnly) => {
+      const prev = get().slots[instanceKey]
       const left = Math.round(rect.left)
       const top = Math.round(rect.top)
       const width = Math.round(rect.width)
       const height = Math.round(rect.height)
       if (prev && prev.mode === mode && prev.left === left && prev.top === top && prev.width === width && prev.height === height) return
       set((s) => ({
-        slots: { ...s.slots, [appId]: { mode, left, top, width, height } },
+        slots: { ...s.slots, [instanceKey]: { mode, left, top, width, height } },
       }))
     },
 
-    unregisterSlot: (appId: string, mode: 'panel' | 'canvas') => {
-      const prev = get().slots[appId]
+    unregisterSlot: (instanceKey: string, mode: 'panel' | 'canvas') => {
+      const prev = get().slots[instanceKey]
       if (!prev || prev.mode !== mode) return
-      set((s) => ({ slots: withoutKey(s.slots, appId) }))
-    },
-
-    handlePanelRemoved: (appId: string) => {
-      const migrating = get()._migratingApps.has(appId)
-      if (migrating) {
-        set((s) => {
-          const next = new Set(s._migratingApps)
-          next.delete(appId)
-          return { _migratingApps: next }
-        })
-        return
-      }
-      void get().closeApp(appId)
+      set((s) => ({ slots: withoutKey(s.slots, instanceKey) }))
     },
   }
 })

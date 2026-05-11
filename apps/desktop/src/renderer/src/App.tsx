@@ -400,7 +400,7 @@ function CanvasReturnToPanelButton() {
   if (layoutMode !== 'canvas' || !fullscreenApp) return null
   return (
     <button
-      onClick={() => moveAppToPanel(fullscreenApp.entry.id)}
+      onClick={() => moveAppToPanel(fullscreenApp.instanceKey)}
       className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
       title="Return to panel"
     >

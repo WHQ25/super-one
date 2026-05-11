@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import type { SerializedDockview } from 'dockview-core'
-import { applyDockSnapshot, getDockSnapshot, isDockReady, setOnDockReady } from '@/components/activity/activity-panel-api'
+import { applyDockSnapshot, closeGhostMiniAppPanels, getDockSnapshot, isDockReady, setOnDockReady } from '@/components/activity/activity-panel-api'
 import { useActivityPanelStore } from './activity-panel'
+import { useMiniAppStore } from './miniapp'
 
 export interface SessionViewState {
   layout: SerializedDockview | null
@@ -11,6 +12,7 @@ export interface SessionViewState {
 interface ActivityViewStateStore {
   perSession: Record<string, SessionViewState>
   pendingRestore: string | null
+  _currentSessionId: string | null
   park: (sessionId: string) => void
   restore: (sessionId: string) => void
   seedFromCurrent: (sessionId: string) => void
@@ -22,11 +24,13 @@ interface ActivityViewStateStore {
 function applyState(state: SessionViewState | undefined) {
   applyDockSnapshot(state?.layout ?? null)
   useActivityPanelStore.getState().setShowPanel(state?.showPanel ?? false)
+  closeGhostMiniAppPanels((instanceKey) => instanceKey in useMiniAppStore.getState().openApps)
 }
 
 export const useActivityViewStateStore = create<ActivityViewStateStore>((set, get) => ({
   perSession: {},
   pendingRestore: null,
+  _currentSessionId: null,
 
   park: (sessionId) => {
     if (!isDockReady()) return
@@ -42,10 +46,10 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
 
   restore: (sessionId) => {
     if (!isDockReady()) {
-      set({ pendingRestore: sessionId })
+      set({ pendingRestore: sessionId, _currentSessionId: sessionId })
       return
     }
-    set({ pendingRestore: null })
+    set({ pendingRestore: null, _currentSessionId: sessionId })
     const target = get().perSession[sessionId]
     applyState(target ? { layout: target.layout ? structuredClone(target.layout) : null, showPanel: target.showPanel } : undefined)
   },
@@ -81,9 +85,21 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
     applyState(target ? { layout: target.layout ? structuredClone(target.layout) : null, showPanel: target.showPanel } : undefined)
   },
 
-  _resetForTest: () => set({ perSession: {}, pendingRestore: null }),
+  _resetForTest: () => set({ perSession: {}, pendingRestore: null, _currentSessionId: null }),
 }))
 
 setOnDockReady(() => {
   useActivityViewStateStore.getState().flushPending()
 })
+
+export function isInstanceReferencedInSavedSessions(instanceKey: string): boolean {
+  const panelId = `miniapp-${instanceKey}`
+  const state = useActivityViewStateStore.getState()
+  const current = state._currentSessionId
+  for (const [sid, view] of Object.entries(state.perSession)) {
+    if (sid === current) continue
+    const panels = view.layout?.panels
+    if (panels && panelId in panels) return true
+  }
+  return false
+}

@@ -1,19 +1,19 @@
 import { useRef, forwardRef, useImperativeHandle, useMemo } from 'react'
 import { useMiniAppBridge } from '@/hooks/useMiniAppBridge'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { useAppStore } from '@/stores/app'
 import type { MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 import { buildMiniAppFrameAttrs } from '@superone/shared/miniapp-frame-attrs'
 import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 
 interface MiniAppFrameProps {
+  instanceKey: string
   appId: string
   className?: string
   overlay?: MiniAppOverlayCallbacks
 }
 
 export const MiniAppFrame = forwardRef<HTMLIFrameElement, MiniAppFrameProps>(
-  function MiniAppFrame({ appId, className, overlay }, ref) {
+  function MiniAppFrame({ instanceKey, appId, className, overlay }, ref) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   useImperativeHandle(ref, () => iframeRef.current!, [])
 
@@ -22,7 +22,7 @@ export const MiniAppFrame = forwardRef<HTMLIFrameElement, MiniAppFrameProps>(
   const mediaEntries = useMiniAppStore((s) => s.apps.find((a) => a.id === appId)?.manifest.permissions?.media)
   const { sandbox, allow } = useMemo(() => buildMiniAppFrameAttrs(mediaEntries?.map((m) => m.kind)), [mediaEntries])
 
-  const projectId = useAppStore((s) => s.currentProjectId)
+  const projectId = useMiniAppStore((s) => s.openApps[instanceKey]?.projectId ?? null)
   const src = `superone-app://${buildMiniAppHost(appId, projectId)}/index.html`
 
   return (

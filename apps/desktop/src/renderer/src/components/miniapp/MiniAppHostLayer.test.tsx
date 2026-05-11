@@ -4,14 +4,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 
-const { mockSetLayoutMode, mockOpenMiniAppTab, mockCloseMiniAppTab } = vi.hoisted(() => ({
+const { mockSetLayoutMode, mockOpenMiniAppTab, mockCloseMiniAppTab, appStateRef } = vi.hoisted(() => ({
   mockSetLayoutMode: vi.fn(),
   mockOpenMiniAppTab: vi.fn(),
   mockCloseMiniAppTab: vi.fn(),
+  appStateRef: { currentProjectId: 'proj-1' as string | null },
 }))
 
 vi.mock('@/stores/app', () => ({
-  useAppStore: { getState: () => ({ setLayoutMode: mockSetLayoutMode }) },
+  useAppStore: { getState: () => ({ setLayoutMode: mockSetLayoutMode, currentProjectId: appStateRef.currentProjectId }) },
 }))
 
 vi.mock('@/components/activity/activity-panel-api', () => ({
@@ -19,12 +20,16 @@ vi.mock('@/components/activity/activity-panel-api', () => ({
   closeMiniAppTab: mockCloseMiniAppTab,
 }))
 
+vi.mock('@/stores/activity-view-state', () => ({
+  isInstanceReferencedInSavedSessions: () => false,
+}))
+
 let viewMountCount: Record<string, number> = {}
 
 vi.mock('./MiniAppView', () => ({
-  MiniAppView: ({ appId }: { appId: string }) => {
-    viewMountCount[appId] = (viewMountCount[appId] ?? 0) + 1
-    return <div data-testid={`view-${appId}`} data-mount-id={viewMountCount[appId]}>{appId}</div>
+  MiniAppView: ({ instanceKey, appId }: { instanceKey: string; appId: string }) => {
+    viewMountCount[instanceKey] = (viewMountCount[instanceKey] ?? 0) + 1
+    return <div data-testid={`view-${instanceKey}`} data-app-id={appId} data-mount-id={viewMountCount[instanceKey]}>{instanceKey}</div>
   },
 }))
 
@@ -51,85 +56,111 @@ function makeEntry(id: string): MiniAppEntry {
 }
 
 let useMiniAppStore: typeof import('@/stores/miniapp').useMiniAppStore
+let makeInstanceKey: typeof import('@/stores/miniapp').makeInstanceKey
 let MiniAppHostLayer: typeof import('./MiniAppHostLayer').MiniAppHostLayer
 
 beforeEach(async () => {
   vi.clearAllMocks()
   viewMountCount = {}
+  appStateRef.currentProjectId = 'proj-1'
   vi.resetModules()
-  ;({ useMiniAppStore } = await import('@/stores/miniapp'))
+  ;({ useMiniAppStore, makeInstanceKey } = await import('@/stores/miniapp'))
   ;({ MiniAppHostLayer } = await import('./MiniAppHostLayer'))
 })
 
 describe('MiniAppHostLayer persistence', () => {
-  it('renders a single MiniAppView per openApp', async () => {
+  it('renders a single MiniAppView per open instance', async () => {
     const { getByTestId, queryByTestId } = render(<MiniAppHostLayer />)
-    expect(queryByTestId('view-app-a')).toBeNull()
+    const key = makeInstanceKey('app-a', 'proj-1')
+    expect(queryByTestId(`view-${key}`)).toBeNull()
 
     await act(async () => {
       await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
     })
 
-    expect(getByTestId('view-app-a')).toBeInTheDocument()
+    expect(getByTestId(`view-${key}`)).toBeInTheDocument()
+  })
+
+  it('renders two independent MiniAppViews when the same app is opened from two projects', async () => {
+    const { getByTestId } = render(<MiniAppHostLayer />)
+
+    appStateRef.currentProjectId = 'proj-A'
+    await act(async () => {
+      await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj-A')
+    })
+
+    appStateRef.currentProjectId = 'proj-B'
+    await act(async () => {
+      await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj-B')
+    })
+
+    const keyA = makeInstanceKey('app-a', 'proj-A')
+    const keyB = makeInstanceKey('app-a', 'proj-B')
+    expect(getByTestId(`view-${keyA}`)).toBeInTheDocument()
+    expect(getByTestId(`view-${keyB}`)).toBeInTheDocument()
+    expect(getByTestId(`view-${keyA}`)).not.toBe(getByTestId(`view-${keyB}`))
   })
 
   it('keeps MiniAppView DOM identity stable across panel→canvas→panel migration', async () => {
     const { getByTestId } = render(<MiniAppHostLayer />)
+    const key = makeInstanceKey('app-a', 'proj-1')
 
     await act(async () => {
       await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
     })
 
-    const initialNode = getByTestId('view-app-a')
+    const initialNode = getByTestId(`view-${key}`)
     const initialMountId = initialNode.getAttribute('data-mount-id')
     expect(initialMountId).toBe('1')
 
     act(() => {
-      useMiniAppStore.getState().moveAppToCanvas('app-a')
+      useMiniAppStore.getState().moveAppToCanvas(key)
     })
     act(() => {
-      useMiniAppStore.getState().moveAppToPanel('app-a')
+      useMiniAppStore.getState().moveAppToPanel(key)
     })
 
-    const afterMigrationNode = getByTestId('view-app-a')
+    const afterMigrationNode = getByTestId(`view-${key}`)
     expect(afterMigrationNode).toBe(initialNode)
     expect(afterMigrationNode.getAttribute('data-mount-id')).toBe('1')
-    expect(viewMountCount['app-a']).toBe(1)
+    expect(viewMountCount[key]).toBe(1)
   })
 
   it('unmounts MiniAppView only when the app is actually closed', async () => {
     const { getByTestId, queryByTestId } = render(<MiniAppHostLayer />)
+    const key = makeInstanceKey('app-a', 'proj-1')
 
     await act(async () => {
       await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
     })
-    expect(getByTestId('view-app-a')).toBeInTheDocument()
+    expect(getByTestId(`view-${key}`)).toBeInTheDocument()
 
     act(() => {
-      useMiniAppStore.getState().moveAppToCanvas('app-a')
+      useMiniAppStore.getState().moveAppToCanvas(key)
     })
-    expect(getByTestId('view-app-a')).toBeInTheDocument()
+    expect(getByTestId(`view-${key}`)).toBeInTheDocument()
 
     await act(async () => {
-      await useMiniAppStore.getState().closeApp('app-a')
+      await useMiniAppStore.getState().closeApp(key)
     })
-    expect(queryByTestId('view-app-a')).toBeNull()
+    expect(queryByTestId(`view-${key}`)).toBeNull()
   })
 
   it('positions container by current slot rect and hides when no slot', async () => {
     const { container } = render(<MiniAppHostLayer />)
+    const key = makeInstanceKey('app-a', 'proj-1')
 
     await act(async () => {
       await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
     })
 
-    const host = container.querySelector('[data-app-id="app-a"]') as HTMLElement
+    const host = container.querySelector(`[data-instance-key="${key}"]`) as HTMLElement
     expect(host).not.toBeNull()
     expect(host.style.display).toBe('none')
 
     act(() => {
       useMiniAppStore.getState().updateSlot(
-        'app-a',
+        key,
         'panel',
         { left: 100, top: 50, width: 800, height: 600 } as DOMRectReadOnly,
       )
@@ -141,7 +172,7 @@ describe('MiniAppHostLayer persistence', () => {
     expect(host.style.height).toBe('600px')
 
     act(() => {
-      useMiniAppStore.getState().unregisterSlot('app-a', 'panel')
+      useMiniAppStore.getState().unregisterSlot(key, 'panel')
     })
     expect(host.style.display).toBe('none')
   })

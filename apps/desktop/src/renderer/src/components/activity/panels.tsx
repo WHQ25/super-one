@@ -19,8 +19,8 @@ function SessionHistoryPanel(props: IDockviewPanelProps) {
   return <SessionHistory showBackButton={false} onClose={handleClose} />
 }
 
-function MiniAppPanel(props: IDockviewPanelProps<{ appId: string }>) {
-  return <MiniAppSlot appId={props.params.appId} mode="panel" className="h-full w-full" />
+function MiniAppPanel(props: IDockviewPanelProps<{ instanceKey: string; appId: string }>) {
+  return <MiniAppSlot instanceKey={props.params.instanceKey} mode="panel" className="h-full w-full" />
 }
 
 export const activityPanelComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {

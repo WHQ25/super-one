@@ -3,12 +3,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 
-const { mockSetLayoutMode, mockOpenMiniAppTab, mockCloseMiniAppTab, mockSetPanelWidth, appStateRef } = vi.hoisted(() => ({
+const { mockSetLayoutMode, mockOpenMiniAppTab, mockCloseMiniAppTab, mockSetPanelWidth, mockIsInstanceReferenced, appStateRef } = vi.hoisted(() => ({
   mockSetLayoutMode: vi.fn(),
   mockOpenMiniAppTab: vi.fn(),
   mockCloseMiniAppTab: vi.fn(),
   mockSetPanelWidth: vi.fn(),
-  appStateRef: { showSidebar: true, sidebarWidth: 320 } as { showSidebar: boolean; sidebarWidth: number },
+  mockIsInstanceReferenced: vi.fn<(instanceKey: string) => boolean>(),
+  appStateRef: { showSidebar: true, sidebarWidth: 320, currentProjectId: 'proj-id-1' as string | null } as { showSidebar: boolean; sidebarWidth: number; currentProjectId: string | null },
+}))
+
+vi.mock('./activity-view-state', () => ({
+  isInstanceReferencedInSavedSessions: mockIsInstanceReferenced,
 }))
 
 vi.mock('./app', () => ({
@@ -17,6 +22,7 @@ vi.mock('./app', () => ({
       setLayoutMode: mockSetLayoutMode,
       showSidebar: appStateRef.showSidebar,
       sidebarWidth: appStateRef.sidebarWidth,
+      currentProjectId: appStateRef.currentProjectId,
     }),
   },
 }))
@@ -73,17 +79,20 @@ const APPS: MiniAppEntry[] = [
 ]
 
 let useMiniAppStore: typeof import('./miniapp').useMiniAppStore
+let makeInstanceKey: typeof import('./miniapp').makeInstanceKey
 
 beforeEach(async () => {
   vi.clearAllMocks()
   capturedHandler = null
   appStateRef.showSidebar = true
   appStateRef.sidebarWidth = 320
+  appStateRef.currentProjectId = 'proj-id-1'
+  mockIsInstanceReferenced.mockReturnValue(false)
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 })
   mockMiniapp.list.mockResolvedValue(APPS)
 
   vi.resetModules()
-  ;({ useMiniAppStore } = await import('./miniapp'))
+  ;({ useMiniAppStore, makeInstanceKey } = await import('./miniapp'))
 
   await useMiniAppStore.getState().refreshApps('/proj')
 })
@@ -100,7 +109,7 @@ describe('miniapp store onDevAppReady routing', () => {
     expect(mockMiniapp.open).toHaveBeenCalledTimes(1)
     expect(mockMiniapp.open).toHaveBeenCalledWith('panel-app', '/proj')
     expect(mockOpenMiniAppTab).toHaveBeenCalledTimes(1)
-    expect(mockOpenMiniAppTab).toHaveBeenCalledWith('panel-app', 'App panel-app')
+    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(makeInstanceKey('panel-app', 'proj-id-1'), 'panel-app', 'App panel-app')
     expect(mockSetLayoutMode).not.toHaveBeenCalled()
   })
 
@@ -108,7 +117,7 @@ describe('miniapp store onDevAppReady routing', () => {
     await capturedHandler!('/proj', 'fullscreen-app')
 
     expect(mockMiniapp.open).toHaveBeenCalledWith('fullscreen-app', '/proj')
-    expect(mockOpenMiniAppTab).toHaveBeenCalledWith('fullscreen-app', 'App fullscreen-app')
+    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(makeInstanceKey('fullscreen-app', 'proj-id-1'), 'fullscreen-app', 'App fullscreen-app')
     expect(mockSetLayoutMode).not.toHaveBeenCalled()
     expect(useMiniAppStore.getState().pendingOpenAppId).toBeNull()
   })
@@ -129,7 +138,7 @@ describe('miniapp store onDevAppReady routing', () => {
 
     expect(mockMiniapp.list).toHaveBeenLastCalledWith('/proj')
     expect(mockMiniapp.open).toHaveBeenCalledWith('fresh-app', '/proj')
-    expect(mockOpenMiniAppTab).toHaveBeenCalledWith('fresh-app', 'App fresh-app')
+    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(makeInstanceKey('fresh-app', 'proj-id-1'), 'fresh-app', 'App fresh-app')
   })
 
   it('signaling one app among many opens exactly one (regression: old code opened all dev apps)', async () => {
@@ -144,7 +153,7 @@ describe('miniapp store onDevAppReady routing', () => {
     mockMiniapp.list.mockClear()
     mockMiniapp.list.mockResolvedValue(APPS)
     capturedHandler = null
-    ;({ useMiniAppStore } = await import('./miniapp'))
+    ;({ useMiniAppStore, makeInstanceKey } = await import('./miniapp'))
 
     await capturedHandler!('/fallback-proj', 'panel-app')
 
@@ -166,21 +175,94 @@ describe('miniapp store onDevAppReady routing', () => {
 })
 
 describe('miniapp store lifecycle (persistent iframe)', () => {
-  it('openAppInPanel registers app and triggers MINIAPP_OPEN exactly once', async () => {
+  it('openAppInPanel registers app instance keyed by (appId, projectId) and triggers MINIAPP_OPEN exactly once', async () => {
     const fullscreenApp = entry('fullscreen-app', true)
     await useMiniAppStore.getState().openAppInPanel(fullscreenApp, '/proj')
 
+    const key = makeInstanceKey('fullscreen-app', 'proj-id-1')
     expect(mockMiniapp.open).toHaveBeenCalledTimes(1)
     expect(mockMiniapp.open).toHaveBeenCalledWith('fullscreen-app', '/proj')
-    expect(mockOpenMiniAppTab).toHaveBeenCalledWith('fullscreen-app', 'App fullscreen-app')
+    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(key, 'fullscreen-app', 'App fullscreen-app')
 
-    const open = useMiniAppStore.getState().openApps['fullscreen-app']
+    const open = useMiniAppStore.getState().openApps[key]
     expect(open).toBeDefined()
     expect(open?.presentation).toBe('panel')
     expect(open?.projectDir).toBe('/proj')
+    expect(open?.projectId).toBe('proj-id-1')
+    expect(open?.instanceKey).toBe(key)
   })
 
-  it('opening an already-open app focuses the tab without re-opening', async () => {
+  it('openAppInPanel captures the currentProjectId at open time so iframe origin stays stable across project switches', async () => {
+    appStateRef.currentProjectId = 'project-A-id'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-A')
+
+    const key = makeInstanceKey('panel-app', 'project-A-id')
+    const open = useMiniAppStore.getState().openApps[key]
+    expect(open?.projectId).toBe('project-A-id')
+
+    appStateRef.currentProjectId = 'project-B-id'
+    const stillOpen = useMiniAppStore.getState().openApps[key]
+    expect(stillOpen?.projectId).toBe('project-A-id')
+  })
+
+  it('openAppInPanel records null projectId when no project is active at open time', async () => {
+    appStateRef.currentProjectId = null
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj')
+
+    const key = makeInstanceKey('panel-app', null)
+    const open = useMiniAppStore.getState().openApps[key]
+    expect(open?.projectId).toBeNull()
+  })
+
+  it('opening the same app from two different projects creates two independent instances', async () => {
+    appStateRef.currentProjectId = 'A'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-A')
+
+    appStateRef.currentProjectId = 'B'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-B')
+
+    const keyA = makeInstanceKey('panel-app', 'A')
+    const keyB = makeInstanceKey('panel-app', 'B')
+    const state = useMiniAppStore.getState()
+    expect(state.openApps[keyA]).toBeDefined()
+    expect(state.openApps[keyB]).toBeDefined()
+    expect(state.openApps[keyA]?.projectId).toBe('A')
+    expect(state.openApps[keyB]?.projectId).toBe('B')
+  })
+
+  it('closing one project-instance keeps the other instance alive and does not call MINIAPP_CLOSE until the last instance closes', async () => {
+    appStateRef.currentProjectId = 'A'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-A')
+    appStateRef.currentProjectId = 'B'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-B')
+    mockMiniapp.close.mockClear()
+
+    const keyA = makeInstanceKey('panel-app', 'A')
+    const keyB = makeInstanceKey('panel-app', 'B')
+
+    await useMiniAppStore.getState().closeApp(keyA)
+    expect(mockMiniapp.close).not.toHaveBeenCalled()
+    expect(useMiniAppStore.getState().openApps[keyA]).toBeUndefined()
+    expect(useMiniAppStore.getState().openApps[keyB]).toBeDefined()
+
+    await useMiniAppStore.getState().closeApp(keyB)
+    expect(mockMiniapp.close).toHaveBeenCalledTimes(1)
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app')
+    expect(useMiniAppStore.getState().openApps[keyB]).toBeUndefined()
+  })
+
+  it('opening a second project-instance reuses the existing main-process registration (no second MINIAPP_OPEN)', async () => {
+    appStateRef.currentProjectId = 'A'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-A')
+    mockMiniapp.open.mockClear()
+
+    appStateRef.currentProjectId = 'B'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-B')
+
+    expect(mockMiniapp.open).not.toHaveBeenCalled()
+  })
+
+  it('opening an already-open instance focuses the tab without re-opening', async () => {
     const fullscreenApp = entry('fullscreen-app', true)
     await useMiniAppStore.getState().openAppInPanel(fullscreenApp, '/proj')
     mockMiniapp.open.mockClear()
@@ -195,40 +277,42 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
   it('moveAppToCanvas flips presentation without calling MINIAPP_OPEN or MINIAPP_CLOSE', async () => {
     const app = entry('fullscreen-app', true)
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+    const key = makeInstanceKey('fullscreen-app', 'proj-id-1')
     mockMiniapp.open.mockClear()
     mockMiniapp.close.mockClear()
     mockOpenMiniAppTab.mockClear()
     mockCloseMiniAppTab.mockClear()
 
-    useMiniAppStore.getState().moveAppToCanvas('fullscreen-app')
+    useMiniAppStore.getState().moveAppToCanvas(key)
 
     expect(mockMiniapp.open).not.toHaveBeenCalled()
     expect(mockMiniapp.close).not.toHaveBeenCalled()
-    expect(mockCloseMiniAppTab).toHaveBeenCalledWith('fullscreen-app')
+    expect(mockCloseMiniAppTab).toHaveBeenCalledWith(key)
     expect(mockSetLayoutMode).toHaveBeenLastCalledWith('canvas')
 
-    const open = useMiniAppStore.getState().openApps['fullscreen-app']
+    const open = useMiniAppStore.getState().openApps[key]
     expect(open?.presentation).toBe('canvas')
-    expect(useMiniAppStore.getState().fullscreenApp?.appId).toBe('fullscreen-app')
+    expect(useMiniAppStore.getState().fullscreenApp?.instanceKey).toBe(key)
   })
 
   it('moveAppToPanel flips presentation without calling MINIAPP_OPEN or MINIAPP_CLOSE', async () => {
     const app = entry('fullscreen-app', true)
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
-    useMiniAppStore.getState().moveAppToCanvas('fullscreen-app')
+    const key = makeInstanceKey('fullscreen-app', 'proj-id-1')
+    useMiniAppStore.getState().moveAppToCanvas(key)
     mockMiniapp.open.mockClear()
     mockMiniapp.close.mockClear()
     mockOpenMiniAppTab.mockClear()
     mockSetLayoutMode.mockClear()
 
-    useMiniAppStore.getState().moveAppToPanel('fullscreen-app')
+    useMiniAppStore.getState().moveAppToPanel(key)
 
     expect(mockMiniapp.open).not.toHaveBeenCalled()
     expect(mockMiniapp.close).not.toHaveBeenCalled()
-    expect(mockOpenMiniAppTab).toHaveBeenCalledWith('fullscreen-app', 'App fullscreen-app')
+    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(key, 'fullscreen-app', 'App fullscreen-app')
     expect(mockSetLayoutMode).toHaveBeenCalledWith('coding')
 
-    const open = useMiniAppStore.getState().openApps['fullscreen-app']
+    const open = useMiniAppStore.getState().openApps[key]
     expect(open?.presentation).toBe('panel')
     expect(useMiniAppStore.getState().fullscreenApp).toBeNull()
   })
@@ -236,66 +320,93 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
   it('panel → canvas → panel preserves openApps and calls open/close zero extra times', async () => {
     const app = entry('fullscreen-app', true)
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+    const key = makeInstanceKey('fullscreen-app', 'proj-id-1')
     expect(mockMiniapp.open).toHaveBeenCalledTimes(1)
 
-    useMiniAppStore.getState().moveAppToCanvas('fullscreen-app')
-    useMiniAppStore.getState().moveAppToPanel('fullscreen-app')
+    useMiniAppStore.getState().moveAppToCanvas(key)
+    useMiniAppStore.getState().moveAppToPanel(key)
 
     expect(mockMiniapp.open).toHaveBeenCalledTimes(1)
     expect(mockMiniapp.close).not.toHaveBeenCalled()
 
-    const open = useMiniAppStore.getState().openApps['fullscreen-app']
+    const open = useMiniAppStore.getState().openApps[key]
     expect(open?.presentation).toBe('panel')
   })
 
-  it('closeApp removes app from openApps and triggers MINIAPP_CLOSE', async () => {
+  it('closeApp removes the instance and triggers MINIAPP_CLOSE when it is the last instance', async () => {
     const app = entry('panel-app')
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+    const key = makeInstanceKey('panel-app', 'proj-id-1')
     mockMiniapp.close.mockClear()
     mockCloseMiniAppTab.mockClear()
 
-    await useMiniAppStore.getState().closeApp('panel-app')
+    await useMiniAppStore.getState().closeApp(key)
 
     expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app')
-    expect(mockCloseMiniAppTab).toHaveBeenCalledWith('panel-app')
-    expect(useMiniAppStore.getState().openApps['panel-app']).toBeUndefined()
+    expect(mockCloseMiniAppTab).toHaveBeenCalledWith(key)
+    expect(useMiniAppStore.getState().openApps[key]).toBeUndefined()
+  })
+
+  it('closing a tab while another session still references the same instance keeps openApps and skips MINIAPP_CLOSE (per-project iframe sharing)', async () => {
+    const app = entry('panel-app')
+    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+    const key = makeInstanceKey('panel-app', 'proj-id-1')
+    mockMiniapp.close.mockClear()
+    mockCloseMiniAppTab.mockClear()
+    mockIsInstanceReferenced.mockReturnValue(true)
+
+    await useMiniAppStore.getState().closeApp(key)
+
+    expect(mockMiniapp.close).not.toHaveBeenCalled()
+    expect(mockCloseMiniAppTab).toHaveBeenCalledWith(key)
+    expect(useMiniAppStore.getState().openApps[key]).toBeDefined()
+  })
+
+  it('closing the last referencing session unloads the instance and fires MINIAPP_CLOSE', async () => {
+    const app = entry('panel-app')
+    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+    const key = makeInstanceKey('panel-app', 'proj-id-1')
+
+    mockIsInstanceReferenced.mockReturnValueOnce(true)
+    await useMiniAppStore.getState().closeApp(key)
+    expect(useMiniAppStore.getState().openApps[key]).toBeDefined()
+
+    mockIsInstanceReferenced.mockReturnValue(false)
+    mockMiniapp.close.mockClear()
+    await useMiniAppStore.getState().closeApp(key)
+
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app')
+    expect(useMiniAppStore.getState().openApps[key]).toBeUndefined()
   })
 
   it('closing a canvas app switches layoutMode back to coding', async () => {
     const app = entry('fullscreen-app', true)
     await useMiniAppStore.getState().openFullscreenApp(app, '/proj')
+    const key = makeInstanceKey('fullscreen-app', 'proj-id-1')
     mockSetLayoutMode.mockClear()
 
-    await useMiniAppStore.getState().closeApp('fullscreen-app')
+    await useMiniAppStore.getState().closeApp(key)
 
     expect(mockSetLayoutMode).toHaveBeenCalledWith('coding')
     expect(useMiniAppStore.getState().fullscreenApp).toBeNull()
   })
 
-  it('handlePanelRemoved closes app when not migrating (real user X click)', async () => {
-    const app = entry('panel-app')
-    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
-    mockMiniapp.close.mockClear()
+  it('uninstallApp closes every open instance of the appId before deleting', async () => {
+    appStateRef.currentProjectId = 'A'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-A')
+    appStateRef.currentProjectId = 'B'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj-B')
 
-    useMiniAppStore.getState().handlePanelRemoved('panel-app')
-    await Promise.resolve()
-    await Promise.resolve()
-
-    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app')
-    expect(useMiniAppStore.getState().openApps['panel-app']).toBeUndefined()
-  })
-
-  it('uninstallApp closes an open instance first so MINIAPP_CLOSE fires before delete', async () => {
-    const app = entry('panel-app')
-    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
     const callOrder: string[] = []
-    mockMiniapp.close.mockImplementationOnce(async () => { callOrder.push('close') })
+    mockMiniapp.close.mockImplementation(async () => { callOrder.push('close') })
     mockMiniapp.uninstall.mockImplementationOnce(async () => { callOrder.push('uninstall') })
 
     await useMiniAppStore.getState().uninstallApp('panel-app')
 
     expect(callOrder).toEqual(['close', 'uninstall'])
-    expect(useMiniAppStore.getState().openApps['panel-app']).toBeUndefined()
+    expect(mockMiniapp.close).toHaveBeenCalledTimes(1)
+    expect(useMiniAppStore.getState().openApps[makeInstanceKey('panel-app', 'A')]).toBeUndefined()
+    expect(useMiniAppStore.getState().openApps[makeInstanceKey('panel-app', 'B')]).toBeUndefined()
   })
 
   it('uninstallApp skips the close step when the app is not currently open', async () => {
@@ -315,21 +426,6 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     expect(mockMiniapp.uninstall).toHaveBeenCalledWith('panel-app', projectInstallDir)
   })
 
-  it('handlePanelRemoved suppresses close during a migration (consumes _migratingApps)', async () => {
-    const app = entry('fullscreen-app', true)
-    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
-
-    useMiniAppStore.getState().moveAppToCanvas('fullscreen-app')
-    mockMiniapp.close.mockClear()
-
-    expect(useMiniAppStore.getState()._migratingApps.has('fullscreen-app')).toBe(true)
-
-    useMiniAppStore.getState().handlePanelRemoved('fullscreen-app')
-
-    expect(useMiniAppStore.getState()._migratingApps.has('fullscreen-app')).toBe(false)
-    expect(mockMiniapp.close).not.toHaveBeenCalled()
-    expect(useMiniAppStore.getState().openApps['fullscreen-app']).toBeDefined()
-  })
 })
 
 describe('miniapp store preferWidth', () => {
@@ -393,22 +489,24 @@ describe('miniapp store preferWidth', () => {
 
 describe('miniapp store slots', () => {
   it('updateSlot records rect and unregisterSlot clears it', () => {
+    const key = makeInstanceKey('panel-app', 'proj-id-1')
     const rect = { left: 10, top: 20, width: 300, height: 400 } as DOMRectReadOnly
-    useMiniAppStore.getState().updateSlot('panel-app', 'panel', rect)
+    useMiniAppStore.getState().updateSlot(key, 'panel', rect)
 
-    const slot = useMiniAppStore.getState().slots['panel-app']
+    const slot = useMiniAppStore.getState().slots[key]
     expect(slot).toEqual({ mode: 'panel', left: 10, top: 20, width: 300, height: 400 })
 
-    useMiniAppStore.getState().unregisterSlot('panel-app', 'panel')
-    expect(useMiniAppStore.getState().slots['panel-app']).toBeUndefined()
+    useMiniAppStore.getState().unregisterSlot(key, 'panel')
+    expect(useMiniAppStore.getState().slots[key]).toBeUndefined()
   })
 
   it('unregisterSlot ignores stale mode (mode-mismatched call does not clear current slot)', () => {
+    const key = makeInstanceKey('a', 'proj-id-1')
     const rect = { left: 0, top: 0, width: 100, height: 100 } as DOMRectReadOnly
-    useMiniAppStore.getState().updateSlot('a', 'canvas', rect)
+    useMiniAppStore.getState().updateSlot(key, 'canvas', rect)
 
-    useMiniAppStore.getState().unregisterSlot('a', 'panel')
+    useMiniAppStore.getState().unregisterSlot(key, 'panel')
 
-    expect(useMiniAppStore.getState().slots['a']?.mode).toBe('canvas')
+    expect(useMiniAppStore.getState().slots[key]?.mode).toBe('canvas')
   })
 })

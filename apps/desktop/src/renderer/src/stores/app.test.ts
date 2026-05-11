@@ -16,6 +16,28 @@ vi.mock('./activity-panel', () => ({
 
 vi.mock('@/components/activity/activity-panel-api', () => ({
   openFileTab: vi.fn(),
+  setDockApi: vi.fn(),
+  setOnDockReady: vi.fn(),
+  applyDockSnapshot: vi.fn(),
+  getDockSnapshot: vi.fn(),
+  isDockReady: () => false,
+  closeGhostMiniAppPanels: vi.fn(),
+  openMiniAppTab: vi.fn(),
+  closeMiniAppTab: vi.fn(),
+}))
+
+vi.mock('./activity-view-state', () => ({
+  useActivityViewStateStore: {
+    getState: () => ({
+      perSession: {},
+      park: vi.fn(),
+      restore: vi.fn(),
+      seedFromCurrent: vi.fn(),
+      clearForSession: vi.fn(),
+      flushPending: vi.fn(),
+    }),
+  },
+  isInstanceReferencedInSavedSessions: () => false,
 }))
 
 const mockInitializeHarness = vi.fn().mockResolvedValue(undefined)

@@ -598,3 +598,63 @@ describe('setup_mini_app_dev tool handler', () => {
     expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_DEV_APP_READY)).toBeUndefined()
   })
 })
+
+describe('basic scenario: sessionA opens X loads X tools, sessionA closes X unloads X tools', () => {
+  const SID_A = 'sess-a'
+  const SID_B = 'sess-b'
+  const PROJ = '/proj'
+
+  beforeEach(() => {
+    initSuperoneMcpServer(() => null)
+    unregisterAppTools(SID_A, 'weather')
+    unregisterAppTools(SID_B, 'weather')
+    disposeSuperoneMcpServer(SID_A)
+    disposeSuperoneMcpServer(SID_B)
+    createSuperoneMcpServer(SID_A)
+    createSuperoneMcpServer(SID_B)
+  })
+
+  it('sessionA opens X: weather tools appear in sessionA listing', () => {
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
+
+    registerAppTools(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
+
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).toContain('weather__forecast')
+  })
+
+  it('sessionA closes X: weather tools disappear from sessionA listing', () => {
+    registerAppTools(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).toContain('weather__forecast')
+
+    unregisterAppTools(SID_A, 'weather')
+
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
+  })
+
+  it('sessionA opens X then closes X: tools were added then fully removed', () => {
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
+
+    registerAppTools(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).toContain('weather__forecast')
+
+    unregisterAppTools(SID_A, 'weather')
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
+  })
+
+  it('sessionA opens X never affects sessionB tool listing (per-session isolation)', () => {
+    registerAppTools(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
+
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).toContain('weather__forecast')
+    expect(listSuperoneMcpTools(SID_B).map((t) => t.name)).not.toContain('weather__forecast')
+  })
+
+  it('sessionA closes X never affects sessionB which had also opened X (independent ref-counts)', () => {
+    registerAppTools(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
+    registerAppTools(SID_B, PROJ, 'weather', 'weather', makeTools('forecast'))
+
+    unregisterAppTools(SID_A, 'weather')
+
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
+    expect(listSuperoneMcpTools(SID_B).map((t) => t.name)).toContain('weather__forecast')
+  })
+})

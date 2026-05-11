@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { useActivityPanelStore } from './activity-panel'
-import { isInstanceReferencedInSavedSessions } from './activity-view-state'
 import { useChatStore } from './chat'
 import { closeMiniAppTab, openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { LAYOUT } from '@/lib/layout-constants'
@@ -38,6 +37,7 @@ export interface OpenAppEntry {
   projectDir: string
   projectId: string | null
   presentation: 'panel' | 'canvas'
+  holderSessions: Set<string>
 }
 
 export interface MiniAppSlot {
@@ -91,38 +91,6 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       const entry = get().apps.find((a) => a.id === appId)
       if (!entry) return
       await get().openAppInPanel(entry, projectDir)
-    })
-  }
-
-  if (typeof window !== 'undefined') {
-    queueMicrotask(() => {
-      if (typeof useChatStore?.getState !== 'function') return
-      const lastActiveSids = new Map<string, string>()
-      for (const [projectDir, proj] of Object.entries(useChatStore.getState().projectSessions)) {
-        if (proj._activeSessionId) lastActiveSids.set(projectDir, proj._activeSessionId)
-      }
-      useChatStore.subscribe((state) => {
-        const openApps = get().openApps
-        for (const [projectDir, proj] of Object.entries(state.projectSessions)) {
-          const newSid = proj._activeSessionId ?? ''
-          const oldSid = lastActiveSids.get(projectDir) ?? ''
-          if (newSid === oldSid) continue
-          lastActiveSids.set(projectDir, newSid)
-          if (!newSid) continue
-          const projectOpenApps = Object.values(openApps).filter((o) => o.projectDir === projectDir)
-          if (projectOpenApps.length === 0) continue
-          void (async () => {
-            for (const open of projectOpenApps) {
-              try {
-                await window.miniapp.open(open.entry.id, projectDir, newSid)
-                if (oldSid) await window.miniapp.close(open.entry.id, projectDir, oldSid)
-              } catch (err) {
-                console.error('[miniapp] rekey failed', { appId: open.entry.id, projectDir, oldSid, newSid, err })
-              }
-            }
-          })()
-        }
-      })
     })
   }
 
@@ -180,7 +148,9 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
         .filter(([, v]) => v.entry.id === appId)
       if (openInstances.length > 0) {
         for (const [, v] of openInstances) {
-          await window.miniapp.close(appId, v.projectDir, activeSessionId(v.projectDir))
+          for (const sid of v.holderSessions) {
+            await window.miniapp.close(appId, v.projectDir, sid)
+          }
         }
         for (const [key] of openInstances) {
           closeMiniAppTab(key)
@@ -213,16 +183,35 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     openAppInPanel: async (entry: MiniAppEntry, projectDir: string) => {
       const projectId = useAppStore.getState().currentProjectId
       const instanceKey = makeInstanceKey(entry.id, projectId)
+      const sid = activeSessionId(projectDir)
       const existing = get().openApps[instanceKey]
-      await window.miniapp.open(entry.id, projectDir, activeSessionId(projectDir))
+      await window.miniapp.open(entry.id, projectDir, sid)
       if (existing) {
+        if (!existing.holderSessions.has(sid)) {
+          set((s) => ({
+            openApps: {
+              ...s.openApps,
+              [instanceKey]: {
+                ...existing,
+                holderSessions: new Set([...existing.holderSessions, sid]),
+              },
+            },
+          }))
+        }
         openMiniAppTab(instanceKey, entry.id, entry.manifest.name)
         return
       }
       set((s) => ({
         openApps: {
           ...s.openApps,
-          [instanceKey]: { instanceKey, entry, projectDir, projectId, presentation: 'panel' },
+          [instanceKey]: {
+            instanceKey,
+            entry,
+            projectDir,
+            projectId,
+            presentation: 'panel',
+            holderSessions: new Set([sid]),
+          },
         },
       }))
       if (entry.manifest.preferWidth) {
@@ -234,19 +223,31 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     openFullscreenApp: async (entry: MiniAppEntry, projectDir: string) => {
       const projectId = useAppStore.getState().currentProjectId
       const instanceKey = makeInstanceKey(entry.id, projectId)
+      const sid = activeSessionId(projectDir)
       const existing = get().openApps[instanceKey]
       const currentCanvas = get().fullscreenApp
       if (currentCanvas && currentCanvas.instanceKey !== instanceKey) {
         await get().closeApp(currentCanvas.instanceKey)
       }
-      await window.miniapp.open(entry.id, projectDir, activeSessionId(projectDir))
-      set((s) => ({
-        openApps: {
-          ...s.openApps,
-          [instanceKey]: { instanceKey, entry, projectDir, projectId, presentation: 'canvas' },
-        },
-        fullscreenApp: { instanceKey, entry },
-      }))
+      await window.miniapp.open(entry.id, projectDir, sid)
+      set((s) => {
+        const prevHolders = s.openApps[instanceKey]?.holderSessions
+        const nextHolders = prevHolders ? new Set([...prevHolders, sid]) : new Set([sid])
+        return {
+          openApps: {
+            ...s.openApps,
+            [instanceKey]: {
+              instanceKey,
+              entry,
+              projectDir,
+              projectId,
+              presentation: 'canvas',
+              holderSessions: nextHolders,
+            },
+          },
+          fullscreenApp: { instanceKey, entry },
+        }
+      })
       void existing
     },
 
@@ -256,15 +257,23 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       const appId = open.entry.id
       const projectDir = open.projectDir
       const wasCanvas = open.presentation === 'canvas'
+      const sid = activeSessionId(projectDir)
 
       if (!wasCanvas) {
         closeMiniAppTab(instanceKey)
       }
 
-      await window.miniapp.close(appId, projectDir, activeSessionId(projectDir))
+      await window.miniapp.close(appId, projectDir, sid)
 
-      if (isInstanceReferencedInSavedSessions(instanceKey)) {
+      const remainingHolders = new Set(open.holderSessions)
+      remainingHolders.delete(sid)
+
+      if (remainingHolders.size > 0) {
         set((s) => ({
+          openApps: {
+            ...s.openApps,
+            [instanceKey]: { ...open, holderSessions: remainingHolders },
+          },
           slots: withoutKey(s.slots, instanceKey),
           fullscreenApp: s.fullscreenApp?.instanceKey === instanceKey ? null : s.fullscreenApp,
         }))

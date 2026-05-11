@@ -3,18 +3,63 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 
-const { mockSetLayoutMode, mockOpenMiniAppTab, mockCloseMiniAppTab, mockSetPanelWidth, mockIsInstanceReferenced, appStateRef } = vi.hoisted(() => ({
+type MockChatState = {
+  projectSessions: Record<string, { _activeSessionId: string | null; _sessions: Record<string, unknown> }>
+}
+
+const { mockSetLayoutMode, mockOpenMiniAppTab, mockCloseMiniAppTab, mockSetPanelWidth, mockIsInstanceReferenced, appStateRef, mockChatState, chatSubs } = vi.hoisted(() => ({
   mockSetLayoutMode: vi.fn(),
   mockOpenMiniAppTab: vi.fn(),
   mockCloseMiniAppTab: vi.fn(),
   mockSetPanelWidth: vi.fn(),
   mockIsInstanceReferenced: vi.fn<(instanceKey: string) => boolean>(),
   appStateRef: { showSidebar: true, sidebarWidth: 320, currentProjectId: 'proj-id-1' as string | null } as { showSidebar: boolean; sidebarWidth: number; currentProjectId: string | null },
+  mockChatState: { projectSessions: {} } as { projectSessions: Record<string, { _activeSessionId: string | null; _sessions: Record<string, unknown> }> },
+  chatSubs: [] as Array<(state: { projectSessions: Record<string, { _activeSessionId: string | null; _sessions: Record<string, unknown> }> }) => void>,
 }))
 
 vi.mock('./activity-view-state', () => ({
   isInstanceReferencedInSavedSessions: mockIsInstanceReferenced,
 }))
+
+vi.mock('./chat', () => ({
+  useChatStore: {
+    getState: () => ({
+      projectSessions: mockChatState.projectSessions,
+      ensureSession: (projectPath: string) => {
+        const proj = mockChatState.projectSessions[projectPath]
+        if (!proj) {
+          mockChatState.projectSessions[projectPath] = { _activeSessionId: `auto-${projectPath}`, _sessions: {} }
+        } else if (!proj._activeSessionId) {
+          proj._activeSessionId = `auto-${projectPath}`
+        }
+      },
+    }),
+    setState: () => {},
+    subscribe: (cb: (state: MockChatState) => void) => {
+      chatSubs.push(cb)
+      return () => {
+        const i = chatSubs.indexOf(cb)
+        if (i >= 0) chatSubs.splice(i, 1)
+      }
+    },
+  },
+}))
+
+function triggerSessionSwitch(projectPath: string, newSid: string | null) {
+  let proj = mockChatState.projectSessions[projectPath]
+  if (!proj) {
+    proj = { _activeSessionId: null, _sessions: {} }
+    mockChatState.projectSessions[projectPath] = proj
+  }
+  proj._activeSessionId = newSid
+  const snapshot = { projectSessions: { ...mockChatState.projectSessions } }
+  for (const cb of [...chatSubs]) cb(snapshot)
+}
+
+async function flushMicrotasks() {
+  for (let i = 0; i < 5; i++) await Promise.resolve()
+}
 
 vi.mock('./app', () => ({
   useAppStore: {
@@ -90,11 +135,14 @@ beforeEach(async () => {
   mockIsInstanceReferenced.mockReturnValue(false)
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 })
   mockMiniapp.list.mockResolvedValue(APPS)
+  mockChatState.projectSessions = {}
+  chatSubs.length = 0
 
   vi.resetModules()
   ;({ useMiniAppStore, makeInstanceKey } = await import('./miniapp'))
 
   await useMiniAppStore.getState().refreshApps('/proj')
+  await flushMicrotasks()
 })
 
 describe('miniapp store onDevAppReady routing', () => {
@@ -349,35 +397,52 @@ describe('miniapp store lifecycle (persistent iframe)', () => {
     expect(useMiniAppStore.getState().openApps[key]).toBeUndefined()
   })
 
-  it('closing a tab while another session still references the same instance fires MINIAPP_CLOSE (session-scoped) and keeps openApps (iframe sharing)', async () => {
-    const app = entry('panel-app')
-    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+  it('closing in one session while another session still holds the same instance fires MINIAPP_CLOSE for the closing session only and keeps openApps alive (iframe sharing across sessions)', async () => {
+    mockChatState.projectSessions['/proj'] = { _activeSessionId: 'sess-a', _sessions: {} }
+    vi.resetModules()
+    chatSubs.length = 0
+    ;({ useMiniAppStore, makeInstanceKey } = await import('./miniapp'))
+    await useMiniAppStore.getState().refreshApps('/proj')
+
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj')
+    mockChatState.projectSessions['/proj']._activeSessionId = 'sess-b'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj')
+
     const key = makeInstanceKey('panel-app', 'proj-id-1')
+    expect(useMiniAppStore.getState().openApps[key]?.holderSessions.size).toBe(2)
+
     mockMiniapp.close.mockClear()
     mockCloseMiniAppTab.mockClear()
-    mockIsInstanceReferenced.mockReturnValue(true)
-
     await useMiniAppStore.getState().closeApp(key)
 
-    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj', expect.any(String))
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj', 'sess-b')
+    expect(mockMiniapp.close).toHaveBeenCalledTimes(1)
     expect(mockCloseMiniAppTab).toHaveBeenCalledWith(key)
     expect(useMiniAppStore.getState().openApps[key]).toBeDefined()
+    expect(useMiniAppStore.getState().openApps[key]?.holderSessions.has('sess-a')).toBe(true)
+    expect(useMiniAppStore.getState().openApps[key]?.holderSessions.has('sess-b')).toBe(false)
   })
 
-  it('closing the last referencing session unloads the instance and fires MINIAPP_CLOSE', async () => {
-    const app = entry('panel-app')
-    await useMiniAppStore.getState().openAppInPanel(app, '/proj')
+  it('closing the last holder session unloads the instance and fires MINIAPP_CLOSE', async () => {
+    mockChatState.projectSessions['/proj'] = { _activeSessionId: 'sess-a', _sessions: {} }
+    vi.resetModules()
+    chatSubs.length = 0
+    ;({ useMiniAppStore, makeInstanceKey } = await import('./miniapp'))
+    await useMiniAppStore.getState().refreshApps('/proj')
+
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj')
+    mockChatState.projectSessions['/proj']._activeSessionId = 'sess-b'
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj')
     const key = makeInstanceKey('panel-app', 'proj-id-1')
 
-    mockIsInstanceReferenced.mockReturnValueOnce(true)
     await useMiniAppStore.getState().closeApp(key)
     expect(useMiniAppStore.getState().openApps[key]).toBeDefined()
 
-    mockIsInstanceReferenced.mockReturnValue(false)
+    mockChatState.projectSessions['/proj']._activeSessionId = 'sess-a'
     mockMiniapp.close.mockClear()
     await useMiniAppStore.getState().closeApp(key)
 
-    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj', expect.any(String))
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj', 'sess-a')
     expect(useMiniAppStore.getState().openApps[key]).toBeUndefined()
   })
 
@@ -512,5 +577,93 @@ describe('miniapp store slots', () => {
     useMiniAppStore.getState().unregisterSlot(key, 'panel')
 
     expect(useMiniAppStore.getState().slots[key]?.mode).toBe('canvas')
+  })
+})
+
+describe('regression: closing a mini-app must unregister its tools across active-session changes', () => {
+  async function reloadStoreWithActiveSession(projectPath: string, sid: string) {
+    mockChatState.projectSessions[projectPath] = { _activeSessionId: sid, _sessions: {} }
+    chatSubs.length = 0
+    vi.resetModules()
+    ;({ useMiniAppStore, makeInstanceKey } = await import('./miniapp'))
+    await useMiniAppStore.getState().refreshApps(projectPath)
+    await flushMicrotasks()
+  }
+
+  it('close fires MINIAPP_CLOSE with the same sessionId that received MINIAPP_OPEN', async () => {
+    await reloadStoreWithActiveSession('/proj', 'sess-a')
+
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj')
+    expect(mockMiniapp.open).toHaveBeenLastCalledWith('panel-app', '/proj', 'sess-a')
+
+    const key = makeInstanceKey('panel-app', 'proj-id-1')
+    mockMiniapp.close.mockClear()
+
+    await useMiniAppStore.getState().closeApp(key)
+
+    expect(mockMiniapp.close).toHaveBeenCalledWith('panel-app', '/proj', 'sess-a')
+  })
+
+  it('switching active session does NOT touch open/close (holding is per-session, not driven by active-sid changes)', async () => {
+    await reloadStoreWithActiveSession('/proj', 'sess-a')
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj')
+    expect(mockMiniapp.open).toHaveBeenLastCalledWith('panel-app', '/proj', 'sess-a')
+
+    mockMiniapp.open.mockClear()
+    mockMiniapp.close.mockClear()
+
+    triggerSessionSwitch('/proj', 'sess-b')
+    await flushMicrotasks()
+
+    expect(mockMiniapp.open).not.toHaveBeenCalled()
+    expect(mockMiniapp.close).not.toHaveBeenCalled()
+
+    const key = makeInstanceKey('panel-app', 'proj-id-1')
+    expect(useMiniAppStore.getState().openApps[key]?.holderSessions.has('sess-a')).toBe(true)
+    expect(useMiniAppStore.getState().openApps[key]?.holderSessions.has('sess-b')).toBe(false)
+  })
+
+  it('BUG: closing while another session still references the panel in its saved layout, then switching back, must NOT re-attach the tools', async () => {
+    await reloadStoreWithActiveSession('/proj', 'sess-a')
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj')
+
+    triggerSessionSwitch('/proj', 'sess-b')
+    await flushMicrotasks()
+
+    mockIsInstanceReferenced.mockReturnValue(true)
+
+    const key = makeInstanceKey('panel-app', 'proj-id-1')
+    await useMiniAppStore.getState().closeApp(key)
+
+    expect(mockMiniapp.close).toHaveBeenLastCalledWith('panel-app', '/proj', 'sess-b')
+    expect(useMiniAppStore.getState().openApps[key]).toBeDefined()
+
+    mockMiniapp.open.mockClear()
+    mockMiniapp.close.mockClear()
+
+    triggerSessionSwitch('/proj', 'sess-a')
+    await flushMicrotasks()
+
+    expect(mockMiniapp.open).not.toHaveBeenCalled()
+  })
+
+  it('BUG: opening in sessionA, closing in sessionA (panel survives via saved layout), then switching to sessionB must NOT silently re-register the tools on sessionB', async () => {
+    await reloadStoreWithActiveSession('/proj', 'sess-a')
+    await useMiniAppStore.getState().openAppInPanel(entry('panel-app'), '/proj')
+
+    mockIsInstanceReferenced.mockReturnValue(true)
+
+    const key = makeInstanceKey('panel-app', 'proj-id-1')
+    await useMiniAppStore.getState().closeApp(key)
+
+    expect(mockMiniapp.close).toHaveBeenLastCalledWith('panel-app', '/proj', 'sess-a')
+
+    mockMiniapp.open.mockClear()
+    mockMiniapp.close.mockClear()
+
+    triggerSessionSwitch('/proj', 'sess-b')
+    await flushMicrotasks()
+
+    expect(mockMiniapp.open).not.toHaveBeenCalled()
   })
 })

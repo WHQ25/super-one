@@ -5,9 +5,8 @@ declare const requestAnimationFrame: (cb: () => void) => number
 
 import { contextBridge, ipcRenderer } from 'electron'
 import { createSuperoneApi, startSuperoneResize, type MiniAppTransport } from '@superone/shared/miniapp-api-runtime'
-import { ProcessTitle } from '../main/process-titles'
 
-try { process.title = ProcessTitle.MiniAppDev } catch { /* process.title not writable in some sandboxed contexts */ }
+try { process.title = 'SuperOne MiniApp Dev' } catch { /* process.title not writable in some sandboxed contexts */ }
 
 const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; resultKey?: string }>()
 let reqId = 0

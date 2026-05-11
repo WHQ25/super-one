@@ -2,11 +2,11 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type HookSavePayload } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
-import { SUPERONE_ROLE_ARG_PREFIX, titleForRole } from '../main/process-titles'
 
 try {
-  const roleArg = process.argv.find((a) => a.startsWith(SUPERONE_ROLE_ARG_PREFIX))
-  const title = titleForRole(roleArg?.slice(SUPERONE_ROLE_ARG_PREFIX.length))
+  const ROLE_PREFIX = '--superone-role='
+  const role = process.argv.find((a) => a.startsWith(ROLE_PREFIX))?.slice(ROLE_PREFIX.length)
+  const title = role === 'main' ? 'SuperOne Main Window' : role === 'mini' ? 'SuperOne Mini Window' : null
   if (title) process.title = title
 } catch { /* process.title not writable in some sandboxed contexts */ }
 

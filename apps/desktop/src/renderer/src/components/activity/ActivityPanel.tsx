@@ -39,8 +39,6 @@ function ActivityPrefixActions() {
 
 export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
   const { showPanel, side, panelWidth, setPanelWidth } = useActivityPanelStore()
-  const showSidebar = useAppStore((s) => s.showSidebar)
-  const isLeftmost = !showSidebar && side === 'left'
   const visible = showPanel && !hidden
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -144,7 +142,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
       <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col rounded-l-2xl bg-background overflow-hidden" style={{ width: panelWidth }}>
         <div className="min-h-0 flex-1" onKeyDown={onKeyDown}>
           <DockviewReact
-            className={cn('dockview-theme-superone', isLeftmost && 'activity-leftmost')}
+            className="dockview-theme-superone"
             onReady={onReady}
             components={activityPanelComponents}
             tabComponents={activityTabComponents}

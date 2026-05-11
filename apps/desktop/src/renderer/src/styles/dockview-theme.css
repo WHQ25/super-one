@@ -93,18 +93,10 @@
   border-bottom: none;
 }
 
-.dockview-theme-superone.single-group .dv-void-container {
-  pointer-events: none;
-}
-
-.dockview-theme-superone.activity-leftmost .dv-tabs-and-actions-container {
+.dockview-theme-superone .dv-tabs-and-actions-container {
   -webkit-app-region: drag;
 }
 
-.dockview-theme-superone.activity-leftmost .dv-tab {
+.dockview-theme-superone .dv-tab {
   -webkit-app-region: no-drag;
-}
-
-.dockview-theme-superone.activity-leftmost.single-group .dv-void-container {
-  pointer-events: auto;
 }

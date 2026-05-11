@@ -357,6 +357,15 @@ const appAPI = {
   updateMarketplace: (name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE, name),
 
+  addMarketplace: (source: string, scope: string, projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_ADD_MARKETPLACE, source, scope, projectPath),
+  removeMarketplace: (name: string, scope: string, projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_REMOVE_MARKETPLACE, name, scope, projectPath),
+  readMarketplacePlugin: (marketplace: string, name: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_READ_MARKETPLACE, marketplace, name),
+  readMarketplacePluginFile: (marketplace: string, name: string, relativePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_READ_MARKETPLACE_FILE, marketplace, name, relativePath),
+
   // Agents
   listAgents: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.AGENTS_LIST, projectPath),

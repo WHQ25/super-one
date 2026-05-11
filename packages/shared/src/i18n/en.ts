@@ -712,6 +712,29 @@ export type Messages = {
       searchPlaceholder: string
       searchNoMatch: string
       marketplaceEmpty: string
+      addMarketplace: string
+      addMarketplaceTitle: string
+      addMarketplaceDesc: string
+      addMarketplaceSourceLabel: string
+      addMarketplaceSourcePlaceholder: string
+      addMarketplaceSourceHint: string
+      addMarketplaceScopeLabel: string
+      removeMarketplace: string
+      removeMarketplaceTitle: string
+      removeMarketplaceDesc: string
+      add: string
+      adding: string
+      removing: string
+      scope: {
+        user: string
+        project: string
+      }
+      marketplaceScope: {
+        user: string
+        project: string
+        local: string
+        official: string
+      }
       detail: {
         apps: string
         needsAuth: string
@@ -728,6 +751,10 @@ export type Messages = {
         privacy: string
         terms: string
         starterPrompts: string
+        noFiles: string
+        selectResource: string
+        emptyFolder: string
+        referencedScripts: string
       }
       capability: {
         commands: string
@@ -735,6 +762,7 @@ export type Messages = {
         skills: string
         hooks: string
         mcp: string
+        other: string
       }
     }
     hooks: {
@@ -1692,6 +1720,29 @@ export const en: Messages = {
       searchPlaceholder: 'Search plugins...',
       searchNoMatch: 'No plugins match your search',
       marketplaceEmpty: 'No plugins in this marketplace',
+      addMarketplace: 'Add Marketplace',
+      addMarketplaceTitle: 'Add a Marketplace',
+      addMarketplaceDesc: 'Connect a marketplace by GitHub repo, URL, or local path.',
+      addMarketplaceSourceLabel: 'Source',
+      addMarketplaceSourcePlaceholder: 'owner/repo, https://…, or /absolute/path',
+      addMarketplaceSourceHint: 'Examples: anthropics/claude-plugins-official, https://example.com/marketplace.git, /Users/me/my-marketplace',
+      addMarketplaceScopeLabel: 'Scope',
+      removeMarketplace: 'Remove',
+      removeMarketplaceTitle: 'Remove this marketplace?',
+      removeMarketplaceDesc: 'This unregisters "{{name}}" from {{scope}} settings. Already-installed plugins from it remain installed.',
+      add: 'Add',
+      adding: 'Adding…',
+      removing: 'Removing…',
+      scope: {
+        user: 'User',
+        project: 'Project',
+      },
+      marketplaceScope: {
+        user: 'User',
+        project: 'Project',
+        local: 'Local',
+        official: 'Built-in',
+      },
       detail: {
         apps: 'Apps',
         needsAuth: 'Needs auth',
@@ -1708,6 +1759,10 @@ export const en: Messages = {
         privacy: 'Privacy',
         terms: 'Terms',
         starterPrompts: 'Starter Prompts',
+        noFiles: 'No resources in this plugin',
+        selectResource: 'Select a resource to preview',
+        emptyFolder: 'Empty folder',
+        referencedScripts: 'Referenced scripts',
       },
       capability: {
         commands: 'Commands',
@@ -1715,6 +1770,7 @@ export const en: Messages = {
         skills: 'Skills',
         hooks: 'Hooks',
         mcp: 'MCP',
+        other: 'Other',
       },
     },
     hooks: {

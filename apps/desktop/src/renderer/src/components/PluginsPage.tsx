@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
 import {
   ArrowLeft,
   ChevronDown,
@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Folder,
   FolderOpen,
+  FileText,
   Search,
   Download,
   Terminal,
@@ -17,20 +18,29 @@ import {
   HardDrive,
   ArrowUpCircle,
   RefreshCw,
+  Plus,
+  Trash2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Code,
+  BookOpen,
 } from 'lucide-react'
+import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
-import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { streamdownLinkSafety, mathPlugin } from '@/components/chat/chat-shared'
 import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
 import { Button } from '@superone/ui/components/ui/button'
+import { Input } from '@superone/ui/components/ui/input'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { resolveAssetUrls } from '@/lib/path-utils'
 import type {
   MarketplacePlugin,
+  MarketplaceScope,
   PluginAppSummary,
   PluginAuthPolicy,
   PluginDetail,
@@ -163,10 +173,19 @@ function MarkdownView({ content }: { content: string }) {
 }
 
 const EXT_LANG_MAP: Record<string, string> = {
-  ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx', json: 'json',
-  md: 'markdown', sh: 'bash', bash: 'bash', zsh: 'bash', py: 'python',
-  yaml: 'yaml', yml: 'yaml', toml: 'toml', css: 'css', html: 'html',
-  xml: 'xml', sql: 'sql', rs: 'rust', go: 'go', rb: 'ruby',
+  ts: 'typescript', tsx: 'tsx', mts: 'typescript', cts: 'typescript',
+  js: 'javascript', jsx: 'jsx', mjs: 'javascript', cjs: 'javascript',
+  json: 'json', jsonc: 'json',
+  md: 'markdown', mdx: 'markdown',
+  sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash', ps1: 'powershell', env: 'bash',
+  py: 'python',
+  yaml: 'yaml', yml: 'yaml', toml: 'toml',
+  css: 'css', scss: 'scss', html: 'html', htm: 'html', xml: 'xml',
+  sql: 'sql',
+  rs: 'rust', go: 'go', rb: 'ruby', lua: 'lua', swift: 'swift',
+  kt: 'kotlin', kts: 'kotlin', java: 'java',
+  c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', hpp: 'cpp',
+  php: 'php', dockerfile: 'dockerfile',
 }
 
 function inferLanguage(filePath: string): string {
@@ -176,10 +195,6 @@ function inferLanguage(filePath: string): string {
 
 function isMarkdown(filePath: string): boolean {
   return /\.md$/i.test(filePath)
-}
-
-function buildPath(prefix: string, name: string): string {
-  return prefix ? `${prefix}/${name}` : name
 }
 
 function PluginAvatar({ name, iconPath, logoPath, className }: { name: string; iconPath?: string; logoPath?: string; className?: string }) {
@@ -319,12 +334,10 @@ function PluginDetailsPanel({
   plugin,
   apps,
   skills,
-  mcpServers,
 }: {
   plugin: PluginInfo | MarketplacePlugin | PluginDetail
   apps?: PluginAppSummary[]
   skills?: PluginSkillSummary[]
-  mcpServers?: string[]
 }) {
   const { t } = useTranslation()
   const longDescription = plugin.longDescription && plugin.longDescription !== plugin.description
@@ -335,8 +348,8 @@ function PluginDetailsPanel({
   const prompts = plugin.defaultPrompts ?? []
   const capabilities = plugin.capabilities ?? []
   const screenshots = plugin.screenshots ?? []
+  // Version is shown inline in the card header; everything else surfaces as inline pills here.
   const metadata = [
-    'version' in plugin && plugin.version ? `Version ${plugin.version}` : null,
     plugin.category,
     plugin.brandColor ? `Brand ${plugin.brandColor}` : null,
     plugin.enabled === false ? t('resources.plugins.detail.disabled') : null,
@@ -344,45 +357,45 @@ function PluginDetailsPanel({
     authPolicy ? `Auth ${authPolicy}` : null,
   ].filter((value): value is string => !!value)
 
+  const hasLinks = !!(plugin.websiteUrl || plugin.privacyPolicyUrl || plugin.termsOfServiceUrl)
+  const hasSkillsList = (skills?.length ?? 0) > 0
+  const hasAppsList = (apps?.length ?? 0) > 0
+  const hasAnyDetail = !!longDescription
+    || metadata.length > 0
+    || capabilities.length > 0
+    || hasLinks
+    || prompts.length > 0
+    || screenshots.length > 0
+    || hasSkillsList
+    || hasAppsList
+
+  if (!hasAnyDetail) return null
+
   return (
-    <div className="space-y-4 p-3">
-      {longDescription && (
+    <div className="space-y-4 border-t border-border p-3">
+      {(longDescription || metadata.length > 0) && (
         <DetailGroup title={t('resources.plugins.detail.overview')}>
-          <p className="text-sm text-muted-foreground">{longDescription}</p>
+          {longDescription && (
+            <p className="text-sm text-muted-foreground">{longDescription}</p>
+          )}
+          {metadata.length > 0 && (
+            <div className={cn('flex flex-wrap gap-1.5', longDescription && 'mt-2')}>
+              {metadata.map((value) => (
+                <MetaPill key={value}>{value}</MetaPill>
+              ))}
+            </div>
+          )}
         </DetailGroup>
       )}
 
-      {metadata.length > 0 && (
-        <DetailGroup title={t('resources.plugins.detail.metadata')}>
+      {capabilities.length > 0 && (
+        <DetailGroup title={t('resources.plugins.detail.capabilities')}>
           <div className="flex flex-wrap gap-1.5">
-            {metadata.map((value) => (
-              <MetaPill key={value}>{value}</MetaPill>
+            {capabilities.map((capability) => (
+              <MetaPill key={capability}>{capability}</MetaPill>
             ))}
           </div>
         </DetailGroup>
-      )}
-
-      {(capabilities.length > 0 || mcpServers?.length) && (
-        <div className="grid gap-3 md:grid-cols-2">
-          {capabilities.length > 0 && (
-            <DetailGroup title={t('resources.plugins.detail.capabilities')}>
-              <div className="flex flex-wrap gap-1.5">
-                {capabilities.map((capability) => (
-                  <MetaPill key={capability}>{capability}</MetaPill>
-                ))}
-              </div>
-            </DetailGroup>
-          )}
-          {(mcpServers?.length ?? 0) > 0 && (
-            <DetailGroup title={t('resources.plugins.detail.mcpServers')}>
-              <div className="flex flex-wrap gap-1.5">
-                {mcpServers?.map((server) => (
-                  <MetaPill key={server}>{server}</MetaPill>
-                ))}
-              </div>
-            </DetailGroup>
-          )}
-        </div>
       )}
 
       {(plugin.websiteUrl || plugin.privacyPolicyUrl || plugin.termsOfServiceUrl) && (
@@ -414,99 +427,517 @@ function PluginDetailsPanel({
   )
 }
 
-// --- File tree ---
+// --- Resource explorer (categorized list + preview) ---
 
-function FileTreeNode({
+interface PluginResourceEntry {
+  label: string
+  path: string
+  hint?: string
+  /** If set, this resource lives in its own folder (e.g. a skill). Clicking it should open the folder browser. */
+  resourceFolderPath?: string
+}
+
+interface PluginResourceCategory {
+  key: 'commands' | 'agents' | 'skills' | 'hooks' | 'mcp' | 'other'
+  icon: typeof Terminal
+  entries: PluginResourceEntry[]
+}
+
+const CATEGORY_FALLBACK_ICONS: Record<PluginResourceCategory['key'], typeof Terminal> = {
+  commands: Terminal,
+  agents: Bot,
+  skills: Puzzle,
+  hooks: Webhook,
+  mcp: Server,
+  other: Folder,
+}
+
+function stripExt(name: string): string {
+  return name.replace(/\.(md|json|sh|ts|js|yaml|yml|toml)$/i, '')
+}
+
+function findChild(dir: SkillFileEntry | undefined, name: string): SkillFileEntry | undefined {
+  return dir?.children?.find((c) => c.name === name)
+}
+
+function flattenMarkdownLike(dir: SkillFileEntry | undefined, prefix: string): PluginResourceEntry[] {
+  if (!dir?.isDirectory || !dir.children) return []
+  const out: PluginResourceEntry[] = []
+  const walk = (node: SkillFileEntry, p: string) => {
+    if (node.isDirectory) {
+      for (const child of node.children ?? []) walk(child, `${p}/${child.name}`)
+    } else if (/\.(md|json|sh|ts|js)$/i.test(node.name)) {
+      const rel = p
+      const label = stripExt(node.name)
+      out.push({ label, path: rel })
+    }
+  }
+  for (const child of dir.children) walk(child, `${prefix}/${child.name}`)
+  return out
+}
+
+function categorizePluginFiles(
+  files: SkillFileEntry[],
+  mcpServerConfigs?: Record<string, unknown>,
+  hookEvents?: Record<string, unknown>,
+): PluginResourceCategory[] {
+  const top = (name: string) => files.find((f) => f.name === name)
+
+  const commandsDir = top('commands')
+  const agentsDir = top('agents')
+  const hooksDir = top('hooks')
+  const skillsDir = top('skills')
+
+  const commands = flattenMarkdownLike(commandsDir, 'commands')
+  const agents = flattenMarkdownLike(agentsDir, 'agents')
+  const hooks: PluginResourceEntry[] = []
+  if (hookEvents && Object.keys(hookEvents).length > 0) {
+    for (const event of Object.keys(hookEvents)) {
+      hooks.push({ label: event, path: `hooks:${event}` })
+    }
+  } else {
+    if (hooksDir?.isDirectory) hooks.push(...flattenMarkdownLike(hooksDir, 'hooks'))
+    const hooksJson = files.find((f) => !f.isDirectory && f.name === 'hooks.json')
+    if (hooksJson) hooks.push({ label: 'hooks.json', path: 'hooks.json' })
+  }
+
+  const skills: PluginResourceEntry[] = []
+  if (skillsDir?.isDirectory && skillsDir.children) {
+    for (const skill of skillsDir.children) {
+      if (!skill.isDirectory) continue
+      const resourceFolderPath = `skills/${skill.name}`
+      // Only treat the skill as a "folder-shaped" resource if it carries siblings
+      // besides the entry .md (references/, scripts/, additional notes, etc).
+      const isFolderShaped = (skill.children?.length ?? 0) > 1
+      const folderProp = isFolderShaped ? { resourceFolderPath } : {}
+      const skillMd = findChild(skill, 'SKILL.md')
+      if (skillMd) {
+        skills.push({ label: skill.name, path: `${resourceFolderPath}/SKILL.md`, ...folderProp })
+      } else {
+        const firstMd = skill.children?.find((c) => !c.isDirectory && /\.md$/i.test(c.name))
+        if (firstMd) {
+          skills.push({ label: skill.name, path: `${resourceFolderPath}/${firstMd.name}`, ...folderProp })
+        }
+      }
+    }
+  }
+
+  const mcp: PluginResourceEntry[] = []
+  if (mcpServerConfigs && Object.keys(mcpServerConfigs).length > 0) {
+    for (const serverName of Object.keys(mcpServerConfigs)) {
+      mcp.push({ label: serverName, path: `mcp:${serverName}` })
+    }
+  } else {
+    const dotMcp = files.find((f) => !f.isDirectory && f.name === '.mcp.json')
+    if (dotMcp) mcp.push({ label: '.mcp.json', path: '.mcp.json' })
+  }
+
+  const known = new Set(['commands', 'agents', 'hooks', 'skills', '.mcp.json', 'hooks.json', '.claude-plugin'])
+  const other: PluginResourceEntry[] = []
+  for (const entry of files) {
+    if (entry.isDirectory) {
+      if (known.has(entry.name)) continue
+      for (const child of entry.children ?? []) {
+        if (child.isDirectory) continue
+        other.push({ label: child.name, path: `${entry.name}/${child.name}` })
+      }
+    } else {
+      if (known.has(entry.name)) continue
+      other.push({ label: entry.name, path: entry.name })
+    }
+  }
+
+  // `other` is intentionally hidden from the category list — folder view still
+  // exposes README/LICENSE/etc when the user drills into a directory.
+  void other
+  const all: PluginResourceCategory[] = [
+    { key: 'commands', icon: Terminal, entries: commands },
+    { key: 'agents', icon: Bot, entries: agents },
+    { key: 'skills', icon: Puzzle, entries: skills },
+    { key: 'hooks', icon: Webhook, entries: hooks },
+    { key: 'mcp', icon: Server, entries: mcp },
+  ]
+  return all.filter((c) => c.entries.length > 0)
+}
+
+const HOOK_SCRIPT_RE = /\$\{CLAUDE_PLUGIN_ROOT\}[\\/]([^\s"'`)]+)/g
+
+function extractHookScriptPaths(eventConfig: unknown): string[] {
+  const out = new Set<string>()
+  const visit = (v: unknown) => {
+    if (typeof v === 'string') {
+      for (const match of v.matchAll(HOOK_SCRIPT_RE)) {
+        const rel = match[1].replace(/[\\/]+$/, '')
+        if (rel) out.add(rel)
+      }
+      return
+    }
+    if (Array.isArray(v)) {
+      for (const item of v) visit(item)
+      return
+    }
+    if (v && typeof v === 'object') {
+      for (const value of Object.values(v as Record<string, unknown>)) visit(value)
+    }
+  }
+  visit(eventConfig)
+  return Array.from(out)
+}
+
+function findFolderChildren(files: SkillFileEntry[], folderPath: string): SkillFileEntry[] {
+  if (!folderPath) return files
+  const parts = folderPath.split('/').filter(Boolean)
+  let current: SkillFileEntry[] | undefined = files
+  for (const part of parts) {
+    const found: SkillFileEntry | undefined = current?.find((e) => e.name === part && e.isDirectory)
+    if (!found) return []
+    current = found.children
+  }
+  return current ?? []
+}
+
+function PluginFileTreeNode({
   entry,
   depth,
-  pathPrefix,
-  itemKey,
+  parentPath,
   selectedPath,
   onSelect,
 }: {
   entry: SkillFileEntry
   depth: number
-  pathPrefix: string
-  itemKey: string
+  parentPath: string
   selectedPath: string | null
-  onSelect: (key: string, relativePath: string) => void
+  onSelect: (path: string) => void
 }) {
   const [open, setOpen] = useState(true)
-  const fullPath = buildPath(pathPrefix, entry.name)
-  const isSelected = !entry.isDirectory && fullPath === selectedPath
+  const fullPath = parentPath ? `${parentPath}/${entry.name}` : entry.name
 
   if (entry.isDirectory) {
     return (
-      <div style={{ paddingLeft: depth * 12 }}>
+      <div>
         <button
           onClick={() => setOpen(!open)}
-          className="flex w-full items-center gap-1 rounded px-1.5 py-0.5 text-left text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+          className="flex w-full items-center gap-1 rounded px-1.5 py-0.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          style={{ paddingLeft: 6 + depth * 12 }}
         >
           {open ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
           {open ? <FolderOpen className="size-3.5 shrink-0 text-blue-500" /> : <Folder className="size-3.5 shrink-0 text-blue-500" />}
           <span className="truncate">{entry.name}</span>
         </button>
-        {open && entry.children && (
-          <div>
-            {entry.children.map((child) => (
-              <FileTreeNode
-                key={child.name}
-                entry={child}
-                depth={depth + 1}
-                pathPrefix={fullPath}
-                itemKey={itemKey}
-                selectedPath={selectedPath}
-                onSelect={onSelect}
-              />
-            ))}
-          </div>
-        )}
+        {open && entry.children?.map((child) => (
+          <PluginFileTreeNode
+            key={child.name}
+            entry={child}
+            depth={depth + 1}
+            parentPath={fullPath}
+            selectedPath={selectedPath}
+            onSelect={onSelect}
+          />
+        ))}
+      </div>
+    )
+  }
+
+  const isSelected = fullPath === selectedPath
+  return (
+    <button
+      onClick={() => onSelect(fullPath)}
+      className={cn(
+        'flex w-full items-center gap-1 rounded px-1.5 py-0.5 text-left text-xs transition-colors',
+        isSelected
+          ? 'bg-accent text-accent-foreground'
+          : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+      )}
+      style={{ paddingLeft: 6 + depth * 12 + 18 }}
+      title={fullPath}
+    >
+      <FileText className="size-3.5 shrink-0" />
+      <span className="truncate">{entry.name}</span>
+    </button>
+  )
+}
+
+function PluginResourceCategoryGroup({
+  category,
+  selectedPath,
+  onSelect,
+}: {
+  category: PluginResourceCategory
+  selectedPath: string | null
+  onSelect: (path: string) => void
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(true)
+  const Icon = category.icon
+  return (
+    <div className="mb-1">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+      >
+        {open ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
+        <Icon className="size-3 shrink-0" />
+        <span className="truncate">{t(`resources.plugins.capability.${category.key === 'other' ? 'other' : category.key === 'mcp' ? 'mcp' : category.key}`)}</span>
+        <span className="ml-auto text-muted-foreground">{category.entries.length}</span>
+      </button>
+      {open && (
+        <div className="mt-0.5">
+          {category.entries.map((entry) => {
+            const isSelected = entry.path === selectedPath
+            return (
+              <button
+                key={entry.path}
+                onClick={() => onSelect(entry.path)}
+                className={cn(
+                  'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs transition-colors',
+                  isSelected
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                )}
+                style={{ paddingLeft: 22 }}
+                title={entry.path}
+              >
+                <span className="truncate">{entry.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PluginResourceExplorer({
+  files,
+  mcpServerConfigs,
+  hookEvents,
+  selectedPath,
+  fileContent,
+  onSelect,
+  emptyHint,
+}: {
+  files: SkillFileEntry[]
+  mcpServerConfigs?: Record<string, unknown>
+  hookEvents?: Record<string, unknown>
+  selectedPath: string | null
+  fileContent: string | null
+  onSelect: (relativePath: string) => void
+  emptyHint: string
+}) {
+  const { t } = useTranslation()
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [mdRawView, setMdRawView] = useState(false)
+  const [view, setView] = useState<'categories' | 'folder'>('categories')
+  const [folderInfo, setFolderInfo] = useState<{ rootPath: string; categoryKey: PluginResourceCategory['key'] } | null>(null)
+  const categories = useMemo(
+    () => categorizePluginFiles(files, mcpServerConfigs, hookEvents),
+    [files, mcpServerConfigs, hookEvents],
+  )
+
+  const isMcpPath = selectedPath?.startsWith('mcp:') ?? false
+  const mcpName = isMcpPath ? selectedPath!.slice('mcp:'.length) : null
+  const mcpPreview = useMemo(() => {
+    if (!mcpName || !mcpServerConfigs || !(mcpName in mcpServerConfigs)) return null
+    return JSON.stringify(mcpServerConfigs[mcpName], null, 2)
+  }, [mcpName, mcpServerConfigs])
+
+  const isHooksPath = selectedPath?.startsWith('hooks:') ?? false
+  const hookEventName = isHooksPath ? selectedPath!.slice('hooks:'.length) : null
+  const hookPreview = useMemo(() => {
+    if (!hookEventName || !hookEvents || !(hookEventName in hookEvents)) return null
+    return JSON.stringify(hookEvents[hookEventName], null, 2)
+  }, [hookEventName, hookEvents])
+
+  const hookScripts = useMemo(() => {
+    if (!hookEventName || !hookEvents || !(hookEventName in hookEvents)) return []
+    return extractHookScriptPaths(hookEvents[hookEventName])
+  }, [hookEventName, hookEvents])
+
+  const isVirtualPath = isMcpPath || isHooksPath
+  const virtualLabel = isMcpPath ? `.mcp.json › ${mcpName}` : isHooksPath ? `hooks.json › ${hookEventName}` : null
+  const virtualContent = isMcpPath ? mcpPreview : isHooksPath ? hookPreview : null
+
+  const displayLabel = isVirtualPath ? virtualLabel : selectedPath
+  const displayContent = isVirtualPath ? virtualContent : fileContent
+  const displayIsMarkdown = !isVirtualPath && !!selectedPath && isMarkdown(selectedPath)
+  const displayLang = isVirtualPath ? 'json' : selectedPath ? inferLanguage(selectedPath) : 'text'
+
+  const folderEntries = useMemo(
+    () => findFolderChildren(files, folderInfo?.rootPath ?? ''),
+    [files, folderInfo],
+  )
+  const folderHeaderLabel = useMemo(() => {
+    const rp = folderInfo?.rootPath
+    if (!rp) return ''
+    const last = rp.split('/').pop()
+    return last || rp
+  }, [folderInfo])
+  const folderHeaderIcon = useMemo(() => {
+    if (!folderInfo) return null
+    return categories.find((c) => c.key === folderInfo.categoryKey)?.icon
+      ?? CATEGORY_FALLBACK_ICONS[folderInfo.categoryKey]
+      ?? null
+  }, [folderInfo, categories])
+
+  const handleCategorySelect = useCallback((path: string) => {
+    onSelect(path)
+    if (path.startsWith('mcp:') || path.startsWith('hooks:')) return
+    // Only resources that live in their own folder (e.g. skills) drill into the FileTree view.
+    // Single-file resources (command/agent/hook) just preview, no navigation.
+    for (const cat of categories) {
+      const entry = cat.entries.find((e) => e.path === path)
+      if (!entry) continue
+      if (!entry.resourceFolderPath) return
+      setFolderInfo({ rootPath: entry.resourceFolderPath, categoryKey: cat.key })
+      setView('folder')
+      return
+    }
+  }, [onSelect, categories])
+
+  const handleBack = useCallback(() => {
+    setView('categories')
+  }, [])
+
+  if (categories.length === 0) {
+    return (
+      <div className="flex h-32 items-center justify-center text-xs text-muted-foreground">
+        {emptyHint}
       </div>
     )
   }
 
   return (
-    <div style={{ paddingLeft: depth * 12 }}>
-      <button
-        onClick={() => onSelect(itemKey, fullPath)}
-        className={`flex w-full items-center gap-1 rounded px-1.5 py-0.5 text-left text-xs transition-colors ${
-          isSelected
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-        }`}
-        style={{ paddingLeft: `${12 + 6}px` }}
+    <div className="flex" style={{ height: 320 }}>
+      <div
+        className="shrink-0 overflow-hidden border-r border-border transition-[width] duration-300 ease-in-out"
+        style={{ width: sidebarOpen ? 200 : 0 }}
       >
-        <FileIcon name={entry.name} />
-        <span className="truncate">{entry.name}</span>
-      </button>
-    </div>
-  )
-}
-
-function FileTree({
-  entries,
-  itemKey,
-  selectedPath,
-  onSelect,
-}: {
-  entries: SkillFileEntry[]
-  itemKey: string
-  selectedPath: string | null
-  onSelect: (key: string, relativePath: string) => void
-}) {
-  return (
-    <div>
-      {entries.map((entry) => (
-        <FileTreeNode
-          key={entry.name}
-          entry={entry}
-          depth={0}
-          pathPrefix=""
-          itemKey={itemKey}
-          selectedPath={selectedPath}
-          onSelect={onSelect}
-        />
-      ))}
+        <div className="relative h-full w-[200px] overflow-hidden">
+          <AnimatePresence mode="wait" initial={false}>
+            {view === 'categories' ? (
+              <motion.div
+                key="categories"
+                initial={{ x: -16, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -16, opacity: 0 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className="absolute inset-0 overflow-y-auto p-2"
+              >
+                {categories.map((category) => (
+                  <PluginResourceCategoryGroup
+                    key={category.key}
+                    category={category}
+                    selectedPath={selectedPath}
+                    onSelect={handleCategorySelect}
+                  />
+                ))}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="folder"
+                initial={{ x: 16, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: 16, opacity: 0 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className="absolute inset-0 flex flex-col"
+              >
+                <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-1.5 py-1">
+                  <button
+                    onClick={handleBack}
+                    className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                    title={t('common.back')}
+                  >
+                    <ArrowLeft className="size-3.5" />
+                  </button>
+                  {folderHeaderIcon && (() => {
+                    const Icon = folderHeaderIcon
+                    return <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                  })()}
+                  <span
+                    className="flex-1 truncate text-xs font-medium text-foreground"
+                    title={folderInfo?.rootPath || ''}
+                  >
+                    {folderHeaderLabel}
+                  </span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                  {folderEntries.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-[11px] text-muted-foreground">
+                      {t('resources.plugins.detail.emptyFolder')}
+                    </div>
+                  ) : (
+                    folderEntries.map((entry) => (
+                      <PluginFileTreeNode
+                        key={entry.name}
+                        entry={entry}
+                        depth={0}
+                        parentPath={folderInfo?.rootPath ?? ''}
+                        selectedPath={selectedPath}
+                        onSelect={onSelect}
+                      />
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-2 py-1">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          >
+            {sidebarOpen ? <PanelLeftClose className="size-3.5" /> : <PanelLeftOpen className="size-3.5" />}
+          </button>
+          {displayLabel && (
+            <span className="flex-1 truncate text-[11px] text-muted-foreground">{displayLabel}</span>
+          )}
+          {displayIsMarkdown && (
+            <button
+              onClick={() => setMdRawView(!mdRawView)}
+              className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              title={mdRawView ? t('resources.skills.previewToggle') : t('resources.skills.sourceToggle')}
+            >
+              {mdRawView ? <BookOpen className="size-3.5" /> : <Code className="size-3.5" />}
+            </button>
+          )}
+        </div>
+        <div className="flex-1 overflow-auto p-2">
+          {displayContent != null ? (
+            displayIsMarkdown && !mdRawView ? (
+              <MarkdownView content={displayContent} />
+            ) : (
+              <FileContentView code={displayContent} language={displayLang} />
+            )
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              {t('resources.plugins.detail.selectResource')}
+            </div>
+          )}
+          {isHooksPath && hookScripts.length > 0 && (
+            <div className="mt-3 border-t border-border pt-2">
+              <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('resources.plugins.detail.referencedScripts')}
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {hookScripts.map((scriptPath) => (
+                  <button
+                    key={scriptPath}
+                    onClick={() => onSelect(scriptPath)}
+                    className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                    title={scriptPath}
+                  >
+                    <FileText className="size-3.5 shrink-0" />
+                    <span className="truncate">{scriptPath}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -543,7 +974,8 @@ function ContentBadges({ plugin }: { plugin: PluginInfo }) {
 // --- Installed plugin card ---
 
 function PluginCard({ plugin }: { plugin: PluginInfo }) {
-  const { pluginDetail, readPlugin, clearPluginDetail } = useSettingsStore()
+  const { t } = useTranslation()
+  const { pluginDetail, pluginFileContent, pluginFilePath, readPlugin, readPluginFile, clearPluginDetail } = useSettingsStore()
   const isExpanded = pluginDetail?.key === plugin.key
 
   const handleToggle = () => {
@@ -553,6 +985,10 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
       readPlugin(plugin.key)
     }
   }
+
+  const handleFileSelect = useCallback((relativePath: string) => {
+    readPluginFile(plugin.key, relativePath)
+  }, [plugin.key, readPluginFile])
 
   return (
     <div className="rounded-lg border border-border bg-card">
@@ -568,6 +1004,9 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
             {plugin.author && (
               <span className="text-xs text-muted-foreground">by {plugin.author}</span>
             )}
+            {plugin.version && (
+              <span className="text-xs text-muted-foreground">v{plugin.version}</span>
+            )}
             {plugin.hasUpdate && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-500">
                 <ArrowUpCircle className="size-2.5" />
@@ -582,19 +1021,44 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
             <ContentBadges plugin={plugin} />
           </div>
         </div>
-        {isExpanded ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
+        <motion.div
+          animate={{ rotate: isExpanded ? 90 : 0 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="shrink-0"
+        >
+          <ChevronRight className="size-4 text-muted-foreground" />
+        </motion.div>
       </div>
 
-      {isExpanded && pluginDetail && (
-        <div className="border-t border-border">
-          <PluginDetailsPanel
-            plugin={pluginDetail}
-            apps={pluginDetail.apps}
-            skills={pluginDetail.skills}
-            mcpServers={pluginDetail.mcpServers}
-          />
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {isExpanded && pluginDetail && (
+          <motion.div
+            key="content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
+            className="overflow-hidden"
+          >
+            <PluginDetailsPanel
+              plugin={pluginDetail}
+              apps={pluginDetail.apps}
+              skills={pluginDetail.skills}
+            />
+            <div className="border-t border-border">
+              <PluginResourceExplorer
+                files={pluginDetail.files}
+                mcpServerConfigs={pluginDetail.mcpServerConfigs}
+                hookEvents={pluginDetail.hookEvents}
+                selectedPath={pluginFilePath}
+                fileContent={pluginFileContent}
+                onSelect={handleFileSelect}
+                emptyHint={t('resources.plugins.detail.noFiles')}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -619,15 +1083,44 @@ function PluginInstallCard({
   plugin,
   onInstall,
   allowProjectInstall,
+  canExplore,
 }: {
   plugin: MarketplacePlugin
   onInstall: (key: string, scope: ResourceScope) => void
   allowProjectInstall: boolean
+  canExplore: boolean
 }) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const [installing, setInstalling] = useState(false)
   const [scopeChoice, setScopeChoice] = useState(false)
   const installScopes = allowProjectInstall ? (['user', 'project'] as const) : (['user'] as const)
+  const {
+    marketplacePluginDetail,
+    marketplacePluginFileContent,
+    marketplacePluginFilePath,
+    readMarketplacePlugin,
+    readMarketplacePluginFile,
+    clearMarketplacePluginDetail,
+  } = useSettingsStore()
+
+  const detail = canExplore && marketplacePluginDetail?.key === plugin.key ? marketplacePluginDetail : null
+
+  const handleToggle = () => {
+    if (expanded) {
+      if (detail) clearMarketplacePluginDetail()
+      setExpanded(false)
+    } else {
+      setExpanded(true)
+      if (canExplore) {
+        readMarketplacePlugin(plugin.marketplace, plugin.name)
+      }
+    }
+  }
+
+  const handleFileSelect = useCallback((relativePath: string) => {
+    readMarketplacePluginFile(plugin.marketplace, plugin.name, relativePath)
+  }, [plugin.marketplace, plugin.name, readMarketplacePluginFile])
 
   const handleInstall = async (scope: ResourceScope) => {
     setScopeChoice(false)
@@ -643,7 +1136,7 @@ function PluginInstallCard({
     <div className="rounded-lg border border-border bg-card">
       <div
         role="button"
-        onClick={() => setExpanded((current) => !current)}
+        onClick={handleToggle}
         className="flex cursor-pointer items-start gap-3 p-3 transition-colors hover:bg-muted/50"
       >
         <PluginAvatar name={plugin.name} iconPath={plugin.iconPath} logoPath={plugin.logoPath} className="size-9 text-sm" />
@@ -652,6 +1145,9 @@ function PluginInstallCard({
             <span className="text-sm font-medium">{getPluginTitle(plugin)}</span>
             {plugin.author && (
               <span className="text-xs text-muted-foreground">by {plugin.author}</span>
+            )}
+            {plugin.version && (
+              <span className="text-xs text-muted-foreground">v{plugin.version}</span>
             )}
           </div>
           {plugin.description && (
@@ -704,14 +1200,48 @@ function PluginInstallCard({
               )}
             </Button>
           )}
-          {expanded ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
+          <motion.div
+            animate={{ rotate: expanded ? 90 : 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="shrink-0"
+          >
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </motion.div>
         </div>
       </div>
-      {expanded && (
-        <div className="border-t border-border">
-          <PluginDetailsPanel plugin={plugin} />
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
+            className="overflow-hidden"
+          >
+            <PluginDetailsPanel plugin={detail ?? plugin} />
+            {canExplore && (
+              <div className="border-t border-border">
+                {detail ? (
+                  <PluginResourceExplorer
+                    files={detail.files}
+                    mcpServerConfigs={detail.mcpServerConfigs}
+                    hookEvents={detail.hookEvents}
+                    selectedPath={marketplacePluginFilePath}
+                    fileContent={marketplacePluginFileContent}
+                    onSelect={handleFileSelect}
+                    emptyHint={t('resources.plugins.detail.noFiles')}
+                  />
+                ) : (
+                  <div className="flex h-40 items-center justify-center text-xs text-muted-foreground">
+                    {t('common.loading')}
+                  </div>
+                )}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -726,6 +1256,23 @@ interface MarketplaceSummary {
   source?: string
   iconPath?: string
   logoPath?: string
+  scope?: MarketplaceScope
+}
+
+function ScopeBadge({ scope }: { scope?: MarketplaceScope }) {
+  const { t } = useTranslation()
+  if (!scope) return null
+  const styles: Record<MarketplaceScope, string> = {
+    official: 'bg-primary/10 text-primary',
+    user: 'bg-blue-500/10 text-blue-500',
+    project: 'bg-emerald-500/10 text-emerald-500',
+    local: 'bg-amber-500/10 text-amber-500',
+  }
+  return (
+    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium', styles[scope])}>
+      {t(`resources.plugins.marketplaceScope.${scope}`)}
+    </span>
+  )
 }
 
 function formatRelativeTime(iso: string): string {
@@ -750,7 +1297,10 @@ function MarketplaceListCard({ mp, onClick }: { mp: MarketplaceSummary; onClick:
     >
       <PluginAvatar name={mp.name} iconPath={mp.iconPath} logoPath={mp.logoPath} className="size-10 text-base" />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{mp.name}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium truncate">{mp.name}</p>
+          <ScopeBadge scope={mp.scope} />
+        </div>
         {mp.source && (
           <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground truncate">
             {isGithubSource(mp.source)
@@ -810,20 +1360,28 @@ function MarketplaceDetailView({
   onBack,
   onInstall,
   onUpdateMarketplace,
+  onRemoveMarketplace,
   canUpdateMarketplace,
+  canRemoveMarketplace,
   allowProjectInstall,
+  canExplore,
 }: {
   summary: MarketplaceSummary
   plugins: MarketplacePlugin[]
   onBack: () => void
   onInstall: (key: string, scope: ResourceScope) => void
   onUpdateMarketplace: () => Promise<void>
+  onRemoveMarketplace?: () => Promise<void>
   canUpdateMarketplace: boolean
+  canRemoveMarketplace: boolean
   allowProjectInstall: boolean
+  canExplore: boolean
 }) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [updating, setUpdating] = useState(false)
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false)
+  const [removing, setRemoving] = useState(false)
 
   const handleUpdate = async () => {
     setUpdating(true)
@@ -831,6 +1389,17 @@ function MarketplaceDetailView({
       await onUpdateMarketplace()
     } finally {
       setUpdating(false)
+    }
+  }
+
+  const handleRemove = async () => {
+    if (!onRemoveMarketplace) return
+    setRemoving(true)
+    try {
+      await onRemoveMarketplace()
+      setRemoveConfirmOpen(false)
+    } finally {
+      setRemoving(false)
     }
   }
 
@@ -858,7 +1427,10 @@ function MarketplaceDetailView({
       {/* Header */}
       <div className="mb-5">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">{summary.name}</h2>
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="text-lg font-semibold truncate">{summary.name}</h2>
+            <ScopeBadge scope={summary.scope} />
+          </div>
           <div className="flex items-center gap-2">
             <ProjectSelector mode="switch" />
             {canUpdateMarketplace && (
@@ -870,6 +1442,17 @@ function MarketplaceDetailView({
               >
                 <RefreshCw className={cn('size-3.5', updating && 'animate-spin')} />
                 {updating ? t('resources.plugins.updating') : t('resources.plugins.update')}
+              </Button>
+            )}
+            {canRemoveMarketplace && summary.scope !== 'official' && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setRemoveConfirmOpen(true)}
+                className="text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="size-3.5" />
+                {t('resources.plugins.removeMarketplace')}
               </Button>
             )}
           </div>
@@ -909,11 +1492,147 @@ function MarketplaceDetailView({
       ) : (
         <div className="flex flex-col gap-2">
           {filtered.map((plugin) => (
-            <PluginInstallCard key={plugin.key} plugin={plugin} onInstall={onInstall} allowProjectInstall={allowProjectInstall} />
+            <PluginInstallCard key={plugin.key} plugin={plugin} onInstall={onInstall} allowProjectInstall={allowProjectInstall} canExplore={canExplore} />
           ))}
         </div>
       )}
+
+      <Dialog open={removeConfirmOpen} onOpenChange={setRemoveConfirmOpen}>
+        <DialogContent showCloseButton={false} className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('resources.plugins.removeMarketplaceTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('resources.plugins.removeMarketplaceDesc', {
+                name: summary.name,
+                scope: summary.scope ? t(`resources.plugins.marketplaceScope.${summary.scope}`) : '',
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveConfirmOpen(false)} disabled={removing}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={handleRemove} disabled={removing}>
+              {removing ? t('resources.plugins.removing') : t('resources.plugins.removeMarketplace')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+// --- Add marketplace dialog ---
+
+function AddMarketplaceDialog({
+  open,
+  onOpenChange,
+  onAdd,
+  allowProjectScope,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onAdd: (source: string, scope: ResourceScope) => Promise<void>
+  allowProjectScope: boolean
+}) {
+  const { t } = useTranslation()
+  const [source, setSource] = useState('')
+  const [scope, setScope] = useState<ResourceScope>('user')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open) {
+      setSource('')
+      setScope('user')
+      setError(null)
+      setSubmitting(false)
+    }
+  }, [open])
+
+  const handleSubmit = async () => {
+    const trimmed = source.trim()
+    if (!trimmed || submitting) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onAdd(trimmed, scope)
+      onOpenChange(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t('resources.plugins.addMarketplaceTitle')}</DialogTitle>
+          <DialogDescription>{t('resources.plugins.addMarketplaceDesc')}</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">
+              {t('resources.plugins.addMarketplaceSourceLabel')}
+            </label>
+            <Input
+              autoFocus
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              placeholder={t('resources.plugins.addMarketplaceSourcePlaceholder')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !submitting) {
+                  e.preventDefault()
+                  handleSubmit()
+                }
+              }}
+              disabled={submitting}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {t('resources.plugins.addMarketplaceSourceHint')}
+            </p>
+          </div>
+          {allowProjectScope && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                {t('resources.plugins.addMarketplaceScopeLabel')}
+              </label>
+              <div className="flex gap-1 rounded-md bg-muted p-1">
+                {(['user', 'project'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setScope(s)}
+                    disabled={submitting}
+                    className={cn(
+                      'flex-1 rounded-sm px-3 py-1 text-xs font-medium transition-colors',
+                      scope === s
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {t(`resources.plugins.scope.${s}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {error && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={handleSubmit} disabled={!source.trim() || submitting}>
+            {submitting ? t('resources.plugins.adding') : t('resources.plugins.add')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -932,17 +1651,23 @@ export function PluginsPage() {
     fetchMarketplacePlugins,
     installPlugin,
     clearPluginDetail,
+    clearMarketplacePluginDetail,
+    addMarketplace,
+    removeMarketplace,
   } = useSettingsStore()
   const [tab, setTab] = useState<PluginsTab>('marketplace')
   const [selectedMarketplace, setSelectedMarketplace] = useState<string | null>(null)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
   const isCodex = settingsProvider === 'codex'
+  const canManageMarketplaces = !isCodex
 
   useEffect(() => {
     clearPluginDetail()
+    clearMarketplacePluginDetail()
     setSelectedMarketplace(null)
     fetchPlugins()
     fetchMarketplacePlugins()
-  }, [currentFolder, settingsProvider, clearPluginDetail, fetchPlugins, fetchMarketplacePlugins])
+  }, [currentFolder, settingsProvider, clearPluginDetail, clearMarketplacePluginDetail, fetchPlugins, fetchMarketplacePlugins])
 
   // Derive marketplace summaries from plugins data
   const marketplaceSummaries = useMemo(() => {
@@ -958,6 +1683,7 @@ export function PluginsPage() {
           source: p.marketplaceSource,
           iconPath: p.iconPath,
           logoPath: p.logoPath,
+          scope: p.marketplaceScope,
         }
         map.set(p.marketplace, mp)
       }
@@ -967,6 +1693,14 @@ export function PluginsPage() {
       if (!mp.iconPath && p.iconPath) mp.iconPath = p.iconPath
       if (!mp.lastUpdated && p.marketplaceLastUpdated) mp.lastUpdated = p.marketplaceLastUpdated
       if (!mp.source && p.marketplaceSource) mp.source = p.marketplaceSource
+      if (!mp.scope && p.marketplaceScope) mp.scope = p.marketplaceScope
+    }
+    // Fall back to the repo owner's avatar for GitHub-hosted marketplaces that don't ship a logo.
+    for (const mp of map.values()) {
+      if (mp.logoPath || mp.iconPath) continue
+      if (!mp.source || !isGithubSource(mp.source)) continue
+      const owner = mp.source.split('/')[0]
+      if (owner) mp.logoPath = `https://github.com/${owner}.png?size=80`
     }
     // Sort by plugin count descending
     return Array.from(map.values()).sort((a, b) => b.pluginCount - a.pluginCount)
@@ -1013,8 +1747,14 @@ export function PluginsPage() {
               await window.app.updateMarketplace(selectedMarketplace!)
               await fetchMarketplacePlugins()
             }}
+            onRemoveMarketplace={canManageMarketplaces && summary.scope && summary.scope !== 'official' ? async () => {
+              await removeMarketplace(selectedMarketplace!, summary.scope!)
+              setSelectedMarketplace(null)
+            } : undefined}
             canUpdateMarketplace={!isCodex}
+            canRemoveMarketplace={canManageMarketplaces && summary.scope !== 'official'}
             allowProjectInstall={!isCodex}
+            canExplore={!isCodex}
           />
         </div>
       )
@@ -1056,25 +1796,48 @@ export function PluginsPage() {
 
       {/* Marketplace tab */}
       {tab === 'marketplace' && (
-        marketplaceSummaries.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-8 text-center">
+        <div>
+          {canManageMarketplaces && (
+            <div className="mb-3 flex justify-end">
+              <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
+                <Plus className="size-3.5" />
+                {t('resources.plugins.addMarketplace')}
+              </Button>
+            </div>
+          )}
+          {marketplaceSummaries.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border p-8 text-center">
               <p className="text-sm text-muted-foreground">{t('resources.plugins.emptyMarketplace')}</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {isCodex ? t('resources.plugins.emptyMarketplaceHintCodex') : t('resources.plugins.emptyMarketplaceHintClaude')}
               </p>
+              {canManageMarketplaces && (
+                <Button size="sm" variant="outline" className="mt-4" onClick={() => setAddDialogOpen(true)}>
+                  <Plus className="size-3.5" />
+                  {t('resources.plugins.addMarketplace')}
+                </Button>
+              )}
             </div>
           ) : (
-          <div className="flex flex-col gap-2">
-            {marketplaceSummaries.map((mp) => (
-              <MarketplaceListCard
-                key={mp.name}
-                mp={mp}
-                onClick={() => setSelectedMarketplace(mp.name)}
-              />
-            ))}
-          </div>
-        )
+            <div className="flex flex-col gap-2">
+              {marketplaceSummaries.map((mp) => (
+                <MarketplaceListCard
+                  key={mp.name}
+                  mp={mp}
+                  onClick={() => setSelectedMarketplace(mp.name)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       )}
+
+      <AddMarketplaceDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onAdd={addMarketplace}
+        allowProjectScope={!isCodex}
+      />
 
       {/* Installed tab */}
       {tab === 'installed' && (

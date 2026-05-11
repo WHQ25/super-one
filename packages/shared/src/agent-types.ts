@@ -985,8 +985,13 @@ export interface PluginDetail extends PluginInfo {
   apps?: PluginAppSummary[]
   skills?: PluginSkillSummary[]
   mcpServers?: string[]
+  mcpServerConfigs?: Record<string, unknown>
+  hookEvents?: Record<string, unknown>
   files: SkillFileEntry[]
 }
+
+/** Scope of a marketplace declaration in settings.json (per Claude Code docs). */
+export type MarketplaceScope = 'user' | 'project' | 'local' | 'official'
 
 export interface MarketplacePlugin {
   name: string
@@ -1014,6 +1019,31 @@ export interface MarketplacePlugin {
   installedScope?: ResourceScope
   marketplaceLastUpdated?: string
   marketplaceSource?: string   // e.g. "github:anthropics/claude-plugins-official" or "directory:/path"
+  marketplaceScope?: MarketplaceScope
+  version?: string
+  hasCommands?: boolean
+  hasAgents?: boolean
+  hasSkills?: boolean
+  hasHooks?: boolean
+  hasMcpServers?: boolean
+}
+
+export interface MarketplacePluginDetail extends MarketplacePlugin {
+  sourcePath: string
+  files: SkillFileEntry[]
+  mcpServers?: string[]
+  mcpServerConfigs?: Record<string, unknown>
+  hookEvents?: Record<string, unknown>
+}
+
+export interface MarketplaceSourceInfo {
+  name: string
+  source: 'github' | 'directory' | 'url'
+  repo?: string
+  path?: string
+  url?: string
+  installLocation: string
+  lastUpdated?: string
 }
 
 // --- Skills ---
@@ -1455,6 +1485,10 @@ export const AgentIpcChannels = {
   PLUGINS_INSTALL: 'plugins:install',
   PLUGINS_UPDATE: 'plugins:update',
   PLUGINS_UPDATE_MARKETPLACE: 'plugins:update-marketplace',
+  PLUGINS_ADD_MARKETPLACE: 'plugins:add-marketplace',
+  PLUGINS_REMOVE_MARKETPLACE: 'plugins:remove-marketplace',
+  PLUGINS_READ_MARKETPLACE: 'plugins:read-marketplace',
+  PLUGINS_READ_MARKETPLACE_FILE: 'plugins:read-marketplace-file',
 
   // Skills
   SKILLS_LIST: 'skills:list',

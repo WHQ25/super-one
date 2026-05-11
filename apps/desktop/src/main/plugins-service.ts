@@ -1,13 +1,91 @@
-import { join, resolve } from 'path'
+import { join, resolve, dirname } from 'path'
 import { homedir } from 'os'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { execFile, execFileSync } from 'child_process'
-import type { ResourceScope, PluginInfo, PluginDetail, PluginManifest, MarketplacePlugin, SkillFileEntry } from '@superone/shared/agent-types'
+import type {
+  ResourceScope,
+  MarketplaceScope,
+  PluginInfo,
+  PluginDetail,
+  PluginManifest,
+  MarketplacePlugin,
+  MarketplacePluginDetail,
+  SkillFileEntry,
+} from '@superone/shared/agent-types'
 
 const PLUGINS_DIR = join(homedir(), '.claude', 'plugins')
 const INSTALLED_FILE = join(PLUGINS_DIR, 'installed_plugins.json')
 const MARKETPLACES_FILE = join(PLUGINS_DIR, 'known_marketplaces.json')
 const INSTALL_COUNTS_FILE = join(PLUGINS_DIR, 'install-counts-cache.json')
+
+function getUserSettingsPath(): string {
+  return join(homedir(), '.claude', 'settings.json')
+}
+function getProjectSettingsPath(cwd: string): string {
+  return join(cwd, '.claude', 'settings.json')
+}
+function getLocalSettingsPath(cwd: string): string {
+  return join(cwd, '.claude', 'settings.local.json')
+}
+
+function readJsonObject(filePath: string): Record<string, unknown> {
+  if (!existsSync(filePath)) return {}
+  try {
+    const data = JSON.parse(readFileSync(filePath, 'utf-8'))
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : {}
+  } catch {
+    return {}
+  }
+}
+
+function readExtraKnownMarketplaces(filePath: string): Record<string, unknown> {
+  const data = readJsonObject(filePath)
+  const ek = data.extraKnownMarketplaces
+  if (!ek || typeof ek !== 'object' || Array.isArray(ek)) return {}
+  return ek as Record<string, unknown>
+}
+
+/**
+ * Build a map of marketplace name → scope based on settings.json declarations.
+ * Precedence: local > project > user (more specific scope wins).
+ * Marketplaces present in known_marketplaces.json but not in any settings.json
+ * are treated as built-in (e.g. claude-plugins-official).
+ */
+function getMarketplaceScopeMap(cwd: string): Map<string, MarketplaceScope> {
+  const map = new Map<string, MarketplaceScope>()
+  for (const name of Object.keys(readExtraKnownMarketplaces(getUserSettingsPath()))) {
+    map.set(name, 'user')
+  }
+  if (cwd) {
+    for (const name of Object.keys(readExtraKnownMarketplaces(getProjectSettingsPath(cwd)))) {
+      map.set(name, 'project')
+    }
+    for (const name of Object.keys(readExtraKnownMarketplaces(getLocalSettingsPath(cwd)))) {
+      map.set(name, 'local')
+    }
+  }
+  return map
+}
+
+function writeSettingsJson(filePath: string, data: Record<string, unknown>): void {
+  mkdirSync(dirname(filePath), { recursive: true })
+  writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n')
+}
+
+function removeMarketplaceFromSettings(filePath: string, name: string): boolean {
+  if (!existsSync(filePath)) return false
+  const data = readJsonObject(filePath)
+  const ek = data.extraKnownMarketplaces
+  if (!ek || typeof ek !== 'object' || Array.isArray(ek)) return false
+  const map = ek as Record<string, unknown>
+  if (!(name in map)) return false
+  delete map[name]
+  if (Object.keys(map).length === 0) {
+    delete data.extraKnownMarketplaces
+  }
+  writeSettingsJson(filePath, data)
+  return true
+}
 
 interface InstalledEntry {
   scope?: string
@@ -78,6 +156,60 @@ function detectPluginContents(installPath: string): {
     hasSkills: existsSync(join(installPath, 'skills')),
     hasHooks: existsSync(join(installPath, 'hooks')),
     hasMcpServers: existsSync(join(installPath, '.mcp.json')),
+  }
+}
+
+/**
+ * Parse a plugin's hooks file and return the event → handlers map.
+ * Looks at `<plugin>/hooks/hooks.json` first, then root `hooks.json`.
+ * Returns a record keyed by event name (PreToolUse, Stop, SessionStart, …).
+ */
+function readHookEvents(installPath: string): Record<string, unknown> {
+  const candidates = [
+    join(installPath, 'hooks', 'hooks.json'),
+    join(installPath, 'hooks.json'),
+  ]
+  for (const p of candidates) {
+    if (!existsSync(p)) continue
+    try {
+      const raw = JSON.parse(readFileSync(p, 'utf-8'))
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+      const events = (raw as { hooks?: unknown }).hooks
+      if (!events || typeof events !== 'object' || Array.isArray(events)) continue
+      return events as Record<string, unknown>
+    } catch {
+      // continue to next candidate
+    }
+  }
+  return {}
+}
+
+/**
+ * Parse a plugin's `.mcp.json` and return the configured server map.
+ * Supports both formats seen in practice:
+ *   1. `{ "mcpServers": { "name": { command, args } } }` (wrapper form)
+ *   2. `{ "name": { command, args } }`                   (flat form — most plugins)
+ */
+function readMcpServersMap(installPath: string): Record<string, unknown> {
+  const mcpPath = join(installPath, '.mcp.json')
+  if (!existsSync(mcpPath)) return {}
+  try {
+    const raw = JSON.parse(readFileSync(mcpPath, 'utf-8'))
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+    const root = raw as Record<string, unknown>
+
+    const wrapped = root.mcpServers
+    if (wrapped && typeof wrapped === 'object' && !Array.isArray(wrapped)) {
+      return wrapped as Record<string, unknown>
+    }
+
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(root)) {
+      if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = v
+    }
+    return out
+  } catch {
+    return {}
   }
 }
 
@@ -201,6 +333,8 @@ export function readPluginContent(cwd: string, key: string): PluginDetail | null
     const mpDir = mpLocations.get(marketplace)
     const latestVersion = mpDir ? getPluginNewVersion(mpDir, name) ?? undefined : undefined
     const hasUpdate = !!(latestVersion && entry.version && latestVersion !== entry.version)
+    const mcpServerConfigs = readMcpServersMap(entry.installPath)
+    const hookEvents = readHookEvents(entry.installPath)
 
     return {
       name,
@@ -215,6 +349,9 @@ export function readPluginContent(cwd: string, key: string): PluginDetail | null
       ...contents,
       latestVersion,
       hasUpdate,
+      mcpServers: Object.keys(mcpServerConfigs),
+      mcpServerConfigs,
+      hookEvents,
       files: scanDir(entry.installPath),
     }
   }
@@ -273,6 +410,8 @@ export function listMarketplacePlugins(cwd: string): MarketplacePlugin[] {
   const marketplaces = readJson<Record<string, MarketplaceEntry>>(MARKETPLACES_FILE)
   if (!marketplaces || typeof marketplaces !== 'object') return []
 
+  const scopeMap = getMarketplaceScopeMap(cwd)
+
   // Load install counts
   const countsData = readJson<{ counts?: Array<{ plugin: string; unique_installs: number }> }>(INSTALL_COUNTS_FILE)
   const countMap = new Map<string, number>()
@@ -317,12 +456,14 @@ export function listMarketplacePlugins(cwd: string): MarketplacePlugin[] {
           if (!manifest) continue
 
           const key = `${entry.name}@${mpName}`
+          const contents = detectPluginContents(pluginDir)
           plugins.push({
             name: entry.name,
             marketplace: mpName,
             key,
             description: manifest.description ?? '',
             author: manifest.author?.name,
+            version: manifest.version,
             installCount: countMap.get(key),
             installed: installedMap.has(key),
             installedScope: installedMap.get(key),
@@ -332,6 +473,8 @@ export function listMarketplacePlugins(cwd: string): MarketplacePlugin[] {
               : mpInfo.source?.source === 'directory' && mpInfo.source.path
                 ? mpInfo.source.path
                 : undefined,
+            marketplaceScope: scopeMap.get(mpName) ?? 'official',
+            ...contents,
           })
         }
       } catch {
@@ -346,34 +489,15 @@ export function listMarketplacePlugins(cwd: string): MarketplacePlugin[] {
   return plugins
 }
 
-/** Update a marketplace by running git pull, then update lastUpdated in known_marketplaces.json */
+/** Update a marketplace using the Claude CLI, which handles github / git / url / directory sources. */
 export function updateMarketplace(marketplaceName: string): Promise<void> {
-  const marketplaces = readJson<Record<string, MarketplaceEntry>>(MARKETPLACES_FILE)
-  if (!marketplaces?.[marketplaceName]) {
-    return Promise.reject(new Error(`Marketplace "${marketplaceName}" not found`))
-  }
-
-  const mpDir = marketplaces[marketplaceName].installLocation
-  if (!mpDir || !existsSync(mpDir)) {
-    return Promise.reject(new Error(`Marketplace directory not found`))
-  }
-
-  // Only git repos can be updated
-  if (!existsSync(join(mpDir, '.git'))) {
-    return Promise.reject(new Error(`Marketplace is not a git repository`))
-  }
-
   return new Promise((resolve, reject) => {
-    execFile('git', ['pull', '--ff-only'], { cwd: mpDir, timeout: 30000 }, (error) => {
+    execFile('claude', ['plugin', 'marketplace', 'update', marketplaceName], { timeout: 60000 }, (error, _stdout, stderr) => {
       if (error) {
-        reject(new Error(`Failed to update marketplace: ${error.message}`))
-        return
+        reject(new Error(stderr?.trim() || `Failed to update marketplace: ${error.message}`))
+      } else {
+        resolve()
       }
-
-      // Update lastUpdated timestamp
-      marketplaces[marketplaceName].lastUpdated = new Date().toISOString()
-      writeFileSync(MARKETPLACES_FILE, JSON.stringify(marketplaces, null, 2), 'utf-8')
-      resolve()
     })
   })
 }
@@ -439,4 +563,127 @@ export function updatePlugin(key: string, scope: ResourceScope, cwd: string): vo
   }
 
   writeFileSync(INSTALLED_FILE, JSON.stringify(data, null, 2), 'utf-8')
+}
+
+/**
+ * Add a marketplace via the Claude CLI.
+ * Source can be a GitHub repo (owner/repo), URL, or absolute/relative local path.
+ */
+export function addMarketplace(source: string, scope: ResourceScope, cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const args = ['plugin', 'marketplace', 'add', source, '--scope', scope]
+    execFile('claude', args, { timeout: 60000, cwd }, (error, _stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr?.trim() || `Failed to add marketplace: ${error.message}`))
+      } else {
+        resolve()
+      }
+    })
+  })
+}
+
+export function removeMarketplace(name: string, scope: MarketplaceScope, cwd: string): Promise<void> {
+  if (scope === 'official') {
+    return Promise.reject(new Error('Cannot remove the built-in official marketplace'))
+  }
+
+  const settingsPath = scope === 'user'
+    ? getUserSettingsPath()
+    : scope === 'project'
+      ? getProjectSettingsPath(cwd)
+      : getLocalSettingsPath(cwd)
+
+  removeMarketplaceFromSettings(settingsPath, name)
+
+  // If no other scope still declares it, ask CLI to clean cache + remove install dir.
+  const stillDeclared = getMarketplaceScopeMap(cwd).has(name)
+  if (stillDeclared) {
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve, reject) => {
+    execFile('claude', ['plugin', 'marketplace', 'remove', name], { timeout: 30000 }, (error, _stdout, stderr) => {
+      if (error) {
+        const msg = stderr?.trim() || error.message
+        // Settings.json already updated; cache cleanup failure is non-fatal but surface it.
+        reject(new Error(`Marketplace removed from settings, but cache cleanup failed: ${msg}`))
+      } else {
+        resolve()
+      }
+    })
+  })
+}
+
+export function readMarketplacePluginContent(marketplace: string, name: string): MarketplacePluginDetail | null {
+  const marketplaces = readJson<Record<string, MarketplaceEntry>>(MARKETPLACES_FILE)
+  const mpInfo = marketplaces?.[marketplace]
+  if (!mpInfo?.installLocation || !existsSync(mpInfo.installLocation)) return null
+
+  const sourceDir = findPluginSourceDir(mpInfo.installLocation, name)
+  if (!sourceDir) return null
+
+  const manifest = readPluginManifest(sourceDir)
+  if (!manifest) return null
+
+  const contents = detectPluginContents(sourceDir)
+
+  // Check installed state from installed_plugins.json
+  const installed = readJson<InstalledPluginsData>(INSTALLED_FILE)
+  const key = `${name}@${marketplace}`
+  let installedFlag = false
+  let installedScope: ResourceScope | undefined
+  if (installed?.plugins?.[key]) {
+    for (const entry of installed.plugins[key]) {
+      if (entry.scope === 'user') { installedFlag = true; installedScope = 'user'; break }
+      if (entry.scope === 'project' || entry.scope === 'local') { installedFlag = true; installedScope = 'project' }
+    }
+  }
+
+  const countsData = readJson<{ counts?: Array<{ plugin: string; unique_installs: number }> }>(INSTALL_COUNTS_FILE)
+  const installCount = countsData?.counts?.find(c => c.plugin === key)?.unique_installs
+  const mcpServerConfigs = readMcpServersMap(sourceDir)
+  const hookEvents = readHookEvents(sourceDir)
+
+  return {
+    name,
+    marketplace,
+    key,
+    description: manifest.description ?? '',
+    author: manifest.author?.name,
+    version: manifest.version,
+    installCount,
+    installed: installedFlag,
+    installedScope,
+    marketplaceLastUpdated: mpInfo.lastUpdated,
+    marketplaceSource: mpInfo.source?.source === 'github' && mpInfo.source.repo
+      ? mpInfo.source.repo
+      : mpInfo.source?.source === 'directory' && mpInfo.source.path
+        ? mpInfo.source.path
+        : undefined,
+    marketplaceScope: getMarketplaceScopeMap('').get(marketplace) ?? 'official',
+    ...contents,
+    sourcePath: sourceDir,
+    files: scanDir(sourceDir),
+    mcpServers: Object.keys(mcpServerConfigs),
+    mcpServerConfigs,
+    hookEvents,
+  }
+}
+
+export function readMarketplacePluginFile(marketplace: string, name: string, relativePath: string): string | null {
+  const marketplaces = readJson<Record<string, MarketplaceEntry>>(MARKETPLACES_FILE)
+  const mpInfo = marketplaces?.[marketplace]
+  if (!mpInfo?.installLocation || !existsSync(mpInfo.installLocation)) return null
+
+  const sourceDir = findPluginSourceDir(mpInfo.installLocation, name)
+  if (!sourceDir) return null
+
+  const resolved = resolve(sourceDir, relativePath)
+  if (!resolved.startsWith(sourceDir)) return null
+  if (!existsSync(resolved) || statSync(resolved).isDirectory()) return null
+  try {
+    return readFileSync(resolved, 'utf-8')
+  } catch {
+    return null
+  }
 }

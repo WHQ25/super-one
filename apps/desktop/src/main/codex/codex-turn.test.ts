@@ -877,3 +877,157 @@ describe('mapThreadItemFromAppServer image generation', () => {
     })
   })
 })
+
+describe('streamTurnEvents finalizes stale in_progress items on turn/completed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function makeStreamingConnection(notifications: Array<{ method: string; params: Record<string, unknown> }>) {
+    const remaining = [...notifications]
+    return {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = remaining.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+  }
+
+  it('finalizes mcp_tool_call stuck in_progress when item/completed never arrives', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const mockConnection = makeStreamingConnection([
+      {
+        method: 'item/started',
+        params: {
+          threadId: 'main-thread',
+          item: {
+            id: 'mcp-stuck',
+            type: 'mcp_tool_call',
+            server: 'fs',
+            tool: 'read',
+            arguments: { path: '/tmp/x' },
+            status: 'in_progress',
+          },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ])
+    const onItemDelta = vi.fn()
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta },
+    )
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]).toMatchObject({
+      id: 'mcp-stuck',
+      type: 'mcp_tool_call',
+      status: 'completed',
+    })
+    expect(
+      onItemDelta.mock.calls.some(([phase, item]) =>
+        phase === 'completed' && item?.id === 'mcp-stuck' && item?.status === 'completed',
+      ),
+    ).toBe(true)
+  })
+
+  it('finalizes command_execution stuck in_progress when item/completed never arrives', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const mockConnection = makeStreamingConnection([
+      {
+        method: 'item/started',
+        params: {
+          threadId: 'main-thread',
+          item: {
+            id: 'cmd-stuck',
+            type: 'command_execution',
+            command: 'ls',
+            status: 'in_progress',
+          },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ])
+    const onItemDelta = vi.fn()
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta },
+    )
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]).toMatchObject({
+      id: 'cmd-stuck',
+      type: 'command_execution',
+      status: 'completed',
+    })
+  })
+
+  it('preserves already-completed status (does not downgrade)', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const mockConnection = makeStreamingConnection([
+      {
+        method: 'item/completed',
+        params: {
+          threadId: 'main-thread',
+          item: {
+            id: 'mcp-ok',
+            type: 'mcp_tool_call',
+            server: 'fs',
+            tool: 'read',
+            arguments: {},
+            status: 'completed',
+          },
+        },
+      },
+      {
+        method: 'item/completed',
+        params: {
+          threadId: 'main-thread',
+          item: {
+            id: 'mcp-fail',
+            type: 'mcp_tool_call',
+            server: 'fs',
+            tool: 'read',
+            arguments: {},
+            status: 'failed',
+            error: { message: 'boom' },
+          },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ])
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta: vi.fn() },
+    )
+
+    expect(result.items).toHaveLength(2)
+    expect(result.items[0]).toMatchObject({ id: 'mcp-ok', status: 'completed' })
+    expect(result.items[1]).toMatchObject({ id: 'mcp-fail', status: 'failed' })
+  })
+})

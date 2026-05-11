@@ -1651,6 +1651,15 @@ export async function streamTurnEvents(
         if (status === 'interrupted') {
           throw new Error('Codex run interrupted')
         }
+        for (const id of itemOrder) {
+          const item = itemMap.get(id)
+          if (!item) continue
+          if ('status' in item && (item as { status?: string }).status === 'in_progress') {
+            const finalized = { ...item, status: 'completed' } as CodexThreadItem
+            itemMap.set(id, finalized)
+            callbacks?.onItemDelta?.('completed', finalized)
+          }
+        }
         turnCompleted = true
         break
       }

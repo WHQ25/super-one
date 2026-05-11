@@ -23,6 +23,10 @@ function readCache(): Record<string, McpServerMeta> {
   }
 }
 
+export function readMcpMetaCache(): Record<string, McpServerMeta> {
+  return readCache()
+}
+
 function writeCache(cache: Record<string, McpServerMeta>): void {
   writeFileSync(getCachePath(), JSON.stringify(cache, null, 2))
 }

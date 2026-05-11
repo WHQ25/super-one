@@ -42,7 +42,7 @@ import { listSessionsForFolder, createSession, createAutomationSession, renameSe
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import { listHooks, saveHook, deleteHook } from '../hooks-config-service'
-import { checkMcpServers } from '../mcp-probe-service'
+import { checkMcpServers, readMcpMetaCache } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
 import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, listCodexSkills, readCodexSkillContent, readCodexSkillFile, deleteCodexSkill } from '../skills-service'
 import { readAppSettings, saveAppSettings } from '../app-settings-service'
@@ -1716,7 +1716,11 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.MCP_SAVE_CONFIG, async (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: ResourceScope) => {
       saveMcpConfig(name, config, scope, projectPath)
-      try { await this.sessionManager?.getActiveSession(projectPath)?.reconnectMcp(name) } catch (err) { log.debug('[agent] MCP save reconnect skipped:', err) }
+      const session = this.sessionManager?.getActiveSession(projectPath)
+      if (session) {
+        try { await session.toggleMcpServer(name, true) } catch (err) { log.debug('[agent] MCP save enable skipped:', err) }
+        try { await session.reconnectMcp(name) } catch (err) { log.debug('[agent] MCP save reconnect skipped:', err) }
+      }
     })
 
     ipcMain.handle(AgentIpcChannels.MCP_DELETE_CONFIG, async (_event, projectPath: string, name: string, scope: ResourceScope) => {
@@ -1745,6 +1749,10 @@ export class AgentService {
       )
       try { backupMcpServers(configs, connectedMeta) } catch (err) { log.warn('[agent] MCP backup failed:', err) }
       return result
+    })
+
+    ipcMain.handle(AgentIpcChannels.MCP_META_CACHE, async () => {
+      return readMcpMetaCache()
     })
 
     ipcMain.handle(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, async (_event, serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') => {
@@ -2096,6 +2104,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.MCP_TOGGLE_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.MCP_CHECK_SERVERS)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_META_CACHE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_OAUTH_AUTHORIZE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_LIBRARY)
     ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY)

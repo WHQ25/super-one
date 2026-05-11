@@ -34,6 +34,9 @@ export function buildSlashCommands(
   if (!seen.has('provider')) {
     extra.push({ name: 'provider', description: 'Choose API provider for this session', argumentHint: '', isSkill: false })
   }
+  if (!seen.has('mcp')) {
+    extra.push({ name: 'mcp', description: 'View MCP servers in this session', argumentHint: '', isSkill: false })
+  }
   return [...tagged, ...extra]
 }
 

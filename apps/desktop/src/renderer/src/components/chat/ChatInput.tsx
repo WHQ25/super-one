@@ -29,6 +29,7 @@ import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { ProviderSlashPopup } from './ProviderSlashPopup'
+import { McpSlashPopup } from './McpSlashPopup'
 import { ReviewPanel } from './ReviewPanel'
 import { StopButton } from './StopButton'
 
@@ -231,6 +232,14 @@ export function ChatInput() {
           setText('')
           setSlashIndex(-1)
           useChatStore.getState().openProviderPopup()
+          return
+        }
+        if (name === 'mcp') {
+          const ed = editorRef.current
+          if (ed) ed.chain().focus().setContent('').run()
+          setText('')
+          setSlashIndex(-1)
+          useChatStore.getState().openMcpPopup()
           return
         }
         if (activeProviderForResources === 'claude' && CLAUDE_INTERCEPTED_COMMAND_NAMES.has(name)) {
@@ -968,7 +977,13 @@ export function ChatInput() {
           </div>
         )}
 
-        {commandPopup && commandPopup.command !== 'provider' && (
+        {commandPopup && commandPopup.command === 'mcp' && (
+          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 overflow-hidden rounded-xl border border-border bg-card">
+            <McpSlashPopup onClose={dismissCommandPopup} />
+          </div>
+        )}
+
+        {commandPopup && commandPopup.command !== 'provider' && commandPopup.command !== 'mcp' && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-card">
             <div className="flex items-center justify-between px-3 py-1.5">
               <span className="text-[11px] font-medium text-muted-foreground">/{commandPopup.command}</span>

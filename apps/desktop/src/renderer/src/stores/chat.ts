@@ -24,6 +24,9 @@ const CLAUDE_INTERCEPTED_COMMANDS: Record<string, () => Promise<void>> = {
   provider: async () => {
     useChatStore.getState().openProviderPopup()
   },
+  mcp: async () => {
+    useChatStore.getState().openMcpPopup()
+  },
 }
 
 export const CLAUDE_INTERCEPTED_COMMAND_NAMES: ReadonlySet<string> =
@@ -428,6 +431,7 @@ export interface ChatStore {
 
   setSessionApiProviderId: (apiProviderId: string | null) => Promise<void>
   openProviderPopup: () => void
+  openMcpPopup: () => void
 
   // Attachment actions
   addAttachment: (attachment: ImageAttachment) => void
@@ -4319,6 +4323,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!activeProject) return
     set((s) => updateActivePerSession(s, () => ({
       slashCommandOutput: { command: 'provider', mode: 'popup', content: '' },
+    })))
+  },
+
+  openMcpPopup: () => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateActivePerSession(s, () => ({
+      slashCommandOutput: { command: 'mcp', mode: 'popup', content: '' },
     })))
   },
 

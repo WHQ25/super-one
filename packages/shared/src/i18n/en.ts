@@ -486,6 +486,16 @@ export type Messages = {
       addProvider: string
       willSwitchAfterStreaming: string
     }
+    mcpPopup: {
+      title: string
+      liveBadge: string
+      probeBadge: string
+      empty: string
+      emptyHint: string
+      manageInSettings: string
+      refresh: string
+      noActiveSession: string
+    }
     slashCommand: {
       skillBadge: string
     }
@@ -1455,6 +1465,16 @@ export const en: Messages = {
       title: 'Choose a provider for this session',
       addProvider: 'Add new provider…',
       willSwitchAfterStreaming: 'Will switch after current response',
+    },
+    mcpPopup: {
+      title: 'MCP Servers',
+      liveBadge: 'Live · {{harness}} session',
+      probeBadge: 'Probed from config · no active session',
+      empty: 'No MCP servers configured for this project',
+      emptyHint: 'Add servers in Settings → MCP',
+      manageInSettings: 'Manage in Settings',
+      refresh: 'Refresh',
+      noActiveSession: 'Start a turn to load live MCP status',
     },
     slashCommand: {
       skillBadge: 'skill',

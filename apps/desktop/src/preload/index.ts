@@ -446,6 +446,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MCP_TOGGLE_CONFIG, projectPath, name, disabled, scope),
   checkMcpServers: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_CHECK_SERVERS, projectPath),
+  getMcpMetaCache: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_META_CACHE),
   oauthAuthorize: (serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, serverUrl, headers, transport),
 

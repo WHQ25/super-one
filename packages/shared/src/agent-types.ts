@@ -1490,6 +1490,7 @@ export const AgentIpcChannels = {
   MCP_DELETE_CONFIG: 'mcp:delete-config',
   MCP_TOGGLE_CONFIG: 'mcp:toggle-config',
   MCP_CHECK_SERVERS: 'mcp:check-servers',
+  MCP_META_CACHE: 'mcp:meta-cache',
   MCP_OAUTH_AUTHORIZE: 'mcp:oauth-authorize',
 
   // MCP library

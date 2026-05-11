@@ -500,6 +500,16 @@ export const zh: Messages = {
       addProvider: '添加新服务商…',
       willSwitchAfterStreaming: '当前回复结束后切换',
     },
+    mcpPopup: {
+      title: 'MCP 服务器',
+      liveBadge: '实时 · {{harness}} 会话',
+      probeBadge: '配置探测 · 当前无活跃会话',
+      empty: '本项目尚未配置 MCP 服务器',
+      emptyHint: '在「设置 → MCP」中添加服务器',
+      manageInSettings: '在设置中管理',
+      refresh: '刷新',
+      noActiveSession: '发送一条消息以加载实时 MCP 状态',
+    },
     slashCommand: {
       skillBadge: '技能',
     },

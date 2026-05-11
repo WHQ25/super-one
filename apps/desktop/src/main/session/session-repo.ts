@@ -1,5 +1,6 @@
 import { getDb } from '../database'
 import { getProjectId } from '../recent-folders'
+import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
 import type { ChatMessage, ContentBlock, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
 import type { HarnessId } from './types'
 
@@ -217,15 +218,16 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   `)
 
   const upsertMsg = db.prepare(`
-    INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id, usage_counted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       status = excluded.status,
       content_json = excluded.content_json,
       metadata_json = excluded.metadata_json,
       checkpoint_id = excluded.checkpoint_id,
       resume_point_id = excluded.resume_point_id,
-      session_id = COALESCE(excluded.session_id, session_id)
+      session_id = COALESCE(excluded.session_id, session_id),
+      usage_counted_at = COALESCE(chat_messages.usage_counted_at, excluded.usage_counted_at)
   `)
 
   const updateSession = input.title
@@ -245,6 +247,20 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
 
   const deleteStale = db.prepare('DELETE FROM chat_messages WHERE session_id = ?')
 
+  const sessionRow = db.prepare(`
+    SELECT created_at, usage_counted_at FROM sessions WHERE id = ?
+  `).get(input.sid) as { created_at: string; usage_counted_at: string | null } | undefined
+
+  const priorCounted = db.prepare(`
+    SELECT id FROM chat_messages WHERE session_id = ? AND usage_counted_at IS NOT NULL
+  `).all(input.sid) as Array<{ id: string }>
+  const priorCountedIds = new Set(priorCounted.map((r) => r.id))
+
+  const harness: HarnessKind = legacyProvider === 'codex' ? 'codex' : 'claude'
+  const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
+  let countSessionStarted = false
+  let sessionCreatedAt = sessionRow?.created_at ?? now
+
   const tx = db.transaction(() => {
     upsertSession.run(
       input.sid,
@@ -259,9 +275,15 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       input.worktreePath ?? null,
       input.apiProviderId ?? null,
     )
+    if (!sessionRow) sessionCreatedAt = now
     deleteStale.run(input.sid)
     for (let i = 0; i < input.messages.length; i++) {
       const msg = input.messages[i]
+      const isAssistantComplete = msg.role === 'assistant' && msg.status === 'complete'
+      const isUser = msg.role === 'user'
+      const wasAlreadyCounted = priorCountedIds.has(msg.id)
+      const shouldCount = !wasAlreadyCounted && (isUser || isAssistantComplete)
+      const usageCountedAt = wasAlreadyCounted || shouldCount ? now : null
       upsertMsg.run(
         msg.id,
         input.sid,
@@ -274,16 +296,43 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
         msg.metadata ? JSON.stringify(msg.metadata) : null,
         msg.checkpointId ?? null,
         msg.resumePointId ?? null,
+        usageCountedAt,
       )
+      if (shouldCount) newlyCountedMessages.push({ role: msg.role, createdAt: msg.createdAt })
     }
     if (input.title) {
       updateSession.run(input.totalCostUsd, input.contextTokens, lastUserMessageAt, input.title, input.sid)
     } else {
       updateSession.run(input.totalCostUsd, input.contextTokens, lastUserMessageAt, input.sid)
     }
+    if (!sessionRow || !sessionRow.usage_counted_at) {
+      db.prepare('UPDATE sessions SET usage_counted_at = ? WHERE id = ?').run(now, input.sid)
+      countSessionStarted = true
+    }
   })
 
   tx()
+
+  if (countSessionStarted) {
+    recordSessionStarted(harness, sessionCreatedAt)
+  }
+  if (newlyCountedMessages.length > 0) {
+    const userByDay = new Map<string, number>()
+    const assistantByDay = new Map<string, number>()
+    for (const m of newlyCountedMessages) {
+      if (m.role === 'user') {
+        userByDay.set(m.createdAt, (userByDay.get(m.createdAt) ?? 0) + 1)
+      } else if (m.role === 'assistant') {
+        assistantByDay.set(m.createdAt, (assistantByDay.get(m.createdAt) ?? 0) + 1)
+      }
+    }
+    for (const [createdAt, n] of userByDay) {
+      recordMessageCounts(harness, createdAt, { userMessages: n })
+    }
+    for (const [createdAt, n] of assistantByDay) {
+      recordMessageCounts(harness, createdAt, { assistantMessages: n })
+    }
+  }
 }
 
 export interface LoadedSessionState {

@@ -124,6 +124,23 @@ function makeFakeDb() {
       if (/DELETE FROM sessions WHERE id/.test(sql)) {
         return { run: (id: string) => { sessionsRows.delete(id) } }
       }
+      if (/^SELECT created_at, usage_counted_at FROM sessions WHERE id/.test(sql)) {
+        return {
+          get: (id: string) => {
+            const row = sessionsRows.get(id)
+            return row ? { created_at: row.created_at, usage_counted_at: null } : undefined
+          },
+        }
+      }
+      if (/^SELECT id FROM chat_messages WHERE session_id = \? AND usage_counted_at IS NOT NULL/.test(sql)) {
+        return { all: () => [] as Array<{ id: string }> }
+      }
+      if (/^UPDATE sessions SET usage_counted_at/.test(sql)) {
+        return { run: () => undefined }
+      }
+      if (/^INSERT INTO activity_daily/.test(sql)) {
+        return { run: () => undefined }
+      }
       if (/INSERT INTO chat_messages/.test(sql)) {
         return {
           run: (msgId: string, sessionId: string, sortOrder: number, role: string, status: string, contentJson: string, createdAt: string, providerId: string, metadataJson: string | null, checkpointId: string | null, resumePointId: string | null) => {

@@ -2987,13 +2987,33 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (currentProject && currentProject !== projectPath) {
       const project = get().projectSessions[currentProject]
       if (project) {
-        const activeSession = project._activeSessionId ? project._sessions[project._activeSessionId] : null
-        const isRemote = isRemoteSession(get(), currentProject, project._activeSessionId)
+        const outgoingSid = project._activeSessionId
+        const activeSession = outgoingSid ? project._sessions[outgoingSid] : null
+        const isRemote = isRemoteSession(get(), currentProject, outgoingSid)
         if ((activeSession && (_isBusyStatus(activeSession.status) || activeSession.awaitingAssistantReply)) && !isRemote) {
-          await _parkActiveSession(currentProject, project._activeSessionId)
+          await _parkActiveSession(currentProject, outgoingSid)
         }
-        if (project._activeSessionId) {
-          set({ _previousFocusedSession: { projectPath: currentProject, sessionId: project._activeSessionId } })
+        if (outgoingSid) {
+          // B1: hold the outgoing session in _sessions so Ctrl+Tab can bounce back to it even when
+          // it's an idle history session that hasn't been opened in this run yet. Stub now, hydrate async.
+          if (!project._sessions[outgoingSid]) {
+            set((s) => {
+              const proj = s.projectSessions[currentProject]
+              if (!proj || proj._sessions[outgoingSid]) return {}
+              const stub = createDefaultPerSessionState()
+              stub.cwd = currentProject
+              return {
+                projectSessions: {
+                  ...s.projectSessions,
+                  [currentProject]: { ...proj, _sessions: { ...proj._sessions, [outgoingSid]: stub } },
+                },
+              }
+            })
+            _hydrateSessionState(set, currentProject, outgoingSid)
+          } else if (!project._sessions[outgoingSid]._historyHydrated) {
+            _hydrateSessionState(set, currentProject, outgoingSid)
+          }
+          set({ _previousFocusedSession: { projectPath: currentProject, sessionId: outgoingSid } })
         }
       }
     }

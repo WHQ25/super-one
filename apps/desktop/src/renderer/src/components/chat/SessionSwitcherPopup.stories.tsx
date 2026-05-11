@@ -5,6 +5,7 @@ const NOW = Date.now()
 
 function row(overrides: Partial<SwitcherRow> & { sessionId: string; title: string }): SwitcherRow {
   return {
+    projectPath: '/p',
     status: 'idle',
     lastEventAt: NOW,
     isCurrent: false,

@@ -141,6 +141,7 @@ function resetStore() {
     projectSessions: {},
     activeProject: null,
     remoteSessions: {},
+    _previousFocusedSession: null,
     harnessResources: { claude: null, codex: null },
     initializedHarnesses: new Set(),
   })
@@ -1517,6 +1518,46 @@ describe('lazy session creation on early events', () => {
     const proj = useChatStore.getState().projectSessions['/empty']
     expect(proj._activeSessionId).toBeNull()
     expect(Object.keys(proj._sessions)).toHaveLength(0)
+  })
+})
+
+describe('switchProject tracks global previous session', () => {
+  it('writes _previousFocusedSession with (currentProject, activeSessionId) when leaving a project', async () => {
+    setupProject('/proj-a')
+    const sidA = getActiveDraftId('/proj-a')!
+    useChatStore.getState().ensureSession('/proj-b')
+
+    await useChatStore.getState().switchProject('/proj-b')
+
+    expect(useChatStore.getState()._previousFocusedSession).toEqual({ projectPath: '/proj-a', sessionId: sidA })
+  })
+
+  it('does not write _previousFocusedSession when target === currentProject', async () => {
+    setupProject('/proj-first')
+    await useChatStore.getState().switchProject('/proj-first')
+    expect(useChatStore.getState()._previousFocusedSession).toBeNull()
+  })
+
+  it('inserts an unhydrated stub for the outgoing session if it is missing from _sessions', async () => {
+    setupProject('/proj-a')
+    const sidA = getActiveDraftId('/proj-a')!
+    // Strip the active session from _sessions to simulate "active id known, data not loaded yet"
+    useChatStore.setState((s) => {
+      const proj = s.projectSessions['/proj-a']
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          '/proj-a': { ...proj, _sessions: {} },
+        },
+      }
+    })
+    useChatStore.getState().ensureSession('/proj-b')
+    mockWindowApp.loadSessionState.mockResolvedValue(null)
+
+    await useChatStore.getState().switchProject('/proj-b')
+
+    const sessionA = useChatStore.getState().projectSessions['/proj-a']._sessions[sidA]
+    expect(sessionA).toBeDefined()
   })
 })
 

@@ -5,6 +5,7 @@ import type { DockviewReadyEvent, DockviewApi } from 'dockview-core'
 import 'dockview/dist/styles/dockview.css'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { LAYOUT } from '@/lib/layout-constants'
@@ -116,7 +117,12 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
   }, [])
 
   useEffect(() => {
+    const vs = useActivityViewStateStore.getState()
+    const sid = vs._currentSessionId
+    if (sid) vs.restore(sid)
     return () => {
+      const cur = useActivityViewStateStore.getState()._currentSessionId
+      if (cur) useActivityViewStateStore.getState().park(cur)
       setDockApi(null)
       apiRef.current = null
     }

@@ -260,7 +260,12 @@ function App(): React.JSX.Element {
   const sessionTitle = useActiveSession((s) => extractSessionTitle(s.messages))
 
   if (view === 'loading') {
-    return <div className="h-screen bg-background" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+    return (
+      <>
+        <div className="h-screen bg-background" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+        <MiniAppHostLayer />
+      </>
+    )
   }
 
   const enterAnimation = initialTransition.current ? { animation: 'fade-in 300ms ease-out' } : undefined
@@ -269,30 +274,34 @@ function App(): React.JSX.Element {
   // Non-main views: keep simple titlebar layout
   if (view !== 'main') {
     return (
-      <div className="flex h-screen flex-col bg-background text-foreground" style={enterAnimation}>
-        <div className="flex h-11 shrink-0 items-center justify-between px-3" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-          <div className="w-20" />
-          <div />
-          <div className="flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <MiniAppMediaIndicator />
-            <button
-              onClick={theme.toggle}
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              {theme.dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </button>
+      <>
+        <div className="flex h-screen flex-col bg-background text-foreground" style={enterAnimation}>
+          <div className="flex h-11 shrink-0 items-center justify-between px-3" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+            <div className="w-20" />
+            <div />
+            <div className="flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              <MiniAppMediaIndicator />
+              <button
+                onClick={theme.toggle}
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                {theme.dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              </button>
+            </div>
           </div>
+          {view === 'startup' && <StartupPage />}
+          {view === 'setup' && <SetupPage />}
+          {view === 'settings' && <SettingsLayout />}
+          <UpdateNotification />
         </div>
-        {view === 'startup' && <StartupPage />}
-        {view === 'setup' && <SetupPage />}
-        {view === 'settings' && <SettingsLayout />}
-        <UpdateNotification />
-      </div>
+        <MiniAppHostLayer />
+      </>
     )
   }
 
   // Main view: sidebar + content
   return (
+    <>
     <div className="flex h-screen overflow-hidden bg-sidebar text-foreground" style={enterAnimation}>
       <GitAutoRefresh />
       <>
@@ -367,13 +376,14 @@ function App(): React.JSX.Element {
       </motion.div>
       </div>
       </>
-      <MiniAppHostLayer />
       {layoutMode === 'canvas' && <ChatPanel />}
       <UpdateNotification />
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />
       {import.meta.env.DEV && <DebugPanel />}
     </div>
+    <MiniAppHostLayer />
+    </>
   )
 }
 

@@ -25,6 +25,65 @@ import {
 import { checkAutoModePlanEligibility } from '@/lib/auto-mode-eligibility'
 import type { CodexReasoningEffort, EffortLevel, ModelOption, PermissionMode, SandboxMode } from '@superone/shared/agent-types'
 
+import type { SandboxProbeResult, SandboxSupportLevel } from '@superone/shared/agent-types'
+
+interface SandboxStatusBlockProps {
+  supportLevel: SandboxSupportLevel
+  probe: SandboxProbeResult | null
+  capabilityReason?: string
+  onProbe: () => void
+}
+
+function SandboxStatusBlock({ supportLevel, probe, capabilityReason, onProbe }: SandboxStatusBlockProps) {
+  const { t } = useTranslation()
+  if (supportLevel === 'unsupported') {
+    return (
+      <div className="m-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+        {capabilityReason ?? t('settings.preferences.sandbox.statusUnsupported')}
+      </div>
+    )
+  }
+  if (probe === null) {
+    return (
+      <div className="m-4 flex items-center justify-between gap-3 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+        <span>{t('settings.preferences.sandbox.statusNotProbed')}</span>
+        <button
+          onClick={onProbe}
+          className="rounded border border-border bg-card px-2 py-1 text-foreground hover:bg-muted"
+        >
+          {t('settings.preferences.sandbox.probeNow')}
+        </button>
+      </div>
+    )
+  }
+  if (probe.ok) {
+    return (
+      <div className="m-4 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-xs text-emerald-600 dark:text-emerald-400">
+        {t('settings.preferences.sandbox.statusReady')}
+      </div>
+    )
+  }
+  return (
+    <div className="m-4 space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
+      <div className="font-medium">
+        {t('settings.preferences.sandbox.statusMissing', { missing: probe.missing.join(', ') })}
+      </div>
+      <div>
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          {t('settings.preferences.sandbox.installHintTitle')}
+        </div>
+        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-card p-2 text-[11px] text-foreground">{probe.installHint}</pre>
+      </div>
+      <button
+        onClick={onProbe}
+        className="rounded border border-border bg-card px-2 py-1 text-foreground hover:bg-muted"
+      >
+        {t('settings.preferences.sandbox.reProbe')}
+      </button>
+    </div>
+  )
+}
+
 function ClaudePreferencesPage() {
   const { t } = useTranslation()
   const CLAUDE_EFFORT_LABELS: Record<EffortLevel, string> = {
@@ -35,6 +94,9 @@ function ClaudePreferencesPage() {
     max: t('settings.preferences.effort.levels.max'),
   }
   const currentFolder = useAppStore((s) => s.currentFolder)
+  const sandboxCapability = useAppStore((s) => s.sandboxCapability)
+  const sandboxProbe = useAppStore((s) => s.sandboxProbe)
+  const probeSandbox = useAppStore((s) => s.probeSandbox)
   const availableOutputStyles = useChatStore(selectClaudeOutputStyles)
   const availableModels = useChatStore(selectClaudeModels)
   const account = useChatStore(selectClaudeAccount)
@@ -157,10 +219,15 @@ function ClaudePreferencesPage() {
   }
 
   const disabled = loading || saving
+  const sandboxSupportLevel = sandboxCapability?.supportLevel ?? 'always'
+  const fallbackSandboxMode: SandboxMode = sandboxCapability?.defaultMode ?? 'on'
   const activePermMode = defaultPermissionMode || 'default'
-  const activeSandboxMode = defaultSandboxMode || 'on'
+  const activeSandboxMode = defaultSandboxMode || fallbackSandboxMode
   const currentPerm = permissionModes.find((m) => m.id === activePermMode) ?? permissionModes[0]
   const currentSandbox = sandboxModes.find((m) => m.id === activeSandboxMode) ?? sandboxModes[1]
+  const sandboxOptionDisabled = (id: SandboxMode): boolean =>
+    id !== 'off' && sandboxSupportLevel === 'unsupported'
+  const sandboxTriggerDisabled = disabled || sandboxSupportLevel === 'unsupported'
   const pillTriggerClass = 'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60'
 
   return (
@@ -252,7 +319,8 @@ function ClaudePreferencesPage() {
             <Popover open={sandboxOpen} onOpenChange={setSandboxOpen}>
               <PopoverTrigger asChild>
                 <button
-                  disabled={disabled}
+                  disabled={sandboxTriggerDisabled}
+                  title={sandboxSupportLevel === 'unsupported' ? t('settings.preferences.sandbox.statusUnsupported') : undefined}
                   className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${currentSandbox.color} ${currentSandbox.hoverBg}`}
                 >
                   {currentSandbox.icon}
@@ -262,26 +330,40 @@ function ClaudePreferencesPage() {
               </PopoverTrigger>
               <PopoverContent align="end" side="bottom" className="w-56 border-border bg-card p-1">
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('settings.preferences.sandbox.menuTitle')}</div>
-                {sandboxModes.map((mode) => (
-                  <button
-                    key={mode.id}
-                    onClick={() => handleSandboxModeSelect(mode.id)}
-                    className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                      mode.id === activeSandboxMode
-                        ? 'bg-muted text-foreground'
-                        : 'text-foreground hover:bg-muted/50'
-                    }`}
-                  >
-                    <div className={`flex items-center gap-1.5 font-medium ${mode.color}`}>
-                      {mode.icon}
-                      {t(`chat.sandboxModes.${mode.id}.label`)}
-                    </div>
-                    <div className="mt-0.5 text-[10px] text-muted-foreground">{t(`chat.sandboxModes.${mode.id}.description`)}</div>
-                  </button>
-                ))}
+                {sandboxModes.map((mode) => {
+                  const isDisabled = sandboxOptionDisabled(mode.id)
+                  return (
+                    <button
+                      key={mode.id}
+                      disabled={isDisabled}
+                      aria-disabled={isDisabled}
+                      onClick={() => { if (!isDisabled) void handleSandboxModeSelect(mode.id) }}
+                      title={isDisabled ? t('settings.preferences.sandbox.statusUnsupported') : undefined}
+                      className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                        mode.id === activeSandboxMode
+                          ? 'bg-muted text-foreground'
+                          : 'text-foreground hover:bg-muted/50'
+                      } ${isDisabled ? 'cursor-not-allowed opacity-50 hover:bg-transparent' : ''}`}
+                    >
+                      <div className={`flex items-center gap-1.5 font-medium ${mode.color}`}>
+                        {mode.icon}
+                        {t(`chat.sandboxModes.${mode.id}.label`)}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-muted-foreground">{t(`chat.sandboxModes.${mode.id}.description`)}</div>
+                    </button>
+                  )
+                })}
               </PopoverContent>
             </Popover>
           </div>
+          {sandboxSupportLevel !== 'always' && (
+            <SandboxStatusBlock
+              supportLevel={sandboxSupportLevel}
+              probe={sandboxProbe}
+              capabilityReason={sandboxCapability?.unsupportedReason}
+              onProbe={() => { void probeSandbox(true) }}
+            />
+          )}
 
           <div className="flex items-center justify-between gap-4 border-b border-border p-4">
             <div className="min-w-0">

@@ -149,6 +149,9 @@ const appAPI = {
   getStartupData: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_STARTUP_DATA),
 
+  probeSandbox: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SANDBOX_PROBE) as Promise<import('@superone/shared/agent-types').SandboxProbeResult>,
+
   selectFolder: (defaultPath?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SELECT_FOLDER, defaultPath),
 

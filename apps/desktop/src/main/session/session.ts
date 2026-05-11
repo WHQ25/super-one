@@ -14,6 +14,7 @@ import type {
 } from '@superone/shared/agent-types'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
+import { getSandboxCapability } from '../sandbox-platform'
 import {
   applyClaudeEventToRuntime,
   buildClaudeUserMessage,
@@ -80,7 +81,16 @@ export interface SessionConstructorOptions {
   onBeforeInterrupt?: () => void
 }
 
-const DEFAULT_SANDBOX: SandboxInfo = { enabled: true, autoAllowBash: false }
+function getDefaultSandbox(): SandboxInfo {
+  const capability = getSandboxCapability()
+  return { enabled: capability.defaultMode !== 'off', autoAllowBash: capability.defaultMode === 'auto' }
+}
+
+function coerceSandboxInfo(info: SandboxInfo): SandboxInfo {
+  if (!info.enabled) return info
+  if (getSandboxCapability().supportLevel === 'unsupported') return { enabled: false, autoAllowBash: false }
+  return info
+}
 
 function sameStringArray(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false
@@ -234,7 +244,7 @@ export class Session implements SessionContract {
     this.providerConfig = opts.providerConfig
     this.backend = opts.backend
     this.permissionMode = opts.permissionMode ?? 'default'
-    this.sandboxInfo = opts.sandboxInfo ?? DEFAULT_SANDBOX
+    this.sandboxInfo = coerceSandboxInfo(opts.sandboxInfo ?? getDefaultSandbox())
     this.effort = opts.effort
     this.model = opts.model
     this.additionalDirectories = opts.additionalDirectories ?? []
@@ -468,6 +478,12 @@ export class Session implements SessionContract {
 
   async setSandboxMode(mode: SandboxMode): Promise<SandboxInfo> {
     this.assertNotDisposed()
+    if (mode !== 'off') {
+      const capability = getSandboxCapability()
+      if (capability.supportLevel === 'unsupported') {
+        throw new Error(capability.unsupportedReason ?? '当前平台不支持沙盒')
+      }
+    }
     const next: SandboxInfo = {
       enabled: mode !== 'off',
       autoAllowBash: mode === 'auto',

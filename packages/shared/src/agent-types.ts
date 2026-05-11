@@ -583,6 +583,19 @@ export interface SandboxInfo {
   autoAllowBash: boolean
 }
 
+export type SandboxSupportLevel = 'always' | 'conditional' | 'unsupported'
+
+export interface SandboxCapability {
+  supportLevel: SandboxSupportLevel
+  platform: NodeJS.Platform
+  defaultMode: SandboxMode
+  unsupportedReason?: string
+}
+
+export type SandboxProbeResult =
+  | { ok: true }
+  | { ok: false; missing: string[]; installHint: string }
+
 export interface GitDirtyStatus {
   files: number
   insertions: number
@@ -1140,6 +1153,7 @@ export interface StartupData {
     claude: ClaudeResources | null
     codex: CodexResources | null
   }
+  sandboxCapability: SandboxCapability
 }
 
 // --- Codex experimental integration ---
@@ -1406,6 +1420,7 @@ export const AgentIpcChannels = {
   PERMISSION_RESPONSE: 'agent:permission-response',
   SET_PERMISSION_MODE: 'agent:set-permission-mode',
   SET_SANDBOX_MODE: 'agent:set-sandbox-mode',
+  SANDBOX_PROBE: 'sandbox:probe',
   SET_SESSION_SETTINGS: 'agent:set-session-settings',
   SET_SESSION_API_PROVIDER: 'agent:set-session-api-provider',
   ANSWER_QUESTION: 'agent:answer-question',

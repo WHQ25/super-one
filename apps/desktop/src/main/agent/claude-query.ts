@@ -8,6 +8,7 @@ import { createSuperoneMcpServer } from '../mcp/superone-mcp-server'
 import type { WarmupManager } from './warmup-manager'
 import { resolveSdkClaudeBinary } from './claude-binary'
 import { makeClaudeSpawn } from './claude-spawn'
+import { getSandboxCapability } from '../sandbox-platform'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
 
 export interface SessionQueryOptions {
@@ -47,8 +48,8 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     permissionMode: opts.permissionMode,
     allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
     canUseTool: opts.canUseTool,
-    sandbox: opts.sandboxInfo?.enabled
-      ? { enabled: true, autoAllowBashIfSandboxed: opts.sandboxInfo.autoAllowBash }
+    sandbox: opts.sandboxInfo?.enabled && getSandboxCapability().supportLevel !== 'unsupported'
+      ? { enabled: true, autoAllowBashIfSandboxed: opts.sandboxInfo.autoAllowBash, failIfUnavailable: false }
       : undefined,
     enableFileCheckpointing: true,
     agentProgressSummaries: true,

@@ -308,7 +308,7 @@ export function createDefaultProjectState(): ProjectState {
     _projectCommands: [],
     agents: [],
     homedir: '',
-    sandboxInfo: { enabled: true, autoAllowBash: false },
+    sandboxInfo: { enabled: false, autoAllowBash: false },
     sessions: [],
     sessionsPage: 0,
     sessionsHasMore: true,
@@ -1622,12 +1622,19 @@ function toEffortLevel(value: unknown): EffortLevel | undefined {
   }
 }
 
+function resolveDefaultSandboxMode(stored: SandboxMode | null): SandboxMode | null {
+  const capability = useAppStore.getState().sandboxCapability
+  if (capability?.supportLevel === 'unsupported') return 'off'
+  if (stored) return stored
+  return capability?.defaultMode ?? null
+}
+
 async function _loadDefaultSessionPrefs(): Promise<void> {
   try {
     const appSettings = await window.app.getAppSettings()
     const claude = appSettings.agentPreference?.claude
     _cachedDefaultPermissionMode = (claude?.defaultPermissionMode as PermissionMode) || 'default'
-    _cachedDefaultSandboxMode = (claude?.defaultSandboxMode as SandboxMode) || null
+    _cachedDefaultSandboxMode = resolveDefaultSandboxMode((claude?.defaultSandboxMode as SandboxMode) || null)
     _cachedDefaultClaudeSelection = {
       modelId: typeof claude?.defaultModel === 'string' ? claude.defaultModel : '',
       effort: toEffortLevel(claude?.defaultEffort),
@@ -4254,6 +4261,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setSandboxMode: async (mode) => {
     const { activeProject } = get()
     if (!activeProject) return
+    if (mode !== 'off') {
+      const capability = useAppStore.getState().sandboxCapability
+      if (capability?.supportLevel === 'unsupported') return
+      if (capability?.supportLevel === 'conditional') {
+        const probe = await useAppStore.getState().probeSandbox()
+        if (!probe.ok) return
+      }
+    }
     const updated = await window.agent.setSandboxMode(activeProject, mode)
     set((s) => updateProjectState(s, activeProject, () => ({ sandboxInfo: updated })))
   },

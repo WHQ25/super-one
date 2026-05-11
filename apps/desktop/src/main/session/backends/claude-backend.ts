@@ -28,6 +28,7 @@ import { trace } from '../../agent/event-trace'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
 import { readAppSettings } from '../../app-settings-service'
 import { listSkills } from '../../skills-service'
+import { getSandboxCapability } from '../../sandbox-platform'
 
 interface ClaudeConfig {
   apiKey?: string
@@ -301,8 +302,9 @@ export class ClaudeBackend implements SessionBackend {
 
   async setSandbox(sandboxInfo: SandboxInfo): Promise<void> {
     if (!this.query) return
-    const sandbox = sandboxInfo.enabled
-      ? { enabled: true, autoAllowBashIfSandboxed: sandboxInfo.autoAllowBash, failIfUnavailable: true }
+    const supported = getSandboxCapability().supportLevel !== 'unsupported'
+    const sandbox = sandboxInfo.enabled && supported
+      ? { enabled: true, autoAllowBashIfSandboxed: sandboxInfo.autoAllowBash, failIfUnavailable: false }
       : { enabled: false }
     await this.query.applyFlagSettings({ sandbox })
   }

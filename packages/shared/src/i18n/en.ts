@@ -156,6 +156,13 @@ export type Messages = {
         description: string
         menuTitle: string
         updated: string
+        statusUnsupported: string
+        statusReady: string
+        statusMissing: string
+        statusNotProbed: string
+        installHintTitle: string
+        probeNow: string
+        reProbe: string
       }
       defaultModel: {
         label: string
@@ -272,6 +279,8 @@ export type Messages = {
       on: { label: string; description: string }
       auto: { label: string; description: string }
     }
+    sandboxUnsupportedTooltip: string
+    sandboxConditionalNotReady: string
     suggestions: {
       openProject: string
       addProject: string
@@ -1117,6 +1126,13 @@ export const en: Messages = {
         description: 'Default sandbox mode when starting a new session.',
         menuTitle: 'Sandbox Mode',
         updated: 'Default sandbox mode updated',
+        statusUnsupported: 'Sandbox is not supported on this platform',
+        statusReady: 'Sandbox dependencies are ready',
+        statusMissing: 'Missing dependencies: {{missing}}',
+        statusNotProbed: 'Sandbox dependencies not checked yet',
+        installHintTitle: 'Install command',
+        probeNow: 'Check now',
+        reProbe: 'Re-check',
       },
       defaultModel: {
         label: 'Default Model',
@@ -1233,6 +1249,8 @@ export const en: Messages = {
       on: { label: 'Sandbox', description: 'Commands run in sandboxed environment' },
       auto: { label: 'Sandbox Auto', description: 'Sandbox with auto-allow Bash' },
     },
+    sandboxUnsupportedTooltip: 'Sandbox is not supported on this platform',
+    sandboxConditionalNotReady: 'Enable sandbox in Settings first',
     suggestions: {
       openProject: 'Open a project to get started',
       addProject: 'Add Project',

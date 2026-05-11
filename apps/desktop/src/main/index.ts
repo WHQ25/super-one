@@ -67,6 +67,7 @@ import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
+import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg } from './process-titles'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n } from './i18n'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
@@ -1651,12 +1652,18 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
     const claude = getCachedHarnessResources('claude')
     const codex = getCachedHarnessResources('codex')
+    const sandboxCapability = getSandboxCapability()
     log.info(
-      '[GET_STARTUP_DATA] cached: claude=%s codex=%s',
+      '[GET_STARTUP_DATA] cached: claude=%s codex=%s sandbox=%s',
       claude ? `${claude.models?.length ?? 0} models` : 'null',
       codex ? `${codex.models?.length ?? 0} models` : 'null',
+      sandboxCapability.supportLevel,
     )
-    return { cached: { claude, codex } }
+    return { cached: { claude, codex }, sandboxCapability }
+  })
+
+  ipcMain.handle(AgentIpcChannels.SANDBOX_PROBE, async () => {
+    return probeSandboxDependencies()
   })
 
   ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ClaudeResources> => {

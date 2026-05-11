@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppSettings, RecentFolder, RemoteDeviceConfig, SetupEvent, SettingsProvider, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
+import type { AppSettings, RecentFolder, RemoteDeviceConfig, SandboxCapability, SandboxProbeResult, SetupEvent, SettingsProvider, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
 import type { HarnessId } from '@superone/shared/session-types'
 import {
   clampA,
@@ -72,6 +72,11 @@ interface AppState {
   // Setup
   installStatus: InstallStatus
   installOutput: string
+
+  // Sandbox
+  sandboxCapability: SandboxCapability | null
+  sandboxProbe: SandboxProbeResult | null
+  probeSandbox: (force?: boolean) => Promise<SandboxProbeResult>
 
   // Settings
   settingsProvider: SettingsProvider
@@ -175,6 +180,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateProgress: 0,
   installStatus: 'idle',
   installOutput: '',
+  sandboxCapability: null,
+  sandboxProbe: null,
+  probeSandbox: async (force?: boolean) => {
+    if (!force) {
+      const cached = get().sandboxProbe
+      if (cached) return cached
+    }
+    const result = await window.app.probeSandbox()
+    set({ sandboxProbe: result })
+    return result
+  },
   remoteConfig: null,
   settingsProvider: 'claude',
   settingsTab: 'skills',
@@ -339,12 +355,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       window.app.getStartupData(),
       window.app.getRecentFolders(),
     ])
-    set({ recentFolders: folders })
+    set({ recentFolders: folders, sandboxCapability: startupData.sandboxCapability ?? null })
     console.info(
-      '[continueToMain] cached: claude=%s codex=%s',
+      '[continueToMain] cached: claude=%s codex=%s sandbox=%s',
       startupData.cached.claude ? `${startupData.cached.claude.models?.length ?? 0} models` : 'null',
       startupData.cached.codex ? `${startupData.cached.codex.models?.length ?? 0} models` : 'null',
+      startupData.sandboxCapability?.supportLevel ?? 'unknown',
     )
+    if (startupData.sandboxCapability) {
+      const { invalidateDefaultPermissionModeCache } = await import('./chat')
+      invalidateDefaultPermissionModeCache()
+    }
     const { useChatStore } = await import('./chat')
 
     if (startupData.cached.claude) {

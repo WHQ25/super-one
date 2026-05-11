@@ -24,6 +24,7 @@ import { authorizeAndStat, FileBridgeError, type AuthorizedFile } from '../file-
 import { tmpdir } from 'os'
 import { app } from 'electron'
 import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from '../git/worktree-ops'
+import { coerceSandboxModeForCapability, getSandboxCapability } from '../sandbox-platform'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { SessionClaimConflictError, SessionLockedError } from '../session/types'
 
@@ -1317,9 +1318,10 @@ export class AgentService {
 
   private readDefaultSessionPrefs(): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
     const { agentPreference } = readAppSettings()
+    const storedSandboxMode = agentPreference.claude.defaultSandboxMode || undefined
     return {
       permissionMode: agentPreference.claude.defaultPermissionMode || 'default',
-      sandboxMode: agentPreference.claude.defaultSandboxMode || undefined,
+      sandboxMode: coerceSandboxModeForCapability(storedSandboxMode),
     }
   }
 
@@ -1385,6 +1387,10 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode) => {
       this.throwIfRemoteLocked(projectPath)
+      const capability = getSandboxCapability()
+      if (mode !== 'off' && capability.supportLevel === 'unsupported') {
+        throw new Error(capability.unsupportedReason ?? '当前平台不支持沙盒')
+      }
       return this.getOrCreateActiveSession(projectPath).setSandboxMode(mode)
     })
 

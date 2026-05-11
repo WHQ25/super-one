@@ -19,12 +19,25 @@ const mockLocalStorage = {
   }),
 }
 
+const mockAppStoreState: {
+  sandboxCapability: import('@superone/shared/agent-types').SandboxCapability | null
+  sandboxProbe: import('@superone/shared/agent-types').SandboxProbeResult | null
+  probeSandbox: ReturnType<typeof vi.fn>
+} = {
+  sandboxCapability: { supportLevel: 'always', platform: 'darwin', defaultMode: 'on' },
+  sandboxProbe: null,
+  probeSandbox: vi.fn(async () => ({ ok: true as const })),
+}
+
 vi.mock('./app', () => ({
   useAppStore: {
     getState: () => ({
       getWorktreeState: () => ({}),
       setActiveWorktree: mockSetActiveWorktree,
       clearWorktree: mockClearWorktree,
+      sandboxCapability: mockAppStoreState.sandboxCapability,
+      sandboxProbe: mockAppStoreState.sandboxProbe,
+      probeSandbox: mockAppStoreState.probeSandbox,
     }),
   },
 }))
@@ -275,6 +288,44 @@ describe('ensureSession', () => {
     useChatStore.getState().ensureSession('/sandbox-auto')
     const proj = useChatStore.getState().projectSessions['/sandbox-auto']
     expect(proj.sandboxInfo).toEqual({ enabled: true, autoAllowBash: true })
+  })
+
+  it('setSandboxMode skips IPC when capability is unsupported', async () => {
+    const prevCapability = mockAppStoreState.sandboxCapability
+    mockAppStoreState.sandboxCapability = { supportLevel: 'unsupported', platform: 'win32', defaultMode: 'off' }
+    try {
+      useChatStore.getState().ensureSession('/sandbox-unsupported')
+      useChatStore.setState({ activeProject: '/sandbox-unsupported' })
+      const setSandboxIpc = vi.fn().mockResolvedValue({ enabled: true, autoAllowBash: false })
+      Object.assign(globalThis.window.agent, { setSandboxMode: setSandboxIpc })
+
+      await useChatStore.getState().setSandboxMode('on')
+
+      expect(setSandboxIpc).not.toHaveBeenCalled()
+    } finally {
+      mockAppStoreState.sandboxCapability = prevCapability
+    }
+  })
+
+  it('setSandboxMode probes deps on conditional capability and skips IPC on probe failure', async () => {
+    const prevCapability = mockAppStoreState.sandboxCapability
+    const prevProbe = mockAppStoreState.probeSandbox
+    mockAppStoreState.sandboxCapability = { supportLevel: 'conditional', platform: 'linux', defaultMode: 'off' }
+    mockAppStoreState.probeSandbox = vi.fn(async () => ({ ok: false as const, missing: ['bubblewrap'], installHint: 'sudo apt install bubblewrap socat' }))
+    try {
+      useChatStore.getState().ensureSession('/sandbox-conditional')
+      useChatStore.setState({ activeProject: '/sandbox-conditional' })
+      const setSandboxIpc = vi.fn().mockResolvedValue({ enabled: true, autoAllowBash: false })
+      Object.assign(globalThis.window.agent, { setSandboxMode: setSandboxIpc })
+
+      await useChatStore.getState().setSandboxMode('on')
+
+      expect(mockAppStoreState.probeSandbox).toHaveBeenCalled()
+      expect(setSandboxIpc).not.toHaveBeenCalled()
+    } finally {
+      mockAppStoreState.sandboxCapability = prevCapability
+      mockAppStoreState.probeSandbox = prevProbe
+    }
   })
 
   it('triggers prewarm when a new project session is created', () => {
@@ -4154,7 +4205,7 @@ describe('createDefaultProjectState', () => {
     expect(state._projectCommands).toEqual([])
     expect(state.agents).toEqual([])
     expect(state.homedir).toBe('')
-    expect(state.sandboxInfo).toEqual({ enabled: true, autoAllowBash: false })
+    expect(state.sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
     expect(state.sessions).toEqual([])
     expect(state.sessionsPage).toBe(0)
     expect(state.sessionsHasMore).toBe(true)

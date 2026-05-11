@@ -170,6 +170,13 @@ export const zh: Messages = {
         description: '新会话启动时的默认沙盒模式。',
         menuTitle: '沙盒模式',
         updated: '默认沙盒模式已更新',
+        statusUnsupported: '当前平台不支持沙盒',
+        statusReady: '沙盒依赖已就绪',
+        statusMissing: '缺少依赖：{{missing}}',
+        statusNotProbed: '尚未检测沙盒依赖',
+        installHintTitle: '安装命令',
+        probeNow: '立即检测',
+        reProbe: '重新检测',
       },
       defaultModel: {
         label: '默认模型',
@@ -286,6 +293,8 @@ export const zh: Messages = {
       on: { label: '沙盒', description: '命令在沙盒环境中运行' },
       auto: { label: '自动沙盒', description: '沙盒内自动允许 Bash' },
     },
+    sandboxUnsupportedTooltip: '当前平台不支持沙盒',
+    sandboxConditionalNotReady: '需要先在设置中启用沙盒',
     suggestions: {
       openProject: '打开一个项目以开始使用',
       addProject: '添加项目',

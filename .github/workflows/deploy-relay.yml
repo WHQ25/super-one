@@ -36,13 +36,29 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Inject official custom domain
+        working-directory: apps/relay
+        run: |
+          cat > /tmp/route.toml <<'EOF'
+          # Prepended by deploy-relay.yml for the official deployment only.
+          # Not committed — keeps wrangler.toml self-host friendly in the public mirror.
+          routes = [
+            { pattern = "relay.super-one.dev", custom_domain = true },
+          ]
+
+          EOF
+          cat /tmp/route.toml wrangler.toml > wrangler.toml.new
+          mv wrangler.toml.new wrangler.toml
+          echo "--- wrangler.toml after injection ---"
+          cat wrangler.toml
+
       - name: Deploy via wrangler
         working-directory: apps/relay
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN secret is not set. Create a fine-grained CF API token (Account: Workers Scripts:Edit + Account:Read; resource scope: this account only) and add it as a repo secret."
+            echo "::error::CLOUDFLARE_API_TOKEN secret is not set. Create a fine-grained CF API token with Account: Workers Scripts:Edit + Account:Read, plus Zone: DNS:Edit + Zone: Workers Routes:Edit on the super-one.dev zone (needed for the relay.super-one.dev custom domain). Add it as a repo secret."
             exit 1
           fi
           if [ -n "${{ inputs.message }}" ]; then

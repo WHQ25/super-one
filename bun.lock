@@ -7,7 +7,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.30.4-alpha",
+      "version": "0.30.5-alpha",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "0.2.136",
         "@chenglou/pretext": "^0.0.3",

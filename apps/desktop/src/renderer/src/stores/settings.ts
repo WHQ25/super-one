@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentInfo, ApiProvider, CreateProviderRequest, HookConfig, HookSavePayload, MarketplacePlugin, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo, UpdateProviderRequest } from '@superone/shared/agent-types'
+import type { AgentInfo, ApiProvider, CreateProviderRequest, HookConfig, HookSavePayload, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo, UpdateProviderRequest } from '@superone/shared/agent-types'
 import type { McpbInstalledEntry } from '@superone/shared/mcpb-types'
 import { useAppStore } from './app'
 import { useChatStore } from './chat'
@@ -80,6 +80,9 @@ interface SettingsState {
   pluginFileContent: string | null
   pluginFilePath: string | null
   marketplacePlugins: MarketplacePlugin[]
+  marketplacePluginDetail: MarketplacePluginDetail | null
+  marketplacePluginFileContent: string | null
+  marketplacePluginFilePath: string | null
   fetchPlugins: () => Promise<void>
   readPlugin: (key: string) => Promise<void>
   readPluginFile: (pluginKey: string, relativePath: string) => Promise<void>
@@ -87,6 +90,11 @@ interface SettingsState {
   deletePlugin: (key: string, scope: ResourceScope) => Promise<void>
   fetchMarketplacePlugins: () => Promise<void>
   installPlugin: (key: string, scope: ResourceScope) => Promise<void>
+  readMarketplacePlugin: (marketplace: string, name: string) => Promise<void>
+  readMarketplacePluginFile: (marketplace: string, name: string, relativePath: string) => Promise<void>
+  clearMarketplacePluginDetail: () => void
+  addMarketplace: (source: string, scope: ResourceScope) => Promise<void>
+  removeMarketplace: (name: string, scope: MarketplaceScope) => Promise<void>
 
   // Hooks
   hooks: HookConfig[]
@@ -132,6 +140,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   pluginFileContent: null,
   pluginFilePath: null,
   marketplacePlugins: [],
+  marketplacePluginDetail: null,
+  marketplacePluginFileContent: null,
+  marketplacePluginFilePath: null,
   hooks: [],
 
   fetchSkills: async () => {
@@ -350,6 +361,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   readPluginFile: async (pluginKey, relativePath) => {
+    // Virtual paths (mcp:/hooks:) are rendered from in-memory detail data — no file read.
+    if (relativePath.startsWith('mcp:') || relativePath.startsWith('hooks:')) {
+      set({ pluginFileContent: null, pluginFilePath: relativePath })
+      return
+    }
     const pp = getProjectPath()
     const provider = useAppStore.getState().settingsProvider
     const content = provider === 'codex'
@@ -395,6 +411,37 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
     await get().fetchPlugins()
     await get().fetchMarketplacePlugins()
+  },
+
+  readMarketplacePlugin: async (marketplace, name) => {
+    const detail = await window.app.readMarketplacePlugin(marketplace, name)
+    set({ marketplacePluginDetail: detail, marketplacePluginFileContent: null, marketplacePluginFilePath: null })
+  },
+
+  readMarketplacePluginFile: async (marketplace, name, relativePath) => {
+    if (relativePath.startsWith('mcp:') || relativePath.startsWith('hooks:')) {
+      set({ marketplacePluginFileContent: null, marketplacePluginFilePath: relativePath })
+      return
+    }
+    const content = await window.app.readMarketplacePluginFile(marketplace, name, relativePath)
+    set({ marketplacePluginFileContent: content, marketplacePluginFilePath: relativePath })
+  },
+
+  clearMarketplacePluginDetail: () =>
+    set({ marketplacePluginDetail: null, marketplacePluginFileContent: null, marketplacePluginFilePath: null }),
+
+  addMarketplace: async (source, scope) => {
+    const pp = getProjectPath()
+    await window.app.addMarketplace(source, scope, pp)
+    await get().fetchMarketplacePlugins()
+    await get().fetchPlugins()
+  },
+
+  removeMarketplace: async (name, scope) => {
+    const pp = getProjectPath()
+    await window.app.removeMarketplace(name, scope, pp)
+    await get().fetchMarketplacePlugins()
+    await get().fetchPlugins()
   },
 
   fetchProviders: async () => {

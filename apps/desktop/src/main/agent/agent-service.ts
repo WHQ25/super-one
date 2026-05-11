@@ -48,7 +48,7 @@ import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill,
 import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
-import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace } from '../plugins-service'
+import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile } from '../plugins-service'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
 import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
@@ -1641,6 +1641,22 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE, async (_event, name: string) => {
       await updateMarketplace(name)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_ADD_MARKETPLACE, async (_event, source: string, scope: ResourceScope, projectPath: string) => {
+      await addMarketplace(source, scope, projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_REMOVE_MARKETPLACE, async (_event, name: string, scope: 'user' | 'project' | 'local' | 'official', projectPath: string) => {
+      await removeMarketplace(name, scope, projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_READ_MARKETPLACE, (_event, marketplace: string, name: string) => {
+      return readMarketplacePluginContent(marketplace, name)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_READ_MARKETPLACE_FILE, (_event, marketplace: string, name: string, relativePath: string) => {
+      return readMarketplacePluginFile(marketplace, name, relativePath)
     })
 
     // --- Skills (session-scoped) ---

@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react'
+import { useRef, useCallback, useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import { DockviewReact } from 'dockview'
 import type { DockviewReadyEvent, DockviewApi } from 'dockview-core'
@@ -49,7 +49,8 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
 
   const getWidth = useCallback(() => useActivityPanelStore.getState().panelWidth, [])
 
-  const onResizeStart = useResizeHandle({
+  const [isResizing, setIsResizing] = useState(false)
+  const baseResizeStart = useResizeHandle({
     getWidth,
     setWidth: setPanelWidth,
     minWidth: LAYOUT.MIN_AP,
@@ -57,7 +58,12 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     direction: side === 'right' ? 'rtl' : 'ltr',
     outerRef,
     innerRef,
+    onDragEnd: () => setIsResizing(false),
   })
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    setIsResizing(true)
+    baseResizeStart(e)
+  }, [baseResizeStart])
 
   const onReady = useCallback((event: DockviewReadyEvent) => {
     apiRef.current = event.api
@@ -157,11 +163,16 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
         <div
           onMouseDown={onResizeStart}
           className={cn(
-            'group absolute inset-y-0 w-2 cursor-col-resize',
+            'group absolute inset-y-0 z-40 w-2 cursor-col-resize',
             side === 'right' ? '-left-1' : '-right-1',
           )}
         >
-          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
+          <div
+            className={cn(
+              'pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent transition-opacity',
+              isResizing ? 'opacity-40' : 'opacity-0 group-hover:opacity-40',
+            )}
+          />
         </div>
       )}
     </motion.div>

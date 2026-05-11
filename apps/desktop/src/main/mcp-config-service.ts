@@ -128,6 +128,40 @@ export function saveMcpConfig(
   servers[name] = entry
 
   writeJsonFile(filePath, data)
+
+  if (scope === 'project') {
+    authorizeProjectMcpServer(name, cwd)
+  }
+}
+
+/**
+ * Claude SDK gates project-scope .mcp.json servers behind explicit user
+ * authorization. Servers absent from ~/.claude.json#projects[cwd].enabledMcpjsonServers
+ * load as disabled (the SDK normally prompts the user to allow them).
+ * Writing the name into the enabled array (and clearing it from the disabled
+ * array) tells the SDK the user has authorized this server.
+ */
+function authorizeProjectMcpServer(name: string, cwd: string): void {
+  const filePath = getUserConfigPath()
+  const data = readJsonFile(filePath)
+
+  if (!data.projects || typeof data.projects !== 'object') {
+    data.projects = {}
+  }
+  const projects = data.projects as Record<string, Record<string, unknown>>
+  if (!projects[cwd] || typeof projects[cwd] !== 'object') {
+    projects[cwd] = {}
+  }
+  const project = projects[cwd]
+
+  const enabled = Array.isArray(project.enabledMcpjsonServers) ? [...project.enabledMcpjsonServers] : []
+  if (!enabled.includes(name)) enabled.push(name)
+  project.enabledMcpjsonServers = enabled
+
+  const disabled = Array.isArray(project.disabledMcpjsonServers) ? project.disabledMcpjsonServers.filter((n: unknown) => n !== name) : []
+  project.disabledMcpjsonServers = disabled
+
+  writeJsonFile(filePath, data)
 }
 
 export function toggleMcpConfig(name: string, disabled: boolean, scope: ResourceScope, cwd: string): void {

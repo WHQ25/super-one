@@ -5,6 +5,7 @@ import { powerSaveBlocker } from 'electron'
 import WebSocket from 'ws'
 import { diffLines } from 'diff'
 import log from './logger'
+import { ProcessTitle } from './process-titles'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, RemoteDeviceConfig } from '@superone/shared/agent-types'
 
 export type { RemoteDeviceConfig }
@@ -620,7 +621,7 @@ export class RemoteControlService {
   private acquirePowerLock(): void {
     if (process.platform === 'darwin') {
       if (this.sleepBlockerProcess) return
-      this.sleepBlockerProcess = spawn('caffeinate', ['-s', '-i'])
+      this.sleepBlockerProcess = spawn('caffeinate', ['-s', '-i'], { argv0: ProcessTitle.SleepBlocker })
       this.sleepBlockerProcess.on('exit', () => { this.sleepBlockerProcess = null })
       log.info('[RemoteControl] caffeinate started')
     } else if (process.platform === 'linux') {
@@ -628,7 +629,7 @@ export class RemoteControlService {
       this.sleepBlockerProcess = spawn('systemd-inhibit', [
         '--what=sleep', '--who=SuperOne', '--why=Remote control active', '--mode=block',
         'sleep', 'infinity',
-      ])
+      ], { argv0: ProcessTitle.SleepBlocker })
       this.sleepBlockerProcess.on('exit', () => { this.sleepBlockerProcess = null })
       log.info('[RemoteControl] systemd-inhibit started')
     } else if (process.platform === 'win32') {

@@ -2,6 +2,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { ModelOption } from '@superone/shared/agent-types'
 import log from '../logger'
 import { resolveSdkClaudeBinary } from './claude-binary'
+import { makeClaudeSpawn } from './claude-spawn'
 
 export async function fetchModels(cwd: string, env?: Record<string, string | undefined>): Promise<ModelOption[]> {
   try {
@@ -11,6 +12,7 @@ export async function fetchModels(cwd: string, env?: Record<string, string | und
       options: {
         cwd,
         pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
+        spawnClaudeCodeProcess: makeClaudeSpawn(),
         maxTurns: 0,
         permissionMode: 'bypassPermissions',
         persistSession: false,

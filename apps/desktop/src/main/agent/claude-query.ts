@@ -7,6 +7,7 @@ import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
 import { createSuperoneMcpServer } from '../mcp/superone-mcp-server'
 import type { WarmupManager } from './warmup-manager'
 import { resolveSdkClaudeBinary } from './claude-binary'
+import { makeClaudeSpawn } from './claude-spawn'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
 
 export interface SessionQueryOptions {
@@ -61,12 +62,14 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     abortController: opts.abortController,
     additionalDirectories: opts.additionalDirectories,
     env: opts.env,
-    stderr: (data: string) => {
-      log.warn('[claude-cli]', data.trimEnd())
-      if (data.includes('FileHistory') || data.includes('checkpoint') || data.includes('file_history')) {
-        log.info('[claude-cli][checkpoint-stderr] %s', data.trimEnd())
-      }
-    },
+    spawnClaudeCodeProcess: makeClaudeSpawn({
+      onStderr: (data) => {
+        log.warn('[claude-cli]', data.trimEnd())
+        if (data.includes('FileHistory') || data.includes('checkpoint') || data.includes('file_history')) {
+          log.info('[claude-cli][checkpoint-stderr] %s', data.trimEnd())
+        }
+      },
+    }),
     systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_PROMPT_APPEND },
     mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': createSuperoneMcpServer(opts.superoneSessionId) },
     ...(opts.enabledSkills ? { skills: opts.enabledSkills } : {}),

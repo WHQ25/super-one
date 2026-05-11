@@ -3,6 +3,7 @@ import type { Readable } from 'stream'
 import { hostname, networkInterfaces } from 'os'
 import makeMdns, { type MdnsAnswer, type MdnsInstance, type MdnsQuestion } from 'multicast-dns'
 import log from './logger'
+import { ProcessTitle } from './process-titles'
 
 export const LAN_SERVICE_TYPE = 'superone'
 export const LAN_SERVICE_FQDN = `_${LAN_SERVICE_TYPE}._tcp`
@@ -81,6 +82,7 @@ class DnsSdStrategy implements AdvertiserStrategy {
       ]
       const child: DnsSdChild = spawn('/usr/bin/dns-sd', args, {
         stdio: ['ignore', 'pipe', 'pipe'],
+        argv0: ProcessTitle.Mdns,
       })
       this.child = child
 

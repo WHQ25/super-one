@@ -8,6 +8,7 @@ import { addProjectAdditionalDir, readScopedAdditionalDirs, removeProjectAdditio
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
 import { resolveSdkClaudeBinary } from './claude-binary'
+import { makeClaudeSpawn } from './claude-spawn'
 import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '@superone/shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
@@ -1818,6 +1819,7 @@ export class AgentService {
             env,
             cwd: process.cwd(),
             pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
+            spawnClaudeCodeProcess: makeClaudeSpawn(),
             maxTurns: 1,
             permissionMode: 'bypassPermissions',
             persistSession: false,

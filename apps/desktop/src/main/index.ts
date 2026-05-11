@@ -67,6 +67,7 @@ import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
+import { ProcessTitle, WindowRole, roleArg } from './process-titles'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n } from './i18n'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
 import { buildRemoteActiveProvider, providerSupportsHarness } from '@superone/shared/provider-utils'
@@ -258,6 +259,7 @@ function createWindow(): void {
       sandbox: true,
       zoomFactor: 1,
       webviewTag: true,
+      additionalArguments: [roleArg(WindowRole.Main)],
     }
   })
 
@@ -342,6 +344,7 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
       zoomFactor: 1,
+      additionalArguments: [roleArg(WindowRole.Mini)],
     },
   })
 
@@ -1413,8 +1416,8 @@ function registerIpcHandlers(): void {
       CLICOLOR_FORCE: '1',
     }
     const child = isWin
-      ? spawn('powershell', ['-NoProfile', '-Command', installCmd], { env: colorEnv })
-      : spawn('bash', ['-c', installCmd], { env: colorEnv })
+      ? spawn('powershell', ['-NoProfile', '-Command', installCmd], { env: colorEnv, argv0: ProcessTitle.Installer })
+      : spawn('bash', ['-c', installCmd], { env: colorEnv, argv0: ProcessTitle.Installer })
 
     child.stdout.on('data', (data: Buffer) => {
       !win.isDestroyed() && win.webContents.send(AgentIpcChannels.SETUP_EVENT, {

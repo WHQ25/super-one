@@ -5,6 +5,7 @@ import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { getNodeRuntime } from '../agent/resolve-cli'
 import { getActiveProviderRaw } from '../database'
+import { ProcessTitle } from '../process-titles'
 import {
   CODEX_PERMISSION_PRESETS,
   DEFAULT_CODEX_PERMISSION_PRESET,
@@ -271,11 +272,13 @@ export async function createAppServerConnection(
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: process.platform === 'win32',
         windowsHide: true,
+        argv0: ProcessTitle.Codex,
       })
     : spawn(getNodeRuntime().executable ?? process.execPath, [codexScript, 'app-server', '--listen', 'stdio://'], {
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
+        argv0: ProcessTitle.Codex,
       })
 
   const stdout = child.stdout

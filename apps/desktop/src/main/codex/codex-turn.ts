@@ -46,6 +46,18 @@ import type {
   PermissionRequest,
 } from '@superone/shared/agent-types'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
+import { isToolPreapproved } from '../mcp/superone-mcp-server'
+
+const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
+const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__'
+
+export function extractSuperoneMiniAppToolName(message: string): string | null {
+  const match = message.match(SUPERONE_MCP_TOOL_NAME_PATTERN)
+  if (!match) return null
+  const namespacedName = match[1]
+  if (!namespacedName.includes('__')) return null
+  return `${MCP_SUPERONE_TOOL_PREFIX}${namespacedName}`
+}
 
 export interface CodexRunStreamCallbacks {
   onThreadStarted?: (threadId: string) => void
@@ -796,6 +808,25 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
     const supportsAlwaysPersist = persistFlags.includes('always')
     const schema = asRecord(notification.params.requestedSchema)
     const formFields = parseElicitationSchema(schema)
+
+    const miniAppToolName = serverName === 'superone' && formFields.length === 0
+      ? extractSuperoneMiniAppToolName(message)
+      : null
+    if (miniAppToolName) {
+      return {
+        responseKind: 'elicitation',
+        formFields: [],
+        request: {
+          requestId,
+          toolName: miniAppToolName,
+          toolUseId: requestId,
+          input: {},
+          allowAlwaysAllow: supportsAlwaysPersist,
+          supportsAlwaysPersist,
+        },
+      }
+    }
+
     return {
       responseKind: 'elicitation',
       formFields,
@@ -1244,6 +1275,18 @@ export async function streamTurnEvents(
 
       const respondToServer = (req: typeof notification.requestIdRaw, resp: PendingCodexApprovalResponse): Promise<void> =>
         connection.respond(req!, resp as unknown as Record<string, unknown>)
+
+      if (parsedApprovalRequest.responseKind === 'elicitation') {
+        const requestToolName = parsedApprovalRequest.request.toolName
+        if (
+          typeof requestToolName === 'string'
+          && requestToolName.startsWith(MCP_SUPERONE_TOOL_PREFIX)
+          && isToolPreapproved(requestToolName)
+        ) {
+          await respondToServer(notification.requestIdRaw, { action: 'accept', content: null, _meta: null })
+          return true
+        }
+      }
 
       if (controller.signal.aborted) {
         await respondToServer(notification.requestIdRaw, fallbackResponse)

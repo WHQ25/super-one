@@ -26,6 +26,10 @@ vi.mock('../agent/resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({})),
 }))
 
+vi.mock('../mcp/superone-mcp-server', () => ({
+  isToolPreapproved: vi.fn(() => false),
+}))
+
 const {
   resolveThread,
   streamTurnEvents,
@@ -34,6 +38,7 @@ const {
   runCodexTurn,
   mapThreadItemFromAppServer,
   mapApprovalRequest,
+  extractSuperoneMiniAppToolName,
 } = await import('./codex-turn')
 const { createCodexSession } = await import('./codex-session')
 
@@ -216,6 +221,88 @@ describe('mapApprovalRequest mcpServer/elicitation/request', () => {
       { name: 'mood', type: 'enum', label: 'Mood', required: true, enumOptions: ['happy', 'sad'] },
     ])
     expect(parsed.request.elicitationForm).toEqual(parsed.formFields)
+  })
+})
+
+describe('extractSuperoneMiniAppToolName', () => {
+  it('extracts mini-app tool name from codex elicitation message', () => {
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "excalidraw__clear_canvas"?'),
+    ).toBe('mcp__superone__excalidraw__clear_canvas')
+  })
+
+  it('returns null when message lacks namespaced tool format', () => {
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "list_apps"?'),
+    ).toBeNull()
+  })
+
+  it('returns null when message has no recognizable tool reference', () => {
+    expect(extractSuperoneMiniAppToolName('Allow access?')).toBeNull()
+  })
+})
+
+describe('mapApprovalRequest superone mini-app tool elicitation', () => {
+  it('rewrites superone elicitation into a plain tool-call PermissionRequest (no mcp_elicitation kind)', () => {
+    const parsed = mapApprovalRequest({
+      requestIdRaw: 11,
+      requestId: '11',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'superone',
+        message: 'Allow the superone MCP server to run tool "excalidraw__clear_canvas"?',
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: { persist: ['always'] },
+      },
+    })
+
+    expect(parsed?.responseKind).toBe('elicitation')
+    if (parsed?.responseKind !== 'elicitation') return
+    expect(parsed.formFields).toEqual([])
+    expect(parsed.request.toolName).toBe('mcp__superone__excalidraw__clear_canvas')
+    expect(parsed.request.allowAlwaysAllow).toBe(true)
+    expect(parsed.request.supportsAlwaysPersist).toBe(true)
+    expect(parsed.request.requestKind).toBeUndefined()
+    expect(parsed.request.message).toBeUndefined()
+  })
+
+  it('keeps original elicitation shape for non-superone servers', () => {
+    const parsed = mapApprovalRequest({
+      requestIdRaw: 12,
+      requestId: '12',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'computer-use',
+        message: 'Allow Codex to use Google Chrome?',
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: { persist: ['always'] },
+      },
+    })
+
+    if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
+    expect(parsed.request.requestKind).toBe('mcp_elicitation')
+    expect(parsed.request.toolName).toBe('computer-use')
+  })
+
+  it('keeps elicitation shape for superone elicit with a form (not a plain approval)', () => {
+    const parsed = mapApprovalRequest({
+      requestIdRaw: 13,
+      requestId: '13',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'superone',
+        message: 'Allow the superone MCP server to run tool "demo__edit"?',
+        requestedSchema: {
+          type: 'object',
+          required: ['note'],
+          properties: { note: { type: 'string' } },
+        },
+      },
+    })
+
+    if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
+    expect(parsed.request.requestKind).toBe('mcp_elicitation')
+    expect(parsed.formFields.length).toBeGreaterThan(0)
   })
 })
 
@@ -453,6 +540,115 @@ describe('streamTurnEvents child-thread routing', () => {
         ],
       },
     })
+  })
+})
+
+describe('streamTurnEvents superone preapprove short-circuit', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('auto-accepts preapproved superone mini-app tools without forwarding to UI', async () => {
+    const { isToolPreapproved } = await import('../mcp/superone-mcp-server')
+    vi.mocked(isToolPreapproved).mockImplementation(
+      (name: string) => name === 'mcp__superone__excalidraw__clear_canvas',
+    )
+
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<Record<string, unknown>> = [
+      {
+        requestIdRaw: 99,
+        requestId: '99',
+        method: 'mcpServer/elicitation/request',
+        params: {
+          serverName: 'superone',
+          message: 'Allow the superone MCP server to run tool "excalidraw__clear_canvas"?',
+          requestedSchema: { type: 'object', properties: {} },
+          _meta: { persist: ['always'] },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ]
+    const respond = vi.fn().mockResolvedValue(undefined)
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond,
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+    const onPermissionRequest = vi.fn()
+
+    await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onPermissionRequest },
+    )
+
+    expect(onPermissionRequest).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith(99, { action: 'accept', content: null, _meta: null })
+  })
+
+  it('falls through to UI for non-preapproved superone tools', async () => {
+    const { isToolPreapproved } = await import('../mcp/superone-mcp-server')
+    vi.mocked(isToolPreapproved).mockReturnValue(false)
+
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<Record<string, unknown>> = [
+      {
+        requestIdRaw: 42,
+        requestId: '42',
+        method: 'mcpServer/elicitation/request',
+        params: {
+          serverName: 'superone',
+          message: 'Allow the superone MCP server to run tool "excalidraw__clear_canvas"?',
+          requestedSchema: { type: 'object', properties: {} },
+          _meta: { persist: ['always'] },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ]
+    const respond = vi.fn().mockResolvedValue(undefined)
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond,
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+
+    const onPermissionRequest = vi.fn((req) => {
+      const pending = session.pendingApprovals.get(req.requestId)
+      pending?.resolve({ action: 'decline', content: null, _meta: null })
+    })
+
+    await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onPermissionRequest },
+    )
+
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+    const reqArg = onPermissionRequest.mock.calls[0][0]
+    expect(reqArg.toolName).toBe('mcp__superone__excalidraw__clear_canvas')
+    expect(reqArg.requestKind).toBeUndefined()
+    expect(respond).toHaveBeenCalledWith(42, { action: 'decline', content: null, _meta: null })
   })
 })
 

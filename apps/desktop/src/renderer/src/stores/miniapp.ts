@@ -2,10 +2,16 @@ import { create } from 'zustand'
 import { useAppStore } from './app'
 import { useActivityPanelStore } from './activity-panel'
 import { isInstanceReferencedInSavedSessions } from './activity-view-state'
+import { useChatStore } from './chat'
 import { closeMiniAppTab, openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { LAYOUT } from '@/lib/layout-constants'
 import { NO_PROJECT_KEY } from '@superone/shared/miniapp-host'
 import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult } from '@superone/shared/miniapp-types'
+
+function activeSessionId(projectDir: string): string {
+  const proj = useChatStore.getState().projectSessions[projectDir]
+  return proj?._activeSessionId ?? ''
+}
 
 export function makeInstanceKey(appId: string, projectId: string | null): string {
   return `${appId}:${projectId ?? NO_PROJECT_KEY}`
@@ -137,7 +143,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
         .filter(([, v]) => v.entry.id === appId)
       if (openInstances.length > 0) {
         for (const [, v] of openInstances) {
-          await window.miniapp.close(appId, v.projectDir)
+          await window.miniapp.close(appId, v.projectDir, activeSessionId(v.projectDir))
         }
         for (const [key] of openInstances) {
           closeMiniAppTab(key)
@@ -171,11 +177,11 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       const projectId = useAppStore.getState().currentProjectId
       const instanceKey = makeInstanceKey(entry.id, projectId)
       const existing = get().openApps[instanceKey]
+      await window.miniapp.open(entry.id, projectDir, activeSessionId(projectDir))
       if (existing) {
         openMiniAppTab(instanceKey, entry.id, entry.manifest.name)
         return
       }
-      await window.miniapp.open(entry.id, projectDir)
       set((s) => ({
         openApps: {
           ...s.openApps,
@@ -196,9 +202,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       if (currentCanvas && currentCanvas.instanceKey !== instanceKey) {
         await get().closeApp(currentCanvas.instanceKey)
       }
-      if (!existing) {
-        await window.miniapp.open(entry.id, projectDir)
-      }
+      await window.miniapp.open(entry.id, projectDir, activeSessionId(projectDir))
       set((s) => ({
         openApps: {
           ...s.openApps,
@@ -206,6 +210,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
         },
         fullscreenApp: { instanceKey, entry },
       }))
+      void existing
     },
 
     closeApp: async (instanceKey: string) => {
@@ -219,6 +224,8 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
         closeMiniAppTab(instanceKey)
       }
 
+      await window.miniapp.close(appId, projectDir, activeSessionId(projectDir))
+
       if (isInstanceReferencedInSavedSessions(instanceKey)) {
         set((s) => ({
           slots: withoutKey(s.slots, instanceKey),
@@ -227,8 +234,6 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
         if (wasCanvas) useAppStore.getState().setLayoutMode('coding')
         return
       }
-
-      await window.miniapp.close(appId, projectDir)
       set((s) => ({
         openApps: withoutKey(s.openApps, instanceKey),
         slots: withoutKey(s.slots, instanceKey),

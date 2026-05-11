@@ -13,7 +13,7 @@ type RequestId = string | number
 interface IpcClient {
   socket: Socket
   buffer: string
-  projectDir: string | null
+  sessionId: string | null
 }
 
 interface IpcState {
@@ -74,20 +74,20 @@ async function handleRequest(client: IpcClient, raw: unknown): Promise<void> {
     }
 
     if (method === 'tools/list') {
-      const projectDir = readString(params.projectDir)
-      if (!projectDir) throw new Error('Missing projectDir')
-      client.projectDir = projectDir
-      writeMessage(client.socket, { id, result: { tools: listSuperoneMcpTools(projectDir) } })
+      const sessionId = readString(params.sessionId)
+      if (!sessionId) throw new Error('Missing sessionId')
+      client.sessionId = sessionId
+      writeMessage(client.socket, { id, result: { tools: listSuperoneMcpTools(sessionId) } })
       return
     }
 
     if (method === 'tools/call') {
-      const projectDir = readString(params.projectDir)
+      const sessionId = readString(params.sessionId)
       const toolName = readString(params.name)
-      if (!projectDir) throw new Error('Missing projectDir')
+      if (!sessionId) throw new Error('Missing sessionId')
       if (!toolName) throw new Error('Missing tool name')
       const args = readRecord(params.arguments) ?? {}
-      const result = await executeSuperoneMcpTool(projectDir, toolName, args)
+      const result = await executeSuperoneMcpTool(sessionId, toolName, args)
       writeMessage(client.socket, { id, result })
       return
     }
@@ -107,7 +107,7 @@ function handleSocket(socket: Socket): void {
     return
   }
 
-  const client: IpcClient = { socket, buffer: '', projectDir: null }
+  const client: IpcClient = { socket, buffer: '', sessionId: null }
   state.clients.add(client)
   socket.setEncoding('utf8')
 
@@ -136,11 +136,11 @@ function handleSocket(socket: Socket): void {
   })
 }
 
-function notifyToolsChanged(projectDir: string): void {
+function notifyToolsChanged(sessionId: string): void {
   if (!state) return
   for (const client of state.clients) {
-    if (client.projectDir !== projectDir) continue
-    writeMessage(client.socket, { method: 'tools/changed', params: { projectDir } })
+    if (client.sessionId !== sessionId) continue
+    writeMessage(client.socket, { method: 'tools/changed', params: { sessionId } })
   }
 }
 

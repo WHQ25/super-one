@@ -54,7 +54,7 @@ vi.mock('./guides/recipes.md?raw', () => ({ default: 'recipes' }))
 vi.mock('./guides/tools.md?raw', () => ({ default: 'tools' }))
 
 import {
-  getSuperoneMcpServer,
+  createSuperoneMcpServer,
   disposeSuperoneMcpServer,
   registerAppTools,
   unregisterAppTools,
@@ -68,7 +68,7 @@ import {
   submitToolIntercept,
   cancelToolIntercept,
   setToolSyncCallbacks,
-  clearProjectPendingCalls,
+  clearSessionPendingCalls,
   executeAppTool,
 } from './superone-mcp-server'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from './superone-mcp-tool-surface'
@@ -102,12 +102,12 @@ beforeEach(() => {
   setToolSyncCallbacks(null)
   disposeSuperoneMcpServer(PROJ_A)
   disposeSuperoneMcpServer(PROJ_B)
-  getSuperoneMcpServer(PROJ_A)
+  createSuperoneMcpServer(PROJ_A)
 })
 
 describe('registerAppTools / unregisterAppTools', () => {
   it('registers tools on the project server', () => {
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
 
     expect(mockRegisterTool).toHaveBeenCalledWith(
       'myapp__do_thing',
@@ -118,7 +118,7 @@ describe('registerAppTools / unregisterAppTools', () => {
   })
 
   it('unregisters tools and calls sendToolListChanged', () => {
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     mockRemove.mockClear()
     mockSendToolListChanged.mockClear()
 
@@ -129,21 +129,21 @@ describe('registerAppTools / unregisterAppTools', () => {
   })
 
   it('skips duplicate tool registration', () => {
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     const countAfterFirst = mockRegisterTool.mock.calls.filter((c) => c[0] === 'myapp__do_thing').length
 
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     const countAfterSecond = mockRegisterTool.mock.calls.filter((c) => c[0] === 'myapp__do_thing').length
 
     expect(countAfterSecond).toBe(countAfterFirst)
   })
 
-  it('caches tools when no active server, attaches them on next getSuperoneMcpServer(projectPath)', () => {
+  it('caches tools when no active server, attaches them on next createSuperoneMcpServer(projectPath)', () => {
     disposeSuperoneMcpServer(PROJ_A)
 
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('cached_tool'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('cached_tool'))
 
-    getSuperoneMcpServer(PROJ_A)
+    createSuperoneMcpServer(PROJ_A)
 
     expect(mockRegisterTool).toHaveBeenCalledWith(
       'myapp__cached_tool',
@@ -155,9 +155,9 @@ describe('registerAppTools / unregisterAppTools', () => {
 
 describe('multi-project tool routing', () => {
   it('keeps tool registrations isolated between projects', () => {
-    getSuperoneMcpServer(PROJ_B)
-    registerAppTools(PROJ_A, 'shared-app', 'shared', makeTools('a_only'))
-    registerAppTools(PROJ_B, 'shared-app', 'shared', makeTools('b_only'))
+    createSuperoneMcpServer(PROJ_B)
+    registerAppTools(PROJ_A, PROJ_A, 'shared-app', 'shared', makeTools('a_only'))
+    registerAppTools(PROJ_B, PROJ_B, 'shared-app', 'shared', makeTools('b_only'))
 
     const aOnlyCall = mockRegisterTool.mock.calls.find((c) => c[0] === 'shared__a_only')
     const bOnlyCall = mockRegisterTool.mock.calls.find((c) => c[0] === 'shared__b_only')
@@ -166,9 +166,9 @@ describe('multi-project tool routing', () => {
   })
 
   it('unregistering one project does not affect the other', () => {
-    getSuperoneMcpServer(PROJ_B)
-    registerAppTools(PROJ_A, 'shared-app', 'shared', makeTools('common'))
-    registerAppTools(PROJ_B, 'shared-app', 'shared', makeTools('common'))
+    createSuperoneMcpServer(PROJ_B)
+    registerAppTools(PROJ_A, PROJ_A, 'shared-app', 'shared', makeTools('common'))
+    registerAppTools(PROJ_B, PROJ_B, 'shared-app', 'shared', makeTools('common'))
 
     mockRemove.mockClear()
     unregisterAppTools(PROJ_A, 'shared-app')
@@ -180,7 +180,7 @@ describe('multi-project tool routing', () => {
 
 describe('tool handler rejects closed app', () => {
   it('returns error when app has been unregistered', async () => {
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     const handler = getLastHandler('myapp__do_thing')
 
     unregisterAppTools(PROJ_A, 'test-app')
@@ -190,11 +190,11 @@ describe('tool handler rejects closed app', () => {
   })
 
   it('works again after re-registering', async () => {
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     unregisterAppTools(PROJ_A, 'test-app')
 
-    getSuperoneMcpServer(PROJ_A)
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    createSuperoneMcpServer(PROJ_A)
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     notifyAppReady(PROJ_A, 'test-app')
     const handler = getLastHandler('myapp__do_thing')
 
@@ -216,13 +216,13 @@ describe('stdio SuperOne MCP tool surface', () => {
   beforeEach(() => {
     sentMessages.length = 0
     initSuperoneMcpServer(() => mockWin)
-    getSuperoneMcpServer(PROJ_A)
+    createSuperoneMcpServer(PROJ_A)
   })
 
   it('lists built-in tools and only the dynamic tools for the requested project', () => {
-    getSuperoneMcpServer(PROJ_B)
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('a_tool'))
-    registerAppTools(PROJ_B, 'other-app', 'other', makeTools('b_tool'))
+    createSuperoneMcpServer(PROJ_B)
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('a_tool'))
+    registerAppTools(PROJ_B, PROJ_B, 'other-app', 'other', makeTools('b_tool'))
 
     const names = listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)
 
@@ -235,7 +235,7 @@ describe('stdio SuperOne MCP tool surface', () => {
     const toolsChanged = vi.fn()
     setToolSyncCallbacks({ toolsChanged })
 
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('a_tool'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('a_tool'))
     unregisterAppTools(PROJ_A, 'test-app')
 
     expect(toolsChanged).toHaveBeenCalledWith(PROJ_A)
@@ -243,7 +243,7 @@ describe('stdio SuperOne MCP tool surface', () => {
   })
 
   it('executes dynamic tools through the shared dispatcher scoped to projectDir', async () => {
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     notifyAppReady(PROJ_A, 'test-app')
 
     const pending = executeSuperoneMcpTool(PROJ_A, 'myapp__do_thing', { x: 'hello' })
@@ -260,7 +260,7 @@ describe('stdio SuperOne MCP tool surface', () => {
   })
 })
 
-describe('clearProjectPendingCalls — cross-project isolation', () => {
+describe('clearSessionPendingCalls — cross-project isolation', () => {
   const sentMessages: Array<{ channel: string; args: unknown[] }> = []
   const mockWebContents = { send: (channel: string, ...args: unknown[]) => sentMessages.push({ channel, args }) }
   const mockWin = { webContents: mockWebContents, isDestroyed: () => false } as unknown as import('electron').BrowserWindow
@@ -268,13 +268,13 @@ describe('clearProjectPendingCalls — cross-project isolation', () => {
   beforeEach(() => {
     sentMessages.length = 0
     initSuperoneMcpServer(() => mockWin)
-    getSuperoneMcpServer(PROJ_A)
-    getSuperoneMcpServer(PROJ_B)
+    createSuperoneMcpServer(PROJ_A)
+    createSuperoneMcpServer(PROJ_B)
   })
 
   it('rejects only same-project pending calls when one project interrupts', async () => {
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
-    registerAppTools(PROJ_B, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_B, PROJ_B, 'test-app', 'myapp', makeTools('do_thing'))
     notifyAppReady(PROJ_A, 'test-app')
     notifyAppReady(PROJ_B, 'test-app')
 
@@ -290,7 +290,7 @@ describe('clearProjectPendingCalls — cross-project isolation', () => {
     expect(callA).toBeTruthy()
     expect(callB).toBeTruthy()
 
-    clearProjectPendingCalls(PROJ_A)
+    clearSessionPendingCalls(PROJ_A)
 
     await expect(pendingA).rejects.toThrow(/Pending calls cleared/)
 
@@ -305,8 +305,8 @@ describe('clearProjectPendingCalls — cross-project isolation', () => {
       inputSchema: { type: 'object', properties: { x: { type: 'string' } } },
       renderer: { intercept: { template: 'popovers/confirm' } },
     }]
-    registerAppTools(PROJ_A, 'test-app', 'myapp', interceptTool)
-    registerAppTools(PROJ_B, 'test-app', 'myapp', interceptTool)
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', interceptTool)
+    registerAppTools(PROJ_B, PROJ_B, 'test-app', 'myapp', interceptTool)
     registerAppTemplates(PROJ_A, 'test-app', { 'popovers/confirm': 'popovers/confirm.html' })
     registerAppTemplates(PROJ_B, 'test-app', { 'popovers/confirm': 'popovers/confirm.html' })
     notifyAppReady(PROJ_A, 'test-app')
@@ -325,7 +325,7 @@ describe('clearProjectPendingCalls — cross-project isolation', () => {
     expect(openB).toBeTruthy()
 
     sentMessages.length = 0
-    clearProjectPendingCalls(PROJ_A)
+    clearSessionPendingCalls(PROJ_A)
 
     const clearMsg = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_CLEAR)
     expect(clearMsg).toBeTruthy()
@@ -351,7 +351,7 @@ describe('isToolPreapproved', () => {
   })
 
   it('returns false when tool is not preapproved', () => {
-    registerAppTools(PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     expect(isToolPreapproved('mcp__superone__myapp__do_thing')).toBe(false)
   })
 })
@@ -390,7 +390,7 @@ describe('executeAppTool with renderer.intercept', () => {
   beforeEach(() => {
     sentMessages.length = 0
     initSuperoneMcpServer(() => mockWin)
-    registerAppTools(PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action')])
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action')])
     registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
     notifyAppReady(PROJ_A, 'test-app')
   })
@@ -437,7 +437,7 @@ describe('executeAppTool with renderer.intercept', () => {
 
   it('cancel with onCancel=resolve-empty: tool returns cancelled payload', async () => {
     unregisterAppTools(PROJ_A, 'test-app')
-    registerAppTools(PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { onCancel: 'resolve-empty' })])
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { onCancel: 'resolve-empty' })])
     registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
     notifyAppReady(PROJ_A, 'test-app')
 
@@ -455,7 +455,7 @@ describe('executeAppTool with renderer.intercept', () => {
 
   it('inputMerge=replace: user input overrides agent input entirely', async () => {
     unregisterAppTools(PROJ_A, 'test-app')
-    registerAppTools(PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { inputMerge: 'replace' })])
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { inputMerge: 'replace' })])
     registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
     notifyAppReady(PROJ_A, 'test-app')
 
@@ -502,7 +502,7 @@ describe('setup_mini_app_dev tool handler', () => {
   beforeEach(() => {
     sentMessages.length = 0
     initSuperoneMcpServer(() => mockWin)
-    getSuperoneMcpServer(PROJ_A)
+    createSuperoneMcpServer(PROJ_A)
   })
 
   it('returns status=created and notifies dev-app-ready with the new appId', async () => {

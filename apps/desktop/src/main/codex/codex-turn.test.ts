@@ -39,7 +39,7 @@ const { createCodexSession } = await import('./codex-session')
 
 function makeSession(overrides: { threadId?: string | null; model?: string } = {}) {
   return {
-    ...createCodexSession('/project', overrides.model, overrides.threadId ?? undefined, undefined, 'default'),
+    ...createCodexSession('test-session', '/project', overrides.model, overrides.threadId ?? undefined, undefined, 'default'),
   }
 }
 

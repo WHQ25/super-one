@@ -41,7 +41,7 @@ vi.mock('../generative-ui/mcp-server', () => ({
 }))
 
 vi.mock('../mcp/superone-mcp-server', () => ({
-  getSuperoneMcpServer: vi.fn(() => ({ type: 'sdk', name: 'superone', instance: {} })),
+  createSuperoneMcpServer: vi.fn(() => ({ type: 'sdk', name: 'superone', instance: {} })),
 }))
 
 import { buildUserMessage, buildClaudeOptions, createSessionQuery } from './claude-query'

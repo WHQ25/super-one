@@ -161,6 +161,7 @@ export class CodexBackend implements SessionBackend {
       this.providerSessionId = opts.providerSessionId
     }
     this.session = createCodexSession(
+      opts.sessionId,
       opts.projectPath,
       undefined,
       opts.providerSessionId ?? undefined,
@@ -218,6 +219,7 @@ export class CodexBackend implements SessionBackend {
     const warm = this.resolveWarmSessionOptions(opts)
     const handle = await this.createWarmHandle(opts.projectPath, auth)
     const warmSession = createCodexSession(
+      opts.sessionId,
       opts.projectPath,
       warm.model,
       opts.providerSessionId ?? undefined,
@@ -358,6 +360,7 @@ export class CodexBackend implements SessionBackend {
     const existing = this.session
     if (!existing) {
       const created = createCodexSession(
+        startOpts.sessionId,
         startOpts.projectPath,
         requestedModel,
         requestedThreadId,

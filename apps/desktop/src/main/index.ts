@@ -15,7 +15,7 @@ import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearProjectPendingCalls as clearProjectPendingMiniAppCalls, disposeSuperoneMcpServer } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer } from './mcp/superone-mcp-server'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
@@ -165,9 +165,9 @@ const sessionManager = new SessionManagerImpl({
     harnessId,
   ),
   getActiveDefaultApiProviderId: (harnessId) => getActiveProviderRaw(harnessId)?.id ?? null,
-  onBeforeInterrupt: (projectPath) => {
+  onBeforeInterrupt: (sessionId) => {
     clearAllGates()
-    clearProjectPendingMiniAppCalls(projectPath)
+    clearSessionPendingMiniAppCalls(sessionId)
   },
 })
 sessionManager.onAny((_sid, event) => {
@@ -221,6 +221,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
 declare const __CF_RELAY_URL__: string
 const remoteControlService = new RemoteControlService(__CF_RELAY_URL__, remoteCallbacks)
 let mainWindow: BrowserWindow | null = null
+const miniAppSessionRefs = new Map<string, Set<string>>()
 const allWindows = new Set<BrowserWindow>()
 const sessionWindows = new Map<string, BrowserWindow>()
 let currentDarkTheme = true
@@ -1762,26 +1763,44 @@ function registerIpcHandlers(): void {
     return apps
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_OPEN, async (_e, appId: string, projectDir: string) => {
+  ipcMain.handle(AgentIpcChannels.MINIAPP_OPEN, async (_e, appId: string, projectDir: string, sessionId: string) => {
     const basePath = getAppBasePath(appId)
     const installDir = getAppInstallDir(appId)
     const manifest = await readManifest(basePath)
     if (!manifest) throw new Error(`App not found: ${appId}`)
-    setAppFsPermissions(appId, manifest, projectDir, installDir)
-    setAppMediaPermissions(appId, manifest)
+    const projectAppKey = `${projectDir}::${appId}`
+    let sessions = miniAppSessionRefs.get(projectAppKey)
+    if (!sessions) {
+      sessions = new Set()
+      miniAppSessionRefs.set(projectAppKey, sessions)
+    }
+    const isFirstSessionForApp = sessions.size === 0
+    sessions.add(sessionId)
+    if (isFirstSessionForApp) {
+      setAppFsPermissions(appId, manifest, projectDir, installDir)
+      setAppMediaPermissions(appId, manifest)
+      registerAppTemplates(projectDir, appId, manifest.templates)
+    }
     const toolSlug = manifest.toolSlug ?? appId
-    registerAppTools(projectDir, appId, toolSlug, manifest.tools ?? [])
-    registerAppTemplates(projectDir, appId, manifest.templates)
+    registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [])
     loadPreapprovedTools(appId, toolSlug, basePath)
-    if (manifest.tools?.length) agentService.markProjectNeedsRebuild(projectDir)
+    if (manifest.tools?.length) agentService.markSessionNeedsRebuild(sessionId)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string, projectDir: string) => {
-    unregisterAppTools(projectDir, appId)
-    unregisterAppTemplates(projectDir, appId)
-    clearAllowedDirectories(projectDir, appId)
-    clearAllowedMedia(appId)
-    agentService.markProjectNeedsRebuild(projectDir)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string, projectDir: string, sessionId: string) => {
+    unregisterAppTools(sessionId, appId)
+    const projectAppKey = `${projectDir}::${appId}`
+    const sessions = miniAppSessionRefs.get(projectAppKey)
+    if (sessions) {
+      sessions.delete(sessionId)
+      if (sessions.size === 0) {
+        miniAppSessionRefs.delete(projectAppKey)
+        unregisterAppTemplates(projectDir, appId)
+        clearAllowedDirectories(projectDir, appId)
+        clearAllowedMedia(appId)
+      }
+    }
+    agentService.markSessionNeedsRebuild(sessionId)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_TOOL_RESULT, (_e, callId: string, result: unknown, error?: string) => {

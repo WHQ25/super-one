@@ -4,12 +4,14 @@ import type { MessageBridge } from './message-bridge'
 import log from '../logger'
 import { trace } from './event-trace'
 import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
-import { getSuperoneMcpServer } from '../mcp/superone-mcp-server'
+import { createSuperoneMcpServer } from '../mcp/superone-mcp-server'
 import type { WarmupManager } from './warmup-manager'
 import { resolveSdkClaudeBinary } from './claude-binary'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
 
 export interface SessionQueryOptions {
+  /** SuperOne session id (Session class) — distinct from SDK sessionId (resume) */
+  superoneSessionId: string
   projectPath: string
   cwd: string
   model?: string
@@ -66,7 +68,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
       }
     },
     systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_PROMPT_APPEND },
-    mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': getSuperoneMcpServer(opts.projectPath) },
+    mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': createSuperoneMcpServer(opts.superoneSessionId) },
     ...(opts.enabledSkills ? { skills: opts.enabledSkills } : {}),
   }
 }

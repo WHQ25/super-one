@@ -2,13 +2,13 @@ import { getNodeRuntime } from '../agent/resolve-cli'
 import {
   SUPERONE_MCP_IPC_ENDPOINT_ENV,
   SUPERONE_MCP_IPC_TOKEN_ENV,
-  SUPERONE_MCP_PROJECT_DIR_ENV,
+  SUPERONE_MCP_SESSION_ID_ENV,
 } from './superone-mcp-stdio-env'
 
 export {
   SUPERONE_MCP_IPC_ENDPOINT_ENV,
   SUPERONE_MCP_IPC_TOKEN_ENV,
-  SUPERONE_MCP_PROJECT_DIR_ENV,
+  SUPERONE_MCP_SESSION_ID_ENV,
 }
 
 interface SuperoneMcpBridgeRuntime {
@@ -29,7 +29,7 @@ export function setSuperoneMcpBridgeRuntime(runtime: SuperoneMcpBridgeRuntime | 
   bridgeRuntime = runtime
 }
 
-export function getCodexSuperoneMcpConfig(projectDir: string): CodexSuperoneMcpConfig | null {
+export function getCodexSuperoneMcpConfig(sessionId: string): CodexSuperoneMcpConfig | null {
   if (!bridgeRuntime) return null
   const nodeRuntime = getNodeRuntime()
   const command = nodeRuntime.executable ?? process.execPath
@@ -37,7 +37,7 @@ export function getCodexSuperoneMcpConfig(projectDir: string): CodexSuperoneMcpC
     ...nodeRuntime.env,
     [SUPERONE_MCP_IPC_ENDPOINT_ENV]: bridgeRuntime.endpoint,
     [SUPERONE_MCP_IPC_TOKEN_ENV]: bridgeRuntime.token,
-    [SUPERONE_MCP_PROJECT_DIR_ENV]: projectDir,
+    [SUPERONE_MCP_SESSION_ID_ENV]: sessionId,
   }
   if (!nodeRuntime.executable && process.versions.electron) {
     env.ELECTRON_RUN_AS_NODE = '1'

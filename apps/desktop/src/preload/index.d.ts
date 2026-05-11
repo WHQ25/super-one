@@ -304,8 +304,8 @@ interface AppAPI {
 
 interface MiniAppAPI {
   list(projectDir?: string): Promise<MiniAppEntry[]>
-  open(appId: string, projectDir: string): Promise<void>
-  close(appId: string, projectDir: string): Promise<void>
+  open(appId: string, projectDir: string, sessionId: string): Promise<void>
+  close(appId: string, projectDir: string, sessionId: string): Promise<void>
   toolResult(callId: string, result: unknown, error?: string): Promise<void>
   fsRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   gitRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>

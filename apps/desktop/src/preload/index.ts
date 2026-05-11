@@ -894,11 +894,11 @@ const miniappAPI = {
   list: (projectDir?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_LIST, projectDir) as Promise<MiniAppEntry[]>,
 
-  open: (appId: string, projectDir: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_OPEN, appId, projectDir),
+  open: (appId: string, projectDir: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_OPEN, appId, projectDir, sessionId),
 
-  close: (appId: string, projectDir: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CLOSE, appId, projectDir),
+  close: (appId: string, projectDir: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CLOSE, appId, projectDir, sessionId),
 
   toolResult: (callId: string, result: unknown, error?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_TOOL_RESULT, callId, result, error),

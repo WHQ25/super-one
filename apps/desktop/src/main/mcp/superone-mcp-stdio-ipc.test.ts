@@ -55,7 +55,7 @@ const {
 } = await import('./superone-mcp-stdio-ipc')
 const { getCodexSuperoneMcpConfig } = await import('./superone-mcp-stdio-state')
 const {
-  getSuperoneMcpServer,
+  createSuperoneMcpServer,
   disposeSuperoneMcpServer,
   registerAppTools,
   unregisterAppTools,
@@ -81,7 +81,7 @@ interface IpcResponseMessage {
   result?: { tools?: Array<{ name: string }>; content?: Array<{ text: string }> }
   error?: { message?: string }
   method?: string
-  params?: { projectDir?: string }
+  params?: { sessionId?: string }
 }
 
 class TestClient {
@@ -152,20 +152,20 @@ function getEndpoint(): string {
 describe('superone-mcp-stdio-ipc', () => {
   beforeEach(async () => {
     initSuperoneMcpServer(() => null)
-    getSuperoneMcpServer(PROJ)
+    createSuperoneMcpServer(PROJ)
     await startSuperoneMcpStdioBridge()
   })
 
   afterEach(async () => {
     stopSuperoneMcpStdioBridge()
-    unregisterAppTools(PROJ, 'test-app')
+    unregisterAppTools(PROJ, PROJ, 'test-app')
     disposeSuperoneMcpServer(PROJ)
   })
 
   it('registers a config with endpoint + token after start', () => {
     const cfg = getCodexSuperoneMcpConfig(PROJ)
     expect(cfg).not.toBeNull()
-    expect(cfg!.env.SUPERONE_MCP_PROJECT_DIR).toBe(PROJ)
+    expect(cfg!.env.SUPERONE_MCP_SESSION_ID).toBe(PROJ)
     expect(cfg!.env.SUPERONE_MCP_IPC_TOKEN).toMatch(/^[0-9a-f-]{36}$/)
     expect(cfg!.env.SUPERONE_MCP_IPC_ENDPOINT).toBeTruthy()
   })
@@ -185,44 +185,44 @@ describe('superone-mcp-stdio-ipc', () => {
   it('rejects requests with the wrong token', async () => {
     const client = new TestClient(getEndpoint())
     await client.ready()
-    const res = await client.send('tools/list', 'wrong-token', { projectDir: PROJ })
+    const res = await client.send('tools/list', 'wrong-token', { sessionId: PROJ })
     expect(res.error?.message).toMatch(/Unauthorized/)
     client.close()
   })
 
-  it('lists built-in superone tools + project-scoped dynamic tools', async () => {
-    registerAppTools(PROJ, 'test-app', 'myapp', makeTools('do_thing'))
+  it('lists built-in superone tools + session-scoped dynamic tools', async () => {
+    registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
 
     const client = new TestClient(getEndpoint())
     await client.ready()
-    const res = await client.send('tools/list', getToken(), { projectDir: PROJ })
+    const res = await client.send('tools/list', getToken(), { sessionId: PROJ })
     const names = (res.result?.tools ?? []).map((t) => t.name)
     expect(names).toContain('read_miniapp_guide')
     expect(names).toContain('myapp__do_thing')
     client.close()
   })
 
-  it('rejects tools/list without projectDir', async () => {
+  it('rejects tools/list without sessionId', async () => {
     const client = new TestClient(getEndpoint())
     await client.ready()
     const res = await client.send('tools/list', getToken(), {})
-    expect(res.error?.message).toMatch(/Missing projectDir/)
+    expect(res.error?.message).toMatch(/Missing sessionId/)
     client.close()
   })
 
-  it('pushes tools/changed notifications scoped to the client projectDir', async () => {
+  it('pushes tools/changed notifications scoped to the client sessionId', async () => {
     const clientA = new TestClient(getEndpoint())
     await clientA.ready()
-    await clientA.send('tools/list', getToken(), { projectDir: PROJ })
+    await clientA.send('tools/list', getToken(), { sessionId: PROJ })
 
     const clientB = new TestClient(getEndpoint())
     await clientB.ready()
-    await clientB.send('tools/list', getToken(), { projectDir: '/other-proj' })
+    await clientB.send('tools/list', getToken(), { sessionId: '/other-proj' })
 
-    registerAppTools(PROJ, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
     await new Promise((r) => setTimeout(r, 30))
 
-    expect(clientA.notifications.some((n) => n.method === 'tools/changed' && n.params?.projectDir === PROJ)).toBe(true)
+    expect(clientA.notifications.some((n) => n.method === 'tools/changed' && n.params?.sessionId === PROJ)).toBe(true)
     expect(clientB.notifications.some((n) => n.method === 'tools/changed')).toBe(false)
 
     clientA.close()
@@ -233,7 +233,7 @@ describe('superone-mcp-stdio-ipc', () => {
     const client = new TestClient(getEndpoint())
     await client.ready()
     const res = await client.send('tools/call', getToken(), {
-      projectDir: PROJ,
+      sessionId: PROJ,
       name: 'read_miniapp_guide',
       arguments: { topic: 'overview' },
     })
@@ -241,20 +241,20 @@ describe('superone-mcp-stdio-ipc', () => {
     client.close()
   })
 
-  it('routes dynamic tool calls to executeAppTool scoped by projectDir', async () => {
+  it('routes dynamic tool calls to executeAppTool scoped by sessionId', async () => {
     const sentToRenderer: Array<{ channel: string; args: unknown[] }> = []
     const fakeWin = {
       webContents: { send: (channel: string, ...args: unknown[]) => sentToRenderer.push({ channel, args }) },
       isDestroyed: () => false,
     } as unknown as import('electron').BrowserWindow
     initSuperoneMcpServer(() => fakeWin)
-    registerAppTools(PROJ, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
     notifyAppReady(PROJ, 'test-app')
 
     const client = new TestClient(getEndpoint())
     await client.ready()
     const inflight = client.send('tools/call', getToken(), {
-      projectDir: PROJ,
+      sessionId: PROJ,
       name: 'myapp__do_thing',
       arguments: { x: 'hello' },
     })

@@ -42,7 +42,7 @@ export interface SessionManagerPersistence {
   resolveProviderConfig?: (provider: SessionProvider, apiProviderId?: string | null) => unknown
   getActiveProvider?: (harnessId: HarnessId, apiProviderId: string | null) => RemoteActiveProvider | null
   getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
-  onBeforeInterrupt?: (projectPath: string) => void
+  onBeforeInterrupt?: (sessionId: string) => void
 }
 
 function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorktreePath: string | null } {
@@ -88,7 +88,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     cwds.add(projectPath)
     for (const cwd of cwds) this.projectResources.invalidate(cwd)
     const { disposeSuperoneMcpServer } = await import('../mcp/superone-mcp-server')
-    disposeSuperoneMcpServer(projectPath)
+    for (const { sid } of targets) disposeSuperoneMcpServer(sid)
   }
 
   forEachSession(fn: (session: SessionContract) => void): void {
@@ -183,7 +183,7 @@ export class SessionManagerImpl implements SessionManagerContract {
         : undefined,
       getActiveDefaultApiProviderId: this.persistence.getActiveDefaultApiProviderId,
       onBeforeInterrupt: this.persistence.onBeforeInterrupt
-        ? () => this.persistence.onBeforeInterrupt!(opts.projectPath)
+        ? () => this.persistence.onBeforeInterrupt!(sessionId)
         : undefined,
     })
 
@@ -275,7 +275,7 @@ export class SessionManagerImpl implements SessionManagerContract {
         : undefined,
       getActiveDefaultApiProviderId: this.persistence.getActiveDefaultApiProviderId,
       onBeforeInterrupt: this.persistence.onBeforeInterrupt
-        ? () => this.persistence.onBeforeInterrupt!(data.projectPath)
+        ? () => this.persistence.onBeforeInterrupt!(sessionId)
         : undefined,
     })
 
@@ -307,6 +307,14 @@ export class SessionManagerImpl implements SessionManagerContract {
   markProjectNeedsRebuild(projectPath: string, harnessId?: SessionProvider['harnessId']): void {
     this._markNeedsRebuild((session) => {
       if (session.projectPath !== projectPath) return false
+      if (harnessId && session.snapshot.harnessId !== harnessId) return false
+      return true
+    })
+  }
+
+  markSessionNeedsRebuild(sessionId: string, harnessId?: SessionProvider['harnessId']): void {
+    this._markNeedsRebuild((session) => {
+      if (session.snapshot.id !== sessionId) return false
       if (harnessId && session.snapshot.harnessId !== harnessId) return false
       return true
     })

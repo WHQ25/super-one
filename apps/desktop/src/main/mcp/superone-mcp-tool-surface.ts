@@ -11,10 +11,10 @@ import {
 } from './superone-mcp-server'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 
-export function listSuperoneMcpTools(projectDir: string): SuperoneMcpToolDescriptor[] {
+export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
   const tools = [...BUILT_IN_SUPERONE_TOOL_DEFS]
   for (const entry of getAppToolDefs().values()) {
-    if (entry.projectDir !== projectDir) continue
+    if (entry.sessionId !== sessionId) continue
     for (const t of entry.tools) {
       tools.push({
         name: `${entry.toolSlug}__${t.name}`,
@@ -27,7 +27,7 @@ export function listSuperoneMcpTools(projectDir: string): SuperoneMcpToolDescrip
 }
 
 export async function executeSuperoneMcpTool(
-  projectDir: string,
+  sessionId: string,
   toolName: string,
   args: Record<string, unknown>,
 ) {
@@ -36,14 +36,14 @@ export async function executeSuperoneMcpTool(
   }
 
   for (const entry of getAppToolDefs().values()) {
-    if (entry.projectDir !== projectDir) continue
+    if (entry.sessionId !== sessionId) continue
     const prefix = `${entry.toolSlug}__`
     if (!toolName.startsWith(prefix)) continue
     const appToolName = toolName.slice(prefix.length)
     const toolDef = entry.tools.find((t) => t.name === appToolName)
     if (!toolDef) continue
     try {
-      const result = await executeAppTool(projectDir, entry.appId, appToolName, args)
+      const result = await executeAppTool(sessionId, entry.appId, appToolName, args)
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
     } catch (err) {
       return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }

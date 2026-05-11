@@ -42,6 +42,8 @@ export interface PendingCodexApproval {
 }
 
 export interface CodexSession {
+  /** SuperOne session id (Session class) — used to scope mini-app MCP tools to this session */
+  superoneSessionId: string
   projectPath: string
   model?: string
   modelReasoningEffort?: CodexReasoningEffort
@@ -64,6 +66,7 @@ function resolvePermissionPreset(preset?: CodexPermissionPreset): CodexPermissio
 }
 
 export function createCodexSession(
+  superoneSessionId: string,
   projectPath: string,
   model?: string,
   threadId?: string,
@@ -71,6 +74,7 @@ export function createCodexSession(
   permissionPreset?: CodexPermissionPreset,
 ): CodexSession {
   return {
+    superoneSessionId,
     projectPath,
     model,
     modelReasoningEffort,

@@ -925,7 +925,7 @@ export function resolveCwd(session: CodexSession, projectPath: string, requested
 }
 
 function buildThreadConfig(
-  projectPath: string,
+  superoneSessionId: string,
   permissionProfile: {
     sandboxMode: CodexSandboxMode
     networkAccessEnabled: boolean
@@ -937,7 +937,7 @@ function buildThreadConfig(
       network_access: permissionProfile.networkAccessEnabled,
     }
   }
-  const superoneMcpConfig = getCodexSuperoneMcpConfig(projectPath)
+  const superoneMcpConfig = getCodexSuperoneMcpConfig(superoneSessionId)
   if (superoneMcpConfig) {
     config.mcp_servers = { superone: superoneMcpConfig }
   }
@@ -979,7 +979,7 @@ export async function resolveThread(
   cwd: string,
   permissionProfile: ReturnType<typeof resolvePermissionProfile>,
 ): Promise<string> {
-  const threadConfig = buildThreadConfig(projectPath, permissionProfile)
+  const threadConfig = buildThreadConfig(session.superoneSessionId, permissionProfile)
   if (session.threadId && session.threadReady) {
     trace('codex.thread', 'reuse_ready', {
       threadId: session.threadId,

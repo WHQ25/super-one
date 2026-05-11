@@ -6,7 +6,7 @@ import { jsonSchemaToZodShape } from './json-schema-zod'
 import {
   SUPERONE_MCP_IPC_ENDPOINT_ENV,
   SUPERONE_MCP_IPC_TOKEN_ENV,
-  SUPERONE_MCP_PROJECT_DIR_ENV,
+  SUPERONE_MCP_SESSION_ID_ENV,
 } from './superone-mcp-stdio-env'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 
@@ -49,7 +49,7 @@ class SuperoneIpcClient {
   constructor(
     private readonly endpoint: string,
     private readonly token: string,
-    private readonly projectDir: string,
+    private readonly sessionId: string,
   ) {}
 
   connect(): Promise<void> {
@@ -70,13 +70,13 @@ class SuperoneIpcClient {
 
   listTools(): Promise<SuperoneMcpToolDescriptor[]> {
     return this.request<{ tools: SuperoneMcpToolDescriptor[] }>('tools/list', {
-      projectDir: this.projectDir,
+      sessionId: this.sessionId,
     }).then((result) => Array.isArray(result.tools) ? result.tools : [])
   }
 
   callTool(name: string, args: Record<string, unknown>): Promise<SuperoneMcpToolResult> {
     return this.request<SuperoneMcpToolResult>('tools/call', {
-      projectDir: this.projectDir,
+      sessionId: this.sessionId,
       name,
       arguments: args,
     })
@@ -156,11 +156,11 @@ function toolSignature(tool: SuperoneMcpToolDescriptor): string {
 }
 
 async function main(): Promise<void> {
-  const projectDir = requiredEnv(SUPERONE_MCP_PROJECT_DIR_ENV)
+  const sessionId = requiredEnv(SUPERONE_MCP_SESSION_ID_ENV)
   const ipc = new SuperoneIpcClient(
     requiredEnv(SUPERONE_MCP_IPC_ENDPOINT_ENV),
     requiredEnv(SUPERONE_MCP_IPC_TOKEN_ENV),
-    projectDir,
+    sessionId,
   )
 
   await ipc.connect()

@@ -345,6 +345,7 @@ export interface ChatStore {
   projectSessions: Record<string, ProjectState>
   activeProject: string | null
   remoteSessions: Record<string, string[]>
+  _previousFocusedSession: { projectPath: string; sessionId: string } | null
 
   // Bash output live content (not persisted)
   _bashOutputs: Record<string, { content: string; finished: boolean; outputPath?: string }>
@@ -2471,6 +2472,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   projectSessions: {},
   activeProject: null,
   remoteSessions: {},
+  _previousFocusedSession: null,
   _bashOutputs: {},
   toolRenderers: {},
 
@@ -2989,6 +2991,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const isRemote = isRemoteSession(get(), currentProject, project._activeSessionId)
         if ((activeSession && (_isBusyStatus(activeSession.status) || activeSession.awaitingAssistantReply)) && !isRemote) {
           await _parkActiveSession(currentProject, project._activeSessionId)
+        }
+        if (project._activeSessionId) {
+          set({ _previousFocusedSession: { projectPath: currentProject, sessionId: project._activeSessionId } })
         }
       }
     }
@@ -4452,6 +4457,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const prevSid = project._activeSessionId
     if (prevSid && prevSid !== sessionId) {
       set((s) => updateProjectState(s, activeProject, () => ({ _previousSessionId: prevSid })))
+      set({ _previousFocusedSession: { projectPath: activeProject, sessionId: prevSid } })
     }
 
     if (project.unseenCompletedSessions.has(sessionId)) {

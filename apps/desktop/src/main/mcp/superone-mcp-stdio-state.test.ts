@@ -7,7 +7,7 @@ vi.mock('../agent/resolve-cli', () => ({
 const {
   SUPERONE_MCP_IPC_ENDPOINT_ENV,
   SUPERONE_MCP_IPC_TOKEN_ENV,
-  SUPERONE_MCP_PROJECT_DIR_ENV,
+  SUPERONE_MCP_SESSION_ID_ENV,
   getCodexSuperoneMcpConfig,
   setSuperoneMcpBridgeRuntime,
 } = await import('./superone-mcp-stdio-state')
@@ -22,23 +22,23 @@ describe('getCodexSuperoneMcpConfig', () => {
   })
 
   it('returns null until the bridge runtime is registered', () => {
-    expect(getCodexSuperoneMcpConfig('/project')).toBeNull()
+    expect(getCodexSuperoneMcpConfig('session-1')).toBeNull()
   })
 
-  it('builds stdio MCP config with project env', () => {
+  it('builds stdio MCP config with session env', () => {
     setSuperoneMcpBridgeRuntime({
       endpoint: '/tmp/superone.sock',
       token: 'token-1',
       bridgeScriptPath: '/app/out/main/superone-mcp-stdio-bridge.js',
     })
 
-    expect(getCodexSuperoneMcpConfig('/project')).toEqual({
+    expect(getCodexSuperoneMcpConfig('session-1')).toEqual({
       command: '/mock/node',
       args: ['/app/out/main/superone-mcp-stdio-bridge.js'],
       env: {
         [SUPERONE_MCP_IPC_ENDPOINT_ENV]: '/tmp/superone.sock',
         [SUPERONE_MCP_IPC_TOKEN_ENV]: 'token-1',
-        [SUPERONE_MCP_PROJECT_DIR_ENV]: '/project',
+        [SUPERONE_MCP_SESSION_ID_ENV]: 'session-1',
       },
     })
   })

@@ -77,12 +77,14 @@ vi.mock('../../codex/codex-turn', () => ({
 
 vi.mock('../../codex/codex-session', () => ({
   createCodexSession: (
+    superoneSessionId: string,
     projectPath: string,
     model?: string,
     threadId?: string,
     modelReasoningEffort?: unknown,
     permissionPreset?: string,
   ) => ({
+    superoneSessionId,
     projectPath,
     model,
     modelReasoningEffort,

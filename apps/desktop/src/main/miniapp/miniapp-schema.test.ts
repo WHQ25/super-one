@@ -292,6 +292,46 @@ describe('parseManifest', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('should accept permissions.storage with reason', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { storage: { reason: 'Persist user preferences' } },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('should reject permissions.storage without reason', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { storage: {} },
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject permissions.storage with empty reason', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { storage: { reason: '' } },
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject permissions.storage as array', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { storage: [{ reason: 'x' }] },
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('should reject permissions.storage as boolean', () => {
+    const result = parseManifest({
+      ...validManifest,
+      permissions: { storage: true },
+    })
+    expect(result.ok).toBe(false)
+  })
+
   it('should reject old string-based permissions.fs format', () => {
     const result = parseManifest({
       ...validManifest,

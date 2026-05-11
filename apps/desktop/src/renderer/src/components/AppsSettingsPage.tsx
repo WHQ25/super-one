@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, ChevronRight, Link, Trash2, Mic, Video, Globe, HardDrive, FolderOpen } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Link, Trash2, Mic, Video, Globe, HardDrive, FolderOpen, Database } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@superone/ui/components/ui/switch'
@@ -101,7 +101,8 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
   const hasPermissions =
     (manifest.permissions?.fs?.length ?? 0) > 0 ||
     (manifest.permissions?.network?.length ?? 0) > 0 ||
-    (manifest.permissions?.media?.length ?? 0) > 0
+    (manifest.permissions?.media?.length ?? 0) > 0 ||
+    !!manifest.permissions?.storage
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -225,6 +226,18 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
                   </div>
                 )
               })}
+              {manifest.permissions?.storage && (
+                <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                  <Database className="size-5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 text-sm">
+                      <span className="font-medium">Storage</span>
+                      <span className="inline-flex h-4 shrink-0 items-center rounded bg-purple-500/10 px-1 text-[10px] leading-none text-purple-600 dark:text-purple-400">Persistent</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">{manifest.permissions.storage.reason}</div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

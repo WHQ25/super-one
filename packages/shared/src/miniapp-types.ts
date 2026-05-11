@@ -19,6 +19,10 @@ export interface MiniAppMediaEntry {
   reason: string
 }
 
+export interface MiniAppStorageEntry {
+  reason: string
+}
+
 export interface MiniAppAuthor {
   name: string
   email?: string
@@ -76,6 +80,7 @@ export interface MiniAppPermissions {
   network?: MiniAppNetworkEntry[]
   fs?: MiniAppFsEntry[]
   media?: MiniAppMediaEntry[]
+  storage?: MiniAppStorageEntry
 }
 
 export interface MiniAppToolDefinition {

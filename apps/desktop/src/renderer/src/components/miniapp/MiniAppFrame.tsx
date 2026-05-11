@@ -21,7 +21,11 @@ export const MiniAppFrame = forwardRef<HTMLIFrameElement, MiniAppFrameProps>(
   useMiniAppBridge({ appId, projectDir, iframeRef, overlay })
 
   const mediaEntries = useMiniAppStore((s) => s.apps.find((a) => a.id === appId)?.manifest.permissions?.media)
-  const { sandbox, allow } = useMemo(() => buildMiniAppFrameAttrs(mediaEntries?.map((m) => m.kind)), [mediaEntries])
+  const storageGranted = useMiniAppStore((s) => !!s.apps.find((a) => a.id === appId)?.manifest.permissions?.storage)
+  const { sandbox, allow } = useMemo(
+    () => buildMiniAppFrameAttrs({ grantedMedia: mediaEntries?.map((m) => m.kind), storage: storageGranted }),
+    [mediaEntries, storageGranted],
+  )
 
   const projectId = useMiniAppStore((s) => s.openApps[instanceKey]?.projectId ?? null)
   const src = `superone-app://${buildMiniAppHost(appId, projectId)}/index.html`

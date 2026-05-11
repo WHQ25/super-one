@@ -71,6 +71,36 @@ CDN libraries (Chart.js, D3, Three.js, Alpine.js, etc.) work great in vanilla ap
 { "domain": "cdn.jsdelivr.net", "reason": "Load Chart.js" }
 ```
 
+## Storage (`permissions.storage`)
+
+By default, mini-app iframes run with a `sandbox` that has no `allow-same-origin`, which makes them an opaque origin. On opaque origins the browser refuses every Web Storage API — `localStorage`, `sessionStorage`, `indexedDB.open(...)`, the Cache API, and `navigator.storage.*` all throw `SecurityError` (silently in some libraries).
+
+Declare `permissions.storage` to add `allow-same-origin` to the iframe sandbox so these APIs work. Each mini-app is served from its own `superone-app://<appId>.<projectId>` origin, so storage is isolated per app — no app can read another app's data, and the host shell is on a different origin.
+
+```json
+{
+  "permissions": {
+    "storage": { "reason": "Persist user preferences and cached assets" }
+  }
+}
+```
+
+`storage` is a single object (not an array), with a required `reason` shown to the user during installation. There is no runtime API — once granted, use the standard Web Storage / IndexedDB / Cache APIs directly:
+
+```js
+localStorage.setItem('theme', 'dark')
+const db = await new Promise((resolve, reject) => {
+  const req = indexedDB.open('my-app', 1)
+  req.onupgradeneeded = () => req.result.createObjectStore('kv')
+  req.onsuccess = () => resolve(req.result)
+  req.onerror = () => reject(req.error)
+})
+```
+
+Use this when you want third-party libraries that quietly cache to storage to actually work (PDF.js, font loaders, request caches, etc.), or when your app needs to persist UI state across sessions without going through the `fs` bridge.
+
+For larger or structured data that you want backed up with the project or shared across devices, prefer `permissions.fs` with `scope: "app"` instead — that data lives in `<appDir>/data/` and survives app rebuilds and pack/install cycles. Web Storage lives in the Chromium profile and can be cleared by browser-cache eviction.
+
 ## Media (`permissions.media`)
 
 Request access to the system microphone or camera. Each entry needs a `kind` and a `reason` (shown to the user during installation).

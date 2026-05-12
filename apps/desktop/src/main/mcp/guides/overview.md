@@ -11,6 +11,7 @@ Every app opens as a tab in the activity panel by default. Set `fullscreen: true
 - The bridge script (`window.superone.*`) is auto-injected into every mini-app's HTML `<head>`
 - Tools declared in `manifest.json` are automatically registered with the MCP server when the app opens
 - Apps are packaged as `.s1app` files (zip + integrity checksums) and installed via drag-and-drop
+- Dev-mode apps are tracked in a global registry at `~/.superone/dev-registry.json`; the per-scope pointer file `.s1-dev.json` only carries `{ enabled }` and resolves to a source directory via the registry at runtime
 
 ## Development Workflow
 
@@ -26,10 +27,12 @@ Do NOT skip these steps. Do NOT start coding before the user confirms the plan.
 **After confirmation, build the app:**
 
 1. Confirm with the user **where** the mini-app source should live (`directory`) and **who** should see it (`scope`: `project` or `user`). See "Where the App Lives" below.
-2. Call `setup_mini_app_dev` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, fullscreen, description). It scaffolds files at `directory` and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
+2. Call `setup_mini_app_dev` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, fullscreen, description). It scaffolds files at `directory`, adds an entry to the global dev-registry, and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
 3. Read **`manifest`** for manifest fields and panel layout, then **`tools`** for declaring agent-facing tools and custom inline renderers.
 4. Edit `manifest.json` to add tools, permissions, etc.
 5. Write app code
+
+**Already have a mini-app source directory?** (e.g. cloned from a repo, or copied from another machine) Skip scaffolding and call `register_dev_miniapp` with the absolute `directory` path. It reads the existing `manifest.json`, adds it to the dev-registry, and optionally installs a dev pointer to a chosen `scope`. Users can also run this flow from Settings → Mini Apps → "Dev Apps" → "Add dev app…".
 
 ## Do You Need Tools?
 
@@ -81,22 +84,23 @@ After scaffolding, `setup_mini_app_dev` writes a small pointer file at:
 - `<projectDir>/.superone/apps/<appId>/.s1-dev.json` for `scope=project`
 - `~/.superone/apps/<appId>/.s1-dev.json` for `scope=user`
 
-This pointer is how SuperOne discovers the app:
+The pointer itself carries only enablement state:
 
 ```jsonc
 {
-  "distDir": "packages/my-app/dist",   // relative to projectDir for scope=project; absolute for scope=user
-  "enabled": true                       // set false to fall back to a packed prod version (see "Switching dev/prod" below)
+  "enabled": true   // set false to fall back to a packed prod version (see "Switching dev/prod" below)
 }
 ```
 
-**No registry file, no symlink** — each app's pointer lives in its own slot under `.superone/apps/<appId>/`. The slot also holds `data/` (the app's persistent storage when `permissions.fs` declares `scope: 'app'`), which survives any rebuild or pack/install cycle.
+`appId` is taken from the parent directory name. At discovery time SuperOne looks up `appId` in the global dev-registry (`~/.superone/dev-registry.json`) to find the actual source / build path on this machine. **No local paths ever live inside the pointer file**, so committing a project-scope `.s1-dev.json` leaks zero filesystem information.
+
+Each app's pointer lives in its own slot under `.superone/apps/<appId>/`. The slot also holds `data/` (the app's persistent storage when `permissions.fs` declares `scope: 'app'`), which survives any rebuild or pack/install cycle.
 
 ### Choosing scope
 
 Use `project` (default) when:
 - Building a tool specific to the current codebase (kanban, dashboard, custom helper)
-- The whole team should auto-discover this dev app by committing `.superone/apps/<appId>/.s1-dev.json` into git (relative `distDir` makes this portable)
+- The pointer file is safe to commit (path-free) — teammates who clone the repo see the `.s1-dev.json` slot but the entry is **only discoverable to them after they register the same source locally** (their dev-registry has its own appIds; alpha-phase appIds carry a timestamp suffix so they won't match across machines). For now, expect each developer to run `register_dev_miniapp` (or the "Add dev app…" flow) once after cloning.
 
 Use `user` when:
 - Building a personal tool you want available regardless of which project you open (e.g. a notes pad, a clipboard manager)
@@ -119,9 +123,9 @@ Prefer bun over npm when both are available (faster installs and builds).
 
 Once a `.s1app` package has been installed by drag-drop into the same install slot, both versions can coexist:
 
-- `.s1-dev.json` with `enabled: true` → SuperOne loads files from your dev `distDir` (live build output)
-- `.s1-dev.json` with `enabled: false` → SuperOne loads the packed prod files from the install slot itself
-- Delete `.s1-dev.json` → only the prod version remains
+- `.s1-dev.json` with `enabled: true` → SuperOne resolves the app's dist via the dev-registry and loads from your live build output
+- `.s1-dev.json` with `enabled: false` → SuperOne ignores the registry and loads the packed prod files from the install slot itself
+- Delete `.s1-dev.json` (or remove the entry from Settings → Mini Apps → Dev Apps) → only the prod version remains
 
 **Drag-drop install never deletes `.s1-dev.json` or the `data/` directory** — your dev pointer and user data are preserved across version upgrades.
 

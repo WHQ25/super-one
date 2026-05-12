@@ -4,6 +4,12 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.31.1-alpha] - 2026-05-12
+
+### Added
+
+- **Dev App Library: a global registry for in-development mini-apps.** A new dev-registry at `~/.superone/dev-registry.json` tracks every dev mini-app on the machine, so a single panel can manage them and install them into any scope (user or current project). `.s1-dev.json` collapses to `{ enabled }` only — the `appId` now comes from the parent directory name and `sourceDir` / `distDir` are reverse-looked-up via the registry (strict schema, alpha-phase). A new `register_dev_miniapp` MCP tool registers existing sources without going through the scaffold flow, paired with 7 new `window.miniapp.devRegistry.*` IPC channels. The Apps settings page gains a "Dev Apps" toggle (renamed from "Library" to avoid clashing with MCP Library's marketplace semantics) opening a `DevAppLibraryView` modeled on the MCP `LibraryView`: multi-select rows, per-row scope chip, bulk install to user / current project, and an "unlinked" badge for registry entries whose source dir is gone. Mini-app developer guides (`overview.md`, `manifest.md`) document the new flow and flag the alpha-phase `appId` timestamp suffix as a cross-machine collab caveat.
+
 ## [0.31.0-alpha] - 2026-05-12
 
 ### Added

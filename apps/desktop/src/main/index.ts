@@ -26,7 +26,7 @@ import { SessionManagerImpl } from './session/session-manager'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { PresenceCoordinator } from './remote/presence-coordinator'
-import { loadSessionStateBySid, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
+import { listWorktreePaths, loadSessionStateBySid, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { buildProviderEnv } from './agent/provider-env'
 import type { SessionProvider } from './session/types'
 import {
@@ -2016,7 +2016,8 @@ app.whenReady().then(async () => {
       const filePath = rawPath.replace(/^\/([A-Za-z]:)/, '$1')
       const resolved = resolveRealPath(filePath)
       const folders = getRecentFolders()
-      const allowedRoots = getReadableAssetRoots(folders.map((f) => f.path))
+      const worktrees = listWorktreePaths()
+      const allowedRoots = getReadableAssetRoots([...folders.map((f) => f.path), ...worktrees])
       if (!isPathWithinAllowed(resolved, allowedRoots)) {
         log.warn('[local-file] blocked path outside project folders:', resolved)
         return new Response('Forbidden', { status: 403 })

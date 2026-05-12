@@ -3,6 +3,7 @@ import { createReadStream, statSync } from 'fs'
 import { extname } from 'path'
 import { resolveRealPath, isPathWithinAllowed, getReadableAssetRoots } from './path-security'
 import { getRecentFolders } from './recent-folders'
+import { listWorktreePaths } from './session/session-repo'
 import log from './logger'
 
 const MEDIA_MIME: Record<string, string> = {
@@ -16,7 +17,10 @@ let server: Server | null = null
 let port = 0
 
 function getAllowedRoots(): string[] {
-  return getReadableAssetRoots(getRecentFolders().map((f) => f.path))
+  return getReadableAssetRoots([
+    ...getRecentFolders().map((f) => f.path),
+    ...listWorktreePaths(),
+  ])
 }
 
 export function startMediaServer(): Promise<number> {

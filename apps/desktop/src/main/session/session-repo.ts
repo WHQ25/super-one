@@ -158,6 +158,15 @@ export function getSessionRecord(sid: string): SessionRecord | null {
   return rowToRecord(row, row.project_path)
 }
 
+export function listWorktreePaths(): string[] {
+  const rows = getDb().prepare(`
+    SELECT DISTINCT worktree_path
+    FROM sessions
+    WHERE worktree_path IS NOT NULL AND worktree_path != ''
+  `).all() as Array<{ worktree_path: string }>
+  return rows.map((r) => r.worktree_path)
+}
+
 export function listSessionRecordsByProject(projectPath: string): SessionRecord[] {
   const projectId = getProjectId(projectPath)
   if (!projectId) return []

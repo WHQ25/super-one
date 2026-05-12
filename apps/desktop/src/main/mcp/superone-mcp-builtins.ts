@@ -3,9 +3,11 @@ import { existsSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { z } from 'zod'
+import log from '../logger'
 import { createMiniApp, cacheAppEntry, registerDevMiniApp, installDevPointer } from '../miniapp/miniapp-service'
 import { packApp } from '../miniapp/miniapp-packager'
 import { generateSuperoneDts } from '../miniapp/miniapp-templates'
+import { renameSession as dbRenameSession, isSessionUserRenamed } from '../db-sessions'
 import overviewMd from './guides/overview.md?raw'
 import manifestMd from './guides/manifest.md?raw'
 import permissionsMd from './guides/permissions.md?raw'
@@ -65,12 +67,23 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'register_dev_miniapp',
   'pack_mini_app',
   'update_superone_types',
+  'rename_session',
 ] as const
 
 export type BuiltInSuperoneToolName = typeof BUILT_IN_SUPERONE_TOOL_NAMES[number]
 
-interface BuiltInSuperoneToolDeps {
+export interface SessionTitleSetter {
+  setTitle(title: string, source: 'user' | 'agent'): void
+}
+
+export interface SessionTitleHost {
+  getSession(sessionId: string): SessionTitleSetter | null
+}
+
+export interface BuiltInSuperoneToolDeps {
   notifyDevAppReady: (projectDir: string, appId: string) => void
+  sessionId: string
+  sessionHost: SessionTitleHost | null
 }
 
 interface SetupMiniAppDevArgs {
@@ -122,6 +135,13 @@ const PACK_MINI_APP_DESCRIPTION =
 
 const UPDATE_SUPERONE_TYPES_DESCRIPTION =
   'Update the superone.d.ts type definitions in an existing mini-app project to the latest version. Use this when the mini-app needs access to newly added SuperOne APIs.'
+
+const RENAME_SESSION_DESCRIPTION =
+  'Rename the current chat session to better reflect its topic so the user can easily find it later in the sidebar. ' +
+  'Call this once near the start of the conversation when the topic becomes clear, and again only if the conversation shifts to a substantially different topic. ' +
+  'Use a concise 4-8 word title without surrounding quotes or trailing punctuation. ' +
+  'Match the title language to the user\'s conversation language. ' +
+  'If the tool returns an error containing "user_locked", the user has manually named this session — do NOT call rename_session again for this session.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {
@@ -197,6 +217,18 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
         appDir: { type: 'string', description: 'Absolute path to the mini-app directory' },
       },
       required: ['appDir'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'rename_session',
+    description: RENAME_SESSION_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'A concise 4-8 word title describing the current conversation topic.', minLength: 1, maxLength: 80 },
+      },
+      required: ['title'],
       additionalProperties: false,
     },
   },
@@ -295,6 +327,36 @@ async function packMiniApp(args: { appDir: string; outputDir: string }) {
   }
 }
 
+function renameSessionTool(args: { title: string }, deps: BuiltInSuperoneToolDeps) {
+  const sessionId = deps.sessionId
+  if (isSessionUserRenamed(sessionId)) {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: user_locked. The user has manually set this session title. Do not call rename_session again for this session.' }],
+      isError: true,
+    }
+  }
+  const trimmed = args.title.trim().replace(/^["']+|["']+$/g, '').trim()
+  if (!trimmed) {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: empty title.' }],
+      isError: true,
+    }
+  }
+  const session = deps.sessionHost?.getSession(sessionId) ?? null
+  if (session) {
+    session.setTitle(trimmed, 'agent')
+  } else {
+    try {
+      dbRenameSession(sessionId, trimmed, 'agent')
+    } catch (err) {
+      log.warn('[rename_session] dbRenameSession error: %s', err instanceof Error ? err.message : String(err))
+    }
+  }
+  return {
+    content: [{ type: 'text' as const, text: `Session renamed to "${trimmed}".` }],
+  }
+}
+
 async function updateSuperoneTypes(args: { appDir: string }) {
   const srcPath = join(args.appDir, 'src', 'superone.d.ts')
   const rootPath = join(args.appDir, 'superone.d.ts')
@@ -328,6 +390,8 @@ export async function executeBuiltInSuperoneTool(
       return packMiniApp(args as { appDir: string; outputDir: string })
     case 'update_superone_types':
       return updateSuperoneTypes(args as { appDir: string })
+    case 'rename_session':
+      return renameSessionTool(args as { title: string }, deps)
   }
 }
 
@@ -388,5 +452,14 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       appDir: z.string().describe('Absolute path to the mini-app directory'),
     },
     updateSuperoneTypes,
+  )
+
+  server.tool(
+    'rename_session',
+    RENAME_SESSION_DESCRIPTION,
+    {
+      title: z.string().min(1).max(80).describe('A concise 4-8 word title describing the current conversation topic.'),
+    },
+    (args) => renameSessionTool(args, deps),
   )
 }

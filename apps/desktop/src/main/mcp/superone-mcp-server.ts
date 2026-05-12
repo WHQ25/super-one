@@ -10,6 +10,7 @@ import { jsonSchemaToZodShape } from './json-schema-zod'
 import {
   BUILT_IN_SUPERONE_TOOL_NAMES,
   registerSuperoneTools,
+  type SessionTitleHost,
 } from './superone-mcp-builtins'
 
 interface PendingCall {
@@ -79,6 +80,16 @@ export function initSuperoneMcpServer(windowGetter: () => BrowserWindow | null):
   getMainWindow = windowGetter
 }
 
+let sessionHostProvider: (() => SessionTitleHost | null) | null = null
+
+export function setSessionHostProvider(provider: (() => SessionTitleHost | null) | null): void {
+  sessionHostProvider = provider
+}
+
+export function getSessionHost(): SessionTitleHost | null {
+  return sessionHostProvider?.() ?? null
+}
+
 export function notifyDevAppReady(projectDir: string, appId: string): void {
   const win = getMainWindow?.()
   if (win && !win.isDestroyed()) {
@@ -96,7 +107,11 @@ export function isBuiltInSuperoneTool(qualifiedName: string): boolean {
 
 export function createSuperoneMcpServer(sessionId: string): McpSdkServerConfigWithInstance {
   const server = new McpServer({ name: 'superone', version: '1.0.0' })
-  registerSuperoneTools(server, { notifyDevAppReady })
+  registerSuperoneTools(server, {
+    notifyDevAppReady,
+    sessionId,
+    sessionHost: getSessionHost(),
+  })
   const state: ProjectServerState = { server, registeredTools: new Map() }
 
   let set = sessionServers.get(sessionId)

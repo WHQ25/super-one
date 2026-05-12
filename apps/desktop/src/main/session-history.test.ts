@@ -7,7 +7,6 @@ const { readdirSyncMock, readFileSyncMock, statSyncMock } = vi.hoisted(() => ({
 }))
 
 const homedirMock = vi.hoisted(() => vi.fn(() => '/home/testuser'))
-const getSessionTitlesMock = vi.hoisted(() => vi.fn(() => ({})))
 
 vi.mock('fs', () => ({
   readdirSync: readdirSyncMock,
@@ -17,10 +16,6 @@ vi.mock('fs', () => ({
 
 vi.mock('os', () => ({
   homedir: homedirMock,
-}))
-
-vi.mock('./session-titles', () => ({
-  getSessionTitles: getSessionTitlesMock,
 }))
 
 import { listSessions, loadSessionMessages, clearSessionMessageCache } from './session-history'
@@ -54,7 +49,6 @@ describe('extractUserText (via listSessions)', () => {
     readdirSyncMock.mockReset()
     readFileSyncMock.mockReset()
     statSyncMock.mockReset()
-    getSessionTitlesMock.mockReset().mockReturnValue({})
   })
 
   function setupSingleSession(content: string) {
@@ -133,7 +127,6 @@ describe('listSessions', () => {
     readdirSyncMock.mockReset()
     readFileSyncMock.mockReset()
     statSyncMock.mockReset()
-    getSessionTitlesMock.mockReset().mockReturnValue({})
   })
 
   it('returns empty when directory does not exist', () => {
@@ -195,15 +188,6 @@ describe('listSessions', () => {
       jsonl({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } })
     )
     expect(listSessions('/proj')).toEqual([])
-  })
-
-  it('applies title overrides from getSessionTitles', () => {
-    getSessionTitlesMock.mockReturnValue({ s1: 'Custom Title' })
-    readdirSyncMock.mockReturnValue(['s1.jsonl'])
-    statSyncMock.mockReturnValue({ mtime: new Date('2025-01-01') })
-    readFileSyncMock.mockReturnValue(jsonl(userEntry('original')))
-    const sessions = listSessions('/proj')
-    expect(sessions[0].title).toBe('Custom Title')
   })
 
   it('sorts by lastActiveAt descending', () => {

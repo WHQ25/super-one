@@ -101,6 +101,7 @@ export function createSessionId(): string {
 
 export interface PerSessionState {
   cwd: string
+  _title: string | null
   messages: ChatMessage[]
   status: AgentStatus
   awaitingAssistantReply: boolean
@@ -200,6 +201,7 @@ export type ActiveSessionView = PerSessionState & ProjectState
 export function createDefaultPerSessionState(): PerSessionState {
   return {
     cwd: '',
+    _title: null,
     messages: [],
     status: 'idle',
     awaitingAssistantReply: false,
@@ -349,6 +351,8 @@ export interface ChatStore {
   activeProject: string | null
   remoteSessions: Record<string, string[]>
   _previousFocusedSession: { projectPath: string; sessionId: string } | null
+
+  agentTitles: Record<string, string>
 
   // Bash output live content (not persisted)
   _bashOutputs: Record<string, { content: string; finished: boolean; outputPath?: string }>
@@ -1521,6 +1525,7 @@ type PersistedSessionState = {
   worktreePath: string | null
   provider: string
   apiProviderId?: string | null
+  title?: string | null
 }
 
 function _mergePersistedMessages(savedMessages: ChatMessage[], runtimeMessages: ChatMessage[]): ChatMessage[] {
@@ -1540,6 +1545,7 @@ function _mergePersistedSessionState(session: PerSessionState, saved: PersistedS
   const persistedProvider = saved.provider === 'codex' ? 'codex' : 'claude'
   return {
     ...session,
+    _title: session._title ?? saved.title ?? null,
     messages: mergedMessages,
     totalCostUsd: Math.max(session.totalCostUsd, saved.totalCostUsd),
     contextTokens: Math.max(session.contextTokens, saved.contextTokens),
@@ -2484,6 +2490,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   activeProject: null,
   remoteSessions: {},
   _previousFocusedSession: null,
+  agentTitles: {},
   _bashOutputs: {},
   toolRenderers: {},
 
@@ -2613,6 +2620,35 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set((s) => ({
         remoteSessions: removeRemoteSession(s.remoteSessions, event.remoteProjectPath, event.remoteSessionId),
       }))
+      return
+    }
+
+    if (event.type === 'session_title_changed') {
+      const { sessionId, title, projectPath: targetProjectPath } = event
+      set((s) => {
+        const next: Partial<ChatStore> = {
+          agentTitles: { ...s.agentTitles, [sessionId]: title },
+        }
+        if (!targetProjectPath) return next
+        const project = s.projectSessions[targetProjectPath]
+        if (!project) return next
+        let changed = false
+        const sessions = project.sessions.map((entry) => {
+          if (entry.sessionId === sessionId && entry.title !== title) {
+            changed = true
+            return { ...entry, title }
+          }
+          return entry
+        })
+        if (!changed) return next
+        return {
+          ...next,
+          projectSessions: {
+            ...s.projectSessions,
+            [targetProjectPath]: { ...project, sessions },
+          },
+        }
+      })
       return
     }
 

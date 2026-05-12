@@ -342,6 +342,9 @@ export function runDatabaseMigrations(db: Database.Database): void {
   if (!sessionColsPostRebuild.some((c) => c.name === 'usage_counted_at')) {
     db.exec('ALTER TABLE sessions ADD COLUMN usage_counted_at TEXT')
   }
+  if (!sessionColsPostRebuild.some((c) => c.name === 'is_user_renamed')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN is_user_renamed INTEGER DEFAULT 0')
+  }
   const msgColsPostRebuild = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
   if (!msgColsPostRebuild.some((c) => c.name === 'usage_counted_at')) {
     db.exec('ALTER TABLE chat_messages ADD COLUMN usage_counted_at TEXT')

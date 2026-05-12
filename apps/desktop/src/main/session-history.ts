@@ -2,7 +2,6 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { readdirSync, readFileSync, statSync } from 'fs'
 import type { ChatMessage, ContentBlock, LoadSessionMessagesResult, SessionHistoryEntry } from '@superone/shared/agent-types'
-import { getSessionTitles } from './session-titles'
 
 function encodeCwd(cwd: string): string {
   return cwd.replace(/[\\/]/g, '-')
@@ -88,14 +87,6 @@ export function listSessions(cwd: string): SessionHistoryEntry[] {
       })
     } catch {
       continue
-    }
-  }
-
-  // Apply custom title overrides
-  const titleOverrides = getSessionTitles()
-  for (const entry of entries) {
-    if (titleOverrides[entry.sessionId]) {
-      entry.title = titleOverrides[entry.sessionId]
     }
   }
 

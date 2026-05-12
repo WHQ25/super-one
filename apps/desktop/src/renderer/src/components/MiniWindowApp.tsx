@@ -8,6 +8,7 @@ import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useTheme } from '@/hooks/useTheme'
 import { useHarnessTheme } from '@/hooks/useHarnessTheme'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
+import { SessionTitleAnimated, useSessionTitleByAgent } from '@/components/sidebar/AnimatedSessionTitle'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { cn } from '@superone/ui/lib/utils'
 
@@ -30,9 +31,10 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
 
   const switchProject = useChatStore((s) => s.switchProject)
   const switchSession = useChatStore((s) => s.switchSession)
-  const sessionTitle = useActiveSession((s) => extractSessionTitle(s.messages))
+  const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
   const activeSessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId)
-  const displayTitle = sessionTitle ?? initialTitle ?? 'Session'
+  const liveTitle = useSessionTitleByAgent(activeSessionId, sessionFallback)
+  const displayTitle = liveTitle || initialTitle || 'Session'
   const isMac = window.app.platform === 'darwin'
 
   useEffect(() => {
@@ -96,9 +98,11 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {isMac && <div className="w-[66px] shrink-0" />}
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-          {displayTitle}
-        </span>
+        <SessionTitleAnimated
+          sessionId={activeSessionId}
+          fallback={displayTitle}
+          className="min-w-0 flex-1 text-xs text-muted-foreground"
+        />
         <TooltipProvider delayDuration={200}>
           <Tooltip>
             <TooltipTrigger asChild>

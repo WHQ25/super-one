@@ -7,6 +7,7 @@ import { CollapsedChatPanelView, COLLAPSED_SIZE, COLLAPSED_PENDING_MAX_W } from 
 import { useChatScroll } from '@/hooks/useChatScroll'
 import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 import { getPendingReason } from '@/components/sidebar/session-state-utils'
+import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { cn } from '@superone/ui/lib/utils'
 
 const OFFSET = 16
@@ -101,7 +102,8 @@ export const ChatPanel = memo(function ChatPanel() {
   const setCorner = useChatStore((s) => s.setCorner)
   const toggleOpen = useChatStore((s) => s.toggleOpen)
   const sessionStatus = useActiveSession((s) => s.status)
-  const sessionTitle = useActiveSession((s) => extractSessionTitle(s.messages))
+  const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? '')
+  const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
   const pendingPermissions = useActiveSession((s) => s.pendingPermissions)
   const pendingQuestion = useActiveSession((s) => s.pendingQuestion)
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
@@ -430,9 +432,11 @@ export const ChatPanel = memo(function ChatPanel() {
             >
               <ChevronDown className="size-3.5" />
             </button>
-            <span className="min-w-0 flex-1 truncate pr-3 text-xs text-muted-foreground">
-              {sessionTitle ?? 'New Session'}
-            </span>
+            <SessionTitleAnimated
+              sessionId={sessionId}
+              fallback={sessionFallback ?? 'New Session'}
+              className="min-w-0 flex-1 pr-3 text-xs text-muted-foreground"
+            />
             <button
               onClick={() => resetSession()}
               className="shrink-0 rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"

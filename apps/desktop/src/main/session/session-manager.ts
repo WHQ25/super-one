@@ -28,6 +28,7 @@ export interface LoadedSessionData {
   messages: ChatMessage[]
   totalCostUsd: number
   contextTokens: number
+  title?: string | null
   worktreePath?: string | null
   gitBranch?: string | null
   apiProviderId?: string | null
@@ -257,6 +258,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       initialMessages: data.messages,
       initialTotalCostUsd: data.totalCostUsd,
       initialContextTokens: data.contextTokens,
+      title: data.title ?? null,
       gitBranch: data.gitBranch ?? null,
       missingWorktreePath,
       apiProviderId,

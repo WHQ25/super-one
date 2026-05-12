@@ -46,7 +46,7 @@ import type {
   PermissionRequest,
 } from '@superone/shared/agent-types'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
-import { isToolPreapproved } from '../mcp/superone-mcp-server'
+import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
 const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__'
@@ -1281,7 +1281,7 @@ export async function streamTurnEvents(
         if (
           typeof requestToolName === 'string'
           && requestToolName.startsWith(MCP_SUPERONE_TOOL_PREFIX)
-          && isToolPreapproved(requestToolName)
+          && (isToolPreapproved(requestToolName) || isBuiltInSuperoneTool(requestToolName))
         ) {
           await respondToServer(notification.requestIdRaw, { action: 'accept', content: null, _meta: null })
           return true

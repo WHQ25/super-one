@@ -721,6 +721,7 @@ export type AgentEventBase =
   | { type: 'api_retry'; attempt: number; maxRetries: number; delayMs: number }
   | { type: 'queued_message_consumed'; clientMessageId: string }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
+  | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
 

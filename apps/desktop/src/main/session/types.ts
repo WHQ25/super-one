@@ -226,6 +226,7 @@ export interface Session {
   getSelectedEffort(): SendMessageRequest['effort']
   setApiProviderId(apiProviderId: string | null): void
   getApiProviderId(): string | null
+  setTitle(title: string, source: 'user' | 'agent'): void
   respondToPermission(
     requestId: string,
     allow: boolean,

@@ -25,6 +25,7 @@ const chatState = {
   switchSession: vi.fn(async () => {}),
   projectSessions: {} as Record<string, unknown>,
   remoteSessions: {} as Record<string, string[]>,
+  agentTitles: {} as Record<string, string>,
 }
 
 const mockWindowApp = {
@@ -50,6 +51,7 @@ vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
   motion: {
     div: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
+    span: ({ children, ...props }: HTMLAttributes<HTMLSpanElement>) => <span {...props}>{children}</span>,
   },
 }))
 
@@ -92,6 +94,11 @@ vi.mock('@/components/sidebar/FileTree', () => ({
 
 vi.mock('@/components/sidebar/BrandColorPopover', () => ({
   BrandColorPopover: () => null,
+}))
+
+vi.mock('@/components/sidebar/AnimatedSessionTitle', () => ({
+  SessionTitleAnimated: ({ fallback, className }: { fallback: string; className?: string }) => <span className={className}>{fallback}</span>,
+  useSessionTitleByAgent: (_sessionId: string | null | undefined, fallback: string | null | undefined) => fallback ?? '',
 }))
 
 vi.mock('@/components/ui/button', () => ({
@@ -183,7 +190,7 @@ describe('AppSidebar interactions', () => {
     await screen.findByText('Old Session')
 
     const title = screen.getByText('Old Session')
-    const row = title.parentElement as HTMLElement
+    const row = title.closest('.group\\/session') as HTMLElement
     const buttons = row.querySelectorAll('button')
     fireEvent.click(buttons[0] as HTMLButtonElement)
 

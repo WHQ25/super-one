@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ArrowLeft, Check, Copy, Eye, EyeOff, GitFork, MessageSquare, MoreHorizontal, Pencil, Search, Trash2, X } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from '../session-delete-helpers'
+import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 
 
@@ -238,7 +239,7 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
                       ) : (
                         <div className="flex items-center gap-1 overflow-hidden">
                           {entry.isWorktree ? <GitFork className="size-3 shrink-0 text-muted-foreground/70" /> : <MessageSquare className="size-3 shrink-0 text-muted-foreground/70" />}
-                          <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/80">{entry.title}</div>
+                          <SessionTitleAnimated sessionId={entry.sessionId} fallback={entry.title} className="min-w-0 flex-1 text-sm font-medium text-foreground/80" />
                           <div className="flex w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-all group-hover:w-auto group-hover:opacity-100">
                             <button
                               onClick={(e) => { e.stopPropagation(); entry.isHidden ? handleUnhide(entry.sessionId) : handleHide(entry.sessionId) }}

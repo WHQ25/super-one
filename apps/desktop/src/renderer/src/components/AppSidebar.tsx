@@ -28,6 +28,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { FileTree } from '@/components/sidebar/FileTree'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
 import type { RecentFolder, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from './session-delete-helpers'
@@ -422,7 +423,7 @@ export const AppSidebar = memo(function AppSidebar() {
               className="group/pin flex cursor-pointer items-center justify-between overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
             >
               <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="min-w-0 truncate text-[13px]">{s.title}</span>
+                <SessionTitleAnimated sessionId={s.sessionId} fallback={s.title} className="text-[13px]" />
                 <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
               </div>
               <button

@@ -28,6 +28,7 @@ vi.mock('../agent/resolve-cli', () => ({
 
 vi.mock('../mcp/superone-mcp-server', () => ({
   isToolPreapproved: vi.fn(() => false),
+  isBuiltInSuperoneTool: vi.fn(() => false),
 }))
 
 const {

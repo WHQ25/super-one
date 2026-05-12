@@ -98,10 +98,18 @@ export function createAutomationSession(folderPath: string, sessionId: string, t
   return sessionId
 }
 
-/** Update session title */
-export function renameSession(sessionId: string, title: string): void {
+export function renameSession(sessionId: string, title: string, source: 'user' | 'agent' = 'user'): void {
   const db = getDb()
-  db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, sessionId)
+  if (source === 'user') {
+    db.prepare('UPDATE sessions SET title = ?, is_user_renamed = 1 WHERE id = ?').run(title, sessionId)
+  } else {
+    db.prepare('UPDATE sessions SET title = ? WHERE id = ? AND is_user_renamed = 0').run(title, sessionId)
+  }
+}
+
+export function isSessionUserRenamed(sessionId: string): boolean {
+  const row = getDb().prepare('SELECT is_user_renamed FROM sessions WHERE id = ?').get(sessionId) as { is_user_renamed: number } | undefined
+  return row?.is_user_renamed === 1
 }
 
 /** Save full session state to DB: upsert messages into chat_messages, update session metadata */
@@ -221,11 +229,11 @@ export function saveSessionState(
 /** Load session state from DB */
 export function loadSessionState(
   sessionId: string,
-): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; apiProviderId: string | null } | null {
+): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; apiProviderId: string | null; title: string | null } | null {
   const db = getDb()
 
   const session = db.prepare(`
-    SELECT total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, api_provider_id FROM sessions WHERE id = ?
+    SELECT title, total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, api_provider_id FROM sessions WHERE id = ?
   `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; api_provider_id: string | null }) | undefined
 
   if (!session) return null
@@ -266,6 +274,7 @@ export function loadSessionState(
     worktreePath: session.worktree_path ?? null,
     provider: session.provider ?? 'claude',
     apiProviderId: session.api_provider_id ?? null,
+    title: session.title ?? null,
   }
 }
 

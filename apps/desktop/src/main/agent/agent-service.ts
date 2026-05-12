@@ -2006,7 +2006,12 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_RENAME, (_event, sessionId: string, title: string) => {
-      dbRenameSession(sessionId, title)
+      const session = this.requireSessionManager().getSession(sessionId)
+      if (session) {
+        session.setTitle(title, 'user')
+      } else {
+        dbRenameSession(sessionId, title, 'user')
+      }
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_STATE, (_event, sessionId: string) => {

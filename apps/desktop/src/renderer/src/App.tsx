@@ -32,6 +32,7 @@ import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useActiveSession, extractSessionTitle, useChatStore } from '@/stores/chat'
+import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
@@ -257,7 +258,8 @@ function App(): React.JSX.Element {
   }, [])
 
   const folderName = currentFolder?.split('/').pop() ?? null
-  const sessionTitle = useActiveSession((s) => extractSessionTitle(s.messages))
+  const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? '')
+  const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
 
   if (view === 'loading') {
     return (
@@ -344,7 +346,7 @@ function App(): React.JSX.Element {
         >
           {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', !isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'w-[66px]' : 'w-0')} />}
           {layoutMode === 'coding' && (!isMac || !showSidebar) && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
-          <HeaderTitle layoutMode={layoutMode} sessionTitle={sessionTitle} folderName={folderName} />
+          <HeaderTitle layoutMode={layoutMode} sessionId={sessionId} sessionFallback={sessionFallback} folderName={folderName} />
 
           <div className="flex-1" />
 
@@ -419,7 +421,7 @@ function CanvasReturnToPanelButton() {
   )
 }
 
-function HeaderTitle({ layoutMode, sessionTitle, folderName }: { layoutMode: 'canvas' | 'coding'; sessionTitle: string | null | undefined; folderName: string | null | undefined }) {
+function HeaderTitle({ layoutMode, sessionId, sessionFallback, folderName }: { layoutMode: 'canvas' | 'coding'; sessionId: string; sessionFallback: string | null | undefined; folderName: string | null | undefined }) {
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
   if (layoutMode === 'canvas' && fullscreenApp) {
     return (
@@ -429,9 +431,17 @@ function HeaderTitle({ layoutMode, sessionTitle, folderName }: { layoutMode: 'ca
       </span>
     )
   }
-  const text = layoutMode === 'coding' ? (sessionTitle ?? 'New Session') : (folderName ?? '')
+  if (layoutMode === 'coding') {
+    return (
+      <SessionTitleAnimated
+        sessionId={sessionId}
+        fallback={sessionFallback ?? 'New Session'}
+        className="max-w-[200px] text-xs text-muted-foreground"
+      />
+    )
+  }
   return (
-    <span className="max-w-[200px] truncate text-xs text-muted-foreground">{text}</span>
+    <span className="max-w-[200px] truncate text-xs text-muted-foreground">{folderName ?? ''}</span>
   )
 }
 

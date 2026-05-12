@@ -372,8 +372,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   }
 
   if (mcpInfo?.serverName === SUPERONE_SERVER) {
-    const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string }> = {
-      read_miniapp_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide') },
+    const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string; summaryField?: string }> = {
+      read_miniapp_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide'), summaryField: 'topic' },
+      rename_session: { icon: 'pencil', streaming: t('chat.toolBlock.renamingSession'), done: t('chat.toolBlock.renamedSession'), summaryField: 'title' },
     }
     if (mcpInfo.mcpToolName === 'pack_mini_app') {
       const appDir = String(params.appDir ?? '')
@@ -417,10 +418,10 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     }
     const d = superoneToolDisplay[mcpInfo.mcpToolName]
     if (d) {
-      const topic = mcpInfo.mcpToolName === 'read_miniapp_guide' ? String(params.topic ?? '') : ''
+      const summaryValue = d.summaryField ? String(params[d.summaryField] ?? '') : ''
       return (
         <CompactToolRow icon={<ToolIcon icon={d.icon} className="size-3 shrink-0 text-muted-foreground" />}>
-          <span className="font-medium text-foreground">{isStreaming ? <>{d.streaming}…</> : d.done}{topic && <>: <span className="text-muted-foreground">{topic}</span></>}</span>
+          <span className="font-medium text-foreground">{isStreaming ? <>{d.streaming}…</> : d.done}{summaryValue && <>: <span className="text-muted-foreground">{summaryValue}</span></>}</span>
         </CompactToolRow>
       )
     }

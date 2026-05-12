@@ -7,6 +7,7 @@ import {
 import {
   executeAppTool,
   getAppToolDefs,
+  getSessionHost,
   notifyDevAppReady,
 } from './superone-mcp-server'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
@@ -32,7 +33,11 @@ export async function executeSuperoneMcpTool(
   args: Record<string, unknown>,
 ) {
   if ((BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(toolName)) {
-    return executeBuiltInSuperoneTool(toolName as BuiltInSuperoneToolName, args, { notifyDevAppReady })
+    return executeBuiltInSuperoneTool(toolName as BuiltInSuperoneToolName, args, {
+      notifyDevAppReady,
+      sessionId,
+      sessionHost: getSessionHost(),
+    })
   }
 
   for (const entry of getAppToolDefs().values()) {

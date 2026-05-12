@@ -10,6 +10,7 @@ import { homePath } from '@/lib/path-utils'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import type { Automation, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { getPendingReason, getSessionTitle, isLiveSession } from './session-state-utils'
+import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { AutomationDialog } from '../AutomationDialog'
 
 function SessionStatusSpinner({ lastEventAt }: { lastEventAt: number }) {
@@ -357,7 +358,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                               }
                             </span>
                           </div>
-                          <span className="min-w-0 truncate text-[13px]">{session.title}</span>
+                          <SessionTitleAnimated sessionId={session.sessionId} fallback={session.title} className="text-[13px]" />
                           <button
                             onClick={(e) => {
                               e.stopPropagation()

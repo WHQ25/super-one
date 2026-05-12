@@ -28,6 +28,7 @@ import {
   finalizeCodexAssistantMessage,
   type CodexSessionRuntime,
 } from '../agent/codex-session-runtime'
+import { renameSession as dbRenameSession } from '../db-sessions'
 import { nextEventSeq } from './event-seq'
 import {
   LOCAL_OWNER,
@@ -130,6 +131,7 @@ export class Session implements SessionContract {
   get lastEventAt(): number { return this._lastEventAt }
 
   private _messages: ChatMessage[] = []
+  private _title: string | null = null
   private _totalCostUsd = 0
   private _contextTokens = 0
   private _taskProgress: Record<string, TaskProgressEntry> = {}
@@ -251,6 +253,7 @@ export class Session implements SessionContract {
     this.createdAt = opts.createdAt ?? Date.now()
     this._providerSessionId = opts.resumedProviderSessionId ?? null
     if (opts.initialMessages?.length) this._messages = [...opts.initialMessages]
+    if (opts.title) this._title = opts.title
     this._totalCostUsd = opts.initialTotalCostUsd ?? 0
     this._contextTokens = opts.initialContextTokens ?? 0
     this._gitBranch = opts.gitBranch ?? null
@@ -1040,7 +1043,22 @@ export class Session implements SessionContract {
     }
   }
 
+  setTitle(title: string, source: 'user' | 'agent'): void {
+    if (this._status === 'disposed') return
+    const trimmed = title.trim()
+    if (!trimmed) return
+    if (this._title === trimmed) return
+    this._title = trimmed
+    try {
+      dbRenameSession(this.id, trimmed, source)
+    } catch (err) {
+      log.warn('[Session] dbRenameSession error:', err)
+    }
+    this.forwardEvent({ type: 'session_title_changed', sessionId: this.id, title: trimmed, source } as AgentEvent)
+  }
+
   private computeTitle(): string | null {
+    if (this._title) return this._title
     if (this._messages.length === 0) return null
     const title = this.harnessId === 'claude'
       ? extractClaudeTitle(this._messages)

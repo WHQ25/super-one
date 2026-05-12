@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode, remapMessagesForFork } from './chat-helpers'
+import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, remapMessagesForFork } from './chat-helpers'
 import type { ChatMessage, SlashCommandInfo } from '@superone/shared/agent-types'
 
 function cmd(name: string, description = ''): SlashCommandInfo {
@@ -103,26 +103,6 @@ describe('buildSlashCommands', () => {
     const release = result.find((c) => c.name === 'release')
     expect(release).toBeTruthy()
     expect(release?.isSkill).toBe(false)
-  })
-})
-
-describe('getCommandOutputMode', () => {
-  it('returns popup for utility commands', () => {
-    expect(getCommandOutputMode('help')).toBe('popup')
-    expect(getCommandOutputMode('reset')).toBe('popup')
-    expect(getCommandOutputMode('auth')).toBe('popup')
-    expect(getCommandOutputMode('auth-status')).toBe('popup')
-    expect(getCommandOutputMode('auth-set')).toBe('popup')
-  })
-
-  it('returns overlay for content commands', () => {
-    expect(getCommandOutputMode('context')).toBe('overlay')
-    expect(getCommandOutputMode('commit')).toBe('overlay')
-    expect(getCommandOutputMode('review')).toBe('overlay')
-  })
-
-  it('defaults to overlay for unknown commands', () => {
-    expect(getCommandOutputMode('unknown-command')).toBe('overlay')
   })
 })
 

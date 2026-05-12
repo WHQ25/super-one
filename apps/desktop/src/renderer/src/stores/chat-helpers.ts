@@ -64,13 +64,6 @@ export function remapMessagesForFork(messages: ChatMessage[], forkedSessionId: s
   return messages.map((m) => ({ ...m, id: `${forkedSessionId}_${m.id}` }))
 }
 
-/** Commands that render as a lightweight popup near the input area. Everything else uses full overlay. */
-const POPUP_COMMANDS = new Set(['help', 'reset', 'auth', 'auth-status', 'auth-set'])
-
-export function getCommandOutputMode(command: string): 'overlay' | 'popup' {
-  return POPUP_COMMANDS.has(command) ? 'popup' : 'overlay'
-}
-
 export function extractModeFromSuggestions(
   suggestions: Array<Record<string, unknown>> | undefined,
   selectedIndices: number[]

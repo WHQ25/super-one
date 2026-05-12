@@ -1396,7 +1396,7 @@ describe('/provider slash command + setSessionApiProviderId', () => {
 
     expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
     const popup = getActiveDraftSession('/test')!.slashCommandOutput
-    expect(popup).toMatchObject({ command: 'provider', mode: 'popup' })
+    expect(popup).toMatchObject({ command: 'provider' })
   })
 
   it('intercepts /provider under codex provider too (universal command)', async () => {
@@ -1425,7 +1425,7 @@ describe('/provider slash command + setSessionApiProviderId', () => {
 
     expect(mockWindowApp.codexRun).not.toHaveBeenCalled()
     const popup = useChatStore.getState().projectSessions['/test']._sessions[codexSid].slashCommandOutput
-    expect(popup).toMatchObject({ command: 'provider', mode: 'popup' })
+    expect(popup).toMatchObject({ command: 'provider' })
   })
 
   it('setSessionApiProviderId updates the active session and dispatches IPC', async () => {

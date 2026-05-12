@@ -10,7 +10,6 @@ import { ChatMessage, CompactingIndicator, CompactIndicator, RateLimitIndicator,
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
-import { SlashCommandOverlay } from './SlashCommandOverlay'
 import { TodoPopup } from './TodoPopup'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
 import { PlanFullscreenContext } from './codex-item-renderer'
@@ -170,7 +169,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
         <PlanApprovalPrompt />
       ) : (
         <>
-          <SlashCommandOverlay />
           <div className="relative min-w-0 flex-1 overflow-hidden">
             {messages.length === 0 && !hasActiveSession ? (
               <ChatSuggestions />

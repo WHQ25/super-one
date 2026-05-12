@@ -31,6 +31,7 @@ import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { ProviderSlashPopup } from './ProviderSlashPopup'
 import { McpSlashPopup } from './McpSlashPopup'
 import { ReviewPanel } from './ReviewPanel'
+import { SlashCommandContent } from './SlashCommandContent'
 import { StopButton } from './StopButton'
 
 export const chatInputAPI: {
@@ -99,9 +100,7 @@ export function ChatInput() {
       showReviewPanel: s.showReviewPanel,
       activeSessionId: s._activeSessionId,
     })))
-    const commandPopup = useActiveSession((s) =>
-      s.slashCommandOutput?.mode === 'popup' ? s.slashCommandOutput : null
-    )
+    const commandPopup = useActiveSession((s) => s.slashCommandOutput)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const [slashIndex, setSlashIndex] = useState(-1)
@@ -984,7 +983,7 @@ export function ChatInput() {
         )}
 
         {commandPopup && commandPopup.command !== 'provider' && commandPopup.command !== 'mcp' && (
-          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-card">
+          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-96 flex-col overflow-hidden rounded-xl border border-border bg-card">
             <div className="flex items-center justify-between px-3 py-1.5">
               <span className="text-[11px] font-medium text-muted-foreground">/{commandPopup.command}</span>
               <button
@@ -995,7 +994,7 @@ export function ChatInput() {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-3 py-2">
-              <pre className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{commandPopup.content}</pre>
+              <SlashCommandContent command={commandPopup.command} content={commandPopup.content} />
             </div>
           </div>
         )}

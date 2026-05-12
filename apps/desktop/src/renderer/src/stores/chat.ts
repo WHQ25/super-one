@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { useActivityViewStateStore } from './activity-view-state'
-import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget, getCommandOutputMode } from './chat-helpers'
+import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget } from './chat-helpers'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
@@ -140,7 +140,7 @@ export interface PerSessionState {
   pendingQuestion: AskUserQuestionRequest | null
   pendingPlanApproval: PlanApprovalRequest | null
   planApprovalOutcome: { approved: boolean; feedback?: string } | null
-  slashCommandOutput: { command: string; content: string; mode?: 'overlay' | 'popup' } | null
+  slashCommandOutput: { command: string; content: string } | null
   _streamingToolInputPreviews: Record<string, Record<string, unknown>>
   _pendingSlashCommand: string
   _pendingCompactUserId: string
@@ -1349,7 +1349,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         providerId: 'claude',
       }
       return {
-        slashCommandOutput: { command: cmd, content: event.content, mode: getCommandOutputMode(cmd) },
+        slashCommandOutput: { command: cmd, content: event.content },
         _pendingSlashCommand: '',
         messages: [...filtered, hintMsg],
       }
@@ -3249,13 +3249,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const codexSessionId = resolvedCodexCommand ? _getEffectiveSessionId(getProject(get(), activeProject)) : null
 
-    // Utility codex commands → popup overlay (no chat messages)
+    // Utility codex commands → popup (no chat messages); errors fall through to in-chat assistant error message
     if (resolvedCodexCommand) {
       const utilityKind = resolvedCodexCommand.kind
       if (utilityKind === 'help' || utilityKind === 'reset' || utilityKind === 'auth-status' || utilityKind === 'auth-set' || utilityKind === 'plan') {
         set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
-        let popupContent: string
         try {
+          let popupContent: string
           if (utilityKind === 'help') {
             popupContent = getCodexHelpText()
           } else if (utilityKind === 'reset') {
@@ -3274,13 +3274,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             })
             popupContent = `Auth mode updated.\n\n${formatCodexAuthStatus(status)}`
           }
+          set((s) => updateActivePerSession(s, () => ({
+            slashCommandOutput: { command: utilityKind, content: popupContent },
+          })))
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error)
-          popupContent = `Error: ${msg}`
+          const errorMsg: ChatMessage = {
+            id: `slash-error-${Date.now()}`,
+            role: 'assistant',
+            content: [{ type: 'text', text: `Error: ${msg}` }],
+            status: 'error',
+            createdAt: new Date().toISOString(),
+            providerId: 'codex',
+          }
+          set((s) => updateActivePerSession(s, (sess) => ({
+            messages: [...sess.messages, errorMsg],
+          })))
         }
-        set((s) => updateActivePerSession(s, () => ({
-          slashCommandOutput: { command: utilityKind, content: popupContent, mode: getCommandOutputMode(utilityKind) },
-        })))
         return
       }
     }
@@ -4322,7 +4332,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     set((s) => updateActivePerSession(s, () => ({
-      slashCommandOutput: { command: 'provider', mode: 'popup', content: '' },
+      slashCommandOutput: { command: 'provider', content: '' },
     })))
   },
 
@@ -4330,7 +4340,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
     set((s) => updateActivePerSession(s, () => ({
-      slashCommandOutput: { command: 'mcp', mode: 'popup', content: '' },
+      slashCommandOutput: { command: 'mcp', content: '' },
     })))
   },
 

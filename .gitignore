@@ -55,3 +55,12 @@ test-results/
 
 # Storybook build output
 storybook-static/
+
+# Claude Code local state
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+
+# Locally installed remotion skill (not used by this repo)
+.agents/skills/remotion-best-practices
+.claude/skills/remotion-best-practices
+skills-lock.json

@@ -4,6 +4,26 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.31.0-alpha] - 2026-05-12
+
+### Added
+
+- **Claude plugin settings page is now scope-aware with a structured resource explorer.** You can add a marketplace from GitHub/URL/local path, see its scope (user/project/local from each `.claude/settings.json`'s `extraKnownMarketplaces`, with `claude-plugins-official` surfacing as "Built-in"), and remove it at the correct scope — the right settings file is edited and the CLI's marketplace remove runs only when no other scope still references it. Falls back to the GitHub owner's avatar as the marketplace logo. Plugin detail now parses `.mcp.json` and `hooks/hooks.json` so MCP servers and hook events become first-class entries in the left sidebar; a category list (commands/agents/skills/hooks/mcp) replaces the raw file tree, folder-shaped resources drill into a collapsible FileTree with a `← <icon> <name>` header, single-file resources preview in place, and selecting a hook event shows its JSON plus a "Referenced scripts" list with each `${CLAUDE_PLUGIN_ROOT}/...` path clickable and syntax-highlighted. Expanded plugin cards drawer-animate via motion. A root `postinstall` proxy now runs the desktop workspace's electron-rebuild, since bun does not run lifecycle scripts for child workspaces by default.
+- **Worktree session indicator shows git dirty state.** Worktree sessions had no visible dirty signal once a session became "old" — the branch popover only renders when the user can still switch worktrees. The indicator now shows an amber/grey dot when there are uncommitted changes and turns into a click popover mirroring the git indicator's branch + uncommitted file/+ins/-del row.
+
+### Fixed
+
+- **Codex `in_progress` shimmer no longer sticks after streaming finishes.** Codex app-server occasionally omits `item/completed` for `mcp_tool_call` / `command_execution` items, so the item map kept their status as `in_progress` through `turn/completed` and the ToolBlock's shimmer highlight never cleared. The `turn/completed` handler now scans the item map and finalizes residual `in_progress` items to `completed`, emitting `onItemDelta('completed', …)` so the renderer clears the shimmer immediately.
+
+### Changed
+
+- **Slash command output is unified as an input-area popup; command failures surface in chat.** The fullscreen overlay path is dropped — all slash command output now renders in the input-area popup (max-h-96) with a command-aware view router for the context pie chart, release notes, markdown, and raw text. Codex utility command failures (`/auth-set`, `/reset`, `/auth-status`) push an in-chat assistant error message instead of populating the popup, matching the existing `message_error` visual treatment.
+- **`@anthropic-ai/claude-agent-sdk` bumped to 0.2.139** (parity with Claude Code 2.1.137–139, no breaking changes). The `AccountApiProvider` union extends to include `'gateway'` matching the SDK's newly added `apiProvider` value.
+
+### CI
+
+- **`deploy-relay` workflow injects `relay.super-one.dev` as a route at deploy time.** The workflow prepends a routes block to `wrangler.toml` so the official deployment binds to `relay.super-one.dev`, while the mirrored public `wrangler.toml` stays self-host friendly (deploys to `workers.dev` out of the box).
+
 ## [0.30.6-alpha] - 2026-05-11
 
 ### Added

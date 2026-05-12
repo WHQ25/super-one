@@ -129,6 +129,7 @@ export function openHistoryTab() {
     dockApi.addPanel({
       id: 'session-history',
       component: 'session-history',
+      tabComponent: 'session-history-tab',
       title: 'History',
     })
   })

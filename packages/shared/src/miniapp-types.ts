@@ -101,6 +101,34 @@ export interface MiniAppEntry {
   manifest: MiniAppManifest
   installDir: string
   distDir?: string
+  /**
+   * Set for dev pointer entries whose appId is not present in the dev-registry
+   * (e.g. registry was reset, source folder unlinked). Renderer should surface
+   * an "orphan" badge instead of trying to load the app.
+   */
+  orphan?: boolean
+}
+
+export interface DevRegistryEntry {
+  appId: string
+  sourceDir: string
+  distDir: string
+  name: string
+  registeredAt: number
+  lastSeenAt: number
+}
+
+export interface DevAppInstallation {
+  scope: 'user' | 'project'
+  projectDir?: string
+  installDir: string
+  enabled: boolean
+}
+
+export interface DevRegistryView extends DevRegistryEntry {
+  /** 'ok' = sourceDir exists; 'missing' = sourceDir not found on disk. */
+  status: 'ok' | 'missing'
+  installations: DevAppInstallation[]
 }
 
 export interface MiniAppToolCallRequest {

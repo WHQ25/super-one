@@ -1730,6 +1730,13 @@ export const AgentIpcChannels = {
   MINIAPP_GET_PREAPPROVED: 'miniapp:get-preapproved',
   MINIAPP_SET_PREAPPROVED: 'miniapp:set-preapproved',
   MINIAPP_DEV_APP_READY: 'miniapp:dev-app-ready',
+  MINIAPP_DEV_REGISTRY_LIST: 'miniapp:dev-registry:list',
+  MINIAPP_DEV_REGISTRY_ADD: 'miniapp:dev-registry:add',
+  MINIAPP_DEV_REGISTRY_REMOVE: 'miniapp:dev-registry:remove',
+  MINIAPP_DEV_REGISTRY_INSTALL: 'miniapp:dev-registry:install',
+  MINIAPP_DEV_REGISTRY_UNINSTALL: 'miniapp:dev-registry:uninstall',
+  MINIAPP_DEV_REGISTRY_SET_ENABLED: 'miniapp:dev-registry:set-enabled',
+  MINIAPP_DEV_REGISTRY_REVEAL_SOURCE: 'miniapp:dev-registry:reveal-source',
 
   // Automations
   AUTOMATIONS_LIST: 'automations:list',

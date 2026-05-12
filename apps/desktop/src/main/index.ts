@@ -10,7 +10,8 @@ import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessa
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
+import * as devRegistry from './miniapp/dev-registry'
 import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
@@ -1904,6 +1905,45 @@ function registerIpcHandlers(): void {
     const basePath = getAppBasePath(appId)
     await setPreapprovedByPath(basePath, tools)
     updatePreapprovedTools(appId, tools)
+  })
+
+  // Dev-registry (mini-app development)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DEV_REGISTRY_LIST, async () => {
+    const knownProjects = getRecentFolders().map((f) => f.path)
+    return listDevRegistryView(knownProjects)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DEV_REGISTRY_ADD, async () => {
+    const result = await dialog.showOpenDialog(getMainWindow(), {
+      properties: ['openDirectory'],
+      title: 'Select mini-app source directory',
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return registerDevMiniApp({ directory: result.filePaths[0] })
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DEV_REGISTRY_REMOVE, async (_e, appId: string, cascade?: boolean) => {
+    const knownProjects = getRecentFolders().map((f) => f.path)
+    await unregisterDevMiniApp(appId, !!cascade, knownProjects)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DEV_REGISTRY_INSTALL, async (_e, appId: string, scope: 'user' | 'project', projectDir?: string, force?: boolean) => {
+    const installDir = await installDevPointer({ appId, scope, projectDir, force })
+    return { installDir }
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DEV_REGISTRY_UNINSTALL, async (_e, appId: string, scope: 'user' | 'project', projectDir?: string) => {
+    await removeDevPointer({ appId, scope, projectDir })
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DEV_REGISTRY_SET_ENABLED, async (_e, appId: string, scope: 'user' | 'project', enabled: boolean, projectDir?: string) => {
+    await setDevPointerEnabled({ appId, scope, projectDir, enabled })
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DEV_REGISTRY_REVEAL_SOURCE, async (_e, appId: string) => {
+    const entry = await devRegistry.lookupByAppId(appId)
+    if (!entry) return
+    shell.showItemInFolder(entry.sourceDir)
   })
 
   // Automations

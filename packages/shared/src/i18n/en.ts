@@ -959,6 +959,37 @@ export type Messages = {
       readWrite: string
       network: string
     }
+    devAppLibrary: {
+      toggleButton: string
+      title: string
+      addNew: string
+      loading: string
+      empty: string
+      emptyHint: string
+      added: string
+      addFailed: string
+      installedHere: string
+      missingBadge: string
+      orphanBadge: string
+      installScopeUser: string
+      installScopeProject: string
+      revealSource: string
+      installTo: string
+      scopeUser: string
+      scopeProject: string
+      scopeProjectNone: string
+      installCount: string
+      installing: string
+      installedCount: string
+      noProjectSelected: string
+      removeButton: string
+      removeTitle: string
+      removeDescription: string
+      removeCascadeLabel: string
+      remove: string
+      removing: string
+      removedCount: string
+    }
   }
   tooltips: {
     toggleSidebar: string
@@ -1966,6 +1997,37 @@ export const en: Messages = {
       readOnly: 'Read only',
       readWrite: 'Read & Write',
       network: 'Network',
+    },
+    devAppLibrary: {
+      toggleButton: 'Library',
+      title: 'Dev App Library',
+      addNew: 'Add dev app…',
+      loading: 'Loading…',
+      empty: 'No dev apps registered yet',
+      emptyHint: 'Use “Add dev app…” to register a source directory, or run register_dev_miniapp from an agent.',
+      added: 'Added {{name}} to library',
+      addFailed: 'Failed to add dev app',
+      installedHere: 'installed',
+      missingBadge: 'missing',
+      orphanBadge: 'unlinked',
+      installScopeUser: 'User',
+      installScopeProject: 'In {{name}}',
+      revealSource: 'Reveal source in Finder',
+      installTo: 'Install to',
+      scopeUser: 'User (all projects)',
+      scopeProject: 'Project: {{name}}',
+      scopeProjectNone: 'Project (none open)',
+      installCount: 'Install {{count}}',
+      installing: 'Installing…',
+      installedCount: 'Installed {{count}} dev app(s)',
+      noProjectSelected: 'Open a project first to install at project scope',
+      removeButton: 'Remove {{count}}',
+      removeTitle: 'Remove from library',
+      removeDescription: 'Remove {{count}} entry from the dev registry? Source files stay on disk.',
+      removeCascadeLabel: 'Also uninstall .s1-dev.json pointers from all scopes',
+      remove: 'Remove',
+      removing: 'Removing…',
+      removedCount: 'Removed {{count}} entry(s)',
     },
   },
   tooltips: {

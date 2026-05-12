@@ -1,16 +1,17 @@
-import { readdir, readFile, writeFile, stat, mkdir, glob, watch, rm, rename } from 'fs/promises'
+import { readdir, readFile, writeFile, stat, mkdir, glob, watch, rm, rename, rmdir } from 'fs/promises'
 import { watch as watchSync } from 'fs'
 import type { FSWatcher } from 'fs'
-import { join, resolve, sep, relative, dirname } from 'path'
+import { join, resolve, sep, relative, dirname, basename } from 'path'
 import { app, shell } from 'electron'
 import log from '../logger'
 import { gitRun } from '../git-run'
 import { sanitizeGitRef } from '../path-security'
 import { parseGitStatusFiles } from '../git-status-utils'
 import { parseManifest, parseDevLink } from './miniapp-schema'
-import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp, MiniAppFsAccess, MiniAppMediaKind } from '@superone/shared/miniapp-types'
+import type { MiniAppEntry, MiniAppManifest, MiniAppFsOp, MiniAppFsWatchEvent, MiniAppGitOp, MiniAppFsAccess, MiniAppMediaKind, DevAppInstallation, DevRegistryEntry } from '@superone/shared/miniapp-types'
 import { generateVanillaFiles, generateReactFiles, type GeneratedFile } from './miniapp-templates'
 import { closeDbForApp } from './miniapp-db'
+import * as devRegistry from './dev-registry'
 
 const DEV_LINK_FILE = '.s1-dev.json'
 
@@ -220,24 +221,33 @@ interface ResolveAppEntryOpts {
   projectDir?: string
 }
 
-export async function resolveAppEntry(installDir: string, opts: ResolveAppEntryOpts): Promise<MiniAppEntry | null> {
+export async function resolveAppEntry(installDir: string, _opts: ResolveAppEntryOpts): Promise<MiniAppEntry | null> {
   const devLink = await readDevLink(installDir)
-  if (devLink && devLink.enabled) {
-    const distDir = resolveDistDir(devLink.distDir, opts.projectDir)
-    if (distDir) {
-      const manifest = await readManifest(distDir)
-      if (manifest) {
-        return { id: manifest.appId, manifest, installDir, distDir }
-      }
-      log.warn('[miniapp] dev link distDir has no manifest: %s → %s', installDir, distDir)
+  if (devLink) {
+    if (!devLink.enabled) {
+      const prodManifest = await readManifest(installDir)
+      if (!prodManifest) return null
+      return { id: prodManifest.appId, manifest: prodManifest, installDir }
     }
+    const appId = basename(installDir)
+    const reg = await devRegistry.lookupByAppId(appId)
+    if (!reg) {
+      log.warn('[miniapp] dev pointer at %s has no matching dev-registry entry for appId=%s', installDir, appId)
+      return { id: appId, manifest: { appId, name: appId, isDev: true } as MiniAppManifest, installDir, orphan: true }
+    }
+    const manifest = await readManifest(reg.distDir)
+    if (!manifest) {
+      log.warn('[miniapp] dev-registry %s points to %s but no manifest found', appId, reg.distDir)
+      return { id: appId, manifest: { appId, name: reg.name, isDev: true } as MiniAppManifest, installDir, orphan: true }
+    }
+    return { id: appId, manifest, installDir, distDir: reg.distDir }
   }
   const manifest = await readManifest(installDir)
   if (!manifest) return null
   return { id: manifest.appId, manifest, installDir }
 }
 
-async function readDevLink(installDir: string): Promise<{ distDir: string; enabled: boolean } | null> {
+async function readDevLink(installDir: string): Promise<{ enabled: boolean } | null> {
   let raw: string
   try {
     raw = await readFile(join(installDir, DEV_LINK_FILE), 'utf-8')
@@ -257,15 +267,6 @@ async function readDevLink(installDir: string): Promise<{ distDir: string; enabl
     return null
   }
   return result.devLink
-}
-
-function resolveDistDir(distDir: string, projectDir: string | undefined): string | null {
-  if (distDir.startsWith('/')) return distDir
-  if (!projectDir) {
-    log.warn('[miniapp] relative distDir %s requires a projectDir base', distDir)
-    return null
-  }
-  return resolve(projectDir, distDir)
 }
 
 export async function discoverApps(): Promise<MiniAppEntry[]> {
@@ -373,23 +374,230 @@ export async function createMiniApp(opts: CreateMiniAppOptions): Promise<CreateM
   await writeGeneratedFiles(directory, files)
 
   const distAbs = template === 'react' ? join(directory, 'dist') : directory
-  const installRoot = scope === 'project'
-    ? getProjectAppsDir(opts.projectDir!)
-    : userAppsDir()
-  const installDir = join(installRoot, appId)
-  const distDirField = scope === 'project'
-    ? relative(opts.projectDir!, distAbs)
-    : distAbs
 
-  const devLink = { distDir: distDirField, enabled: true }
-  await mkdir(installDir, { recursive: true })
-  await writeFile(join(installDir, DEV_LINK_FILE), JSON.stringify(devLink, null, 2), 'utf-8')
+  await devRegistry.upsertEntry({
+    appId,
+    sourceDir: directory,
+    distDir: distAbs,
+    name: opts.name,
+  })
+
+  const installDir = await writeDevPointer({
+    appId,
+    scope,
+    projectDir: opts.projectDir,
+  })
 
   return {
     entry: { id: appId, manifest, installDir, distDir: distAbs },
     appPath: directory,
     buildRequired,
   }
+}
+
+export interface WriteDevPointerOpts {
+  appId: string
+  scope: CreateMiniAppScope
+  projectDir?: string
+  enabled?: boolean
+}
+
+export function getDevPointerInstallDir(appId: string, scope: CreateMiniAppScope, projectDir?: string): string {
+  const root = scope === 'project' ? getProjectAppsDir(requireProjectDir(scope, projectDir)) : userAppsDir()
+  return join(root, appId)
+}
+
+function requireProjectDir(scope: CreateMiniAppScope, projectDir?: string): string {
+  if (scope === 'project' && !projectDir) {
+    throw new Error('scope="project" requires projectDir')
+  }
+  return projectDir!
+}
+
+export async function writeDevPointer(opts: WriteDevPointerOpts): Promise<string> {
+  const installDir = getDevPointerInstallDir(opts.appId, opts.scope, opts.projectDir)
+  await mkdir(installDir, { recursive: true })
+  const devLink = { enabled: opts.enabled ?? true }
+  await writeFile(join(installDir, DEV_LINK_FILE), JSON.stringify(devLink, null, 2), 'utf-8')
+  return installDir
+}
+
+/**
+ * Detect what kind of content (if any) lives in `installDir` so install can refuse to clobber
+ * a real prod install. A dev pointer dir contains only `.s1-dev.json` (and possibly nothing
+ * else); a prod install dir contains `manifest.json` and assets.
+ */
+export async function classifyInstallDir(installDir: string): Promise<'empty' | 'dev-pointer' | 'prod-install'> {
+  let entries: string[]
+  try {
+    entries = await readdir(installDir)
+  } catch {
+    return 'empty'
+  }
+  const meaningful = entries.filter((e) => e !== '.DS_Store')
+  if (meaningful.length === 0) return 'empty'
+  if (meaningful.includes('manifest.json')) return 'prod-install'
+  if (meaningful.length === 1 && meaningful[0] === DEV_LINK_FILE) return 'dev-pointer'
+  // Anything else (e.g. dev-pointer + data/) is also treated as dev-pointer if .s1-dev.json present
+  if (meaningful.includes(DEV_LINK_FILE)) return 'dev-pointer'
+  return 'prod-install'
+}
+
+export interface InstallDevPointerOpts {
+  appId: string
+  scope: CreateMiniAppScope
+  projectDir?: string
+  force?: boolean
+}
+
+export async function installDevPointer(opts: InstallDevPointerOpts): Promise<string> {
+  requireProjectDir(opts.scope, opts.projectDir)
+  const reg = await devRegistry.lookupByAppId(opts.appId)
+  if (!reg) throw new Error(`dev-registry has no entry for appId=${opts.appId}; register it first`)
+  const installDir = getDevPointerInstallDir(opts.appId, opts.scope, opts.projectDir)
+  const kind = await classifyInstallDir(installDir)
+  if (kind === 'prod-install' && !opts.force) {
+    throw new Error(`refusing to overwrite prod install at ${installDir}; uninstall it first or pass force=true`)
+  }
+  return writeDevPointer({ appId: opts.appId, scope: opts.scope, projectDir: opts.projectDir })
+}
+
+export interface RemoveDevPointerOpts {
+  appId: string
+  scope: CreateMiniAppScope
+  projectDir?: string
+}
+
+export async function removeDevPointer(opts: RemoveDevPointerOpts): Promise<void> {
+  const installDir = getDevPointerInstallDir(opts.appId, opts.scope, opts.projectDir)
+  const kind = await classifyInstallDir(installDir)
+  if (kind !== 'dev-pointer') return
+  await rm(join(installDir, DEV_LINK_FILE), { force: true })
+  try {
+    await rmdir(installDir)
+  } catch {
+    // Directory not empty (e.g. data/ subdir) — leave it.
+  }
+}
+
+export async function setDevPointerEnabled(opts: RemoveDevPointerOpts & { enabled: boolean }): Promise<void> {
+  const installDir = getDevPointerInstallDir(opts.appId, opts.scope, opts.projectDir)
+  const kind = await classifyInstallDir(installDir)
+  if (kind !== 'dev-pointer') {
+    throw new Error(`no dev pointer at ${installDir}`)
+  }
+  const devLink = { enabled: opts.enabled }
+  await writeFile(join(installDir, DEV_LINK_FILE), JSON.stringify(devLink, null, 2), 'utf-8')
+}
+
+async function listInstallationsInScopeRoot(
+  scopeRoot: string,
+  scope: CreateMiniAppScope,
+  projectDir: string | undefined,
+): Promise<DevAppInstallation[]> {
+  let names: string[]
+  try {
+    names = await readdir(scopeRoot)
+  } catch {
+    return []
+  }
+  const out: DevAppInstallation[] = []
+  for (const appId of names) {
+    const installDir = join(scopeRoot, appId)
+    const devLink = await readDevLink(installDir)
+    if (!devLink) continue
+    out.push({
+      scope,
+      installDir,
+      enabled: devLink.enabled,
+      ...(scope === 'project' && projectDir ? { projectDir } : {}),
+    })
+  }
+  return out
+}
+
+/**
+ * Reverse-scan `~/.superone/apps` and every known project's `<proj>/.superone/apps` for
+ * `.s1-dev.json` files. Returns installations grouped by appId.
+ */
+export async function listAllInstallations(knownProjects: string[]): Promise<Map<string, DevAppInstallation[]>> {
+  const grouped = new Map<string, DevAppInstallation[]>()
+  const add = (appId: string, inst: DevAppInstallation) => {
+    const arr = grouped.get(appId) ?? []
+    arr.push(inst)
+    grouped.set(appId, arr)
+  }
+  const userInstalls = await listInstallationsInScopeRoot(userAppsDir(), 'user', undefined)
+  for (const inst of userInstalls) {
+    const appId = basename(inst.installDir)
+    add(appId, inst)
+  }
+  for (const projectDir of knownProjects) {
+    const projectInstalls = await listInstallationsInScopeRoot(getProjectAppsDir(projectDir), 'project', projectDir)
+    for (const inst of projectInstalls) {
+      const appId = basename(inst.installDir)
+      add(appId, inst)
+    }
+  }
+  return grouped
+}
+
+export interface DevRegistryViewWithStatus extends DevRegistryEntry {
+  status: 'ok' | 'missing'
+  installations: DevAppInstallation[]
+}
+
+export async function listDevRegistryView(knownProjects: string[]): Promise<DevRegistryViewWithStatus[]> {
+  const entries = await devRegistry.listEntries()
+  const installs = await listAllInstallations(knownProjects)
+  const out: DevRegistryViewWithStatus[] = []
+  for (const entry of entries) {
+    const exists = await devRegistry.sourceDirExists(entry.sourceDir)
+    out.push({
+      ...entry,
+      status: exists ? 'ok' : 'missing',
+      installations: installs.get(entry.appId) ?? [],
+    })
+  }
+  return out
+}
+
+export interface RegisterDevMiniAppInput {
+  directory: string
+  name?: string
+}
+
+/**
+ * Register an existing mini-app source directory in the global dev-registry without
+ * scaffolding anything. The directory must contain a manifest.json at the root or under dist/.
+ * Returns the registry entry (idempotent — re-registering the same directory upserts).
+ */
+export async function registerDevMiniApp(input: RegisterDevMiniAppInput): Promise<DevRegistryEntry> {
+  if (!input.directory.startsWith('/')) {
+    throw new Error(`directory must be an absolute path, got: ${input.directory}`)
+  }
+  const detected = await detectStandaloneApp(input.directory)
+  if (!detected) {
+    throw new Error(`no manifest.json found at ${input.directory} or ${join(input.directory, 'dist')}`)
+  }
+  const distDir = detected.distDir ?? detected.installDir
+  return devRegistry.upsertEntry({
+    appId: detected.manifest.appId,
+    sourceDir: input.directory,
+    distDir,
+    name: input.name ?? detected.manifest.name,
+  })
+}
+
+export async function unregisterDevMiniApp(appId: string, cascade: boolean, knownProjects: string[]): Promise<void> {
+  if (cascade) {
+    const installs = await listAllInstallations(knownProjects)
+    const arr = installs.get(appId) ?? []
+    for (const inst of arr) {
+      await removeDevPointer({ appId, scope: inst.scope, projectDir: inst.projectDir })
+    }
+  }
+  await devRegistry.removeEntry(appId)
 }
 
 interface CachedAppPaths {

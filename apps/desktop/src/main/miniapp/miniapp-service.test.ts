@@ -5,6 +5,9 @@ const mockWriteFile = vi.fn()
 const mockMkdir = vi.fn()
 const mockReadFile = vi.fn()
 const mockStat = vi.fn()
+const mockRename = vi.fn()
+const mockRmdir = vi.fn()
+const mockRm = vi.fn()
 
 vi.mock('fs/promises', () => ({
   readdir: (...args: unknown[]) => mockReaddir(...args),
@@ -12,6 +15,9 @@ vi.mock('fs/promises', () => ({
   mkdir: (...args: unknown[]) => mockMkdir(...args),
   readFile: (...args: unknown[]) => mockReadFile(...args),
   stat: (...args: unknown[]) => mockStat(...args),
+  rename: (...args: unknown[]) => mockRename(...args),
+  rmdir: (...args: unknown[]) => mockRmdir(...args),
+  rm: (...args: unknown[]) => mockRm(...args),
   glob: vi.fn(),
   watch: vi.fn(),
 }))
@@ -22,6 +28,20 @@ vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi
 vi.mock('../git-run', () => ({ gitRun: vi.fn() }))
 vi.mock('../path-security', () => ({ sanitizeGitRef: vi.fn((s: string) => s) }))
 vi.mock('../git-status-utils', () => ({ parseGitStatusFiles: vi.fn(() => []) }))
+
+const mockDevRegistryLookup = vi.fn()
+const mockDevRegistryUpsert = vi.fn()
+const mockDevRegistryList = vi.fn().mockResolvedValue([])
+const mockDevRegistryRemove = vi.fn()
+const mockDevRegistrySourceExists = vi.fn().mockResolvedValue(true)
+vi.mock('./dev-registry', () => ({
+  lookupByAppId: (...args: unknown[]) => mockDevRegistryLookup(...args),
+  upsertEntry: (...args: unknown[]) => mockDevRegistryUpsert(...args),
+  listEntries: (...args: unknown[]) => mockDevRegistryList(...args),
+  removeEntry: (...args: unknown[]) => mockDevRegistryRemove(...args),
+  sourceDirExists: (...args: unknown[]) => mockDevRegistrySourceExists(...args),
+  touchLastSeen: vi.fn(),
+}))
 
 import { discoverProjectApps, detectStandaloneApp, createMiniApp, getProjectAppsDir, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, resolveAppEntry, setAllowedMedia, isMediaAllowed, clearAllowedMedia, getAllowedMedia, appIdFromUrl } from './miniapp-service'
 
@@ -37,6 +57,15 @@ beforeEach(() => {
   vi.spyOn(Date, 'now').mockReturnValue(MOCK_TS)
   mockMkdir.mockResolvedValue(undefined)
   mockWriteFile.mockResolvedValue(undefined)
+  mockRename.mockResolvedValue(undefined)
+  mockRmdir.mockResolvedValue(undefined)
+  mockRm.mockResolvedValue(undefined)
+  mockDevRegistryLookup.mockResolvedValue(undefined)
+  mockDevRegistryUpsert.mockImplementation(async (input: { appId: string; sourceDir: string; distDir: string; name: string }) => ({
+    ...input, registeredAt: MOCK_TS, lastSeenAt: MOCK_TS,
+  }))
+  mockDevRegistryList.mockResolvedValue([])
+  mockDevRegistrySourceExists.mockResolvedValue(true)
 })
 
 describe('getProjectAppsDir', () => {
@@ -54,7 +83,7 @@ describe('resolveAppEntry', () => {
     expect(result).toBeNull()
   })
 
-  it('reads manifest from installDir when no .s1-dev.json (prod / legacy)', async () => {
+  it('reads manifest from installDir when no .s1-dev.json (prod install)', async () => {
     mockReadFile.mockImplementation((path: string) => {
       if (path === `${installDir}/.s1-dev.json`) return Promise.reject(new Error('ENOENT'))
       if (path === `${installDir}/manifest.json`) return Promise.resolve(JSON.stringify(mockManifest('foo', 'Foo')))
@@ -67,11 +96,15 @@ describe('resolveAppEntry', () => {
     expect(result!.distDir).toBeUndefined()
   })
 
-  it('resolves project-level dev link with relative distDir', async () => {
+  it('resolves dev pointer by looking up appId (basename) in registry', async () => {
+    mockDevRegistryLookup.mockResolvedValue({
+      appId: 'foo', sourceDir: '/src/foo', distDir: '/src/foo/dist',
+      name: 'Foo', registeredAt: 0, lastSeenAt: 0,
+    })
     mockReadFile.mockImplementation((path: string) => {
       if (path === `${installDir}/.s1-dev.json`)
-        return Promise.resolve(JSON.stringify({ distDir: 'packages/foo/dist', enabled: true }))
-      if (path === '/projects/test/packages/foo/dist/manifest.json')
+        return Promise.resolve(JSON.stringify({ enabled: true }))
+      if (path === '/src/foo/dist/manifest.json')
         return Promise.resolve(JSON.stringify(mockManifest('foo', 'Foo')))
       return Promise.reject(new Error('ENOENT'))
     })
@@ -79,27 +112,43 @@ describe('resolveAppEntry', () => {
     expect(result).not.toBeNull()
     expect(result!.id).toBe('foo')
     expect(result!.installDir).toBe(installDir)
-    expect(result!.distDir).toBe('/projects/test/packages/foo/dist')
+    expect(result!.distDir).toBe('/src/foo/dist')
+    expect(mockDevRegistryLookup).toHaveBeenCalledWith('foo')
   })
 
-  it('resolves user-level dev link with absolute distDir', async () => {
-    const userInstall = '/mock-home/.superone/apps/notes'
-    mockReadFile.mockImplementation((path: string) => {
-      if (path === `${userInstall}/.s1-dev.json`)
-        return Promise.resolve(JSON.stringify({ distDir: '/Users/me/code/notes/dist', enabled: true }))
-      if (path === '/Users/me/code/notes/dist/manifest.json')
-        return Promise.resolve(JSON.stringify(mockManifest('notes', 'Notes')))
-      return Promise.reject(new Error('ENOENT'))
-    })
-    const result = await resolveAppEntry(userInstall, {})
-    expect(result).not.toBeNull()
-    expect(result!.distDir).toBe('/Users/me/code/notes/dist')
-  })
-
-  it('falls back to installDir manifest when devlink enabled=false', async () => {
+  it('returns orphan entry when dev pointer has no matching registry entry', async () => {
+    mockDevRegistryLookup.mockResolvedValue(undefined)
     mockReadFile.mockImplementation((path: string) => {
       if (path === `${installDir}/.s1-dev.json`)
-        return Promise.resolve(JSON.stringify({ distDir: 'packages/foo/dist', enabled: false }))
+        return Promise.resolve(JSON.stringify({ enabled: true }))
+      return Promise.reject(new Error('ENOENT'))
+    })
+    const result = await resolveAppEntry(installDir, { projectDir: '/projects/test' })
+    expect(result).not.toBeNull()
+    expect(result!.orphan).toBe(true)
+    expect(result!.id).toBe('foo')
+    expect(result!.distDir).toBeUndefined()
+  })
+
+  it('returns orphan when registry exists but distDir manifest missing', async () => {
+    mockDevRegistryLookup.mockResolvedValue({
+      appId: 'foo', sourceDir: '/src/foo', distDir: '/src/foo/dist',
+      name: 'Foo (stale)', registeredAt: 0, lastSeenAt: 0,
+    })
+    mockReadFile.mockImplementation((path: string) => {
+      if (path === `${installDir}/.s1-dev.json`)
+        return Promise.resolve(JSON.stringify({ enabled: true }))
+      return Promise.reject(new Error('ENOENT'))
+    })
+    const result = await resolveAppEntry(installDir, { projectDir: '/projects/test' })
+    expect(result!.orphan).toBe(true)
+    expect(result!.manifest.name).toBe('Foo (stale)')
+  })
+
+  it('falls back to prod manifest when dev pointer is disabled', async () => {
+    mockReadFile.mockImplementation((path: string) => {
+      if (path === `${installDir}/.s1-dev.json`)
+        return Promise.resolve(JSON.stringify({ enabled: false }))
       if (path === `${installDir}/manifest.json`)
         return Promise.resolve(JSON.stringify(mockManifest('foo', 'Foo (prod)')))
       return Promise.reject(new Error('ENOENT'))
@@ -108,61 +157,39 @@ describe('resolveAppEntry', () => {
     expect(result).not.toBeNull()
     expect(result!.manifest.name).toBe('Foo (prod)')
     expect(result!.distDir).toBeUndefined()
+    expect(mockDevRegistryLookup).not.toHaveBeenCalled()
   })
 
   it('treats enabled omitted as true (default)', async () => {
+    mockDevRegistryLookup.mockResolvedValue({
+      appId: 'foo', sourceDir: '/src/foo', distDir: '/src/foo/dist',
+      name: 'Foo dev', registeredAt: 0, lastSeenAt: 0,
+    })
     mockReadFile.mockImplementation((path: string) => {
       if (path === `${installDir}/.s1-dev.json`)
-        return Promise.resolve(JSON.stringify({ distDir: 'packages/foo/dist' }))
-      if (path === '/projects/test/packages/foo/dist/manifest.json')
+        return Promise.resolve(JSON.stringify({}))
+      if (path === '/src/foo/dist/manifest.json')
         return Promise.resolve(JSON.stringify(mockManifest('foo', 'Foo dev')))
       return Promise.reject(new Error('ENOENT'))
     })
     const result = await resolveAppEntry(installDir, { projectDir: '/projects/test' })
-    expect(result!.distDir).toBe('/projects/test/packages/foo/dist')
+    expect(result!.distDir).toBe('/src/foo/dist')
     expect(result!.manifest.name).toBe('Foo dev')
   })
 
-  it('falls back to prod manifest when devlink enabled but distDir manifest missing', async () => {
+  it('returns null when devlink JSON is invalid and no prod manifest exists', async () => {
     mockReadFile.mockImplementation((path: string) => {
-      if (path === `${installDir}/.s1-dev.json`)
-        return Promise.resolve(JSON.stringify({ distDir: 'packages/foo/dist', enabled: true }))
-      if (path === `${installDir}/manifest.json`)
-        return Promise.resolve(JSON.stringify(mockManifest('foo', 'Foo prod fallback')))
-      return Promise.reject(new Error('ENOENT'))
-    })
-    const result = await resolveAppEntry(installDir, { projectDir: '/projects/test' })
-    expect(result).not.toBeNull()
-    expect(result!.manifest.name).toBe('Foo prod fallback')
-    expect(result!.distDir).toBeUndefined()
-  })
-
-  it('returns null when devlink enabled, distDir manifest missing, and no prod manifest', async () => {
-    mockReadFile.mockImplementation((path: string) => {
-      if (path === `${installDir}/.s1-dev.json`)
-        return Promise.resolve(JSON.stringify({ distDir: 'packages/foo/dist', enabled: true }))
+      if (path === `${installDir}/.s1-dev.json`) return Promise.resolve('{not valid json')
       return Promise.reject(new Error('ENOENT'))
     })
     const result = await resolveAppEntry(installDir, { projectDir: '/projects/test' })
     expect(result).toBeNull()
   })
 
-  it('falls back to prod when devlink JSON is invalid', async () => {
-    mockReadFile.mockImplementation((path: string) => {
-      if (path === `${installDir}/.s1-dev.json`) return Promise.resolve('{not valid json')
-      if (path === `${installDir}/manifest.json`)
-        return Promise.resolve(JSON.stringify(mockManifest('foo', 'Foo')))
-      return Promise.reject(new Error('ENOENT'))
-    })
-    const result = await resolveAppEntry(installDir, { projectDir: '/projects/test' })
-    expect(result).not.toBeNull()
-    expect(result!.distDir).toBeUndefined()
-  })
-
-  it('falls back to prod when devlink schema is invalid (missing distDir)', async () => {
+  it('rejects extra unknown fields in .s1-dev.json via strict schema (forces prod fallback)', async () => {
     mockReadFile.mockImplementation((path: string) => {
       if (path === `${installDir}/.s1-dev.json`)
-        return Promise.resolve(JSON.stringify({ enabled: true }))
+        return Promise.resolve(JSON.stringify({ enabled: true, distDir: 'legacy/path' }))
       if (path === `${installDir}/manifest.json`)
         return Promise.resolve(JSON.stringify(mockManifest('foo', 'Foo')))
       return Promise.reject(new Error('ENOENT'))
@@ -214,50 +241,55 @@ describe('discoverProjectApps', () => {
     expect(result).toEqual([])
   })
 
-  it('mixes dev-linked apps (via .s1-dev.json) with legacy vanilla apps in same scope', async () => {
-    mockReaddir.mockResolvedValue(['vanilla-legacy', 'react-dev'])
+  it('mixes dev-linked apps (via .s1-dev.json + registry) with prod apps in same scope', async () => {
+    mockReaddir.mockResolvedValue(['vanilla-prod', 'react-dev'])
+    mockDevRegistryLookup.mockImplementation(async (appId: string) =>
+      appId === 'react-dev'
+        ? { appId, sourceDir: '/src/react-dev', distDir: '/src/react-dev/dist', name: 'React', registeredAt: 0, lastSeenAt: 0 }
+        : undefined,
+    )
     mockReadFile.mockImplementation((path: string) => {
-      // legacy vanilla: manifest at installDir
-      if (path === '/projects/p/.superone/apps/vanilla-legacy/manifest.json')
-        return Promise.resolve(JSON.stringify(mockManifest('vanilla-legacy', 'Legacy')))
-      if (path === '/projects/p/.superone/apps/vanilla-legacy/.s1-dev.json')
+      // prod vanilla: manifest at installDir
+      if (path === '/projects/p/.superone/apps/vanilla-prod/manifest.json')
+        return Promise.resolve(JSON.stringify(mockManifest('vanilla-prod', 'Prod')))
+      if (path === '/projects/p/.superone/apps/vanilla-prod/.s1-dev.json')
         return Promise.reject(new Error('ENOENT'))
-      // dev-linked react: .s1-dev.json + manifest at distDir
+      // dev-linked react: .s1-dev.json + manifest read from registry distDir
       if (path === '/projects/p/.superone/apps/react-dev/.s1-dev.json')
-        return Promise.resolve(JSON.stringify({ distDir: 'packages/react-dev/dist', enabled: true }))
-      if (path === '/projects/p/packages/react-dev/dist/manifest.json')
+        return Promise.resolve(JSON.stringify({ enabled: true }))
+      if (path === '/src/react-dev/dist/manifest.json')
         return Promise.resolve(JSON.stringify(mockManifest('react-dev', 'React')))
       return Promise.reject(new Error('ENOENT'))
     })
     const result = await discoverProjectApps('/projects/p')
     expect(result).toHaveLength(2)
-    const legacy = result.find((e) => e.id === 'vanilla-legacy')!
+    const prod = result.find((e) => e.id === 'vanilla-prod')!
     const dev = result.find((e) => e.id === 'react-dev')!
-    expect(legacy.installDir).toBe('/projects/p/.superone/apps/vanilla-legacy')
-    expect(legacy.distDir).toBeUndefined()
+    expect(prod.installDir).toBe('/projects/p/.superone/apps/vanilla-prod')
+    expect(prod.distDir).toBeUndefined()
     expect(dev.installDir).toBe('/projects/p/.superone/apps/react-dev')
-    expect(dev.distDir).toBe('/projects/p/packages/react-dev/dist')
+    expect(dev.distDir).toBe('/src/react-dev/dist')
   })
 
-  it('discovers a dev-linked app whose installDir is otherwise empty (only .s1-dev.json)', async () => {
-    mockReaddir.mockResolvedValue(['fresh-dev'])
+  it('marks dev pointer as orphan when registry has no entry for its appId', async () => {
+    mockReaddir.mockResolvedValue(['unknown-dev'])
+    mockDevRegistryLookup.mockResolvedValue(undefined)
     mockReadFile.mockImplementation((path: string) => {
-      if (path === '/projects/p/.superone/apps/fresh-dev/.s1-dev.json')
-        return Promise.resolve(JSON.stringify({ distDir: 'tools/fresh/dist' }))
-      if (path === '/projects/p/tools/fresh/dist/manifest.json')
-        return Promise.resolve(JSON.stringify(mockManifest('fresh', 'Fresh')))
+      if (path === '/projects/p/.superone/apps/unknown-dev/.s1-dev.json')
+        return Promise.resolve(JSON.stringify({ enabled: true }))
       return Promise.reject(new Error('ENOENT'))
     })
     const result = await discoverProjectApps('/projects/p')
     expect(result).toHaveLength(1)
-    expect(result[0].distDir).toBe('/projects/p/tools/fresh/dist')
+    expect(result[0].orphan).toBe(true)
+    expect(result[0].id).toBe('unknown-dev')
   })
 
   it('falls back to prod manifest when dev link disabled, even with both files present (dev/prod coexist)', async () => {
     mockReaddir.mockResolvedValue(['both'])
     mockReadFile.mockImplementation((path: string) => {
       if (path === '/projects/p/.superone/apps/both/.s1-dev.json')
-        return Promise.resolve(JSON.stringify({ distDir: 'packages/both/dist', enabled: false }))
+        return Promise.resolve(JSON.stringify({ enabled: false }))
       if (path === '/projects/p/.superone/apps/both/manifest.json')
         return Promise.resolve(JSON.stringify(mockManifest('both', 'Prod Version')))
       return Promise.reject(new Error('ENOENT'))
@@ -359,7 +391,7 @@ describe('createMiniApp', () => {
       expect(writtenPaths).toContain('/projects/test/tools/dashboard/index.html')
     })
 
-    it('writes .s1-dev.json to <projectDir>/.superone/apps/<appId>/ with relative distDir = directory', async () => {
+    it('writes .s1-dev.json (enabled only) to <projectDir>/.superone/apps/<appId>/ and registers absolute distDir in registry', async () => {
       await createMiniApp({
         name: 'Dashboard', slug: 'dashboard',
         directory: '/projects/test/tools/dashboard',
@@ -370,8 +402,13 @@ describe('createMiniApp', () => {
       )
       expect(devLinkCall).toBeDefined()
       const parsed = JSON.parse(devLinkCall![1])
-      expect(parsed.distDir).toBe('tools/dashboard')
-      expect(parsed.enabled).toBe(true)
+      expect(parsed).toEqual({ enabled: true })
+      expect(mockDevRegistryUpsert).toHaveBeenCalledWith({
+        appId: `dashboard-${MOCK_TS_B36}`,
+        sourceDir: '/projects/test/tools/dashboard',
+        distDir: '/projects/test/tools/dashboard',
+        name: 'Dashboard',
+      })
     })
 
     it('returns buildRequired=false', async () => {
@@ -396,7 +433,7 @@ describe('createMiniApp', () => {
       expect(writtenPaths.some((p: string) => p === '/projects/test/packages/dashboard/src/App.tsx')).toBe(true)
     })
 
-    it('writes .s1-dev.json with relative distDir = <directory>/dist', async () => {
+    it('registers distDir = <directory>/dist for react template', async () => {
       await createMiniApp({
         name: 'Dashboard', slug: 'dashboard',
         directory: '/projects/test/packages/dashboard',
@@ -406,9 +443,12 @@ describe('createMiniApp', () => {
         c[0] === `/projects/test/.superone/apps/dashboard-${MOCK_TS_B36}/.s1-dev.json`,
       )
       expect(devLinkCall).toBeDefined()
-      const parsed = JSON.parse(devLinkCall![1])
-      expect(parsed.distDir).toBe('packages/dashboard/dist')
-      expect(parsed.enabled).toBe(true)
+      expect(JSON.parse(devLinkCall![1])).toEqual({ enabled: true })
+      expect(mockDevRegistryUpsert).toHaveBeenCalledWith(expect.objectContaining({
+        appId: `dashboard-${MOCK_TS_B36}`,
+        sourceDir: '/projects/test/packages/dashboard',
+        distDir: '/projects/test/packages/dashboard/dist',
+      }))
     })
 
     it('returns buildRequired=true', async () => {
@@ -432,7 +472,7 @@ describe('createMiniApp', () => {
       expect(writtenPaths).toContain('/Users/me/code/notes/manifest.json')
     })
 
-    it('writes .s1-dev.json to ~/.superone/apps/<appId>/ with absolute distDir', async () => {
+    it('writes .s1-dev.json to ~/.superone/apps/<appId>/ and registers absolute distDir', async () => {
       await createMiniApp({
         name: 'Notes', slug: 'notes',
         directory: '/Users/me/code/notes',
@@ -442,24 +482,25 @@ describe('createMiniApp', () => {
         c[0] === `/mock-home/.superone/apps/notes-${MOCK_TS_B36}/.s1-dev.json`,
       )
       expect(devLinkCall).toBeDefined()
-      const parsed = JSON.parse(devLinkCall![1])
-      expect(parsed.distDir).toBe('/Users/me/code/notes')
-      expect(parsed.enabled).toBe(true)
+      expect(JSON.parse(devLinkCall![1])).toEqual({ enabled: true })
+      expect(mockDevRegistryUpsert).toHaveBeenCalledWith(expect.objectContaining({
+        sourceDir: '/Users/me/code/notes',
+        distDir: '/Users/me/code/notes',
+      }))
     })
   })
 
   describe('user scope + react', () => {
-    it('writes .s1-dev.json with absolute distDir = <directory>/dist', async () => {
+    it('registers absolute distDir = <directory>/dist', async () => {
       await createMiniApp({
         name: 'Calc', slug: 'calc',
         directory: '/Users/me/code/calc',
         scope: 'user', template: 'react',
       })
-      const devLinkCall = mockWriteFile.mock.calls.find((c: string[]) =>
-        c[0] === `/mock-home/.superone/apps/calc-${MOCK_TS_B36}/.s1-dev.json`,
-      )
-      const parsed = JSON.parse(devLinkCall![1])
-      expect(parsed.distDir).toBe('/Users/me/code/calc/dist')
+      expect(mockDevRegistryUpsert).toHaveBeenCalledWith(expect.objectContaining({
+        sourceDir: '/Users/me/code/calc',
+        distDir: '/Users/me/code/calc/dist',
+      }))
     })
   })
 

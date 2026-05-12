@@ -371,53 +371,36 @@ describe('parseManifest', () => {
 })
 
 describe('parseDevLink', () => {
-  it('accepts a minimal dev link with only distDir', () => {
-    const result = parseDevLink({ distDir: 'packages/dashboard/dist' })
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.devLink.distDir).toBe('packages/dashboard/dist')
-      expect(result.devLink.enabled).toBe(true)
-    }
-  })
-
-  it('defaults enabled to true when omitted', () => {
-    const result = parseDevLink({ distDir: '/abs/path' })
+  it('accepts an empty object and defaults enabled=true', () => {
+    const result = parseDevLink({})
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.devLink.enabled).toBe(true)
   })
 
   it('accepts enabled=false', () => {
-    const result = parseDevLink({ distDir: '/abs/path', enabled: false })
+    const result = parseDevLink({ enabled: false })
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.devLink.enabled).toBe(false)
   })
 
   it('accepts enabled=true explicitly', () => {
-    const result = parseDevLink({ distDir: '/abs/path', enabled: true })
+    const result = parseDevLink({ enabled: true })
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.devLink.enabled).toBe(true)
   })
 
-  it('rejects when distDir missing', () => {
-    const result = parseDevLink({ enabled: true })
+  it('rejects legacy distDir field (strict mode)', () => {
+    const result = parseDevLink({ distDir: 'packages/dashboard/dist', enabled: true })
     expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.errors.some((e) => e.includes('distDir'))).toBe(true)
-    }
   })
 
-  it('rejects empty distDir', () => {
-    const result = parseDevLink({ distDir: '' })
+  it('rejects unknown fields (strict mode)', () => {
+    const result = parseDevLink({ enabled: true, somethingElse: 1 })
     expect(result.ok).toBe(false)
   })
 
   it('rejects non-boolean enabled', () => {
-    const result = parseDevLink({ distDir: 'x', enabled: 'yes' })
-    expect(result.ok).toBe(false)
-  })
-
-  it('rejects non-string distDir', () => {
-    const result = parseDevLink({ distDir: 123 })
+    const result = parseDevLink({ enabled: 'yes' })
     expect(result.ok).toBe(false)
   })
 

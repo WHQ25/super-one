@@ -144,7 +144,7 @@ describe('confirmInstall preservation', () => {
     )
     await writeFile(join(targetDir, 'manifest.json'), JSON.stringify({ appId, name: 'Old', version: '1.0.0' }))
     await writeFile(join(targetDir, 'index.html'), '<html>v1</html>')
-    const devLink = { distDir: '/Users/me/code/preserved/dist', enabled: true }
+    const devLink = { enabled: true }
     await writeFile(join(targetDir, '.s1-dev.json'), JSON.stringify(devLink))
 
     await confirmInstall(tempDir, installRoot)
@@ -179,13 +179,12 @@ describe('confirmInstall preservation', () => {
       join(targetDir, 'install.json'),
       JSON.stringify({ appId, version: '1.0.0', installedAt: '...', source: 'local', integrityVerified: true }),
     )
-    await writeFile(join(targetDir, '.s1-dev.json'), JSON.stringify({ distDir: '/x/dist', enabled: false }))
+    await writeFile(join(targetDir, '.s1-dev.json'), JSON.stringify({ enabled: false }))
     await writeFile(join(targetDir, 'data', 'state.json'), '{"counter":42}')
 
     await confirmInstall(tempDir, installRoot)
 
     const dev = JSON.parse(await readFile(join(targetDir, '.s1-dev.json'), 'utf-8'))
-    expect(dev.distDir).toBe('/x/dist')
     expect(dev.enabled).toBe(false)
     const state = await readFile(join(targetDir, 'data', 'state.json'), 'utf-8')
     expect(state).toBe('{"counter":42}')

@@ -135,9 +135,8 @@ export function parseManifest(raw: unknown): ManifestParseResult {
 }
 
 export const devLinkSchema = z.object({
-  distDir: z.string().min(1),
   enabled: z.boolean().default(true),
-})
+}).strict()
 
 export type DevLink = z.infer<typeof devLinkSchema>
 
@@ -155,3 +154,19 @@ export function parseDevLink(raw: unknown): DevLinkParseResult {
   )
   return { ok: false, errors }
 }
+
+const devRegistryEntrySchema = z.object({
+  appId: z.string().min(1),
+  sourceDir: z.string().min(1),
+  distDir: z.string().min(1),
+  name: z.string().min(1),
+  registeredAt: z.number().int().nonnegative(),
+  lastSeenAt: z.number().int().nonnegative(),
+})
+
+export const devRegistryFileSchema = z.object({
+  version: z.literal(1),
+  apps: z.array(devRegistryEntrySchema),
+})
+
+export type DevRegistryFile = z.infer<typeof devRegistryFileSchema>

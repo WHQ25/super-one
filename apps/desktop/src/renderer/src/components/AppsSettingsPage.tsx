@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, ChevronRight, Link, Trash2, Mic, Video, Globe, HardDrive, FolderOpen, Database } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Link, Trash2, Mic, Video, Globe, HardDrive, FolderOpen, Database, Library, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Button } from '@superone/ui/components/ui/button'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { DevAppLibraryView } from '@/components/DevAppLibraryView'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useAppStore } from '@/stores/app'
 import { cn } from '@superone/ui/lib/utils'
@@ -36,6 +37,12 @@ function AppCard({ app, onClick }: { app: MiniAppEntry; onClick: () => void }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium truncate">{app.manifest.name}</p>
+          {app.orphan && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] px-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="size-2.5" />
+              {t('resources.devAppLibrary.orphanBadge')}
+            </span>
+          )}
           {app.manifest.isDev && <span className="text-[10px] px-1 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400">dev</span>}
           {app.manifest.fullscreen && <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground">fullscreen</span>}
         </div>
@@ -278,6 +285,7 @@ export function AppsSettingsPage() {
   const refreshApps = useMiniAppStore((s) => s.refreshApps)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const [selectedApp, setSelectedApp] = useState<MiniAppEntry | null>(null)
+  const [libraryOpen, setLibraryOpen] = useState(false)
 
   useEffect(() => {
     refreshApps(currentFolder ?? undefined)
@@ -301,8 +309,24 @@ export function AppsSettingsPage() {
           <h2 className="text-lg font-semibold">{t('resources.apps.title')}</h2>
           <p className="text-sm text-muted-foreground">{t('resources.apps.subtitle')}</p>
         </div>
-        <ProjectSelector mode="switch" />
+        <div className="flex items-center gap-2">
+          <Button
+            variant={libraryOpen ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setLibraryOpen((v) => !v)}
+          >
+            <Library className="size-4" />
+            {t('resources.devAppLibrary.toggleButton')}
+          </Button>
+          <ProjectSelector mode="switch" />
+        </div>
       </div>
+
+      {libraryOpen && (
+        <div className="mb-6">
+          <DevAppLibraryView onClose={() => setLibraryOpen(false)} />
+        </div>
+      )}
 
       {!loaded ? (
         <div className="text-sm text-muted-foreground">{t('resources.apps.loading')}</div>

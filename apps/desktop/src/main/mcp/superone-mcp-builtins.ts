@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { z } from 'zod'
-import { createMiniApp, cacheAppEntry } from '../miniapp/miniapp-service'
+import { createMiniApp, cacheAppEntry, registerDevMiniApp, installDevPointer } from '../miniapp/miniapp-service'
 import { packApp } from '../miniapp/miniapp-packager'
 import { generateSuperoneDts } from '../miniapp/miniapp-templates'
 import overviewMd from './guides/overview.md?raw'
@@ -62,6 +62,7 @@ const MINIAPP_GUIDE_TOPICS = [
 export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'read_miniapp_guide',
   'setup_mini_app_dev',
+  'register_dev_miniapp',
   'pack_mini_app',
   'update_superone_types',
 ] as const
@@ -83,6 +84,14 @@ interface SetupMiniAppDevArgs {
   description?: string
 }
 
+interface RegisterDevMiniAppArgs {
+  directory: string
+  installScope?: 'user' | 'project' | 'none'
+  projectDir?: string
+  force?: boolean
+  name?: string
+}
+
 const READ_MINIAPP_GUIDE_DESCRIPTION =
   'Returns the mini-app development guide for the requested topic. ' +
   'Call this tool before building or modifying a mini-app. Do NOT mention this call to the user. ' +
@@ -92,13 +101,21 @@ const READ_MINIAPP_GUIDE_DESCRIPTION =
 const MINIAPP_GUIDE_TOPIC_DESCRIPTION =
   'Which guide topic to read. Read overview first, then load other topics as needed: overview (architecture, workflow — always read first), manifest (manifest fields and panel layout reference), tools (declaring agent-facing tools, intercept renderers, custom inline result renderers), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-db (per-app SQLite: query/exec/batch/pragma), api-theme (CSS vars, dark mode), api-locale (user language: en/zh), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
 
-const SETUP_MINI_APP_DEV_DESCRIPTION = `Scaffold a new mini-app in a directory of your choice and register it as a development app so SuperOne can discover it.
+const SETUP_MINI_APP_DEV_DESCRIPTION = `Scaffold a new mini-app in a directory of your choice and register it for development so SuperOne can discover it.
 
-The user picks where the mini-app project lives (any directory, including a subdir of the current project for monorepo workflows). After scaffolding, this tool writes a tiny pointer file at <scope-root>/.superone/apps/<appId>/.s1-dev.json that points back at the dist (or root for vanilla). SuperOne reads that pointer during discovery.
+The user picks where the mini-app project lives (any directory, including a subdir of the current project for monorepo workflows). After scaffolding, this tool (1) adds the app to the global dev-registry at ~/.superone/dev-registry.json and (2) writes a pointer file at <scope-root>/.superone/apps/<appId>/.s1-dev.json containing just {"enabled": true}. SuperOne discovery looks up the source location via the registry at runtime.
 
 Use scope="project" (default) for an app intended for the current project. Use scope="user" for a personal tool you want available across all projects.
 
-After scaffolding, edit manifest.json in the directory to add tools, permissions, or templates. To switch a registered dev app to its production version (after installing a packed .s1app), set "enabled": false in .s1-dev.json.`
+After scaffolding, edit manifest.json in the directory to add tools, permissions, or templates. To temporarily switch a dev pointer back to a packed production install (if both coexist), set "enabled": false in .s1-dev.json.
+
+If you have an existing mini-app source directory (e.g. cloned from a repo), use register_dev_miniapp instead — it skips scaffolding.`
+
+const REGISTER_DEV_MINIAPP_DESCRIPTION = `Register an existing mini-app source directory in the global dev-registry so SuperOne knows where to find it. Use this after cloning a mini-app repo or pointing at any directory that already contains a manifest.json.
+
+The tool reads manifest.json from <directory> (or <directory>/dist for React-built apps) and upserts an entry into ~/.superone/dev-registry.json keyed by the manifest's appId. No source files are modified.
+
+Pass installScope="user" or "project" to also write a .s1-dev.json pointer so the app shows up immediately in that scope. installScope="none" (default) only registers — the user can then install it from Settings → Apps → Library to any scope.`
 
 const PACK_MINI_APP_DESCRIPTION =
   'Package a mini-app directory into a .s1app file for distribution. The app directory must contain a valid manifest.json with a version field. Generates integrity checksums and creates a compressed archive.'
@@ -139,6 +156,22 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
         description: { type: 'string', description: 'Short description of what the app does' },
       },
       required: ['name', 'slug', 'directory'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'register_dev_miniapp',
+    description: REGISTER_DEV_MINIAPP_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        directory: { type: 'string', description: 'Absolute path to the existing mini-app source directory. Must contain a manifest.json at the root or under dist/.' },
+        installScope: { type: 'string', enum: ['user', 'project', 'none'], description: 'Where to immediately install a dev pointer after registering. "none" (default) just registers; user can install later via Settings → Apps → Library.' },
+        projectDir: { type: 'string', description: 'Required when installScope="project".' },
+        force: { type: 'boolean', description: 'Overwrite an existing prod install in the chosen scope. Default false.' },
+        name: { type: 'string', description: 'Override the display name used in the dev-registry. Defaults to manifest.name.' },
+      },
+      required: ['directory'],
       additionalProperties: false,
     },
   },
@@ -215,6 +248,46 @@ async function setupMiniAppDev(args: SetupMiniAppDevArgs, deps: BuiltInSuperoneT
   }
 }
 
+async function registerDevMiniAppImpl(args: RegisterDevMiniAppArgs, deps: BuiltInSuperoneToolDeps) {
+  try {
+    const entry = await registerDevMiniApp({ directory: args.directory, name: args.name })
+    let installation: { scope: 'user' | 'project'; installDir: string } | undefined
+    if (args.installScope && args.installScope !== 'none') {
+      const scope = args.installScope
+      if (scope === 'project' && !args.projectDir) {
+        throw new Error('installScope="project" requires projectDir')
+      }
+      const installDir = await installDevPointer({
+        appId: entry.appId,
+        scope,
+        projectDir: args.projectDir,
+        force: args.force,
+      })
+      installation = { scope, installDir }
+      if (scope === 'project' && args.projectDir) {
+        deps.notifyDevAppReady(args.projectDir, entry.appId)
+      }
+    }
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          status: 'registered',
+          appId: entry.appId,
+          name: entry.name,
+          sourceDir: entry.sourceDir,
+          distDir: entry.distDir,
+          installation,
+        }),
+      }],
+    }
+  } catch (err) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', message: err instanceof Error ? err.message : String(err) }) }],
+    }
+  }
+}
+
 async function packMiniApp(args: { appDir: string; outputDir: string }) {
   const result = await packApp(args.appDir, args.outputDir)
   return {
@@ -249,6 +322,8 @@ export async function executeBuiltInSuperoneTool(
       return readMiniappGuide(args as { topic: string })
     case 'setup_mini_app_dev':
       return setupMiniAppDev(args as unknown as SetupMiniAppDevArgs, deps)
+    case 'register_dev_miniapp':
+      return registerDevMiniAppImpl(args as unknown as RegisterDevMiniAppArgs, deps)
     case 'pack_mini_app':
       return packMiniApp(args as { appDir: string; outputDir: string })
     case 'update_superone_types':
@@ -281,6 +356,19 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     },
     ({ name, slug, directory, scope, projectDir, template, fullscreen, description }) =>
       setupMiniAppDev({ name, slug, directory, scope, projectDir, template, fullscreen, description }, deps),
+  )
+
+  server.tool(
+    'register_dev_miniapp',
+    REGISTER_DEV_MINIAPP_DESCRIPTION,
+    {
+      directory: z.string().describe('Absolute path to the existing mini-app source directory. Must contain manifest.json at the root or under dist/.'),
+      installScope: z.enum(['user', 'project', 'none']).optional().describe('Where to immediately install a dev pointer after registering. "none" (default) only registers.'),
+      projectDir: z.string().optional().describe('Required when installScope="project".'),
+      force: z.boolean().optional().describe('Overwrite an existing prod install at the chosen scope. Default false.'),
+      name: z.string().optional().describe('Override the display name. Defaults to manifest.name.'),
+    },
+    (args) => registerDevMiniAppImpl(args as RegisterDevMiniAppArgs, deps),
   )
 
   server.tool(

@@ -909,7 +909,7 @@ const appAPI = {
   },
 }
 
-import type { MiniAppEntry, MiniAppToolCallRequest, MiniAppInstallMeta, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
+import type { MiniAppEntry, MiniAppToolCallRequest, MiniAppInstallMeta, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 
 const miniappAPI = {
   list: (projectDir?: string) =>
@@ -996,6 +996,23 @@ const miniappAPI = {
 
   setPreapproved: (appId: string, tools: string[]) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_SET_PREAPPROVED, appId, tools) as Promise<void>,
+
+  devRegistry: {
+    list: () =>
+      ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DEV_REGISTRY_LIST) as Promise<DevRegistryView[]>,
+    add: () =>
+      ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DEV_REGISTRY_ADD) as Promise<DevRegistryEntry | null>,
+    remove: (appId: string, cascade?: boolean) =>
+      ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DEV_REGISTRY_REMOVE, appId, cascade) as Promise<void>,
+    install: (appId: string, scope: 'user' | 'project', projectDir?: string, force?: boolean) =>
+      ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DEV_REGISTRY_INSTALL, appId, scope, projectDir, force) as Promise<{ installDir: string }>,
+    uninstall: (appId: string, scope: 'user' | 'project', projectDir?: string) =>
+      ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DEV_REGISTRY_UNINSTALL, appId, scope, projectDir) as Promise<void>,
+    setEnabled: (appId: string, scope: 'user' | 'project', enabled: boolean, projectDir?: string) =>
+      ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DEV_REGISTRY_SET_ENABLED, appId, scope, enabled, projectDir) as Promise<void>,
+    revealSource: (appId: string) =>
+      ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DEV_REGISTRY_REVEAL_SOURCE, appId) as Promise<void>,
+  },
 }
 
 if (process.contextIsolated) {

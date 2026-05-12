@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.31.2-alpha] - 2026-05-12
+
+### Fixed
+
+- **Worktree sessions can load local assets again.** `local-file` protocol and the media-server only trusted recent-folder roots, so assets referenced from a session running inside a worktree (under `~/.worktrees/...`) were rejected with 403. A new session-repo helper returns distinct `worktree_path` values currently used by sessions and includes them in the allowed roots for both transports.
+- **Chat status bar no longer renders both worktree and main-repo branch pills.** `ChatStatusBar` required `session._worktreeBaseBranch` *in addition to* the app-store worktree state, so when the two desynced both pills rendered side-by-side. The app-store is now the single source of truth via `computeIsInWorktree()`, with regression tests covering the desynced-session case.
+
+### Changed
+
+- **Activity panel uses a dedicated MessageSquare tab for session history** instead of folding it into the existing tabs, making it easier to spot.
+
 ## [0.31.1-alpha] - 2026-05-12
 
 ### Added

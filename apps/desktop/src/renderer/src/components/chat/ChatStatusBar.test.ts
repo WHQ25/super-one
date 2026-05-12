@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { collectBackgroundActivities } from './ChatStatusBar'
+import { collectBackgroundActivities, computeIsInWorktree } from './ChatStatusBar'
 import type { ContentBlock } from '@superone/shared/agent-types'
 
 function toolUse(id: string, toolName: string, input: Record<string, unknown>, status: 'streaming' | 'complete' = 'streaming'): ContentBlock & { type: 'tool_use' } {
@@ -89,6 +89,37 @@ describe('collectBackgroundActivities', () => {
       const messages = [msg(toolUse('t1', 'Bash', { command: 'npm test' }))]
       const { bashActivities } = collectBackgroundActivities(messages, {})
       expect(bashActivities).toHaveLength(0)
+    })
+  })
+
+  describe('worktree indicator gate', () => {
+    const noWt = { pendingBaseBranch: null, activePath: null }
+
+    it('returns true when app-store has an active worktree path, regardless of session state', () => {
+      // Regression: WorkDirIndicator (which only looks at app-store) showed "Worktree web/ui-mock"
+      // while ChatStatusBar's git branch indicator (feat/video-demos) was simultaneously visible
+      // because isInWorktree mistakenly required session._worktreeBaseBranch to also be set.
+      // Single source of truth: app-store's worktree state.
+      const wt = { pendingBaseBranch: null, activePath: '/repo/.worktrees/web-ui-mock' }
+      expect(computeIsInWorktree(wt)).toBe(true)
+    })
+
+    it('returns true when pending base branch is set', () => {
+      const wt = { pendingBaseBranch: 'main', activePath: null }
+      expect(computeIsInWorktree(wt)).toBe(true)
+    })
+
+    it('returns true when both pending and active are set', () => {
+      const wt = { pendingBaseBranch: 'main', activePath: '/repo/.worktrees/x' }
+      expect(computeIsInWorktree(wt)).toBe(true)
+    })
+
+    it('returns false when neither pending nor active path is set', () => {
+      expect(computeIsInWorktree(noWt)).toBe(false)
+    })
+
+    it('returns false when wtState is undefined (no project)', () => {
+      expect(computeIsInWorktree(undefined)).toBe(false)
     })
   })
 

@@ -33,6 +33,15 @@ import { ToolBlock } from './ToolBlock'
 import { SubagentBlock } from './SubagentBlock'
 import type { ContentBlock, GitInfo } from '@superone/shared/agent-types'
 
+interface WorktreeStateLike {
+  pendingBaseBranch: string | null
+  activePath: string | null
+}
+
+export function computeIsInWorktree(wtState: WorktreeStateLike | undefined): boolean {
+  return !!(wtState?.pendingBaseBranch || wtState?.activePath)
+}
+
 const fmt = (n: number) => n.toLocaleString()
 
 interface FailedCheckout {
@@ -159,7 +168,7 @@ export function ChatStatusBar() {
 
   const worktreeBaseBranch = useActiveSession((s) => s._worktreeBaseBranch)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
-  const isInWorktree = !!(wtState?.pendingBaseBranch || (wtState?.activePath && worktreeBaseBranch))
+  const isInWorktree = computeIsInWorktree(wtState)
 
   const refreshGitInfo = useCallback(async () => {
     if (!currentFolder) return

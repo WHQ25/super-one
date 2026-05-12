@@ -31,14 +31,19 @@ export const SlashDecoration = Extension.create<SlashDecorationOptions, SlashDec
         props: {
           decorations(state) {
             const doc = state.doc
-            const text = doc.textContent
-            if (!text.startsWith('/')) return DecorationSet.empty
+            const paragraph = doc.firstChild
+            if (!paragraph || paragraph.type.name !== 'paragraph') return DecorationSet.empty
 
-            const match = text.match(/^(\/\S*)(.*)$/s)
-            if (!match) return DecorationSet.empty
+            const firstInline = paragraph.firstChild
+            if (!firstInline || !firstInline.isText) return DecorationSet.empty
 
-            const cmdPart = match[1]
-            const rest = match[2]
+            const firstText = firstInline.text ?? ''
+            if (!firstText.startsWith('/')) return DecorationSet.empty
+
+            const cmdMatch = firstText.match(/^\/\S*/)
+            if (!cmdMatch) return DecorationSet.empty
+
+            const cmdPart = cmdMatch[0]
             const cmdName = cmdPart.slice(1)
             const commands = storage.slashCommands
             const exact = commands.find((c) => c.name === cmdName)
@@ -48,34 +53,41 @@ export const SlashDecoration = Extension.create<SlashDecorationOptions, SlashDec
             if (!hasMatch && !exact) return DecorationSet.empty
 
             const decorations: Decoration[] = []
+            const startOffset = 1
 
-            // Find the text node position — walk through the first paragraph
-            let startOffset = 0
-            doc.descendants((node, pos) => {
-              if (node.isText && startOffset === 0) {
-                startOffset = pos
-                return false
-              }
-              return true
-            })
-
-            // Blue highlight on /command
             decorations.push(
               Decoration.inline(startOffset, startOffset + cmdPart.length, {
                 style: 'color: #60a5fa',
               }),
             )
 
-            // Argument hint widget after existing text
             if (exact?.argumentHint) {
               const hintTokens = exact.argumentHint.match(/<[^>]+>|\[[^\]]+\]/g) ?? []
-              const trimmedRest = rest.trimStart()
-              const filledCount = trimmedRest ? trimmedRest.split(/\s+/).length : 0
+
+              let filledCount = 0
+              let lastChildIsMention = false
+              let lastTextEndsWithSpace = false
+
+              paragraph.forEach((node, _offset, index) => {
+                if (node.isText) {
+                  let textPart = node.text ?? ''
+                  if (index === 0) textPart = textPart.slice(cmdPart.length)
+                  const trimmed = textPart.trim()
+                  if (trimmed) filledCount += trimmed.split(/\s+/).length
+                  lastChildIsMention = false
+                  lastTextEndsWithSpace = textPart.endsWith(' ')
+                } else if (node.type.name === 'mention') {
+                  filledCount += 1
+                  lastChildIsMention = true
+                  lastTextEndsWithSpace = false
+                }
+              })
+
               const remainingHints = hintTokens.slice(filledCount)
 
               if (remainingHints.length > 0) {
-                const hintPrefix = rest.endsWith(' ') ? '' : ' '
-                const endPos = startOffset + text.length
+                const hintPrefix = lastTextEndsWithSpace || lastChildIsMention ? '' : ' '
+                const endPos = startOffset + paragraph.content.size
                 decorations.push(
                   Decoration.widget(endPos, () => {
                     const span = document.createElement('span')

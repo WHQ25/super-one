@@ -25,7 +25,10 @@ export const PromptSuggestion = Extension.create<object, PromptSuggestionStorage
             if (!suggestion) return DecorationSet.empty
 
             const doc = state.doc
-            if (doc.textContent.length > 0) return DecorationSet.empty
+            const firstChild = doc.firstChild
+            if (doc.childCount !== 1 || firstChild == null || firstChild.content.size > 0) {
+              return DecorationSet.empty
+            }
 
             let insertPos = 1
             doc.descendants((node, pos) => {

@@ -9,6 +9,7 @@ const config: StorybookConfig = {
   stories: [
     '../src/renderer/src/**/*.stories.@(ts|tsx|mdx)',
     '../../../packages/ui/src/**/*.stories.@(ts|tsx|mdx)',
+    '../../web/components/**/*.stories.@(ts|tsx|mdx)',
   ],
   framework: {
     name: '@storybook/react-vite',

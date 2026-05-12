@@ -3,6 +3,7 @@
 @import "./github-md.css";
 @import "./dockview-theme.css";
 @source "../../../../../../node_modules/streamdown/dist/*.js";
+@source "../../../../../web/components/**/*.{ts,tsx}";
 
 @keyframes fade-in {
   from { opacity: 0; }

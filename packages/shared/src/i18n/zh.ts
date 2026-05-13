@@ -981,7 +981,7 @@ export const zh: Messages = {
       addNew: '添加开发小程序…',
       loading: '加载中…',
       empty: '尚未注册任何开发中的小程序',
-      emptyHint: '点击「添加开发小程序…」选择源目录，或在 AI 对话中调用 register_dev_miniapp。',
+      emptyHint: '点击「添加开发小程序…」选择源目录，或在 AI 对话中调用 miniapp_dev_register。',
       added: '已添加 {{name}} 到开发中小程序',
       addFailed: '添加失败',
       installedHere: '已安装',

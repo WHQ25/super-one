@@ -40,7 +40,7 @@ export const WidgetReadGuidelinesComplete: Story = {
 
 export const SuperoneReadMiniAppGuideStreaming: Story = {
   args: {
-    toolName: 'mcp__superone__read_miniapp_guide',
+    toolName: 'mcp__superone__miniapp_dev_read_guide',
     input: JSON.stringify({ topic: 'iframe-bridge' }),
     status: 'streaming',
     elapsedSeconds: 1,
@@ -49,7 +49,7 @@ export const SuperoneReadMiniAppGuideStreaming: Story = {
 
 export const SuperoneReadMiniAppGuideComplete: Story = {
   args: {
-    toolName: 'mcp__superone__read_miniapp_guide',
+    toolName: 'mcp__superone__miniapp_dev_read_guide',
     input: JSON.stringify({ topic: 'state-persistence' }),
     status: 'complete',
     result: 'Guide content delivered',
@@ -58,7 +58,7 @@ export const SuperoneReadMiniAppGuideComplete: Story = {
 
 export const PackMiniAppStreaming: Story = {
   args: {
-    toolName: 'mcp__superone__pack_mini_app',
+    toolName: 'mcp__superone__miniapp_dev_pack',
     input: JSON.stringify({ appDir: '/Users/me/projects/example/dist', outputDir: '/Users/me/Downloads' }),
     status: 'streaming',
     elapsedSeconds: 2,
@@ -67,7 +67,7 @@ export const PackMiniAppStreaming: Story = {
 
 export const PackMiniAppComplete: Story = {
   args: {
-    toolName: 'mcp__superone__pack_mini_app',
+    toolName: 'mcp__superone__miniapp_dev_pack',
     input: JSON.stringify({ appDir: '/Users/me/projects/example/dist', outputDir: '/Users/me/Downloads' }),
     status: 'complete',
     result: JSON.stringify({ packagePath: '/Users/me/Downloads/example-1.0.0.s1app' }),

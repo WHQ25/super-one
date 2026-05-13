@@ -373,10 +373,10 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
 
   if (mcpInfo?.serverName === SUPERONE_SERVER) {
     const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string; summaryField?: string }> = {
-      read_miniapp_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide'), summaryField: 'topic' },
-      rename_session: { icon: 'pencil', streaming: t('chat.toolBlock.renamingSession'), done: t('chat.toolBlock.renamedSession'), summaryField: 'title' },
+      miniapp_dev_read_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide'), summaryField: 'topic' },
+      session_rename: { icon: 'pencil', streaming: t('chat.toolBlock.renamingSession'), done: t('chat.toolBlock.renamedSession'), summaryField: 'title' },
     }
-    if (mcpInfo.mcpToolName === 'pack_mini_app') {
+    if (mcpInfo.mcpToolName === 'miniapp_dev_pack') {
       const appDir = String(params.appDir ?? '')
       const outputDir = String(params.outputDir ?? '')
       const packApp = appDir ? useMiniAppStore.getState().apps.find((a) => a.distDir === appDir || a.installDir === appDir) : undefined
@@ -401,7 +401,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         </CompactToolRow>
       )
     }
-    if (mcpInfo.mcpToolName === 'setup_mini_app_dev') {
+    if (mcpInfo.mcpToolName === 'miniapp_dev_setup') {
       const appName = String(params.name ?? '')
       let parsedResult: Record<string, unknown> | null = null
       if (!isStreaming && result) {

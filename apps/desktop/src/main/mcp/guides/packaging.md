@@ -4,7 +4,7 @@ Once the app is ready, package it as a `.s1app` file for sharing.
 
 ## Using the MCP Tool
 
-Ask the agent: "Pack my mini-app for distribution." The agent will call the `pack_mini_app` tool, which:
+Ask the agent: "Pack my mini-app for distribution." The agent will call the `miniapp_dev_pack` tool, which:
 
 1. Copies the app directory to a temporary location (source files are never modified)
 2. Validates `manifest.json` (must have `version` field)

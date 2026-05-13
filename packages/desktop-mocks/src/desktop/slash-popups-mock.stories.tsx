@@ -194,7 +194,7 @@ export const McpMixedStatuses: Story = {
           expanded: true,
           tools: [
             { name: "list_apps", description: "List installed mini-apps and dev apps" },
-            { name: "pack_mini_app", description: "Bundle a folder into a .s1app archive" },
+            { name: "miniapp_dev_pack", description: "Bundle a folder into a .s1app archive" },
           ],
         },
         { name: "github-actions", status: "needs-auth", statusLabel: "Authorize in Settings" },

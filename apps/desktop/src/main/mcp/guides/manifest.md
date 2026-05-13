@@ -2,7 +2,7 @@
 
 Every mini-app is described by a `manifest.json` file at its root. This is where you declare its identity, tool surface, permissions, and UI behavior. Mini-apps open by default as a tab in the activity panel; set `fullscreen: true` to also expose a full-screen canvas entry.
 
-Start with the scaffold from `setup_mini_app_dev` (or register an existing source directory with `register_dev_miniapp`), then edit `manifest.json` to add tools and other fields.
+Start with the scaffold from `miniapp_dev_setup` (or register an existing source directory with `miniapp_dev_register`), then edit `manifest.json` to add tools and other fields.
 
 ## Fields
 

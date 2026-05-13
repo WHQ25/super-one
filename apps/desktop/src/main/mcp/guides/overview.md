@@ -27,12 +27,12 @@ Do NOT skip these steps. Do NOT start coding before the user confirms the plan.
 **After confirmation, build the app:**
 
 1. Confirm with the user **where** the mini-app source should live (`directory`) and **who** should see it (`scope`: `project` or `user`). See "Where the App Lives" below.
-2. Call `setup_mini_app_dev` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, fullscreen, description). It scaffolds files at `directory`, adds an entry to the global dev-registry, and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
+2. Call `miniapp_dev_setup` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, fullscreen, description). It scaffolds files at `directory`, adds an entry to the global dev-registry, and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
 3. Read **`manifest`** for manifest fields and panel layout, then **`tools`** for declaring agent-facing tools and custom inline renderers.
 4. Edit `manifest.json` to add tools, permissions, etc.
 5. Write app code
 
-**Already have a mini-app source directory?** (e.g. cloned from a repo, or copied from another machine) Skip scaffolding and call `register_dev_miniapp` with the absolute `directory` path. It reads the existing `manifest.json`, adds it to the dev-registry, and optionally installs a dev pointer to a chosen `scope`. Users can also run this flow from Settings → Mini Apps → "Dev Apps" → "Add dev app…".
+**Already have a mini-app source directory?** (e.g. cloned from a repo, or copied from another machine) Skip scaffolding and call `miniapp_dev_register` with the absolute `directory` path. It reads the existing `manifest.json`, adds it to the dev-registry, and optionally installs a dev pointer to a chosen `scope`. Users can also run this flow from Settings → Mini Apps → "Dev Apps" → "Add dev app…".
 
 ## Do You Need Tools?
 
@@ -70,7 +70,7 @@ Most mini-apps should use vanilla. CDN libraries (Chart.js, D3, Alpine.js, Three
 
 ## Where the App Lives — `directory` and `scope`
 
-`setup_mini_app_dev` takes two location-related arguments:
+`miniapp_dev_setup` takes two location-related arguments:
 
 - **`directory`** (required, absolute path): where the mini-app source files are scaffolded. This is the **user's choice** — anywhere on disk. Common patterns:
   - Inside a project's source tree: `<projectDir>/packages/my-app` (monorepo workspace), `<projectDir>/tools/dashboard`
@@ -79,7 +79,7 @@ Most mini-apps should use vanilla. CDN libraries (Chart.js, D3, Alpine.js, Three
   - `project` (default): only visible when SuperOne is opened on `projectDir`. Required argument: `projectDir`. The `directory` MUST be inside `projectDir`.
   - `user`: visible across every project on this machine. `projectDir` not required; `directory` can be anywhere.
 
-After scaffolding, `setup_mini_app_dev` writes a small pointer file at:
+After scaffolding, `miniapp_dev_setup` writes a small pointer file at:
 
 - `<projectDir>/.superone/apps/<appId>/.s1-dev.json` for `scope=project`
 - `~/.superone/apps/<appId>/.s1-dev.json` for `scope=user`
@@ -100,11 +100,11 @@ Each app's pointer lives in its own slot under `.superone/apps/<appId>/`. The sl
 
 Use `project` (default) when:
 - Building a tool specific to the current codebase (kanban, dashboard, custom helper)
-- The pointer file is safe to commit (path-free) — teammates who clone the repo see the `.s1-dev.json` slot but the entry is **only discoverable to them after they register the same source locally** (their dev-registry has its own appIds; alpha-phase appIds carry a timestamp suffix so they won't match across machines). For now, expect each developer to run `register_dev_miniapp` (or the "Add dev app…" flow) once after cloning.
+- The pointer file is safe to commit (path-free) — teammates who clone the repo see the `.s1-dev.json` slot but the entry is **only discoverable to them after they register the same source locally** (their dev-registry has its own appIds; alpha-phase appIds carry a timestamp suffix so they won't match across machines). For now, expect each developer to run `miniapp_dev_register` (or the "Add dev app…" flow) once after cloning.
 
 Use `user` when:
 - Building a personal tool you want available regardless of which project you open (e.g. a notes pad, a clipboard manager)
-- Cross-machine distribution will go through `pack_mini_app` → `.s1app` → drag-drop install, not via this dev pointer
+- Cross-machine distribution will go through `miniapp_dev_pack` → `.s1app` → drag-drop install, not via this dev pointer
 
 ## React Template Setup Flow
 
@@ -113,7 +113,7 @@ Use `user` when:
    - macOS/Linux: `curl -fsSL https://bun.sh/install | bash`
    - Windows: `powershell -c "irm bun.sh/install.ps1 | iex"`
 3. Decide where the mini-app project lives (any directory; for `scope=project`, must be inside `projectDir` — e.g. `packages/<name>` for a monorepo workspace)
-4. Call `setup_mini_app_dev` with `template: "react"`, `directory` pointing to that path, and the chosen `scope`
+4. Call `miniapp_dev_setup` with `template: "react"`, `directory` pointing to that path, and the chosen `scope`
 5. Run `<pm> install && <pm> run build` in the directory
 6. For ongoing development with auto-rebuild: `<pm> run build --watch`
 
@@ -158,10 +158,10 @@ The install slot at `<scope-root>/.superone/apps/<appId>/` holds only:
 └── data/            # created lazily on first app-scope fs write
 ```
 
-After `pack_mini_app` + drag-drop install, the slot also contains the packed prod files (manifest.json, index.html, …) alongside `.s1-dev.json` and `data/`.
+After `miniapp_dev_pack` + drag-drop install, the slot also contains the packed prod files (manifest.json, index.html, …) alongside `.s1-dev.json` and `data/`.
 
 ## Updating Type Definitions
 
-If a mini-app was created with an older version of SuperOne and needs access to newly added APIs, call `update_superone_types` with the app directory path. This regenerates `superone.d.ts` with the latest API definitions.
+If a mini-app was created with an older version of SuperOne and needs access to newly added APIs, call `miniapp_dev_update_types` with the app directory path. This regenerates `superone.d.ts` with the latest API definitions.
 
 

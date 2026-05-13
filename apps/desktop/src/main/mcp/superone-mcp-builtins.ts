@@ -62,12 +62,12 @@ const MINIAPP_GUIDE_TOPICS = [
 ] as const
 
 export const BUILT_IN_SUPERONE_TOOL_NAMES = [
-  'read_miniapp_guide',
-  'setup_mini_app_dev',
-  'register_dev_miniapp',
-  'pack_mini_app',
-  'update_superone_types',
-  'rename_session',
+  'miniapp_dev_read_guide',
+  'miniapp_dev_setup',
+  'miniapp_dev_register',
+  'miniapp_dev_pack',
+  'miniapp_dev_update_types',
+  'session_rename',
 ] as const
 
 export type BuiltInSuperoneToolName = typeof BUILT_IN_SUPERONE_TOOL_NAMES[number]
@@ -122,7 +122,7 @@ Use scope="project" (default) for an app intended for the current project. Use s
 
 After scaffolding, edit manifest.json in the directory to add tools, permissions, or templates. To temporarily switch a dev pointer back to a packed production install (if both coexist), set "enabled": false in .s1-dev.json.
 
-If you have an existing mini-app source directory (e.g. cloned from a repo), use register_dev_miniapp instead — it skips scaffolding.`
+If you have an existing mini-app source directory (e.g. cloned from a repo), use miniapp_dev_register instead — it skips scaffolding.`
 
 const REGISTER_DEV_MINIAPP_DESCRIPTION = `Register an existing mini-app source directory in the global dev-registry so SuperOne knows where to find it. Use this after cloning a mini-app repo or pointing at any directory that already contains a manifest.json.
 
@@ -141,11 +141,11 @@ const RENAME_SESSION_DESCRIPTION =
   'Call this once near the start of the conversation when the topic becomes clear, and again only if the conversation shifts to a substantially different topic. ' +
   'Use a concise 4-8 word title without surrounding quotes or trailing punctuation. ' +
   'Match the title language to the user\'s conversation language. ' +
-  'If the tool returns an error containing "user_locked", the user has manually named this session — do NOT call rename_session again for this session.'
+  'If the tool returns an error containing "user_locked", the user has manually named this session — do NOT call session_rename again for this session.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {
-    name: 'read_miniapp_guide',
+    name: 'miniapp_dev_read_guide',
     description: READ_MINIAPP_GUIDE_DESCRIPTION,
     inputSchema: {
       type: 'object',
@@ -161,7 +161,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   {
-    name: 'setup_mini_app_dev',
+    name: 'miniapp_dev_setup',
     description: SETUP_MINI_APP_DEV_DESCRIPTION,
     inputSchema: {
       type: 'object',
@@ -180,7 +180,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   {
-    name: 'register_dev_miniapp',
+    name: 'miniapp_dev_register',
     description: REGISTER_DEV_MINIAPP_DESCRIPTION,
     inputSchema: {
       type: 'object',
@@ -196,7 +196,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   {
-    name: 'pack_mini_app',
+    name: 'miniapp_dev_pack',
     description: PACK_MINI_APP_DESCRIPTION,
     inputSchema: {
       type: 'object',
@@ -209,7 +209,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   {
-    name: 'update_superone_types',
+    name: 'miniapp_dev_update_types',
     description: UPDATE_SUPERONE_TYPES_DESCRIPTION,
     inputSchema: {
       type: 'object',
@@ -221,7 +221,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   {
-    name: 'rename_session',
+    name: 'session_rename',
     description: RENAME_SESSION_DESCRIPTION,
     inputSchema: {
       type: 'object',
@@ -331,7 +331,7 @@ function renameSessionTool(args: { title: string }, deps: BuiltInSuperoneToolDep
   const sessionId = deps.sessionId
   if (isSessionUserRenamed(sessionId)) {
     return {
-      content: [{ type: 'text' as const, text: 'Error: user_locked. The user has manually set this session title. Do not call rename_session again for this session.' }],
+      content: [{ type: 'text' as const, text: 'Error: user_locked. The user has manually set this session title. Do not call session_rename again for this session.' }],
       isError: true,
     }
   }
@@ -349,7 +349,7 @@ function renameSessionTool(args: { title: string }, deps: BuiltInSuperoneToolDep
     try {
       dbRenameSession(sessionId, trimmed, 'agent')
     } catch (err) {
-      log.warn('[rename_session] dbRenameSession error: %s', err instanceof Error ? err.message : String(err))
+      log.warn('[session_rename] dbRenameSession error: %s', err instanceof Error ? err.message : String(err))
     }
   }
   return {
@@ -364,7 +364,7 @@ async function updateSuperoneTypes(args: { appDir: string }) {
 
   if (!targetPath) {
     return {
-      content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', message: 'No existing superone.d.ts found. This tool is for updating existing type definitions. For new mini-apps, use setup_mini_app_dev with template "react".' }) }],
+      content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', message: 'No existing superone.d.ts found. This tool is for updating existing type definitions. For new mini-apps, use miniapp_dev_setup with template "react".' }) }],
     }
   }
 
@@ -380,24 +380,24 @@ export async function executeBuiltInSuperoneTool(
   deps: BuiltInSuperoneToolDeps,
 ) {
   switch (toolName) {
-    case 'read_miniapp_guide':
+    case 'miniapp_dev_read_guide':
       return readMiniappGuide(args as { topic: string })
-    case 'setup_mini_app_dev':
+    case 'miniapp_dev_setup':
       return setupMiniAppDev(args as unknown as SetupMiniAppDevArgs, deps)
-    case 'register_dev_miniapp':
+    case 'miniapp_dev_register':
       return registerDevMiniAppImpl(args as unknown as RegisterDevMiniAppArgs, deps)
-    case 'pack_mini_app':
+    case 'miniapp_dev_pack':
       return packMiniApp(args as { appDir: string; outputDir: string })
-    case 'update_superone_types':
+    case 'miniapp_dev_update_types':
       return updateSuperoneTypes(args as { appDir: string })
-    case 'rename_session':
+    case 'session_rename':
       return renameSessionTool(args as { title: string }, deps)
   }
 }
 
 export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneToolDeps): void {
   server.tool(
-    'read_miniapp_guide',
+    'miniapp_dev_read_guide',
     READ_MINIAPP_GUIDE_DESCRIPTION,
     {
       topic: z.enum(MINIAPP_GUIDE_TOPICS).describe(MINIAPP_GUIDE_TOPIC_DESCRIPTION),
@@ -406,7 +406,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
   )
 
   server.tool(
-    'setup_mini_app_dev',
+    'miniapp_dev_setup',
     SETUP_MINI_APP_DEV_DESCRIPTION,
     {
       name: z.string().describe('Display name for the mini-app'),
@@ -423,7 +423,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
   )
 
   server.tool(
-    'register_dev_miniapp',
+    'miniapp_dev_register',
     REGISTER_DEV_MINIAPP_DESCRIPTION,
     {
       directory: z.string().describe('Absolute path to the existing mini-app source directory. Must contain manifest.json at the root or under dist/.'),
@@ -436,7 +436,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
   )
 
   server.tool(
-    'pack_mini_app',
+    'miniapp_dev_pack',
     PACK_MINI_APP_DESCRIPTION,
     {
       appDir: z.string().describe('Absolute path to the mini-app directory containing manifest.json'),
@@ -446,7 +446,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
   )
 
   server.tool(
-    'update_superone_types',
+    'miniapp_dev_update_types',
     UPDATE_SUPERONE_TYPES_DESCRIPTION,
     {
       appDir: z.string().describe('Absolute path to the mini-app directory'),
@@ -455,7 +455,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
   )
 
   server.tool(
-    'rename_session',
+    'session_rename',
     RENAME_SESSION_DESCRIPTION,
     {
       title: z.string().min(1).max(80).describe('A concise 4-8 word title describing the current conversation topic.'),

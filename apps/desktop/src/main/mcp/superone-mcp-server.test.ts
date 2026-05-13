@@ -226,7 +226,7 @@ describe('stdio SuperOne MCP tool surface', () => {
 
     const names = listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)
 
-    expect(names).toContain('read_miniapp_guide')
+    expect(names).toContain('miniapp_dev_read_guide')
     expect(names).toContain('myapp__a_tool')
     expect(names).not.toContain('other__b_tool')
   })
@@ -483,7 +483,7 @@ describe('executeAppTool with renderer.intercept', () => {
   })
 })
 
-describe('setup_mini_app_dev tool handler', () => {
+describe('miniapp_dev_setup tool handler', () => {
   function getBuiltInHandler(toolName: string): Function {
     const call = mockBuiltInTool.mock.calls.find((c) => c[0] === toolName)
     if (!call) throw new Error(`Built-in tool ${toolName} not registered`)
@@ -516,7 +516,7 @@ describe('setup_mini_app_dev tool handler', () => {
       appPath: '/proj/packages/weather',
       buildRequired: true,
     })
-    const handler = getBuiltInHandler('setup_mini_app_dev')
+    const handler = getBuiltInHandler('miniapp_dev_setup')
 
     const result = await handler({
       name: 'Weather',
@@ -555,7 +555,7 @@ describe('setup_mini_app_dev tool handler', () => {
 
   it('returns status=error (no throw) when createMiniApp throws — UI needs the structured payload', async () => {
     mockCreateMiniApp.mockRejectedValueOnce(new Error('directory must be an absolute path, got: foo'))
-    const handler = getBuiltInHandler('setup_mini_app_dev')
+    const handler = getBuiltInHandler('miniapp_dev_setup')
 
     const result = await handler({
       name: 'Bad',
@@ -583,7 +583,7 @@ describe('setup_mini_app_dev tool handler', () => {
       appPath: '/Users/me/notes',
       buildRequired: false,
     })
-    const handler = getBuiltInHandler('setup_mini_app_dev')
+    const handler = getBuiltInHandler('miniapp_dev_setup')
 
     const result = await handler({
       name: 'Notes',

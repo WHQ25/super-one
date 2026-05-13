@@ -401,7 +401,7 @@ Mini-apps are sandboxed web apps (HTML/CSS/JS) that run in iframes and are contr
 
 | Module | Path | Purpose |
 |--------|------|---------|
-| MCP Server | `apps/desktop/src/main/mcp/superone-mcp-server.ts` | Built-in MCP tools (`read_miniapp_guide`, `list_apps`, `setup_mini_app_dev`, `pack_mini_app`) + dynamic tool registration per app. Guide content in `apps/desktop/src/main/mcp/guides/` |
+| MCP Server | `apps/desktop/src/main/mcp/superone-mcp-server.ts` | Built-in MCP tools (`miniapp_dev_read_guide`, `miniapp_dev_setup`, `miniapp_dev_register`, `miniapp_dev_pack`, `miniapp_dev_update_types`, `session_rename`) + dynamic tool registration per app. Guide content in `apps/desktop/src/main/mcp/guides/`. Naming convention: `<category>_<subcategory>_<verb>` — `miniapp_dev_*` for mini-app development workflow, `session_*` for chat session management. Built-in tool entries live in `BUILT_IN_SUPERONE_TOOL_NAMES` (`superone-mcp-builtins.ts`); they auto-bypass permission prompts via `isBuiltInSuperoneTool` |
 | Service | `apps/desktop/src/main/miniapp/miniapp-service.ts` | App discovery, manifest parsing (Zod validated), filesystem operations |
 | Schema | `apps/desktop/src/main/miniapp/miniapp-schema.ts` | Zod v4 manifest validation schema |
 | Packager | `apps/desktop/src/main/miniapp/miniapp-packager.ts` | `.s1app` packaging (zip + integrity), install/uninstall, SHA-256 verification |

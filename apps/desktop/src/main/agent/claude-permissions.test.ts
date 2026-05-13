@@ -9,10 +9,10 @@ vi.mock('fs', () => ({ readFileSync: mockReadFileSync }))
 vi.mock('os', () => ({ homedir: mockHomedir }))
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 const BUILT_IN_QUALIFIED = new Set([
-  'mcp__superone__read_miniapp_guide',
-  'mcp__superone__setup_mini_app_dev',
-  'mcp__superone__pack_mini_app',
-  'mcp__superone__update_superone_types',
+  'mcp__superone__miniapp_dev_read_guide',
+  'mcp__superone__miniapp_dev_setup',
+  'mcp__superone__miniapp_dev_pack',
+  'mcp__superone__miniapp_dev_update_types',
 ])
 vi.mock('../mcp/superone-mcp-server', () => ({
   isToolPreapproved: vi.fn(() => false),
@@ -180,9 +180,9 @@ describe('createCanUseTool', () => {
     expect(perms.size).toBe(0)
   })
 
-  it('should auto-approve mcp__superone__read_miniapp_guide without permission prompt', async () => {
+  it('should auto-approve mcp__superone__miniapp_dev_read_guide without permission prompt', async () => {
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
-    const result = await canUseTool('mcp__superone__read_miniapp_guide', { topic: 'overview' }, makeContext())
+    const result = await canUseTool('mcp__superone__miniapp_dev_read_guide', { topic: 'overview' }, makeContext())
     expect(result.behavior).toBe('allow')
     expect(result.updatedInput).toEqual({ topic: 'overview' })
     expect(events).toHaveLength(0)
@@ -214,9 +214,9 @@ describe('createCanUseTool', () => {
   it('should auto-approve all built-in superone tools (system tools, not user code)', async () => {
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
     for (const tool of [
-      'mcp__superone__setup_mini_app_dev',
-      'mcp__superone__pack_mini_app',
-      'mcp__superone__update_superone_types',
+      'mcp__superone__miniapp_dev_setup',
+      'mcp__superone__miniapp_dev_pack',
+      'mcp__superone__miniapp_dev_update_types',
     ]) {
       const result = await canUseTool(tool, {}, makeContext())
       expect(result.behavior).toBe('allow')

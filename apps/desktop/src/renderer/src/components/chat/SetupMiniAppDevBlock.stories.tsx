@@ -28,7 +28,7 @@ const SETUP_INPUT = {
 
 export const Streaming: Story = {
   args: {
-    toolName: 'mcp__superone__setup_mini_app_dev',
+    toolName: 'mcp__superone__miniapp_dev_setup',
     input: JSON.stringify(SETUP_INPUT),
     status: 'streaming',
     elapsedSeconds: 2,
@@ -37,7 +37,7 @@ export const Streaming: Story = {
 
 export const CompleteSuccess: Story = {
   args: {
-    toolName: 'mcp__superone__setup_mini_app_dev',
+    toolName: 'mcp__superone__miniapp_dev_setup',
     input: JSON.stringify(SETUP_INPUT),
     status: 'complete',
     result: JSON.stringify({
@@ -49,7 +49,7 @@ export const CompleteSuccess: Story = {
 
 export const CompleteError: Story = {
   args: {
-    toolName: 'mcp__superone__setup_mini_app_dev',
+    toolName: 'mcp__superone__miniapp_dev_setup',
     input: JSON.stringify(SETUP_INPUT),
     status: 'complete',
     result: JSON.stringify({

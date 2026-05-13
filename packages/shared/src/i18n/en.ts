@@ -2008,7 +2008,7 @@ export const en: Messages = {
       addNew: 'Add dev app…',
       loading: 'Loading…',
       empty: 'No dev apps registered yet',
-      emptyHint: 'Use “Add dev app…” to register a source directory, or run register_dev_miniapp from an agent.',
+      emptyHint: 'Use “Add dev app…” to register a source directory, or run miniapp_dev_register from an agent.',
       added: 'Added {{name}} to Dev Apps',
       addFailed: 'Failed to add dev app',
       installedHere: 'installed',

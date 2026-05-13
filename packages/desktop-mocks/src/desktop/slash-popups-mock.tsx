@@ -378,9 +378,9 @@ const DEFAULT_SERVERS: McpServerEntryMock[] = [
     expanded: true,
     tools: [
       { name: "list_apps", description: "List installed mini-apps and dev apps" },
-      { name: "read_miniapp_guide", description: "Fetch the SuperOne mini-app development guide" },
-      { name: "setup_mini_app_dev", description: "Scaffold and register a new mini-app dev project" },
-      { name: "pack_mini_app", description: "Bundle a mini-app folder into a .s1app archive" },
+      { name: "miniapp_dev_read_guide", description: "Fetch the SuperOne mini-app development guide" },
+      { name: "miniapp_dev_setup", description: "Scaffold and register a new mini-app dev project" },
+      { name: "miniapp_dev_pack", description: "Bundle a mini-app folder into a .s1app archive" },
     ],
   },
   { name: "github", status: "connected", statusLabel: "12 tools" },

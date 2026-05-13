@@ -197,7 +197,7 @@ describe('superone-mcp-stdio-ipc', () => {
     await client.ready()
     const res = await client.send('tools/list', getToken(), { sessionId: PROJ })
     const names = (res.result?.tools ?? []).map((t) => t.name)
-    expect(names).toContain('read_miniapp_guide')
+    expect(names).toContain('miniapp_dev_read_guide')
     expect(names).toContain('myapp__do_thing')
     client.close()
   })
@@ -234,7 +234,7 @@ describe('superone-mcp-stdio-ipc', () => {
     await client.ready()
     const res = await client.send('tools/call', getToken(), {
       sessionId: PROJ,
-      name: 'read_miniapp_guide',
+      name: 'miniapp_dev_read_guide',
       arguments: { topic: 'overview' },
     })
     expect(res.result?.content?.[0]?.text).toBe('overview content')

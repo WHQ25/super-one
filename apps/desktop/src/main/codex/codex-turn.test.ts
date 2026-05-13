@@ -248,7 +248,16 @@ describe('extractSuperoneMiniAppToolName', () => {
     ).toBe('mcp__superone__excalidraw__clear_canvas')
   })
 
-  it('returns null when message lacks namespaced tool format', () => {
+  it('extracts built-in superone tool name even without namespace separator', () => {
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "miniapp_dev_read_guide"?'),
+    ).toBe('mcp__superone__miniapp_dev_read_guide')
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "session_rename"?'),
+    ).toBe('mcp__superone__session_rename')
+  })
+
+  it('returns null when tool is neither a built-in nor a namespaced mini-app tool', () => {
     expect(
       extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "list_apps"?'),
     ).toBeNull()
@@ -281,6 +290,23 @@ describe('mapApprovalRequest superone mini-app tool elicitation', () => {
     expect(parsed.request.supportsAlwaysPersist).toBe(false)
     expect(parsed.request.requestKind).toBeUndefined()
     expect(parsed.request.message).toBeUndefined()
+  })
+
+  it('rewrites built-in superone tool elicitation so pre-approve check can match by qualified name', () => {
+    const parsed = mapApprovalRequest({
+      requestIdRaw: 21,
+      requestId: '21',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'superone',
+        message: 'Allow the superone MCP server to run tool "miniapp_dev_read_guide"?',
+        requestedSchema: { type: 'object', properties: {} },
+      },
+    })
+
+    if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
+    expect(parsed.request.toolName).toBe('mcp__superone__miniapp_dev_read_guide')
+    expect(parsed.request.requestKind).toBeUndefined()
   })
 
   it('keeps original elicitation shape for non-superone servers', () => {

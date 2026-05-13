@@ -47,6 +47,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
+import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtins'
 import { SUPERONE_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
@@ -56,7 +57,9 @@ export function extractSuperoneMiniAppToolName(message: string): string | null {
   const match = message.match(SUPERONE_MCP_TOOL_NAME_PATTERN)
   if (!match) return null
   const namespacedName = match[1]
-  if (!namespacedName.includes('__')) return null
+  const isMiniAppTool = namespacedName.includes('__')
+  const isBuiltIn = (BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(namespacedName)
+  if (!isMiniAppTool && !isBuiltIn) return null
   return `${MCP_SUPERONE_TOOL_PREFIX}${namespacedName}`
 }
 

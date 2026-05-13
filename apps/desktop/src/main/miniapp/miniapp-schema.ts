@@ -69,7 +69,7 @@ const toolDefinitionSchema = z.object({
   groupable: z.boolean().optional(),
   inputSchema: toolInputSchemaSchema,
   renderer: toolRendererSchema.optional(),
-  canCallWhileClosed: z.boolean().optional(),
+  headless: z.boolean().optional(),
   timeoutMs: z.number().int().positive().optional(),
 })
 
@@ -123,11 +123,11 @@ export const manifestSchema = z.object({
 ).refine(
   (m) => {
     if (!m.tools) return true
-    const hasHeadlessTool = m.tools.some((t) => t.canCallWhileClosed === true)
+    const hasHeadlessTool = m.tools.some((t) => t.headless === true)
     if (hasHeadlessTool && !m.headlessEntry) return false
     return true
   },
-  { message: 'manifest.headlessEntry is required when any tool declares canCallWhileClosed=true' },
+  { message: 'manifest.headlessEntry is required when any tool declares headless=true' },
 )
 
 export type ManifestParseResult =

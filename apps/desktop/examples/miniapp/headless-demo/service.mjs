@@ -26,8 +26,8 @@ superone.tools.handle('reset', async () => {
 
 superone.tools.handle('show_counter', async () => {
   // Stub for the panel-bound tool. The platform will throw before reaching this
-  // because show_counter is registered as a non-headless tool (canCallWhileClosed=false).
+  // because show_counter is registered as a non-headless tool (headless=false).
   // Including a placeholder here is safe — bootstrap dispatcher won't call it
-  // unless the dispatcher routes here, which it won't for canCallWhileClosed=false.
+  // unless the dispatcher routes here, which it won't for headless=false.
   return { ok: false, message: 'show_counter should be served by the panel UI handler' }
 })

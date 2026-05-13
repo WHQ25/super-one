@@ -381,21 +381,21 @@ describe('parseManifest - headless tools', () => {
         name: 'query',
         description: 'Query the weather API.',
         inputSchema: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] },
-        canCallWhileClosed: true,
+        headless: true,
       },
     ],
   }
 
-  it('accepts manifest with headlessEntry + canCallWhileClosed tool', () => {
+  it('accepts manifest with headlessEntry + headless tool', () => {
     const result = parseManifest(baseHeadless)
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.manifest.headlessEntry).toBe('service.mjs')
-      expect(result.manifest.tools?.[0].canCallWhileClosed).toBe(true)
+      expect(result.manifest.tools?.[0].headless).toBe(true)
     }
   })
 
-  it('rejects canCallWhileClosed=true tool without manifest.headlessEntry', () => {
+  it('rejects headless=true tool without manifest.headlessEntry', () => {
     const { headlessEntry: _ignore, ...withoutEntry } = baseHeadless
     void _ignore
     const result = parseManifest(withoutEntry)
@@ -423,14 +423,14 @@ describe('parseManifest - headless tools', () => {
       toolSlug: 'mixed',
       headlessEntry: 'service.mjs',
       tools: [
-        { name: 'query', description: 'bg', inputSchema: { type: 'object' }, canCallWhileClosed: true },
-        { name: 'show', description: 'ui', inputSchema: { type: 'object' }, canCallWhileClosed: false },
+        { name: 'query', description: 'bg', inputSchema: { type: 'object' }, headless: true },
+        { name: 'show', description: 'ui', inputSchema: { type: 'object' }, headless: false },
       ],
     })
     expect(result.ok).toBe(true)
   })
 
-  it('defaults canCallWhileClosed undefined (backwards compatible)', () => {
+  it('defaults headless undefined (backwards compatible)', () => {
     const result = parseManifest({
       appId: 'legacy',
       name: 'Legacy',
@@ -439,7 +439,7 @@ describe('parseManifest - headless tools', () => {
     })
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.manifest.tools?.[0].canCallWhileClosed).toBeUndefined()
+      expect(result.manifest.tools?.[0].headless).toBeUndefined()
       expect(result.manifest.headlessEntry).toBeUndefined()
     }
   })
@@ -487,10 +487,10 @@ describe('parseManifest - headless tools', () => {
     expect(result.ok).toBe(false)
   })
 
-  it('rejects non-boolean canCallWhileClosed', () => {
+  it('rejects non-boolean headless', () => {
     const result = parseManifest({
       ...baseHeadless,
-      tools: [{ ...baseHeadless.tools[0], canCallWhileClosed: 'yes' }],
+      tools: [{ ...baseHeadless.tools[0], headless: 'yes' }],
     })
     expect(result.ok).toBe(false)
   })

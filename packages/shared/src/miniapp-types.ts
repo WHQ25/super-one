@@ -95,7 +95,7 @@ export interface MiniAppToolDefinition {
   groupable?: boolean
   inputSchema: Record<string, unknown>
   renderer?: MiniAppToolRenderer
-  canCallWhileClosed?: boolean
+  headless?: boolean
   timeoutMs?: number
 }
 

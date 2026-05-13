@@ -169,12 +169,12 @@ describe('headless tool dispatch', () => {
       name,
       description: `Tool ${name}`,
       inputSchema: { type: 'object', properties: {} },
-      canCallWhileClosed: true,
+      headless: true,
       ...overrides,
     }
   }
 
-  it('description has panel-required note when canCallWhileClosed is false', () => {
+  it('description has panel-required note when headless is false', () => {
     registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('ui_tool'))
     expect(mockRegisterTool).toHaveBeenCalledWith(
       'myapp__ui_tool',
@@ -185,7 +185,7 @@ describe('headless tool dispatch', () => {
     )
   })
 
-  it('description omits panel note when canCallWhileClosed is true', () => {
+  it('description omits panel note when headless is true', () => {
     registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeHeadlessTool('bg_tool')], '/abs/path/service.mjs')
     const call = mockRegisterTool.mock.calls.find((c) => c[0] === 'myapp__bg_tool')!
     const desc = (call[1] as { description: string }).description
@@ -193,7 +193,7 @@ describe('headless tool dispatch', () => {
     expect(desc).not.toContain('requires')
   })
 
-  it('canCallWhileClosed tool routes calls to executeHeadlessTool', async () => {
+  it('headless tool routes calls to executeHeadlessTool', async () => {
     mockExecuteHeadlessTool.mockResolvedValueOnce({ value: 42 })
     registerAppTools(PROJ_A, PROJ_A, 'weather', 'wx', [makeHeadlessTool('forecast')], '/install/weather/service.mjs')
 
@@ -226,7 +226,7 @@ describe('headless tool dispatch', () => {
     )
   })
 
-  it('canCallWhileClosed=true without headlessEntryAbsPath returns error', async () => {
+  it('headless=true without headlessEntryAbsPath returns error', async () => {
     registerAppTools(PROJ_A, PROJ_A, 'broken', 'b', [makeHeadlessTool('orphan')])
 
     const handler = getLastHandler('b__orphan')

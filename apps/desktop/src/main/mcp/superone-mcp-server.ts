@@ -47,7 +47,7 @@ interface AppToolEntry {
 
 function describeTool(t: MiniAppToolDefinition): string {
   const base = t.description
-  if (t.canCallWhileClosed) return base
+  if (t.headless) return base
   return `${base}\n\n(Note: this tool requires the mini-app's panel UI to be open to execute.)`
 }
 
@@ -213,7 +213,7 @@ function registerToolsOnState(
     if (state.registeredTools.has(namespacedName)) continue
 
     const zodShape = jsonSchemaToZodShape(t.inputSchema)
-    const isHeadless = t.canCallWhileClosed === true
+    const isHeadless = t.headless === true
     const registered = state.server.registerTool(
       namespacedName,
       { description: describeTool(t), inputSchema: zodShape },
@@ -222,7 +222,7 @@ function registerToolsOnState(
           let result: unknown
           if (isHeadless) {
             if (!headlessEntryAbsPath) {
-              throw new Error(`Tool '${t.name}' is declared canCallWhileClosed but app '${appId}' has no resolved headlessEntry`)
+              throw new Error(`Tool '${t.name}' is declared headless but app '${appId}' has no resolved headlessEntry`)
             }
             result = await executeHeadlessTool({
               sessionId,

@@ -19,7 +19,7 @@
           "by": { "type": "number", "description": "Amount to add (default 1)" }
         }
       },
-      "canCallWhileClosed": true,
+      "headless": true,
       "timeoutMs": 10000
     },
     {
@@ -30,7 +30,7 @@
         "type": "object",
         "properties": {}
       },
-      "canCallWhileClosed": true,
+      "headless": true,
       "timeoutMs": 5000
     },
     {
@@ -41,7 +41,7 @@
         "type": "object",
         "properties": {}
       },
-      "canCallWhileClosed": true
+      "headless": true
     },
     {
       "name": "show_counter",

@@ -37,7 +37,7 @@ The demo app uses `"isDev": true`. Easiest install path:
 **Verify schema validation works** (negative test):
 - Temporarily edit `manifest.json` and delete the top-level `"headlessEntry": "service.mjs"` line.
 - Try to re-install or refresh the dev app.
-- **Expected error**: `manifest.headlessEntry is required when any tool declares canCallWhileClosed=true`.
+- **Expected error**: `manifest.headlessEntry is required when any tool declares headless=true`.
 - Restore the line before continuing.
 
 ---
@@ -201,7 +201,7 @@ Add to `manifest.json` tools array:
   "name": "slow",
   "description": "Test timeout",
   "inputSchema": { "type": "object" },
-  "canCallWhileClosed": true,
+  "headless": true,
   "timeoutMs": 2000
 }
 ```

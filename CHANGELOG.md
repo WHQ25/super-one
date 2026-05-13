@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.32.1-alpha] - 2026-05-13
+
+### Added
+
+- **Main-process crash diagnostics.** Process-level handlers now route uncaught exceptions and unhandled rejections through `electron-log` with the error's name/code/message/stack plus runtime metadata (appVersion, platform, arch, Electron version). Previously a main-process crash left no trace beyond the OS exit code; `unhandledRejection` coerces non-Error rejections via `String(reason)` so arbitrary thrown values still surface a readable line.
+
+### Changed
+
+- **Session-title rename animation switched to a per-character flip + shimmer.** The agent-driven rename animation now uses a CSS-native `rotateX` flip with an accent-color shimmer per character instead of motion's staggered fade. It fires only when the agent renames the *currently displayed* session; switching to a different session jumps straight to the new title without animating, so navigation no longer looks like a rename.
+
 ## [0.32.0-alpha] - 2026-05-13
 
 ### Added

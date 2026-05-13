@@ -113,5 +113,17 @@ export function useMiniAppBridge({ appId, projectDir, iframeRef, onReady, onResi
     return cleanup
   }, [appId, projectDir, sendToFrame])
 
+  useEffect(() => {
+    window.app.trace?.('miniapp.peer', 'renderer-subscribe', { appId })
+    const cleanup = window.miniapp.onPeerEvent((evt) => {
+      const match = evt.appId === appId
+      window.app.trace?.('miniapp.peer', 'renderer-received', { incomingAppId: evt.appId, ownAppId: appId, event: evt.event, match, payload: evt.payload })
+      if (!match) return
+      window.app.trace?.('miniapp.peer', 'renderer-forward-to-iframe', { appId, event: evt.event })
+      sendToFrame({ type: 'miniapp-peer-event', event: evt.event, payload: evt.payload })
+    })
+    return cleanup
+  }, [appId, sendToFrame])
+
   return { sendToFrame, readyRef }
 }

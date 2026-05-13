@@ -8,6 +8,11 @@
       "types": "./src/miniapp-api-runtime.d.ts",
       "default": "./src/miniapp-api-runtime.js"
     },
+    "./miniapp-headless-runtime": {
+      "types": "./src/miniapp-headless-runtime.d.ts",
+      "default": "./src/miniapp-headless-runtime.js"
+    },
+    "./miniapp-headless-bootstrap": "./src/miniapp-headless-bootstrap.js",
     "./i18n": "./src/i18n/index.ts",
     "./i18n/*": "./src/i18n/*.ts",
     "./generative-ui/*": "./src/generative-ui/*.ts",

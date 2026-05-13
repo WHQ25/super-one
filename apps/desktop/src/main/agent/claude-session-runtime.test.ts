@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyClaudeEventToRuntime, createClaudeRuntime, extractResultText, buildUserMessage } from './claude-session-runtime'
+import { applyClaudeEventToRuntime, createClaudeRuntime, extractResultText, buildUserMessage, extractClaudeTitle } from './claude-session-runtime'
 import type { AgentEvent, ChatMessage, SendMessageRequest } from '@superone/shared/agent-types'
 
 function makeRuntime(messages: ChatMessage[]) {
@@ -394,5 +394,59 @@ describe('buildUserMessage (agent-agnostic constructor)', () => {
       { name: 'pic.png', base64: 'data', mimeType: 'image/png' },
       { name: 'spec.pdf', base64: 'data', mimeType: 'application/pdf' },
     ])
+  })
+})
+
+describe('extractClaudeTitle', () => {
+  function userMessage(text: string): ChatMessage {
+    return {
+      id: 'u1',
+      role: 'user',
+      status: 'complete',
+      content: [{ type: 'text', text }],
+      createdAt: '',
+      providerId: 'local',
+    }
+  }
+
+  it('returns plain user text', () => {
+    expect(extractClaudeTitle([userMessage('write me a haiku')])).toBe('write me a haiku')
+  })
+
+  it('returns undefined when no user message', () => {
+    expect(extractClaudeTitle([])).toBeUndefined()
+  })
+
+  it('truncates long text to 100 chars', () => {
+    const long = 'x'.repeat(150)
+    expect(extractClaudeTitle([userMessage(long)])).toBe('x'.repeat(100))
+  })
+
+  it('replaces miniapp tag with @AppName so title shows app name only', () => {
+    const input = '<superone-miniapp><appname>Headless Demo</appname><appid>headless-demo</appid></superone-miniapp> increment please'
+    expect(extractClaudeTitle([userMessage(input)])).toBe('@Headless Demo increment please')
+  })
+
+  it('strips miniapp reminder block from title', () => {
+    const input = 'do the thing\n\n<superone-miniapp-reminder>\ntools available\n</superone-miniapp-reminder>'
+    expect(extractClaudeTitle([userMessage(input)])).toBe('do the thing')
+  })
+
+  it('handles miniapp tag plus reminder block together', () => {
+    const input = '<superone-miniapp><appname>Notes</appname><appid>notes</appid></superone-miniapp> jot this down\n\n<superone-miniapp-reminder>\ntool info\n</superone-miniapp-reminder>'
+    expect(extractClaudeTitle([userMessage(input)])).toBe('@Notes jot this down')
+  })
+
+  it('returns undefined for message that is only tags', () => {
+    const input = '<superone-miniapp-reminder>only reminder</superone-miniapp-reminder>'
+    expect(extractClaudeTitle([userMessage(input)])).toBeUndefined()
+  })
+
+  it('uses only the first user message', () => {
+    const messages: ChatMessage[] = [
+      userMessage('first one'),
+      userMessage('second one'),
+    ]
+    expect(extractClaudeTitle(messages)).toBe('first one')
   })
 })

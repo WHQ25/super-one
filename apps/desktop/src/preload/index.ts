@@ -921,6 +921,12 @@ const miniappAPI = {
   close: (appId: string, projectDir: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CLOSE, appId, projectDir, sessionId),
 
+  authorize: (appIds: string[], projectDir: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_AUTHORIZE, appIds, projectDir, sessionId),
+
+  unauthorize: (appIds: string[], projectDir: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_UNAUTHORIZE, appIds, projectDir, sessionId),
+
   toolResult: (callId: string, result: unknown, error?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_TOOL_RESULT, callId, result, error),
 
@@ -932,6 +938,9 @@ const miniappAPI = {
 
   dbRequest: (appId: string, op: string, args: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DB_REQUEST, appId, op, args),
+
+  kvRequest: (appId: string, op: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_KV_REQUEST, appId, op, args),
 
   onGitHeadChangeEvent: (callback: (event: { projectDir: string; appId: string }) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: { projectDir: string; appId: string }) => callback(event)
@@ -971,6 +980,20 @@ const miniappAPI = {
       callback(projectDir, appId)
     ipcRenderer.on('miniapp:dev-app-ready', handler)
     return () => ipcRenderer.removeListener('miniapp:dev-app-ready', handler)
+  },
+
+  onLazyOpenRequest: (callback: (event: { appId: string; projectDir: string; sessionId: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { appId: string; projectDir: string; sessionId: string }) =>
+      callback(event)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST, handler)
+  },
+
+  onPeerEvent: (callback: (event: { sessionId: string; appId: string; event: string; payload: unknown }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { sessionId: string; appId: string; event: string; payload: unknown }) =>
+      callback(event)
+    ipcRenderer.on('miniapp-peer-event', handler)
+    return () => ipcRenderer.removeListener('miniapp-peer-event', handler)
   },
 
   preview: (s1appPath: string) =>

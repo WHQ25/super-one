@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import type { AgentEvent, ChatMessage, ContentBlock, SendMessageRequest, SessionInfo } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
+import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 
 export interface PersistedClaudeSessionState {
   messages: ChatMessage[]
@@ -454,9 +455,10 @@ export function buildUserMessage(
 export const buildClaudeUserMessage = buildUserMessage
 
 export function extractClaudeTitle(messages: ChatMessage[]): string | undefined {
-  return messages.find((message) => message.role === 'user')?.content
+  const text = messages.find((message) => message.role === 'user')?.content
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
-    .join(' ')
-    .slice(0, 100) || undefined
+    .join(' ') ?? ''
+  const cleaned = stripMiniAppMarkup(text)
+  return cleaned.slice(0, 100) || undefined
 }

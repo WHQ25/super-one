@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Headless Demo</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: #f6f5ef;
+      color: #1d1d1f;
+      padding: 24px;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a1a; color: #f0f0f0; }
+      .card { background: #2a2a2a; border-color: #3a3a3a; }
+      .row { background: #1f1f1f; }
+    }
+    h1 { font-size: 16px; margin: 0 0 12px; opacity: 0.7; font-weight: 500; }
+    .counter {
+      font-size: 72px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.04em;
+      text-align: center;
+      margin: 24px 0;
+      transition: color 200ms;
+    }
+    .counter.bumping { color: #d97706; }
+    .card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .log {
+      font-family: ui-monospace, "SF Mono", monospace;
+      font-size: 11px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .row {
+      padding: 6px 8px;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      background: #f0f0f0;
+    }
+    .label { font-size: 11px; opacity: 0.6; margin-bottom: 6px; }
+    button {
+      background: #d97706;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    button:hover { background: #c2660b; }
+    .actions { display: flex; gap: 8px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Headless Demo · Counter</h1>
+
+  <div class="card">
+    <div class="label">Current value (via KV)</div>
+    <div id="counter" class="counter">…</div>
+    <div class="actions">
+      <button id="refresh">Refresh from KV</button>
+      <button id="local-inc">Local +1 (iframe writes KV)</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">peer.emit log (from worker)</div>
+    <div id="log" class="log"></div>
+  </div>
+
+  <script>
+    const counterEl = document.getElementById('counter')
+    const logEl = document.getElementById('log')
+
+    async function refresh() {
+      const v = await superone.kv.get('counter')
+      counterEl.textContent = String(v ?? 0)
+    }
+
+    function appendLog(text) {
+      const row = document.createElement('div')
+      row.className = 'row'
+      row.textContent = `[${new Date().toLocaleTimeString()}] ${text}`
+      logEl.insertBefore(row, logEl.firstChild)
+      while (logEl.childNodes.length > 30) logEl.removeChild(logEl.lastChild)
+    }
+
+    superone.peer.on('count-changed', (payload) => {
+      appendLog(`count-changed: value=${payload.value} delta=${payload.delta}${payload.reset ? ' (reset)' : ''}`)
+      counterEl.textContent = String(payload.value)
+      counterEl.classList.add('bumping')
+      setTimeout(() => counterEl.classList.remove('bumping'), 200)
+    })
+
+    // Handler for the UI tool — lives in iframe (not in service.mjs).
+    superone.tools.handle('show_counter', async () => {
+      const value = (await superone.kv.get('counter')) ?? 0
+      appendLog(`show_counter called → value=${value}`)
+      return { value, source: 'panel-iframe' }
+    })
+
+    document.getElementById('refresh').addEventListener('click', refresh)
+    document.getElementById('local-inc').addEventListener('click', async () => {
+      const cur = (await superone.kv.get('counter')) ?? 0
+      const next = cur + 1
+      await superone.kv.set('counter', next)
+      counterEl.textContent = String(next)
+      appendLog(`local +1 → ${next} (iframe writes KV; worker won't see via peer because no emit)`)
+    })
+
+    refresh()
+  </script>
+</body>
+</html>

@@ -13,6 +13,8 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { MentionNode } from './mention-node'
+import { findMiniAppMentionMarkers } from '@superone/shared/miniapp-mention-marker'
+import { useMiniAppStore } from '@/stores/miniapp'
 import { PasteChipNode, PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { SlashDecoration } from './slash-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
@@ -128,6 +130,8 @@ export function ChatInput() {
     mentionsRef.current = mentions
     const removeMentionRef = useRef(removeMention)
     removeMentionRef.current = removeMention
+    const addMentionRef = useRef(addMention)
+    addMentionRef.current = addMention
     const processSelectedFilesRef = useRef<(files: FileList | File[]) => void>(() => {})
     const setTextRef = useRef(setText)
     setTextRef.current = setText
@@ -357,7 +361,7 @@ export function ChatInput() {
     }, [removeDir])
 
     const handleMentionSelect = useCallback(
-      (value: string, action: 'navigate' | 'select') => {
+      (value: string, action: 'navigate' | 'select', kindHint?: MentionKind, displayNameHint?: string) => {
         const info = mentionInfoRef.current
         const ed = editorRef.current
         if (!info || !ed) return
@@ -373,10 +377,18 @@ export function ChatInput() {
           return
         }
 
-        const isAgent = showAgentMentions && agents.some((a) => a.name === value)
-        const kind: MentionKind = isAgent ? 'agent' : value.endsWith('/') ? 'directory' : 'file'
-        const displayName = value.split('/').filter(Boolean).pop() || value
+        let kind: MentionKind
+        let displayName: string
+        if (kindHint === 'miniapp') {
+          kind = 'miniapp'
+          displayName = displayNameHint || value
+        } else {
+          const isAgent = showAgentMentions && agents.some((a) => a.name === value)
+          kind = isAgent ? 'agent' : value.endsWith('/') ? 'directory' : 'file'
+          displayName = value.split('/').filter(Boolean).pop() || value
+        }
 
+        console.log('[DEBUG handleMentionSelect]', { kind, value, displayName, kindHint })
         addMention({ kind, value, displayName })
 
         ed.chain()
@@ -397,13 +409,20 @@ export function ChatInput() {
     const serializeAndClear = useCallback(() => {
       const ed = editorRef.current
       const segments: Array<{ text: string; isPaste: boolean }> = []
+      const collectedMentions: MentionNodeAttrs[] = []
       let current = ''
       if (ed) {
         ed.state.doc.descendants((node) => {
           if (node.isText) {
             current += node.text ?? ''
           } else if (node.type.name === 'mention') {
-            current += ` @${(node.attrs as MentionNodeAttrs).value} `
+            const attrs = node.attrs as MentionNodeAttrs
+            collectedMentions.push(attrs)
+            if (attrs.kind === 'miniapp') {
+              current += ` <superone-miniapp><appname>${attrs.displayName}</appname><appid>${attrs.value}</appid></superone-miniapp> `
+            } else {
+              current += ` @${attrs.value} `
+            }
           } else if (node.type.name === 'hardBreak') {
             current += '\n'
           } else if (node.type.name === 'pasteChip') {
@@ -424,14 +443,14 @@ export function ChatInput() {
       setMentionActive(false)
       setMentionIndex(0)
       mentionInfoRef.current = null
-      return segments
+      return { segments, mentions: collectedMentions }
     }, [text])
 
     const handleSend = useCallback(() => {
       if (!canSend) return
-      const segments = serializeAndClear()
+      const { segments, mentions: editorMentions } = serializeAndClear()
       const fullText = segments.map((s) => s.text).join('\n')
-      sendMessage(fullText, segments)
+      sendMessage(fullText, segments, editorMentions)
     }, [canSend, sendMessage, serializeAndClear])
 
     const handleKeyDownCore = useCallback(
@@ -747,6 +766,31 @@ export function ChatInput() {
         },
         handlePaste: (_view, event) => {
           const plainText = event.clipboardData?.getData('text/plain')
+          if (plainText) {
+            const markers = findMiniAppMentionMarkers(plainText)
+            if (markers.length > 0) {
+              const installedAppIds = new Set(useMiniAppStore.getState().apps.map((a) => a.id))
+              const content: { type: string; text?: string; attrs?: Record<string, unknown> }[] = []
+              let cursor = 0
+              const pushText = (slice: string) => {
+                if (slice) content.push({ type: 'text', text: slice })
+              }
+              for (const m of markers) {
+                if (m.start > cursor) pushText(plainText.slice(cursor, m.start))
+                if (installedAppIds.has(m.appId)) {
+                  content.push({ type: 'mention', attrs: { kind: 'miniapp', value: m.appId, displayName: m.appName } })
+                  addMentionRef.current({ kind: 'miniapp', value: m.appId, displayName: m.appName })
+                } else {
+                  pushText(`@${m.appName}`)
+                }
+                cursor = m.end
+              }
+              if (cursor < plainText.length) pushText(plainText.slice(cursor))
+              event.preventDefault()
+              editorRef.current?.chain().focus().insertContent(content).run()
+              return true
+            }
+          }
           if (plainText && plainText.trim()) {
             const lineCount = plainText.split('\n').length
             if (lineCount >= PASTE_CHIP_LINE_THRESHOLD || plainText.length >= PASTE_CHIP_CHAR_THRESHOLD) {

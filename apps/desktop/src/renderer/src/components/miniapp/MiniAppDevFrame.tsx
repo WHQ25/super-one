@@ -127,18 +127,32 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
     useContextConsumedEvent(appId, sendToWebview)
 
     useEffect(() => {
+      window.app.trace?.('miniapp.toolcall', 'devframe-subscribe', { appId, projectDir })
       const cleanup = window.miniapp.onToolCall((call) => {
-        if (call.appId !== appId) return
-        if (call.projectDir !== projectDir) return
+        const match = call.appId === appId && call.projectDir === projectDir
+        window.app.trace?.('miniapp.toolcall', 'devframe-received', { callId: call.callId, toolName: call.toolName, incoming: { appId: call.appId, projectDir: call.projectDir }, own: { appId, projectDir }, match, webviewMounted: !!webviewRef.current })
+        if (!match) return
         webviewRef.current?.send('miniapp-tool-call', {
           callId: call.callId,
           toolName: call.toolName,
           arguments: call.arguments,
           projectDir: call.projectDir,
         })
+        window.app.trace?.('miniapp.toolcall', 'devframe-forwarded', { callId: call.callId, toolName: call.toolName })
       })
       return cleanup
     }, [appId, projectDir])
+
+    useEffect(() => {
+      window.app.trace?.('miniapp.peer', 'devframe-subscribe', { appId })
+      const cleanup = window.miniapp.onPeerEvent((evt) => {
+        const match = evt.appId === appId
+        window.app.trace?.('miniapp.peer', 'devframe-received', { incomingAppId: evt.appId, ownAppId: appId, event: evt.event, match })
+        if (!match) return
+        webviewRef.current?.send('miniapp-peer-event', { appId: evt.appId, event: evt.event, payload: evt.payload })
+      })
+      return cleanup
+    }, [appId])
 
     if (!preloadPath) return null
 

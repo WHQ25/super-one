@@ -4,7 +4,9 @@ import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useChatStore, useActiveSession, type MentionKind } from '@/stores/chat'
+import { useMiniAppStore } from '@/stores/miniapp'
+import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import type { ListDirEntry, MentionSearchItem } from '@superone/shared/agent-types'
 
 export interface MentionPopupHandle {
@@ -16,7 +18,7 @@ export interface MentionPopupHandle {
 interface MentionPopupProps {
   query: string
   selectedIndex: number
-  onSelect: (value: string, action: 'navigate' | 'select') => void
+  onSelect: (value: string, action: 'navigate' | 'select', kind?: MentionKind, displayName?: string) => void
   onSetSelectedIndex: (index: number) => void
   onClose: () => void
   showAgents?: boolean
@@ -26,6 +28,18 @@ type FlatItem =
   | { kind: 'file'; path: string; displayPath: string; isDirectory: boolean; matchIndices: number[] }
   | { kind: 'dir-entry'; entry: ListDirEntry; prefix: string }
   | { kind: 'agent'; name: string; model: string; matchIndices: number[] }
+  | { kind: 'miniapp'; appId: string; displayName: string; matchIndices: number[] }
+
+function fuzzyMatchIndices(text: string, query: string): number[] | null {
+  if (!query) return []
+  const tLow = text.toLowerCase()
+  const qLow = query.toLowerCase()
+  const idx = tLow.indexOf(qLow)
+  if (idx < 0) return null
+  const indices: number[] = []
+  for (let i = 0; i < qLow.length; i++) indices.push(idx + i)
+  return indices
+}
 
 function HighlightedPath({ path, indices }: { path: string; indices: number[] }) {
   return <HighlightedText text={path} indices={indices} className="truncate" />
@@ -50,6 +64,7 @@ function getSelectPath(item: FlatItem): string {
   }
   if (item.kind === 'file') return item.path
   if (item.kind === 'agent') return item.name
+  if (item.kind === 'miniapp') return item.appId
   return ''
 }
 
@@ -103,9 +118,30 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
     }, [selectedIndex])
 
+    const miniApps = useMiniAppStore((s) => s.apps)
+    const matchedMiniApps = useMemo<FlatItem[]>(() => {
+      if (!miniApps || miniApps.length === 0) return []
+      if (isBrowseMode && query) return []
+      const matches: FlatItem[] = []
+      for (const app of miniApps) {
+        const name = app.manifest.name
+        const idMatch = fuzzyMatchIndices(app.id, query)
+        const nameMatch = fuzzyMatchIndices(name, query)
+        if (idMatch === null && nameMatch === null) continue
+        matches.push({
+          kind: 'miniapp',
+          appId: app.id,
+          displayName: name,
+          matchIndices: nameMatch ?? [],
+        })
+      }
+      return matches
+    }, [miniApps, query, isBrowseMode])
+
     const flatItems: FlatItem[] = useMemo(() => {
       if (isBrowseMode) {
-        const items: FlatItem[] = dirEntries.map((entry): FlatItem => ({ kind: 'dir-entry', entry, prefix: browseDir }))
+        const items: FlatItem[] = [...matchedMiniApps]
+        for (const entry of dirEntries) items.push({ kind: 'dir-entry', entry, prefix: browseDir })
         if (!query) {
           for (const a of agentEntries) {
             items.push({ kind: 'agent', name: a.name, model: a.model, matchIndices: [] })
@@ -115,20 +151,25 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
 
       const prefixLen = scopeDir?.length ?? 0
-      return searchResults.map((item): FlatItem => {
+      const items: FlatItem[] = [...matchedMiniApps]
+      for (const item of searchResults) {
         if (item.kind === 'agent') {
-          return { kind: 'agent', name: item.name, model: item.model, matchIndices: item.matchIndices }
+          items.push({ kind: 'agent', name: item.name, model: item.model, matchIndices: item.matchIndices })
+        } else {
+          const displayPath = scopeDir ? item.path.slice(prefixLen) : item.path
+          const displayIndices = scopeDir ? item.matchIndices.map((i) => i - prefixLen).filter((i) => i >= 0) : item.matchIndices
+          items.push({ kind: 'file', path: item.path, displayPath, isDirectory: item.isDirectory, matchIndices: displayIndices })
         }
-        const displayPath = scopeDir ? item.path.slice(prefixLen) : item.path
-        const displayIndices = scopeDir ? item.matchIndices.map((i) => i - prefixLen).filter((i) => i >= 0) : item.matchIndices
-        return { kind: 'file', path: item.path, displayPath, isDirectory: item.isDirectory, matchIndices: displayIndices }
-      })
-    }, [isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir])
+      }
+      return items
+    }, [isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedMiniApps])
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {
         if (action === 'navigate' && isDirItem(item)) {
           onSelect(getNavigatePath(item), 'navigate')
+        } else if (item.kind === 'miniapp') {
+          onSelect(item.appId, 'select', 'miniapp', item.displayName)
         } else {
           onSelect(getSelectPath(item), 'select')
         }
@@ -194,6 +235,35 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           )}
 
           {flatItems.map((item, i) => {
+            if (item.kind === 'miniapp') {
+              return (
+                <button
+                  key={`m-${item.appId}`}
+                  ref={(el) => {
+                    if (el) itemRefs.current.set(i, el)
+                    else itemRefs.current.delete(i)
+                  }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onSelect(item.appId, 'select', 'miniapp', item.displayName)}
+                  onMouseEnter={() => onSetSelectedIndex(i)}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
+                    i === selectedIndex
+                      ? 'bg-muted text-foreground'
+                      : 'text-foreground hover:bg-muted/50'
+                  )}
+                >
+                  <MiniAppIcon appId={item.appId} className="size-3.5 shrink-0" />
+                  <span className="shrink-0 font-medium">
+                    <HighlightedPath path={item.displayName} indices={item.matchIndices} />
+                  </span>
+                  <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
+                    mini-app
+                  </span>
+                </button>
+              )
+            }
+
             if (item.kind === 'agent') {
               return (
                 <button

@@ -69,6 +69,8 @@ const toolDefinitionSchema = z.object({
   groupable: z.boolean().optional(),
   inputSchema: toolInputSchemaSchema,
   renderer: toolRendererSchema.optional(),
+  canCallWhileClosed: z.boolean().optional(),
+  timeoutMs: z.number().int().positive().optional(),
 })
 
 const TOOL_NAME_RE = /^[a-z0-9_]+$/
@@ -91,6 +93,7 @@ export const manifestSchema = z.object({
     z.string().min(1).regex(/^[a-z0-9_-]+$/, { message: 'Template name must be lowercase alphanumeric with hyphens or underscores' }),
     z.string().min(1),
   ).optional(),
+  headlessEntry: z.string().min(1).optional(),
 }).refine(
   (m) => {
     if (!m.tools || m.tools.length === 0) return true
@@ -117,6 +120,14 @@ export const manifestSchema = z.object({
     return true
   },
   { message: 'renderer.result.template must reference a key in manifest.templates' },
+).refine(
+  (m) => {
+    if (!m.tools) return true
+    const hasHeadlessTool = m.tools.some((t) => t.canCallWhileClosed === true)
+    if (hasHeadlessTool && !m.headlessEntry) return false
+    return true
+  },
+  { message: 'manifest.headlessEntry is required when any tool declares canCallWhileClosed=true' },
 )
 
 export type ManifestParseResult =

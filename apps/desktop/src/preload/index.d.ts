@@ -312,11 +312,16 @@ interface MiniAppAPI {
   list(projectDir?: string): Promise<MiniAppEntry[]>
   open(appId: string, projectDir: string, sessionId: string): Promise<void>
   close(appId: string, projectDir: string, sessionId: string): Promise<void>
+  authorize(appIds: string[], projectDir: string, sessionId: string): Promise<void>
+  unauthorize(appIds: string[], projectDir: string, sessionId: string): Promise<void>
   toolResult(callId: string, result: unknown, error?: string): Promise<void>
   fsRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   gitRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   dbRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
+  kvRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   onGitHeadChangeEvent(callback: (event: { projectDir: string; appId: string }) => void): () => void
+  onLazyOpenRequest(callback: (event: { appId: string; projectDir: string; sessionId: string }) => void): () => void
+  onPeerEvent(callback: (event: { sessionId: string; appId: string; event: string; payload: unknown }) => void): () => void
   fsWatch(projectDir: string, appId: string, path: string): Promise<number>
   fsUnwatch(watchId: number): Promise<void>
   onFsWatchEvent(callback: (event: MiniAppFsWatchEvent) => void): () => void

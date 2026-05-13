@@ -2,10 +2,11 @@ import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { Bot, Folder, X } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
+import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import type { MentionNodeAttrs } from './mention-node'
 
 export function MentionChip({ node, getPos, editor }: NodeViewProps) {
-  const { kind, displayName } = node.attrs as MentionNodeAttrs
+  const { kind, value, displayName } = node.attrs as MentionNodeAttrs
 
   const handleRemove = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -27,6 +28,8 @@ export function MentionChip({ node, getPos, editor }: NodeViewProps) {
         <Bot className="size-3 shrink-0 text-purple-600 dark:text-purple-400" />
       ) : kind === 'directory' ? (
         <Folder className="size-3 shrink-0 text-blue-600 dark:text-blue-400" />
+      ) : kind === 'miniapp' ? (
+        <MiniAppIcon appId={value} className="size-3 shrink-0" />
       ) : (
         <FileIcon name={displayName} size={12} />
       )}

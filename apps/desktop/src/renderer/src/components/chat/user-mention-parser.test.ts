@@ -91,4 +91,63 @@ describe('parseUserMentions', () => {
       { type: 'text', text: ` 改一下\n${longBlob}` },
     ])
   })
+
+  describe('miniapp tags', () => {
+    it('parses a miniapp tag into a mention segment', () => {
+      const input = '<superone-miniapp><appname>Headless Demo</appname><appid>headless-demo</appid></superone-miniapp> increment please'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'mention', kind: 'miniapp', value: 'headless-demo', displayName: 'Headless Demo' },
+        { type: 'text', text: ' increment please' },
+      ])
+    })
+
+    it('parses miniapp tag with surrounding text', () => {
+      const input = 'hey <superone-miniapp><appname>Notes</appname><appid>notes-app</appid></superone-miniapp> please help'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'text', text: 'hey ' },
+        { type: 'mention', kind: 'miniapp', value: 'notes-app', displayName: 'Notes' },
+        { type: 'text', text: ' please help' },
+      ])
+    })
+
+    it('parses multiple miniapp tags', () => {
+      const input = '<superone-miniapp><appname>A</appname><appid>a</appid></superone-miniapp> and <superone-miniapp><appname>B</appname><appid>b</appid></superone-miniapp>'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'mention', kind: 'miniapp', value: 'a', displayName: 'A' },
+        { type: 'text', text: ' and ' },
+        { type: 'mention', kind: 'miniapp', value: 'b', displayName: 'B' },
+      ])
+    })
+
+    it('strips reminder block entirely from output', () => {
+      const input = 'do the thing\n\n<superone-miniapp-reminder>\ntool info here\n</superone-miniapp-reminder>'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'text', text: 'do the thing' },
+      ])
+    })
+
+    it('strips reminder block even when interleaved with miniapp tag', () => {
+      const input = '<superone-miniapp><appname>App</appname><appid>app</appid></superone-miniapp> hello\n\n<superone-miniapp-reminder>\ntools\n</superone-miniapp-reminder>'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'mention', kind: 'miniapp', value: 'app', displayName: 'App' },
+        { type: 'text', text: ' hello' },
+      ])
+    })
+
+    it('coexists with @-mentions', () => {
+      const input = '<superone-miniapp><appname>App</appname><appid>app</appid></superone-miniapp> look at @file.ts'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'mention', kind: 'miniapp', value: 'app', displayName: 'App' },
+        { type: 'text', text: ' look at ' },
+        { type: 'mention', kind: 'file', value: 'file.ts' },
+      ])
+    })
+
+    it('handles malformed miniapp tag as text fallback', () => {
+      const input = '<superone-miniapp>broken</superone-miniapp> ok'
+      // Tag does not match the strict format → left as text, no errors
+      const result = parseUserMentions(input)
+      expect(result).toEqual([{ type: 'text', text: input }])
+    })
+  })
 })

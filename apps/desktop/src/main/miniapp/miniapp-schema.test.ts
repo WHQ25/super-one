@@ -370,6 +370,132 @@ describe('parseManifest', () => {
   })
 })
 
+describe('parseManifest - headless tools', () => {
+  const baseHeadless = {
+    appId: 'weather',
+    name: 'Weather',
+    toolSlug: 'weather',
+    headlessEntry: 'service.mjs',
+    tools: [
+      {
+        name: 'query',
+        description: 'Query the weather API.',
+        inputSchema: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] },
+        canCallWhileClosed: true,
+      },
+    ],
+  }
+
+  it('accepts manifest with headlessEntry + canCallWhileClosed tool', () => {
+    const result = parseManifest(baseHeadless)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.manifest.headlessEntry).toBe('service.mjs')
+      expect(result.manifest.tools?.[0].canCallWhileClosed).toBe(true)
+    }
+  })
+
+  it('rejects canCallWhileClosed=true tool without manifest.headlessEntry', () => {
+    const { headlessEntry: _ignore, ...withoutEntry } = baseHeadless
+    void _ignore
+    const result = parseManifest(withoutEntry)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes('headlessEntry'))).toBe(true)
+    }
+  })
+
+  it('accepts manifest with headlessEntry but no headless tools (forward-compat)', () => {
+    const result = parseManifest({
+      appId: 'mixed',
+      name: 'Mixed',
+      toolSlug: 'mixed',
+      headlessEntry: 'service.mjs',
+      tools: [{ name: 'show_panel', description: 'UI tool', inputSchema: { type: 'object' } }],
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('accepts mixed tools (one headless, one panel-bound) when headlessEntry present', () => {
+    const result = parseManifest({
+      appId: 'mixed',
+      name: 'Mixed',
+      toolSlug: 'mixed',
+      headlessEntry: 'service.mjs',
+      tools: [
+        { name: 'query', description: 'bg', inputSchema: { type: 'object' }, canCallWhileClosed: true },
+        { name: 'show', description: 'ui', inputSchema: { type: 'object' }, canCallWhileClosed: false },
+      ],
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('defaults canCallWhileClosed undefined (backwards compatible)', () => {
+    const result = parseManifest({
+      appId: 'legacy',
+      name: 'Legacy',
+      toolSlug: 'legacy',
+      tools: [{ name: 'foo', description: 'bar', inputSchema: { type: 'object' } }],
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.manifest.tools?.[0].canCallWhileClosed).toBeUndefined()
+      expect(result.manifest.headlessEntry).toBeUndefined()
+    }
+  })
+
+  it('accepts per-tool timeoutMs', () => {
+    const result = parseManifest({
+      ...baseHeadless,
+      tools: [{ ...baseHeadless.tools[0], timeoutMs: 30000 }],
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.manifest.tools?.[0].timeoutMs).toBe(30000)
+    }
+  })
+
+  it('rejects negative timeoutMs', () => {
+    const result = parseManifest({
+      ...baseHeadless,
+      tools: [{ ...baseHeadless.tools[0], timeoutMs: -1 }],
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects zero timeoutMs', () => {
+    const result = parseManifest({
+      ...baseHeadless,
+      tools: [{ ...baseHeadless.tools[0], timeoutMs: 0 }],
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects non-integer timeoutMs', () => {
+    const result = parseManifest({
+      ...baseHeadless,
+      tools: [{ ...baseHeadless.tools[0], timeoutMs: 1000.5 }],
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects empty headlessEntry string', () => {
+    const result = parseManifest({
+      ...baseHeadless,
+      headlessEntry: '',
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects non-boolean canCallWhileClosed', () => {
+    const result = parseManifest({
+      ...baseHeadless,
+      tools: [{ ...baseHeadless.tools[0], canCallWhileClosed: 'yes' }],
+    })
+    expect(result.ok).toBe(false)
+  })
+})
+
 describe('parseDevLink', () => {
   it('accepts an empty object and defaults enabled=true', () => {
     const result = parseDevLink({})

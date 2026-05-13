@@ -7,6 +7,7 @@ import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SkillInfo, SlashCommandInfo, TodoItem, UserQuestion } from '@superone/shared/agent-types'
 import { applySeqToMessage, compareMessageSeq, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
+import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { perfEvent } from '@/lib/perf-trace'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
@@ -71,7 +72,7 @@ function persistStreamingToolInput(messages: ChatMessage[], messageId: string, t
   })
 }
 
-export type MentionKind = 'file' | 'directory' | 'agent'
+export type MentionKind = 'file' | 'directory' | 'agent' | 'miniapp'
 export interface Mention {
   kind: MentionKind
   value: string
@@ -389,7 +390,7 @@ export interface ChatStore {
   ensureSession: (projectPath: string) => void
 
   // Message actions (operate on activeProject)
-  sendMessage: (content: string, segments?: Array<{ text: string; isPaste: boolean }>) => Promise<void>
+  sendMessage: (content: string, segments?: Array<{ text: string; isPaste: boolean }>, explicitMentions?: Mention[]) => Promise<void>
   approveCodexPlan: () => Promise<void>
   rejectCodexPlan: (feedback?: string) => Promise<void>
   interrupt: () => Promise<void>
@@ -528,6 +529,36 @@ function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
     sessionId: project._activeSessionId ?? undefined,
   }
   void window.agent.prewarm(key, hint).catch(() => {})
+}
+
+async function inheritMiniAppToolsForNewSession(
+  projectPath: string,
+  previousSid: string | null | undefined,
+): Promise<void> {
+  if (typeof window === 'undefined' || !window.miniapp?.authorize) return
+  if (!previousSid) return
+  const { useMiniAppStore } = await import('./miniapp')
+  const newSid = useChatStore.getState().projectSessions[projectPath]?._activeSessionId
+  if (!newSid || newSid === previousSid) return
+  const inherited = Object.values(useMiniAppStore.getState().openApps)
+    .filter((a) => a.projectDir === projectPath && a.holderSessions.has(previousSid))
+  if (inherited.length === 0) return
+  const appIds = inherited.map((a) => a.entry.id)
+  window.app.trace?.('miniapp.session', 'inherit-tools', { projectPath, previousSid, newSid, appIds })
+  try {
+    await window.miniapp.authorize(appIds, projectPath, newSid)
+    useMiniAppStore.setState((s) => {
+      const nextOpen = { ...s.openApps }
+      for (const [key, val] of Object.entries(s.openApps)) {
+        if (val.projectDir === projectPath && appIds.includes(val.entry.id)) {
+          nextOpen[key] = { ...val, holderSessions: new Set([...val.holderSessions, newSid]) }
+        }
+      }
+      return { openApps: nextOpen }
+    })
+  } catch (err) {
+    console.error('[inheritMiniAppToolsForNewSession] authorize failed:', err)
+  }
 }
 
 function updateProjectState(
@@ -1501,11 +1532,11 @@ function _createLocalCodexSessionId(): string {
 
 export function extractSessionTitle(messages: ChatMessage[]): string | null {
   const firstUserMsg = messages.find((m) => m.role === 'user')
-  return firstUserMsg?.content
+  const text = firstUserMsg?.content
     .filter((b) => b.type === 'text')
     .map((b) => (b as { text: string }).text)
-    .join(' ')
-    .slice(0, 100) || null
+    .join(' ') ?? ''
+  return stripMiniAppMarkup(text).slice(0, 100) || null
 }
 
 function _getWorktreeBranch(_projectPath: string, session: PerSessionState): string | undefined {
@@ -3134,7 +3165,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (created) triggerPrewarm(get(), projectPath)
   },
 
-  sendMessage: async (content: string, segments?: Array<{ text: string; isPaste: boolean }>) => {
+  sendMessage: async (content: string, segments?: Array<{ text: string; isPaste: boolean }>, explicitMentions?: Mention[]) => {
     const { activeProject } = get()
     if (!activeProject) return
     perfEvent('message_send', { project: activeProject, len: content.length })
@@ -3204,8 +3235,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       selectedCodexPermissionPreset,
       selectedCodexCollaborationMode,
       attachments,
-      mentions,
     } = session
+    const mentions: Mention[] = explicitMentions ?? session.mentions
     const codexThreadId = getLatestCodexThreadId(session.messages)
 
     const rawContent = content.trim()
@@ -3225,7 +3256,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         .join('\n')
       quoteSuffix = `\n\n<quote>\n${inner}\n</quote>`
     }
-    const finalContent = rawContent + contextSuffix + quoteSuffix
+    let miniAppReminderSuffix = ''
+    const miniAppMentions = mentions.filter((m) => m.kind === 'miniapp')
+    if (miniAppMentions.length > 0) {
+      const { useMiniAppStore } = await import('./miniapp')
+      const apps = useMiniAppStore.getState().apps
+      const lines: string[] = [
+        'User mentioned these mini-app(s); their MCP tools are authorized — prefer them when relevant:',
+      ]
+      for (const m of miniAppMentions) {
+        const app = apps.find((a) => a.id === m.value)
+        const manifest = app?.manifest
+        const name = manifest?.name ?? m.displayName
+        const toolSlug = manifest?.toolSlug ?? m.value
+        lines.push(`- "${name}": tools start with "mcp__superone__${toolSlug}__"`)
+      }
+      miniAppReminderSuffix = `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
+    }
+    const finalContent = rawContent + contextSuffix + quoteSuffix + miniAppReminderSuffix
     const codexCommand = parseCodexCommand(rawContent)
     const requestedProvider: ChatProvider = preferredProvider === 'codex' ? 'codex' : 'claude'
     const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
@@ -3415,6 +3463,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     if (_resetSessionLock) await _resetSessionLock
+
+    const miniAppAuthorizations = mentions
+      .filter((m) => m.kind === 'miniapp')
+      .map((m) => m.value)
+    console.log('[DEBUG sendMessage] mentions=', JSON.stringify(mentions), 'miniAppAuthorizations=', miniAppAuthorizations)
+    if (miniAppAuthorizations.length > 0) {
+      const targetSid = project._activeSessionId
+      if (targetSid) {
+        try {
+          await window.miniapp.authorize(miniAppAuthorizations, activeProject, targetSid)
+        } catch (err) {
+          console.error('[sendMessage] miniapp authorize failed:', err)
+        }
+      }
+    }
+
     await _ensureClaudeSessionReadyForSend(get, activeProject)
 
     const mergedDirs = mergeProjectAndSessionDirs(project, session)
@@ -3639,6 +3703,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   resetSessionForWorktreeSwitch: (projectPath: string, opts?: { wtPath?: string; gitBranch?: string | null }) => {
+    const previousSid = get().projectSessions[projectPath]?._activeSessionId ?? null
     const draftId = createSessionId()
     set((s) => {
       const proj = getProject(s, projectPath)
@@ -3664,6 +3729,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })
     useActivityViewStateStore.getState().seedFromCurrent(draftId)
     triggerPrewarm(get(), projectPath)
+    void inheritMiniAppToolsForNewSession(projectPath, previousSid)
   },
 
   resetSession: async () => {
@@ -3759,6 +3825,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     triggerPrewarm(get(), activeProject)
+    void inheritMiniAppToolsForNewSession(activeProject, currentSid)
   },
 
   rewindFiles: async (userMessageId: string) => {
@@ -4409,11 +4476,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   addMention: (mention) => {
     const { activeProject } = get()
-    if (!activeProject) return
+    console.log('[DEBUG addMention] called with', mention, 'activeProject=', activeProject)
+    if (!activeProject) { console.warn('[DEBUG addMention] early return: no activeProject'); return }
     set((s) => updateActivePerSession(s,(sess) => {
+      console.log('[DEBUG addMention] inside set, sess.mentions=', sess.mentions, 'will add=', mention)
       if (sess.mentions.some((m) => m.value === mention.value)) return {}
       return { mentions: [...sess.mentions, mention] }
     }))
+    const after = get().projectSessions[activeProject]
+    const sid = after?._activeSessionId
+    const newMentions = sid ? after?._sessions?.[sid]?.mentions : null
+    console.log('[DEBUG addMention] AFTER set, mentions=', newMentions)
   },
 
   removeMention: (value) => {

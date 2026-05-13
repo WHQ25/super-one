@@ -27,7 +27,7 @@ const PRAGMA_WHITELIST = new Set([
   'page_size',
 ])
 
-function getDbForApp(appId: string): DatabaseType {
+export function getDbForApp(appId: string): DatabaseType {
   const cached = dbConnections.get(appId)
   if (cached && cached.open) return cached
 

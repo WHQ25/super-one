@@ -27,6 +27,7 @@ import { tryCopy } from '@/lib/clipboard'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { ReasoningBlock } from './ReasoningBlock'
 import { parseUserMentions, type UserMentionKind } from './user-mention-parser'
+import { replaceMiniAppTagsWithMention } from '@superone/shared/miniapp-prompt-tags'
 import { deriveColors, ContextPreviewContent } from './ContextChip'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -322,8 +323,10 @@ function RestContent({ rest, forcePlain }: { rest: string; forcePlain?: boolean 
   return <span className="whitespace-pre-wrap">{rest}</span>
 }
 
-function MentionInlineChip({ kind, value }: { kind: UserMentionKind; value: string }) {
-  const display = value.replace(/\/$/, '').split('/').pop() || value
+function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind; value: string; displayName?: string }) {
+  const display = kind === 'miniapp'
+    ? (displayName ?? value)
+    : (value.replace(/\/$/, '').split('/').pop() || value)
   return (
     <span
       className={cn(
@@ -338,6 +341,11 @@ function MentionInlineChip({ kind, value }: { kind: UserMentionKind; value: stri
       ) : kind === 'directory' ? (
         <>
           <Folder className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+          <span>{display}</span>
+        </>
+      ) : kind === 'miniapp' ? (
+        <>
+          <MiniAppIcon appId={value} className="size-3.5 shrink-0" />
           <span>{display}</span>
         </>
       ) : (
@@ -358,7 +366,7 @@ export function UserTextBlock({ text, isPaste }: { text: string; isPaste?: boole
     <span>
       {segments.map((seg, i) =>
         seg.type === 'mention'
-          ? <MentionInlineChip key={i} kind={seg.kind} value={seg.value} />
+          ? <MentionInlineChip key={i} kind={seg.kind} value={seg.value} displayName={seg.displayName} />
           : <RestContent key={i} rest={seg.text} forcePlain={isPaste === false} />
       )}
     </span>
@@ -577,7 +585,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
 
   const userText = useMemo(
     () => (isUser
-      ? message.content.filter((b) => b.type === 'text').map((b) => b.type === 'text' ? b.text : '').join('\n')
+      ? replaceMiniAppTagsWithMention(message.content.filter((b) => b.type === 'text').map((b) => b.type === 'text' ? b.text : '').join('\n'))
       : ''),
     [isUser, message.content],
   )

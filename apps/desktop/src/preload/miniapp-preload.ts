@@ -5,6 +5,7 @@ declare const requestAnimationFrame: (cb: () => void) => number
 
 import { contextBridge, ipcRenderer } from 'electron'
 import { createSuperoneApi, startSuperoneResize, type MiniAppTransport } from '@superone/shared/miniapp-api-runtime'
+import { parseMiniAppHost } from '@superone/shared/miniapp-host'
 
 try { process.title = 'SuperOne MiniApp Dev' } catch { /* process.title not writable in some sandboxed contexts */ }
 
@@ -32,6 +33,7 @@ ipcRenderer.on('miniapp-fs-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-fs-watch-ack', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-git-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-db-response', (_e, data) => dispatchResponse(data))
+ipcRenderer.on('miniapp-kv-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-clipboard-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-ui-contextmenu-result', (_e, data) => dispatchResponse(data))
 
@@ -61,7 +63,18 @@ for (const ch of eventChannels) {
 }
 
 declare const __APP_VERSION__: string
-declare const location: { search: string }
+declare const location: { search: string; host: string }
+
+const ownAppId = (() => {
+  try { return parseMiniAppHost(location.host).appId } catch { return '' }
+})()
+
+ipcRenderer.on('miniapp-peer-event', (_e, data: { appId: string; event: string; payload: unknown }) => {
+  if (!data || data.appId !== ownAppId) return
+  const handler = eventHandlers.get('miniapp-peer-event')
+  if (handler) handler({ event: data.event, payload: data.payload })
+})
+
 const initialLocale = (new URLSearchParams(location.search).get('_locale') as 'en' | 'zh' | null) || 'en'
 const api = createSuperoneApi(transport, __APP_VERSION__, { initialLocale })
 

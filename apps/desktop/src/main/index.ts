@@ -13,10 +13,12 @@ import { startMediaServer, getMediaServerPort } from './media-server'
 import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
 import * as devRegistry from './miniapp/dev-registry'
 import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
+import { handleKvRequest, type KvOp, type KvRequestArgs } from './miniapp/miniapp-kv'
+import { setPeerBroadcaster } from './miniapp/miniapp-peer-bus'
 import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate } from './mcp/superone-mcp-server'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
@@ -1783,6 +1785,13 @@ function registerIpcHandlers(): void {
 
   initSuperoneMcpServer(() => mainWindow)
   setSessionHostProvider(() => sessionManager)
+  setPeerBroadcaster((sessionId, appId, event, payload) => {
+    const hasWin = !!(mainWindow && !mainWindow.isDestroyed())
+    trace('miniapp.peer', 'broadcast', { sessionId, appId, event, payload, hasMainWindow: hasWin })
+    if (hasWin) {
+      mainWindow!.webContents.send('miniapp-peer-event', { sessionId, appId, event, payload })
+    }
+  })
   startSuperoneMcpStdioBridge().catch((err) => log.error('[mcp-stdio-ipc] failed to start:', err))
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async (_e, projectDir?: string) => {
@@ -1820,28 +1829,68 @@ function registerIpcHandlers(): void {
       registerAppTemplates(projectDir, appId, manifest.templates)
     }
     const toolSlug = manifest.toolSlug ?? appId
-    registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [])
+    const headlessEntryAbsPath = manifest.headlessEntry ? join(basePath, manifest.headlessEntry) : undefined
+    registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [], headlessEntryAbsPath)
     loadPreapprovedTools(appId, toolSlug, basePath)
     if (manifest.tools?.length) agentService.markSessionNeedsRebuild(sessionId)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string, projectDir: string, sessionId: string) => {
-    unregisterAppTools(sessionId, appId)
-    const projectAppKey = `${projectDir}::${appId}`
-    const sessions = miniAppSessionRefs.get(projectAppKey)
-    if (sessions) {
-      sessions.delete(sessionId)
-      if (sessions.size === 0) {
-        miniAppSessionRefs.delete(projectAppKey)
-        unregisterAppTemplates(projectDir, appId)
-        clearAllowedDirectories(projectDir, appId)
-        clearAllowedMedia(appId)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_AUTHORIZE, async (_e, appIds: string[], projectDir: string, sessionId: string) => {
+    log.info('[MINIAPP_AUTHORIZE] called appIds=%j projectDir=%s sessionId=%s', appIds, projectDir, sessionId)
+    if (!Array.isArray(appIds) || appIds.length === 0) {
+      log.warn('[MINIAPP_AUTHORIZE] empty appIds, skip')
+      return
+    }
+    let registeredAny = false
+    for (const appId of appIds) {
+      const basePath = getAppBasePath(appId)
+      const installDir = getAppInstallDir(appId)
+      const manifest = await readManifest(basePath)
+      if (!manifest) {
+        log.warn('[MINIAPP_AUTHORIZE] no manifest for appId=%s basePath=%s', appId, basePath)
+        continue
       }
+      setAppFsPermissions(appId, manifest, projectDir, installDir)
+      registerAppTemplates(projectDir, appId, manifest.templates)
+      const toolSlug = manifest.toolSlug ?? appId
+      const headlessEntryAbsPath = manifest.headlessEntry ? join(basePath, manifest.headlessEntry) : undefined
+      registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [], headlessEntryAbsPath)
+      loadPreapprovedTools(appId, toolSlug, basePath)
+      if (manifest.tools?.length) {
+        registeredAny = true
+        log.info('[MINIAPP_AUTHORIZE] registered %d tools for appId=%s sessionId=%s', manifest.tools.length, appId, sessionId)
+      } else {
+        log.info('[MINIAPP_AUTHORIZE] manifest has no tools for appId=%s', appId)
+      }
+    }
+    if (registeredAny) agentService.markSessionNeedsRebuild(sessionId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_UNAUTHORIZE, async (_e, appIds: string[], _projectDir: string, sessionId: string) => {
+    if (!Array.isArray(appIds) || appIds.length === 0) return
+    for (const appId of appIds) {
+      unregisterAppTools(sessionId, appId)
     }
     agentService.markSessionNeedsRebuild(sessionId)
   })
 
+  ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string, projectDir: string, sessionId: string) => {
+    // Closing the panel is purely a UI action. Tools, templates, and fs/media
+    // permissions stay registered for the session lifetime — if the agent
+    // calls a UI tool later, `requestLazyOpenPanel` re-mounts the iframe.
+    // Cleanup is owned by SessionManager.disposeSession (session end) and the
+    // MINIAPP_UNINSTALL path (app removal).
+    clearAppReadyGate(projectDir, appId)
+    const projectAppKey = `${projectDir}::${appId}`
+    const sessions = miniAppSessionRefs.get(projectAppKey)
+    if (sessions) {
+      sessions.delete(sessionId)
+      if (sessions.size === 0) miniAppSessionRefs.delete(projectAppKey)
+    }
+  })
+
   ipcMain.handle(AgentIpcChannels.MINIAPP_TOOL_RESULT, (_e, callId: string, result: unknown, error?: string) => {
+    trace('miniapp.toolcall', 'main-result-ipc', { callId, hasError: !!error, error })
     if (error) {
       rejectToolCall(callId, error)
     } else {
@@ -1885,7 +1934,12 @@ function registerIpcHandlers(): void {
     return handleDbRequest(appId, op as any, args)
   })
 
+  ipcMain.handle(AgentIpcChannels.MINIAPP_KV_REQUEST, async (_e, appId: string, op: string, args: KvRequestArgs) => {
+    return handleKvRequest(appId, op as KvOp, args ?? {})
+  })
+
   ipcMain.handle(AgentIpcChannels.MINIAPP_IFRAME_READY, (_e, appId: string, projectDir: string) => {
+    trace('miniapp.lazyopen', 'main-iframe-ready-ipc', { appId, projectDir })
     notifyMiniAppReady(projectDir, appId)
   })
 
@@ -1912,6 +1966,11 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_UNINSTALL, async (_e, appId: string, installDir?: string) => {
+    const affectedSessions = unregisterAppAcrossSessions(appId)
+    for (const sid of affectedSessions) agentService.markSessionNeedsRebuild(sid)
+    for (const [key] of miniAppSessionRefs) {
+      if (key.endsWith(`::${appId}`)) miniAppSessionRefs.delete(key)
+    }
     return uninstallApp(appId, installDir)
   })
 

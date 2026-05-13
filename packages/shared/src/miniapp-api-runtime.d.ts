@@ -48,6 +48,15 @@ export interface SuperoneApi {
     batch(statements: Array<{ sql: string; params?: unknown[] | Record<string, unknown> }>): Promise<Array<{ changes: number; lastInsertRowid: number }>>
     pragma<T = unknown>(name: string, value?: string | number): Promise<T>
   }
+  kv: {
+    get<T = unknown>(key: string): Promise<T | undefined>
+    set(key: string, value: unknown): Promise<void>
+    delete(key: string): Promise<void>
+    list(prefix?: string): Promise<string[]>
+  }
+  peer: {
+    on(event: string, callback: (payload: unknown) => void): () => void
+  }
   fs: {
     readFile(path: string, opts?: { binary?: boolean }): Promise<string | ArrayBuffer>
     readDir(path?: string): Promise<Array<{ name: string; isDir: boolean }>>

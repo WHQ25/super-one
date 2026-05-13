@@ -363,6 +363,22 @@ export class SessionManagerImpl implements SessionManagerContract {
     } catch (err) {
       log.warn('[SessionManager] onSessionDisposed hook failed:', err)
     }
+    try {
+      const { unregisterSessionAllApps, isAppStillAuthorizedInProject, unregisterAppTemplates } = await import('../mcp/superone-mcp-server')
+      const cleared = unregisterSessionAllApps(sessionId)
+      if (cleared.length > 0) {
+        const { clearAllowedDirectories, clearAllowedMedia } = await import('../miniapp/miniapp-service')
+        for (const { projectDir, appId } of cleared) {
+          if (!isAppStillAuthorizedInProject(projectDir, appId)) {
+            unregisterAppTemplates(projectDir, appId)
+            clearAllowedDirectories(projectDir, appId)
+            clearAllowedMedia(appId)
+          }
+        }
+      }
+    } catch (err) {
+      log.warn('[SessionManager] miniapp tool cleanup failed:', err)
+    }
   }
 
   on(sessionId: string, handler: (e: AgentEvent) => void): () => void {

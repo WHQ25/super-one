@@ -94,6 +94,29 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     })
   }
 
+  if (typeof window !== 'undefined' && window.miniapp?.onLazyOpenRequest) {
+    window.miniapp.onLazyOpenRequest(async ({ appId, projectDir }) => {
+      window.app.trace?.('miniapp.lazyopen', 'renderer-received', { appId, projectDir, loaded: get().loaded, appsCount: get().apps.length })
+      if (!get().loaded) await get().fetchApps(projectDir)
+      const entry = get().apps.find((a) => a.id === appId)
+      if (!entry) {
+        window.app.trace?.('miniapp.lazyopen', 'renderer-app-missing-refresh', { appId, projectDir })
+        await get().refreshApps(projectDir)
+        const refreshed = get().apps.find((a) => a.id === appId)
+        if (!refreshed) {
+          window.app.trace?.('miniapp.lazyopen', 'renderer-app-still-missing-abort', { appId, projectDir })
+          return
+        }
+        window.app.trace?.('miniapp.lazyopen', 'renderer-openAppInPanel-after-refresh', { appId, projectDir })
+        await get().openAppInPanel(refreshed, projectDir)
+        return
+      }
+      window.app.trace?.('miniapp.lazyopen', 'renderer-openAppInPanel', { appId, projectDir })
+      await get().openAppInPanel(entry, projectDir)
+      window.app.trace?.('miniapp.lazyopen', 'renderer-openAppInPanel-done', { appId, projectDir })
+    })
+  }
+
   function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
     if (!(key in record)) return record
     const next = { ...record }

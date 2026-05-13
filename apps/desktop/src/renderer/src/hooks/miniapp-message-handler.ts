@@ -50,6 +50,12 @@ export function handleMiniAppMessage(
         .then((result) => { send({ type: 'miniapp-db-response', id: data.id, result }) })
         .catch((err: unknown) => { send({ type: 'miniapp-db-response', id: data.id, error: (err as Error).message }) })
       return true
+    case 'miniapp-kv-request':
+      window.miniapp
+        .kvRequest(appId, data.op as string, data.args as Record<string, unknown>)
+        .then((result) => { send({ type: 'miniapp-kv-response', id: data.id, result }) })
+        .catch((err: unknown) => { send({ type: 'miniapp-kv-response', id: data.id, error: (err as Error).message }) })
+      return true
     case 'miniapp-fs-watch':
       window.miniapp
         .fsWatch(projectDir, appId, data.path as string)

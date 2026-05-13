@@ -37,6 +37,12 @@ vi.mock('../miniapp/miniapp-packager', () => ({
   packApp: vi.fn(),
   getPreapprovedByPath: vi.fn(() => []),
 }))
+const { mockExecuteHeadlessTool } = vi.hoisted(() => ({
+  mockExecuteHeadlessTool: vi.fn(),
+}))
+vi.mock('../miniapp/miniapp-worker-host', () => ({
+  executeHeadlessTool: mockExecuteHeadlessTool,
+}))
 vi.mock('./guides/overview.md?raw', () => ({ default: 'overview' }))
 vi.mock('./guides/manifest.md?raw', () => ({ default: 'manifest' }))
 vi.mock('./guides/permissions.md?raw', () => ({ default: 'permissions' }))
@@ -111,7 +117,7 @@ describe('registerAppTools / unregisterAppTools', () => {
 
     expect(mockRegisterTool).toHaveBeenCalledWith(
       'myapp__do_thing',
-      expect.objectContaining({ description: 'Tool do_thing' }),
+      expect.objectContaining({ description: expect.stringContaining('Tool do_thing') }),
       expect.any(Function),
     )
     expect(mockSendToolListChanged).toHaveBeenCalled()
@@ -153,6 +159,108 @@ describe('registerAppTools / unregisterAppTools', () => {
   })
 })
 
+describe('headless tool dispatch', () => {
+  beforeEach(() => {
+    mockExecuteHeadlessTool.mockReset()
+  })
+
+  function makeHeadlessTool(name: string, overrides: Partial<MiniAppToolDefinition> = {}): MiniAppToolDefinition {
+    return {
+      name,
+      description: `Tool ${name}`,
+      inputSchema: { type: 'object', properties: {} },
+      canCallWhileClosed: true,
+      ...overrides,
+    }
+  }
+
+  it('description has panel-required note when canCallWhileClosed is false', () => {
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('ui_tool'))
+    expect(mockRegisterTool).toHaveBeenCalledWith(
+      'myapp__ui_tool',
+      expect.objectContaining({
+        description: expect.stringContaining("requires the mini-app's panel UI to be open"),
+      }),
+      expect.any(Function),
+    )
+  })
+
+  it('description omits panel note when canCallWhileClosed is true', () => {
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeHeadlessTool('bg_tool')], '/abs/path/service.mjs')
+    const call = mockRegisterTool.mock.calls.find((c) => c[0] === 'myapp__bg_tool')!
+    const desc = (call[1] as { description: string }).description
+    expect(desc).toBe('Tool bg_tool')
+    expect(desc).not.toContain('requires')
+  })
+
+  it('canCallWhileClosed tool routes calls to executeHeadlessTool', async () => {
+    mockExecuteHeadlessTool.mockResolvedValueOnce({ value: 42 })
+    registerAppTools(PROJ_A, PROJ_A, 'weather', 'wx', [makeHeadlessTool('forecast')], '/install/weather/service.mjs')
+
+    const handler = getLastHandler('wx__forecast')
+    const result = await handler({ city: 'Tokyo' })
+
+    expect(mockExecuteHeadlessTool).toHaveBeenCalledWith({
+      sessionId: PROJ_A,
+      appId: 'weather',
+      headlessEntry: '/install/weather/service.mjs',
+      toolName: 'forecast',
+      args: { city: 'Tokyo' },
+      timeoutMs: undefined,
+    })
+    expect(JSON.parse(result.content[0].text)).toEqual({ value: 42 })
+  })
+
+  it('passes timeoutMs from tool definition to executeHeadlessTool', async () => {
+    mockExecuteHeadlessTool.mockResolvedValueOnce({})
+    registerAppTools(
+      PROJ_A, PROJ_A, 'quick', 'q',
+      [makeHeadlessTool('fast', { timeoutMs: 5000 })],
+      '/install/quick/service.mjs',
+    )
+    const handler = getLastHandler('q__fast')
+    await handler({})
+
+    expect(mockExecuteHeadlessTool).toHaveBeenCalledWith(
+      expect.objectContaining({ timeoutMs: 5000 }),
+    )
+  })
+
+  it('canCallWhileClosed=true without headlessEntryAbsPath returns error', async () => {
+    registerAppTools(PROJ_A, PROJ_A, 'broken', 'b', [makeHeadlessTool('orphan')])
+
+    const handler = getLastHandler('b__orphan')
+    const result = await handler({})
+
+    expect(mockExecuteHeadlessTool).not.toHaveBeenCalled()
+    expect(result.content[0].text).toContain('no resolved headlessEntry')
+  })
+
+  it('non-headless tool still routes through executeAppTool (no worker call)', async () => {
+    registerAppTools(PROJ_A, PROJ_A, 'legacy', 'lg', makeTools('ui_tool'), undefined)
+    const handler = getLastHandler('lg__ui_tool')
+
+    // Don't await: executeAppTool waits for IPC response (no panel here). We only verify the worker is NOT called.
+    const pending = handler({ x: 'y' })
+    // Microtask flush to let any synchronous dispatch happen
+    await new Promise((r) => setImmediate(r))
+
+    expect(mockExecuteHeadlessTool).not.toHaveBeenCalled()
+    // Reject the pending tool call so it cleans up
+    void pending
+  })
+
+  it('headless surface error from executeHeadlessTool returned as [Error] result', async () => {
+    mockExecuteHeadlessTool.mockRejectedValueOnce(new Error('worker boom'))
+    registerAppTools(PROJ_A, PROJ_A, 'bad', 'bd', [makeHeadlessTool('boom_tool')], '/install/bad/service.mjs')
+
+    const handler = getLastHandler('bd__boom_tool')
+    const result = await handler({})
+
+    expect(result.content[0].text).toBe('[Error] worker boom')
+  })
+})
+
 describe('multi-project tool routing', () => {
   it('keeps tool registrations isolated between projects', () => {
     createSuperoneMcpServer(PROJ_B)
@@ -181,6 +289,7 @@ describe('multi-project tool routing', () => {
 describe('tool handler rejects closed app', () => {
   it('returns error when app has been unregistered', async () => {
     registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    notifyAppReady(PROJ_A, 'test-app')
     const handler = getLastHandler('myapp__do_thing')
 
     unregisterAppTools(PROJ_A, 'test-app')

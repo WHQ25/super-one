@@ -44,6 +44,7 @@ export interface MiniAppManifest {
   tools?: MiniAppToolDefinition[]
   runningText?: string
   templates?: Record<string, string>
+  headlessEntry?: string
 }
 
 export interface MiniAppToolInterceptRenderer {
@@ -94,6 +95,8 @@ export interface MiniAppToolDefinition {
   groupable?: boolean
   inputSchema: Record<string, unknown>
   renderer?: MiniAppToolRenderer
+  canCallWhileClosed?: boolean
+  timeoutMs?: number
 }
 
 export interface MiniAppEntry {

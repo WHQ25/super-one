@@ -3,7 +3,7 @@ import { ReactNodeViewRenderer } from '@tiptap/react'
 import { MentionChip } from './MentionChip'
 
 export interface MentionNodeAttrs {
-  kind: 'file' | 'directory' | 'agent'
+  kind: 'file' | 'directory' | 'agent' | 'miniapp'
   value: string
   displayName: string
 }

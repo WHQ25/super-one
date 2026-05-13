@@ -6,6 +6,8 @@ import log from '../logger'
 import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { getPreapprovedByPath } from '../miniapp/miniapp-packager'
+import { executeHeadlessTool } from '../miniapp/miniapp-worker-host'
+import { trace } from '../agent/event-trace'
 import { jsonSchemaToZodShape } from './json-schema-zod'
 import {
   BUILT_IN_SUPERONE_TOOL_NAMES,
@@ -40,6 +42,13 @@ interface AppToolEntry {
   appId: string
   toolSlug: string
   tools: MiniAppToolDefinition[]
+  headlessEntryAbsPath?: string
+}
+
+function describeTool(t: MiniAppToolDefinition): string {
+  const base = t.description
+  if (t.canCallWhileClosed) return base
+  return `${base}\n\n(Note: this tool requires the mini-app's panel UI to be open to execute.)`
 }
 
 function makeAppKey(sessionId: string, appId: string): string {
@@ -125,7 +134,7 @@ export function createSuperoneMcpServer(sessionId: string): McpSdkServerConfigWi
 
   for (const entry of appToolDefs.values()) {
     if (entry.sessionId === sessionId) {
-      registerToolsOnState(state, entry.sessionId, entry.appId, entry.toolSlug, entry.tools)
+      registerToolsOnState(state, entry.sessionId, entry.appId, entry.projectDir, entry.toolSlug, entry.tools, entry.headlessEntryAbsPath)
     }
   }
 
@@ -152,24 +161,88 @@ export function disposeSuperoneMcpServer(sessionId: string): void {
   log.debug('[superone-mcp] disposed all instances for sessionId=%s', sessionId)
 }
 
+const LAZY_OPEN_TIMEOUT_MS = 30_000
+
+async function requestLazyOpenPanel(projectDir: string, appId: string, sessionId: string): Promise<void> {
+  const win = getMainWindow?.()
+  if (!win || win.isDestroyed()) {
+    trace('miniapp.lazyopen', 'main-no-window', { appId, projectDir, sessionId })
+    throw new Error('No renderer available for lazy-open')
+  }
+  trace('miniapp.lazyopen', 'main-ipc-send', { appId, projectDir, sessionId })
+  win.webContents.send(AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST, { appId, projectDir, sessionId })
+  try {
+    await Promise.race([
+      waitForAppReady(projectDir, appId),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Lazy-open timed out after ${LAZY_OPEN_TIMEOUT_MS}ms for app '${appId}'`)), LAZY_OPEN_TIMEOUT_MS),
+      ),
+    ])
+    trace('miniapp.lazyopen', 'main-ready-unblocked', { appId, projectDir })
+  } catch (err) {
+    trace('miniapp.lazyopen', 'main-timeout-or-error', { appId, projectDir, error: err instanceof Error ? err.message : String(err) })
+    throw err
+  }
+}
+
+function isPanelReady(projectDir: string, appId: string): boolean {
+  const key = makeProjectAppKey(projectDir, appId)
+  return appReadyGates.get(key)?.ready === true
+}
+
+export function clearAppReadyGate(projectDir: string, appId: string): void {
+  const key = makeProjectAppKey(projectDir, appId)
+  const entry = appReadyGates.get(key)
+  if (entry?.resolve) {
+    entry.resolve()
+  }
+  appReadyGates.delete(key)
+}
+
 function registerToolsOnState(
   state: ProjectServerState,
   sessionId: string,
   appId: string,
+  projectDir: string,
   toolSlug: string,
   tools: MiniAppToolDefinition[],
+  headlessEntryAbsPath: string | undefined,
 ): void {
   for (const t of tools) {
     const namespacedName = `${toolSlug}__${t.name}`
     if (state.registeredTools.has(namespacedName)) continue
 
     const zodShape = jsonSchemaToZodShape(t.inputSchema)
+    const isHeadless = t.canCallWhileClosed === true
     const registered = state.server.registerTool(
       namespacedName,
-      { description: t.description, inputSchema: zodShape },
+      { description: describeTool(t), inputSchema: zodShape },
       async (args: Record<string, unknown>) => {
         try {
-          const result = await executeAppTool(sessionId, appId, t.name, args)
+          let result: unknown
+          if (isHeadless) {
+            if (!headlessEntryAbsPath) {
+              throw new Error(`Tool '${t.name}' is declared canCallWhileClosed but app '${appId}' has no resolved headlessEntry`)
+            }
+            result = await executeHeadlessTool({
+              sessionId,
+              appId,
+              headlessEntry: headlessEntryAbsPath,
+              toolName: t.name,
+              args,
+              timeoutMs: t.timeoutMs,
+            })
+          } else {
+            const panelReady = isPanelReady(projectDir, appId)
+            trace('miniapp.lazyopen', 'tool-dispatch', { appId, toolName: t.name, panelReady })
+            if (!panelReady) {
+              log.info('[superone-mcp] panel not open for %s, triggering lazy-open', appId)
+              await requestLazyOpenPanel(projectDir, appId, sessionId)
+            }
+            trace('miniapp.lazyopen', 'tool-execute-start', { appId, toolName: t.name })
+            result = await executeAppTool(sessionId, appId, t.name, args)
+            trace('miniapp.lazyopen', 'tool-execute-done', { appId, toolName: t.name })
+          }
           return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
         } catch (err) {
           return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }
@@ -177,7 +250,7 @@ function registerToolsOnState(
       },
     )
     state.registeredTools.set(namespacedName, registered)
-    log.info('[superone-mcp] registered tool %s for sessionId=%s', namespacedName, sessionId)
+    log.info('[superone-mcp] registered tool %s (headless=%s) for sessionId=%s', namespacedName, isHeadless, sessionId)
   }
 }
 
@@ -187,10 +260,12 @@ export function registerAppTools(
   appId: string,
   toolSlug: string,
   tools: MiniAppToolDefinition[],
+  headlessEntryAbsPath?: string,
 ): void {
   const key = makeAppKey(sessionId, appId)
-  log.debug('[superone-mcp] registerAppTools sessionId=%s projectDir=%s appId=%s toolSlug=%s tools=%d', sessionId, projectDir, appId, toolSlug, tools.length)
-  appToolDefs.set(key, { sessionId, projectDir, appId, toolSlug, tools })
+  log.debug('[superone-mcp] registerAppTools sessionId=%s projectDir=%s appId=%s toolSlug=%s tools=%d headlessEntry=%s',
+    sessionId, projectDir, appId, toolSlug, tools.length, headlessEntryAbsPath ?? 'none')
+  appToolDefs.set(key, { sessionId, projectDir, appId, toolSlug, tools, headlessEntryAbsPath })
 
   toolSync?.toolsChanged(sessionId)
 
@@ -201,7 +276,7 @@ export function registerAppTools(
   }
 
   for (const state of states) {
-    registerToolsOnState(state, sessionId, appId, toolSlug, tools)
+    registerToolsOnState(state, sessionId, appId, projectDir, toolSlug, tools, headlessEntryAbsPath)
     if (state.server.isConnected()) state.server.sendToolListChanged()
   }
 }
@@ -281,15 +356,64 @@ export function unregisterAppTools(sessionId: string, appId: string): void {
   toolSync?.toolsChanged(sessionId)
 }
 
+/**
+ * Unregister all mini-app tools held by a given session. Used when a session
+ * is destroyed (project close, /reset, session removal) — at that point the
+ * agent owning these tool slots is going away so the entire authorization set
+ * for this session is dropped at once. Returns the list of (projectDir, appId)
+ * tuples that were cleaned up so callers can run side-effect cleanup
+ * (templates, fs permissions) without having to iterate again.
+ */
+export function unregisterSessionAllApps(sessionId: string): Array<{ projectDir: string; appId: string }> {
+  const targets: Array<{ projectDir: string; appId: string }> = []
+  for (const entry of appToolDefs.values()) {
+    if (entry.sessionId === sessionId) {
+      targets.push({ projectDir: entry.projectDir, appId: entry.appId })
+    }
+  }
+  for (const { appId } of targets) unregisterAppTools(sessionId, appId)
+  return targets
+}
+
+/**
+ * Unregister a specific app across all sessions that currently have it
+ * authorized. Used when the app is being uninstalled — every active session
+ * must drop the tools since the underlying code is going away.
+ */
+export function unregisterAppAcrossSessions(appId: string): string[] {
+  const sessionIds: string[] = []
+  for (const entry of appToolDefs.values()) {
+    if (entry.appId === appId && !sessionIds.includes(entry.sessionId)) {
+      sessionIds.push(entry.sessionId)
+    }
+  }
+  for (const sid of sessionIds) unregisterAppTools(sid, appId)
+  return sessionIds
+}
+
+/**
+ * True if any session still has (projectDir, appId) authorized after recent
+ * cleanup. Used to gate per-project resource teardown (templates, fs perms)
+ * that's shared across sessions in the same project.
+ */
+export function isAppStillAuthorizedInProject(projectDir: string, appId: string): boolean {
+  for (const entry of appToolDefs.values()) {
+    if (entry.projectDir === projectDir && entry.appId === appId) return true
+  }
+  return false
+}
+
 export function resolveToolCall(callId: string, result: unknown): void {
   const pending = pendingCalls.get(callId)
   if (pending) {
     clearTimeout(pending.timer)
     pendingCalls.delete(callId)
     log.debug('[superone-mcp] tool call resolved callId=%s', callId)
+    trace('miniapp.toolcall', 'main-resolve', { callId })
     pending.resolve(result)
   } else {
     log.warn('[superone-mcp] resolveToolCall miss (no pending) callId=%s', callId)
+    trace('miniapp.toolcall', 'main-resolve-miss', { callId })
   }
 }
 
@@ -299,9 +423,11 @@ export function rejectToolCall(callId: string, error: string): void {
     clearTimeout(pending.timer)
     pendingCalls.delete(callId)
     log.debug('[superone-mcp] tool call rejected callId=%s error=%s', callId, error)
+    trace('miniapp.toolcall', 'main-reject', { callId, error })
     pending.reject(new Error(error))
   } else {
     log.warn('[superone-mcp] rejectToolCall miss (no pending) callId=%s', callId)
+    trace('miniapp.toolcall', 'main-reject-miss', { callId, error })
   }
 }
 
@@ -311,10 +437,12 @@ export function notifyAppReady(projectDir: string, appId: string): void {
   if (entry?.resolve) {
     const elapsed = Date.now() - entry.startMs
     log.info('[superone-mcp] app ready: %s @ %s (%dms)', appId, projectDir, elapsed)
-    appReadyGates.delete(key)
+    trace('miniapp.lazyopen', 'main-ready-resolve-pending', { appId, projectDir, elapsedMs: elapsed })
+    appReadyGates.set(key, { startMs: entry.startMs, ready: true })
     entry.resolve()
   } else {
     log.info('[superone-mcp] app ready (early): %s @ %s', appId, projectDir)
+    trace('miniapp.lazyopen', 'main-ready-early-stash', { appId, projectDir })
     appReadyGates.set(key, { startMs: Date.now(), ready: true })
   }
 }
@@ -447,6 +575,7 @@ function sendToolCall(
     }
 
     log.debug('[superone-mcp] tool call dispatched callId=%s projectDir=%s appId=%s toolName=%s', callId, projectDir, appId, toolName)
+    trace('miniapp.toolcall', 'main-dispatch', { callId, appId, toolName, projectDir })
     win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_CALL, request)
   })
 }

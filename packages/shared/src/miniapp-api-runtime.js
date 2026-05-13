@@ -24,6 +24,7 @@ function createSuperoneApi(transport, version, opts) {
   const darkModeListeners = []
   const themeListeners = []
   const localeListeners = []
+  const peerListenersByEvent = new Map()
   let currentLocale = (opts && opts.initialLocale) || 'en'
 
   transport.on('miniapp-tool-call', (data) => {
@@ -76,6 +77,15 @@ function createSuperoneApi(transport, version, opts) {
     localeListeners.forEach((cb) => cb(currentLocale))
   })
 
+  transport.on('miniapp-peer-event', (data) => {
+    if (!data || typeof data.event !== 'string') return
+    const arr = peerListenersByEvent.get(data.event)
+    if (!arr) return
+    for (let i = 0; i < arr.length; i++) {
+      try { arr[i](data.payload) } catch { /* ignore listener throws */ }
+    }
+  })
+
   function makeSub(arr) {
     return (cb) => {
       arr.push(cb)
@@ -103,6 +113,35 @@ function createSuperoneApi(transport, version, opts) {
       },
       pragma(name, value) {
         return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'pragma', args: { name, value } })
+      },
+    },
+    kv: {
+      get(key) {
+        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'get', args: { key } })
+      },
+      set(key, value) {
+        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'set', args: { key, value } })
+      },
+      delete(key) {
+        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'delete', args: { key } })
+      },
+      list(prefix) {
+        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'list', args: { prefix } })
+      },
+    },
+    peer: {
+      on(event, callback) {
+        if (typeof event !== 'string' || typeof callback !== 'function') return () => {}
+        let arr = peerListenersByEvent.get(event)
+        if (!arr) { arr = []; peerListenersByEvent.set(event, arr) }
+        arr.push(callback)
+        return () => {
+          const cur = peerListenersByEvent.get(event)
+          if (!cur) return
+          const idx = cur.indexOf(callback)
+          if (idx >= 0) cur.splice(idx, 1)
+          if (cur.length === 0) peerListenersByEvent.delete(event)
+        }
       },
     },
     fs: {

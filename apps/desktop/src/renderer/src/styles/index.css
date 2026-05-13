@@ -164,3 +164,36 @@ body {
   display: block;
   margin: 4px 1px;
 }
+
+/* --- AnimatedSessionTitle: out → in char shimmer --- */
+.animated-title-wrap {
+  perspective: 500px;
+}
+.animated-title-inner {
+  display: block;
+  transform-style: preserve-3d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.animated-title-wrap[data-phase="out"] .animated-title-inner {
+  opacity: 0;
+  transform: translateY(-2px) scale(.94);
+  filter: blur(1.5px);
+  transition: opacity .22s ease, transform .22s cubic-bezier(.45,0,.25,1), filter .22s ease;
+}
+.animated-title-ch {
+  display: inline-block;
+  white-space: pre;
+  transform-origin: 50% 100%;
+  backface-visibility: hidden;
+}
+.animated-title-ch.is-flip {
+  opacity: 0;
+  animation: animated-title-flip .36s cubic-bezier(.2,0,.2,1) forwards;
+}
+@keyframes animated-title-flip {
+  0%   { opacity: 0; transform: rotateX(-80deg) translateY(2px); color: var(--primary); text-shadow: 0 0 8px color-mix(in oklch, var(--primary) 55%, transparent); }
+  55%  { opacity: 1; transform: rotateX(0deg); color: var(--primary); text-shadow: 0 0 4px color-mix(in oklch, var(--primary) 30%, transparent); }
+  100% { opacity: 1; transform: rotateX(0deg); color: inherit; text-shadow: none; }
+}

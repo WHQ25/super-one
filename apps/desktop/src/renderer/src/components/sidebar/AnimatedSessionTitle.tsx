@@ -1,11 +1,13 @@
-import { useRef } from 'react'
-import { motion } from 'motion/react'
+import { useEffect, useRef, useState } from 'react'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
 
-const TARGET_MS = 1000
-const FADE_MS = 350
-const EASE = [0.3, 0, 0.2, 1] as const
+const OUT_MS = 220
+const CHAR_STAGGER_MS = 55
+const FLIP_DURATION_MS = 360
+const IN_TAIL_MS = 120
+
+type Phase = 'idle' | 'out' | 'in'
 
 export function useSessionTitleByAgent(
   sessionId: string | null | undefined,
@@ -22,30 +24,69 @@ interface SessionTitleAnimatedProps {
 }
 
 export function SessionTitleAnimated({ sessionId, fallback, className }: SessionTitleAnimatedProps) {
-  const title = useSessionTitleByAgent(sessionId, fallback)
-  const initialTitleRef = useRef(title)
-  const animate = title !== initialTitleRef.current
+  const targetTitle = useSessionTitleByAgent(sessionId, fallback)
+  const [displayTitle, setDisplayTitle] = useState(targetTitle)
+  const [phase, setPhase] = useState<Phase>('idle')
+  const [writeKey, setWriteKey] = useState(0)
+  const prevTitleRef = useRef(targetTitle)
+  const prevSessionIdRef = useRef(sessionId)
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
-  const chars = [...title]
-  const stagger = chars.length > 1 ? (TARGET_MS - FADE_MS) / (chars.length - 1) : 0
+  useEffect(() => {
+    if (sessionId !== prevSessionIdRef.current) {
+      prevSessionIdRef.current = sessionId
+      timersRef.current.forEach(clearTimeout)
+      timersRef.current = []
+      prevTitleRef.current = targetTitle
+      setDisplayTitle(targetTitle)
+      setPhase('idle')
+      return
+    }
+
+    if (targetTitle === prevTitleRef.current) return
+
+    timersRef.current.forEach(clearTimeout)
+
+    const nextTitle = targetTitle
+    setPhase('out')
+
+    const inMs = Math.max(0, nextTitle.length - 1) * CHAR_STAGGER_MS + FLIP_DURATION_MS + IN_TAIL_MS
+
+    const t1 = setTimeout(() => {
+      prevTitleRef.current = nextTitle
+      setDisplayTitle(nextTitle)
+      setWriteKey((k) => k + 1)
+      setPhase('in')
+    }, OUT_MS)
+
+    const t2 = setTimeout(() => {
+      setPhase('idle')
+    }, OUT_MS + inMs)
+
+    timersRef.current = [t1, t2]
+
+    return () => {
+      timersRef.current.forEach(clearTimeout)
+    }
+  }, [targetTitle, sessionId])
+
+  const chars = [...displayTitle]
+  const isWriting = phase === 'in'
 
   return (
-    <span className={cn('relative min-w-0 truncate', className)}>
-      <span key={title} className="block truncate">
+    <span
+      className={cn('animated-title-wrap relative inline-block min-w-0 max-w-full align-middle', className)}
+      data-phase={phase}
+    >
+      <span className="animated-title-inner">
         {chars.map((ch, i) => (
-          <motion.span
-            key={i}
-            initial={animate ? { opacity: 0, y: 6 } : false}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: FADE_MS / 1000,
-              delay: (i * stagger) / 1000,
-              ease: EASE,
-            }}
-            style={{ display: 'inline-block', whiteSpace: 'pre' }}
+          <span
+            key={`${writeKey}-${i}`}
+            className={cn('animated-title-ch', isWriting && 'is-flip')}
+            style={isWriting ? { animationDelay: `${i * CHAR_STAGGER_MS}ms` } : undefined}
           >
             {ch}
-          </motion.span>
+          </span>
         ))}
       </span>
     </span>

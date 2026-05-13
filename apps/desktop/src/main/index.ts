@@ -76,6 +76,31 @@ import { buildRemoteActiveProvider, providerSupportsHarness } from '@superone/sh
 import type { RemoteControlCallbacks } from './remote-control-service'
 
 
+process.on('uncaughtException', (err: Error & { code?: string }) => {
+  log.error('[main] uncaughtException', {
+    name: err?.name,
+    code: err?.code,
+    message: err?.message,
+    stack: err?.stack,
+    appVersion: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    electron: process.versions.electron,
+  })
+})
+
+process.on('unhandledRejection', (reason) => {
+  const err = (reason ?? {}) as Error & { code?: string }
+  log.error('[main] unhandledRejection', {
+    name: err?.name,
+    code: err?.code,
+    message: err?.message ?? String(reason),
+    stack: err?.stack,
+    appVersion: app.getVersion(),
+    platform: process.platform,
+  })
+})
+
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: 'superone-app', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },

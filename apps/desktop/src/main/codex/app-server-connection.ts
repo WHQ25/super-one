@@ -4,6 +4,7 @@ import { createInterface } from 'readline'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { getNodeRuntime } from '../agent/resolve-cli'
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { getActiveProviderRaw } from '../database'
 import { ProcessTitle } from '../process-titles'
 import {
@@ -230,7 +231,7 @@ export function buildCollaborationMode(
     settings: {
       model,
       reasoning_effort: reasoningEffort ?? null,
-      developer_instructions: null,
+      developer_instructions: SUPERONE_SYSTEM_PROMPT_APPEND,
     },
   }
 }

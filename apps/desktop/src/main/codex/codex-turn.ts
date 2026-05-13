@@ -47,6 +47,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
 const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__'
@@ -963,6 +964,7 @@ function buildThreadConfig(
   },
 ): Record<string, unknown> | undefined {
   const config: Record<string, unknown> = {}
+  config.developer_instructions = SUPERONE_SYSTEM_PROMPT_APPEND
   if (permissionProfile.sandboxMode === 'workspace-write') {
     config.sandbox_workspace_write = {
       network_access: permissionProfile.networkAccessEnabled,

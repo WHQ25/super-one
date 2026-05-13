@@ -42,6 +42,7 @@ const {
   extractSuperoneMiniAppToolName,
 } = await import('./codex-turn')
 const { createCodexSession } = await import('./codex-session')
+const { SUPERONE_SYSTEM_PROMPT_APPEND } = await import('../agent/superone-system-prompt')
 
 function makeSession(overrides: { threadId?: string | null; model?: string } = {}) {
   return {
@@ -73,6 +74,11 @@ describe('resolveThread fallback', () => {
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).toHaveBeenCalledTimes(2)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/resume')
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[1][0]).toBe('thread/start')
+    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]).toEqual(expect.objectContaining({
+      config: expect.objectContaining({
+        developer_instructions: SUPERONE_SYSTEM_PROMPT_APPEND,
+      }),
+    }))
   })
 
   it('uses thread/resume when it succeeds', async () => {
@@ -87,6 +93,11 @@ describe('resolveThread fallback', () => {
     expect(session.threadReady).toBe(true)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).toHaveBeenCalledTimes(1)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/resume')
+    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]).toEqual(expect.objectContaining({
+      config: expect.objectContaining({
+        developer_instructions: SUPERONE_SYSTEM_PROMPT_APPEND,
+      }),
+    }))
   })
 
   it('uses thread/start when no threadId exists', async () => {
@@ -101,6 +112,11 @@ describe('resolveThread fallback', () => {
     expect(session.threadReady).toBe(true)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).toHaveBeenCalledTimes(1)
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/start')
+    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]).toEqual(expect.objectContaining({
+      config: expect.objectContaining({
+        developer_instructions: SUPERONE_SYSTEM_PROMPT_APPEND,
+      }),
+    }))
   })
 
   it('reuses a ready thread on the current app-server connection', async () => {
@@ -748,7 +764,7 @@ describe('runCodexTurn turn/start payload', () => {
         settings: {
           model: 'gpt-5.4',
           reasoning_effort: null,
-          developer_instructions: null,
+          developer_instructions: SUPERONE_SYSTEM_PROMPT_APPEND,
         },
       },
     }))

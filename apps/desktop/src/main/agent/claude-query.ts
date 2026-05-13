@@ -10,6 +10,7 @@ import { resolveSdkClaudeBinary } from './claude-binary'
 import { makeClaudeSpawn } from './claude-spawn'
 import { getSandboxCapability } from '../sandbox-platform'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from './superone-system-prompt'
 
 export interface SessionQueryOptions {
   /** SuperOne session id (Session class) — distinct from SDK sessionId (resume) */
@@ -33,8 +34,6 @@ export interface SessionQueryOptions {
   warmupManager?: WarmupManager
   enabledSkills?: string[]
 }
-
-const SYSTEM_PROMPT_APPEND = 'You have a powerful `show_widget` tool (via the `widget` MCP server) for rendering visual content inline — diagrams, charts, dashboards, data tables, interactive widgets, illustrations, and any visual explanation. Prefer show_widget over plain text/markdown when the user asks for something visual, data-heavy, or interactive. For mermaid diagrams (ERD, sequence, flowchart, etc.), use fenced ```mermaid code blocks instead — the host app renders them natively.\n\nWhen building or modifying a mini-app, call `miniapp_dev_read_guide` (via the `superone` MCP server) first to load the relevant development guide.\n\nOn the first substantive user request, call `session_rename` (via the `superone` MCP server) **before answering** — make it the first tool call in your response. Call it again when the topic shifts to an unrelated subject (e.g. a joke → a legal question, debugging code → designing a different feature). Skip greetings and same-topic follow-ups. Title: 4-8 words, no quotes, in the user\'s language.'
 
 export function buildClaudeOptions(opts: SessionQueryOptions): Options {
   return {
@@ -71,7 +70,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
         }
       },
     }),
-    systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_PROMPT_APPEND },
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: SUPERONE_SYSTEM_PROMPT_APPEND },
     mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': createSuperoneMcpServer(opts.superoneSessionId) },
     ...(opts.enabledSkills ? { skills: opts.enabledSkills } : {}),
   }

@@ -9,6 +9,8 @@ const config: StorybookConfig = {
   stories: [
     '../src/renderer/src/**/*.stories.@(ts|tsx|mdx)',
     '../../../packages/ui/src/**/*.stories.@(ts|tsx|mdx)',
+    '../../../packages/desktop-mocks/src/**/*.stories.@(ts|tsx|mdx)',
+    '../../../packages/video-compositions/src/**/*.stories.@(ts|tsx|mdx)',
     '../../web/components/**/*.stories.@(ts|tsx|mdx)',
   ],
   framework: {

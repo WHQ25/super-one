@@ -1,0 +1,9 @@
+@import "@superone/ui/styles/base.css";
+@import "@superone/ui/styles/theme.css";
+@import "@superone/ui/styles/chat-md.css";
+@import "@superone/desktop-mocks/styles/brand-scope.css";
+
+@source "./**/*.{ts,tsx}";
+@source "../../../packages/video-compositions/src/**/*.{ts,tsx}";
+@source "../../../packages/desktop-mocks/src/**/*.{ts,tsx}";
+@source "../../../packages/ui/src/**/*.{ts,tsx}";

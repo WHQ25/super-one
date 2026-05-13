@@ -1,0 +1,27 @@
+{
+  "name": "@superone/video-compositions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": ["**/*.css"],
+  "exports": {
+    ".": "./src/index.ts",
+    "./hello-world": "./src/HelloWorld/index.tsx",
+    "./chat-stream": "./src/ChatStream/index.tsx"
+  },
+  "dependencies": {
+    "@superone/desktop-mocks": "workspace:*",
+    "@superone/ui": "workspace:*"
+  },
+  "peerDependencies": {
+    "@remotion/player": "^4.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@remotion/player": {
+      "optional": true
+    }
+  }
+}

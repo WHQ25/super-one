@@ -1,0 +1,5 @@
+out/
+.cache/
+*.mp4
+*.webm
+*.gif

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@superone/desktop-mocks": "workspace:*",
     "@superone/shared": "workspace:*",
     "@superone/ui": "workspace:*",
     "next": "16.2.4",

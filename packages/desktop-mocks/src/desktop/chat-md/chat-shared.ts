@@ -1,0 +1,130 @@
+import { createElement, type ComponentProps } from 'react'
+import type { Components, LinkSafetyConfig } from 'streamdown'
+import { defaultRehypePlugins } from 'streamdown'
+import type { PluggableList } from 'unified'
+import { defaultSchema } from 'hast-util-sanitize'
+import rehypeSanitize from 'rehype-sanitize'
+import { createCodePlugin } from '@streamdown/code'
+import { createMathPlugin } from '@streamdown/math'
+import 'katex/dist/katex.min.css'
+import { createStreamdownCodeComponent } from './CodeBlock'
+import { toMediaUrl, toLocalFileUrl } from './path-utils'
+import { LinkSafetyModal } from './LinkSafetyModal'
+
+/** Shared code highlighter plugin instance — reused across all chat components. */
+export const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
+export const codePluginLight = createCodePlugin({ themes: ['github-light', 'github-light'] })
+
+export const mathPlugin = createMathPlugin({ singleDollarTextMath: false })
+;(mathPlugin.rehypePlugin as [unknown, Record<string, unknown>])[1].strict = false
+
+/** Shared Streamdown plugins config. */
+export const streamdownPlugins = { code: codePlugin, math: mathPlugin }
+
+/** Shared Streamdown controls config. */
+export const streamdownControls = { table: false }
+
+/** Custom link safety modal scoped properly for Electron. */
+export const streamdownLinkSafety: LinkSafetyConfig = {
+  enabled: true,
+  renderModal: (props) => createElement(LinkSafetyModal, props),
+}
+
+function localFileToMediaUrl(src: string | undefined): string | undefined {
+  if (!src) return src
+  if (src.startsWith('local-file:///')) {
+    const filePath = decodeURIComponent(new URL(src).pathname)
+    return toMediaUrl(filePath)
+  }
+  return src
+}
+
+const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.ogg', '.mov'])
+const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.opus', '.weba'])
+const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif'])
+
+function MediaVideo(props: ComponentProps<'video'>) {
+  return createElement('video', { ...props, src: localFileToMediaUrl(props.src), controls: true, style: { width: '100%', borderRadius: '8px' } })
+}
+
+function MediaAudio(props: ComponentProps<'audio'>) {
+  return createElement('audio', { ...props, src: localFileToMediaUrl(props.src), controls: true })
+}
+
+function getMediaExt(src: string | undefined): string | null {
+  if (!src) return null
+  try {
+    const pathname = src.startsWith('local-file:///') ? new URL(src).pathname : src
+    return pathname.slice(pathname.lastIndexOf('.')).toLowerCase()
+  } catch { return null }
+}
+
+function MediaImage(props: ComponentProps<'img'>) {
+  const ext = getMediaExt(props.src)
+  if (ext && VIDEO_EXTS.has(ext)) {
+    const { alt: _, ...rest } = props
+    return MediaVideo(rest as ComponentProps<'video'>)
+  }
+  if (ext && AUDIO_EXTS.has(ext)) {
+    const { alt: _, ...rest } = props
+    return MediaAudio(rest as ComponentProps<'audio'>)
+  }
+  return createElement('img', { ...props, src: localFileToMediaUrl(props.src) })
+}
+
+/** Shared Streamdown code component. */
+export const streamdownComponents = {
+  code: createStreamdownCodeComponent(codePlugin),
+  img: MediaImage,
+  video: MediaVideo,
+  audio: MediaAudio,
+} as unknown as Components
+
+const localFileSanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), 'video', 'audio', 'source'],
+  attributes: {
+    ...defaultSchema.attributes,
+    video: ['src', 'controls', 'autoPlay', 'loop', 'muted', 'poster', 'width', 'height', 'preload'],
+    audio: ['src', 'controls', 'autoPlay', 'loop', 'muted', 'preload'],
+    source: ['src', 'type'],
+  },
+  protocols: {
+    ...defaultSchema.protocols,
+    src: [...(defaultSchema.protocols?.src ?? []), 'local-file'],
+  },
+}
+
+export const streamdownRehypePlugins: PluggableList = Object.values({
+  ...defaultRehypePlugins,
+  sanitize: [rehypeSanitize, localFileSanitizeSchema],
+}) as PluggableList
+
+const MEDIA_EXTS = new Set([...VIDEO_EXTS, ...AUDIO_EXTS, ...IMAGE_EXTS])
+const MD_IMAGE_RE = /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g
+const MD_LINK_RE = /(?<!!)\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g
+
+function resolveLocalSrc(src: string, projectPath: string): string {
+  const cleanSrc = src.replace(/^\.\//, '')
+  return src.startsWith('/')
+    ? toLocalFileUrl(src)
+    : toLocalFileUrl(`${projectPath}/${cleanSrc}`)
+}
+
+export function resolveMarkdownMedia(text: string, projectPath: string): string {
+  text = text.replace(MD_LINK_RE, (match, alt, src, rest) => {
+    const ext = src.slice(src.lastIndexOf('.')).toLowerCase()
+    if (!MEDIA_EXTS.has(ext)) return match
+    return `![${alt}](${resolveLocalSrc(src, projectPath)}${rest})`
+  })
+  return text.replace(MD_IMAGE_RE, (_, alt, src, rest) => {
+    return `![${alt}](${resolveLocalSrc(src, projectPath)}${rest})`
+  })
+}
+
+/** Format token count: plain number if < 1k, otherwise k with 1 decimal. */
+export function formatTokens(n: number): string {
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return String(n)
+}
+

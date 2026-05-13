@@ -1,32 +1,19 @@
-@import "tailwindcss";
-@import "@superone/ui/styles/theme.css";
-@import "@superone/ui/styles/chat-md.css";
-@source "../../../packages/ui/src/**/*.{ts,tsx}";
-@source "../../../packages/desktop-mocks/src/**/*.{ts,tsx}";
-@source "../../../packages/video-compositions/src/**/*.{ts,tsx}";
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
 /*
- * Brand-hue scope.
+ * Brand-hue scope (shared across web + video + storybook).
  *
  * Custom-property values are eagerly substituted at the declaring scope —
  * `--primary: oklch(... var(--brand-hue))` declared on :root locks in the
  * :root value of --brand-hue. Setting --brand-hue on a descendant does NOT
  * cascade through unless we re-declare every dependent token in that scope.
  *
- * `.brand-scope` mirrors the hue-derived declarations from theme.css so that
- * `<BrandedSurface>` (which sets `--brand-hue` inline + adds this class)
- * forces re-resolution of all surface/foreground/accent tokens at its own
- * element scope, using the user-controlled hue.
+ * `.brand-scope` mirrors the hue-derived declarations from theme.css so the
+ * wrapper that sets `--brand-hue` inline forces re-resolution of every
+ * surface/foreground/accent token at its own element scope.
  *
- * Forces light-mode appearance regardless of the page's dark class — the
- * simulated app surface is intentionally always light (mirrors the desktop
- * brand-hue UX, which is light-only).
+ * Dark mode is intentionally hue-agnostic — the `.dark` block in theme.css
+ * uses neutral OKLch (chroma 0). When `<BrandScope darkMode>` is rendered,
+ * the wrapper adds `.dark` instead of `.brand-scope`, so dark surfaces use
+ * the neutral palette and ignore the user's hue (matches desktop behavior).
  */
 .brand-scope {
   --background: oklch(var(--background-l, 0.96) var(--background-c, 0.015) var(--background-h, var(--brand-hue, 240)) / var(--background-a, 1));
@@ -56,4 +43,7 @@ body {
   --sidebar-accent-foreground: oklch(var(--sidebar-accent-foreground-l, 0.22) var(--sidebar-accent-foreground-c, 0.015) var(--sidebar-accent-foreground-h, var(--brand-hue, 240)) / var(--sidebar-accent-foreground-a, 1));
   --sidebar-border: oklch(var(--sidebar-border-l, 0.92) var(--sidebar-border-c, 0.015) var(--sidebar-border-h, var(--brand-hue, 240)) / var(--sidebar-border-a, 1));
   --sidebar-ring: oklch(var(--sidebar-ring-l, 0.65) var(--sidebar-ring-c, 0.20) var(--sidebar-ring-h, var(--brand-hue, 240)) / var(--sidebar-ring-a, 1));
+
+  background: var(--background);
+  color: var(--foreground);
 }

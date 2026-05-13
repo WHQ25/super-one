@@ -1,0 +1,31 @@
+{
+  "name": "@superone/desktop-mocks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./desktop": "./src/desktop/index.ts",
+    "./styles/brand-scope.css": "./src/styles/brand-scope.css"
+  },
+  "dependencies": {
+    "@streamdown/code": "^1.0.1",
+    "@streamdown/math": "^1.0.2",
+    "@superone/ui": "workspace:*",
+    "hast-util-sanitize": "^5.0.2",
+    "katex": "^0.16.38",
+    "mermaid": "^11.12.3",
+    "react-i18next": "^17.0.4",
+    "rehype-sanitize": "^6.0.0",
+    "streamdown": "^2.1.0"
+  },
+  "peerDependencies": {
+    "@lobehub/icons": "*",
+    "diff": "^8.0.0",
+    "lucide-react": "*",
+    "motion": "*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

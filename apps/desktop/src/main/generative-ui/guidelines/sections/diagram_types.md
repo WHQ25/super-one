@@ -12,7 +12,7 @@ Work bottom-up for trees: size leaf tier first, parent width ≥ sum of children
 
 **Diagrams are the hardest use case** — they have the highest failure rate due to precise coordinate math. Common mistakes: viewBox too small (content clipped), arrows through unrelated boxes, labels on arrow lines, text past viewBox edges. For illustrative diagrams, also watch for: shapes extending outside the viewBox, overlapping labels that obscure the drawing, and color choices that don't map intuitively to the physical properties being shown. Double-check coordinates before finalizing.
 
-Use `show_widget` for diagrams. The widget automatically wraps SVG output in a card.
+Use `widget_show` for diagrams. The widget automatically wraps SVG output in a card.
 
 **Pick the right diagram type.** The decision is about *intent*, not subject matter. Ask: is the user trying to *document* this, or *understand* it?
 
@@ -36,7 +36,7 @@ Use `show_widget` for diagrams. The widget automatically wraps SVG output in a c
 | "TCP handshake sequence" | Flowchart | SYN → SYN-ACK → ACK. Three boxes. |
 | "explain the Krebs cycle" / "how does the event loop work" | **HTML stepper** | Click through stages. Never a ring. |
 | "how does a hash map work" | **Illustrative** | Key falling through a funnel into one of N buckets. |
-| "draw the database schema" / "show me the ERD" | **mermaid code block** | Output a \`\`\`mermaid code block with `erDiagram` syntax. The host app renders it natively. Do NOT use show_widget for mermaid. |
+| "draw the database schema" / "show me the ERD" | **mermaid code block** | Output a \`\`\`mermaid code block with `erDiagram` syntax. The host app renders it natively. Do NOT use widget_show for mermaid. |
 
 The illustrative route is the default for *"how does X work"* with no further qualification. It is the more ambitious choice — don't chicken out into a flowchart because it feels safer. Claude draws these well.
 
@@ -66,7 +66,7 @@ For sequential processes, cause-and-effect, decision trees.
 
 **Cycles don't get drawn as rings.** If the last stage feeds back into the first (Krebs cycle, event loop, GC mark-and-sweep, TCP retransmit), your instinct is to place the stages around a circle. Don't. Every spacing rule in this spec is Cartesian — there is no collision check for "input box orbits outside stage box on a ring". You will get satellite boxes overlapping the stages they feed, labels sitting on the dashed circle, and tangential arrows that point nowhere. The ring is decoration; the loop is conveyed by the return arrow.
 
-Build a stepper in `show_widget`. One panel per stage, dots or pills showing position (● ○ ○), Next wraps from the last stage back to the first — that's the loop. Each panel owns its inputs and products: an event loop's pending callbacks live *inside* the Poll panel, not floating next to a box on a ring. Nothing collides because nothing shares the canvas. Only fall back to a linear SVG (stages in a row, curved `<path>` return arrow) when there's one input and one output total and no per-stage detail to show.
+Build a stepper in `widget_show`. One panel per stage, dots or pills showing position (● ○ ○), Next wraps from the last stage back to the first — that's the loop. Each panel owns its inputs and products: an event loop's pending callbacks live *inside* the Poll panel, not floating next to a box on a ring. Nothing collides because nothing shares the canvas. Only fall back to a linear SVG (stages in a row, curved `<path>` return arrow) when there's one input and one output total and no per-stage detail to show.
 
 **Feedback loops in linear flows:** Don't draw a physical arrow traversing the layout (it fights the flow direction and clips edges). Instead:
 - Small `↻` glyph + text near the cycle point: `<text>↻ returns to start</text>`
@@ -161,7 +161,7 @@ For concepts where physical or logical containment matters — things inside oth
 
 **Color in structural diagrams**: Nested regions need distinct ramps — `c-{ramp}` classes resolve to fixed fill/stroke stops, so the same class on parent and child gives identical fills and flattens the hierarchy. Pick a *related* ramp for inner structures (e.g. Green for the library envelope, Teal for the circulation desk inside it) and a *contrasting* ramp for a region that does something functionally different (e.g. Amber for the reading room). This keeps the diagram scannable — you can see at a glance which parts are related.
 
-**Database schemas / ERDs — use mermaid code blocks, not SVG or show_widget.** The host app has native mermaid rendering. Output a fenced mermaid code block in your response text. Do NOT use `show_widget` for any mermaid diagram.
+**Database schemas / ERDs — use mermaid code blocks, not SVG or widget_show.** The host app has native mermaid rendering. Output a fenced mermaid code block in your response text. Do NOT use `widget_show` for any mermaid diagram.
 
 ````
 ```mermaid
@@ -181,7 +181,7 @@ erDiagram
 ```
 ````
 
-This also applies to `classDiagram`, `sequenceDiagram`, `flowchart`, and all other mermaid diagram types — always use mermaid code blocks, never `show_widget`.
+This also applies to `classDiagram`, `sequenceDiagram`, `flowchart`, and all other mermaid diagram types — always use mermaid code blocks, never `widget_show`.
 
 #### Illustrative diagram
 
@@ -193,7 +193,7 @@ For building *intuition*. The subject might be physical (an engine, a lung) or c
 
 This is the most ambitious diagram type and the one Claude is best at. Lean into it. Use colour for intensity (a hot attention weight glows amber, a cold one stays gray). Use repetition for scale (many small circles = many parameters).
 
-**Prefer interactive over static.** A static cross-section is a good answer; a cross-section you can *operate* is a great one. The decision rule: if the real-world system has a control, give the diagram that control. A water heater has a thermostat — so give the user a slider that shifts the hot/cold boundary, a toggle that fires the burner and animates convection currents. An LLM has input tokens — let the user click one and watch the attention weights re-fan. A cache has a hit rate — let them drag it and watch latency change. Reach for `show_widget` with inline SVG first; only fall back to static `show_widget` when there's genuinely nothing to twiddle.
+**Prefer interactive over static.** A static cross-section is a good answer; a cross-section you can *operate* is a great one. The decision rule: if the real-world system has a control, give the diagram that control. A water heater has a thermostat — so give the user a slider that shifts the hot/cold boundary, a toggle that fires the burner and animates convection currents. An LLM has input tokens — let the user click one and watch the attention weights re-fan. A cache has a hit rate — let them drag it and watch latency change. Reach for `widget_show` with inline SVG first; only fall back to static `widget_show` when there's genuinely nothing to twiddle.
 
 **When NOT to use**: The user is asking for a *reference*, not an *intuition*. "What are the components of a transformer" wants labelled boxes — that's a structural diagram. "Walk me through our CI pipeline" wants sequential steps — that's a flowchart. Also skip this when the metaphor would be arbitrary rather than revealing: drawing "the cloud" as a cloud shape or "microservices" as little houses doesn't teach anything about how they work. If the drawing doesn't make the *mechanism* clearer, don't draw it.
 
@@ -226,9 +226,9 @@ All core rules still apply (viewBox 680px, light/dark mode via CSS variables, 14
 4. Add state indicators last: color fills showing temperature/pressure/concentration, small animated elements showing movement or energy.
 5. Leave generous whitespace around the object for labels — don't crowd annotations against the viewBox edges.
 
-**Static vs interactive**: Static cutaways and cross-sections work best as pure `show_widget`. If the diagram benefits from controls — a slider that changes a temperature zone, buttons toggling between operating states, live readouts — use `show_widget` with inline SVG for the drawing and HTML controls around it.
+**Static vs interactive**: Static cutaways and cross-sections work best as pure `widget_show`. If the diagram benefits from controls — a slider that changes a temperature zone, buttons toggling between operating states, live readouts — use `widget_show` with inline SVG for the drawing and HTML controls around it.
 
-**Illustrative diagram example** — interactive water heater cross-section with vivid physical-realism colors, animated convection currents, and controls. Uses `show_widget` with inline SVG: a thermostat slider shifts the hot/cold gradient boundary, a heating toggle animates flames on/off and transitions convection to paused. viewBox is 680x560; tank occupies x=180..440, leaving 140px+ of right margin for labels. Smooth convection paths use `stroke-dasharray:5 5` at ~1.6s for a gentle flow feel. A warm-glow overlay on the hot zone pulses subtly when heating is on. Flame shapes use warm gradient fills and clean opacity transitions. Labels sit along the right margin with leader lines.
+**Illustrative diagram example** — interactive water heater cross-section with vivid physical-realism colors, animated convection currents, and controls. Uses `widget_show` with inline SVG: a thermostat slider shifts the hot/cold gradient boundary, a heating toggle animates flames on/off and transitions convection to paused. viewBox is 680x560; tank occupies x=180..440, leaving 140px+ of right margin for labels. Smooth convection paths use `stroke-dasharray:5 5` at ~1.6s for a gentle flow feel. A warm-glow overlay on the hot zone pulses subtly when heating is on. Flame shapes use warm gradient fills and clean opacity transitions. Labels sit along the right margin with leader lines.
 ```html
 <style>
   @keyframes conv { to { stroke-dashoffset: -20; } }

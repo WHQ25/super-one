@@ -67,7 +67,7 @@ export function createCanUseTool(
     }
 
 
-    if (toolName.startsWith('mcp__widget__') || isBuiltInSuperoneTool(toolName)) {
+    if (isBuiltInSuperoneTool(toolName)) {
       return { behavior: 'allow' as const, updatedInput: input, toolUseID: context.toolUseID }
     }
 

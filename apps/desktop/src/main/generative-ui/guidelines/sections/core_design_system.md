@@ -43,7 +43,7 @@ Output streams token-by-token. Structure code so useful content appears early.
   - Chart.js: `https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.js`
   - D3: `https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js`
   - Three.js: `https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js`
-- **Mermaid**: Do NOT load mermaid via CDN or use it in show_widget. The host app renders mermaid natively — output a fenced ` ```mermaid ` code block in your response text instead.
+- **Mermaid**: Do NOT load mermaid via CDN or use it in widget_show. The host app renders mermaid natively — output a fenced ` ```mermaid ` code block in your response text instead.
 
 ### CSS Variables
 **Backgrounds**: `--color-background-primary` (white), `-secondary` (surfaces), `-tertiary` (page bg), `-info`, `-danger`, `-success`, `-warning`

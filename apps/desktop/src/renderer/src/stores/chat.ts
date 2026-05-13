@@ -1132,10 +1132,10 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
         toolUseId: event.toolUseId,
         toolName: targetBlock?.type === 'tool_use' ? targetBlock.toolName : null,
         partialLen: event.partialJson.length,
-        matchesWidget: targetBlock?.type === 'tool_use' && targetBlock.toolName.endsWith('__show_widget'),
+        matchesWidget: targetBlock?.type === 'tool_use' && targetBlock.toolName.endsWith('__widget_show'),
       })
       const shouldAccumulate = targetBlock?.type === 'tool_use' && (
-        targetBlock.toolName.endsWith('__show_widget') ||
+        targetBlock.toolName.endsWith('__widget_show') ||
         STREAMING_INPUT_TOOLS.has(targetBlock.toolName)
       )
       if (shouldAccumulate) {

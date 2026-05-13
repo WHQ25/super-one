@@ -359,7 +359,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     ? <>{mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{mcpInfo.mcpToolName}</>
     : toolName
 
-  if (mcpInfo?.mcpToolName === 'read_guidelines') {
+  if (mcpInfo?.mcpToolName === 'widget_read_guide') {
     const modules = Array.isArray(params.modules) ? (params.modules as string[]).join(', ') : ''
     return (
       <CompactToolRow icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}>
@@ -492,7 +492,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     }
   }
 
-  if (mcpInfo?.mcpToolName === 'show_widget') {
+  if (mcpInfo?.mcpToolName === 'widget_show') {
     const widgetData = result ? parseWidgetResult(result) : parsePartialWidgetInput(input)
     const jsonComplete = isCompleteJson(input)
     const inputComplete = !isStreaming || jsonComplete

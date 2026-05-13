@@ -268,7 +268,7 @@ function stripContentBlock(block: Record<string, unknown>, bashCmds?: Map<string
     const meta = computeToolMeta(block)
     const toolName = String(block.toolName ?? '')
     const mappedType = TOOL_TYPE_MAP[toolName] ?? 'tool_use'
-    const keepInput = toolName.endsWith('__show_widget')
+    const keepInput = toolName.endsWith('__widget_show')
     return { ...block, type: mappedType, input: keepInput ? block.input : '', ...meta }
   }
   if (block.type === 'tool_result') {
@@ -455,7 +455,7 @@ for (const row of rows) {
       try { const p = JSON.parse(String(delta.input ?? '{}')); bashCmds.set(String(delta.toolUseId), String(p.command ?? '')) } catch {}
     }
 
-    if (deltaType === 'tool_use' && toolName.endsWith('__show_widget')) {
+    if (deltaType === 'tool_use' && toolName.endsWith('__widget_show')) {
       widgetToolIds.add(String(delta.toolUseId))
     }
     if (deltaType === 'tool_use' && toolName === 'Agent') {

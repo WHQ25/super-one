@@ -12,6 +12,7 @@ import {
   registerSuperoneTools,
   type SessionTitleHost,
 } from './superone-mcp-builtins'
+import { registerWidgetTools } from '../generative-ui/mcp-server'
 
 interface PendingCall {
   resolve: (result: unknown) => void
@@ -112,6 +113,7 @@ export function createSuperoneMcpServer(sessionId: string): McpSdkServerConfigWi
     sessionId,
     sessionHost: getSessionHost(),
   })
+  registerWidgetTools(server)
   const state: ProjectServerState = { server, registeredTools: new Map() }
 
   let set = sessionServers.get(sessionId)

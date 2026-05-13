@@ -22,7 +22,7 @@ type Story = StoryObj<typeof ToolBlock>
 
 export const WidgetReadGuidelinesStreaming: Story = {
   args: {
-    toolName: 'mcp__widget__read_guidelines',
+    toolName: 'mcp__superone__widget_read_guide',
     input: JSON.stringify({ modules: ['layout', 'colors', 'typography'] }),
     status: 'streaming',
     elapsedSeconds: 1,
@@ -31,7 +31,7 @@ export const WidgetReadGuidelinesStreaming: Story = {
 
 export const WidgetReadGuidelinesComplete: Story = {
   args: {
-    toolName: 'mcp__widget__read_guidelines',
+    toolName: 'mcp__superone__widget_read_guide',
     input: JSON.stringify({ modules: ['layout', 'colors'] }),
     status: 'complete',
     result: 'Loaded 3 guideline modules',

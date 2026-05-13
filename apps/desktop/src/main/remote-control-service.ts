@@ -255,7 +255,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block, projectPath)
     const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'
-    const keepInput = block.toolName.endsWith('__show_widget')
+    const keepInput = block.toolName.endsWith('__widget_show')
     return { ...block, type: mappedType, input: keepInput ? block.input : '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt, runInBackground: meta.runInBackground } as ContentBlock
   }
   if (block.type === 'tool_result') {
@@ -436,7 +436,7 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
       if (block.type === 'tool_use' && TODO_TOOLS.has(block.toolName)) {
         todoInputs.set(block.toolUseId, { toolName: block.toolName, input: block.input })
       }
-      if (block.type === 'tool_use' && block.toolName.endsWith('__show_widget')) {
+      if (block.type === 'tool_use' && block.toolName.endsWith('__widget_show')) {
         widgetIds.add(block.toolUseId)
       }
       if (block.type === 'tool_use' && block.toolName === 'Agent') {
@@ -1106,7 +1106,7 @@ export class RemoteControlService {
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
         try { const p = JSON.parse(event.delta.input); this.bashToolCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
       }
-      if (event.delta.type === 'tool_use' && event.delta.toolName.endsWith('__show_widget')) {
+      if (event.delta.type === 'tool_use' && event.delta.toolName.endsWith('__widget_show')) {
         this.widgetToolIds.add(event.delta.toolUseId)
       }
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Agent') {

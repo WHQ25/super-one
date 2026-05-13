@@ -13,6 +13,8 @@ const BUILT_IN_QUALIFIED = new Set([
   'mcp__superone__miniapp_dev_setup',
   'mcp__superone__miniapp_dev_pack',
   'mcp__superone__miniapp_dev_update_types',
+  'mcp__superone__widget_show',
+  'mcp__superone__widget_read_guide',
 ])
 vi.mock('../mcp/superone-mcp-server', () => ({
   isToolPreapproved: vi.fn(() => false),
@@ -172,9 +174,9 @@ describe('createCanUseTool', () => {
     }
   }
 
-  it('should auto-approve mcp__widget__ tools without permission prompt', async () => {
+  it('should auto-approve mcp__superone__widget_show without permission prompt', async () => {
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
-    const result = await canUseTool('mcp__widget__show_widget', { title: 'test' }, makeContext())
+    const result = await canUseTool('mcp__superone__widget_show', { title: 'test' }, makeContext())
     expect(result.behavior).toBe('allow')
     expect(events).toHaveLength(0)
     expect(perms.size).toBe(0)

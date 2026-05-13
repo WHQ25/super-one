@@ -31,7 +31,7 @@ Contained mockups — mobile screens, chat threads, single cards, modals, small 
 ### 1. Interactive explainer — learn how something works
 *"Explain how compound interest works" / "Teach me about sorting algorithms"*
 
-Use `show_widget` for the interactive controls — sliders, buttons, live state displays, charts. Keep prose explanations in your normal response text (outside the tool call), not embedded in the HTML. No card wrapper. Whitespace is the container.
+Use `widget_show` for the interactive controls — sliders, buttons, live state displays, charts. Keep prose explanations in your normal response text (outside the tool call), not embedded in the HTML. No card wrapper. Whitespace is the container.
 
 ```html
 <div style="display: flex; align-items: center; gap: 12px; margin: 0 0 1.5rem;">
@@ -55,7 +55,7 @@ Use `sendPrompt()` to let users ask follow-ups: `sendPrompt('What if I increase 
 ### 2. Compare options — decision making
 *"Compare pricing and features of these products" / "Help me choose between React and Vue"*
 
-Use `show_widget`. Side-by-side card grid for options. Highlight differences with semantic colors. Interactive elements for filtering or weighting.
+Use `widget_show`. Side-by-side card grid for options. Highlight differences with semantic colors. Interactive elements for filtering or weighting.
 
 - Use `repeat(auto-fit, minmax(160px, 1fr))` for responsive columns
 - Each option in a card. Use badges for key differentiators.
@@ -66,7 +66,7 @@ Use `show_widget`. Side-by-side card grid for options. Highlight differences wit
 ### 3. Data record — bounded UI object
 *"Show me a Salesforce contact card" / "Create a receipt for this order"*
 
-Use `show_widget`. Wrap the entire thing in a single raised card. All content is sans-serif since it's pure UI. Use an avatar/initials circle for people (see example below).
+Use `widget_show`. Wrap the entire thing in a single raised card. All content is sans-serif since it's pure UI. Use an avatar/initials circle for people (see example below).
 
 ```html
 <div style="background: var(--color-background-primary); border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-tertiary); padding: 1rem 1.25rem;">

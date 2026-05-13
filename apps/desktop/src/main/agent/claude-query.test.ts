@@ -36,10 +36,6 @@ vi.mock('./event-trace', () => ({
 }))
 
 
-vi.mock('../generative-ui/mcp-server', () => ({
-  createGenerativeUiMcpServer: vi.fn(),
-}))
-
 vi.mock('../mcp/superone-mcp-server', () => ({
   createSuperoneMcpServer: vi.fn(() => ({ type: 'sdk', name: 'superone', instance: {} })),
 }))

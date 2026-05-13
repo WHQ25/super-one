@@ -3,7 +3,6 @@ import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMess
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
 import { trace } from './event-trace'
-import { createGenerativeUiMcpServer } from '../generative-ui/mcp-server'
 import { createSuperoneMcpServer } from '../mcp/superone-mcp-server'
 import type { WarmupManager } from './warmup-manager'
 import { resolveSdkClaudeBinary } from './claude-binary'
@@ -71,7 +70,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
       },
     }),
     systemPrompt: { type: 'preset', preset: 'claude_code', append: SUPERONE_SYSTEM_PROMPT_APPEND },
-    mcpServers: { 'widget': createGenerativeUiMcpServer(), 'superone': createSuperoneMcpServer(opts.superoneSessionId) },
+    mcpServers: { 'superone': createSuperoneMcpServer(opts.superoneSessionId) },
     ...(opts.enabledSkills ? { skills: opts.enabledSkills } : {}),
   }
 }

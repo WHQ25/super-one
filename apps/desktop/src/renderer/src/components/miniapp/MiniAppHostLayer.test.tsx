@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { useEffect, useRef } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
@@ -8,12 +9,20 @@ const { mockSetLayoutMode, mockOpenMiniAppTab, mockCloseMiniAppTab, appStateRef 
   mockSetLayoutMode: vi.fn(),
   mockOpenMiniAppTab: vi.fn(),
   mockCloseMiniAppTab: vi.fn(),
-  appStateRef: { currentProjectId: 'proj-1' as string | null },
+  appStateRef: { currentProjectId: 'proj-1' as string | null, layoutMode: 'coding' as 'coding' | 'canvas' },
 }))
 
-vi.mock('@/stores/app', () => ({
-  useAppStore: { getState: () => ({ setLayoutMode: mockSetLayoutMode, currentProjectId: appStateRef.currentProjectId }) },
-}))
+vi.mock('@/stores/app', () => {
+  const getState = () => ({
+    setLayoutMode: mockSetLayoutMode,
+    currentProjectId: appStateRef.currentProjectId,
+    layoutMode: appStateRef.layoutMode,
+  })
+  const useAppStore = ((selector?: (s: ReturnType<typeof getState>) => unknown) =>
+    selector ? selector(getState()) : getState()) as unknown as { getState: typeof getState } & ((selector?: (s: ReturnType<typeof getState>) => unknown) => unknown)
+  useAppStore.getState = getState
+  return { useAppStore }
+})
 
 vi.mock('@/components/activity/activity-panel-api', () => ({
   openMiniAppTab: mockOpenMiniAppTab,
@@ -28,8 +37,12 @@ let viewMountCount: Record<string, number> = {}
 
 vi.mock('./MiniAppView', () => ({
   MiniAppView: ({ instanceKey, appId }: { instanceKey: string; appId: string }) => {
-    viewMountCount[instanceKey] = (viewMountCount[instanceKey] ?? 0) + 1
-    return <div data-testid={`view-${instanceKey}`} data-app-id={appId} data-mount-id={viewMountCount[instanceKey]}>{instanceKey}</div>
+    const ref = useRef<HTMLDivElement>(null)
+    useEffect(() => {
+      viewMountCount[instanceKey] = (viewMountCount[instanceKey] ?? 0) + 1
+      ref.current?.setAttribute('data-mount-id', String(viewMountCount[instanceKey]))
+    }, [instanceKey])
+    return <div ref={ref} data-testid={`view-${instanceKey}`} data-app-id={appId}>{instanceKey}</div>
   },
 }))
 
@@ -144,6 +157,29 @@ describe('MiniAppHostLayer persistence', () => {
       await useMiniAppStore.getState().closeApp(key)
     })
     expect(queryByTestId(`view-${key}`)).toBeNull()
+  })
+
+  it('hides panel-mode miniapps when layoutMode is canvas (no slot leak through hidden activity panel)', async () => {
+    appStateRef.layoutMode = 'canvas'
+    const { container } = render(<MiniAppHostLayer />)
+    const key = makeInstanceKey('app-a', 'proj-1')
+
+    await act(async () => {
+      await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
+    })
+
+    act(() => {
+      useMiniAppStore.getState().updateSlot(
+        key,
+        'panel',
+        { left: 0, top: 44, width: 560, height: 800 } as DOMRectReadOnly,
+      )
+    })
+
+    const host = container.querySelector(`[data-instance-key="${key}"]`) as HTMLElement
+    expect(host).not.toBeNull()
+    expect(host.style.display).toBe('none')
+    appStateRef.layoutMode = 'coding'
   })
 
   it('positions container by current slot rect and hides when no slot', async () => {

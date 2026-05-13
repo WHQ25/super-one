@@ -1,9 +1,11 @@
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useAppStore } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
 import { MiniAppView } from './MiniAppView'
 
 export function MiniAppHostLayer() {
   const openInstanceKeys = useMiniAppStore(useShallow((s) => Object.keys(s.openApps)))
+  const layoutMode = useAppStore((s) => s.layoutMode)
 
   return (
     <div
@@ -16,16 +18,21 @@ export function MiniAppHostLayer() {
       }}
     >
       {openInstanceKeys.map((instanceKey) => (
-        <PersistentMiniAppContainer key={instanceKey} instanceKey={instanceKey} />
+        <PersistentMiniAppContainer key={instanceKey} instanceKey={instanceKey} layoutMode={layoutMode} />
       ))}
     </div>
   )
 }
 
-function PersistentMiniAppContainer({ instanceKey }: { instanceKey: string }) {
+function PersistentMiniAppContainer({ instanceKey, layoutMode }: { instanceKey: string; layoutMode: 'canvas' | 'coding' }) {
   const slot = useMiniAppStore((s) => s.slots[instanceKey])
-  const appId = useMiniAppStore((s) => s.openApps[instanceKey]?.entry.id)
-  const visible = slot != null && slot.width > 0 && slot.height > 0
+  const open = useMiniAppStore((s) => s.openApps[instanceKey])
+  const appId = open?.entry.id
+  const presentation = open?.presentation
+  const presentationMatches =
+    (layoutMode === 'canvas' && presentation === 'canvas') ||
+    (layoutMode === 'coding' && presentation === 'panel')
+  const visible = presentationMatches && slot != null && slot.width > 0 && slot.height > 0
 
   if (!appId) return null
 

@@ -78,7 +78,7 @@ export const BashCommand: Story = {
         toolName: 'Bash',
         toolUseId: 'tu-bash',
         input: { command: 'rm -rf node_modules && bun install' },
-        allowAlwaysAllow: true,
+        allowAlwaysAllow: false,
         riskLevel: 'medium',
         message: 'Run shell command',
       }} />
@@ -99,7 +99,7 @@ export const EditWithDiff: Story = {
           old_string: 'send(text: string)',
           new_string: 'send(text: string, origin: Origin)',
         },
-        allowAlwaysAllow: true,
+        allowAlwaysAllow: false,
         toolDiff: EDIT_DIFF,
         toolLineDelta: { added: 4, removed: 1 },
         riskLevel: 'low',
@@ -120,7 +120,7 @@ export const WriteFile: Story = {
           file_path: '/Users/me/projects/super-one/src/shared/new-feature.ts',
           content: 'export const FOO = "bar"\n',
         },
-        allowAlwaysAllow: true,
+        allowAlwaysAllow: false,
         toolLineDelta: { added: 1, removed: 0 },
         riskLevel: 'low',
       }} />
@@ -137,7 +137,7 @@ export const McpTool: Story = {
         toolName: 'mcp__sentry__create_issue',
         toolUseId: 'tu-mcp',
         input: { title: 'Reproducer for chat regression', project: 'super-one' },
-        allowAlwaysAllow: true,
+        allowAlwaysAllow: false,
         serverName: 'sentry',
         riskLevel: 'medium',
       }} />
@@ -154,7 +154,7 @@ export const SandboxNetworkAccess: Story = {
         toolName: 'SandboxNetworkAccess',
         toolUseId: 'tu-sandbox',
         input: { host: 'api.openai.com' },
-        allowAlwaysAllow: true,
+        allowAlwaysAllow: false,
         riskLevel: 'high',
         message: 'Outbound network from sandbox',
       }} />
@@ -171,7 +171,7 @@ export const WithSuggestions: Story = {
         toolName: 'Bash',
         toolUseId: 'tu-sugg',
         input: { command: 'gh pr create --title "..."' },
-        allowAlwaysAllow: true,
+        allowAlwaysAllow: false,
         suggestions: [
           { kind: 'add_rule', label: 'Allow `gh pr *` going forward', detail: 'permissions.allow += Bash(gh pr:*)' },
           { kind: 'set_mode', label: 'Switch to acceptEdits', detail: 'Bypass per-tool prompts for this session.' },

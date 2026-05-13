@@ -401,7 +401,7 @@ export function PermissionPrompt() {
   const display = getToolDisplay(toolName ?? '', input, cwd, homedir)
   const isBash = toolName === 'Bash'
   const isSandboxNetwork = toolName === 'SandboxNetworkAccess'
-  const hasSuggestionRow = !isCodexDecisionPrompt && (allowAlwaysAllow || (suggestions && suggestions.length > 0))
+  const hasSuggestionRow = !isCodexDecisionPrompt && !!suggestions && suggestions.length > 0
 
   const isDebug = DEBUG_TOOL_NAMES.length > 0 &&
     DEBUG_TOOL_NAMES.some((n) => (toolName ?? '').toLowerCase().includes(n))
@@ -627,15 +627,6 @@ export function PermissionPrompt() {
                 )}
                 {hasSuggestionRow && (
                   <div className="grid grid-cols-1 gap-1.5">
-                    {allowAlwaysAllow && !isEditTool && (!suggestions || suggestions.length === 0) && (
-                      <Button
-                        size="sm"
-                        className="h-7 w-full cursor-pointer bg-blue-600 px-3 text-xs text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-400 focus:outline-none"
-                        onClick={handleAlwaysAllow}
-                      >
-                        {t('chat.permission.alwaysAllow')}
-                      </Button>
-                    )}
                     {suggestions?.map((s, i) => {
                       const isSelected = selectedSuggestions.has(i)
                       return (

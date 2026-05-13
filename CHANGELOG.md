@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.32.0-alpha] - 2026-05-13
+
+### Added
+
+- **AI can rename sessions to reflect the topic.** A new `session_rename` MCP tool lets the active model retitle the current chat as the topic clarifies. Sessions you've manually renamed are protected by an `is_user_renamed` SQLite flag (the tool returns `user_locked` so the model stops calling them). Title updates animate in across all six title surfaces (coding header, chat panel header, mini window, sidebar pinned, sidebar list, history dialog) via a per-char stagger tuned to a fixed 1s total.
+- **Codex now respects SuperOne's system prompt.** Codex's app-server protocol has no system-prompt append interface, so SuperOne tool-usage rules (`widget_show`, `miniapp_dev_read_guide`, `session_rename`) are injected via `developer_instructions` on every thread/turn — Codex behavior now matches Claude.
+
+### Fixed
+
+- **Codex no longer prompts for permission on SuperOne built-in tools.** `extractSuperoneMiniAppToolName` required a `__` namespace separator that built-in tools (`miniapp_dev_*`, `session_rename`) don't have, so the pre-approve check missed and a permission prompt popped on every internal call. Built-in SuperOne tools are now pre-approved uniformly across Claude and Codex.
+- **Mention chips no longer break slash hint / prompt suggestions in chat input.** ProseMirror's `doc.textContent` silently skipped `MentionNode` atoms, so a paragraph containing a mention chip plus a leading slash looked empty to the suggestion engine and the slash hint disappeared. The suggestion and slash-hint paths now use structural API (`paragraph.firstChild.text` / `childCount`) instead.
+
+### Changed
+
+- **PermissionPrompt drops the standalone Always Allow button.** When a permission request has no suggestions, the separate blue "Always Allow" button is gone; always-allow behavior is uniformly carried by the suggestion row.
+- **Built-in SuperOne MCP tools renamed to `<category>_<subcategory>_<verb>`.** `read_miniapp_guide` → `miniapp_dev_read_guide`, `setup_mini_app_dev` → `miniapp_dev_setup`, `register_dev_miniapp` → `miniapp_dev_register`, `pack_mini_app` → `miniapp_dev_pack`, `update_superone_types` → `miniapp_dev_update_types`. The standalone `widget` MCP server is merged into `superone` with `show_widget` → `widget_show` and `read_guidelines` → `widget_read_guide`, so both Claude and Codex now share one server and pre-approval is uniform.
+
 ## [0.31.2-alpha] - 2026-05-12
 
 ### Fixed

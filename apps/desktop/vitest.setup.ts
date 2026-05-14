@@ -31,6 +31,16 @@ if (typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserve
   Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, writable: true, value: ResizeObserverMock })
 }
 
+if (typeof (globalThis as unknown as { IntersectionObserver?: unknown }).IntersectionObserver === 'undefined') {
+  class IntersectionObserverMock {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): never[] { return [] }
+  }
+  Object.defineProperty(globalThis, 'IntersectionObserver', { configurable: true, writable: true, value: IntersectionObserverMock })
+}
+
 if (typeof (globalThis as unknown as { requestIdleCallback?: unknown }).requestIdleCallback === 'undefined') {
   const ric = (cb: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void): number =>
     setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 0 }), 0) as unknown as number

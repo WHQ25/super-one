@@ -94,9 +94,9 @@ describe('parseUserMentions', () => {
 
   describe('miniapp tags', () => {
     it('parses a miniapp tag into a mention segment', () => {
-      const input = '<superone-miniapp><appname>Headless Demo</appname><appid>headless-demo</appid></superone-miniapp> increment please'
+      const input = '<superone-miniapp><appname>Standalone Demo</appname><appid>standalone-demo</appid></superone-miniapp> increment please'
       expect(parseUserMentions(input)).toEqual([
-        { type: 'mention', kind: 'miniapp', value: 'headless-demo', displayName: 'Headless Demo' },
+        { type: 'mention', kind: 'miniapp', value: 'standalone-demo', displayName: 'Standalone Demo' },
         { type: 'text', text: ' increment please' },
       ])
     })

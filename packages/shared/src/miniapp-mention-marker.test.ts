@@ -4,10 +4,10 @@ import { replaceMiniAppTagsWithMention } from './miniapp-prompt-tags'
 
 describe('miniapp mention markers', () => {
   it('round-trips appId and name through invisible markers', () => {
-    const wrapped = wrapMiniAppMention('headless-demo', 'Headless Demo')
+    const wrapped = wrapMiniAppMention('standalone-demo', 'Standalone Demo')
     const matches = findMiniAppMentionMarkers(wrapped)
     expect(matches).toHaveLength(1)
-    expect(matches[0]).toMatchObject({ appId: 'headless-demo', appName: 'Headless Demo' })
+    expect(matches[0]).toMatchObject({ appId: 'standalone-demo', appName: 'Standalone Demo' })
   })
 
   it('survives concatenation with surrounding plain text', () => {
@@ -44,20 +44,20 @@ describe('miniapp mention markers', () => {
   })
 
   it('the visible part of the wrapped string contains @Name', () => {
-    const wrapped = wrapMiniAppMention('headless-demo', 'Headless Demo')
+    const wrapped = wrapMiniAppMention('standalone-demo', 'Standalone Demo')
     const visible = wrapped.replace(/[⁣​‌]/g, '')
-    expect(visible).toBe('@Headless Demo')
+    expect(visible).toBe('@Standalone Demo')
   })
 })
 
 describe('replaceMiniAppTagsWithMention', () => {
   it('replaces superone-miniapp tag with marker-wrapped @name', () => {
-    const input = '<superone-miniapp><appname>Headless Demo</appname><appid>headless-demo</appid></superone-miniapp> hello'
+    const input = '<superone-miniapp><appname>Standalone Demo</appname><appid>standalone-demo</appid></superone-miniapp> hello'
     const out = replaceMiniAppTagsWithMention(input)
     const matches = findMiniAppMentionMarkers(out)
     expect(matches).toHaveLength(1)
-    expect(matches[0].appId).toBe('headless-demo')
-    expect(matches[0].appName).toBe('Headless Demo')
+    expect(matches[0].appId).toBe('standalone-demo')
+    expect(matches[0].appName).toBe('Standalone Demo')
     expect(out.endsWith(' hello')).toBe(true)
   })
 

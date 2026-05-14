@@ -423,8 +423,8 @@ describe('extractClaudeTitle', () => {
   })
 
   it('replaces miniapp tag with @AppName so title shows app name only', () => {
-    const input = '<superone-miniapp><appname>Headless Demo</appname><appid>headless-demo</appid></superone-miniapp> increment please'
-    expect(extractClaudeTitle([userMessage(input)])).toBe('@Headless Demo increment please')
+    const input = '<superone-miniapp><appname>Standalone Demo</appname><appid>standalone-demo</appid></superone-miniapp> increment please'
+    expect(extractClaudeTitle([userMessage(input)])).toBe('@Standalone Demo increment please')
   })
 
   it('strips miniapp reminder block from title', () => {

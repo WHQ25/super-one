@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Increment</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 14px 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: #1d1d1f;
+    background: linear-gradient(135deg, rgba(217,119,6,0.05) 0%, rgba(217,119,6,0.10) 100%);
+    border-radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #f0f0f0; background: linear-gradient(135deg, rgba(217,119,6,0.10) 0%, rgba(217,119,6,0.18) 100%); }
+  }
+  .card { display: flex; align-items: center; gap: 14px; }
+  .delta {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(217,119,6,0.95);
+    background: rgba(217,119,6,0.15);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .nums { display: flex; align-items: baseline; gap: 8px; }
+  .from {
+    font-size: 14px;
+    color: rgba(127,127,127,0.7);
+    text-decoration: line-through;
+    font-variant-numeric: tabular-nums;
+  }
+  .arrow { color: rgba(127,127,127,0.5); font-size: 12px; }
+  .to {
+    font-size: 28px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    color: #d97706;
+    transition: transform 200ms;
+  }
+  .to.bump { transform: scale(1.15); }
+  .skel {
+    height: 28px;
+    width: 60%;
+    background: linear-gradient(90deg,
+      rgba(127,127,127,.10) 0%,
+      rgba(127,127,127,.18) 50%,
+      rgba(127,127,127,.10) 100%);
+    background-size: 200% 100%;
+    border-radius: 6px;
+    animation: shimmer 1.4s infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .err {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 11px;
+    color: #dc2626;
+  }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="skel" id="skel"></div>
+  </div>
+
+  <script type="module">
+    const KEY = 'counter'
+
+    superone.tools.handle('increment', async ({ by }) => {
+      const amount = typeof by === 'number' && Number.isFinite(by) ? by : 1
+      const current = (await superone.kv.get(KEY)) ?? 0
+      const next = current + amount
+      await superone.kv.set(KEY, next)
+      superone.peer.emit('count-changed', { value: next, delta: amount, at: Date.now() })
+      return { ok: true, previous: current, value: next }
+    })
+
+    const card = document.getElementById('card')
+    function render(detail) {
+      if (detail.error) {
+        card.innerHTML = ''
+        const e = document.createElement('div')
+        e.className = 'err'
+        e.textContent = String(detail.error)
+        card.appendChild(e)
+      } else {
+        const r = detail.result || {}
+        card.innerHTML = `
+          <span class="delta">+${r.value - r.previous}</span>
+          <div class="nums">
+            <span class="from">${r.previous}</span>
+            <span class="arrow">→</span>
+            <span class="to" id="to">${r.value}</span>
+          </div>
+        `
+        const to = document.getElementById('to')
+        if (to) {
+          requestAnimationFrame(() => { to.classList.add('bump') })
+          setTimeout(() => to && to.classList.remove('bump'), 200)
+        }
+      }
+      requestAnimationFrame(() => {
+        const h = document.documentElement.scrollHeight
+        if (window.parent) window.parent.postMessage({ type: 'miniapp-resize', height: h }, '*')
+      })
+    }
+    window.addEventListener('superone:tool-result', (ev) => render(ev.detail))
+    const t = window.superone && window.superone.tool
+    if (t && (t.result !== null || t.error !== null)) {
+      render({ result: t.result, error: t.error })
+    }
+  </script>
+</body>
+</html>

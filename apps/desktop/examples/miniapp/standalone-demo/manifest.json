@@ -1,0 +1,52 @@
+{
+  "appId": "standalone-demo",
+  "name": "Standalone Demo",
+  "isDev": true,
+  "version": "0.3.0",
+  "author": { "name": "SuperOne", "url": "https://github.com/WHQ25/super-one" },
+  "description": "Counter app demonstrating standalone tools (each tool's HTML registers its own handler), peer.emit, KV proxy, and lazy-open panel",
+  "preferWidth": 420,
+  "toolSlug": "demo",
+  "templates": {
+    "increment-result": "increment-result.html",
+    "simple-result": "simple-result.html"
+  },
+  "tools": [
+    {
+      "name": "increment",
+      "description": "Increment the counter by a given amount (default 1). Renders a custom +N counter card.",
+      "runningText": "Incrementing counter…",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "by": { "type": "number", "description": "Amount to add (default 1)" }
+        }
+      },
+      "standalone": true,
+      "renderer": { "result": { "template": "increment-result" } }
+    },
+    {
+      "name": "read_counter",
+      "description": "Read the current counter value. Renders the shared simple-result template.",
+      "runningText": "Reading counter…",
+      "inputSchema": { "type": "object", "properties": {} },
+      "standalone": true,
+      "renderer": { "result": { "template": "simple-result" } }
+    },
+    {
+      "name": "reset",
+      "description": "Reset the counter to zero. Renders the shared simple-result template.",
+      "runningText": "Resetting…",
+      "inputSchema": { "type": "object", "properties": {} },
+      "standalone": true,
+      "renderer": { "result": { "template": "simple-result" } }
+    },
+    {
+      "name": "show_counter",
+      "description": "Show the counter value in the app's panel UI. Requires the panel.",
+      "displayName": "Show counter",
+      "runningText": "Showing in panel…",
+      "inputSchema": { "type": "object", "properties": {} }
+    }
+  ]
+}

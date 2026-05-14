@@ -5,6 +5,7 @@ import { onThemeChange, readThemeVars } from '@/components/miniapp/miniapp-theme
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 import { useContextConsumedEvent } from '@/hooks/useContextConsumedEvent'
 import { useMiniAppMediaStore } from '@/stores/miniapp-media'
+import { useMiniAppStore } from '@/stores/miniapp'
 import type { MiniAppToolCallRequest } from '@superone/shared/miniapp-types'
 
 export interface MiniAppBridgeOptions {
@@ -101,6 +102,11 @@ export function useMiniAppBridge({ appId, projectDir, iframeRef, onReady, onResi
     const cleanup = window.miniapp.onToolCall((call: MiniAppToolCallRequest) => {
       if (call.appId !== appId) return
       if (call.projectDir !== projectDir) return
+      // Standalone tools belong to StandaloneToolBlock's iframe, not the panel iframe.
+      // Don't forward — let useStandaloneToolCallRouter route it to the chat block.
+      const app = useMiniAppStore.getState().apps.find((a) => a.id === appId)
+      const toolDef = app?.manifest.tools?.find((t) => t.name === call.toolName)
+      if (toolDef?.standalone) return
       window.app.trace?.('miniapp.tool', 'forward_to_iframe', { appId, projectDir, toolName: call.toolName }, call.callId)
       sendToFrame({
         type: 'miniapp-tool-call',

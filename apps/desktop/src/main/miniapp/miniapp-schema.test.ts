@@ -370,67 +370,64 @@ describe('parseManifest', () => {
   })
 })
 
-describe('parseManifest - headless tools', () => {
-  const baseHeadless = {
+describe('parseManifest - standalone tools', () => {
+  const baseStandalone = {
     appId: 'weather',
     name: 'Weather',
     toolSlug: 'weather',
-    headlessEntry: 'service.mjs',
+    templates: { 'query-result': 'query-result.html' },
     tools: [
       {
         name: 'query',
         description: 'Query the weather API.',
         inputSchema: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] },
-        headless: true,
+        standalone: true,
+        renderer: { result: { template: 'query-result' } },
       },
     ],
   }
 
-  it('accepts manifest with headlessEntry + headless tool', () => {
-    const result = parseManifest(baseHeadless)
+  it('accepts manifest with standalone tool', () => {
+    const result = parseManifest(baseStandalone)
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.manifest.headlessEntry).toBe('service.mjs')
-      expect(result.manifest.tools?.[0].headless).toBe(true)
+      expect(result.manifest.tools?.[0].standalone).toBe(true)
     }
   })
 
-  it('rejects headless=true tool without manifest.headlessEntry', () => {
-    const { headlessEntry: _ignore, ...withoutEntry } = baseHeadless
-    void _ignore
-    const result = parseManifest(withoutEntry)
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.errors.some((e) => e.includes('headlessEntry'))).toBe(true)
-    }
-  })
-
-  it('accepts manifest with headlessEntry but no headless tools (forward-compat)', () => {
+  it('accepts mixed tools (one standalone, one panel-bound)', () => {
     const result = parseManifest({
       appId: 'mixed',
       name: 'Mixed',
       toolSlug: 'mixed',
-      headlessEntry: 'service.mjs',
-      tools: [{ name: 'show_panel', description: 'UI tool', inputSchema: { type: 'object' } }],
-    })
-    expect(result.ok).toBe(true)
-  })
-
-  it('accepts mixed tools (one headless, one panel-bound) when headlessEntry present', () => {
-    const result = parseManifest({
-      appId: 'mixed',
-      name: 'Mixed',
-      toolSlug: 'mixed',
-      headlessEntry: 'service.mjs',
+      templates: { 'query-result': 'query-result.html' },
       tools: [
-        { name: 'query', description: 'bg', inputSchema: { type: 'object' }, headless: true },
-        { name: 'show', description: 'ui', inputSchema: { type: 'object' }, headless: false },
+        { name: 'query', description: 'bg', inputSchema: { type: 'object' }, standalone: true, renderer: { result: { template: 'query-result' } } },
+        { name: 'show', description: 'ui', inputSchema: { type: 'object' }, standalone: false },
       ],
     })
     expect(result.ok).toBe(true)
   })
 
-  it('defaults headless undefined (backwards compatible)', () => {
+  it('rejects standalone tool without renderer.result.template', () => {
+    const result = parseManifest({
+      appId: 'missing-tpl',
+      name: 'Missing',
+      toolSlug: 'missing',
+      tools: [{
+        name: 'query',
+        description: 'no template',
+        inputSchema: { type: 'object' },
+        standalone: true,
+      }],
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => /standalone/i.test(e) && /template/i.test(e))).toBe(true)
+    }
+  })
+
+  it('defaults standalone undefined (backwards compatible)', () => {
     const result = parseManifest({
       appId: 'legacy',
       name: 'Legacy',
@@ -439,15 +436,14 @@ describe('parseManifest - headless tools', () => {
     })
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.manifest.tools?.[0].headless).toBeUndefined()
-      expect(result.manifest.headlessEntry).toBeUndefined()
+      expect(result.manifest.tools?.[0].standalone).toBeUndefined()
     }
   })
 
   it('accepts per-tool timeoutMs', () => {
     const result = parseManifest({
-      ...baseHeadless,
-      tools: [{ ...baseHeadless.tools[0], timeoutMs: 30000 }],
+      ...baseStandalone,
+      tools: [{ ...baseStandalone.tools[0], timeoutMs: 30000 }],
     })
     expect(result.ok).toBe(true)
     if (result.ok) {
@@ -457,42 +453,71 @@ describe('parseManifest - headless tools', () => {
 
   it('rejects negative timeoutMs', () => {
     const result = parseManifest({
-      ...baseHeadless,
-      tools: [{ ...baseHeadless.tools[0], timeoutMs: -1 }],
+      ...baseStandalone,
+      tools: [{ ...baseStandalone.tools[0], timeoutMs: -1 }],
     })
     expect(result.ok).toBe(false)
   })
 
   it('rejects zero timeoutMs', () => {
     const result = parseManifest({
-      ...baseHeadless,
-      tools: [{ ...baseHeadless.tools[0], timeoutMs: 0 }],
+      ...baseStandalone,
+      tools: [{ ...baseStandalone.tools[0], timeoutMs: 0 }],
     })
     expect(result.ok).toBe(false)
   })
 
   it('rejects non-integer timeoutMs', () => {
     const result = parseManifest({
-      ...baseHeadless,
-      tools: [{ ...baseHeadless.tools[0], timeoutMs: 1000.5 }],
+      ...baseStandalone,
+      tools: [{ ...baseStandalone.tools[0], timeoutMs: 1000.5 }],
     })
     expect(result.ok).toBe(false)
   })
 
-  it('rejects empty headlessEntry string', () => {
+  it('rejects non-boolean standalone', () => {
     const result = parseManifest({
-      ...baseHeadless,
-      headlessEntry: '',
+      ...baseStandalone,
+      tools: [{ ...baseStandalone.tools[0], standalone: 'yes' }],
     })
     expect(result.ok).toBe(false)
   })
 
-  it('rejects non-boolean headless', () => {
+  it('rejects standalone tool that also declares renderer.intercept', () => {
     const result = parseManifest({
-      ...baseHeadless,
-      tools: [{ ...baseHeadless.tools[0], headless: 'yes' }],
+      appId: 'bad',
+      name: 'Bad',
+      toolSlug: 'bad',
+      templates: { 'pop': 'pop.html' },
+      tools: [{
+        name: 'conflict',
+        description: 'cannot be both standalone and intercept',
+        inputSchema: { type: 'object' },
+        standalone: true,
+        renderer: { intercept: { template: 'pop' } },
+      }],
     })
     expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => /standalone/i.test(e) && /intercept/i.test(e))).toBe(true)
+    }
+  })
+
+  it('accepts standalone tool with renderer.result (custom UI in chat)', () => {
+    const result = parseManifest({
+      appId: 'ui',
+      name: 'UI',
+      toolSlug: 'ui',
+      templates: { 'counter': 'counter.html' },
+      tools: [{
+        name: 'increment',
+        description: 'increment',
+        inputSchema: { type: 'object' },
+        standalone: true,
+        renderer: { result: { template: 'counter' } },
+      }],
+    })
+    expect(result.ok).toBe(true)
   })
 })
 

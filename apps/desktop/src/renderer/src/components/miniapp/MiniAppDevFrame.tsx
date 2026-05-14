@@ -132,6 +132,10 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
         const match = call.appId === appId && call.projectDir === projectDir
         window.app.trace?.('miniapp.toolcall', 'devframe-received', { callId: call.callId, toolName: call.toolName, incoming: { appId: call.appId, projectDir: call.projectDir }, own: { appId, projectDir }, match, webviewMounted: !!webviewRef.current })
         if (!match) return
+        // Standalone tools are owned by the chat block iframe, not the panel webview.
+        const app = useMiniAppStore.getState().apps.find((a) => a.id === appId)
+        const toolDef = app?.manifest.tools?.find((t) => t.name === call.toolName)
+        if (toolDef?.standalone) return
         webviewRef.current?.send('miniapp-tool-call', {
           callId: call.callId,
           toolName: call.toolName,

@@ -996,6 +996,9 @@ const miniappAPI = {
     return () => ipcRenderer.removeListener('miniapp-peer-event', handler)
   },
 
+  peerEmit: (appId: string, event: string, payload: unknown) =>
+    ipcRenderer.send(AgentIpcChannels.MINIAPP_PEER_EMIT, appId, event, payload),
+
   preview: (s1appPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_PREVIEW, s1appPath),
 

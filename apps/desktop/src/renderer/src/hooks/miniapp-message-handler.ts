@@ -56,6 +56,11 @@ export function handleMiniAppMessage(
         .then((result) => { send({ type: 'miniapp-kv-response', id: data.id, result }) })
         .catch((err: unknown) => { send({ type: 'miniapp-kv-response', id: data.id, error: (err as Error).message }) })
       return true
+    case 'miniapp-peer-emit':
+      if (typeof data.event === 'string') {
+        window.miniapp.peerEmit(appId, data.event, data.payload)
+      }
+      return true
     case 'miniapp-fs-watch':
       window.miniapp
         .fsWatch(projectDir, appId, data.path as string)

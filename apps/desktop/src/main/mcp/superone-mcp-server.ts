@@ -6,7 +6,6 @@ import log from '../logger'
 import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { getPreapprovedByPath } from '../miniapp/miniapp-packager'
-import { executeHeadlessTool } from '../miniapp/miniapp-worker-host'
 import { trace } from '../agent/event-trace'
 import { jsonSchemaToZodShape } from './json-schema-zod'
 import {
@@ -29,7 +28,7 @@ interface GateEntry {
   ready: boolean
 }
 
-const TOOL_CALL_TIMEOUT_MS = 60_000
+const TOOL_CALL_TIMEOUT_MS = 10_000
 
 interface ProjectServerState {
   server: McpServer
@@ -42,12 +41,11 @@ interface AppToolEntry {
   appId: string
   toolSlug: string
   tools: MiniAppToolDefinition[]
-  headlessEntryAbsPath?: string
 }
 
 function describeTool(t: MiniAppToolDefinition): string {
   const base = t.description
-  if (t.headless) return base
+  if (t.standalone) return base
   return `${base}\n\n(Note: this tool requires the mini-app's panel UI to be open to execute.)`
 }
 
@@ -134,7 +132,7 @@ export function createSuperoneMcpServer(sessionId: string): McpSdkServerConfigWi
 
   for (const entry of appToolDefs.values()) {
     if (entry.sessionId === sessionId) {
-      registerToolsOnState(state, entry.sessionId, entry.appId, entry.projectDir, entry.toolSlug, entry.tools, entry.headlessEntryAbsPath)
+      registerToolsOnState(state, entry.sessionId, entry.appId, entry.projectDir, entry.toolSlug, entry.tools)
     }
   }
 
@@ -206,32 +204,23 @@ function registerToolsOnState(
   projectDir: string,
   toolSlug: string,
   tools: MiniAppToolDefinition[],
-  headlessEntryAbsPath: string | undefined,
 ): void {
   for (const t of tools) {
     const namespacedName = `${toolSlug}__${t.name}`
     if (state.registeredTools.has(namespacedName)) continue
 
     const zodShape = jsonSchemaToZodShape(t.inputSchema)
-    const isHeadless = t.headless === true
+    const isStandalone = t.standalone === true
     const registered = state.server.registerTool(
       namespacedName,
       { description: describeTool(t), inputSchema: zodShape },
       async (args: Record<string, unknown>) => {
         try {
           let result: unknown
-          if (isHeadless) {
-            if (!headlessEntryAbsPath) {
-              throw new Error(`Tool '${t.name}' is declared headless but app '${appId}' has no resolved headlessEntry`)
-            }
-            result = await executeHeadlessTool({
-              sessionId,
-              appId,
-              headlessEntry: headlessEntryAbsPath,
-              toolName: t.name,
-              args,
-              timeoutMs: t.timeoutMs,
-            })
+          if (isStandalone) {
+            trace('miniapp.standalone', 'tool-dispatch', { appId, toolName: t.name, sessionId })
+            result = await executeStandaloneTool(sessionId, appId, t.name, args)
+            trace('miniapp.standalone', 'tool-execute-done', { appId, toolName: t.name })
           } else {
             const panelReady = isPanelReady(projectDir, appId)
             trace('miniapp.lazyopen', 'tool-dispatch', { appId, toolName: t.name, panelReady })
@@ -250,7 +239,7 @@ function registerToolsOnState(
       },
     )
     state.registeredTools.set(namespacedName, registered)
-    log.info('[superone-mcp] registered tool %s (headless=%s) for sessionId=%s', namespacedName, isHeadless, sessionId)
+    log.info('[superone-mcp] registered tool %s (standalone=%s) for sessionId=%s', namespacedName, isStandalone, sessionId)
   }
 }
 
@@ -260,12 +249,11 @@ export function registerAppTools(
   appId: string,
   toolSlug: string,
   tools: MiniAppToolDefinition[],
-  headlessEntryAbsPath?: string,
 ): void {
   const key = makeAppKey(sessionId, appId)
-  log.debug('[superone-mcp] registerAppTools sessionId=%s projectDir=%s appId=%s toolSlug=%s tools=%d headlessEntry=%s',
-    sessionId, projectDir, appId, toolSlug, tools.length, headlessEntryAbsPath ?? 'none')
-  appToolDefs.set(key, { sessionId, projectDir, appId, toolSlug, tools, headlessEntryAbsPath })
+  log.debug('[superone-mcp] registerAppTools sessionId=%s projectDir=%s appId=%s toolSlug=%s tools=%d',
+    sessionId, projectDir, appId, toolSlug, tools.length)
+  appToolDefs.set(key, { sessionId, projectDir, appId, toolSlug, tools })
 
   toolSync?.toolsChanged(sessionId)
 
@@ -276,7 +264,7 @@ export function registerAppTools(
   }
 
   for (const state of states) {
-    registerToolsOnState(state, sessionId, appId, projectDir, toolSlug, tools, headlessEntryAbsPath)
+    registerToolsOnState(state, sessionId, appId, projectDir, toolSlug, tools)
     if (state.server.isConnected()) state.server.sendToolListChanged()
   }
 }
@@ -578,6 +566,27 @@ function sendToolCall(
     trace('miniapp.toolcall', 'main-dispatch', { callId, appId, toolName, projectDir })
     win.webContents.send(AgentIpcChannels.MINIAPP_TOOL_CALL, request)
   })
+}
+
+/**
+ * Standalone tools render their own iframe inside the chat tool block — no panel
+ * lazy-open, no intercept template. Just dispatch the tool call IPC and let the
+ * StandaloneToolBlock-mounted iframe receive it via `window.miniapp.onToolCall`.
+ */
+export async function executeStandaloneTool(
+  sessionId: string,
+  appId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  const key = makeAppKey(sessionId, appId)
+  const defsEntry = appToolDefs.get(key)
+  if (!defsEntry) {
+    throw new Error(`App "${appId}" is not authorized in session "${sessionId}". This tool is no longer available.`)
+  }
+  const projectDir = defsEntry.projectDir
+  const callId = randomUUID()
+  return sendToolCall(callId, sessionId, projectDir, appId, toolName, args)
 }
 
 export async function executeAppTool(

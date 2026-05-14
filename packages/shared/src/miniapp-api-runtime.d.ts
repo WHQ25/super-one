@@ -37,11 +37,24 @@ export interface ToolResultApi {
   close(): void
 }
 
-export type ToolRendererApi = ToolInterceptApi | ToolResultApi
+export interface ToolStandaloneApi {
+  phase: 'standalone'
+  callId: string
+  toolName: string
+  args: Record<string, unknown> | null
+  result: unknown
+  error: string | null
+}
+
+export type ToolRendererApi = ToolInterceptApi | ToolResultApi | ToolStandaloneApi
 
 export interface SuperoneApi {
   version: string
-  tools: { handle(name: string, callback: (args: Record<string, unknown>) => unknown): void }
+  tools: {
+    handle(name: string, callback: (args: Record<string, unknown>) => unknown): void
+    /** Internal handler registry — exposed so the standalone bridge can dispatch by callId. Not for author code. */
+    _handlers: Map<string, (args: Record<string, unknown>) => unknown | Promise<unknown>>
+  }
   db: {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[] | Record<string, unknown>): Promise<T[]>
     exec(sql: string, params?: unknown[] | Record<string, unknown>): Promise<{ changes: number; lastInsertRowid: number }>
@@ -56,6 +69,7 @@ export interface SuperoneApi {
   }
   peer: {
     on(event: string, callback: (payload: unknown) => void): () => void
+    emit(event: string, payload?: unknown): void
   }
   fs: {
     readFile(path: string, opts?: { binary?: boolean }): Promise<string | ArrayBuffer>

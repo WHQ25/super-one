@@ -322,6 +322,7 @@ interface MiniAppAPI {
   onGitHeadChangeEvent(callback: (event: { projectDir: string; appId: string }) => void): () => void
   onLazyOpenRequest(callback: (event: { appId: string; projectDir: string; sessionId: string }) => void): () => void
   onPeerEvent(callback: (event: { sessionId: string; appId: string; event: string; payload: unknown }) => void): () => void
+  peerEmit(appId: string, event: string, payload: unknown): void
   fsWatch(projectDir: string, appId: string, path: string): Promise<number>
   fsUnwatch(watchId: number): Promise<void>
   onFsWatchEvent(callback: (event: MiniAppFsWatchEvent) => void): () => void

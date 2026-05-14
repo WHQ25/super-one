@@ -14,8 +14,8 @@ import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManif
 import * as devRegistry from './miniapp/dev-registry'
 import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
 import { handleKvRequest, type KvOp, type KvRequestArgs } from './miniapp/miniapp-kv'
-import { setPeerBroadcaster } from './miniapp/miniapp-peer-bus'
-import { generateBridgeScript, generatePopoverBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
+import { setPeerBroadcaster, emitPeer } from './miniapp/miniapp-peer-bus'
+import { generateBridgeScript, generatePopoverBridgeScript, generateStandaloneBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate } from './mcp/superone-mcp-server'
@@ -1792,6 +1792,12 @@ function registerIpcHandlers(): void {
       mainWindow!.webContents.send('miniapp-peer-event', { sessionId, appId, event, payload })
     }
   })
+
+  ipcMain.on(AgentIpcChannels.MINIAPP_PEER_EMIT, (_e, appId: string, event: string, payload: unknown) => {
+    if (typeof appId !== 'string' || typeof event !== 'string') return
+    emitPeer('', appId, event, payload)
+  })
+
   startSuperoneMcpStdioBridge().catch((err) => log.error('[mcp-stdio-ipc] failed to start:', err))
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async (_e, projectDir?: string) => {
@@ -1829,8 +1835,7 @@ function registerIpcHandlers(): void {
       registerAppTemplates(projectDir, appId, manifest.templates)
     }
     const toolSlug = manifest.toolSlug ?? appId
-    const headlessEntryAbsPath = manifest.headlessEntry ? join(basePath, manifest.headlessEntry) : undefined
-    registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [], headlessEntryAbsPath)
+    registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [])
     loadPreapprovedTools(appId, toolSlug, basePath)
     if (manifest.tools?.length) agentService.markSessionNeedsRebuild(sessionId)
   })
@@ -1853,8 +1858,7 @@ function registerIpcHandlers(): void {
       setAppFsPermissions(appId, manifest, projectDir, installDir)
       registerAppTemplates(projectDir, appId, manifest.templates)
       const toolSlug = manifest.toolSlug ?? appId
-      const headlessEntryAbsPath = manifest.headlessEntry ? join(basePath, manifest.headlessEntry) : undefined
-      registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [], headlessEntryAbsPath)
+      registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [])
       loadPreapprovedTools(appId, toolSlug, basePath)
       if (manifest.tools?.length) {
         registeredAny = true
@@ -2164,6 +2168,7 @@ app.whenReady().then(async () => {
       }
 
       const basePath = getAppBasePath(appId)
+
       const resolved = validatePath(basePath, filePath === '/' ? '/index.html' : filePath)
       if (!resolved) {
         log.warn('[superone-app] path traversal blocked: %s %s', appId, filePath)
@@ -2179,6 +2184,16 @@ app.whenReady().then(async () => {
         const popoverName = url.searchParams.get('_popover')
         const toolIntercept = url.searchParams.get('_toolIntercept')
         const toolResult = url.searchParams.get('_toolResult')
+        const standalone = url.searchParams.get('_standalone')
+        if (standalone) {
+          trace('miniapp.standalone', 'protocol-serve-html', {
+            appId,
+            filePath,
+            callId: url.searchParams.get('_toolCallId') || '',
+            toolName: url.searchParams.get('_toolName') || '',
+            htmlBytes: data.byteLength,
+          })
+        }
         const locale = getCurrentLocale()
         const bridgeScript = toolIntercept
           ? generateToolInterceptBridgeScript(appId, app.getVersion(), locale, {
@@ -2192,9 +2207,14 @@ app.whenReady().then(async () => {
                 toolName: url.searchParams.get('_toolName') || '',
                 result: JSON.parse(url.searchParams.get('_toolData') || 'null'),
               })
-            : popoverName
-              ? generatePopoverBridgeScript(appId, app.getVersion(), locale, JSON.parse(url.searchParams.get('_popoverData') || 'null'))
-              : generateBridgeScript(appId, app.getVersion(), locale)
+            : standalone
+              ? generateStandaloneBridgeScript(appId, app.getVersion(), locale, {
+                  callId: url.searchParams.get('_toolCallId') || '',
+                  toolName: url.searchParams.get('_toolName') || '',
+                })
+              : popoverName
+                ? generatePopoverBridgeScript(appId, app.getVersion(), locale, JSON.parse(url.searchParams.get('_popoverData') || 'null'))
+                : generateBridgeScript(appId, app.getVersion(), locale)
         const injected = html.includes('<head>')
           ? html.replace('<head>', `<head>${bridgeScript}`)
           : html.includes('<html>')

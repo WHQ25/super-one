@@ -22,6 +22,7 @@ import { CanvasEditDiff } from './CanvasEditDiff'
 import { RollingNumber } from './RollingNumber'
 import { parseWidgetResult, parsePartialWidgetInput } from '@superone/shared/generative-ui/types'
 import { ToolRendererFrame } from './ToolRendererFrame'
+import { StandaloneToolBlock } from './StandaloneToolBlock'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { parseFileLinkTarget } from '@/lib/file-link'
@@ -438,6 +439,29 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
       let resultSummary = ''
       if (!isStreaming && result && toolDef?.resultSummaryField) {
         try { resultSummary = String(JSON.parse(result)[toolDef.resultSummaryField] ?? '') } catch {}
+      }
+
+      // Standalone tools render their iframe as the entire chat block — no folding chrome.
+      // The iframe both executes the author's handler AND renders the result UI.
+      // Schema guarantees renderer.result.template exists for standalone tools.
+      if (toolDef?.standalone && canvasApp) {
+        const tplKey = toolDef.renderer?.result?.template
+        const tplPath = tplKey ? canvasApp.manifest.templates?.[tplKey] : undefined
+        if (tplPath) {
+          return (
+            <StandaloneToolBlock
+              appId={canvasApp.id}
+              toolUseId={toolUseId ?? ''}
+              toolName={mcpToolNamePart}
+              appName={appName}
+              toolReadableName={toolReadableName}
+              args={params}
+              result={result}
+              isStreaming={isStreaming}
+              templatePath={tplPath}
+            />
+          )
+        }
       }
 
       if (toolInterceptState) {

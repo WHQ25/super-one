@@ -158,3 +158,75 @@ export function generateToolResultBridgeScript(
   }`
   return wrapToolBridgeScript(appId, version, locale, body)
 }
+
+export function generateStandaloneBridgeScript(
+  appId: string,
+  version: string,
+  locale: string,
+  ctx: { callId: string; toolName: string },
+): string {
+  const callIdJson = JSON.stringify(ctx.callId)
+  const toolNameJson = JSON.stringify(ctx.toolName)
+  return `<script>
+(function() {
+  ${generateTransportBlock(appId)}
+
+  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)}, { initialLocale: ${JSON.stringify(locale)} });
+  delete window.superone.ui.showPopover;
+
+  window.superone.tool = {
+    phase: 'standalone',
+    callId: ${callIdJson},
+    toolName: ${toolNameJson},
+    args: null,
+    result: null,
+    error: null,
+  };
+
+  function fireResultEvent() {
+    try {
+      window.dispatchEvent(new CustomEvent('superone:tool-result', {
+        detail: { result: window.superone.tool.result, error: window.superone.tool.error },
+      }));
+    } catch (e) { /* ignore */ }
+  }
+
+  // Use a standalone-specific message type so we don't collide with runtime's
+  // 'miniapp-tool-call' handler (which serves panel iframes, registered inside
+  // createSuperoneApi above and would fire first if it sees the same type).
+  transport.on('miniapp-standalone-call', function(data) {
+    if (!data) return;
+    window.superone.tool.callId = data.callId;
+    window.superone.tool.args = data.arguments || {};
+    var handler = window.superone.tools._handlers && window.superone.tools._handlers.get(data.toolName);
+    if (!handler) {
+      window.superone.tool.error = "Tool '" + data.toolName + "' is not registered (call superone.tools.handle in your script).";
+      transport.send('miniapp-tool-result', { callId: data.callId, error: window.superone.tool.error });
+      fireResultEvent();
+      return;
+    }
+    Promise.resolve().then(function() { return handler(data.arguments || {}); }).then(function(result) {
+      window.superone.tool.result = result;
+      transport.send('miniapp-tool-result', { callId: data.callId, result: result });
+      fireResultEvent();
+    }).catch(function(err) {
+      var msg = (err && err.message) ? err.message : String(err);
+      window.superone.tool.error = msg;
+      transport.send('miniapp-tool-result', { callId: data.callId, error: msg });
+      fireResultEvent();
+    });
+  });
+
+  transport.on('miniapp-standalone-cached-result', function(data) {
+    if (!data) return;
+    window.superone.tool.callId = data.callId;
+    window.superone.tool.args = data.arguments || null;
+    if (data.error) window.superone.tool.error = data.error;
+    else window.superone.tool.result = data.result;
+    fireResultEvent();
+  });
+
+${generateReadyBlock(appId)}
+})();
+</script>`
+}

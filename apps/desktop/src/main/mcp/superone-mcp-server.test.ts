@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const { mockRemove, mockRegisterTool, mockBuiltInTool, mockSendToolListChanged, mockIsConnected } = vi.hoisted(() => {
   const mockRemove = vi.fn()
@@ -36,12 +36,6 @@ vi.mock('../miniapp/miniapp-service', () => ({
 vi.mock('../miniapp/miniapp-packager', () => ({
   packApp: vi.fn(),
   getPreapprovedByPath: vi.fn(() => []),
-}))
-const { mockExecuteHeadlessTool } = vi.hoisted(() => ({
-  mockExecuteHeadlessTool: vi.fn(),
-}))
-vi.mock('../miniapp/miniapp-worker-host', () => ({
-  executeHeadlessTool: mockExecuteHeadlessTool,
 }))
 vi.mock('./guides/overview.md?raw', () => ({ default: 'overview' }))
 vi.mock('./guides/manifest.md?raw', () => ({ default: 'manifest' }))
@@ -159,22 +153,33 @@ describe('registerAppTools / unregisterAppTools', () => {
   })
 })
 
-describe('headless tool dispatch', () => {
-  beforeEach(() => {
-    mockExecuteHeadlessTool.mockReset()
-  })
-
-  function makeHeadlessTool(name: string, overrides: Partial<MiniAppToolDefinition> = {}): MiniAppToolDefinition {
+describe('standalone tool dispatch', () => {
+  function makeStandaloneTool(name: string, overrides: Partial<MiniAppToolDefinition> = {}): MiniAppToolDefinition {
     return {
       name,
       description: `Tool ${name}`,
       inputSchema: { type: 'object', properties: {} },
-      headless: true,
+      standalone: true,
       ...overrides,
     }
   }
 
-  it('description has panel-required note when headless is false', () => {
+  const sentMessages: Array<{ channel: string; args: unknown[] }> = []
+  const mockWebContents = { send: (channel: string, ...args: unknown[]) => sentMessages.push({ channel, args }) }
+  const mockWin = { webContents: mockWebContents, isDestroyed: () => false } as unknown as import('electron').BrowserWindow
+
+  beforeEach(() => {
+    sentMessages.length = 0
+    initSuperoneMcpServer(() => mockWin)
+  })
+
+  afterEach(() => {
+    // Reset window getter so subsequent describe blocks that don't init their own window
+    // don't accidentally dispatch IPC to this mock and hang waiting for a response.
+    initSuperoneMcpServer(() => null)
+  })
+
+  it('description has panel-required note when standalone is false', () => {
     registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('ui_tool'))
     expect(mockRegisterTool).toHaveBeenCalledWith(
       'myapp__ui_tool',
@@ -185,79 +190,60 @@ describe('headless tool dispatch', () => {
     )
   })
 
-  it('description omits panel note when headless is true', () => {
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeHeadlessTool('bg_tool')], '/abs/path/service.mjs')
+  it('description omits panel note when standalone is true', () => {
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeStandaloneTool('bg_tool')])
     const call = mockRegisterTool.mock.calls.find((c) => c[0] === 'myapp__bg_tool')!
     const desc = (call[1] as { description: string }).description
     expect(desc).toBe('Tool bg_tool')
     expect(desc).not.toContain('requires')
   })
 
-  it('headless tool routes calls to executeHeadlessTool', async () => {
-    mockExecuteHeadlessTool.mockResolvedValueOnce({ value: 42 })
-    registerAppTools(PROJ_A, PROJ_A, 'weather', 'wx', [makeHeadlessTool('forecast')], '/install/weather/service.mjs')
-
+  it('standalone tool dispatches MINIAPP_TOOL_CALL immediately without waitForAppReady', async () => {
+    registerAppTools(PROJ_A, PROJ_A, 'weather', 'wx', [makeStandaloneTool('forecast')])
     const handler = getLastHandler('wx__forecast')
-    const result = await handler({ city: 'Tokyo' })
 
-    expect(mockExecuteHeadlessTool).toHaveBeenCalledWith({
-      sessionId: PROJ_A,
-      appId: 'weather',
-      headlessEntry: '/install/weather/service.mjs',
-      toolName: 'forecast',
-      args: { city: 'Tokyo' },
-      timeoutMs: undefined,
-    })
-    expect(JSON.parse(result.content[0].text)).toEqual({ value: 42 })
-  })
-
-  it('passes timeoutMs from tool definition to executeHeadlessTool', async () => {
-    mockExecuteHeadlessTool.mockResolvedValueOnce({})
-    registerAppTools(
-      PROJ_A, PROJ_A, 'quick', 'q',
-      [makeHeadlessTool('fast', { timeoutMs: 5000 })],
-      '/install/quick/service.mjs',
-    )
-    const handler = getLastHandler('q__fast')
-    await handler({})
-
-    expect(mockExecuteHeadlessTool).toHaveBeenCalledWith(
-      expect.objectContaining({ timeoutMs: 5000 }),
-    )
-  })
-
-  it('headless=true without headlessEntryAbsPath returns error', async () => {
-    registerAppTools(PROJ_A, PROJ_A, 'broken', 'b', [makeHeadlessTool('orphan')])
-
-    const handler = getLastHandler('b__orphan')
-    const result = await handler({})
-
-    expect(mockExecuteHeadlessTool).not.toHaveBeenCalled()
-    expect(result.content[0].text).toContain('no resolved headlessEntry')
-  })
-
-  it('non-headless tool still routes through executeAppTool (no worker call)', async () => {
-    registerAppTools(PROJ_A, PROJ_A, 'legacy', 'lg', makeTools('ui_tool'), undefined)
-    const handler = getLastHandler('lg__ui_tool')
-
-    // Don't await: executeAppTool waits for IPC response (no panel here). We only verify the worker is NOT called.
-    const pending = handler({ x: 'y' })
-    // Microtask flush to let any synchronous dispatch happen
+    // Don't await: handler waits for tool result IPC. Verify the dispatch happened without app-ready gate.
+    const pending = handler({ city: 'Tokyo' })
     await new Promise((r) => setImmediate(r))
 
-    expect(mockExecuteHeadlessTool).not.toHaveBeenCalled()
-    // Reject the pending tool call so it cleans up
+    const toolCall = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
+    expect(toolCall).toBeTruthy()
+    const req = toolCall!.args[0] as MiniAppToolCallRequest
+    expect(req.appId).toBe('weather')
+    expect(req.toolName).toBe('forecast')
+    expect(req.arguments).toEqual({ city: 'Tokyo' })
+
+    // Resolve so handler cleans up
+    resolveToolCall(req.callId, { ok: true, temp: 22 })
+    const result = await pending
+    expect(JSON.parse(result.content[0].text)).toEqual({ ok: true, temp: 22 })
+  })
+
+  it('standalone tool does NOT trigger lazy-open IPC', async () => {
+    registerAppTools(PROJ_A, PROJ_A, 'standalone-app', 'sa', [makeStandaloneTool('do_thing')])
+    const handler = getLastHandler('sa__do_thing')
+    const pending = handler({})
+    await new Promise((r) => setImmediate(r))
+
+    const lazyOpen = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST)
+    expect(lazyOpen).toBeUndefined()
+
+    const toolCall = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!
+    resolveToolCall((toolCall.args[0] as MiniAppToolCallRequest).callId, {})
     void pending
   })
 
-  it('headless surface error from executeHeadlessTool returned as [Error] result', async () => {
-    mockExecuteHeadlessTool.mockRejectedValueOnce(new Error('worker boom'))
-    registerAppTools(PROJ_A, PROJ_A, 'bad', 'bd', [makeHeadlessTool('boom_tool')], '/install/bad/service.mjs')
-
+  it('standalone error surface returned as [Error] result', async () => {
+    registerAppTools(PROJ_A, PROJ_A, 'bad', 'bd', [makeStandaloneTool('boom_tool')])
     const handler = getLastHandler('bd__boom_tool')
-    const result = await handler({})
+    const pending = handler({})
+    await new Promise((r) => setImmediate(r))
 
-    expect(result.content[0].text).toBe('[Error] worker boom')
+    const toolCall = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!
+    rejectToolCall((toolCall.args[0] as MiniAppToolCallRequest).callId, 'iframe crashed')
+
+    const result = await pending
+    expect(result.content[0].text).toBe('[Error] iframe crashed')
   })
 })
 

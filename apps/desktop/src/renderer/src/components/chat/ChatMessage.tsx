@@ -96,6 +96,9 @@ function groupContent(content: ContentBlock[]): GroupResult {
     const app = slugToApp.get(slug)
     if (!app) continue
     const toolDef = app.manifest.tools?.find((t) => t.name === toolNamePart)
+    // Standalone tools own their entire chat block (an iframe) — never group them,
+    // grouping would defeat the purpose of inline custom UI per call.
+    if (toolDef?.standalone) continue
     if (toolDef?.groupable) appToolIdToAppId.set(block.toolUseId, app.id)
   }
 

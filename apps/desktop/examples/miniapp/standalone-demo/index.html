@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Headless Demo</title>
+  <title>Standalone Demo</title>
   <style>
     :root { color-scheme: light dark; }
     body {
@@ -64,7 +64,7 @@
   </style>
 </head>
 <body>
-  <h1>Headless Demo · Counter</h1>
+  <h1>Standalone Demo · Counter</h1>
 
   <div class="card">
     <div class="label">Current value (via KV)</div>
@@ -76,7 +76,7 @@
   </div>
 
   <div class="card">
-    <div class="label">peer.emit log (from worker)</div>
+    <div class="label">peer.emit log (from standalone iframes)</div>
     <div id="log" class="log"></div>
   </div>
 
@@ -117,7 +117,7 @@
       const next = cur + 1
       await superone.kv.set('counter', next)
       counterEl.textContent = String(next)
-      appendLog(`local +1 → ${next} (iframe writes KV; worker won't see via peer because no emit)`)
+      appendLog(`local +1 → ${next} (panel writes KV directly; no peer.emit means standalone iframes won't see this update)`)
     })
 
     refresh()

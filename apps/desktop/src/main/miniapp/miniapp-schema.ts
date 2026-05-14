@@ -69,9 +69,15 @@ const toolDefinitionSchema = z.object({
   groupable: z.boolean().optional(),
   inputSchema: toolInputSchemaSchema,
   renderer: toolRendererSchema.optional(),
-  headless: z.boolean().optional(),
+  standalone: z.boolean().optional(),
   timeoutMs: z.number().int().positive().optional(),
-})
+}).refine(
+  (t) => !(t.standalone === true && t.renderer?.intercept !== undefined),
+  { message: 'standalone tools cannot use renderer.intercept (the iframe IS the renderer)' },
+).refine(
+  (t) => !(t.standalone === true && !t.renderer?.result?.template),
+  { message: 'standalone tools require renderer.result.template — the template HTML registers the handler and renders the result UI' },
+)
 
 const TOOL_NAME_RE = /^[a-z0-9_]+$/
 
@@ -93,7 +99,6 @@ export const manifestSchema = z.object({
     z.string().min(1).regex(/^[a-z0-9_-]+$/, { message: 'Template name must be lowercase alphanumeric with hyphens or underscores' }),
     z.string().min(1),
   ).optional(),
-  headlessEntry: z.string().min(1).optional(),
 }).refine(
   (m) => {
     if (!m.tools || m.tools.length === 0) return true
@@ -120,14 +125,6 @@ export const manifestSchema = z.object({
     return true
   },
   { message: 'renderer.result.template must reference a key in manifest.templates' },
-).refine(
-  (m) => {
-    if (!m.tools) return true
-    const hasHeadlessTool = m.tools.some((t) => t.headless === true)
-    if (hasHeadlessTool && !m.headlessEntry) return false
-    return true
-  },
-  { message: 'manifest.headlessEntry is required when any tool declares headless=true' },
 )
 
 export type ManifestParseResult =

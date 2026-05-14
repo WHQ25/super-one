@@ -100,6 +100,9 @@ function createSuperoneApi(transport, version, opts) {
     version: version || '0.0.0',
     tools: {
       handle(name, callback) { toolHandlers.set(name, callback) },
+      // Exposed so the standalone bridge can do its own callId-filtered dispatch
+      // by reading the same handler registry that .handle() populates.
+      _handlers: toolHandlers,
     },
     db: {
       query(sql, params) {
@@ -142,6 +145,10 @@ function createSuperoneApi(transport, version, opts) {
           if (idx >= 0) cur.splice(idx, 1)
           if (cur.length === 0) peerListenersByEvent.delete(event)
         }
+      },
+      emit(event, payload) {
+        if (typeof event !== 'string') return
+        transport.send('miniapp-peer-emit', { event: event, payload: payload })
       },
     },
     fs: {

@@ -365,6 +365,14 @@ export interface ChatStore {
   cancelToolIntercept: (callId: string, reason?: string) => void
   clearToolIntercepts: (callIds: string[]) => void
 
+  // Standalone tool calls — keyed by SDK toolUseId, value contains the MCP-generated callId
+  // (the ID main awaits in its pending map). Router maps incoming MINIAPP_TOOL_CALL IPC to
+  // the matching tool_use block in chat by (fullToolName, JSON.stringify(args)). Block
+  // subscribes by toolUseId and uses entry.callId for both dispatch into iframe and reply
+  // back to main via window.miniapp.toolResult.
+  _pendingStandaloneCalls: Record<string, { callId: string; appId: string; projectDir: string; toolName: string; arguments: Record<string, unknown> }>
+  mapStandaloneCall: (toolUseId: string, payload: { callId: string; appId: string; projectDir: string; toolName: string; arguments: Record<string, unknown> }) => void
+
   // Global UI state (not per-session)
   isOpen: boolean
   corner: Corner
@@ -2557,6 +2565,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     return { toolRenderers: next }
   }),
 
+  _pendingStandaloneCalls: {},
+
+  mapStandaloneCall: (toolUseId, payload) => set((s) => ({
+    _pendingStandaloneCalls: { ...s._pendingStandaloneCalls, [toolUseId]: payload },
+  })),
+
   isOpen: false,
   corner: 'br',
   harnessResources: { claude: null, codex: null },
@@ -3467,7 +3481,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const miniAppAuthorizations = mentions
       .filter((m) => m.kind === 'miniapp')
       .map((m) => m.value)
-    console.log('[DEBUG sendMessage] mentions=', JSON.stringify(mentions), 'miniAppAuthorizations=', miniAppAuthorizations)
     if (miniAppAuthorizations.length > 0) {
       const targetSid = project._activeSessionId
       if (targetSid) {
@@ -4476,17 +4489,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   addMention: (mention) => {
     const { activeProject } = get()
-    console.log('[DEBUG addMention] called with', mention, 'activeProject=', activeProject)
-    if (!activeProject) { console.warn('[DEBUG addMention] early return: no activeProject'); return }
+    if (!activeProject) return
     set((s) => updateActivePerSession(s,(sess) => {
-      console.log('[DEBUG addMention] inside set, sess.mentions=', sess.mentions, 'will add=', mention)
       if (sess.mentions.some((m) => m.value === mention.value)) return {}
       return { mentions: [...sess.mentions, mention] }
     }))
-    const after = get().projectSessions[activeProject]
-    const sid = after?._activeSessionId
-    const newMentions = sid ? after?._sessions?.[sid]?.mentions : null
-    console.log('[DEBUG addMention] AFTER set, mentions=', newMentions)
   },
 
   removeMention: (value) => {

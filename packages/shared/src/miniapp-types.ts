@@ -44,7 +44,6 @@ export interface MiniAppManifest {
   tools?: MiniAppToolDefinition[]
   runningText?: string
   templates?: Record<string, string>
-  headlessEntry?: string
 }
 
 export interface MiniAppToolInterceptRenderer {
@@ -95,7 +94,7 @@ export interface MiniAppToolDefinition {
   groupable?: boolean
   inputSchema: Record<string, unknown>
   renderer?: MiniAppToolRenderer
-  headless?: boolean
+  standalone?: boolean
   timeoutMs?: number
 }
 
@@ -294,6 +293,10 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-context-consumed'
   | 'miniapp-media-started'
   | 'miniapp-media-track-ended'
+  | 'miniapp-peer-emit'
+  | 'miniapp-peer-event'
+  | 'miniapp-standalone-call'
+  | 'miniapp-standalone-cached-result'
 
 export const MiniAppToolBridgeMsg = {
   SUBMIT: 'miniapp-tool-submit',
@@ -312,4 +315,17 @@ export function buildToolRendererUrl(
   const flag = phase === 'intercept' ? '_toolIntercept' : '_toolResult'
   const encodedData = encodeURIComponent(JSON.stringify(data ?? null))
   return `superone-app://${host}/${templatePath}?${flag}=1&_toolCallId=${encodeURIComponent(callId)}&_toolName=${encodeURIComponent(toolName)}&_toolData=${encodedData}`
+}
+
+export function buildStandaloneToolUrl(
+  host: string,
+  callId: string,
+  toolName: string,
+  templatePath: string,
+): string {
+  const params = new URLSearchParams()
+  params.set('_standalone', '1')
+  params.set('_toolCallId', callId)
+  params.set('_toolName', toolName)
+  return `superone-app://${host}/${templatePath}?${params.toString()}`
 }

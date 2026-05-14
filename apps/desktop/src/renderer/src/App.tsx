@@ -24,6 +24,7 @@ import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useRemoteControl } from '@/hooks/useRemoteControl'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { usePerfSampler } from '@/hooks/usePerfSampler'
+import { useStandaloneToolCallRouter } from '@/hooks/useStandaloneToolCallRouter'
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
 import { useHarnessTheme } from '@/hooks/useHarnessTheme'
@@ -47,6 +48,7 @@ function App(): React.JSX.Element {
   useRemoteControl()
   usePerfSampler()
   useHarnessTheme()
+  useStandaloneToolCallRouter()
   const theme = useTheme()
   const { t } = useTranslation()
   const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode })))

@@ -388,7 +388,6 @@ export function ChatInput() {
           displayName = value.split('/').filter(Boolean).pop() || value
         }
 
-        console.log('[DEBUG handleMentionSelect]', { kind, value, displayName, kindHint })
         addMention({ kind, value, displayName })
 
         ed.chain()

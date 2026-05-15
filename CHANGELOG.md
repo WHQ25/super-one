@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.33.0-alpha] - 2026-05-15
+
+### Added
+
+- **Standalone mini-app tools render as iframes inside the chat tool block.** A mini-app can declare `standalone: true` tools that execute and render entirely inside an iframe placed in the chat message — no panel, no separate UI. The single `renderer.result.template` HTML both registers the handler via `window.superone.tools.handle(...)` and paints the result UI. Calls survive panel close, viewport-scroll unmount (cached replay on re-entry), and out-of-order `miniapp-ready` vs callEntry delivery. Dispatch flows through a new `miniapp.standalone` IPC path with event-trace coverage. Demo: `apps/desktop/examples/miniapp/standalone-demo` ships four tools (`increment`, `read_counter`, `reset`, `show_counter`) so the schema/runtime contract is exercisable out of the box.
+- **Standalone tools can declare `renderer.intercept` for two-phase HITL flows.** Phase 1 renders the intercept iframe inside the chat block for user-refined inputs; once submitted (or cancelled with `onCancel: reject | resolve-empty`), phase 2 takes over as the standalone result iframe. The same `callId` carries through both phases. The `confirm_increment` demo tool walks the pattern end-to-end.
+- **Mini-app mention chips in chat input.** `@`-mention any installed mini-app from the chat input; the chip survives copy/paste via invisible zero-width markers, and the message renderer round-trips it back to a chip on receipt.
+
+### Fixed
+
+- **`session_rename` is now always loaded so the model actually sees it.** The MCP server used the deprecated `server.tool()` helper, which the SDK deferred behind `ToolSearch`, so the model never saw the rename tool unless it explicitly searched for it. Switched to `server.registerTool()` with `_meta['anthropic/alwaysLoad']: true`; the agent system prompt was trimmed in tandem since the tool's own description now carries the trigger rules.
+- **Standalone tool blocks render reliably on first paint after window reopen.** `ToolBlock` and `ChatMessage` read `useMiniAppStore.getState().apps` instead of subscribing, so when `AppSidebar`'s async `fetchApps` landed after the chat first rendered, both memoized components missed the apps list and fell back to the generic tool block. Switched to a Zustand selector subscription so the standalone branch picks up the apps load mid-mount; pinned with a regression test that flips the store between renders.
+- **Panel-mode mini-apps no longer leak over a fullscreened canvas mini-app.** The activity panel collapsed to width 0 but its inner div kept `width: panelWidth`, so panel-mode apps still reported a valid `getBoundingClientRect` and `MiniAppHostLayer` rendered them on top of the fullscreened canvas app. Visibility now gates on matching `(layoutMode, presentation)`.
+
+### Tests
+
+- **Regression test for `StandaloneToolBlock` dispatch lifecycle.** Pins the contract that the iframe call resolves regardless of whether `miniapp-ready` or `callEntry` arrives first, and that the cached-result replay path runs when the block re-enters the viewport. Adds an `IntersectionObserver` mock to `vitest.setup.ts` so future viewport-observation tests can run under jsdom.
+
 ## [0.32.1-alpha] - 2026-05-13
 
 ### Added

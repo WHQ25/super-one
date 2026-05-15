@@ -2677,20 +2677,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (!targetProjectPath) return next
         const project = s.projectSessions[targetProjectPath]
         if (!project) return next
-        let changed = false
+        let sessionsChanged = false
         const sessions = project.sessions.map((entry) => {
           if (entry.sessionId === sessionId && entry.title !== title) {
-            changed = true
+            sessionsChanged = true
             return { ...entry, title }
           }
           return entry
         })
-        if (!changed) return next
+        const perSession = project._sessions[sessionId]
+        const perSessionChanged = !!perSession && perSession._title !== title
+        if (!sessionsChanged && !perSessionChanged) return next
         return {
           ...next,
           projectSessions: {
             ...s.projectSessions,
-            [targetProjectPath]: { ...project, sessions },
+            [targetProjectPath]: {
+              ...project,
+              ...(sessionsChanged ? { sessions } : {}),
+              ...(perSessionChanged
+                ? { _sessions: { ...project._sessions, [sessionId]: { ...perSession, _title: title } } }
+                : {}),
+            },
           },
         }
       })

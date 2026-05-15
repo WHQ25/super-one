@@ -766,8 +766,9 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       const idx = session.queuedMessages.findIndex((m) => m.id === event.clientMessageId)
       if (idx === -1) return {}
       const consumed = session.queuedMessages[idx]
+      const alreadyInTranscript = session.messages.some((m) => m.id === consumed.id)
       return {
-        messages: [...session.messages, consumed],
+        ...(alreadyInTranscript ? {} : { messages: [...session.messages, consumed] }),
         queuedMessages: session.queuedMessages.filter((_, i) => i !== idx),
         awaitingAssistantReply: true,
         lastEventAt: Date.now(),

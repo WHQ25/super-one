@@ -177,7 +177,10 @@ Behavior: groups of >1 call are collapsed by default; the currently streaming ca
 | `showResult` | boolean | Allow expanding to view full result. |
 | `groupable` | boolean | Allow consecutive calls to auto-group. |
 | `inputSchema` | object (required) | JSON Schema for tool parameters. |
-| `renderer.intercept` | object | Human-in-the-loop: render a template in the chat tool block before the call reaches the mini-app. See below. |
+| `standalone` | boolean | Render the tool call as a self-contained iframe inside the chat tool block. The `renderer.result.template` HTML registers the handler **and** renders the UI, so the call works even when the app's main panel is closed. See "Standalone Tools" below. |
+| `timeoutMs` | number | Per-tool timeout for the handler in milliseconds (positive integer). Falls back to the global 60s timeout when unset. |
+| `renderer.intercept` | object | Human-in-the-loop: render a template in the chat tool block before the call reaches the handler. See below. |
+| `renderer.result` | object | Custom inline result UI rendered after the handler returns. **Required** when `standalone: true` (the template doubles as the handler host). See "Result Renderer" below. |
 
 ## Human-in-the-Loop Tool Calls (`renderer.intercept`)
 
@@ -257,6 +260,7 @@ Notes:
 - The same `templates` map is shared with `ui.showPopover`; a template may serve both use cases by inspecting URL parameters (`_toolIntercept`, `_toolResult`, `_popover`).
 - Default timeout follows the global tool-call timeout (60s). Tune per-tool via `timeoutMs`, or set to `0` to wait indefinitely.
 - When the agent is interrupted, all pending intercept prompts are rejected and collapsed automatically.
+- `intercept` may be combined with `standalone: true`. The intercept template renders first (phase 1); on `submit`, the merged input is dispatched to the standalone result iframe's handler (phase 2). See "Standalone Tools" below for the full lifecycle.
 
 ## Result Renderer (`renderer.result`)
 
@@ -308,3 +312,112 @@ Tips:
 - Keep result renderers **read-only** — buttons that would mutate state should trigger a new agent prompt via `superone.agent.sendPrompt()` rather than reusing the same tool call.
 - `resultSummaryField` still works: pick a short string from the result and it will show in the collapsed header, making the tool block informative even before the user expands it.
 - Combining `renderer.intercept` and `renderer.result` on the same tool gives you full control of both phase 2 (user input) and phase 5 (result display).
+
+## Standalone Tools (`standalone`)
+
+Standalone tools turn the chat tool block itself into the runtime: one iframe per call, loaded from `renderer.result.template`, that **both registers the handler and renders the result UI**. The app's main panel does not need to be open — the chat-block iframe is the runtime.
+
+Use standalone when:
+
+- The tool produces a focused, visual result that belongs **inline in the chat** (a counter card, a chart, a receipt, a diff preview), not in a separate panel.
+- The agent may call the tool while the panel is closed and you still want it to work without forcing the panel open.
+- The tool's logic is small enough to live in a single self-contained template HTML (state lives in `superone.kv` or external storage, not in DOM held by the panel).
+
+Use a panel-bound tool (no `standalone`) when the handler mutates UI state already living in the open panel, or when several tools share in-memory state held by the panel's main HTML.
+
+### Declaring a Standalone Tool
+
+```json
+{
+  "toolSlug": "demo",
+  "templates": {
+    "increment-result": "increment-result.html"
+  },
+  "tools": [
+    {
+      "name": "increment",
+      "description": "Increment the counter and render a +N card.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "by": { "type": "number", "description": "Amount to add (default 1)" }
+        }
+      },
+      "standalone": true,
+      "renderer": { "result": { "template": "increment-result" } }
+    }
+  ]
+}
+```
+
+Schema rules:
+
+- `standalone: true` **requires** `renderer.result.template` — without it the call has nowhere to register a handler. The manifest fails to load otherwise.
+- `standalone` is compatible with `renderer.intercept` (see lifecycle below).
+- `renderer.result.autoExpand` is implied for standalone: the iframe is always visible (the tool block IS the iframe), there is no separate collapsed/expanded chrome.
+
+### Standalone Template Contract
+
+The result template registers the handler **and** renders the UI. Both halves live in the same HTML — when the iframe mounts, `tools.handle(...)` runs in time to receive the dispatched call:
+
+```js
+// increment-result.html
+superone.tools.handle('increment', async ({ by }) => {
+  const amount = typeof by === 'number' ? by : 1
+  const current = (await superone.kv.get('counter')) ?? 0
+  const next = current + amount
+  await superone.kv.set('counter', next)
+  return { ok: true, previous: current, value: next }
+})
+
+function render(detail) {
+  if (detail.error) { /* show error */ return }
+  const r = detail.result
+  document.getElementById('card').textContent = `${r.previous} → ${r.value}`
+}
+
+// Live updates while the call is in flight:
+window.addEventListener('superone:tool-result', (ev) => render(ev.detail))
+
+// Replay path: if the iframe was unmounted and remounted (scrolled offscreen),
+// the cached result is exposed synchronously on superone.tool.
+const t = window.superone && window.superone.tool
+if (t && (t.result !== null || t.error !== null)) render({ result: t.result, error: t.error })
+```
+
+Two ways to get the result into the UI:
+
+1. **Live**: listen for `superone:tool-result`. Fired once when the handler returns (or throws). Use this for the freshly-dispatched call.
+2. **Replay**: on remount, read `superone.tool.result` / `superone.tool.error` synchronously. SuperOne caches the result so scrolling back to an older tool block re-renders without re-running the handler.
+
+The handler is dispatched exactly once per `toolUseId`. Remounting the iframe (e.g. after scrolling) does not re-dispatch — it only triggers the replay path.
+
+Inside a standalone iframe, `window.superone.tool` exposes:
+
+| Field | Description |
+|-------|-------------|
+| `phase` | Always `'standalone'`. |
+| `callId` | Internal identifier. |
+| `toolName` | The tool name being dispatched. |
+| `args` | The merged input passed to the handler (set once dispatch begins). |
+| `result` | The handler's return value, or `null` until it resolves. |
+| `error` | Error message, or `null` if no error. |
+
+Note: `superone.tool.data` and `superone.tool.close()` (from non-standalone result templates) are **not** exposed here. The iframe IS the tool block — there is no separate "closed" state.
+
+### Lifecycle
+
+| Phase | Without intercept | With `intercept` + `standalone` |
+|-------|-------------------|----------------------------------|
+| 1. Agent emits tool_use | — | Intercept iframe mounts in the chat block; user submits/cancels. |
+| 2. Iframe mounts | Standalone result iframe mounts; `tools.handle` registers. | Intercept iframe collapses; standalone result iframe mounts; `tools.handle` registers. |
+| 3. Dispatch | SuperOne dispatches the agent's input to the handler. | SuperOne dispatches the **merged** (agent + user) input to the handler. |
+| 4. Render | Handler returns → `superone:tool-result` fires → UI updates. | Same as left. |
+| 5. Replay | On remount, read `superone.tool.result` / `.error` synchronously. | Same as left. |
+
+### Notes
+
+- Standalone iframes share the same `templates` map as `ui.showPopover`, `renderer.intercept`, and (non-standalone) `renderer.result`. The runtime sets a URL flag per mode (`_standalone=1`, `_toolIntercept=1`, `_toolResult=1`, `_popover=<name>`) so a template can detect its mode if reused across surfaces.
+- Multiple standalone calls in the same chat each get their own iframe instance — no shared module state. Persist with `superone.kv`, `superone.fs`, or the host system.
+- The iframe is unmounted when its tool block scrolls far enough out of the viewport and re-mounted when it comes back. On remount the handler does **not** re-dispatch — only the replay path fires. Keep heavy work inside the handler, not at module top-level, so re-mounts stay cheap.
+- Standalone tools still respect `timeoutMs` on the handler side; an unfinished handler past the timeout returns an error to the agent and triggers the error branch in your template.

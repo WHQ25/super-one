@@ -23,6 +23,10 @@ Start with the scaffold from `miniapp_dev_setup` (or register an existing source
 | `fullscreen` | `true` to also offer a canvas full-screen entry. Default `false` (panel only). |
 | `preferWidth` | Preferred activity panel width in pixels (360–2000). Applied when the app is opened, if there's enough room; otherwise clamped to fit. The user can resize freely afterwards — preferWidth only sets the initial size. |
 | `description` | Short description shown in app catalog |
+| `toolSlug` | Namespace prefix for tools. Required when `tools[]` is non-empty. Lowercase alphanumeric + underscores. See `tools` topic. |
+| `tools` | Array of agent-facing tool definitions. See `tools` topic. |
+| `templates` | Map of template name → relative HTML path. Required for tools using `renderer.intercept`, `renderer.result`, or `standalone: true`; also referenced by `ui.showPopover`. Names: lowercase alphanumeric with hyphens/underscores. |
+| `permissions` | File system, network, media, storage permissions. See `permissions` topic. |
 
 ### Where the App Opens
 

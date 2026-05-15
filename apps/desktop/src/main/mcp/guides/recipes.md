@@ -118,3 +118,57 @@ superone.tools.handle('load_file', function(args) {
   })
 })
 ```
+
+## Standalone Tool (Chat-Inline Iframe)
+
+When a tool's output is a focused inline card (counter, receipt, diff preview) and you don't want the user to keep the panel open, declare `standalone: true` with a `renderer.result.template`. One HTML file registers the handler **and** renders the UI — see the `tools` topic for the full contract.
+
+```json
+{
+  "toolSlug": "demo",
+  "templates": {
+    "count-card": "count-card.html"
+  },
+  "tools": [
+    {
+      "name": "bump",
+      "description": "Increment a persistent counter and show the new value as a card",
+      "runningText": "Bumping…",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "by": { "type": "number" } }
+      },
+      "standalone": true,
+      "renderer": { "result": { "template": "count-card" } }
+    }
+  ]
+}
+```
+
+```html
+<!-- count-card.html -->
+<div id="card">…</div>
+<script type="module">
+  superone.tools.handle('bump', async ({ by }) => {
+    const amount = typeof by === 'number' ? by : 1
+    const current = (await superone.kv.get('counter')) ?? 0
+    const next = current + amount
+    await superone.kv.set('counter', next)
+    return { previous: current, value: next }
+  })
+
+  function render({ result, error }) {
+    const card = document.getElementById('card')
+    if (error) { card.textContent = String(error); return }
+    card.textContent = `${result.previous} → ${result.value}`
+  }
+
+  // Live: handler just returned
+  window.addEventListener('superone:tool-result', (ev) => render(ev.detail))
+  // Replay: iframe re-mounted (scroll), result already cached
+  const t = window.superone.tool
+  if (t.result !== null || t.error !== null) render({ result: t.result, error: t.error })
+</script>
+```
+
+Persist state with `superone.kv` (or `superone.fs`) — each call creates a fresh iframe, so in-memory variables don't survive between calls. Pair with `renderer.intercept` to add a confirmation step before the handler runs.

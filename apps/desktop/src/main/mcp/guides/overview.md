@@ -2,7 +2,7 @@
 
 A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe and can be controlled by any AI agent through MCP tools.
 
-Every app opens as a tab in the activity panel by default. Set `fullscreen: true` in the manifest if it should also be openable in the canvas full-screen view (the user can switch between panel and canvas at runtime). Apps can declare `tools[]` so the agent can drive them, and any tool can attach a custom result renderer (`tools[].renderer.result`) to render its output inline in the chat — read the `tools` topic for both. Read the `manifest` topic for the full list of manifest fields and panel layout guidance.
+Every app opens as a tab in the activity panel by default. Set `fullscreen: true` in the manifest if it should also be openable in the canvas full-screen view (the user can switch between panel and canvas at runtime). Apps can declare `tools[]` so the agent can drive them, and any tool can attach a custom result renderer (`tools[].renderer.result`) to render its output inline in the chat — read the `tools` topic for both. Tools come in two flavors: **panel-bound** tools whose handler lives in the open panel, and **standalone** tools (`tools[].standalone: true`) whose handler and UI both live in the chat-block iframe (no panel needed). Read the `manifest` topic for the full list of manifest fields and panel layout guidance.
 
 ## Architecture
 

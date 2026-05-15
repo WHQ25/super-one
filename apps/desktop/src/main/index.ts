@@ -22,6 +22,7 @@ import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregister
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
+import { resolveProbeCwd } from './agent/probe-cwd'
 import { fixPath } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
@@ -1696,11 +1697,12 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ClaudeResources> => {
-    log.info('[CONNECT_CLAUDE] cwd:', app.getPath('userData'))
+    const probeCwd = resolveProbeCwd()
+    log.info('[CONNECT_CLAUDE] cwd:', probeCwd)
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
     const q = query({
       prompt: 'hi',
-      options: { cwd: app.getPath('userData'), pathToClaudeCodeExecutable: resolveSdkClaudeBinary(), maxTurns: 0, permissionMode: 'default', persistSession: false },
+      options: { cwd: probeCwd, pathToClaudeCodeExecutable: resolveSdkClaudeBinary(), maxTurns: 0, permissionMode: 'default', persistSession: false },
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')

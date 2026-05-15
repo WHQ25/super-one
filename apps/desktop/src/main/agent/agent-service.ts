@@ -9,6 +9,7 @@ import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
 import { resolveSdkClaudeBinary } from './claude-binary'
 import { makeClaudeSpawn } from './claude-spawn'
+import { resolveProbeCwd } from './probe-cwd'
 import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '@superone/shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
@@ -1839,15 +1840,16 @@ export class AgentService {
       const TEST_TIMEOUT_MS = 15000
       try {
         const { query: testQuery } = await import('@anthropic-ai/claude-agent-sdk')
+        const probeCwd = resolveProbeCwd()
         trace('providers.test', 'options', {
-          cwd: process.cwd(),
+          cwd: probeCwd,
           envKeys: Object.keys(env),
         })
         const q = testQuery({
           prompt: 'Reply with "ok" only.',
           options: {
             env,
-            cwd: process.cwd(),
+            cwd: probeCwd,
             pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
             spawnClaudeCodeProcess: makeClaudeSpawn(),
             maxTurns: 1,

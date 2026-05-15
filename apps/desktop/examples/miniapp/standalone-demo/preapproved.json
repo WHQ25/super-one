@@ -1,5 +1,6 @@
 {
   "tools": [
-    "increment"
+    "increment",
+    "confirm_increment"
   ]
 }

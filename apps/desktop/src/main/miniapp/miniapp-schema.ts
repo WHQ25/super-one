@@ -72,9 +72,6 @@ const toolDefinitionSchema = z.object({
   standalone: z.boolean().optional(),
   timeoutMs: z.number().int().positive().optional(),
 }).refine(
-  (t) => !(t.standalone === true && t.renderer?.intercept !== undefined),
-  { message: 'standalone tools cannot use renderer.intercept (the iframe IS the renderer)' },
-).refine(
   (t) => !(t.standalone === true && !t.renderer?.result?.template),
   { message: 'standalone tools require renderer.result.template — the template HTML registers the handler and renders the result UI' },
 )

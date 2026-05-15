@@ -585,8 +585,39 @@ export async function executeStandaloneTool(
     throw new Error(`App "${appId}" is not authorized in session "${sessionId}". This tool is no longer available.`)
   }
   const projectDir = defsEntry.projectDir
+  const toolDef = defsEntry.tools.find((t) => t.name === toolName)
+  const intercept = toolDef?.renderer?.intercept
   const callId = randomUUID()
-  return sendToolCall(callId, sessionId, projectDir, appId, toolName, args)
+
+  let finalInput = args
+  if (intercept) {
+    const templates = appTemplates.get(makeProjectAppKey(projectDir, appId))
+    const templatePath = templates?.[intercept.template]
+    if (!templatePath) {
+      throw new Error(`Template "${intercept.template}" not found in manifest.templates`)
+    }
+    try {
+      const timeoutMs = intercept.timeoutMs ?? TOOL_CALL_TIMEOUT_MS
+      const userInput = await openInterceptRenderer({
+        callId,
+        appId,
+        projectDir,
+        toolSlug: defsEntry.toolSlug,
+        toolName,
+        agentInput: args,
+        template: intercept.template,
+        templatePath,
+      }, sessionId, timeoutMs)
+      finalInput = mergeInterceptInput(args, userInput, intercept.inputMerge ?? 'shallow-merge')
+    } catch (err) {
+      if (intercept.onCancel === 'resolve-empty') {
+        return { cancelled: true, reason: err instanceof Error ? err.message : String(err) }
+      }
+      throw err
+    }
+  }
+
+  return sendToolCall(callId, sessionId, projectDir, appId, toolName, finalInput)
 }
 
 export async function executeAppTool(

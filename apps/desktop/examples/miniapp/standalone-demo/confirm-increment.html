@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Confirm increment</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 14px 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    color: #1d1d1f;
+    background: linear-gradient(135deg, rgba(217,119,6,0.04) 0%, rgba(217,119,6,0.10) 100%);
+    border-radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #f0f0f0; background: linear-gradient(135deg, rgba(217,119,6,0.08) 0%, rgba(217,119,6,0.16) 100%); }
+  }
+  header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px;
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(217,119,6,0.95);
+    background: rgba(217,119,6,0.15);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .title { font-weight: 500; }
+  .agent {
+    font-size: 11px;
+    color: rgba(127,127,127,0.85);
+    margin-bottom: 10px;
+  }
+  .row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px;
+  }
+  label {
+    font-size: 12px;
+    color: rgba(127,127,127,0.95);
+  }
+  input[type="number"] {
+    width: 80px;
+    padding: 4px 6px;
+    border: 1px solid rgba(127,127,127,0.3);
+    border-radius: 4px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    background: rgba(255,255,255,0.6);
+    color: inherit;
+  }
+  @media (prefers-color-scheme: dark) {
+    input[type="number"] { background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.2); }
+  }
+  .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  button {
+    padding: 5px 12px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .ok {
+    background: rgb(217,119,6); color: white;
+  }
+  .cancel {
+    background: transparent;
+    border-color: rgba(127,127,127,0.3);
+    color: inherit;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <span class="badge">Confirm</span>
+    <span class="title" id="title">Increment counter</span>
+  </header>
+  <div class="agent" id="agent"></div>
+  <div class="row">
+    <label for="by">Amount</label>
+    <input type="number" id="by" min="1" step="1" />
+  </div>
+  <div class="actions">
+    <button type="button" class="cancel" id="btn-cancel">Skip</button>
+    <button type="button" class="ok" id="btn-ok">Run</button>
+  </div>
+
+  <script type="module">
+    const proposed = (superone.tool.data && typeof superone.tool.data.by === 'number') ? superone.tool.data.by : 1
+    const titleEl = document.getElementById('title')
+    const agentEl = document.getElementById('agent')
+    const input = document.getElementById('by')
+    input.value = String(proposed)
+    agentEl.textContent = `Agent proposed +${proposed}. Adjust or confirm.`
+    titleEl.textContent = `Increment by ${proposed}?`
+
+    document.getElementById('btn-ok').addEventListener('click', () => {
+      const v = Number(input.value)
+      superone.tool.submit({ by: Number.isFinite(v) && v > 0 ? v : proposed })
+    })
+    document.getElementById('btn-cancel').addEventListener('click', () => {
+      superone.tool.cancel('user_skipped')
+    })
+
+    requestAnimationFrame(() => {
+      const h = document.documentElement.scrollHeight
+      if (window.parent) window.parent.postMessage({ type: 'miniapp-resize', height: h }, '*')
+    })
+  </script>
+</body>
+</html>

@@ -483,15 +483,40 @@ describe('parseManifest - standalone tools', () => {
     expect(result.ok).toBe(false)
   })
 
-  it('rejects standalone tool that also declares renderer.intercept', () => {
+  it('accepts standalone tool with both renderer.intercept and renderer.result', () => {
+    const result = parseManifest({
+      appId: 'hitl',
+      name: 'HITL',
+      toolSlug: 'hitl',
+      templates: { 'confirm': 'confirm.html', 'card': 'card.html' },
+      tools: [{
+        name: 'confirm_increment',
+        description: 'standalone tool that asks the user to confirm before running',
+        inputSchema: { type: 'object' },
+        standalone: true,
+        renderer: {
+          intercept: { template: 'confirm' },
+          result: { template: 'card' },
+        },
+      }],
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      const tool = result.manifest.tools?.[0]
+      expect(tool?.renderer?.intercept?.template).toBe('confirm')
+      expect(tool?.renderer?.result?.template).toBe('card')
+    }
+  })
+
+  it('rejects standalone tool that declares renderer.intercept but no renderer.result', () => {
     const result = parseManifest({
       appId: 'bad',
       name: 'Bad',
       toolSlug: 'bad',
       templates: { 'pop': 'pop.html' },
       tools: [{
-        name: 'conflict',
-        description: 'cannot be both standalone and intercept',
+        name: 'incomplete',
+        description: 'standalone still requires result.template even when intercept is set',
         inputSchema: { type: 'object' },
         standalone: true,
         renderer: { intercept: { template: 'pop' } },
@@ -499,7 +524,7 @@ describe('parseManifest - standalone tools', () => {
     })
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.errors.some((e) => /standalone/i.test(e) && /intercept/i.test(e))).toBe(true)
+      expect(result.errors.some((e) => /standalone/i.test(e) && /template/i.test(e))).toBe(true)
     }
   })
 

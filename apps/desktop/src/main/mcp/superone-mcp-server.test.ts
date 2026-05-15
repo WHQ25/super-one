@@ -245,6 +245,104 @@ describe('standalone tool dispatch', () => {
     const result = await pending
     expect(result.content[0].text).toBe('[Error] iframe crashed')
   })
+
+  describe('standalone + intercept', () => {
+    function makeStandaloneInterceptTool(
+      name: string,
+      onCancel: 'reject' | 'resolve-empty' = 'reject',
+    ): MiniAppToolDefinition {
+      return {
+        name,
+        description: `Tool ${name}`,
+        inputSchema: { type: 'object', properties: {} },
+        standalone: true,
+        renderer: {
+          intercept: { template: 'confirm', onCancel },
+          result: { template: 'card' },
+        },
+      }
+    }
+
+    it('opens intercept renderer first, then dispatches MINIAPP_TOOL_CALL with merged args', async () => {
+      registerAppTemplates(PROJ_A, 'hitl-app', { confirm: 'confirm.html', card: 'card.html' })
+      registerAppTools(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('confirm_increment')])
+      const handler = getLastHandler('hitl__confirm_increment')
+
+      const pending = handler({ by: 1 })
+      await new Promise((r) => setImmediate(r))
+
+      const intercept = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)
+      expect(intercept).toBeTruthy()
+      const interceptReq = intercept!.args[0] as MiniAppToolInterceptOpenRequest
+      expect(interceptReq.appId).toBe('hitl-app')
+      expect(interceptReq.toolName).toBe('confirm_increment')
+      expect(interceptReq.template).toBe('confirm')
+      expect(interceptReq.templatePath).toBe('confirm.html')
+      expect(interceptReq.agentInput).toEqual({ by: 1 })
+
+      // No MINIAPP_TOOL_CALL yet — we're still gated on user input
+      expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)).toBeUndefined()
+
+      submitToolIntercept(interceptReq.callId, { by: 5 })
+      await new Promise((r) => setImmediate(r))
+
+      const toolCall = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
+      expect(toolCall).toBeTruthy()
+      const callReq = toolCall!.args[0] as MiniAppToolCallRequest
+      // shallow-merge default: userInput overrides agentInput
+      expect(callReq.arguments).toEqual({ by: 5 })
+      // Same callId across intercept and the resulting tool call
+      expect(callReq.callId).toBe(interceptReq.callId)
+
+      resolveToolCall(callReq.callId, { ok: true, value: 5 })
+      const result = await pending
+      expect(JSON.parse(result.content[0].text)).toEqual({ ok: true, value: 5 })
+    })
+
+    it('honors onCancel: reject — never dispatches MINIAPP_TOOL_CALL and surfaces error', async () => {
+      registerAppTemplates(PROJ_A, 'hitl-app', { confirm: 'confirm.html', card: 'card.html' })
+      registerAppTools(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('strict_tool', 'reject')])
+      const handler = getLastHandler('hitl__strict_tool')
+
+      const pending = handler({})
+      await new Promise((r) => setImmediate(r))
+
+      const interceptReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as MiniAppToolInterceptOpenRequest
+      cancelToolIntercept(interceptReq.callId, 'user said no')
+
+      const result = await pending
+      expect(result.content[0].text).toBe('[Error] user said no')
+      expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)).toBeUndefined()
+    })
+
+    it('honors onCancel: resolve-empty — returns { cancelled: true } without dispatching MINIAPP_TOOL_CALL', async () => {
+      registerAppTemplates(PROJ_A, 'hitl-app', { confirm: 'confirm.html', card: 'card.html' })
+      registerAppTools(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('graceful_tool', 'resolve-empty')])
+      const handler = getLastHandler('hitl__graceful_tool')
+
+      const pending = handler({})
+      await new Promise((r) => setImmediate(r))
+
+      const interceptReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as MiniAppToolInterceptOpenRequest
+      cancelToolIntercept(interceptReq.callId, 'dismissed')
+
+      const result = await pending
+      const parsed = JSON.parse(result.content[0].text)
+      expect(parsed).toEqual({ cancelled: true, reason: 'dismissed' })
+      expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)).toBeUndefined()
+    })
+
+    it('throws when intercept.template is not registered in manifest.templates', async () => {
+      // Use a fresh appId so leftover registerAppTemplates from prior tests cannot satisfy the lookup
+      registerAppTools(PROJ_A, PROJ_A, 'no-tpl-app', 'notpl', [makeStandaloneInterceptTool('missing_template')])
+      const handler = getLastHandler('notpl__missing_template')
+
+      const result = await handler({})
+      expect(result.content[0].text).toMatch(/Template "confirm" not found/)
+      expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)).toBeUndefined()
+      expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)).toBeUndefined()
+    })
+  })
 })
 
 describe('multi-project tool routing', () => {

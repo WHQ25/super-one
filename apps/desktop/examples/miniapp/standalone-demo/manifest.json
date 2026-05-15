@@ -9,7 +9,8 @@
   "toolSlug": "demo",
   "templates": {
     "increment-result": "increment-result.html",
-    "simple-result": "simple-result.html"
+    "simple-result": "simple-result.html",
+    "confirm-increment": "confirm-increment.html"
   },
   "tools": [
     {
@@ -24,6 +25,22 @@
       },
       "standalone": true,
       "renderer": { "result": { "template": "increment-result" } }
+    },
+    {
+      "name": "confirm_increment",
+      "description": "Increment the counter, but ask the user to confirm the amount first. Demonstrates standalone + intercept.",
+      "runningText": "Waiting for confirmation…",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "by": { "type": "number", "description": "Proposed amount to add" }
+        }
+      },
+      "standalone": true,
+      "renderer": {
+        "intercept": { "template": "confirm-increment", "onCancel": "resolve-empty" },
+        "result": { "template": "increment-result" }
+      }
     },
     {
       "name": "read_counter",

@@ -442,9 +442,21 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         try { resultSummary = String(JSON.parse(result)[toolDef.resultSummaryField] ?? '') } catch {}
       }
 
-      // Standalone tools render their iframe as the entire chat block — no folding chrome.
-      // The iframe both executes the author's handler AND renders the result UI.
-      // Schema guarantees renderer.result.template exists for standalone tools.
+      if (toolInterceptState) {
+        return (
+          <div className="tool-node my-0.5 rounded bg-muted/50 p-2">
+            <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs text-muted-foreground">
+              {canvasApp ? <MiniAppIcon appId={canvasApp.id} className="size-3.5 shrink-0" /> : <ToolIcon icon="plug" className="size-3 shrink-0" />}
+              <span>{appName}</span>
+              <span className="text-muted-foreground/70">·</span>
+              <span>{toolReadableName}</span>
+              <span className="text-muted-foreground/70">· needs your input</span>
+            </div>
+            <ToolRendererFrame phase="intercept" state={toolInterceptState} />
+          </div>
+        )
+      }
+
       if (toolDef?.standalone && canvasApp) {
         const tplKey = toolDef.renderer?.result?.template
         const tplPath = tplKey ? canvasApp.manifest.templates?.[tplKey] : undefined
@@ -463,21 +475,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
             />
           )
         }
-      }
-
-      if (toolInterceptState) {
-        return (
-          <div className="tool-node my-0.5 rounded bg-muted/50 p-2">
-            <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs text-muted-foreground">
-              {canvasApp ? <MiniAppIcon appId={canvasApp.id} className="size-3.5 shrink-0" /> : <ToolIcon icon="plug" className="size-3 shrink-0" />}
-              <span>{appName}</span>
-              <span className="text-muted-foreground/70">·</span>
-              <span>{toolReadableName}</span>
-              <span className="text-muted-foreground/70">· needs your input</span>
-            </div>
-            <ToolRendererFrame phase="intercept" state={toolInterceptState} />
-          </div>
-        )
       }
 
       const resultRendererCfg = toolDef?.renderer?.result

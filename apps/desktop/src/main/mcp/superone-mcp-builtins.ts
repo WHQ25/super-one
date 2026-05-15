@@ -139,10 +139,18 @@ const UPDATE_SUPERONE_TYPES_DESCRIPTION =
   'Update the superone.d.ts type definitions in an existing mini-app project to the latest version. Use this when the mini-app needs access to newly added SuperOne APIs.'
 
 const RENAME_SESSION_DESCRIPTION =
-  'Rename the current chat session to better reflect its topic so the user can easily find it later in the sidebar. ' +
-  'Call this once near the start of the conversation when the topic becomes clear, and again only if the conversation shifts to a substantially different topic. ' +
-  'Use a concise 4-8 word title without surrounding quotes or trailing punctuation. ' +
-  'Match the title language to the user\'s conversation language. ' +
+  'Rename the current chat session to a concise topic label so the user can find it later in the sidebar.\n\n' +
+  'Default title behavior: until you call this tool, the session title falls back to the first ~100 characters of the user\'s first message. ' +
+  'That fallback is often noisy (greetings, pasted code, long requests) — your job is to replace it with a clean 4-8 word topic summary.\n\n' +
+  'When to call:\n' +
+  '- As soon as the conversation topic is clear (typically after the user\'s first substantive request).\n' +
+  '- When the user approves a plan — that\'s a strong signal of the session\'s real direction; rename to reflect the approved scope.\n' +
+  '- Every ~10 user turns in long conversations: re-check whether the current title still matches what the conversation is actually about, and rename if it has drifted.\n' +
+  '- When the conversation shifts to a substantially different topic.\n\n' +
+  'Title rules:\n' +
+  '- 4-8 words, no surrounding quotes, no trailing punctuation.\n' +
+  '- Match the user\'s conversation language.\n' +
+  '- Prefer "verb + object" over abstract nouns (e.g. "Fix mobile session sync bug" beats "Mobile sync issue").\n\n' +
   'If the tool returns an error containing "user_locked", the user has manually named this session — do NOT call session_rename again for this session.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
@@ -456,11 +464,14 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     updateSuperoneTypes,
   )
 
-  server.tool(
+  server.registerTool(
     'session_rename',
-    RENAME_SESSION_DESCRIPTION,
     {
-      title: z.string().min(1).max(80).describe('A concise 4-8 word title describing the current conversation topic.'),
+      description: RENAME_SESSION_DESCRIPTION,
+      inputSchema: {
+        title: z.string().min(1).max(80).describe('A concise 4-8 word title describing the current conversation topic.'),
+      },
+      _meta: { 'anthropic/alwaysLoad': true },
     },
     (args) => renameSessionTool(args, deps),
   )

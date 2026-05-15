@@ -76,9 +76,6 @@ export function StopButton({ onInterrupt }: StopButtonProps) {
     <Button
       size="icon-xs"
       variant="ghost"
-      onMouseDown={startHold}
-      onMouseUp={endHold}
-      onMouseLeave={endHold}
       onClick={() => {
         if (!triggeredRef.current) onInterrupt()
       }}

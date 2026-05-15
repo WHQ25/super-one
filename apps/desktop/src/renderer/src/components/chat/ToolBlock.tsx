@@ -250,6 +250,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   const stallLevel = useStallLevel(isStreaming)
   const fileToolPath = FILE_PATH_TOOLS.has(toolName) ? String(params.file_path ?? params.notebook_path ?? '') : ''
   const fileToolName = fileToolPath ? fileToolPath.split('/').pop() || '' : ''
+  const miniApps = useMiniAppStore((s) => s.apps)
 
   // Debug mode (dev only): highest priority — show raw input/output for matching tools
   // Set RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate to enable
@@ -380,7 +381,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     if (mcpInfo.mcpToolName === 'miniapp_dev_pack') {
       const appDir = String(params.appDir ?? '')
       const outputDir = String(params.outputDir ?? '')
-      const packApp = appDir ? useMiniAppStore.getState().apps.find((a) => a.distDir === appDir || a.installDir === appDir) : undefined
+      const packApp = appDir ? miniApps.find((a) => a.distDir === appDir || a.installDir === appDir) : undefined
       const s1appName = packApp ? `${packApp.manifest.appId}-${packApp.manifest.version}.s1app` : null
       return (
         <CompactToolRow icon={<ToolIcon icon="package" className="size-3 shrink-0 text-muted-foreground" />}>
@@ -429,7 +430,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     const appToolMatch = mcpInfo.mcpToolName.match(/^(.+?)__(.+)$/)
     if (appToolMatch) {
       const [, mcpSlug, mcpToolNamePart] = appToolMatch
-      const canvasApp = useMiniAppStore.getState().apps.find((a) => (a.manifest.toolSlug ?? a.id) === mcpSlug)
+      const canvasApp = miniApps.find((a) => (a.manifest.toolSlug ?? a.id) === mcpSlug)
       const toolDef = canvasApp?.manifest.tools?.find((t) => t.name === mcpToolNamePart)
       const appName = canvasApp?.manifest.name ?? mcpSlug
       const toolReadableName = toolDef?.displayName ?? mcpToolNamePart.replace(/_/g, ' ')

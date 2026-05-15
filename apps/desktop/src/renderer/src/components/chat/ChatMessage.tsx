@@ -7,6 +7,7 @@ import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
 import { parseToolInput, parseMcpToolName } from './tool-display'
 import { useMiniAppStore } from '@/stores/miniapp'
+import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { SubagentBlock } from './SubagentBlock'
 import { CodexTurnView } from './CodexTurnView'
 import { AttachmentBar } from './AttachmentBar'
@@ -60,7 +61,7 @@ interface GroupResult {
 }
 
 /** Group consecutive collapsible tool blocks and subagent blocks; everything else stays individual. */
-function groupContent(content: ContentBlock[]): GroupResult {
+function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): GroupResult {
   const toolNameMap = new Map<string, string>()
   const toolResultMap = new Map<string, string>()
   const timedOutToolIds = new Set<string>()
@@ -81,7 +82,6 @@ function groupContent(content: ContentBlock[]): GroupResult {
 
   // Build a set of tool_use IDs that belong to groupable app tools
   const appToolIdToAppId = new Map<string, string>()
-  const apps = useMiniAppStore.getState().apps
   const slugToApp = new Map(apps.flatMap((a) => {
     const slug = a.manifest.toolSlug ?? a.id
     return slug ? [[slug, a] as const] : []
@@ -581,9 +581,10 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
       .join('\n')
   }, [isCodexMessage, isUser, message.content, message.metadata?.codex?.items])
 
+  const apps = useMiniAppStore((s) => s.apps)
   const grouped = useMemo(
-    () => (isUser || isCodexMessage) ? null : groupContent(message.content),
-    [isUser, isCodexMessage, message.content],
+    () => (isUser || isCodexMessage) ? null : groupContent(message.content, apps),
+    [isUser, isCodexMessage, message.content, apps],
   )
 
   const userText = useMemo(

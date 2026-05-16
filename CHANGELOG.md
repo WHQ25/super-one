@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.34.1-alpha] - 2026-05-17
+
+### Added
+
+- **Provider dialog is now scoped to the entry harness** and remembers which section you last opened per harness, so reopening the dialog lands you where you left off for that harness.
+- **Todo UI adapts to the new Task system fields**, keeping the in-chat task list aligned with the updated agent task model.
+- **Upgraded to Claude Agent SDK 0.3.143.**
+
+### Fixed
+
+- **Custom Codex provider connectivity test hardened** so a misconfigured provider fails clearly instead of intermittently.
+- **Queued-turn streaming status fixed.** A user-echo queued turn now emits `status_change:streaming`, so the UI no longer appears idle while the queued message is being processed.
+- **File search no longer starves directories.** `collectFiles` now traverses round-robin, so large or deep folders can't crowd out results from other directories.
+
+### Tests
+
+- **AppSidebar test stabilized** by stubbing `window.app.getAppSettings` in the mock.
+
 ## [0.34.0-alpha] - 2026-05-16
 
 ### Added

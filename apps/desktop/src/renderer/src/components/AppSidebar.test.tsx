@@ -45,6 +45,7 @@ const mockWindowApp = {
   deleteSession: vi.fn(async () => {}),
   renameSession: vi.fn(async () => {}),
   listAutomations: vi.fn(async () => []),
+  getAppSettings: vi.fn(async () => ({ miniAppOrder: {} })),
 }
 
 vi.mock('motion/react', () => ({

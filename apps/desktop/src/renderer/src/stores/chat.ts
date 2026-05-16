@@ -882,6 +882,12 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
                     const { [input.taskId]: _, ...rest } = session.todos
                     extraUpdates = { todos: rest }
                   } else {
+                    const mergeIds = (prev: string[] | undefined, add: unknown): string[] | undefined => {
+                      if (!Array.isArray(add) || add.length === 0) return prev
+                      return Array.from(new Set([...(prev ?? []), ...add.map(String)]))
+                    }
+                    const nextBlockedBy = mergeIds(existing.blockedBy, input.addBlockedBy)
+                    const nextBlocks = mergeIds(existing.blocks, input.addBlocks)
                     extraUpdates = {
                       ...(!session._todosUserDismissed && { showTodos: true }),
                       todos: {
@@ -892,6 +898,9 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
                           ...(input.subject && { subject: input.subject }),
                           ...(input.description && { description: input.description }),
                           ...(input.activeForm && { activeForm: input.activeForm }),
+                          ...(input.owner && { owner: input.owner }),
+                          ...(nextBlockedBy && { blockedBy: nextBlockedBy }),
+                          ...(nextBlocks && { blocks: nextBlocks }),
                         },
                       },
                     }

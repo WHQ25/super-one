@@ -49,6 +49,10 @@ if (typeof (globalThis as unknown as { requestIdleCallback?: unknown }).requestI
   Object.defineProperty(globalThis, 'cancelIdleCallback', { configurable: true, writable: true, value: cic })
 }
 
+if (typeof globalThis.Element !== 'undefined' && typeof globalThis.Element.prototype.scrollIntoView !== 'function') {
+  Object.defineProperty(globalThis.Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: () => {} })
+}
+
 if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage.setItem !== 'function') {
   const store = new Map<string, string>()
   const localStorage = {

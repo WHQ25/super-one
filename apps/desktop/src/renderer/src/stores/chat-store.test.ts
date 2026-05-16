@@ -6313,4 +6313,31 @@ describe('Task tools id mapping (SDK 0.3.142 TodoWrite→Task migration)', () =>
     expect(session.todos['1'].status).toBe('completed')
     expect(session.todos['2'].subject).toBe('B')
   })
+
+  it('captures owner and accumulates blockedBy/blocks across TaskUpdate calls', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'm1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+
+    toolUse('m1', 'tc-1', 'TaskCreate', { subject: 'Blocker' })
+    toolResult('m1', 'tc-1', { todoToolName: 'TaskCreate', toolTodos: [{ content: 'Blocker', status: 'pending', taskId: 'task_a' }] })
+    toolUse('m1', 'tc-2', 'TaskCreate', { subject: 'Dependent' })
+    toolResult('m1', 'tc-2', { todoToolName: 'TaskCreate', toolTodos: [{ content: 'Dependent', status: 'pending', taskId: 'task_b' }] })
+
+    toolUse('m1', 'tu-1', 'TaskUpdate', { taskId: 'task_b', owner: 'general-purpose', addBlockedBy: ['task_a'], addBlocks: ['task_c'] })
+    toolResult('m1', 'tu-1')
+
+    let session = getActiveDraftSession('/test')!
+    expect(session.todos['task_b'].owner).toBe('general-purpose')
+    expect(session.todos['task_b'].blockedBy).toEqual(['task_a'])
+    expect(session.todos['task_b'].blocks).toEqual(['task_c'])
+
+    toolUse('m1', 'tu-2', 'TaskUpdate', { taskId: 'task_b', addBlockedBy: ['task_a', 'task_d'] })
+    toolResult('m1', 'tu-2')
+
+    session = getActiveDraftSession('/test')!
+    expect(session.todos['task_b'].blockedBy).toEqual(['task_a', 'task_d'])
+  })
 })

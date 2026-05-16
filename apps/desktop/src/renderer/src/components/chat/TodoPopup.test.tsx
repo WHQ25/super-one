@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage, TodoItem } from '@superone/shared/agent-types'
 import type { ReactNode } from 'react'
@@ -138,5 +138,47 @@ describe('TodoPopup', () => {
 
     expect(screen.getByText('Todos (1/2)')).toBeTruthy()
     expect(screen.getByText('first task')).toBeTruthy()
+  })
+
+  it('renders the task owner alongside the subject', () => {
+    activeSessionState.todos = {
+      a: { id: 'a', subject: 'delegated task', description: '', status: 'pending', owner: 'general-purpose' },
+    }
+    render(<TodoPopup />)
+
+    expect(screen.getByText('delegated task')).toBeTruthy()
+    expect(screen.getByText('general-purpose')).toBeTruthy()
+  })
+
+  it('counts only unfinished blockers in the pill and reveals them on expand', () => {
+    activeSessionState.todos = {
+      task_a: { id: 'task_a', subject: 'finished blocker', description: '', status: 'completed' },
+      task_c: { id: 'task_c', subject: 'pending blocker', description: '', status: 'pending' },
+      task_b: { id: 'task_b', subject: 'dependent task', description: '', status: 'pending', blockedBy: ['task_a', 'task_c'] },
+    }
+    render(<TodoPopup />)
+
+    expect(screen.getByText('blocked by 1')).toBeTruthy()
+    expect(screen.getAllByText('pending blocker')).toHaveLength(1)
+
+    fireEvent.click(screen.getByText('dependent task'))
+    expect(screen.getAllByText('pending blocker')).toHaveLength(2)
+    expect(screen.getAllByText('finished blocker')).toHaveLength(1)
+  })
+
+  it('auto-expands the description of the in_progress task', () => {
+    activeSessionState.todos = {
+      a: {
+        id: 'a',
+        subject: 'build it',
+        description: 'wire the delta channel end to end',
+        status: 'in_progress',
+        activeForm: 'Building it',
+      },
+    }
+    render(<TodoPopup />)
+
+    expect(screen.getByText('Building it')).toBeTruthy()
+    expect(screen.getByText('wire the delta channel end to end')).toBeTruthy()
   })
 })

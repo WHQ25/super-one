@@ -91,6 +91,12 @@ export function TodoPopup() {
         id: todo.id,
         text: todo.status === 'in_progress' && todo.activeForm ? todo.activeForm : todo.subject,
         status: todo.status,
+        description: todo.description || undefined,
+        owner: todo.owner,
+        blockedBy: (todo.blockedBy ?? [])
+          .map((blockerId) => todos[blockerId])
+          .filter((blocker) => blocker && blocker.status !== 'completed')
+          .map((blocker) => blocker.subject),
       }))
     : (codexTodoList?.items ?? []).map((todo, index) => ({
         id: `${codexTodoList?.id ?? 'todo'}-${index}`,

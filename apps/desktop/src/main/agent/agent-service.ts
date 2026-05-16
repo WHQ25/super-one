@@ -19,6 +19,7 @@ import { readdir, mkdir } from 'fs/promises'
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { getDb, getCachedHarnessResources, getActiveProviderRaw } from '../database'
+import { resolveTestApiKey } from './provider-test-key'
 import { buildRemoteActiveProvider } from '@superone/shared/provider-utils'
 import { sanitizeGitRef } from '../path-security'
 import { authorizeAndStat, FileBridgeError, type AuthorizedFile } from '../file-bridge'
@@ -1830,20 +1831,21 @@ export class AgentService {
       this.broadcastProviderChanged(agentType === 'codex' ? 'codex' : 'claude')
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST, async (_event, data: { api_key: string; base_url: string; extra_env: string }) => {
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST, async (_event, data: { api_key: string; base_url: string; extra_env: string; provider_id?: string }) => {
+      const apiKey = resolveTestApiKey(data)
       const SYSTEM_ENV_ALLOWLIST = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'SystemRoot', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES', 'USERPROFILE', 'PROGRAMDATA', 'COMSPEC']
       const env: Record<string, string> = {}
       for (const key of SYSTEM_ENV_ALLOWLIST) {
         const v = process.env[key]
         if (v !== undefined) env[key] = v
       }
-      if (data.api_key) env.ANTHROPIC_API_KEY = data.api_key
+      if (apiKey) env.ANTHROPIC_API_KEY = apiKey
       if (data.base_url) env.ANTHROPIC_BASE_URL = data.base_url
       try {
         const parsed = JSON.parse(data.extra_env || '{}')
         Object.assign(env, parsed)
       } catch { /* ignore */ }
-      if (data.api_key && env.ANTHROPIC_AUTH_TOKEN !== undefined) env.ANTHROPIC_AUTH_TOKEN = data.api_key
+      if (apiKey && env.ANTHROPIC_AUTH_TOKEN !== undefined) env.ANTHROPIC_AUTH_TOKEN = apiKey
       const TEST_TIMEOUT_MS = 15000
       try {
         const { query: testQuery } = await import('@anthropic-ai/claude-agent-sdk')
@@ -1905,9 +1907,13 @@ export class AgentService {
       }
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_CODEX, async (_event, data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string }) => {
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_CODEX, async (event, data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string; provider_id?: string }) => {
       const { testCodexProvider } = await import('../codex/codex-provider-test')
-      return testCodexProvider(data)
+      return testCodexProvider({ ...data, api_key: resolveTestApiKey(data) }, undefined, (progress) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(AgentIpcChannels.PROVIDERS_TEST_CODEX_PROGRESS, progress)
+        }
+      })
     })
 
     // --- Session Providers (new session_providers table) ---

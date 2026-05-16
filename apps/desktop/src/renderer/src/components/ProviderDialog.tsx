@@ -500,18 +500,34 @@ export function ProviderDialog({
         ...JSON.parse(af.extra_env || '{}'),
         ...expandProviderModelEnv(af.model_env),
       })
-      const result = activeAgentTab === 'codex'
-        ? await window.app.testCodexProvider({
+      let result: { success: boolean; models: number; error?: string }
+      if (activeAgentTab === 'codex') {
+        const offProgress = window.app.onTestCodexProgress?.((progress) => {
+          if (progress.phase === 'model_list' && progress.status === 'start') {
+            setTestMessage(t('resources.providerDialog.fetchingModels'))
+          } else if (progress.phase === 'turn' && progress.status === 'start') {
+            setTestMessage(t('resources.providerDialog.chatProbing'))
+          }
+        })
+        try {
+          result = await window.app.testCodexProvider({
             api_key: form.api_key,
             base_url: af.base_url || '',
             extra_env: mergedExtra,
             name: form.name,
+            provider_id: editProvider?.id,
           })
-        : await window.app.testProvider({
-            api_key: form.api_key,
-            base_url: af.base_url || '',
-            extra_env: mergedExtra,
-          })
+        } finally {
+          offProgress?.()
+        }
+      } else {
+        result = await window.app.testProvider({
+          api_key: form.api_key,
+          base_url: af.base_url || '',
+          extra_env: mergedExtra,
+          provider_id: editProvider?.id,
+        })
+      }
       if (result.success) {
         setTestStatus('success')
         setTestMessage(t('resources.providerDialog.connected'))
@@ -728,7 +744,7 @@ export function ProviderDialog({
             </div>
             {testStatus !== 'idle' && (
               <p className={`text-xs ${testStatus === 'success' ? 'text-green-600 dark:text-green-400' : testStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
-                {testStatus === 'testing' ? t('resources.providerDialog.testing') : testMessage}
+                {testStatus === 'testing' ? (testMessage || t('resources.providerDialog.testing')) : testMessage}
               </p>
             )}
             <DialogFooter className="flex-row justify-between sm:justify-between">

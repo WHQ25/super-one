@@ -587,6 +587,8 @@ export const zh: Messages = {
       bucketDefault: '默认',
       bucketSubagent: '子代理',
       testing: '正在测试连接...',
+      fetchingModels: '正在获取模型列表...',
+      chatProbing: '模型列表获取成功，正在测试真实对话...',
       connected: '已连接 ✓',
       connectionFailed: '连接失败',
       unknownError: '未知错误',

@@ -309,6 +309,9 @@ export interface TodoItem {
   description: string
   status: 'pending' | 'in_progress' | 'completed'
   activeForm?: string
+  owner?: string
+  blockedBy?: string[]
+  blocks?: string[]
 }
 
 // --- Chat message ---
@@ -1231,6 +1234,11 @@ export interface CodexSetAuthRequest {
   apiKey?: string
 }
 
+export interface CodexProviderTestProgress {
+  phase: 'model_list' | 'turn'
+  status: 'start' | 'ok'
+}
+
 export interface CodexRunRequest {
   prompt: string
   model?: string
@@ -1664,6 +1672,7 @@ export const AgentIpcChannels = {
   PROVIDERS_DEACTIVATE_ALL: 'providers:deactivate-all',
   PROVIDERS_TEST: 'providers:test',
   PROVIDERS_TEST_CODEX: 'providers:test-codex',
+  PROVIDERS_TEST_CODEX_PROGRESS: 'providers:test-codex-progress',
 
   // Session Providers (new session_providers table)
   SESSION_PROVIDERS_LIST: 'sessionProviders:list',

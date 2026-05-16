@@ -573,6 +573,8 @@ export type Messages = {
       bucketDefault: string
       bucketSubagent: string
       testing: string
+      fetchingModels: string
+      chatProbing: string
       connected: string
       connectionFailed: string
       unknownError: string
@@ -1620,6 +1622,8 @@ export const en: Messages = {
       bucketDefault: 'Default',
       bucketSubagent: 'Subagent',
       testing: 'Testing connection...',
+      fetchingModels: 'Fetching model list...',
+      chatProbing: 'Model list OK, testing a real conversation...',
       connected: 'Connected ✓',
       connectionFailed: 'Connection failed',
       unknownError: 'Unknown error',

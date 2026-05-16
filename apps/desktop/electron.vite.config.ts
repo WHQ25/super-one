@@ -51,6 +51,7 @@ export default defineConfig(({ mode }) => {
         input: {
           index: resolve('src/preload/index.ts'),
           'miniapp-preload': resolve('src/preload/miniapp-preload.ts'),
+          'worker-host-preload': resolve('src/preload/worker-host-preload.ts'),
         },
         output: {
           format: 'cjs',
@@ -77,7 +78,10 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss()],
     build: {
       rollupOptions: {
-        input: resolve('src/renderer/index.html'),
+        input: {
+          index: resolve('src/renderer/index.html'),
+          'worker-host': resolve('src/renderer/worker-host.html'),
+        },
         output: {
           manualChunks(id) {
             if (

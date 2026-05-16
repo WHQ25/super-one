@@ -307,6 +307,17 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-worker-lease-release'
   | 'miniapp-worker-dropped'
 
+export const MINIAPP_HEADLESS_SAFE_TYPES: ReadonlySet<string> = new Set([
+  'miniapp-tool-result',
+  'miniapp-fs-request',
+  'miniapp-git-request',
+  'miniapp-db-request',
+  'miniapp-kv-request',
+  'miniapp-fs-watch',
+  'miniapp-fs-unwatch',
+  'miniapp-peer-emit',
+])
+
 export const MiniAppToolBridgeMsg = {
   SUBMIT: 'miniapp-tool-submit',
   CANCEL: 'miniapp-tool-cancel',

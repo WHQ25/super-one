@@ -4,6 +4,7 @@ import { useMiniAppMediaStore } from '@/stores/miniapp-media'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { requestClipboardRead, requestClipboardWrite } from '@/lib/miniapp-clipboard'
 import { toast } from 'sonner'
+import { MINIAPP_HEADLESS_SAFE_TYPES } from '@superone/shared/miniapp-types'
 import type { MiniAppMediaKind, MiniAppTooltipRequest, MiniAppContextMenuRequest, MiniAppPopoverShowRequest } from '@superone/shared/miniapp-types'
 
 export interface MiniAppOverlayCallbacks {
@@ -168,17 +169,6 @@ export function handleMiniAppMessage(
       return false
   }
 }
-
-export const MINIAPP_HEADLESS_SAFE_TYPES: ReadonlySet<string> = new Set([
-  'miniapp-tool-result',
-  'miniapp-fs-request',
-  'miniapp-git-request',
-  'miniapp-db-request',
-  'miniapp-kv-request',
-  'miniapp-fs-watch',
-  'miniapp-fs-unwatch',
-  'miniapp-peer-emit',
-])
 
 const WORKER_REJECT_RESPONSE: Record<string, string> = {
   'miniapp-clipboard-read': 'miniapp-clipboard-response',

@@ -945,7 +945,15 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
       }
       const codexUsage = codexCompletionMeta?.usage ?? event.metadata?.codex?.usage ?? null
       const hasUncompletedAgents = agentToolIds.size > 0 && [...agentToolIds].some((id) => !session.taskProgress[id]?.completed)
+      // Settle a stuck 'streaming' status: a completed current turn with no
+      // running subagents is no longer streaming. The backend normally also
+      // emits status_change → idle, but after an interrupt + post-interrupt
+      // queued turn it can fail to deliver that final idle (Bug B), leaving
+      // the UI frozen. Reconciling here removes that single point of failure;
+      // it does not touch 'background' or non-current-turn completions.
+      const settleStatusIdle = isCurrentTurn && !hasUncompletedAgents && session.status === 'streaming'
       return {
+        ...(settleStatusIdle ? { status: 'idle' as const } : {}),
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           const prevCodex = msg.metadata?.codex

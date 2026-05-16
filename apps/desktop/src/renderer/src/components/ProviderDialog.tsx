@@ -205,22 +205,72 @@ function ModelEnvEditor({ value, onChange }: { value: ProviderModelEnv; onChange
 }
 
 function AgentConfigForm({
+  agentType,
   form,
   onChange,
   preset,
   isEdit,
+  isCustom,
 }: {
   agentType: AgentType
   form: AgentFormState
   onChange: (f: AgentFormState) => void
   preset?: AgentPresetConfig
   isEdit: boolean
+  isCustom: boolean
 }) {
   const { t } = useTranslation()
   const [showDetails, setShowDetails] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
-  const hasModelEnv = Object.keys(form.model_env).length > 0 || isEdit || (preset?.model_env && Object.keys(preset.model_env).length > 0)
+  const hasModelEnv = agentType === 'claude' && (Object.keys(form.model_env).length > 0 || isEdit || (preset?.model_env != null && Object.keys(preset.model_env).length > 0))
+
+  const baseUrlField = (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.baseUrl')}</span>
+      <input
+        className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+        value={form.base_url}
+        onChange={(e) => onChange({ ...form, base_url: e.target.value })}
+        placeholder="https://api.example.com"
+      />
+    </label>
+  )
+
+  const modelMappingField = (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>
+      <ModelEnvEditor value={form.model_env} onChange={(m) => onChange({ ...form, model_env: m })} />
+    </div>
+  )
+
+  const advancedSection = (
+    <>
+      <button
+        type="button"
+        className="self-start text-xs text-muted-foreground underline"
+        onClick={() => setShowAdvanced(!showAdvanced)}
+      >
+        {showAdvanced ? t('resources.providerDialog.advancedHide') : t('resources.providerDialog.advancedShow')}
+      </button>
+      {showAdvanced && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.environmentVariables')}</span>
+          <EnvEditor value={form.extra_env} onChange={(v) => onChange({ ...form, extra_env: v })} />
+        </div>
+      )}
+    </>
+  )
+
+  if (isCustom) {
+    return (
+      <div className="flex flex-col gap-3">
+        {baseUrlField}
+        {agentType === 'claude' && modelMappingField}
+        {advancedSection}
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -233,34 +283,9 @@ function AgentConfigForm({
       </button>
       {showDetails && (
         <>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.baseUrl')}</span>
-            <input
-              className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-              value={form.base_url}
-              onChange={(e) => onChange({ ...form, base_url: e.target.value })}
-              placeholder="https://api.example.com"
-            />
-          </label>
-          {hasModelEnv && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>
-              <ModelEnvEditor value={form.model_env} onChange={(m) => onChange({ ...form, model_env: m })} />
-            </div>
-          )}
-          <button
-            type="button"
-            className="self-start text-xs text-muted-foreground underline"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-          >
-            {showAdvanced ? t('resources.providerDialog.advancedHide') : t('resources.providerDialog.advancedShow')}
-          </button>
-          {showAdvanced && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.environmentVariables')}</span>
-              <EnvEditor value={form.extra_env} onChange={(v) => onChange({ ...form, extra_env: v })} />
-            </div>
-          )}
+          {baseUrlField}
+          {hasModelEnv && modelMappingField}
+          {advancedSection}
         </>
       )}
     </div>
@@ -313,11 +338,11 @@ export function ProviderDialog({
   autoSync?: boolean
 }) {
   const { t } = useTranslation()
+  const entryAgent: AgentType = agentFilter ?? 'claude'
   const [step, setStep] = useState<DialogStep>('select')
   const [selectedPreset, setSelectedPreset] = useState<QuickPreset | null>(null)
   const [templateVals, setTemplateVals] = useState<Record<string, string>>({})
   const [form, setForm] = useState<FormState>({ name: '', api_key: '', agentForms: {} })
-  const [activeAgentTab, setActiveAgentTab] = useState<AgentType>('claude')
   const [showApiKey, setShowApiKey] = useState(false)
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
   const [testMessage, setTestMessage] = useState('')
@@ -328,15 +353,12 @@ export function ProviderDialog({
     if (!open) return
     if (editProvider) {
       const configs = JSON.parse(editProvider.agent_configs || '{}')
-      const agentForms: Record<string, AgentFormState> = {}
-      for (const [agent, config] of Object.entries(configs)) {
-        agentForms[agent] = parseAgentForm(config as AgentProviderConfig)
+      const agentForms: Record<string, AgentFormState> = {
+        [entryAgent]: parseAgentForm(configs[entryAgent] as AgentProviderConfig | undefined),
       }
       setForm({ name: editProvider.name, api_key: editProvider.api_key, agentForms })
       setStep('form')
       setSelectedPreset(null)
-      const agents = JSON.parse(editProvider.supported_agents || '["claude"]') as AgentType[]
-      setActiveAgentTab(agents[0] || 'claude')
       setShowApiKey(false)
       setTestStatus('idle')
       setTestMessage('')
@@ -347,13 +369,12 @@ export function ProviderDialog({
       setTestStatus('idle')
       setTestMessage('')
     }
-  }, [open, editProvider])
+  }, [open, editProvider, entryAgent])
 
   const handlePresetSelect = (preset: QuickPreset) => {
     setSelectedPreset(preset)
-    const agentForms: Record<string, AgentFormState> = {}
-    for (const [agent, config] of Object.entries(preset.agent_configs)) {
-      agentForms[agent] = parseAgentForm(undefined, config)
+    const agentForms: Record<string, AgentFormState> = {
+      [entryAgent]: parseAgentForm(undefined, preset.agent_configs[entryAgent]),
     }
     setForm({
       name: preset.name === 'Custom API' ? '' : preset.name,
@@ -369,7 +390,6 @@ export function ProviderDialog({
     } else {
       setTemplateVals({})
     }
-    setActiveAgentTab(preset.supported_agents[0] || 'claude')
     setStep('form')
   }
 
@@ -377,22 +397,20 @@ export function ProviderDialog({
     if (selectedPreset) return selectedPreset
     if (!editProvider) return null
     const configs = JSON.parse(editProvider.agent_configs || '{}')
-    const claudeUrl = configs.claude?.base_url ?? ''
+    const entryUrl = configs[entryAgent]?.base_url ?? ''
     return PRESETS.find((p) => {
-      const pUrl = p.agent_configs.claude?.base_url
-      return pUrl && claudeUrl && claudeUrl === pUrl
+      const pUrl = p.agent_configs[entryAgent]?.base_url
+      return pUrl && entryUrl && entryUrl === pUrl
     }) ?? null
-  }, [selectedPreset, editProvider])
+  }, [selectedPreset, editProvider, entryAgent])
 
-  const supportedAgents: AgentType[] = matchedPreset
-    ? matchedPreset.supported_agents
-    : editProvider
-      ? (JSON.parse(editProvider.supported_agents || '["claude"]') as AgentType[])
-      : ['claude', 'codex']
+  const supportedAgents: AgentType[] = [entryAgent]
+
+  const isCustomProvider = (selectedPreset?.category ?? editProvider?.category) === 'custom'
 
   const showFields = matchedPreset?.fields ?? ['name', 'api_key'] as const
-  const currentAgentForm = form.agentForms[activeAgentTab] || { base_url: '', extra_env: '{}', model_env: {} }
-  const currentPresetConfig = matchedPreset?.agent_configs[activeAgentTab]
+  const currentAgentForm = form.agentForms[entryAgent] || { base_url: '', extra_env: '{}', model_env: {} }
+  const currentPresetConfig = matchedPreset?.agent_configs[entryAgent]
 
   const syncPreset = useMemo(() => {
     if (!editProvider) return null
@@ -416,7 +434,7 @@ export function ProviderDialog({
   const handleApplySync = (effective: PresetSyncDiff) => {
     if (!syncPreset || !editProvider) return
     const newForms: Record<string, AgentFormState> = { ...form.agentForms }
-    for (const agentDiff of effective.perAgent) {
+    for (const agentDiff of effective.perAgent.filter((d) => d.agent === entryAgent)) {
       const presetCfg = syncPreset.agent_configs[agentDiff.agent as keyof typeof syncPreset.agent_configs]
       const existing = newForms[agentDiff.agent]
       let nextBaseUrl = existing?.base_url ?? presetCfg?.base_url ?? ''
@@ -466,15 +484,11 @@ export function ProviderDialog({
         }
       }
     }
-    const dbSupportedAgents: AgentType[] = (() => {
-      try { return JSON.parse(editProvider.supported_agents || '["claude"]') as AgentType[] } catch { return ['claude'] }
-    })()
-    const nextSupportedAgents = Array.from(new Set([...dbSupportedAgents, ...(effective.supportedAgentsAdded as AgentType[])]))
     onSave({
       id: editProvider.id,
       name: form.name,
       api_key: form.api_key,
-      supported_agents: JSON.stringify(nextSupportedAgents),
+      supported_agents: JSON.stringify([entryAgent]),
       agent_configs: buildAgentConfigs(resolvedAgentForms),
     })
 
@@ -494,14 +508,14 @@ export function ProviderDialog({
     setTestStatus('testing')
     setTestMessage('')
     try {
-      const af = form.agentForms[activeAgentTab]
+      const af = form.agentForms[entryAgent]
       if (!af) { setTestStatus('error'); setTestMessage(t('resources.providerDialog.noAgentConfig')); return }
       const mergedExtra = JSON.stringify({
         ...JSON.parse(af.extra_env || '{}'),
         ...expandProviderModelEnv(af.model_env),
       })
       let result: { success: boolean; models: number; error?: string }
-      if (activeAgentTab === 'codex') {
+      if (entryAgent === 'codex') {
         const offProgress = window.app.onTestCodexProgress?.((progress) => {
           if (progress.phase === 'model_list' && progress.status === 'start') {
             setTestMessage(t('resources.providerDialog.fetchingModels'))
@@ -579,7 +593,7 @@ export function ProviderDialog({
   }
 
   const updateAgentForm = (af: AgentFormState) => {
-    setForm((f) => ({ ...f, agentForms: { ...f.agentForms, [activeAgentTab]: af } }))
+    setForm((f) => ({ ...f, agentForms: { ...f.agentForms, [entryAgent]: af } }))
   }
 
   return (
@@ -676,18 +690,18 @@ export function ProviderDialog({
               {matchedPreset?.endpointCandidates && matchedPreset.endpointCandidates.length > 1 && (
                 <div className="flex flex-wrap gap-1.5">
                   {matchedPreset.endpointCandidates.map((url) => {
-                    const af = form.agentForms[activeAgentTab]
-                    const agentUrl = activeAgentTab === 'codex' ? url + '/v1' : url
+                    const af = form.agentForms[entryAgent]
+                    const agentUrl = entryAgent === 'codex' ? url + '/v1' : url
                     return (
                       <button
                         key={url}
                         type="button"
                         onClick={() => {
-                          const newForms = { ...form.agentForms }
-                          for (const [agent, f] of Object.entries(newForms)) {
-                            newForms[agent] = { ...f, base_url: agent === 'codex' ? url + '/v1' : url }
-                          }
-                          setForm((prev) => ({ ...prev, agentForms: newForms }))
+                          const existing = form.agentForms[entryAgent] ?? { base_url: '', extra_env: '{}', model_env: {} }
+                          setForm((prev) => ({
+                            ...prev,
+                            agentForms: { ...prev.agentForms, [entryAgent]: { ...existing, base_url: agentUrl } },
+                          }))
                         }}
                         className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
                           af?.base_url === agentUrl
@@ -716,30 +730,13 @@ export function ProviderDialog({
                   ))}
                 </div>
               )}
-              {supportedAgents.length > 1 && (
-                <div className="flex gap-1 rounded-lg bg-muted p-1">
-                  {supportedAgents.map((agent) => (
-                    <button
-                      key={agent}
-                      type="button"
-                      onClick={() => setActiveAgentTab(agent)}
-                      className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                        activeAgentTab === agent
-                          ? 'bg-background text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {agent === 'claude' ? 'Claude Code' : 'Codex'}
-                    </button>
-                  ))}
-                </div>
-              )}
               <AgentConfigForm
-                agentType={activeAgentTab}
+                agentType={entryAgent}
                 form={currentAgentForm}
                 onChange={updateAgentForm}
                 preset={currentPresetConfig}
                 isEdit={!!editProvider}
+                isCustom={isCustomProvider}
               />
             </div>
             {testStatus !== 'idle' && (

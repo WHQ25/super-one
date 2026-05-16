@@ -23,6 +23,9 @@ type AppView = 'loading' | 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
 export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings'
+
+const PROVIDER_SETTINGS_TABS: SettingsTab[] = ['providers', 'agents', 'skills', 'mcp', 'hooks', 'plugins', 'preferences']
+const FIRST_SETTINGS_SECTION: SettingsTab = 'providers'
 export type LayoutMode = 'canvas' | 'coding'
 export type SidebarTab = 'sessions' | 'files'
 
@@ -81,6 +84,7 @@ interface AppState {
   // Settings
   settingsProvider: SettingsProvider
   settingsTab: SettingsTab
+  settingsProviderTabs: Record<SettingsProvider, SettingsTab>
   setSettingsProvider: (provider: SettingsProvider) => void
 
   // Layout mode
@@ -193,7 +197,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   remoteConfig: null,
   settingsProvider: 'claude',
-  settingsTab: 'skills',
+  settingsTab: FIRST_SETTINGS_SECTION,
+  settingsProviderTabs: { claude: FIRST_SETTINGS_SECTION, codex: FIRST_SETTINGS_SECTION },
   layoutMode: 'coding',
   setLayoutMode: async (mode) => {
     set({ layoutMode: mode })
@@ -401,11 +406,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setSettingsProvider: (provider) => {
-    const currentTab = get().settingsTab
-    const needsTabSwitch = provider === 'codex' && (currentTab === 'providers' || currentTab === 'agents' || currentTab === 'preferences')
+    const { settingsProvider: prev, settingsTab, settingsProviderTabs } = get()
+    if (provider === prev) return
+    const nextTabs = { ...settingsProviderTabs }
+    if (PROVIDER_SETTINGS_TABS.includes(settingsTab)) nextTabs[prev] = settingsTab
     set({
       settingsProvider: provider,
-      ...(needsTabSwitch ? { settingsTab: 'skills' } : {}),
+      settingsTab: nextTabs[provider] ?? FIRST_SETTINGS_SECTION,
+      settingsProviderTabs: nextTabs,
     })
   },
   setSettingsTab: (tab) => set({ settingsTab: tab }),

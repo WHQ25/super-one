@@ -313,3 +313,54 @@ describe('clearPendingWorktree', () => {
     })
   })
 })
+
+describe('settings harness section memory', () => {
+  function seedSettings(overrides: Record<string, unknown> = {}) {
+    resetStore({
+      settingsProvider: 'claude',
+      settingsTab: 'providers',
+      settingsProviderTabs: { claude: 'providers', codex: 'providers' },
+      ...overrides,
+    })
+  }
+
+  it('lands codex on the first section instead of skills on first switch', () => {
+    seedSettings({ settingsTab: 'mcp' })
+
+    useAppStore.getState().setSettingsProvider('codex')
+
+    expect(useAppStore.getState().settingsProvider).toBe('codex')
+    expect(useAppStore.getState().settingsTab).toBe('providers')
+  })
+
+  it('restores each harness to the section it was last left on', () => {
+    seedSettings()
+
+    useAppStore.getState().setSettingsTab('mcp')
+    useAppStore.getState().setSettingsProvider('codex')
+    useAppStore.getState().setSettingsTab('plugins')
+    useAppStore.getState().setSettingsProvider('claude')
+
+    expect(useAppStore.getState().settingsTab).toBe('mcp')
+
+    useAppStore.getState().setSettingsProvider('codex')
+    expect(useAppStore.getState().settingsTab).toBe('plugins')
+  })
+
+  it('does not record a global tab as a provider section', () => {
+    seedSettings({ settingsTab: 'usage' })
+
+    useAppStore.getState().setSettingsProvider('codex')
+
+    expect(useAppStore.getState().settingsTab).toBe('providers')
+    expect(useAppStore.getState().settingsProviderTabs.claude).toBe('providers')
+  })
+
+  it('keeps the current tab when re-selecting the active harness', () => {
+    seedSettings({ settingsTab: 'mcp' })
+
+    useAppStore.getState().setSettingsProvider('claude')
+
+    expect(useAppStore.getState().settingsTab).toBe('mcp')
+  })
+})

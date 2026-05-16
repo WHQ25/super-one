@@ -107,6 +107,7 @@
     <h2 style="font-size:16px;margin-bottom:8px">Background Worker</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button id="btn-worker-start">Start background download</button>
+      <button id="btn-worker-ext">Start external download</button>
       <button id="btn-worker-stop">Stop worker</button>
       <span id="worker-state" style="font-size:13px;color:#78716c">stopped</span>
     </div>
@@ -510,17 +511,23 @@
         }
       });
 
-      document.getElementById('btn-worker-start').onclick = async function () {
+      async function startDownload(src, dest) {
         result.textContent = 'starting worker…';
         try {
-          var st = await superone.worker.start();
+          await superone.worker.start();
           state.textContent = 'running';
-          result.textContent = 'worker started (' + JSON.stringify(st) + '), sending download…';
-          superone.worker.postMessage({ type: 'download', src: 'logo.png', dest: 'downloads/logo-copy.png' });
+          result.textContent = 'worker started, downloading ' + src + ' …';
+          superone.worker.postMessage({ type: 'download', src: src, dest: dest });
         } catch (e) {
           result.textContent = 'worker.start failed: ' + (e && e.message ? e.message : String(e));
           state.textContent = 'error';
         }
+      }
+      document.getElementById('btn-worker-start').onclick = function () {
+        startDownload('logo.png', 'downloads/logo-copy.png');
+      };
+      document.getElementById('btn-worker-ext').onclick = function () {
+        startDownload('https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js', 'downloads/lodash.min.js');
       };
       document.getElementById('btn-worker-stop').onclick = async function () {
         await superone.worker.stop();

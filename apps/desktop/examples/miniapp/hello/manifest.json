@@ -10,6 +10,7 @@
   "toolSlug": "hello",
   "background": { "entry": "background.html" },
   "permissions": {
+    "network": [{ "domain": "cdn.jsdelivr.net", "reason": "Demo external background download" }],
     "fs": [{ "scope": "project", "path": ".", "access": "readwrite", "reason": "Read and write project files" }],
     "media": [
       { "kind": "microphone", "reason": "Demo voice recorder" },

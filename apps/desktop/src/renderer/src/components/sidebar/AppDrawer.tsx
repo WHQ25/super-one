@@ -10,6 +10,7 @@ import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
+import { NO_PROJECT_KEY } from '@superone/shared/miniapp-host'
 import { AnimatePresence, motion } from 'motion/react'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
@@ -84,7 +85,9 @@ function SortableAppRow({ app, index, onClick, onOpenFullscreen }: { app: MiniAp
 export function AppDrawer() {
   const [expanded, setExpanded] = useState(false)
   const currentFolder = useAppStore((s) => s.currentFolder)
+  const currentProjectId = useAppStore((s) => s.currentProjectId)
   const setLayoutMode = useAppStore((s) => s.setLayoutMode)
+  const projectKey = currentProjectId ?? NO_PROJECT_KEY
 
   const refreshApps = useMiniAppStore((s) => s.refreshApps)
   const allApps = useMiniAppStore(useShallow((s) => s.apps))
@@ -102,6 +105,11 @@ export function AppDrawer() {
   const stackedApps = allApps.slice(0, MAX_STACKED_ICONS)
 
   const [appOrder, setAppOrder] = useState<string[]>([])
+
+  useEffect(() => {
+    window.app.getAppSettings().then((s) => setAppOrder(s.miniAppOrder?.[projectKey] ?? [])).catch(() => {})
+  }, [projectKey])
+
   const orderedApps = useMemo(() => {
     if (appOrder.length === 0) return allApps
     const orderMap = new Map(appOrder.map((id, i) => [id, i]))
@@ -114,8 +122,10 @@ export function AppDrawer() {
     const ids = orderedApps.map((a) => a.id)
     const oldIdx = ids.indexOf(active.id as string)
     const newIdx = ids.indexOf(over.id as string)
-    setAppOrder(arrayMove(ids, oldIdx, newIdx))
-  }, [orderedApps])
+    const next = arrayMove(ids, oldIdx, newIdx)
+    setAppOrder(next)
+    void window.app.saveAppSettings({ miniAppOrder: { [projectKey]: next } }).catch(() => {})
+  }, [orderedApps, projectKey])
 
   const openApp = useCallback((app: MiniAppEntry) => {
     setExpanded(false)

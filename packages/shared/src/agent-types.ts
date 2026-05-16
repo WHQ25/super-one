@@ -1855,6 +1855,7 @@ export interface AppSettings {
   analyticsEnabled: boolean
   locale: Locale | ''
   updateChannel: UpdateChannel | null
+  miniAppOrder: Record<string, string[]>
   agentPreference: {
     claude: {
       defaultModel: string
@@ -1878,6 +1879,7 @@ export interface AppSettingsPatch {
   analyticsEnabled?: boolean
   locale?: Locale | ''
   updateChannel?: UpdateChannel | null
+  miniAppOrder?: Record<string, string[]>
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>

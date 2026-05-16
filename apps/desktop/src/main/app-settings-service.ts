@@ -13,6 +13,7 @@ const defaults: AppSettings = {
   analyticsEnabled: true,
   locale: '',
   updateChannel: null,
+  miniAppOrder: {},
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -57,6 +58,15 @@ function isSandboxMode(value: unknown): value is SandboxMode {
 
 function isUpdateChannel(value: unknown): value is UpdateChannel {
   return value === 'alpha' || value === 'beta' || value === 'stable'
+}
+
+function readMiniAppOrder(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, string[]> = {}
+  for (const [key, list] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(list)) out[key] = list.filter((x): x is string => typeof x === 'string')
+  }
+  return out
 }
 
 function isCodexReasoningEffort(value: unknown): value is CodexPref['defaultReasoningEffort'] {
@@ -128,6 +138,7 @@ export function readAppSettings(): AppSettings {
       analyticsEnabled: typeof data.analyticsEnabled === 'boolean' ? data.analyticsEnabled : defaults.analyticsEnabled,
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
       updateChannel: data.updateChannel === null || isUpdateChannel(data.updateChannel) ? data.updateChannel : defaults.updateChannel,
+      miniAppOrder: readMiniAppOrder(data.miniAppOrder),
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
@@ -138,6 +149,7 @@ export function readAppSettings(): AppSettings {
       analyticsEnabled: defaults.analyticsEnabled,
       locale: defaults.locale,
       updateChannel: defaults.updateChannel,
+      miniAppOrder: {},
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
@@ -152,6 +164,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     analyticsEnabled: patch.analyticsEnabled ?? current.analyticsEnabled,
     locale: patch.locale ?? current.locale,
     updateChannel: patch.updateChannel === undefined ? current.updateChannel : patch.updateChannel,
+    miniAppOrder: patch.miniAppOrder
+      ? { ...current.miniAppOrder, ...patch.miniAppOrder }
+      : current.miniAppOrder,
     agentPreference: {
       claude: {
         ...current.agentPreference.claude,
@@ -165,4 +180,12 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
   }
   writeFileSync(getSettingsPath(), JSON.stringify(merged, null, 2))
   return merged
+}
+
+export function dropMiniAppOrderBucket(projectId: string): void {
+  const current = readAppSettings()
+  if (!(projectId in current.miniAppOrder)) return
+  const next = { ...current.miniAppOrder }
+  delete next[projectId]
+  writeFileSync(getSettingsPath(), JSON.stringify({ ...current, miniAppOrder: next }, null, 2))
 }

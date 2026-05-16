@@ -15,7 +15,7 @@ vi.mock('electron', () => ({
   app: { getPath: mocks.getPath },
 }))
 
-import { readAppSettings, saveAppSettings } from './app-settings-service'
+import { dropMiniAppOrderBucket, readAppSettings, saveAppSettings } from './app-settings-service'
 
 function fileNotFound() {
   const err = new Error('ENOENT') as NodeJS.ErrnoException
@@ -48,6 +48,7 @@ describe('app-settings-service', () => {
     analyticsEnabled: true,
     locale: '',
     updateChannel: null,
+    miniAppOrder: {},
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
@@ -80,6 +81,7 @@ describe('app-settings-service', () => {
         analyticsEnabled: false,
         locale: '',
         updateChannel: null,
+        miniAppOrder: {},
         agentPreference: {
           claude: {
             defaultModel: 'claude-sonnet-4-6',
@@ -143,6 +145,7 @@ describe('app-settings-service', () => {
         analyticsEnabled: false,
         locale: '',
         updateChannel: null,
+        miniAppOrder: {},
         agentPreference: {
           claude: defaultClaude,
           codex: {
@@ -234,6 +237,51 @@ describe('app-settings-service', () => {
       }))
       const reloaded = readAppSettings()
       expect(reloaded.agentPreference.claude.disabledSkills).toEqual(['release', 'loop'])
+    })
+
+    it('persists per-project miniAppOrder round-trip', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+
+      saveAppSettings({ miniAppOrder: { projA: ['weather', 'notes'] } })
+      const written = mocks.writeFileSync.mock.calls[0][1] as string
+      mocks.readFileSync.mockReturnValue(written)
+
+      expect(readAppSettings().miniAppOrder).toEqual({ projA: ['weather', 'notes'] })
+    })
+
+    it('merges miniAppOrder per project bucket, leaving other projects intact', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ miniAppOrder: { projA: ['x'], projB: ['y'] } }))
+      const result = saveAppSettings({ miniAppOrder: { projA: ['x', 'z'] } })
+      expect(result.miniAppOrder).toEqual({ projA: ['x', 'z'], projB: ['y'] })
+    })
+
+    it('preserves miniAppOrder when an unrelated patch is saved', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ miniAppOrder: { projA: ['a', 'b'] } }))
+      const result = saveAppSettings({ analyticsEnabled: false })
+      expect(result.miniAppOrder).toEqual({ projA: ['a', 'b'] })
+    })
+
+    it('rejects non-string entries within a project bucket on read', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ miniAppOrder: { projA: ['a', 7, null, 'b'] } }))
+      expect(readAppSettings().miniAppOrder).toEqual({ projA: ['a', 'b'] })
+    })
+
+    it('resets a legacy flat-array miniAppOrder to an empty map', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ miniAppOrder: ['weather', 'notes'] }))
+      expect(readAppSettings().miniAppOrder).toEqual({})
+    })
+
+    it('dropMiniAppOrderBucket removes only the given project bucket', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ miniAppOrder: { projA: ['a'], projB: ['b'] } }))
+      dropMiniAppOrderBucket('projA')
+      const written = JSON.parse(mocks.writeFileSync.mock.calls[0][1] as string)
+      expect(written.miniAppOrder).toEqual({ projB: ['b'] })
+    })
+
+    it('dropMiniAppOrderBucket is a no-op when the project has no bucket', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ miniAppOrder: { projB: ['b'] } }))
+      dropMiniAppOrderBucket('projA')
+      expect(mocks.writeFileSync).not.toHaveBeenCalled()
     })
 
     it('persists updateChannel round-trip and accepts each valid value', () => {

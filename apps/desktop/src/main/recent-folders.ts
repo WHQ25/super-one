@@ -2,6 +2,7 @@ import { basename } from 'path'
 import { randomUUID } from 'crypto'
 import { existsSync } from 'fs'
 import { getDb } from './database'
+import { dropMiniAppOrderBucket } from './app-settings-service'
 import type { RecentFolder } from '@superone/shared/agent-types'
 
 export function getRecentFolders(): RecentFolder[] {
@@ -41,7 +42,9 @@ export function addRecentFolder(folderPath: string): void {
 
 export function removeRecentFolder(folderPath: string): void {
   const db = getDb()
+  const projectId = getProjectId(folderPath)
   db.prepare('DELETE FROM projects WHERE path = ?').run(folderPath)
+  if (projectId) dropMiniAppOrderBucket(projectId)
 }
 
 /** Get project ID by path, or null if not found */

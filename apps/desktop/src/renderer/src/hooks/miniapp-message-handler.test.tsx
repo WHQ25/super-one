@@ -10,6 +10,10 @@ const mockMiniapp = {
   gitRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(() => Promise.resolve('ok')),
   fsWatch: vi.fn(() => Promise.resolve(42)),
   fsUnwatch: vi.fn(),
+  workerStart: vi.fn<(...args: unknown[]) => Promise<unknown>>(() => Promise.resolve({ running: true, since: 1 })),
+  workerStop: vi.fn<(...args: unknown[]) => Promise<unknown>>(() => Promise.resolve({ running: false })),
+  workerStatus: vi.fn<(...args: unknown[]) => Promise<unknown>>(() => Promise.resolve({ running: false })),
+  workerSend: vi.fn(),
 }
 
 const mockApp = {
@@ -322,5 +326,28 @@ describe('handleMiniAppWorkerMessage (headless policy)', () => {
   it('returns false for unknown non-miniapp types', () => {
     const send = vi.fn()
     expect(handleMiniAppWorkerMessage('something-else', {}, appId, projectDir, send)).toBe(false)
+  })
+})
+
+describe('handleMiniAppMessage worker control (foreground)', () => {
+  const appId = 'test-app'
+  const projectDir = '/proj'
+
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('forwards miniapp-worker-start and replies with status-result', async () => {
+    const send = vi.fn()
+    const handled = handleMiniAppMessage('miniapp-worker-start', { id: 3 }, appId, projectDir, send)
+    expect(handled).toBe(true)
+    expect(mockMiniapp.workerStart).toHaveBeenCalledWith(projectDir, appId)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(send).toHaveBeenCalledWith({ type: 'miniapp-worker-status-result', id: 3, result: { running: true, since: 1 } })
+  })
+
+  it('forwards miniapp-worker-msg payload to workerSend', () => {
+    const send = vi.fn()
+    handleMiniAppMessage('miniapp-worker-msg', { payload: { cmd: 'go' } }, appId, projectDir, send)
+    expect(mockMiniapp.workerSend).toHaveBeenCalledWith(projectDir, appId, { cmd: 'go' })
   })
 })

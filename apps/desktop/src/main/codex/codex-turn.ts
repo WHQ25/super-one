@@ -8,10 +8,12 @@ import {
   buildCollaborationMode,
   compactRecord,
   createAppServerConnection,
+  getCodexProviderOverrideFor,
   normalizeApiKey,
   readString,
   resolvePermissionProfile,
   type AppServerConnection,
+  type CodexProviderOverride,
   type AppServerConnectionHandle,
   type AppServerNotification,
   type CodexProjectAuth,
@@ -915,7 +917,7 @@ export async function withSessionConnection<T>(
   }
 
   if (!session.connectionHandle) {
-    const handle = await createAppServerConnection(auth, signal)
+    const handle = await createAppServerConnection(auth, signal, undefined, undefined, session.apiProviderId)
     handle.onClosed((info) => {
       if (session.connectionHandle === handle) {
         session.connectionHandle = null
@@ -965,6 +967,7 @@ function buildThreadConfig(
     sandboxMode: CodexSandboxMode
     networkAccessEnabled: boolean
   },
+  providerOverride: CodexProviderOverride | null,
 ): Record<string, unknown> | undefined {
   const config: Record<string, unknown> = {}
   config.developer_instructions = SUPERONE_SYSTEM_PROMPT_APPEND
@@ -976,6 +979,9 @@ function buildThreadConfig(
   const superoneMcpConfig = getCodexSuperoneMcpConfig(superoneSessionId)
   if (superoneMcpConfig) {
     config.mcp_servers = { superone: superoneMcpConfig }
+  }
+  if (providerOverride) {
+    config.model_providers = { [providerOverride.id]: providerOverride.info }
   }
   return Object.keys(config).length > 0 ? config : undefined
 }
@@ -1015,7 +1021,9 @@ export async function resolveThread(
   cwd: string,
   permissionProfile: ReturnType<typeof resolvePermissionProfile>,
 ): Promise<string> {
-  const threadConfig = buildThreadConfig(session.superoneSessionId, permissionProfile)
+  const providerOverride = getCodexProviderOverrideFor(session.apiProviderId)
+  const threadConfig = buildThreadConfig(session.superoneSessionId, permissionProfile, providerOverride)
+  const modelProvider = providerOverride?.id
   if (session.threadId && session.threadReady) {
     trace('codex.thread', 'reuse_ready', {
       threadId: session.threadId,
@@ -1032,6 +1040,7 @@ export async function resolveThread(
       'thread/start',
       compactRecord({
         model: session.model,
+        model_provider: modelProvider,
         cwd,
         approvalPolicy: permissionProfile.approvalPolicy,
         sandbox: permissionProfile.sandboxMode,
@@ -1055,6 +1064,7 @@ export async function resolveThread(
         compactRecord({
           threadId: session.threadId,
           model: session.model,
+          model_provider: modelProvider,
           cwd,
           approvalPolicy: permissionProfile.approvalPolicy,
           sandbox: permissionProfile.sandboxMode,
@@ -1713,8 +1723,9 @@ export async function streamTurnEvents(
 export async function prewarmCodexConnection(
   auth: CodexProjectAuth,
   signal?: AbortSignal,
+  apiProviderId?: string | null,
 ): Promise<AppServerConnectionHandle> {
-  return createAppServerConnection(auth, signal)
+  return createAppServerConnection(auth, signal, undefined, undefined, apiProviderId)
 }
 
 export async function runCodexTurn(

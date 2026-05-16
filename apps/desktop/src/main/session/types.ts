@@ -78,6 +78,7 @@ export interface BackendStartOptions {
   additionalDirectories?: string[]
   abortController: AbortController
   providerSessionId?: string
+  apiProviderId?: string | null
 }
 
 export interface PrewarmHint {

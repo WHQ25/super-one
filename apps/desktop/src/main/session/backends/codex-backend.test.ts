@@ -278,7 +278,7 @@ describe('CodexBackend lifecycle', () => {
     await backend.start(makeStartOpts())
 
     expect(pooledService.prewarmAppServerConnection).toHaveBeenCalledWith('/tmp/proj')
-    expect(pooledService.takeAppServerConnection).toHaveBeenCalledWith('/tmp/proj', { mode: 'auto' })
+    expect(pooledService.takeAppServerConnection).toHaveBeenCalledWith('/tmp/proj', { mode: 'auto' }, null)
     expect(turnMocks.prewarmCodexSession).toHaveBeenCalledWith(handle, expect.objectContaining({
       model: 'gpt-5.4',
       permissionPreset: 'default',
@@ -310,7 +310,7 @@ describe('CodexBackend lifecycle', () => {
 
     await backend.close()
 
-    expect(releaseAppServerConnection).toHaveBeenCalledWith('/tmp/proj', { mode: 'auto' }, handle)
+    expect(releaseAppServerConnection).toHaveBeenCalledWith('/tmp/proj', { mode: 'auto' }, handle, null)
     expect(close).not.toHaveBeenCalled()
   })
 

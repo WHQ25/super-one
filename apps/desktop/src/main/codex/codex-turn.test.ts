@@ -20,6 +20,7 @@ vi.mock('../agent/event-trace', () => ({
 
 vi.mock('../database', () => ({
   getActiveProviderRaw: vi.fn(() => null),
+  getProviderByIdRaw: vi.fn(() => undefined),
 }))
 
 vi.mock('../agent/resolve-cli', () => ({
@@ -41,6 +42,7 @@ const {
   mapApprovalRequest,
   extractSuperoneMiniAppToolName,
 } = await import('./codex-turn')
+const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
 const { createCodexSession } = await import('./codex-session')
 const { SUPERONE_SYSTEM_PROMPT_APPEND } = await import('../agent/superone-system-prompt')
 
@@ -130,6 +132,102 @@ describe('resolveThread fallback', () => {
 
     expect(result).toBe('ready-thread')
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolveThread custom Codex provider', () => {
+  const permissionProfile = {
+    permissionPreset: 'default' as const,
+    approvalPolicy: 'unless-allow-listed' as const,
+    sandboxMode: 'permissive' as const,
+    networkAccessEnabled: true,
+  }
+
+  beforeEach(() => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue(null as never)
+    vi.mocked(getProviderByIdRaw).mockReturnValue(undefined as never)
+  })
+
+  it('injects model_providers config and selects it via top-level model_provider when an active codex provider has a base_url', async () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue({
+      id: 'p1',
+      name: 'My Gateway',
+      api_key: 'sk-test',
+      agent_configs: JSON.stringify({ codex: { base_url: 'https://gw.example.com/v1' } }),
+    } as never)
+    const session = makeSession({ model: 'gpt-5' })
+    const mockConnection = {
+      request: vi.fn().mockResolvedValueOnce({ thread: { id: 'fresh-thread' } }),
+    } as never
+
+    await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
+
+    const [method, payload] = (mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0]
+    expect(method).toBe('thread/start')
+    expect(payload.model_provider).toBe('superone_custom')
+    expect(payload.config.model_providers.superone_custom).toEqual(
+      expect.objectContaining({
+        base_url: 'https://gw.example.com/v1',
+        env_key: 'CODEX_API_KEY',
+        wire_api: 'responses',
+        requires_openai_auth: false,
+      }),
+    )
+  })
+
+  it('does not set model_provider or model_providers when no active codex provider', async () => {
+    const session = makeSession({ model: 'gpt-5' })
+    const mockConnection = {
+      request: vi.fn().mockResolvedValueOnce({ thread: { id: 'fresh-thread' } }),
+    } as never
+
+    await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
+
+    const payload = (mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]
+    expect(payload.model_provider).toBeUndefined()
+    expect(payload.config?.model_providers).toBeUndefined()
+  })
+
+  it('does not set a provider override when the active codex provider has no base_url', async () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue({
+      id: 'p2',
+      name: 'No URL',
+      api_key: 'sk-test',
+      agent_configs: JSON.stringify({ codex: {} }),
+    } as never)
+    const session = makeSession({ model: 'gpt-5' })
+    const mockConnection = {
+      request: vi.fn().mockResolvedValueOnce({ thread: { id: 'fresh-thread' } }),
+    } as never
+
+    await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
+
+    const payload = (mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]
+    expect(payload.model_provider).toBeUndefined()
+    expect(payload.config?.model_providers).toBeUndefined()
+  })
+
+  it('resolves the override from the session apiProviderId (per-session /provider) over the DB-active provider', async () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue({
+      id: 'global', name: 'Global', api_key: 'sk',
+      agent_configs: JSON.stringify({ codex: { base_url: 'https://global/v1' } }),
+    } as never)
+    vi.mocked(getProviderByIdRaw).mockReturnValue({
+      id: 'sess-gw', name: 'Session GW', api_key: 'sk2',
+      agent_configs: JSON.stringify({ codex: { base_url: 'https://session/v1' } }),
+    } as never)
+    const session = {
+      ...createCodexSession('test-session', '/project', 'gpt-5', undefined, undefined, 'default', 'sess-gw'),
+    }
+    const mockConnection = {
+      request: vi.fn().mockResolvedValueOnce({ thread: { id: 'fresh-thread' } }),
+    } as never
+
+    await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
+
+    const payload = (mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]
+    expect(payload.model_provider).toBe('superone_custom')
+    expect(payload.config.model_providers.superone_custom.base_url).toBe('https://session/v1')
   })
 })
 

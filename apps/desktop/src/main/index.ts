@@ -491,6 +491,7 @@ async function runCodexTurnViaSessionManager(
 function registerIpcHandlers(): void {
   // Setup agent IPC handlers (does NOT auto-initialize)
   agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))
+  agentService.setCodexProviderChanged(() => codexService.handleProviderChanged())
   agentService.setCodexGetAuthStatus((projectPath) => codexService.getAuthStatus(projectPath))
   agentService.setup()
 
@@ -596,11 +597,11 @@ function registerIpcHandlers(): void {
     },
   )
 
-  ipcMain.handle(AgentIpcChannels.CODEX_LIST_MODELS, async (_event, projectPath: string) => {
-    const models = await codexService.listModels(projectPath)
+  ipcMain.handle(AgentIpcChannels.CODEX_LIST_MODELS, async (_event, projectPath: string, apiProviderId?: string | null, force?: boolean) => {
+    const models = await codexService.listModels(projectPath, apiProviderId ?? null, force ?? false)
     const current = getCachedHarnessResources('codex')
     setCachedHarnessResources('codex', { models, prompts: current?.prompts ?? [] })
-    log.debug('[CODEX_LIST_MODELS] project=%s models=%s', projectPath, JSON.stringify(models))
+    log.debug('[CODEX_LIST_MODELS] project=%s apiProvider=%s models=%s', projectPath, apiProviderId ?? 'default', JSON.stringify(models))
     return models
   })
 

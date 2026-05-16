@@ -54,8 +54,8 @@ export interface CodexServiceDeps {
   getProjectAuth(projectPath: string): CodexProjectAuth
   onAuthChanged(projectPath: string, cb: () => void): () => void
   prewarmAppServerConnection?(projectPath: string): void
-  takeAppServerConnection?(projectPath: string, auth: CodexProjectAuth): Promise<AppServerConnectionHandle | null>
-  releaseAppServerConnection?(projectPath: string, auth: CodexProjectAuth, handle: AppServerConnectionHandle): void
+  takeAppServerConnection?(projectPath: string, auth: CodexProjectAuth, apiProviderId?: string | null): Promise<AppServerConnectionHandle | null>
+  releaseAppServerConnection?(projectPath: string, auth: CodexProjectAuth, handle: AppServerConnectionHandle, apiProviderId?: string | null): void
 }
 
 interface CodexBackendConfig {
@@ -167,6 +167,7 @@ export class CodexBackend implements SessionBackend {
       opts.providerSessionId ?? undefined,
       undefined,
       undefined,
+      opts.apiProviderId ?? null,
     )
     await this.adoptWarmHandle()
     this.authChangedUnsub = this.service.onAuthChanged(opts.projectPath, () => {
@@ -204,20 +205,20 @@ export class CodexBackend implements SessionBackend {
     }
   }
 
-  private async createWarmHandle(projectPath: string, auth: CodexProjectAuth): Promise<AppServerConnectionHandle> {
+  private async createWarmHandle(projectPath: string, auth: CodexProjectAuth, apiProviderId: string | null): Promise<AppServerConnectionHandle> {
     if (this.service.prewarmAppServerConnection) {
       this.service.prewarmAppServerConnection(projectPath)
     }
     const pooled = this.service.takeAppServerConnection
-      ? await this.service.takeAppServerConnection(projectPath, auth).catch(() => null)
+      ? await this.service.takeAppServerConnection(projectPath, auth, apiProviderId).catch(() => null)
       : null
-    return pooled ?? prewarmCodexConnection(auth)
+    return pooled ?? prewarmCodexConnection(auth, undefined, apiProviderId)
   }
 
   private async prepareWarmHandle(opts: BackendStartOptions, auth: CodexProjectAuth): Promise<WarmCodexHandle | null> {
     const startedAt = Date.now()
     const warm = this.resolveWarmSessionOptions(opts)
-    const handle = await this.createWarmHandle(opts.projectPath, auth)
+    const handle = await this.createWarmHandle(opts.projectPath, auth, opts.apiProviderId ?? null)
     const warmSession = createCodexSession(
       opts.sessionId,
       opts.projectPath,
@@ -225,6 +226,7 @@ export class CodexBackend implements SessionBackend {
       opts.providerSessionId ?? undefined,
       warm.reasoningEffort,
       warm.permissionPreset,
+      opts.apiProviderId ?? null,
     )
     try {
       const threadId = await prewarmCodexSession(handle, warmSession, warm.cwd)
@@ -264,7 +266,7 @@ export class CodexBackend implements SessionBackend {
     if (this.warmHandlePromise) {
       warm = await this.warmHandlePromise.catch(() => null)
     } else if (this.service.takeAppServerConnection) {
-      const handle = await this.service.takeAppServerConnection(startOpts.projectPath, currentAuth).catch(() => null)
+      const handle = await this.service.takeAppServerConnection(startOpts.projectPath, currentAuth, startOpts.apiProviderId ?? null).catch(() => null)
       if (handle) {
         warm = {
           handle,
@@ -317,7 +319,7 @@ export class CodexBackend implements SessionBackend {
     session.threadId = null
     session.threadReady = false
     session.effectiveCwd = null
-    this.service.releaseAppServerConnection(startOpts.projectPath, auth, handle)
+    this.service.releaseAppServerConnection(startOpts.projectPath, auth, handle, startOpts.apiProviderId ?? null)
     return true
   }
 
@@ -366,6 +368,7 @@ export class CodexBackend implements SessionBackend {
         requestedThreadId,
         requestedReasoningEffort,
         requestedPermissionPreset,
+        startOpts.apiProviderId ?? null,
       )
       this.session = created
       return created
@@ -379,6 +382,7 @@ export class CodexBackend implements SessionBackend {
     if (requestedModel !== undefined) existing.model = requestedModel
     if (requestedReasoningEffort !== undefined) existing.modelReasoningEffort = requestedReasoningEffort
     if (requestedPermissionPreset !== undefined) existing.permissionPreset = requestedPermissionPreset
+    existing.apiProviderId = startOpts.apiProviderId ?? null
 
     return existing
   }

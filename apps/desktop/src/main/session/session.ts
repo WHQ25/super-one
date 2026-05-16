@@ -618,6 +618,7 @@ export class Session implements SessionContract {
       additionalDirectories: dirs.length > 0 ? dirs : undefined,
       abortController: new AbortController(),
       providerSessionId: this._providerSessionId ?? undefined,
+      apiProviderId: this._apiProviderId,
     }
     this.backend.prewarm(opts)
   }
@@ -862,6 +863,7 @@ export class Session implements SessionContract {
       additionalDirectories: this.additionalDirectories.length > 0 ? this.additionalDirectories : undefined,
       abortController: this.abortController,
       providerSessionId: this._providerSessionId ?? undefined,
+      apiProviderId: this._apiProviderId,
     }
   }
 

@@ -67,7 +67,7 @@ interface AppAPI {
   codexSteer(sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] }): Promise<void>
   codexReview(sessionId: string, projectPath: string, target: CodexReviewTarget, model?: string, reasoningEffort?: CodexReasoningEffort, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] }): Promise<CodexRunResult>
   codexCompact(sessionId: string, projectPath: string, model?: string, permissionPreset?: CodexPermissionPreset, threadId?: string, messageId?: string, cwd?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] }): Promise<CodexRunResult>
-  codexListModels(projectPath: string): Promise<ModelOption[]>
+  codexListModels(projectPath: string, apiProviderId?: string | null, force?: boolean): Promise<ModelOption[]>
   codexPlanApproval(projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string): Promise<void>
   codexCollaborationModeChange(projectPath: string, sessionId: string, mode: string): Promise<void>
   codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>
@@ -157,6 +157,7 @@ interface AppAPI {
   activateProvider(id: string, agentType: string): Promise<boolean>
   deactivateAllProviders(agentType: string): Promise<void>
   testProvider(data: { api_key: string; base_url: string; extra_env: string }): Promise<{ success: boolean; models: number; error?: string }>
+  testCodexProvider(data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string }): Promise<{ success: boolean; models: number; error?: string }>
 
   // File operations
   moveFile(folderPath: string, srcRelPath: string, destDirRelPath: string): Promise<FileOpResult>

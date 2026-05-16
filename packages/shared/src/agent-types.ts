@@ -1663,6 +1663,7 @@ export const AgentIpcChannels = {
   PROVIDERS_ACTIVATE: 'providers:activate',
   PROVIDERS_DEACTIVATE_ALL: 'providers:deactivate-all',
   PROVIDERS_TEST: 'providers:test',
+  PROVIDERS_TEST_CODEX: 'providers:test-codex',
 
   // Session Providers (new session_providers table)
   SESSION_PROVIDERS_LIST: 'sessionProviders:list',

@@ -500,11 +500,18 @@ export function ProviderDialog({
         ...JSON.parse(af.extra_env || '{}'),
         ...expandProviderModelEnv(af.model_env),
       })
-      const result = await window.app.testProvider({
-        api_key: form.api_key,
-        base_url: af.base_url || '',
-        extra_env: mergedExtra,
-      })
+      const result = activeAgentTab === 'codex'
+        ? await window.app.testCodexProvider({
+            api_key: form.api_key,
+            base_url: af.base_url || '',
+            extra_env: mergedExtra,
+            name: form.name,
+          })
+        : await window.app.testProvider({
+            api_key: form.api_key,
+            base_url: af.base_url || '',
+            extra_env: mergedExtra,
+          })
       if (result.success) {
         setTestStatus('success')
         setTestMessage(t('resources.providerDialog.connected'))

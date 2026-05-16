@@ -223,8 +223,8 @@ const appAPI = {
       extras,
     ),
 
-  codexListModels: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_LIST_MODELS, projectPath),
+  codexListModels: (projectPath: string, apiProviderId?: string | null, force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_LIST_MODELS, projectPath, apiProviderId ?? null, force ?? false),
 
   codexSteer: (sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: UserMessageExtras) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, sessionId, input, messageId, userMessageId, userMessageText, gitBranch, worktreePath, extras),
@@ -501,6 +501,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL, agentType),
   testProvider: (data: { api_key: string; base_url: string; extra_env: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST, data) as Promise<{ success: boolean; models: number; error?: string }>,
+  testCodexProvider: (data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST_CODEX, data) as Promise<{ success: boolean; models: number; error?: string }>,
 
   // Session Providers (new session layer)
   sessionProviders: {

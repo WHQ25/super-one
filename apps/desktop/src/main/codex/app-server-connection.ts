@@ -5,7 +5,7 @@ import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { getNodeRuntime } from '../agent/resolve-cli'
 import { SUPERONE_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
-import { getActiveProviderRaw } from '../database'
+import { getActiveProviderRaw, getProviderByIdRaw } from '../database'
 import { ProcessTitle } from '../process-titles'
 import {
   CODEX_PERMISSION_PRESETS,
@@ -168,17 +168,98 @@ export function resolveCodexCliScriptPath(): string {
   return cachedCodexCliScriptPath
 }
 
-export function buildAppServerEnv(auth: CodexProjectAuth): NodeJS.ProcessEnv {
+export const SUPERONE_CODEX_PROVIDER_ID = 'superone_custom'
+
+export interface CodexProviderOverride {
+  id: string
+  info: Record<string, unknown>
+}
+
+interface CodexProviderConfig {
+  base_url?: string
+  extra_env?: string
+}
+
+function parseCodexProviderConfig(agentConfigs: string | null | undefined): CodexProviderConfig | undefined {
+  try {
+    return (JSON.parse(agentConfigs || '{}') as { codex?: CodexProviderConfig }).codex
+  } catch {
+    return undefined
+  }
+}
+
+export function makeCodexProviderOverride(name: string, baseUrl: string): CodexProviderOverride {
+  return {
+    id: SUPERONE_CODEX_PROVIDER_ID,
+    info: {
+      name: name || 'SuperOne Custom',
+      base_url: baseUrl,
+      env_key: 'CODEX_API_KEY',
+      wire_api: 'responses',
+      requires_openai_auth: false,
+    },
+  }
+}
+
+function tomlOverrideValue(value: unknown): string {
+  if (typeof value === 'string') return JSON.stringify(value)
+  if (typeof value === 'boolean' || typeof value === 'number') return String(value)
+  return JSON.stringify(String(value))
+}
+
+export function buildCodexProviderCliOverrides(override: CodexProviderOverride | null): string[] {
+  if (!override) return []
+  const args: string[] = ['-c', `model_provider=${override.id}`]
+  for (const [key, value] of Object.entries(override.info)) {
+    if (value === undefined || value === null) continue
+    args.push('-c', `model_providers.${override.id}.${key}=${tomlOverrideValue(value)}`)
+  }
+  return args
+}
+
+function resolveCodexProviderRow(apiProviderId?: string | null) {
+  if (apiProviderId) {
+    const explicit = getProviderByIdRaw(apiProviderId)
+    if (explicit) return explicit
+  }
+  return getActiveProviderRaw('codex')
+}
+
+export function getCodexProviderOverrideFor(apiProviderId?: string | null): CodexProviderOverride | null {
+  const codexProvider = resolveCodexProviderRow(apiProviderId)
+  if (!codexProvider) return null
+  const baseUrl = parseCodexProviderConfig(codexProvider.agent_configs)?.base_url?.trim()
+  if (!baseUrl) return null
+  return makeCodexProviderOverride(codexProvider.name, baseUrl)
+}
+
+export function getCodexProviderOverride(): CodexProviderOverride | null {
+  return getCodexProviderOverrideFor(null)
+}
+
+const CODEX_TEST_SYSTEM_ENV_ALLOWLIST = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'SystemRoot', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES', 'USERPROFILE', 'PROGRAMDATA', 'COMSPEC']
+
+export function buildCodexProviderTestEnv(apiKey: string, extraEnv: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const key of CODEX_TEST_SYSTEM_ENV_ALLOWLIST) {
+    const v = process.env[key]
+    if (v !== undefined) env[key] = v
+  }
+  if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1'
+  if (apiKey) env.CODEX_API_KEY = apiKey
+  try { Object.assign(env, JSON.parse(extraEnv || '{}')) } catch { /* ignore malformed extra_env */ }
+  return env
+}
+
+export function buildAppServerEnv(auth: CodexProjectAuth, apiProviderId?: string | null): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
   if (process.versions.electron) {
     env.ELECTRON_RUN_AS_NODE = '1'
   }
-  const codexProvider = getActiveProviderRaw('codex')
+  const codexProvider = resolveCodexProviderRow(apiProviderId)
   if (codexProvider) {
-    const configs = JSON.parse(codexProvider.agent_configs || '{}')
-    const cc = configs.codex
+    const cc = parseCodexProviderConfig(codexProvider.agent_configs)
     if (codexProvider.api_key) env.CODEX_API_KEY = codexProvider.api_key
-    if (cc?.base_url) env.OPENAI_BASE_URL = cc.base_url
     try { Object.assign(env, JSON.parse(cc?.extra_env || '{}')) } catch {}
     return env
   }
@@ -239,13 +320,17 @@ export function buildCollaborationMode(
 export async function createAppServerConnection(
   auth: CodexProjectAuth,
   signal?: AbortSignal,
+  envOverride?: NodeJS.ProcessEnv,
+  cliOverrides?: string[],
+  apiProviderId?: string | null,
 ): Promise<AppServerConnectionHandle> {
   if (signal?.aborted) {
     throw new Error('Codex run interrupted')
   }
 
   const codexScript = resolveCodexCliScriptPath()
-  const env = buildAppServerEnv(auth)
+  const env = envOverride ?? buildAppServerEnv(auth, apiProviderId)
+  const overrideArgs = cliOverrides ?? buildCodexProviderCliOverrides(getCodexProviderOverrideFor(apiProviderId))
   const expectedPackage = resolveCodexPlatformPackage()
   const hasBundledPackage = expectedPackage ? hasCodexPlatformPackage(expectedPackage) : false
   const systemCodexCli = !hasBundledPackage ? findSystemCodexCli() : null
@@ -268,14 +353,14 @@ export async function createAppServerConnection(
   }
 
   const child: ChildProcess = systemCodexCli
-    ? spawn(systemCodexCli, ['app-server', '--listen', 'stdio://'], {
+    ? spawn(systemCodexCli, [...overrideArgs, 'app-server', '--listen', 'stdio://'], {
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: process.platform === 'win32',
         windowsHide: true,
         argv0: ProcessTitle.Codex,
       })
-    : spawn(getNodeRuntime().executable ?? process.execPath, [codexScript, 'app-server', '--listen', 'stdio://'], {
+    : spawn(getNodeRuntime().executable ?? process.execPath, [codexScript, ...overrideArgs, 'app-server', '--listen', 'stdio://'], {
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,

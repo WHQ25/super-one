@@ -2669,6 +2669,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       return
     }
+    if (event.type === 'provider_changed') {
+      if (event.harnessId === 'codex') {
+        void get().refreshCodexModels(true)
+      }
+      return
+    }
     if (event.type === 'remote_session_end') {
       if (!event.isSubscribe) return
       set((s) => ({
@@ -4087,48 +4093,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeProject } = get()
     if (!activeProject) return
 
-    const current = getProject(get(), activeProject)
-    if (!force && current.codexModelsLoading) return
-    if (!force && current.codexModels.length > 0) {
-      set((s) => {
-        const proj = getProject(s, activeProject)
-        const activeSid = proj._activeSessionId
-        if (!activeSid) return {}
-        const sess = proj._sessions[activeSid] ?? createDefaultPerSessionState()
-        const next = resolveSessionCodexSelection(
-          proj.codexModels,
-          sess.selectedCodexModel,
-          sess.selectedCodexReasoningEffort,
-        )
-        if (
-          next.modelId === sess.selectedCodexModel
-          && next.reasoningEffort === sess.selectedCodexReasoningEffort
-        ) {
-          return {}
-        }
-        return {
-          projectSessions: {
-            ...s.projectSessions,
-            [activeProject]: {
-              ...proj,
-              _sessions: {
-                ...proj._sessions,
-                [activeSid]: {
-                  ...sess,
-                  selectedCodexModel: next.modelId,
-                  selectedCodexReasoningEffort: next.reasoningEffort,
-                },
-              },
-            },
-          },
-        }
-      })
-      return
-    }
+    const project0 = getProject(get(), activeProject)
+    const activeSid0 = project0._activeSessionId
+    const apiProviderId = activeSid0
+      ? (project0._sessions[activeSid0]?.apiProviderId ?? null)
+      : null
 
-    set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: true })))
-    try {
-      const models = await window.app.codexListModels(activeProject)
+    const applyModels = (models: typeof project0.codexModels, clearLoading: boolean) => {
       set((s) => {
         const proj = getProject(s, activeProject)
         const activeSid = proj._activeSessionId
@@ -4151,15 +4122,46 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         return {
           projectSessions: {
             ...s.projectSessions,
-            [activeProject]: { ...proj, codexModels: models, codexModelsLoading: false, _sessions: updatedSessions },
+            [activeProject]: {
+              ...proj,
+              codexModels: models,
+              ...(clearLoading ? { codexModelsLoading: false } : {}),
+              _sessions: updatedSessions,
+            },
           },
           harnessResources: { ...s.harnessResources, codex: { models, prompts: s.harnessResources.codex?.prompts ?? [] } },
         }
       })
+    }
+
+    const revalidate = async () => {
+      try {
+        const fresh = await window.app.codexListModels(activeProject, apiProviderId, true)
+        applyModels(fresh, true)
+      } catch (error) {
+        console.warn('[refreshCodexModels] revalidate failed:', error)
+        set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: false })))
+      }
+    }
+
+    if (force) {
+      set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: true })))
+      await revalidate()
+      return
+    }
+
+    if (project0.codexModelsLoading) return
+
+    set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: true })))
+    try {
+      // stale-while-revalidate: serve the per-provider cache (main side) fast …
+      const cached = await window.app.codexListModels(activeProject, apiProviderId, false)
+      applyModels(cached, false)
     } catch (error) {
       console.warn('[refreshCodexModels] Failed:', error)
-      set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: false })))
     }
+    // … then refresh in the background and update the cache.
+    void revalidate()
   },
 
   refreshCodexSkills: async (projectPath) => {
@@ -4494,10 +4496,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       apiProviderId,
       slashCommandOutput: null,
     })))
+    const sess = project._sessions[sessionId]
+    const isCodex = (sess?.sessionProvider ?? sess?.preferredProvider ?? 'claude') === 'codex'
     try {
       await window.agent.setSessionApiProvider(sessionId, apiProviderId)
     } catch (err) {
       console.warn('[chat] setSessionApiProvider failed:', err)
+    }
+    if (isCodex) {
+      void get().refreshCodexModels(false)
     }
   },
 

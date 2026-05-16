@@ -61,12 +61,17 @@ export class AgentService {
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
   private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
   private codexGetAuthStatus?: (projectPath: string) => unknown
+  private codexProviderChanged?: () => void
   private remoteControlService?: RemoteControlService
   private deviceRegistry?: import('../remote/device-registry').DeviceRegistry
   private warmupManager = new WarmupManager()
 
   setCodexListModels(fn: (projectPath: string) => Promise<ModelOption[]>): void {
     this.codexListModels = fn
+  }
+
+  setCodexProviderChanged(fn: () => void): void {
+    this.codexProviderChanged = fn
   }
 
   setCodexGetAuthStatus(fn: (projectPath: string) => unknown): void {
@@ -1812,6 +1817,7 @@ export class AgentService {
       log.info('[providers] activate id=%s agentType=%s', id, agentType)
       const result = activateProvider(id, agentType)
       this.markAllNeedsRebuild()
+      if (agentType === 'codex') this.codexProviderChanged?.()
       this.broadcastProviderChanged(agentType === 'codex' ? 'codex' : 'claude')
       return result
     })
@@ -1820,6 +1826,7 @@ export class AgentService {
       log.info('[providers] deactivate all, agentType=%s', agentType)
       deactivateAllProviders(agentType)
       this.markAllNeedsRebuild()
+      if (agentType === 'codex') this.codexProviderChanged?.()
       this.broadcastProviderChanged(agentType === 'codex' ? 'codex' : 'claude')
     })
 
@@ -1896,6 +1903,11 @@ export class AgentService {
         trace('providers.test', 'error', { message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined })
         return { success: false, models: 0, error: err instanceof Error ? err.message : String(err) }
       }
+    })
+
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_CODEX, async (_event, data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string }) => {
+      const { testCodexProvider } = await import('../codex/codex-provider-test')
+      return testCodexProvider(data)
     })
 
     // --- Session Providers (new session_providers table) ---

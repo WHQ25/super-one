@@ -57,6 +57,7 @@ export interface CodexSession {
   steerFn: ((input: string) => Promise<void>) | null
   connectionHandle: AppServerConnectionHandle | null
   connectionAuth: CodexProjectAuth | null
+  apiProviderId: string | null
 }
 
 function resolvePermissionPreset(preset?: CodexPermissionPreset): CodexPermissionPreset {
@@ -72,6 +73,7 @@ export function createCodexSession(
   threadId?: string,
   modelReasoningEffort?: CodexReasoningEffort,
   permissionPreset?: CodexPermissionPreset,
+  apiProviderId?: string | null,
 ): CodexSession {
   return {
     superoneSessionId,
@@ -88,6 +90,7 @@ export function createCodexSession(
     steerFn: null,
     connectionHandle: null,
     connectionAuth: null,
+    apiProviderId: apiProviderId ?? null,
   }
 }
 

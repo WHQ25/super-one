@@ -1,7 +1,9 @@
 import log from '../logger'
 import {
+  buildCodexProviderCliOverrides,
   compactRecord,
   createAppServerConnection,
+  getCodexProviderOverrideFor,
   mapAppServerModel,
   normalizeApiKey,
   readString,
@@ -93,8 +95,14 @@ function authsEqual(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
   return a.mode === b.mode && normalizeApiKey(a.apiKey) === normalizeApiKey(b.apiKey)
 }
 
+function codexProviderSignature(apiProviderId?: string | null): string {
+  const override = getCodexProviderOverrideFor(apiProviderId)
+  return override ? `${override.id}|${String(override.info.base_url ?? '')}` : ''
+}
+
 interface CachedAppServerConnection {
   auth: CodexProjectAuth
+  providerSig: string
   handlePromise: Promise<AppServerConnectionHandle>
   handle: AppServerConnectionHandle | null
   inFlight: number
@@ -106,6 +114,7 @@ export class CodexExperimentService {
   private projectAuth = new Map<string, CodexProjectAuth>()
   private authChangedListeners = new Map<string, Set<() => void>>()
   private appServerConnections = new Map<string, CachedAppServerConnection>()
+  private modelCacheByProvider = new Map<string, ModelOption[]>()
 
   getProjectAuth(projectPath: string): CodexProjectAuth {
     let auth = this.projectAuth.get(projectPath)
@@ -151,9 +160,11 @@ export class CodexExperimentService {
     projectPath: string,
     auth: CodexProjectAuth,
     signal: AbortSignal | undefined,
+    apiProviderId?: string | null,
   ): CachedAppServerConnection {
+    const sig = codexProviderSignature(apiProviderId)
     const existing = this.appServerConnections.get(projectPath)
-    if (existing && authsEqual(existing.auth, auth)) {
+    if (existing && authsEqual(existing.auth, auth) && existing.providerSig === sig) {
       if (existing.idleTimer) {
         clearTimeout(existing.idleTimer)
         existing.idleTimer = null
@@ -164,6 +175,7 @@ export class CodexExperimentService {
 
     const cached: CachedAppServerConnection = {
       auth: { mode: auth.mode, apiKey: normalizeApiKey(auth.apiKey) },
+      providerSig: sig,
       handlePromise: Promise.resolve(null as never),
       handle: null,
       inFlight: 0,
@@ -171,7 +183,13 @@ export class CodexExperimentService {
       claimed: false,
     }
     const startedAt = Date.now()
-    cached.handlePromise = createAppServerConnection(auth, signal)
+    cached.handlePromise = createAppServerConnection(
+      auth,
+      signal,
+      undefined,
+      buildCodexProviderCliOverrides(getCodexProviderOverrideFor(apiProviderId)),
+      apiProviderId,
+    )
       .then((handle) => {
         if (this.appServerConnections.get(projectPath) !== cached && !cached.claimed) {
           void handle.close().catch(() => {})
@@ -209,9 +227,10 @@ export class CodexExperimentService {
   async takeAppServerConnection(
     projectPath: string,
     auth: CodexProjectAuth,
+    apiProviderId?: string | null,
   ): Promise<AppServerConnectionHandle | null> {
     const cached = this.appServerConnections.get(projectPath)
-    if (!cached || !authsEqual(cached.auth, auth) || cached.inFlight > 0) return null
+    if (!cached || !authsEqual(cached.auth, auth) || cached.providerSig !== codexProviderSignature(apiProviderId) || cached.inFlight > 0) return null
     this.appServerConnections.delete(projectPath)
     cached.claimed = true
     if (cached.idleTimer) {
@@ -230,6 +249,7 @@ export class CodexExperimentService {
     projectPath: string,
     auth: CodexProjectAuth,
     handle: AppServerConnectionHandle,
+    apiProviderId?: string | null,
   ): void {
     if (this.appServerConnections.has(projectPath)) {
       void handle.close().catch(() => {})
@@ -237,6 +257,7 @@ export class CodexExperimentService {
     }
     const cached: CachedAppServerConnection = {
       auth: { mode: auth.mode, apiKey: normalizeApiKey(auth.apiKey) },
+      providerSig: codexProviderSignature(apiProviderId),
       handlePromise: Promise.resolve(handle),
       handle,
       inFlight: 0,
@@ -267,8 +288,9 @@ export class CodexExperimentService {
     auth: CodexProjectAuth,
     signal: AbortSignal | undefined,
     fn: (connection: AppServerConnection) => Promise<T>,
+    apiProviderId?: string | null,
   ): Promise<T> {
-    const cached = this.getCachedAppServerConnection(projectPath, auth, signal)
+    const cached = this.getCachedAppServerConnection(projectPath, auth, signal, apiProviderId)
     cached.inFlight += 1
     if (cached.idleTimer) {
       clearTimeout(cached.idleTimer)
@@ -295,7 +317,7 @@ export class CodexExperimentService {
     }
   }
 
-  private async fetchModelsFromAppServer(projectPath: string, auth: CodexProjectAuth): Promise<ModelOption[]> {
+  private async fetchModelsFromAppServer(projectPath: string, auth: CodexProjectAuth, apiProviderId?: string | null): Promise<ModelOption[]> {
     return this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
       const models: CodexAppServerModel[] = []
       let cursor: string | null = null
@@ -323,15 +345,31 @@ export class CodexExperimentService {
         mapped[0] = { ...mapped[0], isDefault: true }
       }
       return mapped
-    })
+    }, apiProviderId)
   }
 
-  async listModels(projectPath: string): Promise<ModelOption[]> {
+  async listModels(projectPath: string, apiProviderId: string | null = null, force = false): Promise<ModelOption[]> {
     const auth = this.getProjectAuth(projectPath)
-    log.info('[codex] listModels: mode=%s, hasApiKey=%s', auth.mode, Boolean(auth.apiKey || process.env.CODEX_API_KEY))
-    const models = await this.fetchModelsFromAppServer(projectPath, auth)
+    const sig = `${codexProviderSignature(apiProviderId)}::${auth.mode}:${normalizeApiKey(auth.apiKey) ?? ''}`
+    if (!force) {
+      const cached = this.modelCacheByProvider.get(sig)
+      if (cached) {
+        log.info('[codex] listModels: cache hit key=%s models=%d', sig, cached.length)
+        return cached
+      }
+    }
+    log.info('[codex] listModels: mode=%s, hasApiKey=%s providerSig=%s', auth.mode, Boolean(auth.apiKey || process.env.CODEX_API_KEY), sig || 'default')
+    const models = await this.fetchModelsFromAppServer(projectPath, auth, apiProviderId)
     log.info('[codex] listModels: fetched %d models', models.length)
+    this.modelCacheByProvider.set(sig, models)
     return models
+  }
+
+  handleProviderChanged(): void {
+    this.modelCacheByProvider.clear()
+    for (const projectPath of [...this.appServerConnections.keys()]) {
+      void this.closeAppServerConnection(projectPath)
+    }
   }
 
   async withAppServerRequest<T>(

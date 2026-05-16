@@ -21,6 +21,7 @@ vi.mock('../agent/event-trace', () => ({
 
 vi.mock('../database', () => ({
   getActiveProviderRaw: vi.fn(() => null),
+  getProviderByIdRaw: vi.fn(() => undefined),
 }))
 
 vi.mock('../agent/resolve-cli', () => ({
@@ -83,7 +84,15 @@ vi.mock('module', async () => {
   }
 })
 
-const { createAppServerConnection, resolvePermissionProfile } = await import('./app-server-connection')
+const {
+  createAppServerConnection,
+  resolvePermissionProfile,
+  buildAppServerEnv,
+  getCodexProviderOverride,
+  getCodexProviderOverrideFor,
+  buildCodexProviderCliOverrides,
+} = await import('./app-server-connection')
+const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
 
 function writeLineToChild(child: FakeChild, payload: Record<string, unknown>): void {
   child.stdout.write(`${JSON.stringify(payload)}\n`)
@@ -143,6 +152,65 @@ describe('createAppServerConnection', () => {
       createAppServerConnection({ mode: 'apiKey' }, controller.signal),
     ).rejects.toThrow(/interrupted/)
     expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('injects cli overrides as -c args before the app-server subcommand', async () => {
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+
+    const handlePromise = createAppServerConnection(
+      { mode: 'apiKey', apiKey: 'k' },
+      undefined,
+      undefined,
+      ['-c', 'model_provider=superone_custom', '-c', 'model_providers.superone_custom.base_url="https://gw/v1"'],
+    )
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: { serverInfo: { name: 'codex' } } })
+    const handle = await handlePromise
+
+    const args = spawnMock.mock.calls[0][1] as string[]
+    const cIdx = args.indexOf('-c')
+    const appServerIdx = args.indexOf('app-server')
+    expect(cIdx).toBeGreaterThanOrEqual(0)
+    expect(cIdx).toBeLessThan(appServerIdx)
+    expect(args).toContain('model_provider=superone_custom')
+    expect(args).toContain('model_providers.superone_custom.base_url="https://gw/v1"')
+
+    await handle.close()
+  })
+})
+
+describe('buildCodexProviderCliOverrides', () => {
+  it('returns [] for a null override', () => {
+    expect(buildCodexProviderCliOverrides(null)).toEqual([])
+  })
+
+  it('flattens the provider override into -c key=value pairs with TOML-quoted strings', () => {
+    const ov = {
+      id: 'superone_custom',
+      info: {
+        name: 'My GW',
+        base_url: 'https://gw.example.com/v1',
+        env_key: 'CODEX_API_KEY',
+        wire_api: 'responses',
+        requires_openai_auth: false,
+      },
+    }
+
+    const args = buildCodexProviderCliOverrides(ov)
+
+    // grouped as -c <pair> repeated
+    const pairs: string[] = []
+    for (let i = 0; i < args.length; i += 2) {
+      expect(args[i]).toBe('-c')
+      pairs.push(args[i + 1])
+    }
+    expect(pairs).toContain('model_provider=superone_custom')
+    expect(pairs).toContain('model_providers.superone_custom.base_url="https://gw.example.com/v1"')
+    expect(pairs).toContain('model_providers.superone_custom.env_key="CODEX_API_KEY"')
+    expect(pairs).toContain('model_providers.superone_custom.wire_api="responses"')
+    expect(pairs).toContain('model_providers.superone_custom.requires_openai_auth=false')
+    expect(pairs).toContain('model_providers.superone_custom.name="My GW"')
   })
 
   it('close is idempotent', async () => {
@@ -267,5 +335,109 @@ describe('resolvePermissionProfile', () => {
       sandboxMode: 'danger-full-access',
       networkAccessEnabled: true,
     })
+  })
+})
+
+describe('buildAppServerEnv custom Codex provider', () => {
+  beforeEach(() => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue(null as never)
+  })
+
+  it('injects CODEX_API_KEY and extra_env but never the unsupported OPENAI_BASE_URL', () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue({
+      id: 'p1',
+      name: 'My Gateway',
+      api_key: 'sk-test',
+      agent_configs: JSON.stringify({
+        codex: { base_url: 'https://gw.example.com/v1', extra_env: JSON.stringify({ FOO: 'bar' }) },
+      }),
+    } as never)
+
+    const env = buildAppServerEnv({ mode: 'apiKey' } as never)
+
+    expect(env.CODEX_API_KEY).toBe('sk-test')
+    expect(env.FOO).toBe('bar')
+    expect(env.OPENAI_BASE_URL).toBeUndefined()
+  })
+})
+
+describe('getCodexProviderOverride', () => {
+  beforeEach(() => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue(null as never)
+  })
+
+  it('returns null when no active codex provider', () => {
+    expect(getCodexProviderOverride()).toBeNull()
+  })
+
+  it('returns null when the active codex provider has no base_url', () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue({
+      id: 'p2',
+      name: 'No URL',
+      api_key: 'sk',
+      agent_configs: JSON.stringify({ codex: {} }),
+    } as never)
+    expect(getCodexProviderOverride()).toBeNull()
+  })
+
+  it('builds a Responses-API provider definition keyed by superone_custom', () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue({
+      id: 'p3',
+      name: 'My Gateway',
+      api_key: 'sk',
+      agent_configs: JSON.stringify({ codex: { base_url: 'https://gw.example.com/v1' } }),
+    } as never)
+
+    expect(getCodexProviderOverride()).toEqual({
+      id: 'superone_custom',
+      info: {
+        name: 'My Gateway',
+        base_url: 'https://gw.example.com/v1',
+        env_key: 'CODEX_API_KEY',
+        wire_api: 'responses',
+        requires_openai_auth: false,
+      },
+    })
+  })
+})
+
+describe('getCodexProviderOverrideFor (session-scoped)', () => {
+  beforeEach(() => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue(null as never)
+    vi.mocked(getProviderByIdRaw).mockReturnValue(undefined as never)
+  })
+
+  it('resolves the explicit per-session provider by id over the DB-active provider', () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue({
+      id: 'global', name: 'Global', api_key: 'sk',
+      agent_configs: JSON.stringify({ codex: { base_url: 'https://global/v1' } }),
+    } as never)
+    vi.mocked(getProviderByIdRaw).mockReturnValue({
+      id: 'sess-1', name: 'Session GW', api_key: 'sk2',
+      agent_configs: JSON.stringify({ codex: { base_url: 'https://session/v1' } }),
+    } as never)
+
+    const ov = getCodexProviderOverrideFor('sess-1')
+    expect(ov?.info.base_url).toBe('https://session/v1')
+    expect(ov?.info.name).toBe('Session GW')
+  })
+
+  it('falls back to the DB-active provider when apiProviderId is null', () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue({
+      id: 'global', name: 'Global', api_key: 'sk',
+      agent_configs: JSON.stringify({ codex: { base_url: 'https://global/v1' } }),
+    } as never)
+
+    expect(getCodexProviderOverrideFor(null)?.info.base_url).toBe('https://global/v1')
+  })
+
+  it('falls back to DB-active when the explicit id is not found', () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue({
+      id: 'global', name: 'Global', api_key: 'sk',
+      agent_configs: JSON.stringify({ codex: { base_url: 'https://global/v1' } }),
+    } as never)
+    vi.mocked(getProviderByIdRaw).mockReturnValue(undefined as never)
+
+    expect(getCodexProviderOverrideFor('missing')?.info.base_url).toBe('https://global/v1')
   })
 })

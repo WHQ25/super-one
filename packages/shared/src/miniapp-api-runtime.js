@@ -340,6 +340,7 @@ function createSuperoneSelf(transport) {
       }
     },
     postMessage(msg) { transport.send('miniapp-worker-event', { payload: msg }) },
+    setStatus(text) { transport.send('miniapp-worker-status-set', { text: text == null ? '' : String(text) }) },
     keepAlive(label) {
       const id = ++leaseSeq
       transport.send('miniapp-worker-lease', { leaseId: id, label: label || '' })

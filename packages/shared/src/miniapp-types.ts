@@ -121,6 +121,14 @@ export interface MiniAppEntry {
   orphan?: boolean
 }
 
+export interface MiniAppWorkerInfo {
+  appId: string
+  projectDir: string
+  name: string
+  since: number
+  statusText?: string
+}
+
 export interface DevRegistryEntry {
   appId: string
   sourceDir: string

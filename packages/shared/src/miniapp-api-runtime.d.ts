@@ -152,6 +152,7 @@ export interface SuperoneApi {
 export interface SuperoneSelfApi {
   onMessage(handler: (msg: unknown) => void): () => void
   postMessage(msg: unknown): void
+  setStatus(text: string): void
   keepAlive(label: string): { release: () => void }
 }
 

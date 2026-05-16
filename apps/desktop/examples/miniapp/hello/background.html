@@ -51,12 +51,14 @@
               percent: total ? Math.floor((received / total) * 100) : 0,
             };
             await superone.kv.set(ckptKey, { received: received });
+            superone.self.setStatus('Downloading ' + current.percent + '%');
             emit('progress', current);
             await delay(700);
           }
 
           await superone.kv.delete(ckptKey);
           current = null;
+          superone.self.setStatus('');
           emit('done', { path: dest, bytes: received });
         } finally {
           lease.release();

@@ -2,6 +2,7 @@ import { BrowserWindow, session } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
+import type { MiniAppWorkerInfo } from '@superone/shared/miniapp-types'
 import { WindowRole, roleArg } from '../process-titles'
 import { registerMiniAppProtocolHandlers } from './miniapp-protocol'
 import log from '../logger'
@@ -19,6 +20,8 @@ interface WorkerInstance {
   win: BrowserWindow
   appId: string
   projectDir: string
+  name: string
+  statusText: string
   since: number
   ready: boolean
   leases: Set<number>
@@ -30,13 +33,16 @@ interface WorkerInstance {
 export interface WorkerStartArgs {
   appId: string
   projectDir: string
+  name: string
   host: string
   entry: string
   storage: boolean
   media: string[]
 }
 
-export interface WorkerStatus { running: boolean; since?: number }
+export interface WorkerStatus { running: boolean; since?: number; statusText?: string }
+
+const STATUS_MAX_LEN = 120
 
 let getMainWindow: (() => BrowserWindow | null) | null = null
 let partitionReady = false
@@ -47,6 +53,28 @@ function key(projectDir: string, appId: string): string { return `${projectDir}:
 
 export function initWorkerHost(mainWindowGetter: () => BrowserWindow | null): void {
   getMainWindow = mainWindowGetter
+}
+
+export function listWorkers(): MiniAppWorkerInfo[] {
+  const out: MiniAppWorkerInfo[] = []
+  for (const inst of instances.values()) {
+    if (inst.win.isDestroyed()) continue
+    out.push({
+      appId: inst.appId,
+      projectDir: inst.projectDir,
+      name: inst.name,
+      since: inst.since,
+      statusText: inst.statusText || undefined,
+    })
+  }
+  return out
+}
+
+function emitWorkerState(): void {
+  const mw = getMainWindow?.()
+  if (mw && !mw.isDestroyed()) {
+    mw.webContents.send(AgentIpcChannels.MINIAPP_WORKER_STATE, { workers: listWorkers() })
+  }
 }
 
 function ensurePartition(): Electron.Session {
@@ -110,6 +138,8 @@ export function startWorker(args: WorkerStartArgs): WorkerStatus {
     win,
     appId: args.appId,
     projectDir: args.projectDir,
+    name: args.name,
+    statusText: '',
     since: Date.now(),
     ready: false,
     leases: new Set(),
@@ -140,6 +170,7 @@ export function startWorker(args: WorkerStartArgs): WorkerStatus {
     if (cur === inst) {
       clearTimers(inst)
       instances.delete(k)
+      emitWorkerState()
     }
   })
 
@@ -149,6 +180,7 @@ export function startWorker(args: WorkerStartArgs): WorkerStatus {
   }, RUNAWAY_MS)
   scheduleIdle(inst)
 
+  emitWorkerState()
   return { running: true, since: inst.since }
 }
 
@@ -159,11 +191,12 @@ export function stopWorker(projectDir: string, appId: string): void {
   clearTimers(inst)
   instances.delete(k)
   if (!inst.win.isDestroyed()) inst.win.destroy()
+  emitWorkerState()
 }
 
 export function workerStatus(projectDir: string, appId: string): WorkerStatus {
   const inst = instances.get(key(projectDir, appId))
-  if (inst && !inst.win.isDestroyed()) return { running: true, since: inst.since }
+  if (inst && !inst.win.isDestroyed()) return { running: true, since: inst.since, statusText: inst.statusText || undefined }
   return { running: false }
 }
 
@@ -238,6 +271,13 @@ export function handleWorkerSend(
       inst.leases.delete(data.leaseId as number)
       scheduleIdle(inst)
       return
+    case 'miniapp-worker-status-set': {
+      const next = String((data as { text?: unknown }).text ?? '').slice(0, STATUS_MAX_LEN)
+      if (next === inst.statusText) return
+      inst.statusText = next
+      emitWorkerState()
+      return
+    }
     case 'miniapp-worker-event': {
       const mw = getMainWindow?.()
       if (mw && !mw.isDestroyed()) {

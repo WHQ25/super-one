@@ -17,7 +17,7 @@ import { handleKvRequest, type KvOp, type KvRequestArgs } from './miniapp/miniap
 import { setPeerBroadcaster, emitPeer } from './miniapp/miniapp-peer-bus'
 import { generateBridgeScript, generatePopoverBridgeScript, generateStandaloneBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { registerMiniAppProtocolHandlers } from './miniapp/miniapp-protocol'
-import { initWorkerHost, startWorker, stopWorker, workerStatus, hasActiveWorkers, stopAllWorkers, sendToWorker, handleWorkerSend } from './miniapp/worker-host'
+import { initWorkerHost, startWorker, stopWorker, workerStatus, listWorkers, hasActiveWorkers, stopAllWorkers, sendToWorker, handleWorkerSend } from './miniapp/worker-host'
 import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
@@ -1915,6 +1915,7 @@ function registerIpcHandlers(): void {
     return startWorker({
       appId,
       projectDir,
+      name: manifest.name,
       host: buildMiniAppHost(appId, projectId),
       entry: manifest.background.entry,
       storage: !!manifest.permissions?.storage,
@@ -1930,6 +1931,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.MINIAPP_WORKER_STATUS, (_e, projectDir: string, appId: string) => {
     return workerStatus(projectDir, appId)
   })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_WORKER_LIST, () => listWorkers())
 
   ipcMain.on(AgentIpcChannels.MINIAPP_WORKER_SEND, (_e, msg: { projectDir: string; appId: string; type: string; data: Record<string, unknown> }) => {
     if (!msg) return

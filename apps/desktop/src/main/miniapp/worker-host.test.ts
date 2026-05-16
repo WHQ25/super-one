@@ -36,7 +36,12 @@ const wh = await import('./worker-host')
 
 const mainWin = { isDestroyed: () => false, webContents: { send: vi.fn((c: string, d: unknown) => sentToMain.push({ channel: c, data: d })) } }
 
-const ARGS = { appId: 'a', projectDir: '/p', host: 'a.proj', entry: 'background.html', storage: false, media: [] as string[] }
+const ARGS = { appId: 'a', projectDir: '/p', name: 'App A', host: 'a.proj', entry: 'background.html', storage: false, media: [] as string[] }
+
+function lastState(): { workers: Array<{ appId: string; projectDir: string; name: string; statusText?: string }> } | undefined {
+  const m = [...sentToMain].reverse().find((e) => e.channel === 'miniapp:worker-state')
+  return m?.data as never
+}
 
 describe('WorkerHost lifecycle', () => {
   beforeEach(() => {
@@ -90,5 +95,38 @@ describe('WorkerHost lifecycle', () => {
     wh.stopWorker('/p', 'a')
     expect(wh.workerStatus('/p', 'a').running).toBe(false)
     expect(wh.hasActiveWorkers()).toBe(false)
+  })
+
+  it('stores worker-pushed status text and reports it via status/listWorkers', () => {
+    wh.startWorker(ARGS)
+    wh.handleWorkerSend('/p', 'a', 'miniapp-worker-status-set', { text: 'Downloading 3/8' })
+    expect(wh.workerStatus('/p', 'a').statusText).toBe('Downloading 3/8')
+    const list = wh.listWorkers()
+    expect(list).toEqual([{ appId: 'a', projectDir: '/p', name: 'App A', since: expect.any(Number), statusText: 'Downloading 3/8' }])
+  })
+
+  it('clamps status text to a max length', () => {
+    wh.startWorker(ARGS)
+    wh.handleWorkerSend('/p', 'a', 'miniapp-worker-status-set', { text: 'x'.repeat(500) })
+    expect(wh.workerStatus('/p', 'a').statusText?.length).toBe(120)
+  })
+
+  it('pushes a worker-state snapshot to the main window on start, status change, and stop', () => {
+    wh.startWorker(ARGS)
+    expect(lastState()?.workers).toEqual([{ appId: 'a', projectDir: '/p', name: 'App A', since: expect.any(Number) }])
+
+    wh.handleWorkerSend('/p', 'a', 'miniapp-worker-status-set', { text: 'syncing' })
+    expect(lastState()?.workers[0]).toMatchObject({ appId: 'a', statusText: 'syncing' })
+
+    wh.stopWorker('/p', 'a')
+    expect(lastState()?.workers).toEqual([])
+  })
+
+  it('drops a worker from the snapshot when reclaimed after idle', () => {
+    wh.startWorker(ARGS)
+    wh.handleWorkerSend('/p', 'a', 'miniapp-worker-lease', { leaseId: 1 })
+    wh.handleWorkerSend('/p', 'a', 'miniapp-worker-lease-release', { leaseId: 1 })
+    vi.advanceTimersByTime(30_001)
+    expect(lastState()?.workers).toEqual([])
   })
 })

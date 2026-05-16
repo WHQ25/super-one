@@ -1,6 +1,6 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo } from '@superone/shared/agent-types'
-import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
+import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest, MiniAppWorkerInfo, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
 import type { LiveSessionSnapshot } from '@superone/shared/session-types'
 
@@ -329,6 +329,8 @@ interface MiniAppAPI {
   workerStatus(projectDir: string, appId: string): Promise<{ running: boolean; since?: number }>
   workerSend(projectDir: string, appId: string, payload: unknown): void
   onWorkerEvent(handler: (data: { appId: string; projectDir: string; payload: unknown }) => void): () => void
+  workerList(): Promise<MiniAppWorkerInfo[]>
+  onWorkerState(handler: (workers: MiniAppWorkerInfo[]) => void): () => void
   fsWatch(projectDir: string, appId: string, path: string): Promise<number>
   fsUnwatch(watchId: number): Promise<void>
   onFsWatchEvent(callback: (event: MiniAppFsWatchEvent) => void): () => void

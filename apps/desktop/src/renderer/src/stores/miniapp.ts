@@ -5,7 +5,7 @@ import { useChatStore } from './chat'
 import { closeMiniAppTab, openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { LAYOUT } from '@/lib/layout-constants'
 import { NO_PROJECT_KEY } from '@superone/shared/miniapp-host'
-import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult } from '@superone/shared/miniapp-types'
+import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult, MiniAppWorkerInfo } from '@superone/shared/miniapp-types'
 
 function activeSessionId(projectDir: string): string {
   const chat = useChatStore.getState()
@@ -59,6 +59,8 @@ interface MiniAppStoreState {
   openApps: Record<string, OpenAppEntry>
   slots: Record<string, MiniAppSlot>
 
+  workers: MiniAppWorkerInfo[]
+
   fullscreenApp: { instanceKey: string; entry: MiniAppEntry } | null
 
   fetchApps: (projectDir?: string) => Promise<void>
@@ -92,6 +94,11 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       if (!entry) return
       await get().openAppInPanel(entry, projectDir)
     })
+  }
+
+  if (typeof window !== 'undefined' && window.miniapp?.onWorkerState) {
+    window.miniapp.onWorkerState((workers) => set({ workers }))
+    window.miniapp.workerList().then((workers) => set({ workers })).catch(() => {})
   }
 
   if (typeof window !== 'undefined' && window.miniapp?.onLazyOpenRequest) {
@@ -134,6 +141,8 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
 
     openApps: {},
     slots: {},
+
+    workers: [],
 
     fullscreenApp: null,
 

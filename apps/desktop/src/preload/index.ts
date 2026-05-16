@@ -1014,6 +1014,13 @@ const miniappAPI = {
     ipcRenderer.on(AgentIpcChannels.MINIAPP_WORKER_EVENT, listener)
     return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_WORKER_EVENT, listener)
   },
+  workerList: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_WORKER_LIST) as Promise<Array<{ appId: string; projectDir: string; name: string; since: number; statusText?: string }>>,
+  onWorkerState: (handler: (workers: Array<{ appId: string; projectDir: string; name: string; since: number; statusText?: string }>) => void) => {
+    const listener = (_e: unknown, data: { workers: Array<{ appId: string; projectDir: string; name: string; since: number; statusText?: string }> }) => handler(data.workers)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_WORKER_STATE, listener)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_WORKER_STATE, listener)
+  },
 
   preview: (s1appPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_PREVIEW, s1appPath),

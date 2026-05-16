@@ -1749,6 +1749,8 @@ export const AgentIpcChannels = {
   MINIAPP_WORKER_STATUS: 'miniapp:worker-status',
   MINIAPP_WORKER_SEND: 'miniapp:worker-send',
   MINIAPP_WORKER_EVENT: 'miniapp:worker-event',
+  MINIAPP_WORKER_LIST: 'miniapp:worker-list',
+  MINIAPP_WORKER_STATE: 'miniapp:worker-state',
 
   // Automations
   AUTOMATIONS_LIST: 'automations:list',

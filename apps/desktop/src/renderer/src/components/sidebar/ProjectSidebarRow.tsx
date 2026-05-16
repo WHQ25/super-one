@@ -5,6 +5,8 @@ import { Bot, CalendarClock, ChevronDown, ChevronRight, ChevronUp, CircleCheck, 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@superone/ui/components/ui/context-menu'
 import { useChatStore } from '@/stores/chat'
+import { useMiniAppStore } from '@/stores/miniapp'
+import { MiniAppWorkerGroup } from './MiniAppWorkerGroup'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
@@ -117,6 +119,20 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       hasOverflow: sessions.length > maxSessions,
     }
   }, [allSessions, currentFolder, folder.path, hasRealProject, isExpanded, maxSessions, projectSession, expandLevel])
+
+  const allWorkers = useMiniAppStore((s) => s.workers)
+  const projectWorkers = useMemo(
+    () => allWorkers.filter((w) => w.projectDir === folder.path),
+    [allWorkers, folder.path],
+  )
+  const handleStopWorker = useCallback((appId: string) => {
+    window.miniapp.workerStop(folder.path, appId).catch(() => {})
+  }, [folder.path])
+
+  const handleOpenWorkerApp = useCallback((appId: string) => {
+    const entry = useMiniAppStore.getState().apps.find((a) => a.id === appId)
+    if (entry) useMiniAppStore.getState().openAppInPanel(entry, folder.path).catch(() => {})
+  }, [folder.path])
 
   const [projectAutomations, setProjectAutomations] = useState<Automation[]>([])
   const [automationsExpanded, setAutomationsExpanded] = useState(false)
@@ -247,7 +263,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       </ContextMenu>
 
       {isExpanded && projectAutomations.length > 0 && (
-        <div className="overflow-hidden pl-5">
+        <div className="overflow-hidden pl-2.5">
           <button
             onClick={() => setAutomationsExpanded((v) => !v)}
             className="group/auto flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
@@ -261,7 +277,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             <span className="ml-auto text-[10px] text-sidebar-foreground/30">{projectAutomations.length}</span>
           </button>
           {automationsExpanded && (
-            <div className="flex flex-col py-0.5 pl-4">
+            <div className="flex flex-col py-0.5 pl-2">
               {projectAutomations.map((automation) => (
                 <ContextMenu key={automation.id}>
                   <ContextMenuTrigger asChild>
@@ -306,9 +322,17 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         </div>
       )}
 
+      {isExpanded && (
+        <MiniAppWorkerGroup
+          workers={projectWorkers}
+          onOpen={handleOpenWorkerApp}
+          onStop={handleStopWorker}
+        />
+      )}
+
       {derived.showSessions && (
         <div className="overflow-hidden">
-          <div className="flex flex-col py-0.5 pl-5">
+          <div className="flex flex-col py-0.5 pl-2.5">
             {derived.sessionsToShow.length === 0 ? (
               <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
             ) : (
@@ -450,7 +474,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                     {pendingReason && (
                       <div
                         onClick={() => onSwitchSession(folder.path, session.sessionId)}
-                        className="ml-5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1"
+                        className="ml-2.5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1"
                       >
                         <Bot className="size-3 shrink-0 text-green-600 dark:text-green-400" />
                         <span className="min-w-0 truncate text-[11px] text-green-600 dark:text-green-400">{pendingReason}</span>

@@ -391,6 +391,11 @@ export function isAppStillAuthorizedInProject(projectDir: string, appId: string)
   return false
 }
 
+export function isSessionAuthorizedForApp(sessionId: string, projectDir: string, appId: string): boolean {
+  const entry = appToolDefs.get(makeAppKey(sessionId, appId))
+  return !!entry && entry.projectDir === projectDir
+}
+
 export function resolveToolCall(callId: string, result: unknown): void {
   const pending = pendingCalls.get(callId)
   if (pending) {

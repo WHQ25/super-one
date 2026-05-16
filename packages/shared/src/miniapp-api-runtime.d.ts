@@ -74,7 +74,7 @@ export interface SuperoneApi {
   fs: {
     readFile(path: string, opts?: { binary?: boolean }): Promise<string | ArrayBuffer>
     readDir(path?: string): Promise<Array<{ name: string; isDir: boolean }>>
-    writeFile(path: string, content: string | ArrayBuffer | Uint8Array): Promise<void>
+    writeFile(path: string, content: string | ArrayBuffer | Uint8Array, opts?: { append?: boolean }): Promise<void>
     deleteFile(path: string): Promise<void>
     rename(from: string, to: string): Promise<void>
     stat(path: string): Promise<{ size: number; isDir: boolean; isFile: boolean; mtime: number; ctime: number }>
@@ -140,8 +140,22 @@ export interface SuperoneApi {
   tool?: ToolRendererApi
   isDarkMode(): boolean
   onDarkModeChange(cb: (isDark: boolean) => void): () => void
+  worker: {
+    start(): Promise<{ running: boolean; since?: number }>
+    stop(): Promise<{ running: boolean; since?: number }>
+    status(): Promise<{ running: boolean; since?: number }>
+    postMessage(msg: unknown): void
+    onMessage(handler: (msg: unknown) => void): () => void
+  }
+}
+
+export interface SuperoneSelfApi {
+  onMessage(handler: (msg: unknown) => void): () => void
+  postMessage(msg: unknown): void
+  keepAlive(label: string): { release: () => void }
 }
 
 export function createSuperoneApi(transport: MiniAppTransport, version: string, opts?: { initialLocale?: MiniAppLocale }): SuperoneApi
+export function createSuperoneSelf(transport: MiniAppTransport): SuperoneSelfApi
 export function startSuperoneResize(transport: MiniAppTransport): void
 export function installSuperoneMediaProbe(transport: MiniAppTransport): void

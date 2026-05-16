@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { handleMiniAppMessage } from './miniapp-message-handler'
+import { handleMiniAppMessage, handleMiniAppWorkerMessage } from './miniapp-message-handler'
 import * as externalLink from '@/lib/external-link'
 import * as clipboardLib from '@/lib/miniapp-clipboard'
 
@@ -288,5 +288,39 @@ describe('handleMiniAppMessage', () => {
       handleMiniAppMessage('miniapp-media-track-ended', { kind: 'screen' }, appId, projectDir, send)
       expect(mockMediaEndTrack).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('handleMiniAppWorkerMessage (headless policy)', () => {
+  const appId = 'test-app'
+  const projectDir = '/proj'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('forwards a headless-safe data request (fs)', () => {
+    const send = vi.fn()
+    const handled = handleMiniAppWorkerMessage('miniapp-fs-request', { id: 1, op: 'readFile', args: {} }, appId, projectDir, send)
+    expect(handled).toBe(true)
+    expect(mockMiniapp.fsRequest).toHaveBeenCalled()
+  })
+
+  it('rejects a UI-bound type without invoking UI side effects', () => {
+    const send = vi.fn()
+    const handled = handleMiniAppWorkerMessage('miniapp-sendPrompt', { text: 'hi' }, appId, projectDir, send)
+    expect(handled).toBe(true)
+    expect(mockSetDraftText).not.toHaveBeenCalled()
+  })
+
+  it('replies unavailable-in-worker for a rejected request/response type', () => {
+    const send = vi.fn()
+    handleMiniAppWorkerMessage('miniapp-clipboard-read', { id: 7 }, appId, projectDir, send)
+    expect(send).toHaveBeenCalledWith({ type: 'miniapp-clipboard-response', id: 7, error: 'unavailable-in-worker' })
+  })
+
+  it('returns false for unknown non-miniapp types', () => {
+    const send = vi.fn()
+    expect(handleMiniAppWorkerMessage('something-else', {}, appId, projectDir, send)).toBe(false)
   })
 })

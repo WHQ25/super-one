@@ -150,7 +150,7 @@ describe('generateSuperoneDts', () => {
   it('covers fs API', () => {
     expect(dts).toContain('readFile(path: string): Promise<string>')
     expect(dts).toContain("readFile(path: string, opts: { binary: true }): Promise<ArrayBuffer>")
-    expect(dts).toContain('writeFile(path: string, content: string | ArrayBuffer | Uint8Array): Promise<void>')
+    expect(dts).toContain('writeFile(path: string, content: string | ArrayBuffer | Uint8Array, opts?: { append?: boolean }): Promise<void>')
     expect(dts).toContain('deleteFile(path: string): Promise<void>')
     expect(dts).toContain('rename(from: string, to: string): Promise<void>')
     expect(dts).toContain('stat(path: string): Promise<SuperOneFsStat>')

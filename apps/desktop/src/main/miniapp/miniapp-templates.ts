@@ -362,7 +362,7 @@ interface SuperOne {
     readFile(path: string): Promise<string>
     readFile(path: string, opts: { binary: true }): Promise<ArrayBuffer>
     readDir(path?: string): Promise<SuperOneFsEntry[]>
-    writeFile(path: string, content: string | ArrayBuffer | Uint8Array): Promise<void>
+    writeFile(path: string, content: string | ArrayBuffer | Uint8Array, opts?: { append?: boolean }): Promise<void>
     deleteFile(path: string): Promise<void>
     rename(from: string, to: string): Promise<void>
     stat(path: string): Promise<SuperOneFsStat>

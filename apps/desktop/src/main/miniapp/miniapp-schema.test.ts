@@ -29,6 +29,36 @@ describe('parseManifest', () => {
     }
   })
 
+  it('accepts background entry when permissions.background is declared', () => {
+    const result = parseManifest({
+      appId: 'bg',
+      name: 'Bg',
+      background: { entry: 'background.html' },
+      permissions: { background: { reason: 'finish downloads with panel closed' } },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('rejects background entry without permissions.background', () => {
+    const result = parseManifest({
+      appId: 'bg',
+      name: 'Bg',
+      background: { entry: 'background.html' },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors.join()).toMatch(/background requires permissions\.background/)
+  })
+
+  it('rejects a non-html background entry', () => {
+    const result = parseManifest({
+      appId: 'bg',
+      name: 'Bg',
+      background: { entry: 'worker.js' },
+      permissions: { background: { reason: 'x' } },
+    })
+    expect(result.ok).toBe(false)
+  })
+
   it('should accept manifest with author object', () => {
     const result = parseManifest({
       ...validManifest,

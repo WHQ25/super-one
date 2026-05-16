@@ -159,8 +159,8 @@ function createSuperoneApi(transport, version, opts) {
       readDir(path) {
         return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'readDir', args: { path: path || '.' } })
       },
-      writeFile(path, content) {
-        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'writeFile', args: { path, content } })
+      writeFile(path, content, opts) {
+        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'writeFile', args: { path, content, append: opts?.append === true } })
       },
       deleteFile(path) {
         return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'deleteFile', args: { path } })
@@ -300,8 +300,58 @@ function createSuperoneApi(transport, version, opts) {
         }
       })(),
     },
+    worker: (function() {
+      const workerMsgListeners = []
+      transport.on('miniapp-worker-event', function(d) {
+        workerMsgListeners.forEach(function(cb) { cb(d && d.payload) })
+      })
+      return {
+        start() { return transport.request('miniapp-worker-start', 'miniapp-worker-status-result', {}) },
+        stop() { return transport.request('miniapp-worker-stop', 'miniapp-worker-status-result', {}) },
+        status() { return transport.request('miniapp-worker-status', 'miniapp-worker-status-result', {}) },
+        postMessage(msg) { transport.send('miniapp-worker-msg', { payload: msg }) },
+        onMessage(cb) {
+          workerMsgListeners.push(cb)
+          return function() {
+            const i = workerMsgListeners.indexOf(cb)
+            if (i >= 0) workerMsgListeners.splice(i, 1)
+          }
+        },
+      }
+    })(),
     isDarkMode() { return document.documentElement.classList.contains('dark') },
     onDarkModeChange: makeSub(darkModeListeners),
+  }
+}
+
+// eslint-disable-next-line no-unused-vars
+function createSuperoneSelf(transport) {
+  const selfMsgListeners = []
+  transport.on('miniapp-worker-msg', function(d) {
+    selfMsgListeners.forEach(function(cb) { cb(d && d.payload) })
+  })
+  let leaseSeq = 0
+  return {
+    onMessage(cb) {
+      selfMsgListeners.push(cb)
+      return function() {
+        const i = selfMsgListeners.indexOf(cb)
+        if (i >= 0) selfMsgListeners.splice(i, 1)
+      }
+    },
+    postMessage(msg) { transport.send('miniapp-worker-event', { payload: msg }) },
+    keepAlive(label) {
+      const id = ++leaseSeq
+      transport.send('miniapp-worker-lease', { leaseId: id, label: label || '' })
+      let released = false
+      return {
+        release() {
+          if (released) return
+          released = true
+          transport.send('miniapp-worker-lease-release', { leaseId: id })
+        },
+      }
+    },
   }
 }
 

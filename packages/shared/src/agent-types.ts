@@ -1744,6 +1744,11 @@ export const AgentIpcChannels = {
   MINIAPP_DEV_REGISTRY_UNINSTALL: 'miniapp:dev-registry:uninstall',
   MINIAPP_DEV_REGISTRY_SET_ENABLED: 'miniapp:dev-registry:set-enabled',
   MINIAPP_DEV_REGISTRY_REVEAL_SOURCE: 'miniapp:dev-registry:reveal-source',
+  MINIAPP_WORKER_START: 'miniapp:worker-start',
+  MINIAPP_WORKER_STOP: 'miniapp:worker-stop',
+  MINIAPP_WORKER_STATUS: 'miniapp:worker-status',
+  MINIAPP_WORKER_SEND: 'miniapp:worker-send',
+  MINIAPP_WORKER_EVENT: 'miniapp:worker-event',
 
   // Automations
   AUTOMATIONS_LIST: 'automations:list',

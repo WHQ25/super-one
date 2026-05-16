@@ -28,11 +28,22 @@ const storageEntrySchema = z.object({
   reason: z.string().min(1),
 })
 
+const backgroundPermissionSchema = z.object({
+  reason: z.string().min(1),
+})
+
 const permissionsSchema = z.object({
   network: z.array(networkEntrySchema).optional(),
   fs: z.array(fsEntrySchema).optional(),
   media: z.array(mediaEntrySchema).optional(),
   storage: storageEntrySchema.optional(),
+  background: backgroundPermissionSchema.optional(),
+})
+
+const backgroundSchema = z.object({
+  entry: z.string().min(1).regex(/^[a-z0-9][a-z0-9_./-]*\.html$/i, {
+    message: 'background.entry must be a relative .html path',
+  }),
 })
 
 const toolInputSchemaSchema = z.looseObject({
@@ -89,6 +100,7 @@ export const manifestSchema = z.object({
   fullscreen: z.boolean().optional(),
   preferWidth: z.number().int().min(360).max(2000).optional(),
   permissions: permissionsSchema.optional(),
+  background: backgroundSchema.optional(),
   toolSlug: z.string().min(1).regex(TOOL_NAME_RE, { message: 'toolSlug must be lowercase alphanumeric with underscores' }).optional(),
   tools: z.array(toolDefinitionSchema).optional(),
   runningText: z.string().optional(),
@@ -122,6 +134,9 @@ export const manifestSchema = z.object({
     return true
   },
   { message: 'renderer.result.template must reference a key in manifest.templates' },
+).refine(
+  (m) => !m.background || !!m.permissions?.background,
+  { message: 'background requires permissions.background' },
 )
 
 export type ManifestParseResult =

@@ -93,6 +93,18 @@ ${generateReadyBlock(appId)}
 </script>`
 }
 
+export function generateWorkerBridgeScript(appId: string, version: string, locale: string): string {
+  return `<script>
+(function() {
+  ${generateTransportBlock(appId)}
+
+  window.superone = createSuperoneApi(transport, ${JSON.stringify(version)}, { initialLocale: ${JSON.stringify(locale)} });
+  window.superone.self = createSuperoneSelf(transport);
+${generateReadyBlock(appId)}
+})();
+</script>`
+}
+
 function wrapToolBridgeScript(appId: string, version: string, locale: string, toolObjectBody: string): string {
   return `<script>
 (function() {

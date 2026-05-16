@@ -168,3 +168,38 @@ export function handleMiniAppMessage(
       return false
   }
 }
+
+export const MINIAPP_HEADLESS_SAFE_TYPES: ReadonlySet<string> = new Set([
+  'miniapp-tool-result',
+  'miniapp-fs-request',
+  'miniapp-git-request',
+  'miniapp-db-request',
+  'miniapp-kv-request',
+  'miniapp-fs-watch',
+  'miniapp-fs-unwatch',
+  'miniapp-peer-emit',
+])
+
+const WORKER_REJECT_RESPONSE: Record<string, string> = {
+  'miniapp-clipboard-read': 'miniapp-clipboard-response',
+  'miniapp-ui-contextmenu': 'miniapp-ui-contextmenu-result',
+}
+
+export function handleMiniAppWorkerMessage(
+  type: string,
+  data: Record<string, unknown>,
+  appId: string,
+  projectDir: string,
+  send: (msg: unknown) => void,
+): boolean {
+  if (MINIAPP_HEADLESS_SAFE_TYPES.has(type)) {
+    return handleMiniAppMessage(type, data, appId, projectDir, send)
+  }
+  const responseType = WORKER_REJECT_RESPONSE[type]
+  if (responseType) {
+    send({ type: responseType, id: data.id, error: 'unavailable-in-worker' })
+    return true
+  }
+  if (type.startsWith('miniapp-')) return true
+  return false
+}

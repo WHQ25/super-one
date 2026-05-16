@@ -297,6 +297,15 @@ export type MiniAppBridgeMessageType =
   | 'miniapp-peer-event'
   | 'miniapp-standalone-call'
   | 'miniapp-standalone-cached-result'
+  | 'miniapp-worker-start'
+  | 'miniapp-worker-stop'
+  | 'miniapp-worker-status'
+  | 'miniapp-worker-status-result'
+  | 'miniapp-worker-msg'
+  | 'miniapp-worker-event'
+  | 'miniapp-worker-lease'
+  | 'miniapp-worker-lease-release'
+  | 'miniapp-worker-dropped'
 
 export const MiniAppToolBridgeMsg = {
   SUBMIT: 'miniapp-tool-submit',

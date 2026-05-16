@@ -694,10 +694,11 @@ export async function handleFsRequest(
       const p = safe(args.path as string)
       await mkdir(dirname(p), { recursive: true })
       const content = args.content
+      const flag = args.append === true ? 'a' : 'w'
       if (content instanceof ArrayBuffer || content instanceof Uint8Array || Buffer.isBuffer(content)) {
-        await writeFile(p, Buffer.from(content as ArrayBuffer))
+        await writeFile(p, Buffer.from(content as ArrayBuffer), { flag })
       } else {
-        await writeFile(p, content as string, 'utf-8')
+        await writeFile(p, content as string, { encoding: 'utf-8', flag })
       }
       return undefined
     }

@@ -7,6 +7,7 @@ export const ProcessTitle = {
   MainWindow: 'SuperOne Main Window',
   MiniWindow: 'SuperOne Mini Window',
   MiniAppDev: 'SuperOne MiniApp Dev',
+  WorkerHost: 'SuperOne Worker Host',
 } as const
 
 export const SUPERONE_ROLE_ARG_PREFIX = '--superone-role='
@@ -14,6 +15,7 @@ export const SUPERONE_ROLE_ARG_PREFIX = '--superone-role='
 export const WindowRole = {
   Main: 'main',
   Mini: 'mini',
+  WorkerHost: 'worker-host',
 } as const
 
 export type WindowRoleValue = (typeof WindowRole)[keyof typeof WindowRole]
@@ -25,5 +27,6 @@ export function roleArg(role: WindowRoleValue): string {
 export function titleForRole(role: string | undefined): string | null {
   if (role === WindowRole.Main) return ProcessTitle.MainWindow
   if (role === WindowRole.Mini) return ProcessTitle.MiniWindow
+  if (role === WindowRole.WorkerHost) return ProcessTitle.WorkerHost
   return null
 }

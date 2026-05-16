@@ -4,6 +4,21 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.34.0-alpha] - 2026-05-16
+
+### Added
+
+- **Mini-app background worker API.** Mini-apps can declare a headless background worker that keeps running — downloads, long-lived tasks — independent of any visible window. Ships a dedicated worker-host shell process, IPC wiring with lifecycle enforcement and an app-quit gate, a per-project worker group in the sidebar with live status text, KV + peer type declarations in the generated `superone.d.ts`, and a dual-path (dev/webview) channel bridge. The `hello` example mini-app now includes a background download demo plus an external-URL download variant.
+- **Per-project mini-app drawer order is now persisted** and restored on reopen.
+
+### Fixed
+
+- **Custom Codex provider now actually takes effect.** A selected custom Codex provider previously failed to propagate to the running session; it is now applied.
+- **Queued-message handling.** Editing or deleting a queued message now honors the dequeue result; consuming a queued message no longer produces a duplicate transcript entry.
+- **Streaming status no longer gets stuck.** A turn that completes now reliably settles the streaming state instead of leaving the UI spinning.
+- **Stop button now interrupts immediately** on click instead of waiting for the next event.
+- **Per-session title syncs on `session_title_changed`**, so a renamed session shows the correct title without a reload.
+
 ## [0.33.0-alpha] - 2026-05-15
 
 ### Added

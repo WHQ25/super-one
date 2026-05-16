@@ -859,9 +859,10 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
                 }
                 extraUpdates = { todos: newTodos, _nextTodoId: input.todos.length + 1, ...(!session._todosUserDismissed && { showTodos: true }) }
               } else if (tn === 'TaskCreate') {
-                const id = String(session._nextTodoId)
+                const resolvedId = resultDelta.toolTodos?.[0]?.taskId
+                const id = resolvedId ?? String(session._nextTodoId)
                 extraUpdates = {
-                  _nextTodoId: session._nextTodoId + 1,
+                  ...(resolvedId ? {} : { _nextTodoId: session._nextTodoId + 1 }),
                   showTodos: !session._todosUserDismissed,
                   todos: {
                     ...session.todos,

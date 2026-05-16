@@ -6230,3 +6230,87 @@ describe('refreshCodexSkills', () => {
     expect(mockWindowApp.codexListSkills).toHaveBeenCalledWith('/p3')
   })
 })
+
+describe('Task tools id mapping (SDK 0.3.142 TodoWrite→Task migration)', () => {
+  function toolUse(messageId: string, toolUseId: string, toolName: string, input: object) {
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'content_delta',
+      messageId,
+      delta: { type: 'tool_use', toolName, toolUseId, input: JSON.stringify(input), status: 'streaming' } as never,
+    }))
+  }
+  function toolResult(messageId: string, toolUseId: string, extra: object = {}) {
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'content_delta',
+      messageId,
+      delta: { type: 'tool_result', toolUseId, summary: 'ok', ...extra } as never,
+    }))
+  }
+
+  it('keys TaskCreate todo by the SDK-assigned task id so a later TaskUpdate matches', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'm1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+
+    toolUse('m1', 'tc-1', 'TaskCreate', { subject: 'Build feature', description: 'do the thing' })
+    toolResult('m1', 'tc-1', {
+      todoToolName: 'TaskCreate',
+      toolTodos: [{ content: 'Build feature', status: 'pending', taskId: 'task_abc' }],
+    })
+
+    let session = getActiveDraftSession('/test')!
+    expect(session.todos['task_abc']).toBeDefined()
+    expect(session.todos['task_abc'].subject).toBe('Build feature')
+    expect(session.todos['task_abc'].description).toBe('do the thing')
+    expect(session.todos['task_abc'].status).toBe('pending')
+
+    toolUse('m1', 'tu-1', 'TaskUpdate', { taskId: 'task_abc', status: 'in_progress' })
+    toolResult('m1', 'tu-1')
+    toolUse('m1', 'tu-2', 'TaskUpdate', { taskId: 'task_abc', status: 'completed' })
+    toolResult('m1', 'tu-2')
+
+    session = getActiveDraftSession('/test')!
+    expect(Object.keys(session.todos)).toEqual(['task_abc'])
+    expect(session.todos['task_abc'].status).toBe('completed')
+  })
+
+  it('removes a TaskCreate-created todo when TaskUpdate marks it deleted', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'm1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+
+    toolUse('m1', 'tc-1', 'TaskCreate', { subject: 'Temp task' })
+    toolResult('m1', 'tc-1', {
+      todoToolName: 'TaskCreate',
+      toolTodos: [{ content: 'Temp task', status: 'pending', taskId: 'task_xyz' }],
+    })
+    toolUse('m1', 'tu-1', 'TaskUpdate', { taskId: 'task_xyz', status: 'deleted' })
+    toolResult('m1', 'tu-1')
+
+    const session = getActiveDraftSession('/test')!
+    expect(session.todos['task_xyz']).toBeUndefined()
+  })
+
+  it('still handles legacy TodoWrite snapshots (back-compat)', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start',
+      message: { id: 'm1', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+    }))
+
+    toolUse('m1', 'tw-1', 'TodoWrite', { todos: [
+      { content: 'A', status: 'completed' },
+      { content: 'B', status: 'in_progress' },
+    ] })
+    toolResult('m1', 'tw-1')
+
+    const session = getActiveDraftSession('/test')!
+    expect(session.todos['1'].subject).toBe('A')
+    expect(session.todos['1'].status).toBe('completed')
+    expect(session.todos['2'].subject).toBe('B')
+  })
+})

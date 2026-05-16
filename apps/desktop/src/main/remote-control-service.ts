@@ -450,7 +450,10 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
         .flatMap((b) => {
           if (b.type === 'tool_result' && todoInputs.has(b.toolUseId)) {
             const entry = todoInputs.get(b.toolUseId)!
-            return { type: 'todo_result' as const, toolUseId: b.toolUseId, summary: b.summary, parentToolUseId: b.parentToolUseId, todoToolName: entry.toolName, toolTodos: computeTodoItems(entry.toolName, entry.input) }
+            const toolTodos = entry.toolName === 'TaskCreate' && b.toolTodos?.length
+              ? b.toolTodos
+              : computeTodoItems(entry.toolName, entry.input)
+            return { type: 'todo_result' as const, toolUseId: b.toolUseId, summary: b.summary, parentToolUseId: b.parentToolUseId, todoToolName: entry.toolName, toolTodos }
           }
           if (b.type === 'tool_result' && widgetIds.has(b.toolUseId)) return b
           if (b.type === 'text') {
@@ -1119,7 +1122,10 @@ export class RemoteControlService {
       let stripped: AgentEvent
       if (event.delta.type === 'tool_result' && this.todoToolInputs.has(event.delta.toolUseId)) {
         const entry = this.todoToolInputs.get(event.delta.toolUseId)!
-        const toolTodos = computeTodoItems(entry.toolName, entry.input)
+        const resolved = event.delta.toolTodos
+        const toolTodos = entry.toolName === 'TaskCreate' && resolved?.length
+          ? resolved
+          : computeTodoItems(entry.toolName, entry.input)
         stripped = { ...event, delta: { type: 'todo_result', toolUseId: event.delta.toolUseId, summary: event.delta.summary, parentToolUseId: event.delta.parentToolUseId, todoToolName: entry.toolName, toolTodos } }
       } else if (event.delta.type === 'tool_result' && this.widgetToolIds.has(event.delta.toolUseId)) {
         stripped = { ...event, delta: event.delta }

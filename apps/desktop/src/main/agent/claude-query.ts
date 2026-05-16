@@ -299,6 +299,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               const isBash = toolName === 'Bash'
               const outputPath = isBash ? extractBashOutputPath(text) : undefined
               const isTimedOut = isBash ? extractBashKilled(userMsg.tool_use_result) : undefined
+              const taskCreateTodo = extractTaskCreateTodo(toolName, userMsg.tool_use_result, text)
               emit({
                 type: 'content_delta',
                 messageId,
@@ -309,6 +310,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                   ...(outputPath ? { outputPath } : {}),
                   ...(isTimedOut ? { isTimedOut } : {}),
                   ...(block.is_error ? { isError: true } : {}),
+                  ...(taskCreateTodo ?? {}),
                   parentToolUseId,
                 },
                 isSynthetic,
@@ -760,10 +762,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             const isBash = toolName === 'Bash'
             const outputPath = isBash ? extractBashOutputPath(summaryText) : undefined
             const isTimedOut = isBash ? extractBashKilled(raw.tool_use_result) : undefined
+            const taskCreateTodo = extractTaskCreateTodo(toolName, raw.tool_use_result, summaryText)
             emit({
               type: 'content_delta',
               messageId,
-              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(raw.is_error ? { isError: true } : {}), parentToolUseId: raw.parent_tool_use_id ?? null },
+              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(raw.is_error ? { isError: true } : {}), ...(taskCreateTodo ?? {}), parentToolUseId: raw.parent_tool_use_id ?? null },
             })
           }
           break
@@ -941,6 +944,33 @@ function extractToolResultText(content: unknown): string {
 function extractBashKilled(toolUseResult?: unknown): boolean | undefined {
   const tur = toolUseResult as any
   return tur?.killed === true ? true : undefined
+}
+
+/**
+ * TaskCreate's real task id is SDK-assigned and only present in its result
+ * (TaskCreateOutput = { task: { id, subject } }). Surface it on the tool_result
+ * delta via the existing toolTodos channel so both the desktop store and the
+ * mobile broadcaster key the todo by the same id a later TaskUpdate references.
+ */
+function extractTaskCreateTodo(
+  toolName: string | undefined,
+  toolUseResult: unknown,
+  resultText: string,
+): { todoToolName: string; toolTodos: Array<{ content: string; status: string; taskId?: string }> } | undefined {
+  if (toolName !== 'TaskCreate') return undefined
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let task = (toolUseResult as any)?.task
+  if (!task?.id && resultText) {
+    try {
+      const parsed = JSON.parse(resultText)
+      if (parsed?.task?.id) task = parsed.task
+    } catch { /* result is not structured JSON */ }
+  }
+  if (!task?.id) return undefined
+  return {
+    todoToolName: 'TaskCreate',
+    toolTodos: [{ content: String(task.subject ?? ''), status: 'pending', taskId: String(task.id) }],
+  }
 }
 
 const BASH_OUTPUT_PATH_RE = /Output is being written to:\s*(\S+\.output)/

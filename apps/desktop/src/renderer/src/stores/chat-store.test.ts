@@ -60,6 +60,7 @@ const mockWindowAgent = {
   setSessionApiProvider: vi.fn().mockResolvedValue(undefined),
   broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
+  dequeueMessage: vi.fn().mockResolvedValue(true),
 }
 
 const mockWindowApp = {
@@ -5496,6 +5497,67 @@ describe('queued_message_consumed', () => {
     const session = useChatStore.getState().projectSessions['/test']._sessions[draftId]
     expect(session.queuedMessages).toHaveLength(1)
     expect(session.messages.find((m) => m.id === 'user-q1')).toBeUndefined()
+  })
+})
+
+describe('edit/delete queued message vs consume race (Bug D)', () => {
+  function seedQueued(text: string) {
+    setupProject('/test')
+    const draftId = getActiveDraftId('/test')!
+    const userMsg: ChatMessage = {
+      ...makeMessage('user-q1', 'user'),
+      content: [{ type: 'text', text }],
+    }
+    const proj = useChatStore.getState().projectSessions['/test']
+    proj._sessions[draftId].queuedMessages = [userMsg]
+    proj._sessions[draftId].status = 'streaming'
+    useChatStore.setState({ projectSessions: { '/test': proj } })
+    return draftId
+  }
+
+  it('editQueuedMessage does not pull into draft when the CLI already consumed it (dequeue=false)', async () => {
+    const draftId = seedQueued('queued text')
+    mockWindowAgent.dequeueMessage.mockResolvedValueOnce(false)
+
+    await useChatStore.getState().editQueuedMessage('user-q1')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[draftId]
+    // Lost the race: message is being answered by the CLI. Don't load it into
+    // the input (that would double-send) and don't yank it from the queue —
+    // the imminent queued_message_consumed event moves it to the transcript.
+    expect(session.draftText).toBe('')
+    expect(session.queuedMessages.map((m) => m.id)).toEqual(['user-q1'])
+  })
+
+  it('editQueuedMessage still pulls into draft when dequeue succeeds (race won)', async () => {
+    const draftId = seedQueued('queued text')
+    mockWindowAgent.dequeueMessage.mockResolvedValueOnce(true)
+
+    await useChatStore.getState().editQueuedMessage('user-q1')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[draftId]
+    expect(session.draftText).toBe('queued text')
+    expect(session.queuedMessages).toHaveLength(0)
+  })
+
+  it('deleteQueuedMessage keeps the message when the CLI already consumed it (dequeue=false)', async () => {
+    const draftId = seedQueued('queued text')
+    mockWindowAgent.dequeueMessage.mockResolvedValueOnce(false)
+
+    await useChatStore.getState().deleteQueuedMessage('user-q1')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[draftId]
+    expect(session.queuedMessages.map((m) => m.id)).toEqual(['user-q1'])
+  })
+
+  it('deleteQueuedMessage removes the message when dequeue succeeds (race won)', async () => {
+    const draftId = seedQueued('queued text')
+    mockWindowAgent.dequeueMessage.mockResolvedValueOnce(true)
+
+    await useChatStore.getState().deleteQueuedMessage('user-q1')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions[draftId]
+    expect(session.queuedMessages).toHaveLength(0)
   })
 })
 

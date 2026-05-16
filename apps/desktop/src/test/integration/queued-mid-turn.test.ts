@@ -121,4 +121,15 @@ describe('queued message mid-turn (recording: queued-mid-turn)', () => {
     const leftover = Object.values(proj?._sessions ?? {}).flatMap((s) => s.queuedMessages)
     expect(leftover).toEqual([])
   })
+
+  it('keeps the mid-turn transcript correctly ordered and separated', () => {
+    replayRecording()
+    const msgs = allMessagesInProject()
+    const shape = msgs.map((m) => m.role)
+    // prompt → turn-1 answer → queued1 → answer → queued2 → answer; each
+    // assistant turn is its own bubble (no merge), all settled.
+    expect(shape).toEqual(['user', 'assistant', 'user', 'assistant', 'user', 'assistant'])
+    expect(new Set(msgs.map((m) => m.id)).size).toBe(msgs.length)
+    expect(msgs.every((m) => m.status === 'complete')).toBe(true)
+  })
 })

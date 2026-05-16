@@ -3899,15 +3899,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     return window.agent.previewRewind(activeProject, checkpointId)
   },
 
-  editQueuedMessage: (messageId) => {
+  editQueuedMessage: async (messageId) => {
     const { activeProject } = get()
     if (!activeProject) return
     const session = getActivePerSession(get())
     const msg = session.queuedMessages.find((m) => m.id === messageId)
     if (!msg) return
+    // The CLI has no consumer-facing cancel: once the message is consumed
+    // into its command queue it WILL be answered. dequeueMessage returns
+    // false in that case — leave it queued (the imminent
+    // queued_message_consumed event moves it to the transcript) and do NOT
+    // pull it into the input, which would double-send.
+    const removed = await window.agent.dequeueMessage(activeProject, messageId)
+    if (!removed) return
     const text = msg.content.find((b) => b.type === 'text')
     const attachments = msg.attachments ?? []
-    window.agent.dequeueMessage(activeProject, messageId)
     set((s) => updateActivePerSession(s, (sess) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
       draftText: text && 'text' in text ? text.text : '',
@@ -3916,10 +3922,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })))
   },
 
-  deleteQueuedMessage: (messageId) => {
+  deleteQueuedMessage: async (messageId) => {
     const { activeProject } = get()
     if (!activeProject) return
-    window.agent.dequeueMessage(activeProject, messageId)
+    const removed = await window.agent.dequeueMessage(activeProject, messageId)
+    if (!removed) return
     set((s) => updateActivePerSession(s, (sess) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
     })))

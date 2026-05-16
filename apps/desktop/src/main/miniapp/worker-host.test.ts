@@ -122,6 +122,18 @@ describe('WorkerHost lifecycle', () => {
     expect(lastState()?.workers).toEqual([])
   })
 
+  it('stopWorkersByAppId stops every project instance of an app, leaving others (P1-b regression)', () => {
+    wh.startWorker({ ...ARGS, projectDir: '/p1' })
+    wh.startWorker({ ...ARGS, projectDir: '/p2' })
+    wh.startWorker({ ...ARGS, appId: 'b', projectDir: '/p1' })
+
+    wh.stopWorkersByAppId('a')
+
+    expect(wh.workerStatus('/p1', 'a').running).toBe(false)
+    expect(wh.workerStatus('/p2', 'a').running).toBe(false)
+    expect(wh.workerStatus('/p1', 'b').running).toBe(true)
+  })
+
   it('drops a worker from the snapshot when reclaimed after idle', () => {
     wh.startWorker(ARGS)
     wh.handleWorkerSend('/p', 'a', 'miniapp-worker-lease', { leaseId: 1 })

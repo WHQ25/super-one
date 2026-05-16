@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Globe, HardDrive, FolderOpen, Package, ArrowUpCircle, Link, Check, Wrench, Mic, Video, Database } from 'lucide-react'
+import { Globe, HardDrive, FolderOpen, Package, ArrowUpCircle, Link, Check, Wrench, Mic, Video, Database, Repeat } from 'lucide-react'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useAppStore } from '@/stores/app'
 import { cn } from '@superone/ui/lib/utils'
-import type { MiniAppFsEntry, MiniAppMediaEntry, MiniAppStorageEntry } from '@superone/shared/miniapp-types'
+import { hasAnyPermission, permissionApprovalKeys } from '@/lib/miniapp-permissions'
+import type { MiniAppFsEntry, MiniAppMediaEntry, MiniAppStorageEntry, MiniAppBackgroundPermission } from '@superone/shared/miniapp-types'
 
 type InstallTarget = 'personal' | 'project'
 type ReviewTab = 'permissions' | 'tools'
@@ -51,17 +52,13 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
   const networkEntries = manifest?.permissions?.network ?? []
   const mediaEntries = manifest?.permissions?.media ?? []
   const storageEntry = manifest?.permissions?.storage ?? null
+  const backgroundEntry = manifest?.permissions?.background ?? null
   const tools = manifest?.tools ?? []
-  const hasPermissions = fsEntries.length > 0 || networkEntries.length > 0 || mediaEntries.length > 0 || !!storageEntry
+  const hasPermissions = hasAnyPermission(manifest)
   const hasTools = tools.length > 0
   const isUpgrade = !!existingVersion && existingVersion !== manifest?.version
 
-  const permissionKeys = useMemo(() => [
-    ...fsEntries.map((_, i) => `fs:${i}`),
-    ...networkEntries.map((e) => `net:${e.domain}`),
-    ...mediaEntries.map((e) => `media:${e.kind}`),
-    ...(storageEntry ? ['storage'] : []),
-  ], [fsEntries, networkEntries, mediaEntries, storageEntry])
+  const permissionKeys = useMemo(() => permissionApprovalKeys(manifest), [manifest])
 
   const toolKeys = useMemo(() => tools.map((_, i) => `tool:${i}`), [tools])
   const allPermissionsApproved = !hasPermissions || permissionKeys.every((k) => approved.has(k))
@@ -189,6 +186,7 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
                     networkEntries={networkEntries}
                     mediaEntries={mediaEntries}
                     storageEntry={storageEntry}
+                    backgroundEntry={backgroundEntry}
                     permissionKeys={permissionKeys}
                     approved={approved}
                     allApproved={allPermissionsApproved}
@@ -212,6 +210,7 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
                 networkEntries={networkEntries}
                 mediaEntries={mediaEntries}
                 storageEntry={storageEntry}
+                backgroundEntry={backgroundEntry}
                 permissionKeys={permissionKeys}
                 approved={approved}
                 allApproved={allPermissionsApproved}
@@ -252,6 +251,7 @@ function PermissionsSection({
   networkEntries,
   mediaEntries,
   storageEntry,
+  backgroundEntry,
   permissionKeys,
   approved,
   allApproved,
@@ -262,6 +262,7 @@ function PermissionsSection({
   networkEntries: { domain: string; reason: string }[]
   mediaEntries: MiniAppMediaEntry[]
   storageEntry: MiniAppStorageEntry | null
+  backgroundEntry: MiniAppBackgroundPermission | null
   permissionKeys: string[]
   approved: Set<string>
   allApproved: boolean
@@ -350,6 +351,23 @@ function PermissionsSection({
                   <span className="inline-flex h-4 shrink-0 items-center rounded bg-purple-500/10 px-1 text-[10px] leading-none text-purple-600 dark:text-purple-400">Persistent</span>
                 </div>
                 <div className="text-xs text-muted-foreground">{storageEntry.reason}</div>
+              </div>
+              <ApprovalCheck checked={isApproved} />
+            </button>
+          )
+        })()}
+        {backgroundEntry && (() => {
+          const key = 'background'
+          const isApproved = approved.has(key)
+          return (
+            <button key={key} onClick={() => onToggle(key)} className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50">
+              <Repeat className="size-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-sm">
+                  <span className="font-medium">Background activity</span>
+                  <span className="inline-flex h-4 shrink-0 items-center rounded bg-amber-500/10 px-1 text-[10px] leading-none text-amber-600 dark:text-amber-400">Always-on</span>
+                </div>
+                <div className="text-xs text-muted-foreground">{backgroundEntry.reason}</div>
               </div>
               <ApprovalCheck checked={isApproved} />
             </button>

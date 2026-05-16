@@ -77,7 +77,7 @@ vi.mock('@/stores/chat', () => ({
 }))
 
 vi.mock('@/stores/miniapp', () => ({
-  useMiniAppStore: (selector: (s: Record<string, unknown>) => unknown) => selector({ fetchApps: vi.fn(), apps: [] }),
+  useMiniAppStore: (selector: (s: Record<string, unknown>) => unknown) => selector({ fetchApps: vi.fn(), apps: [], workers: [] }),
 }))
 
 vi.mock('@/hooks/useFullscreen', () => ({

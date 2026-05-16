@@ -1,5 +1,5 @@
 import { buildMiniAppFrameAttrs } from '@superone/shared/miniapp-frame-attrs'
-import { MINIAPP_HEADLESS_SAFE_TYPES } from '@superone/shared/miniapp-types'
+import { MINIAPP_HEADLESS_SAFE_TYPES, MINIAPP_WORKER_REJECT_RESPONSE, MINIAPP_WORKER_UNAVAILABLE_ERROR } from '@superone/shared/miniapp-types'
 import type { MiniAppMediaKind } from '@superone/shared/miniapp-types'
 
 interface WorkerHostBridge {
@@ -44,6 +44,7 @@ const WORKER_PLUMBING = new Set([
   'miniapp-worker-event',
   'miniapp-worker-lease',
   'miniapp-worker-lease-release',
+  'miniapp-worker-status-set',
 ])
 
 window.addEventListener('message', (e) => {
@@ -60,7 +61,11 @@ window.addEventListener('message', (e) => {
     wh.toMain(appId, projectDir, 'miniapp-ready', {})
     return
   }
-  if (!MINIAPP_HEADLESS_SAFE_TYPES.has(type)) return
+  if (!MINIAPP_HEADLESS_SAFE_TYPES.has(type)) {
+    const rejectType = MINIAPP_WORKER_REJECT_RESPONSE[type]
+    if (rejectType) reply(rejectType, id, { error: MINIAPP_WORKER_UNAVAILABLE_ERROR })
+    return
+  }
 
   const args = data.args as Record<string, unknown>
   switch (type) {

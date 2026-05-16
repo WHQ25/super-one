@@ -4,7 +4,7 @@ import { useMiniAppMediaStore } from '@/stores/miniapp-media'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { requestClipboardRead, requestClipboardWrite } from '@/lib/miniapp-clipboard'
 import { toast } from 'sonner'
-import { MINIAPP_HEADLESS_SAFE_TYPES } from '@superone/shared/miniapp-types'
+import { MINIAPP_HEADLESS_SAFE_TYPES, MINIAPP_WORKER_REJECT_RESPONSE, MINIAPP_WORKER_UNAVAILABLE_ERROR } from '@superone/shared/miniapp-types'
 import type { MiniAppMediaKind, MiniAppTooltipRequest, MiniAppContextMenuRequest, MiniAppPopoverShowRequest } from '@superone/shared/miniapp-types'
 
 export interface MiniAppOverlayCallbacks {
@@ -191,11 +191,6 @@ export function handleMiniAppMessage(
   }
 }
 
-const WORKER_REJECT_RESPONSE: Record<string, string> = {
-  'miniapp-clipboard-read': 'miniapp-clipboard-response',
-  'miniapp-ui-contextmenu': 'miniapp-ui-contextmenu-result',
-}
-
 export function handleMiniAppWorkerMessage(
   type: string,
   data: Record<string, unknown>,
@@ -206,9 +201,9 @@ export function handleMiniAppWorkerMessage(
   if (MINIAPP_HEADLESS_SAFE_TYPES.has(type)) {
     return handleMiniAppMessage(type, data, appId, projectDir, send)
   }
-  const responseType = WORKER_REJECT_RESPONSE[type]
+  const responseType = MINIAPP_WORKER_REJECT_RESPONSE[type]
   if (responseType) {
-    send({ type: responseType, id: data.id, error: 'unavailable-in-worker' })
+    send({ type: responseType, id: data.id, error: MINIAPP_WORKER_UNAVAILABLE_ERROR })
     return true
   }
   if (type.startsWith('miniapp-')) return true

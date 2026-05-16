@@ -336,6 +336,17 @@ export const MINIAPP_HEADLESS_SAFE_TYPES: ReadonlySet<string> = new Set([
   'miniapp-peer-emit',
 ])
 
+// Request/response types the worker (headless) shell cannot service. The shell
+// must reply with an error on these so the iframe's transport.request promise
+// rejects instead of hanging forever. Single source of truth for both the
+// panel-host worker policy and the renderer worker-host shell.
+export const MINIAPP_WORKER_REJECT_RESPONSE: Readonly<Record<string, string>> = {
+  'miniapp-clipboard-read': 'miniapp-clipboard-response',
+  'miniapp-ui-contextmenu': 'miniapp-ui-contextmenu-result',
+}
+
+export const MINIAPP_WORKER_UNAVAILABLE_ERROR = 'unavailable-in-worker'
+
 export const MiniAppToolBridgeMsg = {
   SUBMIT: 'miniapp-tool-submit',
   CANCEL: 'miniapp-tool-cancel',

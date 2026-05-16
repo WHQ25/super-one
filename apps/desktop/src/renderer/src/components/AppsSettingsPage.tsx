@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, ChevronRight, Link, Trash2, Mic, Video, Globe, HardDrive, FolderOpen, Database, Library, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Link, Trash2, Mic, Video, Globe, HardDrive, FolderOpen, Database, Library, AlertTriangle, Repeat } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@superone/ui/components/ui/switch'
@@ -10,6 +10,7 @@ import { DevAppLibraryView } from '@/components/DevAppLibraryView'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useAppStore } from '@/stores/app'
 import { cn } from '@superone/ui/lib/utils'
+import { hasAnyPermission } from '@/lib/miniapp-permissions'
 import type { MiniAppEntry, MiniAppFsEntry } from '@superone/shared/miniapp-types'
 
 function formatFsLabel(entry: MiniAppFsEntry): { label: string; detail: string } {
@@ -105,11 +106,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
 
   const tools = app.manifest.tools ?? []
   const { manifest } = app
-  const hasPermissions =
-    (manifest.permissions?.fs?.length ?? 0) > 0 ||
-    (manifest.permissions?.network?.length ?? 0) > 0 ||
-    (manifest.permissions?.media?.length ?? 0) > 0 ||
-    !!manifest.permissions?.storage
+  const hasPermissions = hasAnyPermission(manifest)
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -242,6 +239,18 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
                       <span className="inline-flex h-4 shrink-0 items-center rounded bg-purple-500/10 px-1 text-[10px] leading-none text-purple-600 dark:text-purple-400">Persistent</span>
                     </div>
                     <div className="text-xs text-muted-foreground">{manifest.permissions.storage.reason}</div>
+                  </div>
+                </div>
+              )}
+              {manifest.permissions?.background && (
+                <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                  <Repeat className="size-5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 text-sm">
+                      <span className="font-medium">Background activity</span>
+                      <span className="inline-flex h-4 shrink-0 items-center rounded bg-amber-500/10 px-1 text-[10px] leading-none text-amber-600 dark:text-amber-400">Always-on</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">{manifest.permissions.background.reason}</div>
                   </div>
                 </div>
               )}

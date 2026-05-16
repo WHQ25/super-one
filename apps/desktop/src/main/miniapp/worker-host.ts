@@ -214,6 +214,15 @@ export function stopAllWorkers(): void {
   }
 }
 
+// Stop every worker for an app across all projects, independent of panel
+// presence. Worker lifetime is owned here, not by panel/session refs — an
+// uninstalled app's worker must die even if its panel was already closed.
+export function stopWorkersByAppId(appId: string): void {
+  for (const inst of [...instances.values()]) {
+    if (inst.appId === appId) stopWorker(inst.projectDir, inst.appId)
+  }
+}
+
 function flushToWorker(inst: WorkerInstance): void {
   if (!inst.ready || inst.win.isDestroyed()) return
   const now = Date.now()

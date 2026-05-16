@@ -19,6 +19,7 @@ import apiLocaleMd from './guides/api/locale.md?raw'
 import apiAgentMd from './guides/api/agent.md?raw'
 import apiSystemMd from './guides/api/system.md?raw'
 import apiUiMd from './guides/api/ui.md?raw'
+import apiWorkerMd from './guides/api/worker.md?raw'
 import packagingMd from './guides/packaging.md?raw'
 import iconMd from './guides/icon.md?raw'
 import recipesMd from './guides/recipes.md?raw'
@@ -37,6 +38,7 @@ const MINIAPP_GUIDES: Record<string, string> = {
   'api-agent': apiAgentMd,
   'api-system': apiSystemMd,
   'api-ui': apiUiMd,
+  'api-worker': apiWorkerMd,
   packaging: packagingMd,
   icon: iconMd,
   recipes: recipesMd,
@@ -55,6 +57,7 @@ const MINIAPP_GUIDE_TOPICS = [
   'api-agent',
   'api-system',
   'api-ui',
+  'api-worker',
   'packaging',
   'icon',
   'recipes',
@@ -114,7 +117,7 @@ const READ_MINIAPP_GUIDE_DESCRIPTION =
   'IMPORTANT: After reading the overview, confirm requirements, fullscreen capability, template, and tool design with the user BEFORE writing any code.'
 
 const MINIAPP_GUIDE_TOPIC_DESCRIPTION =
-  'Which guide topic to read. Read overview first, then load other topics as needed: overview (architecture, workflow — always read first), manifest (manifest fields and panel layout reference), tools (declaring agent-facing tools, intercept renderers, custom inline result renderers), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-db (per-app SQLite: query/exec/batch/pragma), api-theme (CSS vars, dark mode), api-locale (user language: en/zh), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
+  'Which guide topic to read. Read overview first, then load other topics as needed: overview (architecture, workflow — always read first), manifest (manifest fields and panel layout reference), tools (declaring agent-facing tools, intercept renderers, custom inline result renderers), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-db (per-app SQLite: query/exec/batch/pragma), api-theme (CSS vars, dark mode), api-locale (user language: en/zh), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), api-worker (background worker that outlives the panel: worker.start/stop/postMessage + self.keepAlive/setStatus), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
 
 const SETUP_MINI_APP_DEV_DESCRIPTION = `Scaffold a new mini-app in a directory of your choice and register it for development so SuperOne can discover it.
 

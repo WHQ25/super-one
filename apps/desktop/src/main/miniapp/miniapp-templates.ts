@@ -347,6 +347,19 @@ interface SuperOneToolResultApi {
 
 type SuperOneToolRendererApi = SuperOneToolInterceptApi | SuperOneToolResultApi
 
+interface SuperOneWorkerStatus {
+  running: boolean
+  since?: number
+  statusText?: string
+}
+
+interface SuperOneSelfApi {
+  onMessage(handler: (msg: unknown) => void): () => void
+  postMessage(msg: unknown): void
+  setStatus(text: string): void
+  keepAlive(label: string): { release(): void }
+}
+
 interface SuperOne {
   readonly version: string
   tools: {
@@ -426,6 +439,14 @@ interface SuperOne {
   }
   popover?: SuperOnePopoverApi
   tool?: SuperOneToolRendererApi
+  worker: {
+    start(): Promise<SuperOneWorkerStatus>
+    stop(): Promise<SuperOneWorkerStatus>
+    status(): Promise<SuperOneWorkerStatus>
+    postMessage(msg: unknown): void
+    onMessage(handler: (msg: unknown) => void): () => void
+  }
+  self?: SuperOneSelfApi
   isDarkMode(): boolean
   onDarkModeChange(callback: (isDark: boolean) => void): () => void
 }

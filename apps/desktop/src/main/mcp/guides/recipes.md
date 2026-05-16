@@ -172,3 +172,70 @@ When a tool's output is a focused inline card (counter, receipt, diff preview) a
 ```
 
 Persist state with `superone.kv` (or `superone.fs`) — each call creates a fresh iframe, so in-memory variables don't survive between calls. Pair with `renderer.intercept` to add a confirmation step before the handler runs.
+
+## Background Worker (Panel ⇄ Worker)
+
+Pattern: the panel kicks off a long job, then closes; the worker runs it to completion and the panel re-syncs progress when reopened. Requires `background.entry` + `permissions.background` (see `api-worker`).
+
+```json
+{
+  "background": { "entry": "background.html" },
+  "permissions": {
+    "background": { "reason": "Finish the download even if the panel is closed" },
+    "fs": [{ "scope": "app", "reason": "Store the downloaded file" }],
+    "network": [{ "domain": "example.com", "reason": "Download source" }]
+  }
+}
+```
+
+**Panel (index.html)** — start the worker, push a job, re-sync on open:
+
+```js
+await superone.worker.start()
+superone.worker.onMessage((m) => {
+  if (m.type === 'progress') bar.value = m.percent
+  if (m.type === 'done') superone.ui.toast('Saved ' + m.path, 'success')
+})
+superone.worker.postMessage({ type: 'query' })            // re-sync if already running
+startBtn.onclick = () =>
+  superone.worker.postMessage({ type: 'download', src: url, dest: 'out.bin' })
+```
+
+**Worker (background.html)** — hold a lease, checkpoint, report status:
+
+```js
+let current = null
+superone.self.onMessage((msg) => {
+  if (msg.type === 'query') { if (current) emit('progress', current); return }
+  if (msg.type === 'download') run(msg.src, msg.dest).catch((e) => emit('error', { error: String(e) }))
+})
+function emit(type, data) { superone.self.postMessage(Object.assign({ type }, data)) }
+
+async function run(src, dest) {
+  const lease = superone.self.keepAlive('download ' + dest)
+  try {
+    const res = await fetch(src)
+    const total = Number(res.headers.get('content-length') || 0)
+    const reader = res.body.getReader()
+    let received = 0, first = true
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      await superone.fs.writeFile(dest, value, { append: !first })
+      first = false
+      received += value.byteLength
+      current = { received, total, percent: total ? Math.floor(received / total * 100) : 0 }
+      superone.self.setStatus('Downloading ' + current.percent + '%')
+      emit('progress', current)
+    }
+    current = null
+    superone.self.setStatus('')
+    emit('done', { path: dest, bytes: received })
+  } finally {
+    lease.release()
+  }
+}
+emit('ready', {})
+```
+
+Key points: **always** wrap work in `keepAlive(...)` / `finally lease.release()` (no lease → reclaimed after 30 s idle); `emit('ready')` + a panel-side `{ type: 'query' }` lets a reopened panel re-sync; checkpoint to `superone.kv` if the job must survive the 6 h runaway cap. Full example: the `hello` demo app's `background.html`.

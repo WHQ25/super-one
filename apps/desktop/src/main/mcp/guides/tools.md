@@ -182,6 +182,8 @@ Behavior: groups of >1 call are collapsed by default; the currently streaming ca
 | `renderer.intercept` | object | Human-in-the-loop: render a template in the chat tool block before the call reaches the handler. See below. |
 | `renderer.result` | object | Custom inline result UI rendered after the handler returns. **Required** when `standalone: true` (the template doubles as the handler host). See "Result Renderer" below. |
 
+> **React/Vite template:** every `templates.*` HTML below (`renderer.intercept`, `renderer.result`, `standalone`, and `ui.showPopover`) is a **separate Vite entry**, not part of your React SPA — each must be added to `rollupOptions.input` or the build emits no such HTML. Each is an independent React root. See the "React / Vite — Multi-Page Entries" section in the `manifest` topic. (Vanilla template: just author each `.html` directly — no build step.)
+
 ## Human-in-the-Loop Tool Calls (`renderer.intercept`)
 
 When a tool call must be confirmed or completed by the user, declare a `renderer.intercept` on the tool. The chat tool block will expand an inline iframe using one of your `templates`, and the mini-app's `tools.handle` receives a **merged** input (agent input + user input) only after the user submits.

@@ -158,6 +158,23 @@ Whenever any mini-app holds a live audio or video track, a red pulsing pill appe
 
 Be a good citizen: stop tracks as soon as you don't need them, otherwise the red dot stays on and users will revoke trust.
 
+## Background Worker (`permissions.background`)
+
+Grants the app a headless background worker that keeps running after the panel is closed (long downloads, polling, queued uploads). Requires a `background.entry` HTML file in the manifest.
+
+```json
+{
+  "background": { "entry": "background.html" },
+  "permissions": {
+    "background": { "reason": "Finish the download even when the panel is closed" }
+  }
+}
+```
+
+`background` is a single object (not an array), with a required `reason` shown to the user during installation. Without it, `superone.worker.start()` rejects. The worker inherits the app's other permissions (`fs`, `network`, `storage`, `media`) — declare those as usual if the worker needs them.
+
+The worker is auto-reclaimed after 30 s idle (unless it holds a `superone.self.keepAlive` lease) and hard-capped at 6 h. Use the `api-worker` topic for the full API and lifecycle contract.
+
 ### What is *not* supported (yet)
 
 - **Screen capture** (`getDisplayMedia()`) — needs Electron `desktopCapturer` plus a host-rendered source picker. Coming in a later release.

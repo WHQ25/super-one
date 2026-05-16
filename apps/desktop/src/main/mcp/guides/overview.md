@@ -10,6 +10,7 @@ Every app opens as a tab in the activity panel by default. Set `fullscreen: true
 - All agent communication goes through the built-in SuperOne MCP server
 - The bridge script (`window.superone.*`) is auto-injected into every mini-app's HTML `<head>`
 - Tools declared in `manifest.json` are automatically registered with the MCP server when the app opens
+- An app can declare a headless **background worker** (`background.entry` + `permissions.background`) that keeps running after the panel is closed — see the `api-worker` topic
 - Apps are packaged as `.s1app` files (zip + integrity checksums) and installed via drag-and-drop
 - Dev-mode apps are tracked in a global registry at `~/.superone/dev-registry.json`; the per-scope pointer file `.s1-dev.json` only carries `{ enabled }` and resolves to a source directory via the registry at runtime
 
@@ -118,6 +119,8 @@ Use `user` when:
 6. For ongoing development with auto-rebuild: `<pm> run build --watch`
 
 Prefer bun over npm when both are available (faster installs and builds).
+
+The scaffold has a **single** Vite entry (`index.html`). A background worker (`background.entry`) or any tool renderer / standalone tool / popover (`templates.*`) is a **separate document with its own Vite entry** — read the "React / Vite — Multi-Page Entries" section in the `manifest` topic before adding any of these, or the build will silently omit them.
 
 ## Switching between Dev and Prod Versions
 

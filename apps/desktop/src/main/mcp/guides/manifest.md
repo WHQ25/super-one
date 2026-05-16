@@ -26,7 +26,8 @@ Start with the scaffold from `miniapp_dev_setup` (or register an existing source
 | `toolSlug` | Namespace prefix for tools. Required when `tools[]` is non-empty. Lowercase alphanumeric + underscores. See `tools` topic. |
 | `tools` | Array of agent-facing tool definitions. See `tools` topic. |
 | `templates` | Map of template name → relative HTML path. Required for tools using `renderer.intercept`, `renderer.result`, or `standalone: true`; also referenced by `ui.showPopover`. Names: lowercase alphanumeric with hyphens/underscores. |
-| `permissions` | File system, network, media, storage permissions. See `permissions` topic. |
+| `background` | `{ entry }` — relative path to a headless background-worker HTML file (`^[a-z0-9][a-z0-9_./-]*\.html$`). Requires `permissions.background`. See `api-worker` topic. |
+| `permissions` | File system, network, media, storage, background permissions. See `permissions` topic. |
 
 ### Where the App Opens
 
@@ -43,6 +44,74 @@ For inline rendering of agent tool output inside the chat itself, declare a cust
 - Wide content (tables, charts): use `overflow-x: auto` on container
 - For fullscreen apps, the layout can spread freely; still scroll internally rather than relying on browser scroll
 
+## React / Vite — Multi-Page Entries
+
+**Rule: every manifest path that points to an `.html` file is a separate document (its own iframe / process), not part of your React SPA.** The `react` template scaffolds a *single* entry (`index.html` → `src/main.tsx`). The moment you add a worker, a tool renderer, a standalone tool, or a popover, you must add a matching Vite entry — otherwise the build emits no such HTML and the app silently loads the wrong document (commonly: the whole React SPA boots inside a tool block or worker).
+
+This **only applies to the `react`/Vite template**. The `vanilla` template needs no build step — just author each `.html` directly.
+
+### Which manifest paths are separate documents
+
+| Manifest field | Used by | Bridge injects | Needs React? |
+|---|---|---|---|
+| `background.entry` | background worker | `superone` + `superone.self` | No — pure logic, do **not** import React |
+| `templates.*` referenced by `renderer.intercept` | chat-inline confirm/intercept UI | `superone` + `superone.tool` (phase `intercept`) | Yes — has UI |
+| `templates.*` referenced by `renderer.result` | chat-inline result card | `superone` + `superone.tool` (phase `result`) | Yes — has UI |
+| `templates.*` on a `standalone: true` tool | handler + UI in one chat-block iframe | `superone` + `superone.tool` + `superone.tools.handle` | Yes — has UI |
+| `templates.*` used by `ui.showPopover` | panel popover | `superone` + `superone.popover` | Yes — has UI |
+
+### Vite config
+
+Add one input per HTML entry. Keep `base: './'` (the app is served from `superone-app://<host>/`, so asset URLs must be relative):
+
+```ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { resolve } from 'path'
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  base: './',
+  build: {
+    outDir: 'dist',
+    rollupOptions: {
+      input: {
+        index: resolve(__dirname, 'index.html'),          // panel SPA
+        background: resolve(__dirname, 'background.html'),  // worker — no React
+        confirm: resolve(__dirname, 'confirm.html'),        // renderer.intercept
+        receipt: resolve(__dirname, 'receipt.html'),        // renderer.result
+        detail: resolve(__dirname, 'detail.html'),          // ui.showPopover
+      },
+    },
+  },
+})
+```
+
+Each input HTML at the project root builds to `dist/<name>.html`. `manifest.json` (in `public/`, copied to `dist/`) references the **built** path relative to `dist/`:
+
+```json
+{
+  "background": { "entry": "background.html" },
+  "templates": { "confirm": "confirm.html", "receipt": "receipt.html", "detail": "detail.html" }
+}
+```
+
+A minimal non-panel entry HTML just loads its own script — no `<div id="root">` for the worker:
+
+```html
+<!-- background.html --> <body><script type="module" src="/src/worker.ts"></script></body>
+<!-- detail.html (popover, has UI) --> <body><div id="root"></div><script type="module" src="/src/popover.tsx"></script></body>
+```
+
+### State & code sharing across entries
+
+- Each document is **fresh** — no shared in-memory state with the panel or with each other (a `standalone` tool gets a brand-new iframe every call). Cross-boundary state goes through `superone.kv`, `superone.fs`, or the typed message channels (`superone.popover.postMessage`, `superone.tool.submit`, `superone.worker`/`superone.self` messaging).
+- Share **code** (types, pure functions, fetch logic) via a `src/shared.ts` imported by each entry. Rollup splits it into a common chunk; the worker bundle stays React-free as long as `worker.ts` doesn't import React.
+- UI entries (renderer/popover) each mount their own small React tree (`createRoot` on their own `#root`) — they are independent roots, not one SPA.
+
+For the per-API contracts see `api-worker` (worker), `tools` (renderers, standalone), and `api-ui` (popover).
+
 ## Related Topics
 
 - `tools` — tool declaration, handlers, display customization, grouping
@@ -50,5 +119,6 @@ For inline rendering of agent tool output inside the chat itself, declare a cust
 - `api-fs`, `api-git`, `api-theme`, `api-locale`, `api-agent` — bridge APIs
 - `api-system` — open folders, external links, clipboard
 - `api-ui` — toast, tooltip, context menu overlays
+- `api-worker` — background worker that keeps running after the panel closes
 - `packaging` — distribute as .s1app
 - `icon` — visual assets

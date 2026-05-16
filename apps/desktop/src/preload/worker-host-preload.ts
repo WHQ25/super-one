@@ -1,32 +1,44 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { AgentIpcChannels } from '@superone/shared/agent-types'
 
 try { process.title = 'SuperOne Worker Host' } catch { /* not writable in some sandboxed contexts */ }
 
+const CH = {
+  TOOL_RESULT: 'miniapp:tool-result',
+  FS_REQUEST: 'miniapp:fs-request',
+  GIT_REQUEST: 'miniapp:git-request',
+  DB_REQUEST: 'miniapp:db-request',
+  KV_REQUEST: 'miniapp:kv-request',
+  FS_WATCH: 'miniapp:fs-watch',
+  FS_UNWATCH: 'miniapp:fs-unwatch',
+  PEER_EMIT: 'miniapp:peer-emit',
+  WORKER_SEND: 'miniapp:worker-send',
+  WORKER_EVENT: 'miniapp:worker-event',
+} as const
+
 const workerMsgListeners: Array<(payload: unknown) => void> = []
-ipcRenderer.on(AgentIpcChannels.MINIAPP_WORKER_EVENT, (_e, data: { payload: unknown }) => {
+ipcRenderer.on(CH.WORKER_EVENT, (_e, data: { payload: unknown }) => {
   workerMsgListeners.forEach((cb) => cb(data?.payload))
 })
 
 const api = {
   toolResult: (callId: string, result: unknown, error?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_TOOL_RESULT, callId, result, error),
+    ipcRenderer.invoke(CH.TOOL_RESULT, callId, result, error),
   fsRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_REQUEST, projectDir, appId, op, args),
+    ipcRenderer.invoke(CH.FS_REQUEST, projectDir, appId, op, args),
   gitRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GIT_REQUEST, projectDir, appId, op, args),
+    ipcRenderer.invoke(CH.GIT_REQUEST, projectDir, appId, op, args),
   dbRequest: (appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DB_REQUEST, appId, op, args),
+    ipcRenderer.invoke(CH.DB_REQUEST, appId, op, args),
   kvRequest: (appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_KV_REQUEST, appId, op, args),
+    ipcRenderer.invoke(CH.KV_REQUEST, appId, op, args),
   fsWatch: (projectDir: string, appId: string, path: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_WATCH, projectDir, appId, path) as Promise<number>,
+    ipcRenderer.invoke(CH.FS_WATCH, projectDir, appId, path) as Promise<number>,
   fsUnwatch: (watchId: number) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_UNWATCH, watchId),
+    ipcRenderer.invoke(CH.FS_UNWATCH, watchId),
   peerEmit: (appId: string, event: string, payload: unknown) =>
-    ipcRenderer.send(AgentIpcChannels.MINIAPP_PEER_EMIT, appId, event, payload),
+    ipcRenderer.send(CH.PEER_EMIT, appId, event, payload),
   toMain: (appId: string, projectDir: string, type: string, data: Record<string, unknown>) =>
-    ipcRenderer.send(AgentIpcChannels.MINIAPP_WORKER_SEND, { appId, projectDir, type, data }),
+    ipcRenderer.send(CH.WORKER_SEND, { appId, projectDir, type, data }),
   onWorkerMsg: (cb: (payload: unknown) => void) => {
     workerMsgListeners.push(cb)
     return () => {

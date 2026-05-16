@@ -511,9 +511,16 @@
       });
 
       document.getElementById('btn-worker-start').onclick = async function () {
-        await superone.worker.start();
-        state.textContent = 'running';
-        superone.worker.postMessage({ type: 'download', src: 'logo.png', dest: 'downloads/logo-copy.png' });
+        result.textContent = 'starting worker…';
+        try {
+          var st = await superone.worker.start();
+          state.textContent = 'running';
+          result.textContent = 'worker started (' + JSON.stringify(st) + '), sending download…';
+          superone.worker.postMessage({ type: 'download', src: 'logo.png', dest: 'downloads/logo-copy.png' });
+        } catch (e) {
+          result.textContent = 'worker.start failed: ' + (e && e.message ? e.message : String(e));
+          state.textContent = 'error';
+        }
       };
       document.getElementById('btn-worker-stop').onclick = async function () {
         await superone.worker.stop();

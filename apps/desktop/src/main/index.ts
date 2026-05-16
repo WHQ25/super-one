@@ -1902,6 +1902,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_WORKER_START, async (_e, projectDir: string, appId: string) => {
     if (!isAppStillAuthorizedInProject(projectDir, appId)) {
+      log.warn('[worker-host] start rejected: not authorized %s::%s', projectDir, appId)
       throw new Error('App is not authorized in this project')
     }
     const basePath = getAppBasePath(appId)

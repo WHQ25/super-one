@@ -414,19 +414,34 @@ Mini-apps are sandboxed web apps (HTML/CSS/JS) that run in iframes and are contr
 
 **Manifest** requires `appId` and `name`; `version` and `author` are required for packaging. Schema enforces `appId` format (`^[a-z0-9][a-z0-9_-]*$`) and tool name format (`^[a-z0-9_]+$`).
 
+**⚠️ Two runtime paths — always wire BOTH (recurring footgun):**
+
+A mini-app runs in **one of two transports depending on `manifest.isDev`**, and they do NOT share transport wiring (only the `createSuperoneApi` *logic* is shared):
+
+| | Production (`isDev` falsy) | Dev (`isDev: true`) |
+|---|---|---|
+| Container | sandboxed `<iframe src="superone-app://…">` | `<webview>` |
+| Bridge injected by | `miniapp-bridge.ts` (`?raw` runtime + `postMessage`) | `miniapp-preload.ts` (`ipcRenderer.sendToHost`) |
+| Host side | `useMiniAppBridge` → `handleMiniAppMessage` | `MiniAppDevFrame` → `handleMiniAppMessage` |
+| Request→response replies reach the app via | `postMessage` back into the iframe (works for any type) | **only** the explicit channel list in `miniapp-preload.ts` |
+| Host→panel push events reach the app via | a `useMiniAppBridge` `useEffect` (`sendToFrame`) | a **separate** `MiniAppDevFrame` `useEffect` (`webview.send`) **+** `miniapp-preload.ts` `eventChannels` |
+
+So for **any new request/response message type**: add its response channel to the `ipcRenderer.on(... dispatchResponse)` list in `miniapp-preload.ts`, or the dev (webview) path's `transport.request` promise **hangs forever** (the iframe path silently works, so this is easy to miss — `hello` is `isDev:true`, test with it).
+For **any new host→panel push event**: forward it in **both** `useMiniAppBridge` *and* `MiniAppDevFrame`, and add the channel to `eventChannels` in `miniapp-preload.ts`.
+
 **Adding a new mini-app bridge API:**
 
 1. `packages/shared/src/miniapp-api-runtime.js` — Add the method to `createSuperoneApi()`. Use `transport.send()` for fire-and-forget, `transport.request()` for request-response.
 2. `packages/shared/src/miniapp-api-runtime.d.ts` — Add TypeScript signature to `SuperoneApi` interface.
 3. `apps/desktop/src/main/miniapp/miniapp-templates.ts` — Update `generateSuperoneDts()` to include the new API in the React template's type declarations.
 4. `packages/shared/src/miniapp-types.ts` — If a new message type is added, append it to `MiniAppBridgeMessageType`.
-5. If the API needs host-side handling: add a case in `apps/desktop/src/renderer/src/hooks/miniapp-message-handler.ts`.
+5. If the API needs host-side handling: add a case in `apps/desktop/src/renderer/src/hooks/miniapp-message-handler.ts` (shared by both the iframe and webview host paths).
 6. If the API needs main process handling: add a handler in `apps/desktop/src/main/miniapp/miniapp-service.ts` or `apps/desktop/src/main/index.ts`.
-7. If the API needs a new IPC response channel: add `ipcRenderer.on(channel, dispatchResponse)` in `apps/desktop/src/preload/miniapp-preload.ts`.
+7. **Dev/webview path (do not skip):** for a request/response type, add `ipcRenderer.on('<resType>', (_e, d) => dispatchResponse(d))` to `miniapp-preload.ts`; for a host→panel push event, add the channel to `eventChannels` in `miniapp-preload.ts` **and** forward it in `MiniAppDevFrame` (mirror the existing `onGitHeadChangeEvent`/`onWorkerEvent` `useEffect`). The production iframe path needs the matching forward in `useMiniAppBridge`.
 8. Update the relevant guide in `apps/desktop/src/main/mcp/guides/api/`.
-9. Update `apps/desktop/examples/miniapp/hello/index.html` to demo the new API.
+9. Update `apps/desktop/examples/miniapp/hello/index.html` to demo the new API (`hello` is `isDev:true`, so it also exercises the webview path).
 
-Bridge and preload share the same runtime — **no need to update API logic in two places**.
+The `createSuperoneApi` **logic** is shared (don't reimplement it), but the **transport wiring is per-path** — see the "Two runtime paths" table above; missing the dev-path wiring is the most common mini-app bug.
 
 ## Conventions
 

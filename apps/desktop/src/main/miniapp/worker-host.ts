@@ -89,7 +89,7 @@ export function startWorker(args: WorkerStartArgs): WorkerStatus {
     webPreferences: {
       session: ses,
       preload: join(__dirname, '../preload/worker-host-preload.js'),
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
@@ -101,6 +101,9 @@ export function startWorker(args: WorkerStartArgs): WorkerStatus {
   const entryUrl = `worker-host.html`
   win.webContents.on('will-navigate', (e, url) => {
     if (!url.includes(entryUrl)) e.preventDefault()
+  })
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    log.error('[worker-host] shell did-fail-load %s code=%d %s url=%s', k, code, desc, url)
   })
 
   const inst: WorkerInstance = {
@@ -125,6 +128,7 @@ export function startWorker(args: WorkerStartArgs): WorkerStatus {
     media: args.media.join(','),
   }).toString()
 
+  log.info('[worker-host] start %s', k)
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/worker-host.html?${qs}`)
   } else {

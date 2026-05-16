@@ -113,6 +113,14 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
     }, [appId])
 
     useEffect(() => {
+      const cleanup = window.miniapp.onWorkerEvent((data) => {
+        if (data.appId !== appId || data.projectDir !== projectDir) return
+        webviewRef.current?.send('miniapp-worker-event', { payload: data.payload })
+      })
+      return cleanup
+    }, [appId, projectDir])
+
+    useEffect(() => {
       const cleanup = window.miniapp.onFsWatchEvent((event) => {
         if (event.appId !== appId) return
         webviewRef.current?.send('miniapp-fs-watch-event', {

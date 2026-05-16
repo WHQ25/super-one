@@ -36,6 +36,7 @@ ipcRenderer.on('miniapp-db-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-kv-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-clipboard-response', (_e, data) => dispatchResponse(data))
 ipcRenderer.on('miniapp-ui-contextmenu-result', (_e, data) => dispatchResponse(data))
+ipcRenderer.on('miniapp-worker-status-result', (_e, data) => dispatchResponse(data))
 
 function dispatchResponse(data: Record<string, unknown>) {
   const key = `${data.type}:${data.id}`
@@ -53,6 +54,7 @@ const eventChannels = [
   'miniapp-git-head-change',
   'miniapp-theme',
   'miniapp-locale',
+  'miniapp-worker-event',
 ] as const
 
 for (const ch of eventChannels) {

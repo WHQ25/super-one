@@ -324,6 +324,11 @@ interface MiniAppAPI {
   onLazyOpenRequest(callback: (event: { appId: string; projectDir: string; sessionId: string }) => void): () => void
   onPeerEvent(callback: (event: { sessionId: string; appId: string; event: string; payload: unknown }) => void): () => void
   peerEmit(appId: string, event: string, payload: unknown): void
+  workerStart(projectDir: string, appId: string): Promise<{ running: boolean; since?: number }>
+  workerStop(projectDir: string, appId: string): Promise<{ running: boolean }>
+  workerStatus(projectDir: string, appId: string): Promise<{ running: boolean; since?: number }>
+  workerSend(projectDir: string, appId: string, payload: unknown): void
+  onWorkerEvent(handler: (data: { appId: string; projectDir: string; payload: unknown }) => void): () => void
   fsWatch(projectDir: string, appId: string, path: string): Promise<number>
   fsUnwatch(watchId: number): Promise<void>
   onFsWatchEvent(callback: (event: MiniAppFsWatchEvent) => void): () => void

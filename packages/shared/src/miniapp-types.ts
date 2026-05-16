@@ -40,10 +40,15 @@ export interface MiniAppManifest {
   fullscreen?: boolean
   preferWidth?: number
   permissions?: MiniAppPermissions
+  background?: MiniAppBackground
   toolSlug?: string
   tools?: MiniAppToolDefinition[]
   runningText?: string
   templates?: Record<string, string>
+}
+
+export interface MiniAppBackground {
+  entry: string
 }
 
 export interface MiniAppToolInterceptRenderer {
@@ -81,6 +86,11 @@ export interface MiniAppPermissions {
   fs?: MiniAppFsEntry[]
   media?: MiniAppMediaEntry[]
   storage?: MiniAppStorageEntry
+  background?: MiniAppBackgroundPermission
+}
+
+export interface MiniAppBackgroundPermission {
+  reason: string
 }
 
 export interface MiniAppToolDefinition {

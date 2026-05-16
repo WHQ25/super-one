@@ -89,6 +89,14 @@ export function useMiniAppBridge({ appId, projectDir, iframeRef, onReady, onResi
   }, [appId, sendToFrame])
 
   useEffect(() => {
+    const cleanup = window.miniapp.onWorkerEvent((data) => {
+      if (data.appId !== appId || data.projectDir !== projectDir) return
+      sendToFrame({ type: 'miniapp-worker-event', payload: data.payload })
+    })
+    return cleanup
+  }, [appId, projectDir, sendToFrame])
+
+  useEffect(() => {
     const cleanup = window.miniapp.onFsWatchEvent((event) => {
       if (event.appId !== appId) return
       sendToFrame({ type: 'miniapp-fs-watch-event', watchId: event.watchId, eventType: event.type, path: event.path })

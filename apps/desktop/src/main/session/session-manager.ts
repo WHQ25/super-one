@@ -368,8 +368,10 @@ export class SessionManagerImpl implements SessionManagerContract {
       const cleared = unregisterSessionAllApps(sessionId)
       if (cleared.length > 0) {
         const { clearAllowedDirectories, clearAllowedMedia } = await import('../miniapp/miniapp-service')
+        const { stopWorker } = await import('../miniapp/worker-host')
         for (const { projectDir, appId } of cleared) {
           if (!isAppStillAuthorizedInProject(projectDir, appId)) {
+            stopWorker(projectDir, appId)
             unregisterAppTemplates(projectDir, appId)
             clearAllowedDirectories(projectDir, appId)
             clearAllowedMedia(appId)

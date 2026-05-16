@@ -62,6 +62,27 @@ export function handleMiniAppMessage(
         window.miniapp.peerEmit(appId, data.event, data.payload)
       }
       return true
+    case 'miniapp-worker-start':
+      window.miniapp
+        .workerStart(projectDir, appId)
+        .then((result) => { send({ type: 'miniapp-worker-status-result', id: data.id, result }) })
+        .catch((err: unknown) => { send({ type: 'miniapp-worker-status-result', id: data.id, error: (err as Error).message }) })
+      return true
+    case 'miniapp-worker-stop':
+      window.miniapp
+        .workerStop(projectDir, appId)
+        .then((result) => { send({ type: 'miniapp-worker-status-result', id: data.id, result }) })
+        .catch((err: unknown) => { send({ type: 'miniapp-worker-status-result', id: data.id, error: (err as Error).message }) })
+      return true
+    case 'miniapp-worker-status':
+      window.miniapp
+        .workerStatus(projectDir, appId)
+        .then((result) => { send({ type: 'miniapp-worker-status-result', id: data.id, result }) })
+        .catch((err: unknown) => { send({ type: 'miniapp-worker-status-result', id: data.id, error: (err as Error).message }) })
+      return true
+    case 'miniapp-worker-msg':
+      window.miniapp.workerSend(projectDir, appId, (data as { payload?: unknown }).payload)
+      return true
     case 'miniapp-fs-watch':
       window.miniapp
         .fsWatch(projectDir, appId, data.path as string)

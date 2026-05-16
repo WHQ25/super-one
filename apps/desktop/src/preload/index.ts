@@ -1001,6 +1001,20 @@ const miniappAPI = {
   peerEmit: (appId: string, event: string, payload: unknown) =>
     ipcRenderer.send(AgentIpcChannels.MINIAPP_PEER_EMIT, appId, event, payload),
 
+  workerStart: (projectDir: string, appId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_WORKER_START, projectDir, appId) as Promise<{ running: boolean; since?: number }>,
+  workerStop: (projectDir: string, appId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_WORKER_STOP, projectDir, appId) as Promise<{ running: boolean }>,
+  workerStatus: (projectDir: string, appId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_WORKER_STATUS, projectDir, appId) as Promise<{ running: boolean; since?: number }>,
+  workerSend: (projectDir: string, appId: string, payload: unknown) =>
+    ipcRenderer.send(AgentIpcChannels.MINIAPP_WORKER_SEND, { projectDir, appId, type: 'miniapp-worker-msg', data: { payload } }),
+  onWorkerEvent: (handler: (data: { appId: string; projectDir: string; payload: unknown }) => void) => {
+    const listener = (_e: unknown, data: { appId: string; projectDir: string; payload: unknown }) => handler(data)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_WORKER_EVENT, listener)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_WORKER_EVENT, listener)
+  },
+
   preview: (s1appPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_PREVIEW, s1appPath),
 

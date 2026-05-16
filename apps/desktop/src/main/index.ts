@@ -17,9 +17,11 @@ import { handleKvRequest, type KvOp, type KvRequestArgs } from './miniapp/miniap
 import { setPeerBroadcaster, emitPeer } from './miniapp/miniapp-peer-bus'
 import { generateBridgeScript, generatePopoverBridgeScript, generateStandaloneBridgeScript, generateToolInterceptBridgeScript, generateToolResultBridgeScript } from './miniapp/miniapp-bridge'
 import { registerMiniAppProtocolHandlers } from './miniapp/miniapp-protocol'
+import { initWorkerHost, startWorker, stopWorker, workerStatus, hasActiveWorkers, stopAllWorkers, sendToWorker, handleWorkerSend } from './miniapp/worker-host'
+import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate, isAppStillAuthorizedInProject } from './mcp/superone-mcp-server'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
@@ -322,6 +324,7 @@ function createWindow(): void {
 
   // Update agentService's window reference for event forwarding
   agentService.setMainWindow(mainWindow)
+  initWorkerHost(() => mainWindow)
   agentService.setBroadcastFn((event) => safeSend(AgentIpcChannels.EVENT, event))
   agentService.setSessionManager(sessionManager)
   automationService.setMainWindow(mainWindow)
@@ -1897,6 +1900,45 @@ function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle(AgentIpcChannels.MINIAPP_WORKER_START, async (_e, projectDir: string, appId: string) => {
+    if (!isAppStillAuthorizedInProject(projectDir, appId)) {
+      throw new Error('App is not authorized in this project')
+    }
+    const basePath = getAppBasePath(appId)
+    const manifest = await readManifest(basePath)
+    if (!manifest) throw new Error(`App not found: ${appId}`)
+    if (!manifest.background?.entry) throw new Error('App does not declare a background entry')
+    if (!manifest.permissions?.background) throw new Error('App lacks permissions.background')
+    const projectId = getProjectId(projectDir)
+    const media = (manifest.permissions?.media ?? []).map((m) => m.kind)
+    return startWorker({
+      appId,
+      projectDir,
+      host: buildMiniAppHost(appId, projectId),
+      entry: manifest.background.entry,
+      storage: !!manifest.permissions?.storage,
+      media,
+    })
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_WORKER_STOP, (_e, projectDir: string, appId: string) => {
+    stopWorker(projectDir, appId)
+    return { running: false }
+  })
+
+  ipcMain.handle(AgentIpcChannels.MINIAPP_WORKER_STATUS, (_e, projectDir: string, appId: string) => {
+    return workerStatus(projectDir, appId)
+  })
+
+  ipcMain.on(AgentIpcChannels.MINIAPP_WORKER_SEND, (_e, msg: { projectDir: string; appId: string; type: string; data: Record<string, unknown> }) => {
+    if (!msg) return
+    if (msg.type === 'miniapp-worker-msg') {
+      sendToWorker(msg.projectDir, msg.appId, (msg.data as { payload?: unknown }).payload)
+    } else {
+      handleWorkerSend(msg.projectDir, msg.appId, msg.type, msg.data)
+    }
+  })
+
   ipcMain.handle(AgentIpcChannels.MINIAPP_TOOL_RESULT, (_e, callId: string, result: unknown, error?: string) => {
     trace('miniapp.toolcall', 'main-result-ipc', { callId, hasError: !!error, error })
     if (error) {
@@ -1977,7 +2019,10 @@ function registerIpcHandlers(): void {
     const affectedSessions = unregisterAppAcrossSessions(appId)
     for (const sid of affectedSessions) agentService.markSessionNeedsRebuild(sid)
     for (const [key] of miniAppSessionRefs) {
-      if (key.endsWith(`::${appId}`)) miniAppSessionRefs.delete(key)
+      if (key.endsWith(`::${appId}`)) {
+        stopWorker(key.slice(0, -`::${appId}`.length), appId)
+        miniAppSessionRefs.delete(key)
+      }
     }
     return uninstallApp(appId, installDir)
   })
@@ -2197,6 +2242,7 @@ let quitting = false
 function performQuit(): void {
   quitting = true
   automationService.stop()
+  stopAllWorkers()
   stopWatching()
   stopSuperoneMcpStdioBridge()
   disposeUpdater()
@@ -2230,7 +2276,7 @@ app.on('before-quit', (e) => {
   if (quitting) return
   e.preventDefault()
 
-  if (!agentService.hasRunningSessions()) {
+  if (!agentService.hasRunningSessions() && !hasActiveWorkers()) {
     performQuit()
     return
   }
@@ -2247,7 +2293,7 @@ app.on('before-quit', (e) => {
     defaultId: 0,
     cancelId: 1,
     message: 'Quit SuperOne?',
-    detail: 'Running sessions will be stopped.',
+    detail: 'Running sessions and background tasks will be stopped.',
   }).then(({ response }) => {
     if (response === 0) performQuit()
   })

@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /><title>Hello Worker</title></head>
+  <body>
+    <script>
+      var current = null;
+
+      superone.self.onMessage(function (msg) {
+        if (!msg) return;
+        if (msg.type === 'query') {
+          if (current) emit('progress', current);
+          return;
+        }
+        if (msg.type === 'download') {
+          runDownload(msg.src || 'logo.png', msg.dest || 'downloads/logo-copy.png').catch(function (e) {
+            emit('error', { error: String(e) });
+          });
+        }
+      });
+
+      function emit(type, data) {
+        superone.self.postMessage(Object.assign({ type: type }, data));
+      }
+
+      function delay(ms) {
+        return new Promise(function (r) { setTimeout(r, ms); });
+      }
+
+      async function runDownload(src, dest) {
+        var lease = superone.self.keepAlive('download ' + dest);
+        try {
+          var ckptKey = 'dl:' + dest;
+          var ckpt = (await superone.kv.get(ckptKey)) || { received: 0 };
+
+          var res = await fetch(src);
+          var total = Number(res.headers.get('content-length') || 0);
+          var reader = res.body.getReader();
+          var received = 0;
+          var first = true;
+
+          for (;;) {
+            var step = await reader.read();
+            if (step.done) break;
+            var chunk = step.value;
+            await superone.fs.writeFile(dest, chunk, { append: !first || ckpt.received > 0 });
+            first = false;
+            received += chunk.byteLength;
+            current = {
+              received: received,
+              total: total,
+              percent: total ? Math.floor((received / total) * 100) : 0,
+            };
+            await superone.kv.set(ckptKey, { received: received });
+            emit('progress', current);
+            await delay(700);
+          }
+
+          await superone.kv.delete(ckptKey);
+          current = null;
+          emit('done', { path: dest, bytes: received });
+        } finally {
+          lease.release();
+        }
+      }
+
+      emit('ready', {});
+    </script>
+  </body>
+</html>

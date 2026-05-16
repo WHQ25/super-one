@@ -8,12 +8,14 @@
   "logo": "logo.png",
   "preferWidth": 500,
   "toolSlug": "hello",
+  "background": { "entry": "background.html" },
   "permissions": {
     "fs": [{ "scope": "project", "path": ".", "access": "readwrite", "reason": "Read and write project files" }],
     "media": [
       { "kind": "microphone", "reason": "Demo voice recorder" },
       { "kind": "camera", "reason": "Demo webcam preview & snapshot" }
-    ]
+    ],
+    "background": { "reason": "Finish the demo download even when the panel is closed" }
   },
   "templates": {
     "detail": "popovers/detail.html",

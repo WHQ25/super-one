@@ -284,6 +284,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               createdAt: new Date().toISOString(),
               providerId: 'claude',
             } })
+            emit({ type: 'status_change', status: 'streaming' })
             turnActive = true
           }
         }

@@ -690,6 +690,39 @@ describe('createSessionQuery', () => {
     expect((messageStarts[0].message as Record<string, unknown>).id).toBe(queuedId)
   })
 
+  it('emits status_change:streaming for the queued turn so the reply keeps the streaming indicator', async () => {
+    state.messages = [
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'turn 1' } } },
+      { type: 'user', message: { role: 'user', content: 'original message' }, parent_tool_use_id: null, isReplay: true },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'turn 1' }] } },
+      { type: 'user', message: { role: 'user', content: 'queued message' }, parent_tool_use_id: null, isReplay: true },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'turn 2 response' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const consumedTags = ['queued-tag-1']
+    let currentId = 'msg-A'
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags, drainConsumedTag: () => consumedTags.shift() } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      (id: string) => { currentId = id },
+    )
+    await handle.iterationDone
+
+    const startIdx = events.findIndex((e) => e.type === 'message_start')
+    const streamingIdx = events.findIndex(
+      (e) => e.type === 'status_change' && e.status === 'streaming',
+    )
+    expect(startIdx).toBeGreaterThanOrEqual(0)
+    expect(streamingIdx).toBeGreaterThan(startIdx)
+  })
+
   it('calls onStepBoundary when top-level tool_result is received', async () => {
     state.messages = [
       {

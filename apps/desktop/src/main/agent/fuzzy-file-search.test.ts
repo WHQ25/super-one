@@ -1,5 +1,31 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { fuzzyMatch, searchFiles, searchMentions, collectFiles, EXCLUDED_DIRS } from './fuzzy-file-search'
+
+// Deterministic fixture tree instead of root: walking the real cwd
+// (apps/desktop) is non-deterministic and starves the collectFiles maxFiles cap
+// once a dev machine accumulates a large gitignored .dev-data (Electron userData).
+let root: string
+
+beforeAll(() => {
+  root = mkdtempSync(join(tmpdir(), 's1-fuzzy-'))
+  const agentDir = join(root, 'src', 'main', 'agent')
+  mkdirSync(agentDir, { recursive: true })
+  writeFileSync(join(agentDir, 'fuzzy-file-search.ts'), '// fuzzy\n')
+  writeFileSync(join(agentDir, 'fuzzy-file-search.test.ts'), '// fuzzy test\n')
+  writeFileSync(join(agentDir, 'session.ts'), '// session\n')
+  writeFileSync(join(root, 'src', 'main', 'index.ts'), '// index\n')
+  writeFileSync(join(root, 'README.md'), '# fixture\n')
+  // Excluded dir must be skipped by collectFiles even though it sorts first.
+  mkdirSync(join(root, 'node_modules', 'junk'), { recursive: true })
+  writeFileSync(join(root, 'node_modules', 'junk', 'fuzzy.ts'), '// should be excluded\n')
+})
+
+afterAll(() => {
+  rmSync(root, { recursive: true, force: true })
+})
 
 describe('fuzzyMatch', () => {
   it('should match basic subsequence', () => {
@@ -84,12 +110,12 @@ describe('searchFiles', () => {
   })
 
   it('should respect limit parameter', () => {
-    const results = searchFiles([process.cwd()], '', 5)
+    const results = searchFiles([root], '', 5)
     expect(results.length).toBeLessThanOrEqual(5)
   })
 
   it('should sort results by score (best match first)', () => {
-    const results = searchFiles([process.cwd()], 'fuzzy-file-search')
+    const results = searchFiles([root], 'fuzzy-file-search')
     if (results.length >= 2) {
       const thisFile = results.find((r) => r.path.includes('fuzzy-file-search.ts') && !r.path.includes('.test.'))
       expect(thisFile).toBeDefined()
@@ -98,7 +124,7 @@ describe('searchFiles', () => {
   })
 
   it('should include matchIndices in results', () => {
-    const results = searchFiles([process.cwd()], 'fuzzy')
+    const results = searchFiles([root], 'fuzzy')
     for (const r of results) {
       expect(Array.isArray(r.matchIndices)).toBe(true)
       expect(r.matchIndices.length).toBeGreaterThan(0)
@@ -106,49 +132,69 @@ describe('searchFiles', () => {
   })
 
   it('should return results with empty query', () => {
-    const results = searchFiles([process.cwd()], '', 10)
+    const results = searchFiles([root], '', 10)
     for (const r of results) {
       expect(r.matchIndices).toEqual([])
     }
   })
 
   it('should not include rootPath when using a single root', () => {
-    const results = searchFiles([process.cwd()], 'fuzzy', 5)
+    const results = searchFiles([root], 'fuzzy', 5)
     for (const r of results) {
       expect(r.rootPath).toBeUndefined()
     }
   })
 
   it('should include rootPath when using multiple roots', () => {
-    const results = searchFiles([process.cwd(), process.cwd()], 'fuzzy', 5)
+    const results = searchFiles([root, root], 'fuzzy', 5)
     for (const r of results) {
-      expect(r.rootPath).toBe(process.cwd())
+      expect(r.rootPath).toBe(root)
     }
   })
 })
 
 describe('collectFiles', () => {
   it('should track root for each collected file', () => {
-    const files = collectFiles([process.cwd()])
+    const files = collectFiles([root])
     expect(files.length).toBeGreaterThan(0)
     for (const f of files.slice(0, 10)) {
-      expect(f.root).toBe(process.cwd())
+      expect(f.root).toBe(root)
+    }
+  })
+
+  it('does not let an early-sorting heavy subtree starve deep source files under the cap', () => {
+    const starveRoot = mkdtempSync(join(tmpdir(), 's1-starve-'))
+    try {
+      // ".heavy" sorts before "src" (dot-first) and is deeply nested + wide,
+      // exactly mirroring a gitignored .dev-data Electron userData dir.
+      const heavy = join(starveRoot, '.heavy', 'cache', 'shards')
+      mkdirSync(heavy, { recursive: true })
+      for (let i = 0; i < 200; i++) writeFileSync(join(heavy, `blob-${i}.bin`), 'x')
+      const deep = join(starveRoot, 'src', 'main', 'agent')
+      mkdirSync(deep, { recursive: true })
+      writeFileSync(join(deep, 'target-xyzzy.ts'), '// findme\n')
+
+      const files = collectFiles([starveRoot], 10, 40)
+      const found = files.some((f) => f.path === join('src', 'main', 'agent', 'target-xyzzy.ts'))
+      expect(found).toBe(true)
+    } finally {
+      rmSync(starveRoot, { recursive: true, force: true })
     }
   })
 })
 
 describe('searchMentions', () => {
   it('should include rootPath for file items with multiple roots', () => {
-    const results = searchMentions([process.cwd(), process.cwd()], 'fuzzy', [], 5)
+    const results = searchMentions([root, root], 'fuzzy', [], 5)
     const fileItems = results.filter((r) => r.kind === 'file')
     expect(fileItems.length).toBeGreaterThan(0)
     for (const r of fileItems) {
-      expect(r.rootPath).toBe(process.cwd())
+      expect(r.rootPath).toBe(root)
     }
   })
 
   it('should not include rootPath for file items with single root', () => {
-    const results = searchMentions([process.cwd()], 'fuzzy', [], 5)
+    const results = searchMentions([root], 'fuzzy', [], 5)
     const fileItems = results.filter((r) => r.kind === 'file')
     for (const r of fileItems) {
       expect(r.rootPath).toBeUndefined()
@@ -156,7 +202,7 @@ describe('searchMentions', () => {
   })
 
   it('should not include rootPath for agent items', () => {
-    const results = searchMentions([process.cwd(), process.cwd()], 'test', [{ name: 'test-agent', model: 'opus' }], 10)
+    const results = searchMentions([root, root], 'test', [{ name: 'test-agent', model: 'opus' }], 10)
     const agentItems = results.filter((r) => r.kind === 'agent')
     for (const r of agentItems) {
       expect('rootPath' in r).toBe(false)

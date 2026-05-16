@@ -87,38 +87,62 @@ export function collectFiles(
   const result: CollectedFile[] = []
   const seen = new Set<string>()
 
-  function walk(dir: string, root: string, depth: number): void {
-    if (depth > maxDepth || result.length >= maxFiles) return
-    let entries: import('fs').Dirent[]
+  interface DirFrame {
+    dir: string
+    root: string
+    depth: number
+    entries: import('fs').Dirent[]
+    idx: number
+  }
+
+  function openDir(dir: string, root: string, depth: number): DirFrame | null {
+    if (depth > maxDepth) return null
     try {
-      entries = readdirSync(dir, { withFileTypes: true }) as import('fs').Dirent[]
+      const entries = readdirSync(dir, { withFileTypes: true }) as import('fs').Dirent[]
+      return { dir, root, depth, entries, idx: 0 }
     } catch {
-      return
-    }
-    for (const entry of entries) {
-      if (result.length >= maxFiles) return
-      if (EXCLUDED_DIRS.has(entry.name)) continue
-
-      const fullPath = join(dir, entry.name)
-      const relPath = relative(root, fullPath)
-
-      if (seen.has(fullPath)) continue
-      seen.add(fullPath)
-
-      result.push({ path: relPath, isDirectory: entry.isDirectory(), root })
-      if (entry.isDirectory()) {
-        walk(fullPath, root, depth + 1)
-      }
+      return null
     }
   }
 
+  // Round-robin fair traversal: every still-open directory emits at most one
+  // entry per round. A huge early-sorting subtree (e.g. a gitignored .dev-data
+  // Electron userData dir) therefore can't drain the maxFiles cap before
+  // shallower sibling subtrees — DFS/FIFO-BFS would starve src/ here.
+  let active: DirFrame[] = []
   for (const root of roots) {
     try {
       statSync(root)
-      walk(root, root, 0)
     } catch {
       continue
     }
+    const frame = openDir(root, root, 0)
+    if (frame) active.push(frame)
+  }
+
+  while (active.length > 0 && result.length < maxFiles) {
+    const stillActive: DirFrame[] = []
+    const discovered: DirFrame[] = []
+    for (const frame of active) {
+      if (result.length >= maxFiles) break
+      // Advance past excluded/seen entries, emitting at most one this round.
+      while (frame.idx < frame.entries.length) {
+        const entry = frame.entries[frame.idx++]
+        if (EXCLUDED_DIRS.has(entry.name)) continue
+        const fullPath = join(frame.dir, entry.name)
+        if (seen.has(fullPath)) continue
+        seen.add(fullPath)
+        const isDirectory = entry.isDirectory()
+        result.push({ path: relative(frame.root, fullPath), isDirectory, root: frame.root })
+        if (isDirectory) {
+          const sub = openDir(fullPath, frame.root, frame.depth + 1)
+          if (sub) discovered.push(sub)
+        }
+        break
+      }
+      if (frame.idx < frame.entries.length) stillActive.push(frame)
+    }
+    active = stillActive.concat(discovered)
   }
 
   return result

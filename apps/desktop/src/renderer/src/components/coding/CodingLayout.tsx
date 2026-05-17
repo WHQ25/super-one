@@ -8,6 +8,7 @@ import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { closeActiveTerminal } from '@/components/coding/terminal-panel-api'
 import { getDockApi } from '@/components/activity/activity-panel-api'
+import { routeCloseTabShortcut } from '@/components/coding/close-tab-router'
 
 const MIN_TERM_HEIGHT = 120
 
@@ -39,16 +40,11 @@ export const CodingLayout = memo(function CodingLayout() {
 
   useEffect(() => {
     return window.app.onCloseTabShortcut(() => {
-      const focused = document.activeElement
-      if (focused?.closest('.xterm')) {
-        closeActiveTerminal()
-        return
-      }
-      if (focused?.closest('[data-activity-outer]')) {
-        getDockApi()?.activePanel?.api.close()
-        return
-      }
-      window.app.closeWindow()
+      routeCloseTabShortcut(document.activeElement, {
+        closeTerminal: closeActiveTerminal,
+        closeDock: () => getDockApi()?.activePanel?.api.close(),
+        closeWindow: () => window.app.closeWindow(),
+      })
     })
   }, [])
 

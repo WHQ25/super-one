@@ -113,6 +113,7 @@ export function TodoPopup() {
   return (
     <TodoListPanel
       items={panelItems}
+      showItemIds={usingSessionTodos}
       expanded={showTodos}
       onToggle={toggleTodos}
       trailing={<Kbd className="ml-auto">{showTodos ? 'esc' : '⌃T'}</Kbd>}

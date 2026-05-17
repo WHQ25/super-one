@@ -87,6 +87,16 @@ describe('TodoPopup', () => {
     expect(screen.getByText('second task')).toBeTruthy()
   })
 
+  it('does not leak the composite codex todo id as a #prefix on each row', () => {
+    activeSessionState.messages = [createCodexTodoMessage(false, 'todo_019e3769-5dd4-70b3-839c-fd1226540ad5')]
+
+    render(<TodoPopup />)
+
+    expect(screen.getByText('first task')).toBeTruthy()
+    expect(screen.queryByText(/#todo_019e3769/)).toBeNull()
+    expect(screen.queryByText('#todo_019e3769-5dd4-70b3-839c-fd1226540ad5-0')).toBeNull()
+  })
+
   it('does not render when all codex todos are completed', () => {
     activeSessionState.messages = [createCodexTodoMessage(true)]
 

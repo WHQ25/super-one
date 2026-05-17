@@ -71,7 +71,7 @@ export function TodoListPanel({
           {items.map((item) => {
             const blockers = item.blockedBy ?? []
             const autoDesc = item.status === 'in_progress' && item.description
-            const detail = (item.description && !autoDesc) || blockers.length > 0
+            const detail = Boolean(item.description && !autoDesc)
             const isOpen = openRows.has(item.id)
             return (
               <div key={item.id} ref={item.status === 'in_progress' ? activeRef : undefined}>
@@ -95,6 +95,7 @@ export function TodoListPanel({
                       item.status === 'completed' && 'text-muted-foreground line-through',
                     )}
                   >
+                    <span className="mr-1 text-muted-foreground">#{item.id}</span>
                     {item.text}
                     {item.owner && (
                       <span className="ml-2 inline-flex items-center gap-1 align-middle text-[11px] text-muted-foreground">
@@ -105,7 +106,7 @@ export function TodoListPanel({
                     {blockers.length > 0 && (
                       <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-px align-middle text-[10px] font-medium text-amber-700 dark:text-amber-400">
                         <Lock className="size-2.5" />
-                        blocked by {blockers.length}
+                        {blockers.map((b) => `#${b}`).join(' ')}
                       </span>
                     )}
                   </span>
@@ -121,16 +122,8 @@ export function TodoListPanel({
                 )}
 
                 {detail && isOpen && (
-                  <div className="ml-[26px] border-l border-border pl-2 pb-1 pr-2">
-                    {item.description && !autoDesc && (
-                      <div className="text-[11px] leading-relaxed text-muted-foreground">{item.description}</div>
-                    )}
-                    {blockers.map((b, i) => (
-                      <div key={i} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <span className="size-1 shrink-0 rounded-full bg-amber-500" />
-                        <span className="truncate">{b}</span>
-                      </div>
-                    ))}
+                  <div className="ml-[26px] border-l border-border pl-2 pb-1 pr-2 text-[11px] leading-relaxed text-muted-foreground">
+                    {item.description}
                   </div>
                 )}
               </div>

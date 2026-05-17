@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage, TodoItem } from '@superone/shared/agent-types'
 import type { ReactNode } from 'react'
@@ -140,30 +140,52 @@ describe('TodoPopup', () => {
     expect(screen.getByText('first task')).toBeTruthy()
   })
 
-  it('renders the task owner alongside the subject', () => {
+  it('renders the task owner and the #id prefix alongside the subject', () => {
     activeSessionState.todos = {
-      a: { id: 'a', subject: 'delegated task', description: '', status: 'pending', owner: 'general-purpose' },
+      x9: { id: 'x9', subject: 'delegated task', description: '', status: 'pending', owner: 'general-purpose' },
     }
     render(<TodoPopup />)
 
     expect(screen.getByText('delegated task')).toBeTruthy()
     expect(screen.getByText('general-purpose')).toBeTruthy()
+    expect(screen.getByText('#x9')).toBeTruthy()
   })
 
-  it('counts only unfinished blockers in the pill and reveals them on expand', () => {
+  it('shows only the unfinished blocker ids in the pill, not a count', () => {
     activeSessionState.todos = {
-      task_a: { id: 'task_a', subject: 'finished blocker', description: '', status: 'completed' },
-      task_c: { id: 'task_c', subject: 'pending blocker', description: '', status: 'pending' },
-      task_b: { id: 'task_b', subject: 'dependent task', description: '', status: 'pending', blockedBy: ['task_a', 'task_c'] },
+      a1: { id: 'a1', subject: 'finished blocker', description: '', status: 'completed' },
+      c3: { id: 'c3', subject: 'pending blocker', description: '', status: 'pending' },
+      b2: { id: 'b2', subject: 'dependent task', description: '', status: 'pending', blockedBy: ['a1', 'c3'] },
     }
     render(<TodoPopup />)
 
-    expect(screen.getByText('blocked by 1')).toBeTruthy()
-    expect(screen.getAllByText('pending blocker')).toHaveLength(1)
+    expect(screen.queryByText(/blocked by/)).toBeNull()
+    // completed a1 filtered → chip shows only #c3; #c3 also appears as c3's own row prefix
+    expect(screen.getAllByText('#c3')).toHaveLength(2)
+    // completed blocker id never appears in any chip → only a1's own row prefix
+    expect(screen.getAllByText('#a1')).toHaveLength(1)
+  })
 
-    fireEvent.click(screen.getByText('dependent task'))
-    expect(screen.getAllByText('pending blocker')).toHaveLength(2)
-    expect(screen.getAllByText('finished blocker')).toHaveLength(1)
+  it('derives the blocked-by pill from the inverse blocks edge when the agent only sent addBlocks', () => {
+    activeSessionState.todos = {
+      a1: { id: 'a1', subject: 'design schema', description: '', status: 'in_progress', blocks: ['b2'] },
+      b2: { id: 'b2', subject: 'implement api', description: '', status: 'pending' },
+    }
+    render(<TodoPopup />)
+
+    // #a1 appears as a1's own row prefix AND as b2's blocked-by chip
+    expect(screen.getAllByText('#a1')).toHaveLength(2)
+  })
+
+  it('does not double-count when both the explicit blockedBy and the inverse blocks edge name the same blocker', () => {
+    activeSessionState.todos = {
+      a1: { id: 'a1', subject: 'pending blocker', description: '', status: 'pending', blocks: ['b2'] },
+      b2: { id: 'b2', subject: 'dependent task', description: '', status: 'pending', blockedBy: ['a1'] },
+    }
+    render(<TodoPopup />)
+
+    // a1 row prefix + single deduped chip on b2 = 2 (not 3)
+    expect(screen.getAllByText('#a1')).toHaveLength(2)
   })
 
   it('auto-expands the description of the in_progress task', () => {

@@ -86,6 +86,13 @@ export function TodoPopup() {
 
   if (!usingSessionTodos && !usingCodexTodos) return null
 
+  const inverseBlockers: Record<string, string[]> = {}
+  for (const t of sessionTodoList) {
+    for (const blockedId of t.blocks ?? []) {
+      ;(inverseBlockers[blockedId] ??= []).push(t.id)
+    }
+  }
+
   const panelItems = usingSessionTodos
     ? sessionTodoList.map((todo) => ({
         id: todo.id,
@@ -93,10 +100,9 @@ export function TodoPopup() {
         status: todo.status,
         description: todo.description || undefined,
         owner: todo.owner,
-        blockedBy: (todo.blockedBy ?? [])
-          .map((blockerId) => todos[blockerId])
-          .filter((blocker) => blocker && blocker.status !== 'completed')
-          .map((blocker) => blocker.subject),
+        blockedBy: Array.from(new Set([...(todo.blockedBy ?? []), ...(inverseBlockers[todo.id] ?? [])]))
+          .filter((blockerId) => todos[blockerId] && todos[blockerId].status !== 'completed')
+          .map((blockerId) => todos[blockerId].id),
       }))
     : (codexTodoList?.items ?? []).map((todo, index) => ({
         id: `${codexTodoList?.id ?? 'todo'}-${index}`,

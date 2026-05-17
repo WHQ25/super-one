@@ -3786,6 +3786,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const currentSid = resolveActiveSessionId(project)
     const nextProvider = activeSession.sessionProvider ?? activeSession.preferredProvider
 
+    // Idempotent: a pristine current session (no messages, idle, not remote, no worktree)
+    // is already "a fresh session". Creating another one just stacks empty drafts in
+    // _sessions, which later surface as duplicate "New session" rows in Ctrl+Tab
+    // (current + previous both pinned, both falling back to the same title).
+    if (
+      activeSession.messages.length === 0 &&
+      !_isLiveSession(activeSession) &&
+      !activeSession._worktreePath &&
+      !isRemoteSession(get(), activeProject, currentSid)
+    ) {
+      window.app.trace?.('session.lifecycle', 'resetSession:skip-pristine', { activeProject, currentSid })
+      return
+    }
+
     const newSessionId = nextProvider === 'codex' ? _createLocalCodexSessionId() : createSessionId()
     window.app.trace?.('session.lifecycle', 'resetSession', {
       activeProject,

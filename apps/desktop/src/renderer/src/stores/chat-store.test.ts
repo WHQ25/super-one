@@ -210,6 +210,14 @@ function patchDraftSession(path: string, patch: Record<string, unknown>) {
   })
 }
 
+// resetSession() is now idempotent on a pristine (no-message, idle) session, so tests
+// that exercise reset *mechanics* must seed a message to make the session non-pristine.
+function seedUserMessage(path: string) {
+  patchDraftSession(path, {
+    messages: [{ id: 'seed', role: 'user' as const, content: [], status: 'complete' as const, createdAt: '', providerId: 'claude' }],
+  })
+}
+
 function makeEvent(overrides: Partial<AgentEvent> & { type: AgentEvent['type'] }): AgentEvent {
   return { projectPath: '/test', sessionId: undefined, ...overrides } as AgentEvent
 }
@@ -1156,6 +1164,21 @@ describe('resetSession', () => {
     expect(after._sessions['old-session'].messages).toHaveLength(1)
   })
 
+  it('is idempotent on a pristine session: no stacked empty draft, no backend call', async () => {
+    mockWindowAgent.resetSession.mockClear()
+    setupProject('/test')
+    const before = useChatStore.getState().projectSessions['/test']
+    const oldSid = before._activeSessionId
+    expect(Object.keys(before._sessions)).toHaveLength(1)
+
+    await useChatStore.getState().resetSession()
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._activeSessionId).toBe(oldSid)
+    expect(Object.keys(after._sessions)).toHaveLength(1)
+    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+  })
+
   it('applies permissionMode and sandboxInfo from agentConfig on idle reset', async () => {
     const agentConfig = {
       permissionMode: 'acceptEdits' as const,
@@ -1165,6 +1188,7 @@ describe('resetSession', () => {
     mockWindowAgent.resetSession.mockResolvedValue(agentConfig)
 
     setupProject('/test')
+    seedUserMessage('/test')
 
     await useChatStore.getState().resetSession()
 
@@ -1181,6 +1205,7 @@ describe('resetSession', () => {
     })
     setupProject('/prewarm-reset')
     useChatStore.setState({ activeProject: '/prewarm-reset' })
+    seedUserMessage('/prewarm-reset')
     mockWindowAgent.prewarm.mockClear()
 
     await useChatStore.getState().resetSession()
@@ -1199,6 +1224,7 @@ describe('resetSession', () => {
     })
 
     setupProject('/test')
+    seedUserMessage('/test')
     const before = useChatStore.getState().projectSessions['/test']
     const oldSid = before._activeSessionId
 
@@ -1319,6 +1345,7 @@ describe('Claude /clear command interception', () => {
     mockWindowAgent.sendMessage.mockClear()
 
     setupProject('/test')
+    seedUserMessage('/test')
     const before = useChatStore.getState().projectSessions['/test']
     const oldSid = before._activeSessionId
 
@@ -1338,6 +1365,7 @@ describe('Claude /clear command interception', () => {
     mockWindowAgent.sendMessage.mockClear()
 
     setupProject('/test')
+    seedUserMessage('/test')
 
     await useChatStore.getState().sendMessage('/clear   ')
 

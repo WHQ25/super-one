@@ -151,7 +151,6 @@ const DEFAULT_PROJECTS: MockProject[] = [
       { id: "a3", name: "Stale PR sweep", status: "error" },
     ],
     automationsExpanded: true,
-    workers: [{ id: "w1", name: "design-canvas", uptime: "12m 4s" }],
     sessions: [
       { id: "s1", title: "Refactor sidebar layout", active: true, status: "running" },
       { id: "s2", title: "Fix relay reconnect bug", status: "unseen", pendingReason: "Allow Bash?" },
@@ -164,6 +163,15 @@ const DEFAULT_PROJECTS: MockProject[] = [
   },
   {
     name: "marketing-site",
+    expanded: true,
+    workers: [
+      { id: "w1", name: "design-canvas", uptime: "12m 4s" },
+      { id: "w2", name: "asset-optimizer", uptime: "3m 41s" },
+    ],
+    sessions: [
+      { id: "ms1", title: "Landing hero copy", status: "idle" },
+      { id: "ms2", title: "OG image generator", status: "background" },
+    ],
   },
   {
     name: "experiments",

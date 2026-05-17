@@ -45,7 +45,7 @@ const STAGES: Stage[] = [
   {
     title: "Full sidebar",
     caption:
-      "Pinned sessions, seven live status icons, an expanded automation group, a running mini-app worker, and a missing project.",
+      "Pinned sessions and seven live status icons. Automations group under super-one; mini-app background workers under marketing-site — each feature on its own project.",
     props: {},
   },
   {

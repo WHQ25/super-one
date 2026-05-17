@@ -27,8 +27,8 @@ interface ChatContentProps {
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom }: ChatContentProps) {
   const {
     messages, isCompacting, rateLimitInfo, apiRetry, pendingPlanApproval,
-    historySessionId, hasActiveSession, worktreeRemoved,
-    sessionStatus, lastAssistantMessageId, queuedMessages,
+    historySessionId, historyHydrated, worktreeRemoved,
+    sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     isCompacting: s.isCompacting,
@@ -36,11 +36,12 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     apiRetry: s.apiRetry,
     pendingPlanApproval: s.pendingPlanApproval,
     historySessionId: s._activeSessionId,
-    hasActiveSession: !!s.session,
+    historyHydrated: s._historyHydrated,
     worktreeRemoved: s._worktreeRemoved,
     sessionStatus: s.status,
     lastAssistantMessageId: s.lastAssistantMessageId,
     queuedMessages: s.queuedMessages,
+    awaitingAssistantReply: s.awaitingAssistantReply,
   })))
   const { editQueuedMessage, deleteQueuedMessage, disconnectRemoteSession } = useChatStore(useShallow((s) => ({
     editQueuedMessage: s.editQueuedMessage,
@@ -170,7 +171,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       ) : (
         <>
           <div className="relative min-w-0 flex-1 overflow-hidden">
-            {messages.length === 0 && !hasActiveSession ? (
+            {messages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
               <ChatSuggestions />
             ) : (
               <ScrollArea key={historySessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>

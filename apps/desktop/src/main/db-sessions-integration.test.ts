@@ -165,3 +165,67 @@ describe('session restore with worktree path', () => {
     expect(insertCall![0]).toContain('CASE WHEN title IS NULL OR title =')
   })
 })
+
+describe('loadSessionState provider authority (provider_id is the source of truth)', () => {
+  function mockDbWithSessionRow(row: Record<string, unknown>) {
+    return {
+      prepare: vi.fn((sql: string) => ({
+        run: vi.fn(),
+        get: vi.fn(() => (sql.includes('FROM sessions') ? row : undefined)),
+        all: vi.fn(() =>
+          sql.includes('FROM chat_messages')
+            ? [{
+                id: 'm1', role: 'assistant', status: 'complete',
+                content_json: JSON.stringify({ content: [{ type: 'text', text: 'hi' }] }),
+                created_at: '2026-01-01T00:00:00Z', provider_id: 'codex',
+                metadata_json: null, checkpoint_id: null, resume_point_id: null,
+              }]
+            : [],
+        ),
+      })),
+      transaction: vi.fn((fn: () => void) => fn),
+    }
+  }
+
+  it('restores legacy Codex session as codex when provider column is NULL but provider_id=codex-base', () => {
+    getDbMock.mockReturnValue(mockDbWithSessionRow({
+      title: 't', total_cost_usd: 0, context_tokens: 0,
+      is_worktree: 0, git_branch: null, worktree_path: null,
+      provider: null, provider_id: 'codex-base', api_provider_id: null,
+    }))
+
+    const restored = loadSessionState('legacy-codex')
+    expect(restored).not.toBeNull()
+    expect(restored!.provider).toBe('codex')
+  })
+
+  it('falls back to legacy provider column when provider_id is NULL', () => {
+    getDbMock.mockReturnValue(mockDbWithSessionRow({
+      title: 't', total_cost_usd: 0, context_tokens: 0,
+      is_worktree: 0, git_branch: null, worktree_path: null,
+      provider: 'codex', provider_id: null, api_provider_id: null,
+    }))
+
+    expect(loadSessionState('legacy-codex-2')!.provider).toBe('codex')
+  })
+
+  it('provider_id wins over a stale/mismatched legacy provider column', () => {
+    getDbMock.mockReturnValue(mockDbWithSessionRow({
+      title: 't', total_cost_usd: 0, context_tokens: 0,
+      is_worktree: 0, git_branch: null, worktree_path: null,
+      provider: 'claude', provider_id: 'codex-base', api_provider_id: null,
+    }))
+
+    expect(loadSessionState('mismatch')!.provider).toBe('codex')
+  })
+
+  it('defaults to claude only when both provider_id and provider are absent', () => {
+    getDbMock.mockReturnValue(mockDbWithSessionRow({
+      title: 't', total_cost_usd: 0, context_tokens: 0,
+      is_worktree: 0, git_branch: null, worktree_path: null,
+      provider: null, provider_id: null, api_provider_id: null,
+    }))
+
+    expect(loadSessionState('bare')!.provider).toBe('claude')
+  })
+})

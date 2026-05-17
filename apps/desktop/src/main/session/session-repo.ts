@@ -84,7 +84,7 @@ interface MessageRow {
 
 function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
   const providerId = row.provider_id ?? inferLegacyProviderId(row)
-  const harnessId = providerId.startsWith('codex') ? 'codex' : 'claude'
+  const harnessId = deriveHarnessId(row)
   return {
     id: row.id,
     projectPath,
@@ -106,9 +106,20 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
   }
 }
 
-function inferLegacyProviderId(row: SessionRow): string {
+function inferLegacyProviderId(row: { provider?: string | null }): string {
   if (row.provider === 'codex') return 'codex-base'
   return 'claude-base'
+}
+
+/**
+ * Single authoritative harness derivation: structured `provider_id` wins;
+ * fall back to the legacy `provider` string column; default claude only when
+ * both are absent. Shared by session-repo and db-sessions so there is exactly
+ * one place that maps a persisted row to a harness.
+ */
+export function deriveHarnessId(row: { provider_id?: string | null; provider?: string | null }): 'codex' | 'claude' {
+  const providerId = row.provider_id ?? inferLegacyProviderId(row)
+  return providerId.startsWith('codex') ? 'codex' : 'claude'
 }
 
 export interface InsertSessionInput {

@@ -1,6 +1,6 @@
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
-import { serializeMessageContent, parseMessageContent } from './session/session-repo'
+import { serializeMessageContent, parseMessageContent, deriveHarnessId } from './session/session-repo'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 
@@ -233,8 +233,8 @@ export function loadSessionState(
   const db = getDb()
 
   const session = db.prepare(`
-    SELECT title, total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, api_provider_id FROM sessions WHERE id = ?
-  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; api_provider_id: string | null }) | undefined
+    SELECT title, total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, provider_id, api_provider_id FROM sessions WHERE id = ?
+  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; api_provider_id: string | null }) | undefined
 
   if (!session) return null
 
@@ -272,7 +272,7 @@ export function loadSessionState(
     isWorktree: !!(session.is_worktree),
     gitBranch: session.git_branch ?? null,
     worktreePath: session.worktree_path ?? null,
-    provider: session.provider ?? 'claude',
+    provider: deriveHarnessId(session),
     apiProviderId: session.api_provider_id ?? null,
     title: session.title ?? null,
   }

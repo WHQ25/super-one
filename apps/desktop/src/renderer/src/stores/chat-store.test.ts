@@ -2005,6 +2005,83 @@ describe('switchSession Case A (in _sessions)', () => {
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions.local.cwd).toBe('/test')
   })
+
+  it('hydrates messages from DB when target is an un-hydrated codex stub (finished background session)', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'ses-a',
+          _sessions: {
+            'ses-a': createDefaultPerSessionState(),
+            'codex-bg': { ...createDefaultPerSessionState(), sessionProvider: 'codex', _historyHydrated: false },
+          },
+        },
+      },
+    })
+
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [{ id: 'codex-msg', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'codex' }],
+      totalCostUsd: 0.02,
+      contextTokens: 500,
+      gitBranch: null,
+      provider: 'codex',
+    })
+
+    await useChatStore.getState().switchSession('codex-bg')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._activeSessionId).toBe('codex-bg')
+    expect(after._sessions['codex-bg'].messages).toHaveLength(1)
+    expect(after._sessions['codex-bg'].messages[0].id).toBe('codex-msg')
+    expect(after._sessions['codex-bg'].sessionProvider).toBe('codex')
+    expect(after._sessions['codex-bg']._historyHydrated).toBe(true)
+  })
+
+  it('resolves codex model selection by the session own provider when switching to a codex stub (Case A no longer hardcodes claude)', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'ses-a',
+          codexModels: [{ id: 'gpt-5.4', name: 'GPT-5.4', supportedEffortLevels: [] }] as never[],
+          _sessions: {
+            'ses-a': createDefaultPerSessionState(),
+            'codex-cached': { ...createDefaultPerSessionState(), sessionProvider: 'codex', _historyHydrated: true },
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().switchSession('codex-cached')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['codex-cached'].selectedCodexModel).toBe('gpt-5.4')
+    expect(after._sessions['codex-cached'].selectedModel).toBe('')
+  })
+})
+
+describe('switchSession prewarms unconditionally (harness-agnostic)', () => {
+  it('prewarms a Claude session restored from DB (Case B), not only Codex', async () => {
+    setupProject('/test')
+    useChatStore.setState({
+      harnessResources: { claude: { models: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
+    })
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [{ id: 'm', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'claude' }],
+      totalCostUsd: 0, contextTokens: 0, gitBranch: null, provider: 'claude',
+    })
+    mockWindowAgent.prewarm.mockClear()
+
+    await useChatStore.getState().switchSession('claude-db')
+
+    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith('/test', expect.objectContaining({ provider: 'claude' }))
+  })
 })
 
 describe('switchSession Case B (from DB)', () => {

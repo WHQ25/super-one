@@ -15,6 +15,8 @@ interface FakeSessionState {
   status: string
   lastAssistantMessageId: string | null
   queuedMessages: unknown[]
+  _historyHydrated: boolean
+  awaitingAssistantReply: boolean
 }
 
 const hoisted = vi.hoisted(() => {
@@ -30,6 +32,8 @@ const hoisted = vi.hoisted(() => {
     status: 'idle',
     lastAssistantMessageId: null,
     queuedMessages: [],
+    _historyHydrated: true,
+    awaitingAssistantReply: false,
   }
   return { sessionState, isRemoteLocked: { value: false } }
 })
@@ -139,5 +143,61 @@ describe('ChatContent worktree-removed banner', () => {
     expect(screen.queryByText(/READ ONLY/i)).toBeNull()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(screen.getByTestId('permission-prompt')).toBeInTheDocument()
+  })
+})
+
+describe('ChatContent empty-state gate is harness-agnostic', () => {
+  function reset() {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState.pendingPlanApproval = null
+    hoisted.sessionState.status = 'idle'
+    hoisted.sessionState.awaitingAssistantReply = false
+    hoisted.isRemoteLocked.value = false
+  }
+
+  it('shows ChatSuggestions for a brand-new empty session even when session is null (codex/no session_init)', () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = null
+    hoisted.sessionState._historyHydrated = true
+
+    renderContent()
+
+    expect(screen.getByTestId('chat-suggestions')).toBeInTheDocument()
+  })
+
+  it('does NOT show ChatSuggestions while an un-hydrated stub is still loading (no flash)', () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = null
+    hoisted.sessionState._historyHydrated = false
+
+    renderContent()
+
+    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
+  })
+
+  it('does NOT show ChatSuggestions for an empty session that is busy/awaiting reply', () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = null
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.status = 'streaming'
+
+    renderContent()
+
+    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
+  })
+
+  it('renders transcript (not suggestions) for a hydrated codex session with messages and null session', () => {
+    reset()
+    hoisted.sessionState.messages = [{ id: 'm1' }]
+    hoisted.sessionState.session = null
+    hoisted.sessionState._historyHydrated = true
+
+    renderContent()
+
+    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
+    expect(screen.getByTestId('chat-message')).toBeInTheDocument()
   })
 })

@@ -304,6 +304,35 @@ function applyDefaultModel(session: PerSessionState, models: ModelOption[]): voi
   }
 }
 
+/**
+ * The ONLY place switchSession dispatches on harness identity. Resolves the
+ * model/effort defaults for a session based on the session's own declared
+ * provider (data it already carries), never on an out-of-band identity check.
+ * Returns a patch so it composes with both updatePerSession and a freshly
+ * built restored session.
+ */
+function applySessionAgentDefaults(
+  session: PerSessionState,
+  project: ProjectState,
+  claudeModels: ModelOption[],
+): Partial<PerSessionState> {
+  const provider = session.sessionProvider ?? session.preferredProvider
+  if (provider === 'codex') {
+    const sel = resolveSessionCodexSelection(
+      project.codexModels,
+      session.selectedCodexModel,
+      session.selectedCodexReasoningEffort,
+    )
+    return { selectedCodexModel: sel.modelId, selectedCodexReasoningEffort: sel.reasoningEffort }
+  }
+  if (!session.selectedModel) {
+    const draft = { ...session }
+    applyDefaultModel(draft, claudeModels)
+    return { selectedModel: draft.selectedModel, selectedEffort: draft.selectedEffort }
+  }
+  return {}
+}
+
 export function createDefaultProjectState(): ProjectState {
   return {
     _activeSessionId: null,
@@ -1581,7 +1610,7 @@ type PersistedSessionState = {
   isWorktree: boolean
   gitBranch: string | null
   worktreePath: string | null
-  provider: string
+  provider: ChatProvider
   apiProviderId?: string | null
   title?: string | null
 }
@@ -1600,7 +1629,7 @@ function _mergePersistedMessages(savedMessages: ChatMessage[], runtimeMessages: 
 
 function _mergePersistedSessionState(session: PerSessionState, saved: PersistedSessionState): PerSessionState {
   const mergedMessages = _mergePersistedMessages(saved.messages, session.messages)
-  const persistedProvider = saved.provider === 'codex' ? 'codex' : 'claude'
+  const persistedProvider = saved.provider
   return {
     ...session,
     _title: session._title ?? saved.title ?? null,
@@ -1617,14 +1646,14 @@ function _mergePersistedSessionState(session: PerSessionState, saved: PersistedS
   }
 }
 
-async function _prepareSessionSnapshot(sessionId: string, session: PerSessionState): Promise<PerSessionState | null> {
+async function _ensureSessionHydrated(sessionId: string, session: PerSessionState): Promise<PerSessionState | null> {
   if (session._historyHydrated) return session
   try {
     const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
     if (!saved) return { ...session, _historyHydrated: true }
     return _mergePersistedSessionState(session, saved)
   } catch (err) {
-    console.warn('[saveSessionSnapshot] hydrate failed:', err)
+    console.warn('[ensureSessionHydrated] failed:', err)
     return null
   }
 }
@@ -2961,7 +2990,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           )
         ) {
           const snapshot = updatedSession
-          setTimeout(() => _prepareSessionSnapshot(effectiveSid, snapshot), 0)
+          setTimeout(() => _ensureSessionHydrated(effectiveSid, snapshot), 0)
         }
       }
 
@@ -2976,7 +3005,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               const evictSid = targetSid
               const evictProjectPath = projectPath
               setTimeout(() => {
-                _prepareSessionSnapshot(effectiveSid, snapshot).then(() => {
+                _ensureSessionHydrated(effectiveSid, snapshot).then(() => {
                   set((s) => {
                     const proj = s.projectSessions[evictProjectPath]
                     if (!proj?._sessions[evictSid]) return {}
@@ -4732,7 +4761,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       })
 
-      const targetSession = get().projectSessions[activeProject]!._sessions[sessionId]
+      let targetSession = get().projectSessions[activeProject]!._sessions[sessionId]
+
+      if (!targetSession._historyHydrated) {
+        const hydrated = await _ensureSessionHydrated(sessionId, targetSession)
+        if (hydrated) {
+          set((s) => {
+            const proj = s.projectSessions[activeProject]
+            if (!proj?._sessions[sessionId]) return {}
+            return {
+              projectSessions: {
+                ...s.projectSessions,
+                [activeProject]: {
+                  ...proj,
+                  _sessions: { ...proj._sessions, [sessionId]: hydrated },
+                },
+              },
+            }
+          })
+          targetSession = get().projectSessions[activeProject]!._sessions[sessionId] ?? hydrated
+        }
+      }
+
       const runtimeSession = targetSession
 
       window.app.trace?.('agent.store', 'switchSession:A', {
@@ -4747,22 +4797,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         useAppStore.getState().setActiveWorktree(activeProject, null)
       }
 
-      if (!targetSession.selectedModel) {
-        const defaultModel = (get().harnessResources.claude?.models ?? [])[0]
-        if (defaultModel) {
-          const effort = getDefaultEffortForModel(defaultModel)
-          set((s) => updatePerSession(s, activeProject, sessionId, () => ({
-            selectedModel: defaultModel.id,
-            ...(effort ? { selectedEffort: effort } : {}),
-          })))
-        }
-      }
+      set((s) => updatePerSession(s, activeProject, sessionId, (sess) =>
+        applySessionAgentDefaults(sess, getProject(s, activeProject), s.harnessResources.claude?.models ?? []),
+      ))
 
       try {
         await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, runtimeSession))
       } catch (err) {
         console.warn('[chat] resumeSession failed:', err)
       }
+      triggerPrewarm(get(), activeProject)
       return
     }
 
@@ -4816,17 +4860,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       _historyHydrated: true,
       permissionMode: defaultPermissionMode,
     }
-    if (restoredProvider !== 'codex') {
-      applyDefaultModel(restoredSession, get().harnessResources.claude?.models ?? [])
-    } else {
-      const codexSelection = resolveSessionCodexSelection(
-        freshProject.codexModels,
-        restoredSession.selectedCodexModel,
-        restoredSession.selectedCodexReasoningEffort,
-      )
-      restoredSession.selectedCodexModel = codexSelection.modelId
-      restoredSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-    }
+    Object.assign(
+      restoredSession,
+      applySessionAgentDefaults(restoredSession, freshProject, get().harnessResources.claude?.models ?? []),
+    )
 
     set((s) => {
       const proj = getProject(s, activeProject)
@@ -4858,9 +4895,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } catch (err) {
       console.warn('[chat] resumeSession failed:', err)
     }
-    if (restoredSession.sessionProvider === 'codex') {
-      triggerPrewarm(get(), activeProject)
-    }
+    triggerPrewarm(get(), activeProject)
   },
 
   addDir: (path, scope) => {

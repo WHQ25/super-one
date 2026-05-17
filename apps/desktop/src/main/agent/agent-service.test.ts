@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TerminalManager } from '../terminal/terminal-manager'
 
 const { createdAgents } = vi.hoisted(() => ({
   createdAgents: [] as Array<{
@@ -2065,5 +2066,83 @@ describe('add-dir IPC handlers', () => {
       const res = await handler({}, tmpRoot, basename(file)) as { entries: unknown[] }
       expect(res.entries).toEqual([])
     })
+  })
+})
+
+describe('AgentService terminal remote commands', () => {
+  function setup() {
+    const ptyWrites: string[] = []
+    const spawner = {
+      spawn: () => ({
+        write: (d: string) => ptyWrites.push(d),
+        resize: () => {},
+        onData: () => {},
+        onExit: () => {},
+        kill: () => {},
+      }),
+    }
+    const sent: Array<{ event: { type: string; [k: string]: unknown }; targets?: string[] }> = []
+    const rcs = { sendTerminalFrame: vi.fn(async (event, targets) => { sent.push({ event, targets }) }) }
+    const service = new AgentService()
+    const tm = new TerminalManager({ spawner, onEvent: () => {} })
+    service.setTerminalManager(tm)
+    service.setRemoteControlService(rcs as never)
+    const src = (deviceId: string) => ({ deviceId, transport: 'relay' as const })
+    return { service, tm, sent, rcs, ptyWrites, src }
+  }
+
+  it('terminal_create subscribes+claims the creator and replies with result + snapshot', async () => {
+    const { service, sent, src } = setup()
+    await service.handleRemoteCommand(
+      { type: 'terminal_create', requestId: 'c1', projectPath: '/proj' },
+      undefined,
+      src('dev-a'),
+    )
+    const result = sent.find((s) => s.event.type === 'terminal_command_result')
+    expect(result?.event).toMatchObject({ ok: true, requestId: 'c1' })
+    expect(result?.targets).toEqual(['dev-a'])
+    const snap = sent.find((s) => s.event.type === 'terminal_snapshot')
+    expect(snap?.targets).toEqual(['dev-a'])
+    expect((snap?.event.snapshot as { writableByMe: boolean }).writableByMe).toBe(true)
+  })
+
+  it('rejects terminal_input from a non-owner with terminal_error and never writes the pty', async () => {
+    const { service, sent, ptyWrites, src } = setup()
+    await service.handleRemoteCommand({ type: 'terminal_create', requestId: 'c1', projectPath: '/p' }, undefined, src('dev-a'))
+    const termId = (sent.find((s) => s.event.type === 'terminal_command_result')!.event as { terminalId: string }).terminalId
+
+    await service.handleRemoteCommand({ type: 'terminal_subscribe', requestId: 's1', terminalId: termId }, undefined, src('dev-b'))
+    await service.handleRemoteCommand({ type: 'terminal_input', terminalId: termId, data: 'rm -rf /\n' }, undefined, src('dev-b'))
+
+    expect(ptyWrites).not.toContain('rm -rf /\n')
+    const err = sent.find((s) => s.event.type === 'terminal_error')
+    expect(err?.event).toMatchObject({ code: 'not_owner' })
+    expect(err?.targets).toEqual(['dev-b'])
+  })
+
+  it('allows N read-only subscribers without conflict; only the claiming device writes', async () => {
+    const { service, sent, ptyWrites, src } = setup()
+    await service.handleRemoteCommand({ type: 'terminal_create', requestId: 'c1', projectPath: '/p' }, undefined, src('dev-a'))
+    const termId = (sent.find((s) => s.event.type === 'terminal_command_result')!.event as { terminalId: string }).terminalId
+
+    await service.handleRemoteCommand({ type: 'terminal_subscribe', requestId: 's1', terminalId: termId }, undefined, src('dev-b'))
+    await service.handleRemoteCommand({ type: 'terminal_subscribe', requestId: 's2', terminalId: termId }, undefined, src('dev-c'))
+
+    const subResults = sent.filter((s) => s.event.type === 'terminal_command_result' && s.event.requestId !== 'c1')
+    expect(subResults.every((r) => r.event.ok === true)).toBe(true)
+
+    await service.handleRemoteCommand({ type: 'terminal_input', terminalId: termId, data: 'ls\n' }, undefined, src('dev-a'))
+    await service.handleRemoteCommand({ type: 'terminal_input', terminalId: termId, data: 'whoami\n' }, undefined, src('dev-c'))
+    expect(ptyWrites).toEqual(['ls\n'])
+  })
+
+  it('rejects a second remote claim while owned (already_claimed)', async () => {
+    const { service, sent, src } = setup()
+    await service.handleRemoteCommand({ type: 'terminal_create', requestId: 'c1', projectPath: '/p' }, undefined, src('dev-a'))
+    const termId = (sent.find((s) => s.event.type === 'terminal_command_result')!.event as { terminalId: string }).terminalId
+    await service.handleRemoteCommand({ type: 'terminal_subscribe', requestId: 's1', terminalId: termId }, undefined, src('dev-b'))
+    await service.handleRemoteCommand({ type: 'terminal_claim', requestId: 'k1', terminalId: termId }, undefined, src('dev-b'))
+    const claimRes = sent.find((s) => s.event.type === 'terminal_command_result' && s.event.requestId === 'k1')
+    expect(claimRes?.event).toMatchObject({ ok: false, code: 'already_claimed' })
   })
 })

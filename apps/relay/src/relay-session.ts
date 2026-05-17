@@ -21,6 +21,7 @@ type RelayFrame =
   | { type: 'response_chunk'; requestId: string; index: number; total: number; data: string; mobileDeviceId?: string }
   | { type: 'ack'; seq: number }
   | { type: 'replay'; fromSeq: number }
+  | { type: 'terminal'; data: string; targets?: string[] }
 
 const MAX_BUFFER_SIZE = 500
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000
@@ -222,6 +223,19 @@ export class RelaySession implements DurableObject {
         if (frame.mobileDeviceId) {
           const ws = this.getMobileByDeviceId(frame.mobileDeviceId)
           ws?.send(JSON.stringify(frame))
+        } else {
+          for (const mobile of this.getAllMobiles()) {
+            mobile.send(JSON.stringify(frame))
+          }
+        }
+        break
+      }
+      case 'terminal': {
+        const targets = frame.targets && frame.targets.length > 0 ? frame.targets : null
+        if (targets) {
+          for (const deviceId of targets) {
+            this.getMobileByDeviceId(deviceId)?.send(JSON.stringify(frame))
+          }
         } else {
           for (const mobile of this.getAllMobiles()) {
             mobile.send(JSON.stringify(frame))

@@ -10,7 +10,7 @@ import { fetchModels } from './claude-models'
 import { resolveSdkClaudeBinary } from './claude-binary'
 import { makeClaudeSpawn } from './claude-spawn'
 import { resolveProbeCwd } from './probe-cwd'
-import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest, type TerminalEvent } from '@superone/shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
@@ -65,6 +65,7 @@ export class AgentService {
   private codexProviderChanged?: () => void
   private remoteControlService?: RemoteControlService
   private deviceRegistry?: import('../remote/device-registry').DeviceRegistry
+  private terminalManager?: import('../terminal/terminal-manager').TerminalManager
   private warmupManager = new WarmupManager()
 
   setCodexListModels(fn: (projectPath: string) => Promise<ModelOption[]>): void {
@@ -85,6 +86,10 @@ export class AgentService {
 
   setDeviceRegistry(reg: import('../remote/device-registry').DeviceRegistry): void {
     this.deviceRegistry = reg
+  }
+
+  setTerminalManager(mgr: import('../terminal/terminal-manager').TerminalManager): void {
+    this.terminalManager = mgr
   }
 
   setBroadcastFn(fn: (event: AgentEvent) => void): void {
@@ -377,6 +382,28 @@ export class AgentService {
       }
       throw err
     }
+  }
+
+  private async sendTerminalResult(
+    deviceId: string,
+    requestId: string,
+    ok: boolean,
+    terminalId?: string,
+    code?: 'not_owner' | 'already_claimed' | 'no_terminal',
+  ): Promise<void> {
+    const event: TerminalEvent = { type: 'terminal_command_result', requestId, ok, terminalId, code }
+    await this.remoteControlService?.sendTerminalFrame(event, [deviceId])
+  }
+
+  private async sendTerminalSnapshot(
+    term: import('../terminal/terminal-session').TerminalSession,
+    deviceId: string,
+  ): Promise<void> {
+    const snapshot = await term.snapshot(deviceId)
+    await this.remoteControlService?.sendTerminalFrame(
+      { type: 'terminal_snapshot', terminalId: term.terminalId, snapshot, ansi: term.lastAnsi },
+      [deviceId],
+    )
   }
 
   async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void> {
@@ -690,6 +717,73 @@ export class AgentService {
           session.release(deviceId, 'self_leave')
         }
         if (session.subscribers.has(deviceId)) session.unsubscribe(deviceId, 'self_leave')
+        break
+      }
+      case 'terminal_create': {
+        const mgr = this.terminalManager
+        if (!mgr) { await this.sendTerminalResult(deviceId, command.requestId, false, undefined, 'no_terminal'); break }
+        const cwd = (command.sessionId ? this.sessionManager?.getSession(command.sessionId)?.cwd : undefined) ?? command.projectPath
+        const term = mgr.create({ cwd, title: basename(cwd) || 'Terminal' })
+        term.ownership.subscribe(deviceId)
+        term.ownership.claim(deviceId)
+        await this.sendTerminalResult(deviceId, command.requestId, true, term.terminalId)
+        await this.sendTerminalSnapshot(term, deviceId)
+        break
+      }
+      case 'terminal_subscribe': {
+        const term = this.terminalManager?.get(command.terminalId)
+        if (!term) { await this.sendTerminalResult(deviceId, command.requestId, false, command.terminalId, 'no_terminal'); break }
+        term.ownership.subscribe(deviceId)
+        await this.sendTerminalResult(deviceId, command.requestId, true, term.terminalId)
+        await this.sendTerminalSnapshot(term, deviceId)
+        break
+      }
+      case 'terminal_unsubscribe': {
+        if (command.terminalId) {
+          const term = this.terminalManager?.get(command.terminalId)
+          term?.ownership.handleDeviceDisconnected(deviceId)
+        } else {
+          for (const item of this.terminalManager?.list() ?? []) {
+            this.terminalManager?.get(item.terminalId)?.ownership.handleDeviceDisconnected(deviceId)
+          }
+        }
+        break
+      }
+      case 'terminal_claim': {
+        const term = this.terminalManager?.get(command.terminalId)
+        if (!term) { await this.sendTerminalResult(deviceId, command.requestId, false, command.terminalId, 'no_terminal'); break }
+        const res = term.ownership.claim(deviceId)
+        if (res.ok) await this.sendTerminalResult(deviceId, command.requestId, true, term.terminalId)
+        else await this.sendTerminalResult(deviceId, command.requestId, false, term.terminalId, res.code)
+        break
+      }
+      case 'terminal_release': {
+        const term = this.terminalManager?.get(command.terminalId)
+        term?.ownership.release(deviceId)
+        await this.sendTerminalResult(deviceId, command.requestId, true, command.terminalId)
+        break
+      }
+      case 'terminal_input': {
+        const term = this.terminalManager?.get(command.terminalId)
+        if (!term) break
+        if (!term.ownership.isWritableBy(deviceId)) {
+          await this.remoteControlService?.sendTerminalFrame(
+            { type: 'terminal_error', terminalId: command.terminalId, code: 'not_owner', message: 'Terminal is controlled by another device' },
+            [deviceId],
+          )
+          break
+        }
+        term.input(command.data)
+        break
+      }
+      case 'terminal_resize': {
+        const term = this.terminalManager?.get(command.terminalId)
+        if (!term || !term.ownership.isWritableBy(deviceId)) break
+        term.resize(command.cols, command.rows)
+        break
+      }
+      case 'terminal_kill': {
+        this.terminalManager?.kill(command.terminalId)
         break
       }
       case 'load_session_messages': {

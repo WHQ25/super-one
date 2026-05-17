@@ -6,7 +6,7 @@ import WebSocket from 'ws'
 import { diffLines } from 'diff'
 import log from './logger'
 import { ProcessTitle } from './process-titles'
-import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, RemoteDeviceConfig, TodoToolItem } from '@superone/shared/agent-types'
+import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
 
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
@@ -1046,6 +1046,21 @@ export class RemoteControlService {
       this.sendEventFrame(data, targetDeviceIds)
     } catch (err) {
       log.error('[RemoteControl] Failed to send event to mobile:', err)
+    }
+  }
+
+  async sendTerminalFrame(event: TerminalEvent, targetDeviceIds?: string[]): Promise<void> {
+    if (!this.keys) return
+    if (!this.hasAnyMobileTransport()) return
+    try {
+      const data = await encryptPayload(this.keys.aesKey, event)
+      const payload: Record<string, unknown> = { type: 'terminal', data }
+      if (targetDeviceIds && targetDeviceIds.length > 0) payload.targets = targetDeviceIds
+      const json = JSON.stringify(payload)
+      if (this.relayWs?.readyState === WebSocket.OPEN) this.relayWs.send(json)
+      this.lanServer?.broadcastFrame(json, targetDeviceIds)
+    } catch (err) {
+      log.error('[RemoteControl] Failed to send terminal frame:', err)
     }
   }
 

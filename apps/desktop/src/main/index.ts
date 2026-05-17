@@ -30,6 +30,7 @@ import { fixPath } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
 import { TerminalManager } from './terminal/terminal-manager'
+import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
@@ -284,8 +285,14 @@ new PresenceCoordinator(sessionManager, {
 
 const terminalManager = new TerminalManager({
   spawner: nodePtySpawner,
-  onEvent: (event) => safeSend(AgentIpcChannels.TERMINAL_EVENT, event),
+  onEvent: (event) => {
+    safeSend(AgentIpcChannels.TERMINAL_EVENT, event)
+    void terminalBroadcaster.broadcast(event)
+  },
 })
+const terminalBroadcaster = new TerminalBroadcaster(terminalManager, remoteControlService)
+deviceRegistry.setTerminalManager(terminalManager)
+agentService.setTerminalManager(terminalManager)
 let terminalSweepTimer: ReturnType<typeof setInterval> | null = null
 
 function resolveTerminalCwd(projectPath: string, sessionId?: string): string {

@@ -423,3 +423,53 @@ describe('RelaySession', () => {
     })
   })
 })
+
+describe('RelaySession terminal frames (non-buffered)', () => {
+  let state: ReturnType<typeof createMockState>
+  let session: RelaySession
+  let desktopWs: ReturnType<typeof createMockWebSocket>
+  let mobileA: ReturnType<typeof createMockWebSocket>
+  let mobileB: ReturnType<typeof createMockWebSocket>
+
+  beforeEach(() => {
+    state = createMockState()
+    session = new RelaySession(state as any, {} as any)
+    desktopWs = createMockWebSocket()
+    mobileA = createMockWebSocket()
+    mobileB = createMockWebSocket()
+    state.acceptWebSocket(desktopWs, ['desktop'])
+    state.acceptWebSocket(mobileA, ['mobile:dev-a'])
+    state.acceptWebSocket(mobileB, ['mobile:dev-b'])
+  })
+
+  it('forwards a terminal frame verbatim to targeted mobile only, without a seq', async () => {
+    const frame = { type: 'terminal', data: 'enc-term', targets: ['dev-a'] }
+    await session.webSocketMessage(desktopWs as any, JSON.stringify(frame))
+    expect(mobileA.send).toHaveBeenCalledWith(JSON.stringify(frame))
+    expect(mobileB.send).not.toHaveBeenCalled()
+  })
+
+  it('broadcasts a terminal frame to all mobiles when no targets', async () => {
+    const frame = { type: 'terminal', data: 'enc-term' }
+    await session.webSocketMessage(desktopWs as any, JSON.stringify(frame))
+    expect(mobileA.send).toHaveBeenCalledWith(JSON.stringify(frame))
+    expect(mobileB.send).toHaveBeenCalledWith(JSON.stringify(frame))
+  })
+
+  it('a flood of terminal frames does not advance seq, persist seq, or trigger forcedDrop, while interleaved events still ack/replay correctly', async () => {
+    for (let i = 0; i < 600; i++) {
+      await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'terminal', data: `t${i}` }))
+    }
+    expect(state._kv.get('seq')).toBeUndefined()
+    expect(state.storage.put).not.toHaveBeenCalledWith('seq', expect.anything())
+    expect(state._kv.get('forcedDropSeq')).toBeUndefined()
+
+    await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'event', data: 'real' }))
+    expect(mobileA.send).toHaveBeenCalledWith(JSON.stringify({ type: 'event', seq: 1, data: 'real' }))
+
+    mobileA.send.mockClear()
+    await session.webSocketMessage(mobileA as any, JSON.stringify({ type: 'replay', fromSeq: 1 }))
+    const calls = mobileA.send.mock.calls.map((c: string[]) => JSON.parse(c[0]))
+    expect(calls).toEqual([{ type: 'event', seq: 1, data: 'real' }])
+  })
+})

@@ -16,13 +16,25 @@ type RemoteToolType = 'read' | 'edit' | 'write' | 'notebook_edit' | 'file_change
 
 type DiffTokenLine = [string, string | null][]
 
+export interface TodoToolItem {
+  content: string
+  status: string
+  taskId?: string
+  subject?: string
+  description?: string
+  activeForm?: string
+  owner?: string
+  addBlockedBy?: string[]
+  addBlocks?: string[]
+}
+
 interface ToolMeta {
   toolSummary?: string
   toolFilePath?: string
   toolLineDelta?: { added: number; removed: number }
   toolDiff?: string
   toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
-  toolTodos?: Array<{ content: string; status: string; taskId?: string }>
+  toolTodos?: TodoToolItem[]
 }
 
 interface AgentTaskData {
@@ -48,9 +60,9 @@ export type ContentBlock =
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null }
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData
-  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
+  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[] }
   | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[] }
-  | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: Array<{ content: string; status: string; taskId?: string }> }
+  | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: TodoToolItem[] }
   | { type: 'codex_plan'; text: string; itemId: string }
   | { type: 'codex_image_generation'; itemId: string; status: string; savedPath?: string; revisedPrompt?: string; startedAt?: number; completedAt?: number }
   | { type: 'image'; name: string }

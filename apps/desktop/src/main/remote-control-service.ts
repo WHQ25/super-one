@@ -6,7 +6,7 @@ import WebSocket from 'ws'
 import { diffLines } from 'diff'
 import log from './logger'
 import { ProcessTitle } from './process-titles'
-import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, RemoteDeviceConfig } from '@superone/shared/agent-types'
+import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, RemoteDeviceConfig, TodoToolItem } from '@superone/shared/agent-types'
 
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
@@ -52,7 +52,15 @@ const TOOL_TYPE_MAP: Record<string, string> = {
   Agent: 'agent', Skill: 'skill',
 }
 
-export function computeTodoItems(toolName: string, input: string): Array<{ content: string; status: string; taskId?: string }> | undefined {
+function optStr(v: unknown): string | undefined {
+  return v ? String(v) : undefined
+}
+
+function optStrArray(v: unknown): string[] | undefined {
+  return Array.isArray(v) && v.length > 0 ? v.map(String) : undefined
+}
+
+export function computeTodoItems(toolName: string, input: string): TodoToolItem[] | undefined {
   try {
     const p = JSON.parse(input)
     if (!p || typeof p !== 'object') return undefined
@@ -62,16 +70,53 @@ export function computeTodoItems(toolName: string, input: string): Array<{ conte
         content: String(t.content ?? t.subject ?? ''),
         status: String(t.status ?? 'pending'),
         taskId: String(i + 1),
+        description: optStr(t.description),
+        activeForm: optStr(t.activeForm),
       }))
     }
     if (toolName === 'TaskCreate') {
-      return [{ content: String(p.subject ?? ''), status: 'pending' }]
+      return [{
+        content: String(p.subject ?? ''),
+        status: 'pending',
+        subject: optStr(p.subject),
+        description: optStr(p.description),
+        activeForm: optStr(p.activeForm),
+      }]
     }
     if (toolName === 'TaskUpdate') {
-      return [{ content: String(p.subject ?? ''), status: String(p.status ?? 'pending'), taskId: String(p.taskId ?? '') }]
+      return [{
+        content: String(p.subject ?? ''),
+        status: String(p.status ?? 'pending'),
+        taskId: String(p.taskId ?? ''),
+        subject: optStr(p.subject),
+        description: optStr(p.description),
+        activeForm: optStr(p.activeForm),
+        owner: optStr(p.owner),
+        addBlockedBy: optStrArray(p.addBlockedBy),
+        addBlocks: optStrArray(p.addBlocks),
+      }]
     }
   } catch { /* ignore */ }
   return undefined
+}
+
+/**
+ * TaskCreate's real task id only arrives on the result (extractTaskCreateTodo
+ * surfaces it via toolTodos). Mirror the desktop store: keep the rich
+ * input-derived fields from computeTodoItems and overlay the resolved id so
+ * mobile keys the todo the same way a later TaskUpdate references it.
+ */
+export function resolveTodoToolTodos(
+  toolName: string,
+  input: string,
+  resultToolTodos: TodoToolItem[] | undefined,
+): TodoToolItem[] | undefined {
+  const computed = computeTodoItems(toolName, input)
+  if (toolName !== 'TaskCreate') return computed
+  const resolvedId = resultToolTodos?.[0]?.taskId
+  if (!resolvedId) return computed ?? resultToolTodos
+  if (computed?.length) return [{ ...computed[0], taskId: resolvedId }]
+  return resultToolTodos
 }
 
 export function countLines(s: string): number {
@@ -95,7 +140,7 @@ export function stripProjectPath(value: string, projectPath?: string): string {
   return value.includes(prefix) ? value.replaceAll(prefix, '') : value
 }
 
-export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, projectPath?: string): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: Array<{ content: string; status: string; taskId?: string }>; subagentType?: string; toolPrompt?: string; runInBackground?: boolean } {
+export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, projectPath?: string): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: TodoToolItem[]; subagentType?: string; toolPrompt?: string; runInBackground?: boolean } {
   try {
     const p = JSON.parse(block.input)
     if (!p || typeof p !== 'object') return {}
@@ -105,7 +150,7 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
     let toolLineDelta: { added: number; removed: number } | undefined
     let toolDiff: string | undefined
     let toolDiffTokens: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] } | undefined
-    let toolTodos: Array<{ content: string; status: string; taskId?: string }> | undefined
+    let toolTodos: TodoToolItem[] | undefined
     switch (block.toolName) {
       case 'Read': {
         const fileName = (filePath ?? '').split('/').pop() || filePath || ''
@@ -450,9 +495,7 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
         .flatMap((b) => {
           if (b.type === 'tool_result' && todoInputs.has(b.toolUseId)) {
             const entry = todoInputs.get(b.toolUseId)!
-            const toolTodos = entry.toolName === 'TaskCreate' && b.toolTodos?.length
-              ? b.toolTodos
-              : computeTodoItems(entry.toolName, entry.input)
+            const toolTodos = resolveTodoToolTodos(entry.toolName, entry.input, b.toolTodos)
             return { type: 'todo_result' as const, toolUseId: b.toolUseId, summary: b.summary, parentToolUseId: b.parentToolUseId, todoToolName: entry.toolName, toolTodos }
           }
           if (b.type === 'tool_result' && widgetIds.has(b.toolUseId)) return b
@@ -1122,10 +1165,7 @@ export class RemoteControlService {
       let stripped: AgentEvent
       if (event.delta.type === 'tool_result' && this.todoToolInputs.has(event.delta.toolUseId)) {
         const entry = this.todoToolInputs.get(event.delta.toolUseId)!
-        const resolved = event.delta.toolTodos
-        const toolTodos = entry.toolName === 'TaskCreate' && resolved?.length
-          ? resolved
-          : computeTodoItems(entry.toolName, entry.input)
+        const toolTodos = resolveTodoToolTodos(entry.toolName, entry.input, event.delta.toolTodos)
         stripped = { ...event, delta: { type: 'todo_result', toolUseId: event.delta.toolUseId, summary: event.delta.summary, parentToolUseId: event.delta.parentToolUseId, todoToolName: entry.toolName, toolTodos } }
       } else if (event.delta.type === 'tool_result' && this.widgetToolIds.has(event.delta.toolUseId)) {
         stripped = { ...event, delta: event.delta }

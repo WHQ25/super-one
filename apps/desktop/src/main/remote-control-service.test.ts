@@ -15,6 +15,7 @@ vi.mock('./split-text-blocks', () => ({
 import type { ContentBlock, ChatMessage } from '@superone/shared/agent-types'
 import {
   computeTodoItems,
+  resolveTodoToolTodos,
   countLines,
   stripProjectPath,
   computeToolMeta,
@@ -72,17 +73,41 @@ describe('computeTodoItems', () => {
     expect(computeTodoItems('TodoWrite', input)).toEqual([])
   })
 
-  it('should parse TaskCreate', () => {
-    const input = JSON.stringify({ subject: 'New task' })
-    expect(computeTodoItems('TaskCreate', input)).toEqual([
-      { content: 'New task', status: 'pending' },
+  it('should parse TodoWrite carrying description and activeForm', () => {
+    const input = JSON.stringify({
+      todos: [{ content: 'Task A', status: 'in_progress', description: 'do the thing', activeForm: 'Doing the thing' }],
+    })
+    expect(computeTodoItems('TodoWrite', input)).toEqual([
+      { content: 'Task A', status: 'in_progress', taskId: '1', description: 'do the thing', activeForm: 'Doing the thing' },
     ])
   })
 
-  it('should parse TaskUpdate', () => {
-    const input = JSON.stringify({ subject: 'Updated', status: 'completed', taskId: '3' })
+  it('should parse TaskCreate carrying subject/description/activeForm', () => {
+    const input = JSON.stringify({ subject: 'New task', description: 'details', activeForm: 'Working on it' })
+    expect(computeTodoItems('TaskCreate', input)).toEqual([
+      { content: 'New task', status: 'pending', subject: 'New task', description: 'details', activeForm: 'Working on it' },
+    ])
+  })
+
+  it('should parse TaskUpdate carrying owner and blocker deltas', () => {
+    const input = JSON.stringify({
+      subject: 'Updated',
+      status: 'completed',
+      taskId: '3',
+      owner: 'reviewer-agent',
+      addBlockedBy: ['1', '2'],
+      addBlocks: ['9'],
+    })
     expect(computeTodoItems('TaskUpdate', input)).toEqual([
-      { content: 'Updated', status: 'completed', taskId: '3' },
+      {
+        content: 'Updated',
+        status: 'completed',
+        taskId: '3',
+        subject: 'Updated',
+        owner: 'reviewer-agent',
+        addBlockedBy: ['1', '2'],
+        addBlocks: ['9'],
+      },
     ])
   })
 
@@ -96,6 +121,30 @@ describe('computeTodoItems', () => {
 
   it('should return undefined for unknown tool name', () => {
     expect(computeTodoItems('UnknownTool', JSON.stringify({ todos: [] }))).toBeUndefined()
+  })
+})
+
+describe('resolveTodoToolTodos', () => {
+  it('overlays the SDK-resolved TaskCreate id onto rich input-derived fields', () => {
+    const input = JSON.stringify({ subject: 'Build', description: 'd', activeForm: 'Building' })
+    const resolved = [{ content: 'Build', status: 'pending', taskId: 'task_abc' }]
+    expect(resolveTodoToolTodos('TaskCreate', input, resolved)).toEqual([
+      { content: 'Build', status: 'pending', subject: 'Build', description: 'd', activeForm: 'Building', taskId: 'task_abc' },
+    ])
+  })
+
+  it('falls back to computed items when TaskCreate has no resolved id', () => {
+    const input = JSON.stringify({ subject: 'Build' })
+    expect(resolveTodoToolTodos('TaskCreate', input, undefined)).toEqual([
+      { content: 'Build', status: 'pending', subject: 'Build' },
+    ])
+  })
+
+  it('returns computed items unchanged for non-TaskCreate tools', () => {
+    const input = JSON.stringify({ subject: 'Updated', status: 'completed', taskId: '3' })
+    expect(resolveTodoToolTodos('TaskUpdate', input, undefined)).toEqual([
+      { content: 'Updated', status: 'completed', taskId: '3', subject: 'Updated' },
+    ])
   })
 })
 

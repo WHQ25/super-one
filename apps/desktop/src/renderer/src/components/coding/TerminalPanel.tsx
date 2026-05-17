@@ -9,6 +9,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { setCloseActiveTerminal } from './terminal-panel-api'
+import { disposeTermInstance } from './term-instance'
 import type { TerminalEvent } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
@@ -179,15 +180,7 @@ export function TerminalPanel() {
     (terminalId: string) => {
       void window.terminal.kill(terminalId)
       const inst = instances.get(terminalId)
-      if (inst) {
-        try {
-          inst.webgl?.dispose()
-        } catch {
-          /* webgl renderer already torn down (context lost) */
-        }
-        inst.webgl = undefined
-        inst.xterm.dispose()
-      }
+      if (inst) disposeTermInstance(inst)
       instances.delete(terminalId)
       if (!projectPath) return
       removeTab(projectPath, terminalId)

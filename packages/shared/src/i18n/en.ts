@@ -26,6 +26,7 @@ export type Messages = {
       added: string
     }
     empty: string
+    noFiles: string
     settings: string
     remote: {
       connected: string
@@ -76,6 +77,9 @@ export type Messages = {
       sessionIdCopiedToast: string
       sessionIdNotReadyToast: string
       workingDirCopiedToast: string
+      addToChat: string
+      copyPath: string
+      copyRelativePath: string
     }
   }
   shell: {
@@ -291,6 +295,7 @@ export type Messages = {
       openProject: string
       addProject: string
       poweredBy: string
+      selectProject: string
     }
     additionalDirs: {
       label: string
@@ -506,6 +511,22 @@ export type Messages = {
     }
     slashCommand: {
       skillBadge: string
+    }
+    linkSafety: {
+      openExternal: string
+      copyLink: string
+      copied: string
+      openLink: string
+    }
+    reasoning: {
+      thinking: string
+      thinkingSeconds: string
+      thought: string
+      thoughtSeconds: string
+    }
+    mermaid: {
+      label: string
+      error: string
     }
   }
   resources: {
@@ -1063,6 +1084,7 @@ export const en: Messages = {
       added: 'Date Added',
     },
     empty: 'No projects yet',
+    noFiles: 'No files',
     settings: 'Settings',
     remote: {
       connected: 'Connected',
@@ -1113,6 +1135,9 @@ export const en: Messages = {
       sessionIdCopiedToast: 'Session ID Copied',
       sessionIdNotReadyToast: 'Session ID not ready — copied internal id',
       workingDirCopiedToast: 'Working Directory Copied',
+      addToChat: 'Add to Chat',
+      copyPath: 'Copy Path',
+      copyRelativePath: 'Copy Relative Path',
     },
   },
   shell: {
@@ -1340,6 +1365,7 @@ export const en: Messages = {
       openProject: 'Open a project to get started',
       addProject: 'Add Project',
       poweredBy: 'Powered by',
+      selectProject: 'Select Project',
     },
     additionalDirs: {
       label: 'Additional folder',
@@ -1555,6 +1581,22 @@ export const en: Messages = {
     },
     slashCommand: {
       skillBadge: 'skill',
+    },
+    linkSafety: {
+      openExternal: 'Open external link?',
+      copyLink: 'Copy link',
+      copied: 'Copied',
+      openLink: 'Open link',
+    },
+    reasoning: {
+      thinking: 'Thinking...',
+      thinkingSeconds: 'Thinking for {{count}}s...',
+      thought: 'Thought',
+      thoughtSeconds: 'Thought for {{count}}s',
+    },
+    mermaid: {
+      label: 'Mermaid',
+      error: 'Mermaid Error:',
     },
   },
   resources: {

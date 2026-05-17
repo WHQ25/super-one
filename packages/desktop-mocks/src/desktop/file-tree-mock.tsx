@@ -3,6 +3,7 @@
 import { ChevronRight } from "lucide-react"
 import { FileIcon, FolderIcon } from "@superone/ui/components/ui/FileIcon"
 import { cn } from "@superone/ui/lib/utils"
+import { useMockT } from "./i18n"
 
 export type FileTreeGitStatus = "M" | "A" | "D" | "R" | "C" | "U" | "?" | "!"
 
@@ -66,6 +67,7 @@ function flatten(nodes: FileTreeNode[], depth: number, out: FlatRow[]): void {
 }
 
 export function FileTreeMock({ rootName, nodes, selectedPath, className }: FileTreeMockProps) {
+  const t = useMockT()
   const flat: FlatRow[] = []
   flatten(nodes, 0, flat)
   return (
@@ -111,7 +113,7 @@ export function FileTreeMock({ rootName, nodes, selectedPath, className }: FileT
         })}
         {flat.length === 0 && (
           <div className="flex h-full items-center justify-center p-4 text-xs text-sidebar-foreground/50">
-            No files
+            {t("sidebar.noFiles")}
           </div>
         )}
       </div>

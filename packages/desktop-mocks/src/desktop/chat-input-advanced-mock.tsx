@@ -22,6 +22,7 @@ import { FileIcon } from "@superone/ui/components/ui/FileIcon"
 import { Kbd } from "@superone/ui/components/ui/kbd"
 import { cn } from "@superone/ui/lib/utils"
 import type { Harness } from "./icons"
+import { useMockT } from "./i18n"
 
 export type ChatInputDirScope = "user" | "project" | "session"
 
@@ -144,14 +145,6 @@ const DEFAULT_MODEL: Record<Harness, string> = {
   claude: "Opus 4.7 1M",
   codex: "GPT-5.5",
 }
-const DEFAULT_EFFORT: Record<Harness, string> = {
-  claude: "Extra High",
-  codex: "Extra High",
-}
-const DEFAULT_PLACEHOLDER: Record<Harness, string> = {
-  claude: "Ask Claude anything, @ to mention files & agents, / for commands",
-  codex: "Ask Codex anything, @ to mention, / for commands",
-}
 
 export function ChatInputAdvancedMock({
   harness = "claude",
@@ -180,9 +173,11 @@ export function ChatInputAdvancedMock({
   className,
   overlay,
 }: ChatInputAdvancedMockProps) {
+  const t = useMockT()
   const model = modelLabel ?? DEFAULT_MODEL[harness]
-  const effort = effortLabel ?? DEFAULT_EFFORT[harness]
-  const placeholderText = placeholder ?? DEFAULT_PLACEHOLDER[harness]
+  const effort = effortLabel ?? t("settings.preferences.effort.levels.xhigh")
+  const placeholderText =
+    placeholder ?? t(harness === "codex" ? "chat.placeholder.codexAsk" : "chat.placeholder.claudeAsk")
 
   const trimmedValue = value ?? ""
   const hasTypedValue = trimmedValue.length > 0
@@ -716,6 +711,7 @@ function MentionPopupBar({ popup }: { popup: MentionPopupMock }) {
 }
 
 function SlashPopupBar({ popup }: { popup: SlashPopupMock }) {
+  const t = useMockT()
   const activeIndex = popup.activeIndex ?? 0
   return (
     <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-card p-1.5">
@@ -742,7 +738,7 @@ function SlashPopupBar({ popup }: { popup: SlashPopupMock }) {
                 )}
                 {cmd.isSkill && (
                   <span className="rounded bg-emerald-100 px-1 py-px text-[10px] font-normal text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400">
-                    skill
+                    {t("chat.slashCommand.skillBadge")}
                   </span>
                 )}
               </span>

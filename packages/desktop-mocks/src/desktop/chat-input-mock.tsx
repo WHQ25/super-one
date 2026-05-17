@@ -3,6 +3,7 @@
 import { ArrowUp, Box, ChevronDown, Circle, FolderClosed, GitBranch, Paperclip, Shield } from "lucide-react"
 import { cn } from "@superone/ui/lib/utils"
 import type { Harness } from "./icons"
+import { useMockT } from "./i18n"
 
 export interface ChatInputMockProps {
   placeholder?: string
@@ -23,16 +24,6 @@ const DEFAULT_MODEL: Record<Harness, string> = {
   codex: "GPT-5.5",
 }
 
-const DEFAULT_EFFORT: Record<Harness, string> = {
-  claude: "Extra High",
-  codex: "Extra High",
-}
-
-const DEFAULT_PLACEHOLDER: Record<Harness, string> = {
-  claude: "Ask Claude anything, @ to mention files & agents, / for commands",
-  codex: "Ask Codex anything, @ to mention, / for commands",
-}
-
 export function ChatInputMock({
   placeholder,
   modelLabel,
@@ -46,9 +37,11 @@ export function ChatInputMock({
   sandboxLabel = "On",
   className,
 }: ChatInputMockProps) {
+  const t = useMockT()
   const model = modelLabel ?? DEFAULT_MODEL[harness]
-  const effort = effortLabel ?? DEFAULT_EFFORT[harness]
-  const placeholderText = placeholder ?? DEFAULT_PLACEHOLDER[harness]
+  const effort = effortLabel ?? t("settings.preferences.effort.levels.xhigh")
+  const placeholderText =
+    placeholder ?? t(harness === "codex" ? "chat.placeholder.codexAsk" : "chat.placeholder.claudeAsk")
 
   return (
     <div className={cn("@container mx-auto w-full min-w-0 max-w-3xl", className)}>

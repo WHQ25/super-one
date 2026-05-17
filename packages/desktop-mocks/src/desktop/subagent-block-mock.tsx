@@ -12,6 +12,7 @@ import {
   Wrench,
 } from "lucide-react"
 import { cn } from "@superone/ui/lib/utils"
+import { useMockT } from "./i18n"
 import { ShimmerText } from "./shimmer-text"
 import { ToolBlockMock, type ToolBlockSpec } from "./tool-block-mock"
 
@@ -196,6 +197,7 @@ export function SubagentBlockMock({
   fps = 30,
   className,
 }: SubagentBlockMockProps) {
+  const t = useMockT()
   const colors = SUBAGENT_COLOR_CLASSES[color] ?? SUBAGENT_COLOR_CLASSES[DEFAULT_COLOR]
   const isRunning = state === "running"
   const isSpawning = state === "spawning"
@@ -232,7 +234,7 @@ export function SubagentBlockMock({
           <span className="min-w-0 truncate text-left text-muted-foreground">{description}</span>
         )}
         {isSpawning && !description && (
-          <span className="min-w-0 text-left text-muted-foreground">Spawning subagent…</span>
+          <span className="min-w-0 text-left text-muted-foreground">{t("chat.subagent.spawning")}</span>
         )}
         <ChevronRight
           className={cn(
@@ -283,9 +285,9 @@ export function SubagentBlockMock({
             <>
               <span>
                 {isAsync ? (
-                  <ShimmerText frame={frame} fps={fps}>Running in background…</ShimmerText>
+                  <ShimmerText frame={frame} fps={fps}>{t("chat.subagent.runningInBackground")}</ShimmerText>
                 ) : (
-                  <ShimmerText frame={frame} fps={fps}>Running…</ShimmerText>
+                  <ShimmerText frame={frame} fps={fps}>{t("chat.subagent.running")}</ShimmerText>
                 )}
               </span>
               {elapsedSec > 0 && (
@@ -296,7 +298,7 @@ export function SubagentBlockMock({
             <>
               <Check className="size-3 shrink-0 text-green-600 dark:text-green-400" />
               <span>
-                Done
+                {t("chat.subagent.done")}
                 {elapsedSec > 0 ? ` ${formatElapsed(elapsedSec)}` : ""}
               </span>
             </>
@@ -356,6 +358,7 @@ function PromptPreview({
   model?: string
   expanded: boolean
 }) {
+  const t = useMockT()
   return (
     <div className="px-3 py-1.5 text-[11px]">
       <div className="flex items-center gap-1 text-muted-foreground">
@@ -365,7 +368,7 @@ function PromptPreview({
             expanded && "rotate-90",
           )}
         />
-        <span>Prompt</span>
+        <span>{t("chat.subagent.prompt")}</span>
         {model && (
           <span className="ml-1 rounded bg-muted px-1 py-px text-[10px]">{model}</span>
         )}
@@ -380,6 +383,7 @@ function PromptPreview({
 }
 
 function OutputPreview({ text, expanded }: { text: string; expanded: boolean }) {
+  const t = useMockT()
   return (
     <div className="border-t border-border/30 px-3 py-1.5">
       <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -389,7 +393,7 @@ function OutputPreview({ text, expanded }: { text: string; expanded: boolean }) 
             expanded && "rotate-90",
           )}
         />
-        <span className="font-medium">Output</span>
+        <span className="font-medium">{t("chat.subagent.output")}</span>
       </div>
       {expanded && (
         <div className="mt-1 max-h-[200px] overflow-y-auto whitespace-pre-wrap rounded bg-background/50 px-2 py-1.5 text-xs leading-relaxed text-foreground">

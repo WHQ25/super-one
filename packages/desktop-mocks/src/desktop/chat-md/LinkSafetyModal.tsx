@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react"
 import { createPortal } from "react-dom"
 import { ExternalLink, Copy, Check, X } from "lucide-react"
 import { cn } from "@superone/ui/lib/utils"
+import { useMockT } from "../i18n"
 
 interface LinkSafetyModalProps {
   url: string
@@ -13,6 +14,7 @@ interface LinkSafetyModalProps {
 }
 
 export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyModalProps) {
+  const t = useMockT()
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(async () => {
@@ -54,7 +56,7 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
 
         <div className="flex items-center gap-2 text-sm font-medium">
           <ExternalLink className="size-4 shrink-0" />
-          <span>Open external link?</span>
+          <span>{t("chat.linkSafety.openExternal")}</span>
         </div>
 
         <div className={cn("break-all rounded-md bg-muted px-3 py-2 font-mono text-xs", url.length > 80 && "max-h-24 overflow-y-auto")}>
@@ -68,8 +70,8 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
             type="button"
           >
             {copied
-              ? <><Check className="size-3" /><span>Copied</span></>
-              : <><Copy className="size-3" /><span>Copy link</span></>
+              ? <><Check className="size-3" /><span>{t("chat.linkSafety.copied")}</span></>
+              : <><Copy className="size-3" /><span>{t("chat.linkSafety.copyLink")}</span></>
             }
           </button>
           <button
@@ -78,7 +80,7 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
             type="button"
           >
             <ExternalLink className="size-3" />
-            <span>Open link</span>
+            <span>{t("chat.linkSafety.openLink")}</span>
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useRef, useState, useMemo, type DragEvent, type RefObject } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAppStore } from '@/stores/app'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
@@ -66,6 +67,7 @@ interface DeleteTarget {
 }
 
 export function FileTree() {
+  const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const wtActivePath = useAppStore((s) => currentFolder ? s._worktrees[currentFolder]?.activePath : null)
   const fileRoot = wtActivePath ?? currentFolder
@@ -223,7 +225,7 @@ export function FileTree() {
       >
         {isEmpty ? (
           <div className="flex h-full items-center justify-center p-4 text-xs text-sidebar-foreground/50">
-            No files
+            {t('sidebar.noFiles')}
           </div>
         ) : (
           <div

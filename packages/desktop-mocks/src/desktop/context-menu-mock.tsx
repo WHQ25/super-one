@@ -20,6 +20,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { cn } from "@superone/ui/lib/utils"
+import { useMockT } from "./i18n"
 
 export type ContextMenuItemVariant = "default" | "destructive"
 
@@ -27,6 +28,7 @@ export interface ContextMenuItemMock {
   kind: "item"
   icon?: ReactNode
   label: string
+  labelKey?: string
   hint?: string
   variant?: ContextMenuItemVariant
   disabled?: boolean
@@ -81,7 +83,9 @@ function ContextMenuLabelRow({ children }: { children: ReactNode }) {
 }
 
 function ContextMenuItemRow({ entry }: { entry: ContextMenuItemMock }) {
+  const t = useMockT()
   const destructive = entry.variant === "destructive"
+  const label = entry.labelKey ? t(entry.labelKey) : entry.label
   return (
     <div
       className={cn(
@@ -102,7 +106,7 @@ function ContextMenuItemRow({ entry }: { entry: ContextMenuItemMock }) {
           {entry.icon}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
       {entry.hint && (
         <span className="ml-auto shrink-0 text-[10px] tracking-wider text-muted-foreground">
           {entry.hint}
@@ -118,75 +122,78 @@ function ContextMenuItemRow({ entry }: { entry: ContextMenuItemMock }) {
 const SIZE = "size-3.5"
 
 export const FILE_ROW_CONTEXT_MENU: ContextMenuEntry[] = [
-  { kind: "item", icon: <Pencil className={SIZE} />, label: "Rename" },
-  { kind: "item", icon: <AtSign className={SIZE} />, label: "Add to Chat", focused: true },
-  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Path" },
-  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Relative Path" },
-  { kind: "item", icon: <FolderOpen className={SIZE} />, label: "Open Folder" },
+  { kind: "item", icon: <Pencil className={SIZE} />, label: "Rename", labelKey: "sidebar.contextMenu.rename" },
+  { kind: "item", icon: <AtSign className={SIZE} />, label: "Add to Chat", labelKey: "sidebar.contextMenu.addToChat", focused: true },
+  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Path", labelKey: "sidebar.contextMenu.copyPath" },
+  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Relative Path", labelKey: "sidebar.contextMenu.copyRelativePath" },
+  { kind: "item", icon: <FolderOpen className={SIZE} />, label: "Open Folder", labelKey: "sidebar.contextMenu.openFolder" },
   { kind: "separator" },
-  { kind: "item", icon: <Trash2 className={SIZE} />, label: "Delete", variant: "destructive" },
+  { kind: "item", icon: <Trash2 className={SIZE} />, label: "Delete", labelKey: "sidebar.contextMenu.delete", variant: "destructive" },
 ]
 
 export const FOLDER_ROW_CONTEXT_MENU: ContextMenuEntry[] = [
-  { kind: "item", icon: <Pencil className={SIZE} />, label: "Rename" },
-  { kind: "item", icon: <AtSign className={SIZE} />, label: "Add to Chat" },
-  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Path" },
-  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Relative Path" },
+  { kind: "item", icon: <Pencil className={SIZE} />, label: "Rename", labelKey: "sidebar.contextMenu.rename" },
+  { kind: "item", icon: <AtSign className={SIZE} />, label: "Add to Chat", labelKey: "sidebar.contextMenu.addToChat" },
+  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Path", labelKey: "sidebar.contextMenu.copyPath" },
+  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Relative Path", labelKey: "sidebar.contextMenu.copyRelativePath" },
   { kind: "item", icon: <FolderOpen className={SIZE} />, label: "Reveal in Finder", focused: true },
   { kind: "separator" },
-  { kind: "item", icon: <Trash2 className={SIZE} />, label: "Delete", variant: "destructive" },
+  { kind: "item", icon: <Trash2 className={SIZE} />, label: "Delete", labelKey: "sidebar.contextMenu.delete", variant: "destructive" },
 ]
 
 export const PROJECT_ROW_CONTEXT_MENU: ContextMenuEntry[] = [
-  { kind: "item", icon: <History className={SIZE} />, label: "Session History" },
+  { kind: "item", icon: <History className={SIZE} />, label: "Session History", labelKey: "sidebar.contextMenu.sessionHistory" },
   { kind: "separator" },
   {
     kind: "item",
     icon: <Trash2 className={SIZE} />,
     label: "Remove Project",
+    labelKey: "sidebar.contextMenu.removeProject",
     variant: "destructive",
   },
 ]
 
 export const SESSION_ROW_CONTEXT_MENU: ContextMenuEntry[] = [
-  { kind: "item", icon: <Pencil className={SIZE} />, label: "Rename" },
-  { kind: "item", icon: <Pin className={SIZE} />, label: "Pin" },
-  { kind: "item", icon: <EyeOff className={SIZE} />, label: "Hide" },
+  { kind: "item", icon: <Pencil className={SIZE} />, label: "Rename", labelKey: "sidebar.contextMenu.rename" },
+  { kind: "item", icon: <Pin className={SIZE} />, label: "Pin", labelKey: "sidebar.contextMenu.pin" },
+  { kind: "item", icon: <EyeOff className={SIZE} />, label: "Hide", labelKey: "sidebar.contextMenu.hide" },
   { kind: "separator" },
   {
     kind: "item",
     icon: <PictureInPicture2 className={SIZE} />,
     label: "Open in Mini Window",
+    labelKey: "sidebar.contextMenu.openInMiniWindow",
     focused: true,
   },
   { kind: "separator" },
-  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Session ID" },
-  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Working Directory" },
-  { kind: "item", icon: <FolderOpen className={SIZE} />, label: "Open Folder" },
+  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Session ID", labelKey: "sidebar.contextMenu.copySessionId" },
+  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Working Directory", labelKey: "sidebar.contextMenu.copyWorkingDirectory" },
+  { kind: "item", icon: <FolderOpen className={SIZE} />, label: "Open Folder", labelKey: "sidebar.contextMenu.openFolder" },
   { kind: "separator" },
-  { kind: "item", icon: <Trash2 className={SIZE} />, label: "Delete", variant: "destructive" },
+  { kind: "item", icon: <Trash2 className={SIZE} />, label: "Delete", labelKey: "sidebar.contextMenu.delete", variant: "destructive" },
 ]
 
 export const AUTOMATION_ROW_CONTEXT_MENU: ContextMenuEntry[] = [
-  { kind: "item", icon: <Play className={SIZE} />, label: "Run Now", focused: true },
-  { kind: "item", icon: <Pencil className={SIZE} />, label: "Edit" },
+  { kind: "item", icon: <Play className={SIZE} />, label: "Run Now", labelKey: "sidebar.contextMenu.runNow", focused: true },
+  { kind: "item", icon: <Pencil className={SIZE} />, label: "Edit", labelKey: "sidebar.contextMenu.edit" },
   { kind: "separator" },
-  { kind: "item", icon: <Trash2 className={SIZE} />, label: "Delete", variant: "destructive" },
+  { kind: "item", icon: <Trash2 className={SIZE} />, label: "Delete", labelKey: "sidebar.contextMenu.delete", variant: "destructive" },
 ]
 
 export const TEXT_SELECTION_CONTEXT_MENU: ContextMenuEntry[] = [
-  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy" },
+  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy", labelKey: "chat.selectionMenu.copy" },
   {
     kind: "item",
     icon: <MessageSquarePlus className={SIZE} />,
     label: "Add to Chat",
+    labelKey: "chat.selectionMenu.addToChat",
     focused: true,
   },
 ]
 
 export const FILE_QUOTE_CONTEXT_MENU: ContextMenuEntry[] = [
   { kind: "label", text: "src/main/agent/session.ts · L42-L88" },
-  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy" },
+  { kind: "item", icon: <Copy className={SIZE} />, label: "Copy", labelKey: "chat.selectionMenu.copy" },
   {
     kind: "item",
     icon: <MessageSquarePlus className={SIZE} />,

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/stores/app'
 import { Check, ChevronDown, Folder, FolderOpen, Plus } from 'lucide-react'
 import {
@@ -19,6 +20,7 @@ interface ProjectSelectorProps {
 }
 
 export function ProjectSelector({ compact, mode = 'open', align = 'start' }: ProjectSelectorProps) {
+  const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
   const openFolder = useAppStore((s) => s.openFolder)
@@ -67,7 +69,7 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align} className="w-64 overflow-hidden">
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Select Project</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{t('chat.suggestions.selectProject')}</DropdownMenuLabel>
         <div className="max-h-48 overflow-y-auto">
           {recentFolders.filter((f) => !f.missing).map((folder) => (
             <DropdownMenuItem

@@ -27,6 +27,7 @@ import { Button } from "@superone/ui/components/ui/button"
 import { ScrollArea } from "@superone/ui/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@superone/ui/components/ui/tabs"
 import { cn } from "@superone/ui/lib/utils"
+import { useMockT } from "./i18n"
 
 export type SidebarTab = "sessions" | "files"
 export type SessionStatus = "idle" | "running" | "unseen" | "worktree"
@@ -80,7 +81,7 @@ const DEFAULT_PROJECTS: MockProject[] = [
 
 export function DesktopShell({
   projects = DEFAULT_PROJECTS,
-  headerTitle = "New Session",
+  headerTitle,
   sidebarTab = "sessions",
   fileTree,
   showTrafficLights = true,
@@ -89,6 +90,8 @@ export function DesktopShell({
   children,
   className,
 }: DesktopShellProps) {
+  const t = useMockT()
+  const resolvedHeaderTitle = headerTitle ?? t("sidebar.newSession")
   return (
     <div
       className={cn(
@@ -105,7 +108,7 @@ export function DesktopShell({
         showActivityPanelToggle={showActivityPanelToggle}
       />
       <div className="flex min-w-0 flex-1 flex-col bg-card">
-        <DesktopMainHeader title={headerTitle} />
+        <DesktopMainHeader title={resolvedHeaderTitle} />
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
       </div>
     </div>
@@ -188,6 +191,7 @@ function Sidebar({
   width?: number | string
   layoutToggleSide?: "right" | "left"
 }) {
+  const t = useMockT()
   const showFileTree = sidebarTab === "files" && !!fileTree
   const resolvedWidth = width ?? 320
   return (
@@ -207,7 +211,7 @@ function Sidebar({
           className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:border-border"
         >
           <SquarePen className="size-3.5" />
-          New session
+          {t("sidebar.newSession")}
         </Button>
       </div>
 
@@ -215,11 +219,11 @@ function Sidebar({
         <TabsList variant="sidebar">
           <TabsTrigger value="sessions" className="py-1">
             <MessageSquare className="size-3.5" />
-            Sessions
+            {t("sidebar.tabs.sessions")}
           </TabsTrigger>
           <TabsTrigger value="files" className="py-1">
             <Folder className="size-3.5" />
-            Files
+            {t("sidebar.tabs.files")}
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -232,7 +236,7 @@ function Sidebar({
         ) : (
           <>
             <div className="flex items-center justify-between pl-4 pr-3 pt-1.5 pb-0.5">
-              <span className="text-sm font-medium text-sidebar-foreground/40">Projects</span>
+              <span className="text-sm font-medium text-sidebar-foreground/40">{t("sidebar.projects")}</span>
               <div className="flex items-center gap-0.5">
                 <Button
                   size="icon-xs"
@@ -269,6 +273,7 @@ function Sidebar({
 }
 
 function ProjectRow({ project }: { project: MockProject }) {
+  const t = useMockT()
   const isExpanded = project.expanded ?? false
   const Icon = isExpanded ? FolderOpen : Folder
   return (
@@ -290,7 +295,7 @@ function ProjectRow({ project }: { project: MockProject }) {
         <div className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
           <button
             className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
-            aria-label="New session"
+            aria-label={t("sidebar.newSession")}
           >
             <SquarePen className="size-4" />
           </button>
@@ -344,11 +349,12 @@ function SessionStatusIcon({ status }: { status?: SessionStatus }) {
 }
 
 function SidebarFooter() {
+  const t = useMockT()
   return (
     <div className="flex items-center gap-1 px-3 py-2">
       <button
         className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        aria-label="Settings"
+        aria-label={t("sidebar.settings")}
       >
         <Settings className="size-3.5" />
       </button>
@@ -392,11 +398,12 @@ function LayoutToggleMock({
   showActivityPanelToggle: boolean
   side?: "right" | "left"
 }) {
+  const t = useMockT()
   return (
     <div className="mr-2 flex items-center gap-0.5">
       <button
         type="button"
-        aria-label="Toggle sidebar"
+        aria-label={t("tooltips.toggleSidebar")}
         className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <PanelLeftDashed className="size-3.5" />

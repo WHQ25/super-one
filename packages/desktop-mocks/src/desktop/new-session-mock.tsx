@@ -9,6 +9,7 @@ import { cn } from "@superone/ui/lib/utils"
 import { ClaudeAgentIcon, CodexAgentIcon, type Harness } from "./icons"
 import { DesktopShell, type DesktopShellProps } from "./desktop-shell"
 import { ChatInputMock } from "./chat-input-mock"
+import { useMockT } from "./i18n"
 
 export interface NewSessionMockProps extends Omit<DesktopShellProps, "children" | "headerTitle"> {
   harness?: Harness
@@ -20,11 +21,6 @@ export interface NewSessionMockProps extends Omit<DesktopShellProps, "children" 
   recentProjectsOpen?: boolean
   selectedProject?: string
   recentProjects?: string[]
-}
-
-const HARNESS_LABEL: Record<Harness, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
 }
 
 const DEFAULT_RECENT_PROJECTS = ["super-one", "marketing-site", "experiments", "miniapp-playground"]
@@ -41,6 +37,7 @@ export function NewSessionMock({
   recentProjects = DEFAULT_RECENT_PROJECTS,
   ...shellProps
 }: NewSessionMockProps) {
+  const t = useMockT()
   const [internalHarness, setInternalHarness] = useState<Harness>(defaultHarness)
   const harness = harnessProp ?? internalHarness
   const isControlled = harnessProp !== undefined
@@ -68,7 +65,7 @@ export function NewSessionMock({
             exit={{ opacity: 0, y: -4 }}
             duration={0.25}
           >
-            <span className="text-xs text-muted-foreground">Powered by</span>
+            <span className="text-xs text-muted-foreground">{t("chat.suggestions.poweredBy")}</span>
             {harness === "claude" ? (
               <span className="inline-flex items-center gap-1.5">
                 <Claude.Color size={12} />
@@ -87,10 +84,10 @@ export function NewSessionMock({
           <Tabs value={harness} onValueChange={(v) => handleChange(v as Harness)}>
             <TabsList className="rounded-lg p-1">
               <TabsTrigger value="claude" className="rounded-md px-3 py-1.5 text-xs">
-                {HARNESS_LABEL.claude}
+                {t("settings.layout.providers.claude")}
               </TabsTrigger>
               <TabsTrigger value="codex" className="rounded-md px-3 py-1.5 text-xs">
-                {HARNESS_LABEL.codex}
+                {t("settings.layout.providers.codex")}
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -161,6 +158,7 @@ interface RecentProjectsButtonProps {
 }
 
 function RecentProjectsButton({ projects, selected, controlledOpen }: RecentProjectsButtonProps) {
+  const t = useMockT()
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen ?? internalOpen
   const isControlled = controlledOpen !== undefined
@@ -180,7 +178,7 @@ function RecentProjectsButton({ projects, selected, controlledOpen }: RecentProj
       </button>
       {open && (
         <div className="absolute top-full z-10 mt-1 w-64 overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-md">
-          <div className="px-2 py-1.5 text-xs font-normal text-muted-foreground">Select Project</div>
+          <div className="px-2 py-1.5 text-xs font-normal text-muted-foreground">{t("chat.suggestions.selectProject")}</div>
           {projects.map((name) => (
             <div
               key={name}
@@ -196,7 +194,7 @@ function RecentProjectsButton({ projects, selected, controlledOpen }: RecentProj
           <div className="my-1 h-px bg-border" />
           <div className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-popover-foreground transition-colors hover:bg-accent">
             <Plus className="size-4 shrink-0" />
-            <span>Add Project...</span>
+            <span>{t("chat.suggestions.addProject")}</span>
           </div>
         </div>
       )}

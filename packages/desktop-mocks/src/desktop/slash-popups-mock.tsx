@@ -35,6 +35,7 @@ import {
   Zhipu,
 } from "@lobehub/icons"
 import { cn } from "@superone/ui/lib/utils"
+import { useMockT } from "./i18n"
 
 function PanelShell({ className, children }: { className?: string; children: ReactNode }) {
   return (
@@ -407,6 +408,7 @@ export function McpSlashPopupMock({
   harness = "claude",
   className,
 }: McpSlashPopupMockProps) {
+  const t = useMockT()
   const harnessLabel = harness === "codex" ? "Codex" : "Claude"
   const meta =
     variant === "live"
@@ -441,7 +443,7 @@ export function McpSlashPopupMock({
 
   return (
     <PanelShell className={className}>
-      <PanelHeader title="MCP Servers" meta={meta} metaTone={metaTone} right={iconButtons} />
+      <PanelHeader title={t("chat.mcpPopup.title")} meta={meta} metaTone={metaTone} right={iconButtons} />
 
       <div className="min-h-0 flex-1 overflow-y-auto p-1">
         {variant === "loading" && (

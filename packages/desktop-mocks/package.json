@@ -14,6 +14,7 @@
     "@streamdown/math": "^1.0.2",
     "@superone/ui": "workspace:*",
     "hast-util-sanitize": "^5.0.2",
+    "@superone/shared": "workspace:*",
     "katex": "^0.16.38",
     "mermaid": "^11.12.3",
     "react-i18next": "^17.0.4",

@@ -164,3 +164,10 @@ export {
   HARNESS_CODEX_HUE,
   type BrandScopeProps,
 } from "./brand-scope"
+export {
+  MockLocaleProvider,
+  useMockT,
+  useMockLocale,
+  createT,
+  type MockT,
+} from "./i18n"

@@ -5,6 +5,7 @@ import { Button } from "@superone/ui/components/ui/button"
 import { Kbd } from "@superone/ui/components/ui/kbd"
 import { cn } from "@superone/ui/lib/utils"
 import { MockMarkdown } from "./mock-markdown"
+import { useMockT } from "./i18n"
 
 export interface MockQuestionOption {
   label: string
@@ -38,6 +39,7 @@ export function AskUserQuestionMock({
   feedbackFocused = false,
   className,
 }: AskUserQuestionMockProps) {
+  const t = useMockT()
   const singleQuestion = questions.length === 1
   const activeQuestion = questions[Math.min(activeTabIndex, questions.length - 1)] ?? questions[0]
   if (!activeQuestion) return null
@@ -97,7 +99,7 @@ export function AskUserQuestionMock({
             "h-7 cursor-pointer bg-primary px-4 text-xs text-primary-foreground hover:bg-primary/90 dark:bg-blue-600 dark:text-white disabled:opacity-50",
           )}
         >
-          Submit
+          {t("chat.askUser.submit")}
           <Kbd variant="inline" className="ml-1 text-primary-foreground/70 dark:text-white/70">
             ↵
           </Kbd>
@@ -106,31 +108,31 @@ export function AskUserQuestionMock({
           {!singleQuestion && (
             <>
               <Kbd>⇥</Kbd>
-              <span>switch</span>
+              <span>{t("chat.askUser.hintSwitch")}</span>
               <span className="opacity-40">·</span>
             </>
           )}
           {hasPreview && selections[activeKey] && (
             <>
               <Kbd>n</Kbd>
-              <span>note</span>
+              <span>{t("chat.askUser.hintNote")}</span>
               <span className="opacity-40">·</span>
             </>
           )}
           {feedbackFocused ? (
             <>
               <Kbd>ctrl</Kbd>+<Kbd>num</Kbd>
-              <span>select</span>
+              <span>{t("chat.askUser.hintSelect")}</span>
             </>
           ) : (
             <>
               <Kbd>num</Kbd>
-              <span>select</span>
+              <span>{t("chat.askUser.hintSelect")}</span>
             </>
           )}
           <span className="opacity-40">·</span>
           <Kbd>esc</Kbd>
-          <span>dismiss</span>
+          <span>{t("chat.askUser.hintDismiss")}</span>
         </span>
       </div>
     </div>
@@ -172,6 +174,7 @@ function SimplePanel({
   selection?: string
   otherText: string
 }) {
+  const t = useMockT()
   const sel = selection ?? ""
   const selectedLabels = q.multiSelect ? sel.split(", ").filter(Boolean) : sel ? [sel] : []
   const description = !q.multiSelect && sel
@@ -196,7 +199,7 @@ function SimplePanel({
           {q.options.length + 1}
         </Kbd>
         <div className="flex h-7 w-full items-center rounded bg-muted pl-[30px] pr-2 text-xs text-foreground">
-          {otherText || <span className="text-muted-foreground">Other…</span>}
+          {otherText || <span className="text-muted-foreground">{t("chat.askUser.otherOption")}</span>}
         </div>
       </div>
       {description && (
@@ -217,6 +220,7 @@ function PreviewPanel({
   selection?: string
   noteText?: string
 }) {
+  const t = useMockT()
   const sel = selection ?? q.options[0]?.label ?? ""
   const lastLabel = q.multiSelect ? sel.split(", ").pop() ?? "" : sel
   const previewContent = q.options.find((o) => o.label === lastLabel)?.preview
@@ -240,7 +244,7 @@ function PreviewPanel({
             <Kbd variant="square" className="mr-1.5">
               {q.options.length + 1}
             </Kbd>
-            Other…
+            {t("chat.askUser.otherOption")}
           </div>
         </div>
         <div className="min-w-0 flex-1">
@@ -250,7 +254,7 @@ function PreviewPanel({
             </div>
           ) : (
             <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border/30 p-3 text-xs text-muted-foreground">
-              Select an option to preview
+              {t("chat.askUser.selectOptionPreview")}
             </div>
           )}
           {previewContent && sel && (
@@ -262,7 +266,7 @@ function PreviewPanel({
                 n
               </Kbd>
               <div className="flex h-7 w-full items-center rounded bg-muted pl-[30px] pr-2 text-xs text-foreground">
-                {noteText || <span className="text-muted-foreground">Add a note (optional)</span>}
+                {noteText || <span className="text-muted-foreground">{t("chat.askUser.noteOptionalPlaceholder")}</span>}
               </div>
             </div>
           )}

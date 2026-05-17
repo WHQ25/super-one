@@ -5,6 +5,8 @@ import { initReactI18next } from 'react-i18next'
 import '../src/renderer/src/styles/index.css'
 import { installIpcMocks } from './mock-ipc'
 import { resources } from '@superone/shared/i18n'
+import type { Locale } from '@superone/shared/agent-types'
+import { MockLocaleProvider } from '@superone/desktop-mocks'
 
 const sbOverrideStyle = document.createElement('style')
 sbOverrideStyle.textContent = 'html, body { overflow: auto !important; }'
@@ -98,10 +100,11 @@ const HarnessThemeBridge: React.FC<{ children: React.ReactNode }> = ({ children 
 
 const ThemeDecorator = (
   Story: React.ComponentType,
-  ctx: { globals: { theme?: 'light' | 'dark'; harness?: HarnessId } },
+  ctx: { globals: { theme?: 'light' | 'dark'; harness?: HarnessId; locale?: Locale } },
 ) => {
   const theme = ctx.globals.theme ?? 'light'
   const harness: HarnessId = ctx.globals.harness ?? 'claude'
+  const locale: Locale = ctx.globals.locale ?? 'en'
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -111,12 +114,18 @@ const ThemeDecorator = (
     applyHarness(harness)
   }, [harness])
 
+  useEffect(() => {
+    if (i18n.language !== locale) void i18n.changeLanguage(locale)
+  }, [locale])
+
   return (
     <HarnessThemeBridge>
-      <div className="bg-background text-foreground min-h-screen p-6">
-        <Story />
-        {theme === 'light' && <BrandHueDial harness={harness} />}
-      </div>
+      <MockLocaleProvider locale={locale}>
+        <div className="bg-background text-foreground min-h-screen p-6">
+          <Story />
+          {theme === 'light' && <BrandHueDial harness={harness} />}
+        </div>
+      </MockLocaleProvider>
     </HarnessThemeBridge>
   )
 }
@@ -152,6 +161,19 @@ const preview: Preview = {
         items: [
           { value: 'claude', title: 'Claude' },
           { value: 'codex', title: 'Codex' },
+        ],
+        dynamicTitle: true,
+      },
+    },
+    locale: {
+      description: 'Language',
+      defaultValue: 'en',
+      toolbar: {
+        title: 'Language',
+        icon: 'globe',
+        items: [
+          { value: 'en', title: 'English' },
+          { value: 'zh', title: '中文' },
         ],
         dynamicTitle: true,
       },

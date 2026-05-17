@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Brain, ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { useMockT } from "../i18n"
 
 export function ReasoningBlock({
   text,
@@ -19,6 +20,7 @@ export function ReasoningBlock({
   frame?: number
   fps?: number
 }) {
+  const t = useMockT()
   const [elapsed, setElapsed] = useState(0)
   const startRef = useRef(!blockDone ? Date.now() : 0)
   const [expanded, setExpanded] = useState(showContent && (!blockDone || !collapseOnDone))
@@ -60,8 +62,8 @@ export function ReasoningBlock({
 
   const active = !blockDone
   const label = active
-    ? (elapsed >= 1 ? `Thinking for ${elapsed}s...` : 'Thinking...')
-    : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')
+    ? (elapsed >= 1 ? t("chat.reasoning.thinkingSeconds", { count: elapsed }) : t("chat.reasoning.thinking"))
+    : (startRef.current > 0 && elapsed >= 1 ? t("chat.reasoning.thoughtSeconds", { count: elapsed }) : t("chat.reasoning.thought"))
 
   const frameDriven = frame !== undefined && fps !== undefined && fps > 0
   const breathingOpacity = frameDriven

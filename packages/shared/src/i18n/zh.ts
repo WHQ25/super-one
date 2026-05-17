@@ -28,6 +28,7 @@ export const zh: Messages = {
       added: '添加时间',
     },
     empty: '还没有项目',
+    noFiles: '没有文件',
     settings: '设置',
     remote: {
       connected: '已连接',
@@ -78,6 +79,9 @@ export const zh: Messages = {
       sessionIdCopiedToast: '已复制会话 ID',
       sessionIdNotReadyToast: '会话 ID 尚未就绪 — 已复制内部 ID',
       workingDirCopiedToast: '已复制工作目录',
+      addToChat: '添加到对话',
+      copyPath: '复制路径',
+      copyRelativePath: '复制相对路径',
     },
   },
   shell: {
@@ -305,6 +309,7 @@ export const zh: Messages = {
       openProject: '打开一个项目以开始使用',
       addProject: '添加项目',
       poweredBy: 'Powered by',
+      selectProject: '选择项目',
     },
     additionalDirs: {
       label: '附加目录',
@@ -520,6 +525,22 @@ export const zh: Messages = {
     },
     slashCommand: {
       skillBadge: '技能',
+    },
+    linkSafety: {
+      openExternal: '打开外部链接？',
+      copyLink: '复制链接',
+      copied: '已复制',
+      openLink: '打开链接',
+    },
+    reasoning: {
+      thinking: '思考中...',
+      thinkingSeconds: '已思考 {{count}} 秒...',
+      thought: '已思考',
+      thoughtSeconds: '思考了 {{count}} 秒',
+    },
+    mermaid: {
+      label: 'Mermaid',
+      error: 'Mermaid 错误：',
     },
   },
   resources: {

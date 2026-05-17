@@ -1,4 +1,5 @@
 import { useCallback, useRef, useEffect, useState, memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronRight, Pencil, FolderOpen, Trash2, Copy, AtSign } from 'lucide-react'
 import { FileIcon, FolderIcon } from '@superone/ui/components/ui/FileIcon'
 import {
@@ -114,6 +115,7 @@ export const TreeRow = memo(function TreeRow({
   isRenaming: boolean
   onDeleteRequest: (item: VisibleItem) => void
 }) {
+  const { t } = useTranslation()
   const toggleDir = useFileTreeStore((s) => s.toggleDir)
   const setRenamingPath = useFileTreeStore((s) => s.setRenamingPath)
   const copyFilesIn = useFileTreeStore((s) => s.copyFilesIn)
@@ -308,7 +310,7 @@ export const TreeRow = memo(function TreeRow({
       <ContextMenuContent>
         <ContextMenuItem onClick={() => setRenamingPath(item.path)}>
           <Pencil className="mr-2 size-3.5" />
-          Rename
+          {t('sidebar.contextMenu.rename')}
         </ContextMenuItem>
         <ContextMenuItem onClick={() => {
           chatInputAPI.insertMention?.(
@@ -318,19 +320,19 @@ export const TreeRow = memo(function TreeRow({
           )
         }}>
           <AtSign className="mr-2 size-3.5" />
-          Add to Chat
+          {t('sidebar.contextMenu.addToChat')}
         </ContextMenuItem>
         <ContextMenuItem onClick={() => navigator.clipboard.writeText(`${currentFolder}/${item.path}`)}>
           <Copy className="mr-2 size-3.5" />
-          Copy Path
+          {t('sidebar.contextMenu.copyPath')}
         </ContextMenuItem>
         <ContextMenuItem onClick={() => navigator.clipboard.writeText(item.path)}>
           <Copy className="mr-2 size-3.5" />
-          Copy Relative Path
+          {t('sidebar.contextMenu.copyRelativePath')}
         </ContextMenuItem>
         <ContextMenuItem onClick={() => window.app.showInFolder(currentFolder, item.path)}>
           <FolderOpen className="mr-2 size-3.5" />
-          Open Folder
+          {t('sidebar.contextMenu.openFolder')}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
@@ -338,7 +340,7 @@ export const TreeRow = memo(function TreeRow({
           onClick={() => onDeleteRequest(item)}
         >
           <Trash2 className="mr-2 size-3.5" />
-          Delete
+          {t('sidebar.contextMenu.delete')}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

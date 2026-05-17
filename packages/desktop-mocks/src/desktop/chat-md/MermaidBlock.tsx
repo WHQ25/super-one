@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { useTranslation } from 'react-i18next'
 import { Check, Code, Copy, Expand, Eye, Loader2 } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import mermaid from 'mermaid'
 import { useIsDark } from './use-is-dark'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { MermaidFullscreen } from './MermaidFullscreen'
+import { useMockT } from "../i18n"
 
 export const MAX_H = 500
 export const OVERFLOW_THRESHOLD = 0.3
@@ -87,7 +87,7 @@ interface MermaidBlockProps {
 }
 
 export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps) {
-  const { t } = useTranslation()
+  const t = useMockT()
   const isDark = useIsDark()
   const [svg, setSvg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -148,7 +148,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
 
   const toolbar = (
     <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-muted-foreground">
-      <span className="opacity-50">Mermaid</span>
+      <span className="opacity-50">{t("chat.mermaid.label")}</span>
       <div className="flex items-center gap-1">
         {svg && (
           <button
@@ -182,7 +182,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
     return (
       <div data-chat-codeblock className="my-1.5 overflow-hidden rounded-md border border-destructive/30 bg-destructive/5">
         {toolbar}
-        <p className="px-3 pb-3 text-xs text-destructive">Mermaid Error: {error}</p>
+        <p className="px-3 pb-3 text-xs text-destructive">{t("chat.mermaid.error")} {error}</p>
       </div>
     )
   }

@@ -24,6 +24,7 @@ import { Button } from "@superone/ui/components/ui/button"
 import { Kbd } from "@superone/ui/components/ui/kbd"
 import { cn } from "@superone/ui/lib/utils"
 import { EditDiffBody, type ToolBlockSpec } from "./tool-block-mock"
+import { useMockT } from "./i18n"
 
 export type PermissionAction = "allow" | "always_allow" | "deny" | "decline" | "cancel"
 
@@ -77,6 +78,7 @@ export function PermissionPromptMock({
   dangerouslyDisableSandbox = false,
   className,
 }: PermissionPromptMockProps) {
+  const t = useMockT()
   if (mode === "sandbox_network" && sandboxNetwork) {
     return (
       <div className={cn("@container mx-3 mb-2", className)}>
@@ -159,10 +161,10 @@ export function PermissionPromptMock({
             </div>
           )}
           <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
-            <ActionPill color="green" label="Allow" focused={focusedAction === "allow"} />
-            <ActionPill color="blue" label="Always allow" focused={focusedAction === "always_allow"} />
-            <ActionPill color="red" label="Decline" focused={focusedAction === "decline"} />
-            <ActionPill color="ghost" label="Cancel" focused={focusedAction === "cancel"} />
+            <ActionPill color="green" label={t("chat.permission.allow")} focused={focusedAction === "allow"} />
+            <ActionPill color="blue" label={t("chat.permission.alwaysAllow")} focused={focusedAction === "always_allow"} />
+            <ActionPill color="red" label={t("chat.permission.decline")} focused={focusedAction === "decline"} />
+            <ActionPill color="ghost" label={t("common.cancel")} focused={focusedAction === "cancel"} />
           </div>
         </div>
       </div>
@@ -222,7 +224,7 @@ export function PermissionPromptMock({
 
         {blockedPath && (
           <p className="mb-2 break-all text-xs text-amber-600 dark:text-amber-400">
-            Blocked path: {blockedPath}
+            {t("chat.permission.blockedPath", { path: blockedPath })}
           </p>
         )}
 
@@ -233,15 +235,15 @@ export function PermissionPromptMock({
         <div className="flex flex-col gap-2">
           {mode === "codex_decision" ? (
             <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
-              <ActionPill color="green" label="Allow" kbd="⏎" focused={focusedAction === "allow"} />
+              <ActionPill color="green" label={t("chat.permission.allow")} kbd="⏎" focused={focusedAction === "allow"} />
               <ActionPill
                 color="blue"
-                label="Allow for session"
+                label={t("chat.permission.allowForSession")}
                 kbd="⇧↵"
                 focused={focusedAction === "always_allow"}
               />
-              <ActionPill color="red" label="Decline" kbd="esc" focused={focusedAction === "decline"} />
-              <ActionPill color="ghost" label="Cancel" focused={focusedAction === "cancel"} />
+              <ActionPill color="red" label={t("chat.permission.decline")} kbd="esc" focused={focusedAction === "decline"} />
+              <ActionPill color="ghost" label={t("common.cancel")} focused={focusedAction === "cancel"} />
             </div>
           ) : (
             <DefaultActions
@@ -290,6 +292,7 @@ function DefaultActions({
   feedbackPlaceholder: string
   suggestionCount?: number
 }) {
+  const t = useMockT()
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button
@@ -299,7 +302,7 @@ function DefaultActions({
           focusedAction === "allow" && "ring-2 ring-green-600/60 ring-offset-1 ring-offset-muted/60",
         )}
       >
-        Allow
+        {t("chat.permission.allow")}
         {suggestionCount > 0 && (
           <span className="ml-1 text-[10px] text-green-200/80">+{suggestionCount}</span>
         )}
@@ -314,7 +317,7 @@ function DefaultActions({
           focusedAction === "deny" && "ring-2 ring-red-600/60 ring-offset-1 ring-offset-muted/60",
         )}
       >
-        Deny
+        {t("chat.permission.deny")}
         <Kbd variant="inline" className="ml-1 text-red-200/80">
           esc
         </Kbd>

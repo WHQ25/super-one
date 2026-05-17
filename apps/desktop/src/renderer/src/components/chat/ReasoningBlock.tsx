@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Brain, ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 
@@ -15,6 +16,7 @@ export function ReasoningBlock({
   collapseOnDone?: boolean
   isFirst?: boolean
 }) {
+  const { t } = useTranslation()
   const [elapsed, setElapsed] = useState(0)
   const startRef = useRef(!blockDone ? Date.now() : 0)
   const [expanded, setExpanded] = useState(showContent && (!blockDone || !collapseOnDone))
@@ -56,8 +58,8 @@ export function ReasoningBlock({
 
   const active = !blockDone
   const label = active
-    ? (elapsed >= 1 ? `Thinking for ${elapsed}s...` : 'Thinking...')
-    : (startRef.current > 0 && elapsed >= 1 ? `Thought for ${elapsed}s` : 'Thought')
+    ? (elapsed >= 1 ? t('chat.reasoning.thinkingSeconds', { count: elapsed }) : t('chat.reasoning.thinking'))
+    : (startRef.current > 0 && elapsed >= 1 ? t('chat.reasoning.thoughtSeconds', { count: elapsed }) : t('chat.reasoning.thought'))
 
   return (
     <div className={cn('thinking-node mb-2', isFirst ? 'mt-0' : 'mt-2')}>

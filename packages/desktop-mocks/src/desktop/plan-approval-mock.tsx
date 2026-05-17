@@ -13,6 +13,7 @@ import { Button } from "@superone/ui/components/ui/button"
 import { Kbd } from "@superone/ui/components/ui/kbd"
 import { cn } from "@superone/ui/lib/utils"
 import { MockMarkdown } from "./mock-markdown"
+import { useMockT } from "./i18n"
 
 export type PlanApprovalAction = "approve" | "reject" | "toggle"
 
@@ -37,6 +38,7 @@ export function PlanApprovalMock({
   feedbackPlaceholder = "Tell Claude what to change about the plan",
   className,
 }: PlanApprovalMockProps) {
+  const t = useMockT()
   const isAutoTarget = fastModeTarget === "auto"
   const approveBtn = switchAfterApproval
     ? {
@@ -77,7 +79,7 @@ export function PlanApprovalMock({
         {allowedPrompts.length > 0 && (
           <div>
             <div className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
-              Requested permissions
+              {t("chat.plan.requestedPermissions")}
             </div>
             <div className="flex flex-wrap gap-1.5">
               {allowedPrompts.map((p, i) => (
@@ -114,7 +116,7 @@ export function PlanApprovalMock({
             )}
           >
             <X className="size-3" />
-            Reject
+            {t("chat.plan.reject")}
             <Kbd variant="inline" className="ml-1 text-red-200/80">esc</Kbd>
           </Button>
           <div className="relative flex flex-1 items-center">
@@ -148,7 +150,7 @@ export function PlanApprovalMock({
             <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
           )}
           <span className="flex min-w-0 items-center gap-1">
-            <span>Switch to</span>
+            <span>{t("chat.plan.switchTo")}</span>
             <span
               className={cn(
                 "inline-flex items-center gap-0.5 font-medium",
@@ -156,9 +158,9 @@ export function PlanApprovalMock({
               )}
             >
               {isAutoTarget ? <Zap className="size-3" /> : <FastForward className="size-3" />}
-              {isAutoTarget ? "Auto" : "Accept edits"}
+              {isAutoTarget ? t("chat.plan.auto") : t("chat.plan.acceptEdits")}
             </span>
-            <span>after approval</span>
+            <span>{t("chat.plan.afterApproval")}</span>
           </span>
           <Kbd variant="square" className="ml-auto">1</Kbd>
         </button>

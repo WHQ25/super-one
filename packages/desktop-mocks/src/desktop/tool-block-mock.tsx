@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@superone/ui/lib/utils"
+import { useMockT } from "./i18n"
 import { ShimmerText } from "./shimmer-text"
 import { RollingNumber } from "./rolling-number"
 import { inferLanguage, useHighlightedLines, type DiffHLLine } from "./diff-highlight"
@@ -215,6 +216,7 @@ export function ToolBlockMock({
   className,
 }: ToolBlockMockProps) {
   const [internalExpanded, setInternalExpanded] = useState(defaultExpanded)
+  const t = useMockT()
   if (spec.variant === "banner") {
     return <BannerBlock kind={spec.kind} feedback={spec.feedback} />
   }
@@ -344,7 +346,7 @@ export function ToolBlockMock({
         )}
         {isDenied && (
           <span className="shrink-0 rounded bg-red-500/20 px-1 py-px text-[10px] text-red-600 dark:text-red-400">
-            Denied
+            {t("chat.toolBlock.denied")}
           </span>
         )}
         {meta.body && (
@@ -557,11 +559,12 @@ function BannerBlock({
   kind: "enterPlanMode" | "planApproved" | "planRejected" | "planPending"
   feedback?: string
 }) {
+  const t = useMockT()
   if (kind === "enterPlanMode") {
     return (
       <div className="my-4 flex items-center gap-1.5 rounded bg-blue-500/10 px-2 py-1.5 text-sm">
         <PenLine className="size-3 shrink-0 text-blue-600 dark:text-blue-400" />
-        <span className="font-medium text-blue-600 dark:text-blue-400">Entered plan mode</span>
+        <span className="font-medium text-blue-600 dark:text-blue-400">{t("chat.toolBlock.enteredPlanMode")}</span>
       </div>
     )
   }
@@ -577,7 +580,7 @@ function BannerBlock({
     return (
       <div className="my-4 flex items-center gap-1.5 rounded bg-green-500/10 px-2 py-1.5 text-sm">
         <PenLine className="size-3 shrink-0 text-green-600 dark:text-green-400" />
-        <span className="font-medium text-green-600 dark:text-green-400">Plan Approved</span>
+        <span className="font-medium text-green-600 dark:text-green-400">{t("chat.plan.planApproved")}</span>
         <Check className="ml-auto size-3 shrink-0 text-green-600 dark:text-green-400" />
       </div>
     )
@@ -586,7 +589,7 @@ function BannerBlock({
     <div className="my-4 rounded bg-red-500/10 px-2 py-1.5 text-sm">
       <div className="flex items-center gap-1.5">
         <PenLine className="size-3 shrink-0 text-red-600 dark:text-red-400" />
-        <span className="font-medium text-red-600 dark:text-red-400">Plan Rejected</span>
+        <span className="font-medium text-red-600 dark:text-red-400">{t("chat.plan.planRejected")}</span>
         <X className="ml-auto size-3 shrink-0 text-red-600 dark:text-red-400" />
       </div>
       {feedback && (
@@ -611,6 +614,7 @@ function BashBody({
   fps: number
   streamStartFrame?: number
 }) {
+  const t = useMockT()
   const elapsedSec =
     isStreaming && frame !== undefined && streamStartFrame !== undefined
       ? Math.max(0, Math.floor((frame - streamStartFrame) / fps))
@@ -628,7 +632,7 @@ function BashBody({
           <div className="text-[#8b949e]">{output}</div>
         ) : isStreaming ? (
           <div className="text-[#8b949e]">
-            <ShimmerText frame={frame} fps={fps}>Running…</ShimmerText>
+            <ShimmerText frame={frame} fps={fps}>{t("chat.toolBlock.runningInline")}</ShimmerText>
             {elapsedSec >= 1 && (
               <span className="text-[#6e7681]"> {elapsedSec}s</span>
             )}
@@ -890,10 +894,11 @@ function QABody({ pairs }: { pairs: Array<{ question: string; answer: string }> 
 }
 
 export function SandboxNetworkBanner({ host }: { host: string }) {
+  const t = useMockT()
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs">
       <ShieldAlert className="size-3 shrink-0 text-amber-500" />
-      <span className="font-medium text-amber-500">Sandbox network</span>
+      <span className="font-medium text-amber-500">{t("chat.permission.sandboxNetwork")}</span>
       <span className="font-mono text-muted-foreground">{host}</span>
     </div>
   )

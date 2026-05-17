@@ -22,6 +22,7 @@ import {
   Zap,
 } from "lucide-react"
 import { cn } from "@superone/ui/lib/utils"
+import { useMockT } from "./i18n"
 
 export interface PopoverShellProps {
   width?: number
@@ -113,12 +114,13 @@ const DEFAULT_CLAUDE_MODELS: ModelEntry[] = [
 export function ModelSelectorPopoverMock({
   models = DEFAULT_CLAUDE_MODELS,
   activeId = "opus-4-7-1m",
-  title = "Select Model",
+  title,
   className,
 }: ModelSelectorPopoverMockProps) {
+  const t = useMockT()
   return (
     <PopoverShell width={272} className={className}>
-      <PopoverTitle>{title}</PopoverTitle>
+      <PopoverTitle>{title ?? t("tooltips.selectModel")}</PopoverTitle>
       {models.map((model) => {
         const active = model.id === activeId
         return (
@@ -136,14 +138,6 @@ export function ModelSelectorPopoverMock({
 
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max"
 
-const EFFORT_LABELS: Record<EffortLevel, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra High",
-  max: "Max",
-}
-
 export interface EffortSelectorPopoverMockProps {
   levels?: EffortLevel[]
   activeLevel?: EffortLevel
@@ -154,17 +148,18 @@ export interface EffortSelectorPopoverMockProps {
 export function EffortSelectorPopoverMock({
   levels = ["low", "medium", "high", "xhigh", "max"],
   activeLevel = "xhigh",
-  title = "Thinking Effort",
+  title,
   className,
 }: EffortSelectorPopoverMockProps) {
+  const t = useMockT()
   return (
     <PopoverShell width={192} className={className}>
-      <PopoverTitle>{title}</PopoverTitle>
+      <PopoverTitle>{title ?? t("tooltips.thinkingEffort")}</PopoverTitle>
       {levels.map((level) => {
         const active = level === activeLevel
         return (
           <PopoverItem key={level} active={active}>
-            <div className="font-medium">{EFFORT_LABELS[level]}</div>
+            <div className="font-medium">{t(`settings.preferences.effort.levels.${level}`)}</div>
           </PopoverItem>
         )
       })}
@@ -243,12 +238,13 @@ export interface PermissionModePopoverMockProps {
 export function PermissionModePopoverMock({
   activeId = "default",
   autoBlockedMessage,
-  title = "Permission Mode",
+  title,
   className,
 }: PermissionModePopoverMockProps) {
+  const t = useMockT()
   return (
     <PopoverShell width={208} className={className}>
-      <PopoverTitle>{title}</PopoverTitle>
+      <PopoverTitle>{title ?? t("chat.permissionModeTitle")}</PopoverTitle>
       {PERMISSION_MODES_DATA.map((mode) => {
         const isAutoBlocked = mode.id === "auto" && !!autoBlockedMessage
         const showDivider = mode.id === "dontAsk"
@@ -263,10 +259,10 @@ export function PermissionModePopoverMock({
             >
               <div className={cn("flex items-center gap-1.5 font-medium", mode.color)}>
                 {mode.icon}
-                {mode.label}
+                {t(`chat.permissionModes.${mode.id}.label`)}
               </div>
               <div className="mt-0.5 text-[10px] text-muted-foreground">
-                {isAutoBlocked ? autoBlockedMessage : mode.description}
+                {isAutoBlocked ? autoBlockedMessage : t(`chat.permissionModes.${mode.id}.description`)}
               </div>
             </PopoverItem>
           </div>
@@ -320,12 +316,13 @@ export interface SandboxModePopoverMockProps {
 export function SandboxModePopoverMock({
   activeId = "on",
   notReadyHint,
-  title = "Sandbox Mode",
+  title,
   className,
 }: SandboxModePopoverMockProps) {
+  const t = useMockT()
   return (
     <PopoverShell width={224} className={className}>
-      <PopoverTitle>{title}</PopoverTitle>
+      <PopoverTitle>{title ?? t("chat.sandboxModeTitle")}</PopoverTitle>
       {SANDBOX_MODES_DATA.map((mode) => {
         const active = mode.id === activeId
         return (
@@ -336,9 +333,9 @@ export function SandboxModePopoverMock({
           >
             <div className={cn("flex items-center gap-1.5 font-medium", mode.color)}>
               {mode.icon}
-              {mode.label}
+              {t(`chat.sandboxModes.${mode.id}.label`)}
             </div>
-            <div className="mt-0.5 text-[10px] text-muted-foreground">{mode.description}</div>
+            <div className="mt-0.5 text-[10px] text-muted-foreground">{t(`chat.sandboxModes.${mode.id}.description`)}</div>
           </PopoverItem>
         )
       })}
@@ -364,6 +361,7 @@ export function CodexPermissionPopoverMock({
   title = "Codex permission preset",
   className,
 }: CodexPermissionPopoverMockProps) {
+  const t = useMockT()
   const options: Array<{
     id: CodexPermissionId
     label: string
@@ -373,14 +371,14 @@ export function CodexPermissionPopoverMock({
   }> = [
     {
       id: "default",
-      label: "Default",
+      label: t("resources.automation.defaultValue"),
       description: "Sandboxed read/run, asks before edits & network.",
       icon: <ShieldCheck className="size-3.5" />,
       toneClass: "text-foreground",
     },
     {
       id: "full-access",
-      label: "Full Access",
+      label: t("resources.automation.fullAccess"),
       description: "Bypass sandbox & approvals — use only when you trust the task.",
       icon: <AlertTriangle className="size-3.5" />,
       toneClass: "text-destructive",
@@ -547,6 +545,7 @@ export function WorktreePopoverMock({
   search = "",
   className,
 }: WorktreePopoverMockProps) {
+  const t = useMockT()
   return (
     <PopoverShell width={320} className={cn("p-0", className)}>
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
@@ -561,7 +560,7 @@ export function WorktreePopoverMock({
       <div className="max-h-80 overflow-hidden">
         <div className="flex w-full items-center gap-2 px-3 py-1.5 text-xs">
           <Monitor className="size-3 shrink-0 text-muted-foreground" />
-          <span className="flex-1 truncate text-left">Local</span>
+          <span className="flex-1 truncate text-left">{t("tooltips.local")}</span>
           {!isInWorktree && <Check className="size-3 shrink-0 text-foreground" />}
         </div>
 
@@ -569,7 +568,7 @@ export function WorktreePopoverMock({
           <>
             <div className="border-t border-border" />
             <div className="px-3 pt-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-              Existing worktrees
+              {t("chat.worktree.existingHeading")}
             </div>
             {entries.map((entry, i) => {
               const detached = !entry.branch
@@ -593,7 +592,7 @@ export function WorktreePopoverMock({
                       filesCount > 0 ? "text-amber-500" : "text-muted-foreground",
                     )}
                   >
-                    {filesCount > 0 ? `${filesCount} files` : "clean"}
+                    {filesCount > 0 ? t("chat.worktree.filesCount", { count: filesCount }) : t("chat.worktree.cleanLabel")}
                   </span>
                   {entry.isActive && <Check className="mt-0.5 size-3 shrink-0 text-foreground" />}
                 </div>
@@ -715,6 +714,7 @@ export function ChatStatusBarMock({
   activeTrigger = null,
   className,
 }: ChatStatusBarMockProps) {
+  const t = useMockT()
   return (
     <div
       className={cn(
@@ -754,7 +754,7 @@ export function ChatStatusBarMock({
       {harness === "codex" && (
         <StatusBarTrigger
           icon={<ShieldCheck className="size-3" />}
-          label="Default"
+          label={t("resources.automation.defaultValue")}
           active={activeTrigger === "codex-permission"}
         />
       )}
@@ -771,14 +771,19 @@ export interface ModelEffortTriggerStripProps {
 
 export function ModelEffortTriggerStrip({
   modelLabel = "Opus 4.7 1M",
-  effortLabel = "Extra High",
+  effortLabel,
   activeTrigger = null,
   className,
 }: ModelEffortTriggerStripProps) {
+  const t = useMockT()
   return (
     <div className={cn("flex items-center gap-2 text-xs", className)}>
       <StatusBarTrigger icon={null} label={modelLabel} active={activeTrigger === "model"} />
-      <StatusBarTrigger icon={null} label={effortLabel} active={activeTrigger === "effort"} />
+      <StatusBarTrigger
+        icon={null}
+        label={effortLabel ?? t("settings.preferences.effort.levels.xhigh")}
+        active={activeTrigger === "effort"}
+      />
     </div>
   )
 }

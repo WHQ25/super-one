@@ -32,6 +32,7 @@ import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
+import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { useActiveSession, extractSessionTitle, useChatStore } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { useSettingsStore } from '@/stores/settings'
@@ -53,7 +54,8 @@ function App(): React.JSX.Element {
   useStandaloneToolCallRouter()
   const theme = useTheme()
   const { t } = useTranslation()
-  const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode, terminalOpen, toggleTerminal } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode, terminalOpen: s.terminalOpen, toggleTerminal: s.toggleTerminal })))
+  const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode })))
+  const { open: terminalOpen, toggle: toggleTerminal } = useTerminalPanel()
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
   const isFullscreen = useFullscreen()

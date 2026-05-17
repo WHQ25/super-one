@@ -2323,6 +2323,8 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   if (signalQuitting) return
   signalQuitting = true
   log.info(`[main] received ${sig}, shutting down`)
+  if (terminalSweepTimer) clearInterval(terminalSweepTimer)
+  terminalManager.killAll()
   closeAllDbConnections()
   remoteControlService.stop().catch(() => {}).finally(() => process.exit(0))
   setTimeout(() => process.exit(0), 1500).unref()

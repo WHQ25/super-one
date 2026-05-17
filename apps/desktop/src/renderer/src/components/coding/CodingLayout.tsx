@@ -1,11 +1,11 @@
 import { useRef, useEffect, useState, useCallback, memo } from 'react'
 import { useChatStore } from '@/stores/chat'
-import { useAppStore } from '@/stores/app'
 import { ChatContent } from '@/components/chat/ChatContent'
 import { SessionSwitcherPopup } from '@/components/chat/SessionSwitcherPopup'
 import { TerminalPanel } from '@/components/coding/TerminalPanel'
 import { useChatScroll } from '@/hooks/useChatScroll'
 import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
+import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 
 const MIN_TERM_HEIGHT = 120
 
@@ -16,8 +16,7 @@ export const CodingLayout = memo(function CodingLayout() {
   const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
   useChatKeyboardShortcuts()
 
-  const termOpen = useAppStore((s) => s.terminalOpen)
-  const toggleTerminal = useAppStore((s) => s.toggleTerminal)
+  const { open: termOpen, toggle: toggleTerminal } = useTerminalPanel()
   const [termHeight, setTermHeight] = useState(300)
 
   useEffect(() => {

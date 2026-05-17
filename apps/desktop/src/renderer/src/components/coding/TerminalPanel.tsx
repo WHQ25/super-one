@@ -3,56 +3,55 @@ import { Terminal as TerminalIcon, Plus, X } from 'lucide-react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import type { TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
+import type { TerminalEvent } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useChatStore } from '@/stores/chat'
+import { EMPTY_TABS, useTerminalStore } from '@/stores/terminal'
+import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { HoverCloseSlot } from '@/components/activity/ActivityTab'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
 
 const HEADER_ITEM = 'flex items-center rounded-lg px-1.5 py-1 transition-colors'
 
-interface TermInstance {
-  xterm: XTerm
-  fit: FitAddon
-  lastSeq: number
-  writable: boolean
-  chunks: Map<string, { total: number; parts: Map<number, string>; lastSeq?: number }>
-}
-
 export function TerminalPanel() {
   const projectPath = useAppStore((s) => s.currentFolder)
-  const terminalOpen = useAppStore((s) => s.terminalOpen)
-  const setTerminalOpen = useAppStore((s) => s.setTerminalOpen)
-  const sessionId = useActiveSession((s) => s._activeSessionId) as string | null
+  const { sessionId, open, setOpen } = useTerminalPanel()
 
   const addUserSelection = useChatStore((s) => s.addUserSelection)
-  const [tabs, setTabs] = useState<TerminalListItem[]>([])
-  const [activeId, setActiveId] = useState<string | null>(null)
+  const instances = useTerminalStore((s) => s.instances)
+  const tabs = useTerminalStore((s) => (projectPath ? s.byProject[projectPath]?.tabs : null) ?? EMPTY_TABS)
+  const activeId = useTerminalStore((s) => (projectPath ? s.byProject[projectPath]?.activeId : null) ?? null)
+  const addTab = useTerminalStore((s) => s.addTab)
+  const removeTab = useTerminalStore((s) => s.removeTab)
+  const setActive = useTerminalStore((s) => s.setActive)
+
   const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   const hostRef = useRef<HTMLDivElement>(null)
-  const instances = useRef(new Map<string, TermInstance>())
   const creatingRef = useRef(false)
 
-  const ensureInstance = useCallback((terminalId: string): TermInstance => {
-    let inst = instances.current.get(terminalId)
-    if (inst) return inst
-    const xterm = new XTerm({
-      fontSize: 14,
-      fontFamily: 'Monaco, ui-monospace, SFMono-Regular, Menlo, monospace',
-      cursorBlink: true,
-      allowProposedApi: true,
-      theme: { background: '#00000000' },
-    })
-    const fit = new FitAddon()
-    xterm.loadAddon(fit)
-    xterm.onData((data) => {
-      if (instances.current.get(terminalId)?.writable === false) return
-      void window.terminal.write(terminalId, data)
-    })
-    inst = { xterm, fit, lastSeq: 0, writable: true, chunks: new Map() }
-    instances.current.set(terminalId, inst)
-    return inst
-  }, [])
+  const ensureInstance = useCallback(
+    (terminalId: string) => {
+      let inst = instances.get(terminalId)
+      if (inst) return inst
+      const xterm = new XTerm({
+        fontSize: 14,
+        fontFamily: 'Monaco, ui-monospace, SFMono-Regular, Menlo, monospace',
+        cursorBlink: true,
+        allowProposedApi: true,
+        theme: { background: '#00000000' },
+      })
+      const fit = new FitAddon()
+      xterm.loadAddon(fit)
+      xterm.onData((data) => {
+        if (instances.get(terminalId)?.writable === false) return
+        void window.terminal.write(terminalId, data)
+      })
+      inst = { xterm, fit, lastSeq: 0, writable: true, chunks: new Map() }
+      instances.set(terminalId, inst)
+      return inst
+    },
+    [instances],
+  )
 
   useEffect(() => {
     const off = window.terminal.onTerminalEvent((event: TerminalEvent) => {
@@ -64,7 +63,7 @@ export function TerminalPanel() {
         event.type !== 'terminal_exited'
       )
         return
-      const inst = instances.current.get(event.terminalId)
+      const inst = instances.get(event.terminalId)
       if (!inst) return
       if (event.type === 'terminal_output') {
         if (event.toSeq <= inst.lastSeq) return
@@ -100,56 +99,52 @@ export function TerminalPanel() {
       }
     })
     return off
-  }, [])
-
-  const tabsRef = useRef(tabs)
-  tabsRef.current = tabs
+  }, [instances])
 
   const createTerminal = useCallback(async () => {
     if (!projectPath || creatingRef.current) return
     creatingRef.current = true
     try {
       const item = await window.terminal.create({ projectPath, sessionId: sessionId ?? undefined })
-      setTabs((t) => [...t, item])
-      setActiveId(item.terminalId)
+      addTab(projectPath, item)
     } finally {
       creatingRef.current = false
     }
-  }, [projectPath, sessionId])
+  }, [projectPath, sessionId, addTab])
 
   const closeTab = useCallback(
     (terminalId: string) => {
       void window.terminal.kill(terminalId)
-      const inst = instances.current.get(terminalId)
+      const inst = instances.get(terminalId)
       inst?.xterm.dispose()
-      instances.current.delete(terminalId)
-      const remaining = tabsRef.current.filter((x) => x.terminalId !== terminalId)
-      setTabs(remaining)
-      setActiveId((cur) => (cur === terminalId ? (remaining[remaining.length - 1]?.terminalId ?? null) : cur))
-      if (remaining.length === 0) setTerminalOpen(false)
+      instances.delete(terminalId)
+      if (!projectPath) return
+      removeTab(projectPath, terminalId)
+      if (tabs.length <= 1) setOpen(false)
     },
-    [setTerminalOpen],
+    [instances, projectPath, removeTab, tabs.length, setOpen],
   )
 
   useEffect(() => {
-    for (const inst of instances.current.values()) inst.xterm.dispose()
-    instances.current.clear()
-    setTabs([])
-    setActiveId(null)
-  }, [projectPath, sessionId])
-
-  useEffect(() => {
-    if (terminalOpen && projectPath && tabs.length === 0 && !creatingRef.current) {
+    if (open && projectPath && tabs.length === 0 && !creatingRef.current) {
       void createTerminal()
     }
-  }, [terminalOpen, projectPath, sessionId, tabs.length, createTerminal])
+  }, [open, projectPath, tabs.length, createTerminal])
 
   useEffect(() => {
-    if (!activeId || !hostRef.current) return
-    const inst = ensureInstance(activeId)
     const host = hostRef.current
-    host.replaceChildren()
-    inst.xterm.open(host)
+    if (!host) return
+    if (!activeId) {
+      host.replaceChildren()
+      return
+    }
+    const inst = ensureInstance(activeId)
+    if (inst.xterm.element) {
+      host.replaceChildren(inst.xterm.element)
+    } else {
+      host.replaceChildren()
+      inst.xterm.open(host)
+    }
     inst.fit.fit()
     void window.terminal.snapshot(activeId)
     void window.terminal.resize(activeId, inst.xterm.cols, inst.xterm.rows)
@@ -160,14 +155,7 @@ export function TerminalPanel() {
     ro.observe(host)
     inst.xterm.focus()
     return () => ro.disconnect()
-  }, [activeId, ensureInstance])
-
-  useEffect(() => {
-    return () => {
-      for (const inst of instances.current.values()) inst.xterm.dispose()
-      instances.current.clear()
-    }
-  }, [])
+  }, [activeId, projectPath, ensureInstance])
 
   return (
     <div className="flex h-full flex-col">
@@ -176,7 +164,7 @@ export function TerminalPanel() {
           {tabs.map((tab) => (
             <div
               key={tab.terminalId}
-              onClick={() => setActiveId(tab.terminalId)}
+              onClick={() => projectPath && setActive(projectPath, tab.terminalId)}
               className={`${HEADER_ITEM} gap-1.5 shrink-0 cursor-pointer ${
                 tab.terminalId === activeId
                   ? 'bg-muted text-foreground'
@@ -199,7 +187,7 @@ export function TerminalPanel() {
           </button>
         </div>
         <button
-          onClick={() => setTerminalOpen(false)}
+          onClick={() => setOpen(false)}
           className={`${HEADER_ITEM} shrink-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground`}
           title="Hide terminal (⌘J)"
         >
@@ -215,7 +203,7 @@ export function TerminalPanel() {
           ref={hostRef}
           className="min-h-0 flex-1 overflow-hidden p-1"
           onContextMenu={(e) => {
-            const sel = (activeId ? instances.current.get(activeId) : null)?.xterm.getSelection().trim()
+            const sel = (activeId ? instances.get(activeId) : null)?.xterm.getSelection().trim()
             if (!sel) return
             e.preventDefault()
             setMenu({ x: e.clientX, y: e.clientY, text: sel })

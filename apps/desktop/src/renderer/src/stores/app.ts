@@ -90,9 +90,6 @@ interface AppState {
   // Layout mode
   layoutMode: LayoutMode
   setLayoutMode: (mode: LayoutMode) => void
-  terminalOpen: boolean
-  toggleTerminal: () => void
-  setTerminalOpen: (open: boolean) => void
   sidebarTab: SidebarTab
   setSidebarTab: (tab: SidebarTab) => void
   showSidebar: boolean
@@ -203,9 +200,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   settingsTab: FIRST_SETTINGS_SECTION,
   settingsProviderTabs: { claude: FIRST_SETTINGS_SECTION, codex: FIRST_SETTINGS_SECTION },
   layoutMode: 'coding',
-  terminalOpen: false,
-  toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
-  setTerminalOpen: (open) => set({ terminalOpen: open }),
   setLayoutMode: async (mode) => {
     set({ layoutMode: mode })
     if (mode === 'coding' && !get().currentFolder) {

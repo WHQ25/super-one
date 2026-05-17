@@ -86,7 +86,7 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
       continue
     }
 
-    if (line.startsWith('|') && line.includes('|', 1)) {
+    if (line.startsWith('|') && (inTable || line.includes('|', 1))) {
       if (!inTable) {
         flushCurrent()
         inTable = true

@@ -315,5 +315,25 @@ describe('splitTextIntoBlocks', () => {
       expect(segments[0].content).toContain('Line B.')
       expect(segments[1]).toMatchObject({ type: 'text', text: 'After.' })
     })
+
+    it('keeps a table in remainder when the trailing line is an incomplete row mid-stream', () => {
+      const { segments, remainder } = splitTextIntoBlocks(
+        '| # | name |\n|---|---|\n| 1 | a |\n| 2',
+        true,
+      )
+      expect(segments).toHaveLength(0)
+      expect(remainder).toBe('| # | name |\n|---|---|\n| 1 | a |\n| 2')
+    })
+
+    it('does not fragment a table from its header when force-finalized on an incomplete row', () => {
+      const { segments } = splitTextIntoBlocks(
+        '| # | name | owner |\n|---|---|---|\n| 1 | design | alice |\n| 2',
+        false,
+      )
+      expect(segments).toHaveLength(1)
+      expect(segments[0].text).toBe(
+        '| # | name | owner |\n|---|---|---|\n| 1 | design | alice |\n| 2',
+      )
+    })
   })
 })

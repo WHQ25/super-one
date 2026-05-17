@@ -8,6 +8,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { requestOpenExternalLink } from '@/lib/external-link'
+import { setCloseActiveTerminal } from './terminal-panel-api'
 import type { TerminalEvent } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
@@ -95,9 +96,12 @@ export function TerminalPanel() {
       xterm.loadAddon(search)
       search.onDidChangeResults((e) => setFindHits({ idx: e.resultIndex, count: e.resultCount }))
       xterm.attachCustomKeyEventHandler((e) => {
-        if (e.type === 'keydown' && (e.metaKey || e.ctrlKey) && e.key === 'f') {
-          openFindRef.current()
-          return false
+        if (e.type === 'keydown' && (e.metaKey || e.ctrlKey)) {
+          if (e.key === 'f') {
+            openFindRef.current()
+            return false
+          }
+          if (e.key === 'w' && e.metaKey) return false
         }
         return true
       })
@@ -191,6 +195,11 @@ export function TerminalPanel() {
     },
     [instances, projectPath, removeTab, tabs.length, setOpen],
   )
+
+  useEffect(() => {
+    setCloseActiveTerminal(activeId ? () => closeTab(activeId) : null)
+    return () => setCloseActiveTerminal(null)
+  }, [activeId, closeTab])
 
   useEffect(() => {
     if (open && projectPath && tabs.length === 0 && !creatingRef.current) {

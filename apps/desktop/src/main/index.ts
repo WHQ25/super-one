@@ -601,6 +601,10 @@ function registerIpcHandlers(): void {
     return tmpPath
   })
 
+  ipcMain.on(AgentIpcChannels.CLOSE_WINDOW, () => {
+    mainWindow?.close()
+  })
+
   ipcMain.handle(AgentIpcChannels.CLOSE_PROJECT, async (_event, folderPath: string) => {
     await agentService.closeProject(folderPath)
     codexService.closeProject(folderPath)
@@ -1101,6 +1105,34 @@ function registerIpcHandlers(): void {
     return p?.index === '!' || p?.worktree === '!'
   }
 
+  async function entryIsDirectory(
+    dir: string,
+    entry: { name: string; isDirectory(): boolean; isSymbolicLink(): boolean },
+  ): Promise<boolean> {
+    if (entry.isDirectory()) return true
+    if (entry.isSymbolicLink()) {
+      try {
+        return (await stat(join(dir, entry.name))).isDirectory()
+      } catch {
+        return false
+      }
+    }
+    return false
+  }
+
+  async function decorateEntries<T extends { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }>(
+    dir: string,
+    entries: T[],
+  ): Promise<{ entry: T; isDir: boolean }[]> {
+    const decorated = await Promise.all(
+      entries.map(async (entry) => ({ entry, isDir: await entryIsDirectory(dir, entry) })),
+    )
+    return decorated.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+      return a.entry.name.localeCompare(b.entry.name)
+    })
+  }
+
   function worstColumn(values: (GitFileStatus | null | undefined)[]): GitFileStatus | null {
     let worst: GitFileStatus | null = null
     let worstPri = 0
@@ -1157,12 +1189,9 @@ function registerIpcHandlers(): void {
         const entries = await readdir(dir, { withFileTypes: true })
         const result: FileTreeEntry[] = []
 
-        const sorted = entries.sort((a, b) => {
-          if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
-          return a.name.localeCompare(b.name)
-        })
+        const sorted = await decorateEntries(dir, entries)
 
-        for (const entry of sorted) {
+        for (const { entry, isDir } of sorted) {
           if (SKIP_DIRS.has(entry.name)) continue
           if (entry.name === '.DS_Store') continue
 
@@ -1170,7 +1199,7 @@ function registerIpcHandlers(): void {
           const relPath = relative(folderPath, fullPath)
           const isIgnored = parentIgnored || ignoredDirs.has(relPath) || isPairIgnored(statusMap.get(relPath))
 
-          if (entry.isDirectory()) {
+          if (isDir) {
             const children = await walk(fullPath, isIgnored)
             const pair = isIgnored ? IGNORED_PAIR : worstChildPair(children)
             result.push({
@@ -1245,18 +1274,15 @@ function registerIpcHandlers(): void {
       const targetDir = dirRelPath ? join(folderPath, dirRelPath) : folderPath
       const entries = await readdir(targetDir, { withFileTypes: true })
 
-      const sorted = entries.sort((a, b) => {
-        if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
-        return a.name.localeCompare(b.name)
-      })
+      const sorted = await decorateEntries(targetDir, entries)
 
       const result: FileTreeEntry[] = []
-      for (const entry of sorted) {
+      for (const { entry, isDir } of sorted) {
         if (SKIP_DIRS.has(entry.name) || entry.name === '.DS_Store') continue
         const relPath = dirRelPath ? dirRelPath + '/' + entry.name : entry.name
         const isIgnored = ignoredDirs.has(relPath) || isPairIgnored(statusMap.get(relPath))
 
-        if (entry.isDirectory()) {
+        if (isDir) {
           const pair = isIgnored ? IGNORED_PAIR : dirStatusPair(statusMap, relPath)
           result.push({
             name: entry.name,
@@ -2233,6 +2259,9 @@ app.whenReady().then(async () => {
   function buildAppMenu(): void {
     if (process.platform !== 'darwin') return
     const { label: updateLabel, enabled: updateEnabled } = getUpdateMenuState()
+    const sendCloseTabShortcut = (): void => {
+      mainWindow?.webContents.send(AgentIpcChannels.CLOSE_TAB_SHORTCUT)
+    }
     const template: Electron.MenuItemConstructorOptions[] = [
       {
         label: app.name,
@@ -2269,7 +2298,12 @@ app.whenReady().then(async () => {
       {
         label: 'File',
         submenu: [
-          { role: 'close' },
+          {
+            label: 'Close Tab',
+            accelerator: 'CmdOrCtrl+W',
+            click: sendCloseTabShortcut,
+          },
+          { role: 'close', label: 'Close Window', accelerator: 'Shift+CmdOrCtrl+W' },
         ],
       },
       { role: 'editMenu' },

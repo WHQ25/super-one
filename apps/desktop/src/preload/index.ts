@@ -720,6 +720,16 @@ const appAPI = {
     }
   },
 
+  onCloseTabShortcut: (callback: () => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on(AgentIpcChannels.CLOSE_TAB_SHORTCUT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.CLOSE_TAB_SHORTCUT, handler)
+    }
+  },
+
+  closeWindow: () => ipcRenderer.send(AgentIpcChannels.CLOSE_WINDOW),
+
   // Window state
   getFullscreen: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_FULLSCREEN) as Promise<boolean>,

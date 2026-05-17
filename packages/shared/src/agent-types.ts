@@ -1597,6 +1597,8 @@ export const AgentIpcChannels = {
   PATH_STAT: 'app:path-stat',
   MEDIA_SERVER_PORT: 'app:media-server-port',
   CONTENT_ZOOM: 'app:content-zoom',
+  CLOSE_TAB_SHORTCUT: 'app:close-tab-shortcut',
+  CLOSE_WINDOW: 'app:close-window',
   GET_FULLSCREEN: 'app:get-fullscreen',
   FULLSCREEN_CHANGED: 'app:fullscreen-changed',
   SET_MIN_WINDOW_SIZE: 'app:set-min-window-size',

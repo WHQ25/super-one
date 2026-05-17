@@ -228,6 +228,10 @@ interface AppAPI {
 
   onContentZoom(callback: (action: 'in' | 'out' | 'reset') => void): () => void
 
+  onCloseTabShortcut(callback: () => void): () => void
+
+  closeWindow(): void
+
   // Window state
   getFullscreen(): Promise<boolean>
   onFullscreenChanged(callback: (isFullscreen: boolean) => void): () => void

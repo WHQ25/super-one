@@ -6,6 +6,8 @@ import { TerminalPanel } from '@/components/coding/TerminalPanel'
 import { useChatScroll } from '@/hooks/useChatScroll'
 import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
+import { closeActiveTerminal } from '@/components/coding/terminal-panel-api'
+import { getDockApi } from '@/components/activity/activity-panel-api'
 
 const MIN_TERM_HEIGHT = 120
 
@@ -34,6 +36,21 @@ export const CodingLayout = memo(function CodingLayout() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [toggleTerminal])
+
+  useEffect(() => {
+    return window.app.onCloseTabShortcut(() => {
+      const focused = document.activeElement
+      if (focused?.closest('.xterm')) {
+        closeActiveTerminal()
+        return
+      }
+      if (focused?.closest('[data-activity-outer]')) {
+        getDockApi()?.activePanel?.api.close()
+        return
+      }
+      window.app.closeWindow()
+    })
+  }, [])
 
   const startResize = useCallback((e: React.PointerEvent) => {
     e.preventDefault()

@@ -47,7 +47,8 @@ class FakeBackend implements SessionBackend {
   }
 
   dequeueMessage(_clientMessageId: string): boolean { return false }
-  getPendingInteractions(): AgentEvent[] { return [] }
+  pendingInteractions: AgentEvent[] = []
+  getPendingInteractions(): AgentEvent[] { return this.pendingInteractions }
 
   commandCalls: import('./types').BackendCommand[] = []
   async handleCommand(cmd: import('./types').BackendCommand): Promise<void> {
@@ -1766,5 +1767,31 @@ describe('Session ownership', () => {
     const subscriberRemoved = events.find((e) => e.type === 'subscriber_removed')
     expect(ownerChanged && 'reason' in ownerChanged && ownerChanged.reason).toBe('session_closed')
     expect(subscriberRemoved && 'reason' in subscriberRemoved && subscriberRemoved.reason).toBe('session_closed')
+  })
+})
+
+describe('pending interactions survive window reopen', () => {
+  async function startBackend(session: Session, backend: FakeBackend): Promise<void> {
+    void session.send({ content: 'go' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+  }
+
+  it('tags backend pending interactions with sessionId and projectPath so the renderer can route them after a fresh window load', async () => {
+    const { session, backend } = makeSession({ id: 'sess-7', projectPath: '/tmp/proj-7' })
+    backend.pendingInteractions = [
+      { type: 'permission_request', request: { requestId: 'req-1', toolName: 'Bash', input: {} } } as AgentEvent,
+      { type: 'ask_user_question', request: { requestId: 'q-1', questions: [] } } as AgentEvent,
+      { type: 'plan_approval', request: { requestId: 'p-1', plan: 'do it' } } as AgentEvent,
+    ]
+    await startBackend(session, backend)
+
+    const pending = session.getPendingInteractions()
+
+    expect(pending).toHaveLength(3)
+    for (const ev of pending) {
+      expect((ev as { sessionId?: string }).sessionId).toBe('sess-7')
+      expect((ev as { projectPath?: string }).projectPath).toBe('/tmp/proj-7')
+    }
   })
 })

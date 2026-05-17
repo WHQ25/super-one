@@ -631,7 +631,10 @@ export class Session implements SessionContract {
 
   getPendingInteractions(): AgentEvent[] {
     if (!this.backendStarted) return []
-    return this.backend.getPendingInteractions()
+    return this.backend.getPendingInteractions().map((event) => {
+      const existingProjectPath = (event as { projectPath?: string }).projectPath
+      return { ...event, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent
+    })
   }
 
   async dispatchBackendCommand(cmd: BackendCommand): Promise<void> {

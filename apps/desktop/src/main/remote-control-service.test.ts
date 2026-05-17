@@ -551,8 +551,73 @@ describe('stripMessagesForRemote', () => {
     expect((result.metadata as Record<string, unknown>).codex).toBeUndefined()
   })
 
+  it('converts a codex todo_list item into a TodoWrite todo_result block for mobile', () => {
+    const msg = makeMessage([], {
+      providerId: 'codex',
+      metadata: {
+        codex: {
+          items: [
+            {
+              id: 'todo_019e3769-5dd4-70b3-839c-fd1226540ad5',
+              type: 'todo_list',
+              items: [
+                { text: 'first task', completed: false },
+                { text: 'second task', completed: true },
+              ],
+            },
+          ],
+        },
+      } as unknown as ChatMessage['metadata'],
+    })
+    const [result] = stripMessagesForRemote([msg])
+    const todoResult = result.content.find((b) => b.type === 'todo_result') as {
+      todoToolName: string
+      toolTodos: { content: string; status: string }[]
+    }
+    expect(todoResult).toBeDefined()
+    expect(todoResult.todoToolName).toBe('TodoWrite')
+    expect(todoResult.toolTodos).toEqual([
+      { content: 'first task', status: 'pending' },
+      { content: 'second task', status: 'completed' },
+    ])
+  })
+
   it('should handle empty messages array', () => {
     expect(stripMessagesForRemote([])).toEqual([])
+  })
+})
+
+describe('stripEventForRemote codex todo_list streaming', () => {
+  it('rewrites a codex_item_delta todo_list into a content_delta todo_result event', () => {
+    const event: AgentEvent = {
+      type: 'codex_item_delta',
+      messageId: 'msg-1',
+      phase: 'updated',
+      item: {
+        id: 'todo_abc',
+        type: 'todo_list',
+        items: [{ text: 'do the thing', completed: false }],
+      },
+    } as AgentEvent
+    const result = stripEventForRemote(event) as AgentEvent & { type: 'content_delta' }
+    expect(result.type).toBe('content_delta')
+    expect(result.messageId).toBe('msg-1')
+    expect(result.delta).toMatchObject({
+      type: 'todo_result',
+      toolUseId: 'todo_abc',
+      todoToolName: 'TodoWrite',
+      toolTodos: [{ content: 'do the thing', status: 'pending' }],
+    })
+  })
+
+  it('leaves non-todo codex_item_delta events untouched', () => {
+    const event: AgentEvent = {
+      type: 'codex_item_delta',
+      messageId: 'msg-1',
+      phase: 'updated',
+      item: { id: 'plan_1', type: 'plan', text: 'the plan' },
+    } as AgentEvent
+    expect(stripEventForRemote(event)).toBe(event)
   })
 })
 

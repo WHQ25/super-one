@@ -377,7 +377,18 @@ export function stripEventForRemote(event: AgentEvent, projectPath?: string): Ag
   if (event.type === 'permission_request') {
     return enrichPermissionRequest(event)
   }
+  if (event.type === 'codex_item_delta' && event.item.type === 'todo_list') {
+    return { type: 'content_delta', messageId: event.messageId, delta: codexTodoListToBlock(event.item) }
+  }
   return event
+}
+
+function codexTodoListToBlock(item: Extract<CodexThreadItem, { type: 'todo_list' }>): ContentBlock {
+  const toolTodos: TodoToolItem[] = item.items.map((t) => ({
+    content: t.text,
+    status: t.completed ? 'completed' : 'pending',
+  }))
+  return { type: 'todo_result', toolUseId: item.id, summary: '', todoToolName: 'TodoWrite', toolTodos } as ContentBlock
 }
 
 function convertCodexItemsToBlocks(items: CodexThreadItem[], projectPath?: string): ContentBlock[] {
@@ -455,6 +466,9 @@ function convertCodexItemsToBlocks(items: CodexThreadItem[], projectPath?: strin
           ...(item.savedPath ? { savedPath: item.savedPath } : {}),
           ...(item.revisedPrompt ? { revisedPrompt: item.revisedPrompt } : {}),
         } as ContentBlock)
+        break
+      case 'todo_list':
+        blocks.push(codexTodoListToBlock(item))
         break
       case 'error':
         blocks.push({ type: 'text', text: item.message } as ContentBlock)

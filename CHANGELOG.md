@@ -4,6 +4,26 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.35.0-alpha] - 2026-05-17
+
+### Added
+
+- Integrated terminal: local PTY-backed terminal (node-pty + xterm) with a dedicated coding drawer, plus Phase 2 remote terminal over relay/LAN — inbound command execution with session ownership and snapshot chunking
+- Remote: chat session rename titles are now forwarded to mobile as tool summaries
+- Remote: richer Task fields forwarded to the mobile todo channel
+
+### Fixed
+
+- Codex: real turn interrupt, with correct per-bubble item attribution
+- Chat: `resetSession` is now idempotent on pristine sessions
+- Chat: todo "blocked-by" now renders from the inverse blocks edge
+- Remote: streaming markdown tables stay intact across delta boundaries
+- Sidebar: session pin icon width stays collapsed until row hover
+
+### Changed
+
+- Coding: session title max-width widened to 300px
+
 ## [0.34.1-alpha] - 2026-05-17
 
 ### Added

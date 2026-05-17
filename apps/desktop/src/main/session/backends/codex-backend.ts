@@ -28,6 +28,7 @@ import {
 import type { AppServerConnectionHandle, CodexProjectAuth } from '../../codex/app-server-connection'
 import {
   compactCodexTurn,
+  deriveFinalResponse,
   dismissCodexQuestion,
   interruptCodex,
   prewarmCodexConnection,
@@ -136,6 +137,16 @@ export class CodexBackend implements SessionBackend {
   private currentMessageId: string | null = null
   private activeRun: Promise<void> | null = null
   private swapRunAssistantId: ((nextId: string) => void) | null = null
+
+  // Per-bubble item segmentation. A single Codex turn can be split into
+  // multiple assistant bubbles via steer; each item belongs to the bubble
+  // that was active when it first appeared, so late deltas (e.g. the
+  // turn-end force-complete of a pre-steer item) never leak into the
+  // steered bubble.
+  private itemOwner = new Map<string, string>()
+  private segments = new Map<string, { order: string[]; map: Map<string, CodexThreadItem> }>()
+  private finalizedSegments = new Set<string>()
+  private lastUsageSnapshot: CodexUsageInfo | null = null
 
   private session: CodexSession | null = null
   private authChangedUnsub: (() => void) | null = null
@@ -416,11 +427,44 @@ export class CodexBackend implements SessionBackend {
 
     const auth = this.service.getProjectAuth(projectPath)
 
+    this.resetSegments(assistantMessageId)
     this.currentMessageId = assistantMessageId
     let runningAssistantId = assistantMessageId
+    const runStart = Date.now()
+    const finalizeSegment = (
+      messageId: string,
+      opts: { finalResponseFallback?: string; threadId: string | null; usage: CodexUsageInfo | null },
+    ): void => {
+      if (this.finalizedSegments.has(messageId)) return
+      this.finalizedSegments.add(messageId)
+      const seg = this.segments.get(messageId)
+      const items = seg
+        ? seg.order.map((id) => seg.map.get(id)).filter((i): i is CodexThreadItem => Boolean(i))
+        : []
+      const finalText = deriveFinalResponse(items).trim() || opts.finalResponseFallback?.trim() || ''
+      this.emit({
+        type: 'message_complete',
+        messageId,
+        metadata: {
+          codex: {
+            finalResponse: finalText,
+            durationMs: Date.now() - runStart,
+            items,
+            threadId: opts.threadId,
+            usage: opts.usage,
+            model: resolvedModel,
+          },
+        } as Record<string, unknown>,
+      })
+    }
     this.swapRunAssistantId = (nextId: string) => {
+      finalizeSegment(runningAssistantId, {
+        threadId: this.providerSessionId,
+        usage: this.lastUsageSnapshot,
+      })
       runningAssistantId = nextId
       this.currentMessageId = nextId
+      this.ensureSegment(nextId)
     }
 
     this.emit({
@@ -436,7 +480,6 @@ export class CodexBackend implements SessionBackend {
     })
     this.emit({ type: 'status_change', status: 'streaming' })
     const callbacks = this.buildCallbacks()
-    const runStart = Date.now()
 
     const task = (async () => {
       try {
@@ -493,19 +536,10 @@ export class CodexBackend implements SessionBackend {
         } catch (err) {
           log.warn('[usage-stats] failed to record Codex usage: %s', err instanceof Error ? err.message : String(err))
         }
-        this.emit({
-          type: 'message_complete',
-          messageId: runningAssistantId,
-          metadata: {
-            codex: {
-              finalResponse: finalText,
-              durationMs: Date.now() - runStart,
-              items: result.items,
-              threadId: result.threadId,
-              usage: result.usage,
-              model: resolvedModel,
-            },
-          } as Record<string, unknown>,
+        finalizeSegment(runningAssistantId, {
+          finalResponseFallback: finalText,
+          threadId: result.threadId,
+          usage: result.usage,
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -723,11 +757,22 @@ export class CodexBackend implements SessionBackend {
         this.emit({ type: 'codex_thread_started', messageId, threadId })
       },
       onItemDelta: (phase, item) => {
-        const messageId = this.currentMessageId
-        if (!messageId) return
-        this.emit({ type: 'codex_item_delta', messageId, phase, item })
+        const live = this.currentMessageId
+        if (!live) return
+        // An item belongs to whichever bubble was active when it first
+        // appeared. Late deltas for a pre-steer item (incl. the turn-end
+        // force-complete) stay on the original bubble instead of leaking
+        // into the steered one.
+        let owner = this.itemOwner.get(item.id)
+        if (!owner) {
+          owner = live
+          this.itemOwner.set(item.id, owner)
+        }
+        this.recordSegmentItem(owner, item)
+        this.emit({ type: 'codex_item_delta', messageId: owner, phase, item })
       },
       onUsageDelta: (usage) => {
+        this.lastUsageSnapshot = usage
         const messageId = this.currentMessageId
         if (!messageId) return
         this.emit({
@@ -745,6 +790,29 @@ export class CodexBackend implements SessionBackend {
         this.emit({ type: 'ask_user_question', request })
       },
     }
+  }
+
+  private resetSegments(firstId: string): void {
+    this.itemOwner.clear()
+    this.segments.clear()
+    this.finalizedSegments.clear()
+    this.lastUsageSnapshot = null
+    this.ensureSegment(firstId)
+  }
+
+  private ensureSegment(messageId: string): { order: string[]; map: Map<string, CodexThreadItem> } {
+    let seg = this.segments.get(messageId)
+    if (!seg) {
+      seg = { order: [], map: new Map() }
+      this.segments.set(messageId, seg)
+    }
+    return seg
+  }
+
+  private recordSegmentItem(messageId: string, item: CodexThreadItem): void {
+    const seg = this.ensureSegment(messageId)
+    if (!seg.map.has(item.id)) seg.order.push(item.id)
+    seg.map.set(item.id, item)
   }
 
   private assertStarted(): void {

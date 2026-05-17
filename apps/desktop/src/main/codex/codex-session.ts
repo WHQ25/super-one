@@ -55,6 +55,7 @@ export interface CodexSession {
   pendingApprovals: Map<string, PendingCodexApproval>
   activeTurnId: string | null
   steerFn: ((input: string) => Promise<void>) | null
+  interruptFn: (() => Promise<void>) | null
   connectionHandle: AppServerConnectionHandle | null
   connectionAuth: CodexProjectAuth | null
   apiProviderId: string | null
@@ -88,6 +89,7 @@ export function createCodexSession(
     pendingApprovals: new Map<string, PendingCodexApproval>(),
     activeTurnId: null,
     steerFn: null,
+    interruptFn: null,
     connectionHandle: null,
     connectionAuth: null,
     apiProviderId: apiProviderId ?? null,

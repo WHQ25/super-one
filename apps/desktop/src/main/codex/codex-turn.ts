@@ -616,7 +616,7 @@ function mapUsageFromTokenUsage(raw: unknown): CodexUsageInfo | null {
   }
 }
 
-function deriveFinalResponse(items: CodexThreadItem[]): string {
+export function deriveFinalResponse(items: CodexThreadItem[]): string {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i]
     if (item.type === 'agent_message') return item.text
@@ -1795,12 +1795,21 @@ export async function runCodexTurn(
           expectedTurnId: activeTurnId,
         })
       }
+      session.interruptFn = activeTurnId
+        ? async () => {
+            await connection.request('turn/interrupt', {
+              threadId: resolvedThreadId,
+              turnId: activeTurnId,
+            })
+          }
+        : null
 
       try {
         return await streamTurnEvents(connection, session, activeTurnId, controller, callbacks)
       } finally {
         session.activeTurnId = null
         session.steerFn = null
+        session.interruptFn = null
       }
     })
 
@@ -1927,7 +1936,16 @@ export async function compactCodexTurn(
 
 export function interruptCodex(session: CodexSession): boolean {
   if (!session.runningController) return false
-  session.runningController.abort()
+  const controller = session.runningController
+  const interruptFn = session.interruptFn
+  if (interruptFn) {
+    void interruptFn().catch((err) => {
+      log.warn('[codex] turn/interrupt request failed: %s', err instanceof Error ? err.message : String(err))
+      controller.abort()
+    })
+    return true
+  }
+  controller.abort()
   return true
 }
 
@@ -2017,5 +2035,7 @@ export function resetCodexSession(session: CodexSession): void {
   session.threadReady = false
   session.effectiveCwd = null
   session.runningController = null
+  session.steerFn = null
+  session.interruptFn = null
   void closeSessionConnection(session)
 }

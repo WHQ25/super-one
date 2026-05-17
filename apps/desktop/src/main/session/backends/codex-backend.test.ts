@@ -47,6 +47,12 @@ const turnMocks = vi.hoisted(() => {
     reviewCodexTurn: vi.fn(captureImpl),
     compactCodexTurn: vi.fn(captureImpl),
     steerCodex: vi.fn(async () => {}),
+    deriveFinalResponse: (items: Array<{ type?: string; text?: string }>) => {
+      for (let i = items.length - 1; i >= 0; i--) {
+        if (items[i]?.type === 'agent_message') return items[i].text ?? ''
+      }
+      return ''
+    },
     interruptCodex: vi.fn(() => true),
     resetCodexSession: vi.fn(),
     respondToCodexPermission: vi.fn(() => true),
@@ -66,6 +72,7 @@ vi.mock('../../codex/codex-turn', () => ({
   reviewCodexTurn: turnMocks.reviewCodexTurn,
   compactCodexTurn: turnMocks.compactCodexTurn,
   steerCodex: turnMocks.steerCodex,
+  deriveFinalResponse: turnMocks.deriveFinalResponse,
   interruptCodex: turnMocks.interruptCodex,
   resetCodexSession: turnMocks.resetCodexSession,
   respondToCodexPermission: turnMocks.respondToCodexPermission,
@@ -607,8 +614,12 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     service.resolveRun(makeResult({ finalResponse: 'done' }))
     await pending
 
-    const completeEvt = events.find((e) => e.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }> | undefined
-    expect(completeEvt?.messageId).toBe('asst-2')
+    const completes = events.filter(
+      (e): e is Extract<AgentEvent, { type: 'message_complete' }> => e.type === 'message_complete',
+    )
+    // Steer finalizes the pre-steer bubble (asst-1) and the steered bubble
+    // (asst-2) completes at turn end — each its own message_complete.
+    expect(completes.map((e) => e.messageId)).toEqual(['asst-1', 'asst-2'])
     expect(service.steerMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'redirect')
   })
 
@@ -620,6 +631,84 @@ describe('CodexBackend interrupt / approval forwarding', () => {
 
   it('respondToPlanApproval is a no-op (not applicable to Codex)', () => {
     expect(() => backend.respondToPlanApproval('req', true, 'nope')).not.toThrow()
+  })
+})
+
+describe('CodexBackend steer message attribution', () => {
+  let service: ReturnType<typeof makeFakeService>
+  let backend: CodexBackend
+  let events: AgentEvent[]
+
+  beforeEach(async () => {
+    service = makeFakeService()
+    backend = new CodexBackend(service)
+    events = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(makeStartOpts())
+  })
+
+  function itemDeltas(messageId: string): Array<{ phase: string; id: string }> {
+    return events
+      .filter((e): e is Extract<AgentEvent, { type: 'codex_item_delta' }> => e.type === 'codex_item_delta')
+      .filter((e) => e.messageId === messageId)
+      .map((e) => ({ phase: e.phase, id: (e.item as { id: string }).id }))
+  }
+
+  function completeFor(messageId: string): Extract<AgentEvent, { type: 'message_complete' }> | undefined {
+    return events
+      .filter((e): e is Extract<AgentEvent, { type: 'message_complete' }> => e.type === 'message_complete')
+      .find((e) => e.messageId === messageId)
+  }
+
+  function completeItemIds(messageId: string): string[] {
+    const meta = completeFor(messageId)?.metadata as { codex?: { items?: Array<{ id: string }> } } | undefined
+    return (meta?.codex?.items ?? []).map((i) => i.id)
+  }
+
+  it('keeps each bubble’s items isolated across a steer: pre-steer item completes into the pre-steer bubble, not the steered one', async () => {
+    const pending = backend.send({ content: 'first task', assistantMessageId: 'A' })
+    const cb = service.capturedCallbacks!
+    expect(cb).toBeDefined()
+
+    // Item starts under bubble A (before steer).
+    cb.onItemDelta!('started', { id: 'item-A', type: 'agent_message', text: 'partial A' } as CodexThreadItem)
+
+    // User steers mid-turn → new bubble B.
+    await backend.handleCommand({
+      kind: 'codex.steer',
+      input: 'actually do this instead',
+      newAssistantMessageId: 'B',
+      newUserMessageId: 'U2',
+      newUserText: 'actually do this instead',
+    })
+
+    // Codex finishes item-A *after* the steer (force-completed at turn end),
+    // then streams a fresh item-B for the steered request.
+    cb.onItemDelta!('completed', { id: 'item-A', type: 'agent_message', text: 'A done' } as CodexThreadItem)
+    cb.onItemDelta!('started', { id: 'item-B', type: 'agent_message', text: 'answer B' } as CodexThreadItem)
+    cb.onItemDelta!('completed', { id: 'item-B', type: 'agent_message', text: 'answer B' } as CodexThreadItem)
+
+    service.resolveRun(makeResult({
+      finalResponse: 'answer B',
+      threadId: 'th-1',
+      items: [
+        { id: 'item-A', type: 'agent_message', text: 'A done' } as CodexThreadItem,
+        { id: 'item-B', type: 'agent_message', text: 'answer B' } as CodexThreadItem,
+      ],
+    }))
+    await pending
+
+    // item-A deltas (incl. the post-steer completion) must stay attributed to A.
+    expect(itemDeltas('A').map((d) => d.id)).toEqual(['item-A', 'item-A'])
+    expect(itemDeltas('B').map((d) => d.id)).toEqual(['item-B', 'item-B'])
+
+    // Bubble A must be finalized on steer with only its own items.
+    expect(completeFor('A')).toBeDefined()
+    expect(completeItemIds('A')).toEqual(['item-A'])
+
+    // Bubble B's completion must contain only B's items (no merged turn dump).
+    expect(completeFor('B')).toBeDefined()
+    expect(completeItemIds('B')).toEqual(['item-B'])
   })
 })
 

@@ -38,6 +38,7 @@ const {
   respondToCodexPermission,
   respondToCodexElicitation,
   runCodexTurn,
+  interruptCodex,
   mapThreadItemFromAppServer,
   mapApprovalRequest,
   extractSuperoneMiniAppToolName,
@@ -1170,5 +1171,88 @@ describe('streamTurnEvents finalizes stale in_progress items on turn/completed',
     expect(result.items).toHaveLength(2)
     expect(result.items[0]).toMatchObject({ id: 'mcp-ok', status: 'completed' })
     expect(result.items[1]).toMatchObject({ id: 'mcp-fail', status: 'failed' })
+  })
+})
+
+describe('interruptCodex during a running turn', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function makeInterruptibleConnection(threadId: string, turnId: string) {
+    const queue: Array<{ method: string; params: Record<string, unknown> }> = []
+    let pendingResolve: ((n: { method: string; params: Record<string, unknown> }) => void) | null = null
+
+    const push = (n: { method: string; params: Record<string, unknown> }) => {
+      if (pendingResolve) {
+        const resolve = pendingResolve
+        pendingResolve = null
+        resolve(n)
+      } else {
+        queue.push(n)
+      }
+    }
+
+    const request = vi.fn(async (method: string, _params?: unknown) => {
+      if (method === 'thread/start' || method === 'thread/resume') return { thread: { id: threadId } }
+      if (method === 'turn/start') return { turn: { id: turnId } }
+      if (method === 'turn/interrupt') {
+        // Real codex app-server aborts the active turn and emits
+        // turn/completed{interrupted}; the deferred response resolves on TurnAborted.
+        push({ method: 'turn/completed', params: { turn: { id: turnId, status: 'interrupted' } } })
+        return {}
+      }
+      return {}
+    })
+
+    const handle = {
+      connection: {
+        request,
+        respond: vi.fn(async () => {}),
+        notify: vi.fn(async () => {}),
+        nextNotification: vi.fn(async () => {
+          const queued = queue.shift()
+          if (queued) return queued
+          // Long-running turn: never completes on its own until interrupted.
+          return new Promise<{ method: string; params: Record<string, unknown> }>((resolve) => {
+            pendingResolve = resolve
+          })
+        }),
+      },
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: (_cb: unknown) => () => {},
+    }
+    return { handle, request }
+  }
+
+  it('sends turn/interrupt for the active turn and rejects the run as interrupted without killing the pooled connection', async () => {
+    const { handle, request } = makeInterruptibleConnection('thread-int', 'turn-int')
+    const session = { ...makeSession({ model: 'gpt-5.4' }) }
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+
+    const runPromise = runCodexTurn(session, { mode: 'auto' }, '/project', {
+      prompt: 'a long running task',
+      model: 'gpt-5.4',
+      permissionPreset: 'default',
+    })
+
+    await vi.waitFor(() => {
+      expect(session.activeTurnId).toBe('turn-int')
+    })
+
+    const handled = interruptCodex(session)
+    expect(handled).toBe(true)
+
+    await vi.waitFor(() => {
+      expect(request).toHaveBeenCalledWith('turn/interrupt', {
+        threadId: 'thread-int',
+        turnId: 'turn-int',
+      })
+    })
+
+    await expect(runPromise).rejects.toThrow(/interrupt/i)
+    expect(handle.close).not.toHaveBeenCalled()
   })
 })

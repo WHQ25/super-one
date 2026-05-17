@@ -54,7 +54,7 @@ export async function uploadFileToRelay(
   })
   const putRes = await fetch(uploadUrl, {
     method: 'PUT',
-    body: encrypted,
+    body: encrypted as unknown as BodyInit,
     headers: {
       'content-type': encryptedContentType,
       'content-length': String(encrypted.byteLength),

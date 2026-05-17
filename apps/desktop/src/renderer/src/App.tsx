@@ -438,7 +438,7 @@ function HeaderTitle({ layoutMode, sessionId, sessionFallback, folderName }: { l
       <SessionTitleAnimated
         sessionId={sessionId}
         fallback={sessionFallback ?? 'New Session'}
-        className="max-w-[200px] text-xs text-muted-foreground"
+        className="max-w-[300px] text-xs text-muted-foreground"
       />
     )
   }

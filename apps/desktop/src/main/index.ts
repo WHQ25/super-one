@@ -536,10 +536,12 @@ function registerIpcHandlers(): void {
     return session.snapshot('local')
   })
   ipcMain.handle(AgentIpcChannels.TERMINAL_WRITE, (_e, terminalId: string, data: string) => {
-    terminalManager.get(terminalId)?.input(data)
+    const session = terminalManager.get(terminalId)
+    if (session?.ownership.isWritableBy('local')) session.input(data)
   })
   ipcMain.handle(AgentIpcChannels.TERMINAL_RESIZE, (_e, terminalId: string, cols: number, rows: number) => {
-    terminalManager.get(terminalId)?.resize(cols, rows)
+    const session = terminalManager.get(terminalId)
+    if (session?.ownership.isWritableBy('local')) session.resize(cols, rows)
   })
   ipcMain.handle(AgentIpcChannels.TERMINAL_KILL, (_e, terminalId: string) => {
     terminalManager.kill(terminalId)

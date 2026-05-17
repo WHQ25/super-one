@@ -119,15 +119,11 @@ export class TerminalSession {
     if (this._status === 'running') this.pty.resize(cols, rows)
   }
 
-  async snapshot(requester: 'local' | string): Promise<TerminalSnapshot> {
-    const cut = this.seq
-    this.flushBuffer(true)
-    this.snapshotting = true
-
-    await new Promise<void>((resolve) => this.term.write('', resolve))
-    const ansi = this.serializer.serialize()
-    this.lastAnsi = ansi
-
+  private composeSnapshotFrames(
+    requester: 'local' | string,
+    cut: number,
+    ansi: string,
+  ): { snapshot: TerminalSnapshot; frames: TerminalEvent[] } {
     const snapshot: TerminalSnapshot = {
       terminalId: this.terminalId,
       cwd: this.cwd,
@@ -140,14 +136,14 @@ export class TerminalSession {
       writableByMe: this.ownership.isWritableBy(requester),
       subscriberCount: this.ownership.subscriberCount,
     }
-
+    const frames: TerminalEvent[] = []
     if (ansi.length <= this.snapshotSoftLimit) {
-      this.rawEmit({ type: 'terminal_snapshot', terminalId: this.terminalId, snapshot, ansi })
+      frames.push({ type: 'terminal_snapshot', terminalId: this.terminalId, snapshot, ansi })
     } else {
       const snapshotId = `${this.terminalId}:${cut}:${Date.now()}`
       const total = Math.ceil(ansi.length / this.snapshotSoftLimit)
       for (let i = 0; i < total; i++) {
-        this.rawEmit({
+        frames.push({
           type: 'terminal_snapshot_chunk',
           terminalId: this.terminalId,
           snapshotId,
@@ -158,12 +154,34 @@ export class TerminalSession {
         })
       }
     }
+    return { snapshot, frames }
+  }
+
+  async snapshot(requester: 'local' | string): Promise<TerminalSnapshot> {
+    const cut = this.seq
+    this.flushBuffer(true)
+    this.snapshotting = true
+
+    await new Promise<void>((resolve) => this.term.write('', resolve))
+    const ansi = this.serializer.serialize()
+    this.lastAnsi = ansi
+
+    const { snapshot, frames } = this.composeSnapshotFrames(requester, cut, ansi)
+    for (const f of frames) this.rawEmit(f)
 
     this.snapshotting = false
     const queued = this.deferred
     this.deferred = []
     for (const e of queued) this.rawEmit(e)
     return snapshot
+  }
+
+  async snapshotFrames(requester: 'local' | string): Promise<TerminalEvent[]> {
+    await new Promise<void>((resolve) => this.term.write('', resolve))
+    const cut = this.seq
+    const ansi = this.serializer.serialize()
+    this.lastAnsi = ansi
+    return this.composeSnapshotFrames(requester, cut, ansi).frames
   }
 
   kill(): void {

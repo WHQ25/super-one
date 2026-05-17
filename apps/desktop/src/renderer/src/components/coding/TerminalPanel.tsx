@@ -15,7 +15,8 @@ interface TermInstance {
   xterm: XTerm
   fit: FitAddon
   lastSeq: number
-  chunks: Map<string, { total: number; parts: Map<number, string> }>
+  writable: boolean
+  chunks: Map<string, { total: number; parts: Map<number, string>; lastSeq?: number }>
 }
 
 export function TerminalPanel() {
@@ -44,8 +45,11 @@ export function TerminalPanel() {
     })
     const fit = new FitAddon()
     xterm.loadAddon(fit)
-    xterm.onData((data) => void window.terminal.write(terminalId, data))
-    inst = { xterm, fit, lastSeq: 0, chunks: new Map() }
+    xterm.onData((data) => {
+      if (instances.current.get(terminalId)?.writable === false) return
+      void window.terminal.write(terminalId, data)
+    })
+    inst = { xterm, fit, lastSeq: 0, writable: true, chunks: new Map() }
     instances.current.set(terminalId, inst)
     return inst
   }, [])
@@ -56,6 +60,7 @@ export function TerminalPanel() {
         event.type !== 'terminal_output' &&
         event.type !== 'terminal_snapshot' &&
         event.type !== 'terminal_snapshot_chunk' &&
+        event.type !== 'terminal_owner_changed' &&
         event.type !== 'terminal_exited'
       )
         return
@@ -69,6 +74,7 @@ export function TerminalPanel() {
         inst.xterm.reset()
         inst.xterm.write(event.ansi)
         inst.lastSeq = event.snapshot.lastSeq
+        inst.writable = event.snapshot.writableByMe
       } else if (event.type === 'terminal_snapshot_chunk') {
         let acc = inst.chunks.get(event.snapshotId)
         if (!acc) {
@@ -76,13 +82,19 @@ export function TerminalPanel() {
           inst.chunks.set(event.snapshotId, acc)
         }
         acc.parts.set(event.index, event.ansi)
+        if (event.snapshot) {
+          acc.lastSeq = event.snapshot.lastSeq
+          inst.writable = event.snapshot.writableByMe
+        }
         if (acc.parts.size === acc.total) {
           const ansi = Array.from({ length: acc.total }, (_, i) => acc!.parts.get(i) ?? '').join('')
           inst.xterm.reset()
           inst.xterm.write(ansi)
-          if (event.snapshot) inst.lastSeq = event.snapshot.lastSeq
+          if (acc.lastSeq !== undefined) inst.lastSeq = acc.lastSeq
           inst.chunks.delete(event.snapshotId)
         }
+      } else if (event.type === 'terminal_owner_changed') {
+        inst.writable = event.writableByMe
       } else if (event.type === 'terminal_exited') {
         inst.xterm.write('\r\n\x1b[2m[process exited]\x1b[0m\r\n')
       }
@@ -92,7 +104,6 @@ export function TerminalPanel() {
 
   const tabsRef = useRef(tabs)
   tabsRef.current = tabs
-  const prevOpenRef = useRef(false)
 
   const createTerminal = useCallback(async () => {
     if (!projectPath || creatingRef.current) return
@@ -121,12 +132,17 @@ export function TerminalPanel() {
   )
 
   useEffect(() => {
-    const opened = terminalOpen && !prevOpenRef.current
-    prevOpenRef.current = terminalOpen
-    if (opened && projectPath && tabsRef.current.length === 0 && !creatingRef.current) {
+    for (const inst of instances.current.values()) inst.xterm.dispose()
+    instances.current.clear()
+    setTabs([])
+    setActiveId(null)
+  }, [projectPath, sessionId])
+
+  useEffect(() => {
+    if (terminalOpen && projectPath && tabs.length === 0 && !creatingRef.current) {
       void createTerminal()
     }
-  }, [terminalOpen, projectPath, createTerminal])
+  }, [terminalOpen, projectPath, sessionId, tabs.length, createTerminal])
 
   useEffect(() => {
     if (!activeId || !hostRef.current) return

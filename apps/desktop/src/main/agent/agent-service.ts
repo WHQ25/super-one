@@ -399,11 +399,10 @@ export class AgentService {
     term: import('../terminal/terminal-session').TerminalSession,
     deviceId: string,
   ): Promise<void> {
-    const snapshot = await term.snapshot(deviceId)
-    await this.remoteControlService?.sendTerminalFrame(
-      { type: 'terminal_snapshot', terminalId: term.terminalId, snapshot, ansi: term.lastAnsi },
-      [deviceId],
-    )
+    const frames = await term.snapshotFrames(deviceId)
+    for (const frame of frames) {
+      await this.remoteControlService?.sendTerminalFrame(frame, [deviceId])
+    }
   }
 
   async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void> {
@@ -783,6 +782,15 @@ export class AgentService {
         break
       }
       case 'terminal_kill': {
+        const term = this.terminalManager?.get(command.terminalId)
+        if (!term) break
+        if (!term.ownership.isWritableBy(deviceId)) {
+          await this.remoteControlService?.sendTerminalFrame(
+            { type: 'terminal_error', terminalId: command.terminalId, code: 'not_owner', message: 'Only the controlling device can kill this terminal' },
+            [deviceId],
+          )
+          break
+        }
         this.terminalManager?.kill(command.terminalId)
         break
       }

@@ -2145,4 +2145,19 @@ describe('AgentService terminal remote commands', () => {
     const claimRes = sent.find((s) => s.event.type === 'terminal_command_result' && s.event.requestId === 'k1')
     expect(claimRes?.event).toMatchObject({ ok: false, code: 'already_claimed' })
   })
+
+  it('rejects terminal_kill from a non-owner subscriber and keeps the terminal alive', async () => {
+    const { service, tm, sent, src } = setup()
+    await service.handleRemoteCommand({ type: 'terminal_create', requestId: 'c1', projectPath: '/p' }, undefined, src('dev-a'))
+    const termId = (sent.find((s) => s.event.type === 'terminal_command_result')!.event as { terminalId: string }).terminalId
+    await service.handleRemoteCommand({ type: 'terminal_subscribe', requestId: 's1', terminalId: termId }, undefined, src('dev-b'))
+
+    await service.handleRemoteCommand({ type: 'terminal_kill', terminalId: termId }, undefined, src('dev-b'))
+    expect(tm.get(termId)).toBeDefined()
+    const err = sent.find((s) => s.event.type === 'terminal_error' && s.targets?.[0] === 'dev-b')
+    expect(err?.event).toMatchObject({ code: 'not_owner' })
+
+    await service.handleRemoteCommand({ type: 'terminal_kill', terminalId: termId }, undefined, src('dev-a'))
+    expect(tm.get(termId)).toBeUndefined()
+  })
 })

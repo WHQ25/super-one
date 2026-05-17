@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react'
-import { Sun, Moon, X, Smartphone, Minimize2 } from 'lucide-react'
+import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -37,6 +37,8 @@ import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
+import { CommandShortcut } from '@superone/ui/components/ui/command'
 import { initAnalytics } from '@/lib/analytics'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
 import { LAYOUT } from '@/lib/layout-constants'
@@ -51,7 +53,7 @@ function App(): React.JSX.Element {
   useStandaloneToolCallRouter()
   const theme = useTheme()
   const { t } = useTranslation()
-  const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode })))
+  const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode, terminalOpen, toggleTerminal } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode, terminalOpen: s.terminalOpen, toggleTerminal: s.toggleTerminal })))
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
   const isFullscreen = useFullscreen()
@@ -357,6 +359,24 @@ function App(): React.JSX.Element {
             <MiniAppMediaIndicator />
             <CanvasReturnToPanelButton />
             <CanvasCloseButton />
+            {layoutMode === 'coding' && (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={toggleTerminal}
+                      className={cn(
+                        'rounded-md p-1.5 transition-colors hover:bg-muted hover:text-foreground',
+                        terminalOpen ? 'text-foreground' : 'text-muted-foreground/60',
+                      )}
+                    >
+                      <SquareTerminal className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top"><span>Toggle terminal</span> <CommandShortcut>{isMac ? '⌘J' : 'Ctrl+J'}</CommandShortcut></TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             <button
               onClick={theme.toggle}
               className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"

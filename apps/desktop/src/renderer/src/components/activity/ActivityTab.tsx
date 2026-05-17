@@ -17,7 +17,7 @@ function useIsActive(api: IDockviewPanelHeaderProps['api']) {
   return active
 }
 
-function HoverCloseSlot({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+export function HoverCloseSlot({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="relative size-3.5 shrink-0">
       <div className="absolute inset-0 transition-opacity [div:hover>div>&]:opacity-0">
@@ -34,7 +34,7 @@ function HoverCloseSlot({ children, onClose }: { children: React.ReactNode; onCl
   )
 }
 
-function tabChipClass(active: boolean): string {
+export function tabChipClass(active: boolean): string {
   return cn(
     'flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors',
     active

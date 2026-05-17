@@ -1780,6 +1780,17 @@ export const AgentIpcChannels = {
   AUTOMATIONS_DELETE: 'automations:delete',
   AUTOMATIONS_RUN_NOW: 'automations:run-now',
   AUTOMATIONS_EVENT: 'automations:event',
+
+  // Terminal
+  TERMINAL_CREATE: 'terminal:create',
+  TERMINAL_LIST: 'terminal:list',
+  TERMINAL_SNAPSHOT: 'terminal:snapshot',
+  TERMINAL_WRITE: 'terminal:write',
+  TERMINAL_RESIZE: 'terminal:resize',
+  TERMINAL_KILL: 'terminal:kill',
+  TERMINAL_CLAIM: 'terminal:claim',
+  TERMINAL_RELEASE: 'terminal:release',
+  TERMINAL_EVENT: 'terminal:event',
 } as const
 
 export interface FileSearchResult {
@@ -1793,6 +1804,41 @@ export interface FileSearchResult {
 export type MentionSearchItem =
   | { kind: 'file'; path: string; isDirectory: boolean; matchIndices: number[]; score: number; rootPath?: string }
   | { kind: 'agent'; name: string; model: string; matchIndices: number[]; score: number }
+
+export type TerminalStatus = 'running' | 'exited' | 'error'
+
+export interface TerminalSnapshot {
+  terminalId: string
+  cwd: string
+  title: string
+  status: TerminalStatus
+  cols: number
+  rows: number
+  lastSeq: number
+  ownerDeviceId: string | null
+  writableByMe: boolean
+  subscriberCount: number
+}
+
+export interface TerminalListItem {
+  terminalId: string
+  cwd: string
+  title: string
+  status: TerminalStatus
+  ownerDeviceId: string | null
+}
+
+export type TerminalErrorCode = 'not_owner' | 'no_terminal' | 'spawn_failed' | 'cwd_invalid'
+export type TerminalCommandResultCode = 'not_owner' | 'already_claimed' | 'no_terminal'
+
+export type TerminalEvent =
+  | { type: 'terminal_snapshot'; terminalId: string; snapshot: TerminalSnapshot; ansi: string }
+  | { type: 'terminal_snapshot_chunk'; terminalId: string; snapshotId: string; index: number; total: number; ansi: string; snapshot?: TerminalSnapshot }
+  | { type: 'terminal_output'; terminalId: string; data: string; fromSeq: number; toSeq: number; createdAt: number }
+  | { type: 'terminal_owner_changed'; terminalId: string; ownerDeviceId: string | null; writableByMe: boolean }
+  | { type: 'terminal_command_result'; requestId: string; ok: boolean; terminalId?: string; code?: TerminalCommandResultCode; message?: string }
+  | { type: 'terminal_exited'; terminalId: string; exitCode: number | null; signal: number | null }
+  | { type: 'terminal_error'; terminalId: string; code: TerminalErrorCode; message: string }
 
 export type RemoteCommand =
   | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: 'claude' | 'codex'; permissionMode?: string; effort?: string; model?: string; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[] }
@@ -1834,6 +1880,14 @@ export type RemoteCommand =
   | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number }
   | { type: 'list_providers'; requestId: string }
   | { type: 'set_session_api_provider_id'; projectPath: string; sessionId: string; apiProviderId: string | null }
+  | { type: 'terminal_create'; requestId: string; projectPath: string; sessionId?: string }
+  | { type: 'terminal_kill'; terminalId: string }
+  | { type: 'terminal_subscribe'; requestId: string; terminalId: string }
+  | { type: 'terminal_unsubscribe'; terminalId?: string }
+  | { type: 'terminal_claim'; requestId: string; terminalId: string }
+  | { type: 'terminal_release'; requestId: string; terminalId: string }
+  | { type: 'terminal_input'; terminalId: string; data: string }
+  | { type: 'terminal_resize'; terminalId: string; cols: number; rows: number }
 
 export interface ReadDesktopFileResponse {
   ok: true

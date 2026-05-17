@@ -29,6 +29,8 @@ import { resolveProbeCwd } from './agent/probe-cwd'
 import { fixPath } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
+import { TerminalManager } from './terminal/terminal-manager'
+import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { PresenceCoordinator } from './remote/presence-coordinator'
@@ -280,6 +282,20 @@ new PresenceCoordinator(sessionManager, {
   sendToMobile: (event, targetDeviceIds) => remoteControlService.sendEventToMobile(event, targetDeviceIds),
 })
 
+const terminalManager = new TerminalManager({
+  spawner: nodePtySpawner,
+  onEvent: (event) => safeSend(AgentIpcChannels.TERMINAL_EVENT, event),
+})
+let terminalSweepTimer: ReturnType<typeof setInterval> | null = null
+
+function resolveTerminalCwd(projectPath: string, sessionId?: string): string {
+  if (sessionId) {
+    const session = sessionManager.getSession(sessionId)
+    if (session) return session.cwd
+  }
+  return projectPath
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -493,6 +509,35 @@ async function runCodexTurnViaSessionManager(
 }
 
 function registerIpcHandlers(): void {
+  ipcMain.handle(
+    AgentIpcChannels.TERMINAL_CREATE,
+    (_e, opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number }) => {
+      const cwd = resolveTerminalCwd(opts.projectPath, opts.sessionId)
+      const session = terminalManager.create({
+        cwd,
+        title: opts.title ?? (basename(cwd) || 'Terminal'),
+        cols: opts.cols,
+        rows: opts.rows,
+      })
+      return session.listItem()
+    },
+  )
+  ipcMain.handle(AgentIpcChannels.TERMINAL_LIST, (_e, cwd?: string) => terminalManager.list(cwd))
+  ipcMain.handle(AgentIpcChannels.TERMINAL_SNAPSHOT, async (_e, terminalId: string) => {
+    const session = terminalManager.get(terminalId)
+    if (!session) return null
+    return session.snapshot('local')
+  })
+  ipcMain.handle(AgentIpcChannels.TERMINAL_WRITE, (_e, terminalId: string, data: string) => {
+    terminalManager.get(terminalId)?.input(data)
+  })
+  ipcMain.handle(AgentIpcChannels.TERMINAL_RESIZE, (_e, terminalId: string, cols: number, rows: number) => {
+    terminalManager.get(terminalId)?.resize(cols, rows)
+  })
+  ipcMain.handle(AgentIpcChannels.TERMINAL_KILL, (_e, terminalId: string) => {
+    terminalManager.kill(terminalId)
+  })
+
   // Setup agent IPC handlers (does NOT auto-initialize)
   agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))
   agentService.setCodexProviderChanged(() => codexService.handleProviderChanged())
@@ -2140,6 +2185,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(AgentIpcChannels.MEDIA_SERVER_PORT, () => getMediaServerPort())
   getDb() // Initialize database
   registerIpcHandlers()
+  terminalSweepTimer = setInterval(() => terminalManager.sweep(), 30_000)
 
   const ses = session.defaultSession
   ses.setPermissionRequestHandler((wc, permission, callback, details) => {
@@ -2243,6 +2289,8 @@ let quitting = false
 
 function performQuit(): void {
   quitting = true
+  if (terminalSweepTimer) clearInterval(terminalSweepTimer)
+  terminalManager.killAll()
   automationService.stop()
   stopAllWorkers()
   stopWatching()

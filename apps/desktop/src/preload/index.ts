@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type HookSavePayload } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 
 try {
@@ -135,6 +135,36 @@ const agentAPI = {
     ipcRenderer.on(AgentIpcChannels.EVENT, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.EVENT, handler)
+    }
+  },
+}
+
+const terminalAPI = {
+  create: (opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number }) =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_CREATE, opts) as Promise<TerminalListItem>,
+
+  list: (cwd?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_LIST, cwd) as Promise<TerminalListItem[]>,
+
+  snapshot: (terminalId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_SNAPSHOT, terminalId) as Promise<TerminalSnapshot | null>,
+
+  write: (terminalId: string, data: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_WRITE, terminalId, data) as Promise<void>,
+
+  resize: (terminalId: string, cols: number, rows: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_RESIZE, terminalId, cols, rows) as Promise<void>,
+
+  kill: (terminalId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_KILL, terminalId) as Promise<void>,
+
+  onTerminalEvent: (callback: (event: TerminalEvent) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, event: TerminalEvent): void => {
+      callback(event)
+    }
+    ipcRenderer.on(AgentIpcChannels.TERMINAL_EVENT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.TERMINAL_EVENT, handler)
     }
   },
 }
@@ -1077,6 +1107,7 @@ if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('agent', agentAPI)
+    contextBridge.exposeInMainWorld('terminal', terminalAPI)
     contextBridge.exposeInMainWorld('app', appAPI)
     contextBridge.exposeInMainWorld('miniapp', miniappAPI)
   } catch (error) {
@@ -1087,6 +1118,8 @@ if (process.contextIsolated) {
   window.electron = electronAPI
   // @ts-ignore
   window.agent = agentAPI
+  // @ts-ignore
+  window.terminal = terminalAPI
   // @ts-ignore
   window.app = appAPI
   // @ts-ignore

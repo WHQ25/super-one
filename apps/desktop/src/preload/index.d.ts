@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexProviderTestProgress, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, StartupData, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo } from '@superone/shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexProviderTestProgress, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, FileOpResult, FileSearchResult, FileTreeEntry, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo } from '@superone/shared/agent-types'
 import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest, MiniAppWorkerInfo, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
 import type { LiveSessionSnapshot } from '@superone/shared/session-types'
@@ -359,10 +359,21 @@ interface MiniAppAPI {
   }
 }
 
+interface TerminalAPI {
+  create(opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number }): Promise<TerminalListItem>
+  list(cwd?: string): Promise<TerminalListItem[]>
+  snapshot(terminalId: string): Promise<TerminalSnapshot | null>
+  write(terminalId: string, data: string): Promise<void>
+  resize(terminalId: string, cols: number, rows: number): Promise<void>
+  kill(terminalId: string): Promise<void>
+  onTerminalEvent(callback: (event: TerminalEvent) => void): () => void
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
     agent: AgentAPI
+    terminal: TerminalAPI
     app: AppAPI
     miniapp: MiniAppAPI
   }

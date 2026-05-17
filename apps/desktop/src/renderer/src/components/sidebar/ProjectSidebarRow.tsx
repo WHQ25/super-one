@@ -388,7 +388,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                               e.stopPropagation()
                               onPinSession(session.sessionId, !session.isPinned, folder.path)
                             }}
-                            className="ml-auto shrink-0 rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-accent-foreground group-hover/session:opacity-100"
+                            className="ml-auto box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100"
                           >
                             <Pin className="size-3" />
                           </button>

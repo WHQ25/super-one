@@ -431,7 +431,7 @@ export const AppSidebar = memo(function AppSidebar() {
                   e.stopPropagation()
                   handlePinSession(s.sessionId, false, s.folderPath)
                 }}
-                className="shrink-0 rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-colors hover:text-sidebar-accent-foreground group-hover/pin:opacity-100"
+                className="box-content ml-1 w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/pin:w-3 group-hover/pin:opacity-100"
               >
                 <Pin className="size-3" />
               </button>

@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Terminal as TerminalIcon, Plus, X } from 'lucide-react'
+import { Terminal as TerminalIcon, Plus, X, ArrowUp, ArrowDown } from 'lucide-react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
+import { WebglAddon } from '@xterm/addon-webgl'
+import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
+import { requestOpenExternalLink } from '@/lib/external-link'
 import type { TerminalEvent } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
@@ -26,8 +31,44 @@ export function TerminalPanel() {
   const setActive = useTerminalStore((s) => s.setActive)
 
   const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
+  const [find, setFind] = useState<string | null>(null)
+  const [findHits, setFindHits] = useState({ idx: -1, count: 0 })
   const hostRef = useRef<HTMLDivElement>(null)
+  const findInputRef = useRef<HTMLInputElement>(null)
+  const openFindRef = useRef<() => void>(() => {})
   const creatingRef = useRef(false)
+
+  const SEARCH_DECORATIONS = {
+    matchBackground: '#7a5c1f',
+    activeMatchBackground: '#d18616',
+    matchOverviewRuler: '#7a5c1f',
+    activeMatchColorOverviewRuler: '#d18616',
+  } as const
+
+  const runSearch = useCallback(
+    (query: string, dir: 'next' | 'prev', incremental = false) => {
+      const search = (activeId ? instances.get(activeId) : null)?.search
+      if (!search) return
+      const opts = { incremental, decorations: SEARCH_DECORATIONS }
+      if (dir === 'next') search.findNext(query, opts)
+      else search.findPrevious(query, opts)
+    },
+    [activeId, instances],
+  )
+
+  const closeFind = useCallback(() => {
+    setFind(null)
+    setFindHits({ idx: -1, count: 0 })
+    const inst = activeId ? instances.get(activeId) : null
+    inst?.search.clearDecorations()
+    inst?.xterm.focus()
+  }, [activeId, instances])
+
+  openFindRef.current = () => {
+    const sel = (activeId ? instances.get(activeId) : null)?.xterm.getSelection().trim()
+    setFind((prev) => (sel ? sel : (prev ?? '')))
+    requestAnimationFrame(() => findInputRef.current?.select())
+  }
 
   const ensureInstance = useCallback(
     (terminalId: string) => {
@@ -42,11 +83,29 @@ export function TerminalPanel() {
       })
       const fit = new FitAddon()
       xterm.loadAddon(fit)
+      xterm.loadAddon(
+        new WebLinksAddon((event, uri) => {
+          event.preventDefault()
+          requestOpenExternalLink(uri)
+        }),
+      )
+      xterm.loadAddon(new Unicode11Addon())
+      xterm.unicode.activeVersion = '11'
+      const search = new SearchAddon()
+      xterm.loadAddon(search)
+      search.onDidChangeResults((e) => setFindHits({ idx: e.resultIndex, count: e.resultCount }))
+      xterm.attachCustomKeyEventHandler((e) => {
+        if (e.type === 'keydown' && (e.metaKey || e.ctrlKey) && e.key === 'f') {
+          openFindRef.current()
+          return false
+        }
+        return true
+      })
       xterm.onData((data) => {
         if (instances.get(terminalId)?.writable === false) return
         void window.terminal.write(terminalId, data)
       })
-      inst = { xterm, fit, lastSeq: 0, writable: true, chunks: new Map() }
+      inst = { xterm, fit, search, lastSeq: 0, writable: true, chunks: new Map() }
       instances.set(terminalId, inst)
       return inst
     },
@@ -116,7 +175,15 @@ export function TerminalPanel() {
     (terminalId: string) => {
       void window.terminal.kill(terminalId)
       const inst = instances.get(terminalId)
-      inst?.xterm.dispose()
+      if (inst) {
+        try {
+          inst.webgl?.dispose()
+        } catch {
+          /* webgl renderer already torn down (context lost) */
+        }
+        inst.webgl = undefined
+        inst.xterm.dispose()
+      }
       instances.delete(terminalId)
       if (!projectPath) return
       removeTab(projectPath, terminalId)
@@ -144,6 +211,21 @@ export function TerminalPanel() {
     } else {
       host.replaceChildren()
       inst.xterm.open(host)
+      try {
+        const webgl = new WebglAddon()
+        webgl.onContextLoss(() => {
+          try {
+            webgl.dispose()
+          } catch {
+            /* renderer internals already gone */
+          }
+          inst.webgl = undefined
+        })
+        inst.xterm.loadAddon(webgl)
+        inst.webgl = webgl
+      } catch {
+        /* WebGL unavailable — xterm falls back to the DOM renderer */
+      }
     }
     inst.fit.fit()
     void window.terminal.snapshot(activeId)
@@ -199,16 +281,69 @@ export function TerminalPanel() {
           {projectPath ? 'No terminal — click + to start one' : 'Open a project to use the terminal'}
         </div>
       ) : (
-        <div
-          ref={hostRef}
-          className="min-h-0 flex-1 overflow-hidden p-1"
-          onContextMenu={(e) => {
-            const sel = (activeId ? instances.get(activeId) : null)?.xterm.getSelection().trim()
-            if (!sel) return
-            e.preventDefault()
-            setMenu({ x: e.clientX, y: e.clientY, text: sel })
-          }}
-        />
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={hostRef}
+            className="h-full overflow-hidden p-1"
+            onContextMenu={(e) => {
+              const sel = (activeId ? instances.get(activeId) : null)?.xterm.getSelection().trim()
+              if (!sel) return
+              e.preventDefault()
+              setMenu({ x: e.clientX, y: e.clientY, text: sel })
+            }}
+          />
+          {find !== null && (
+            <div className="absolute right-3 top-2 z-20 flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 shadow-md">
+              <input
+                ref={findInputRef}
+                autoFocus
+                value={find}
+                placeholder="Find"
+                spellCheck={false}
+                onChange={(e) => {
+                  setFind(e.target.value)
+                  runSearch(e.target.value, 'next', true)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    runSearch(find, e.shiftKey ? 'prev' : 'next')
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    closeFind()
+                  }
+                }}
+                className="w-44 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+              />
+              <span className="min-w-10 text-right text-[11px] tabular-nums text-muted-foreground">
+                {findHits.count ? `${findHits.idx + 1}/${findHits.count}` : '0/0'}
+              </span>
+              <button
+                onClick={() => runSearch(find, 'prev')}
+                disabled={!findHits.count}
+                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-40"
+                title="Previous (⇧↵)"
+              >
+                <ArrowUp className="size-3.5" />
+              </button>
+              <button
+                onClick={() => runSearch(find, 'next')}
+                disabled={!findHits.count}
+                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-40"
+                title="Next (↵)"
+              >
+                <ArrowDown className="size-3.5" />
+              </button>
+              <button
+                onClick={closeFind}
+                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                title="Close (Esc)"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
       )}
       {menu && (
         <SelectionMenu

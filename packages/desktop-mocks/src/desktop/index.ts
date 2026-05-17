@@ -17,6 +17,11 @@ export {
   type DesktopMainHeaderProps,
   type MockProject,
   type MockSession,
+  type MockAutomation,
+  type MockWorker,
+  type MockPinnedSession,
+  type MockApp,
+  type AutomationStatus,
   type SessionStatus,
   type SidebarTab,
 } from "./desktop-shell"

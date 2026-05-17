@@ -114,6 +114,12 @@ import {
   MINIAPP_FULLSCREEN_HEIGHT,
   MINIAPP_FULLSCREEN_WIDTH,
   miniAppFullscreenSceneDefaultProps,
+  SidebarGalleryScene,
+  SIDEBAR_GALLERY_DURATION_IN_FRAMES,
+  SIDEBAR_GALLERY_FPS,
+  SIDEBAR_GALLERY_HEIGHT,
+  SIDEBAR_GALLERY_WIDTH,
+  sidebarGallerySceneDefaultProps,
 } from "@superone/video-compositions"
 
 import "./index.css"
@@ -282,6 +288,15 @@ export const RemotionRoot = () => {
         width={ACTIVITY_PANEL_WIDTH}
         height={ACTIVITY_PANEL_HEIGHT}
         defaultProps={activityPanelSceneDefaultProps}
+      />
+      <Composition
+        id="SidebarGalleryScene"
+        component={SidebarGalleryScene}
+        durationInFrames={SIDEBAR_GALLERY_DURATION_IN_FRAMES}
+        fps={SIDEBAR_GALLERY_FPS}
+        width={SIDEBAR_GALLERY_WIDTH}
+        height={SIDEBAR_GALLERY_HEIGHT}
+        defaultProps={sidebarGallerySceneDefaultProps}
       />
       <Composition
         id="MiniAppFullscreenScene"

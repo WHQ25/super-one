@@ -180,6 +180,16 @@ export {
 export type { ActivityPanelSceneProps } from "./ActivityPanelScene/index"
 
 export {
+  SidebarGalleryScene,
+  sidebarGallerySceneDefaultProps,
+  SIDEBAR_GALLERY_DURATION_IN_FRAMES,
+  SIDEBAR_GALLERY_FPS,
+  SIDEBAR_GALLERY_WIDTH,
+  SIDEBAR_GALLERY_HEIGHT,
+} from "./SidebarGalleryScene/index"
+export type { SidebarGallerySceneProps } from "./SidebarGalleryScene/index"
+
+export {
   MiniAppFullscreenScene,
   miniAppFullscreenSceneDefaultProps,
   MINIAPP_FULLSCREEN_DURATION_IN_FRAMES,

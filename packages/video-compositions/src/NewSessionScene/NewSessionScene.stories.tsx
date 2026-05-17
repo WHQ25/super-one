@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { HARNESS_CODEX_HUE } from "@superone/desktop-mocks"
 import {
   NEW_SESSION_DURATION_IN_FRAMES,
   NEW_SESSION_FPS,
@@ -33,7 +34,7 @@ export const Player: Story = {
 }
 
 export const Codex: Story = {
-  args: { ...newSessionSceneDefaultProps, harness: "codex", brandHue: 165 },
+  args: { ...newSessionSceneDefaultProps, startHarness: "codex", brandHue: HARNESS_CODEX_HUE },
   render: (args) => (
     <PlayerStage
       component={NewSessionScene}

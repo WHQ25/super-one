@@ -5,22 +5,32 @@ import {
   ArrowDownUp,
   Blocks,
   Bot,
+  CalendarClock,
+  ChevronDown,
   ChevronRight,
   CircleCheck,
+  EyeOff,
   Folder,
+  FolderClosed,
   FolderOpen,
+  FolderX,
   GitFork,
+  LayoutGrid,
   Loader2,
+  Maximize,
   MessageSquare,
   Moon,
   Palette,
   PanelLeftDashed,
   PanelLeftOpen,
   PanelRightOpen,
+  Pin,
   Plus,
   Settings,
   Smartphone,
+  SquareActivity,
   SquarePen,
+  Store,
   Sun,
 } from "lucide-react"
 import { Button } from "@superone/ui/components/ui/button"
@@ -30,7 +40,14 @@ import { cn } from "@superone/ui/lib/utils"
 import { useMockT } from "./i18n"
 
 export type SidebarTab = "sessions" | "files"
-export type SessionStatus = "idle" | "running" | "unseen" | "worktree"
+export type SessionStatus =
+  | "idle"
+  | "running"
+  | "background"
+  | "unseen"
+  | "worktree"
+  | "automation"
+  | "remote"
 
 export interface MockSession {
   id: string
@@ -38,25 +55,89 @@ export interface MockSession {
   status?: SessionStatus
   active?: boolean
   pendingReason?: string
+  pinned?: boolean
+}
+
+export type AutomationStatus = "idle" | "running" | "error" | "disabled"
+
+export interface MockAutomation {
+  id: string
+  name: string
+  status?: AutomationStatus
+}
+
+export interface MockWorker {
+  id: string
+  name: string
+  uptime?: string
 }
 
 export interface MockProject {
   name: string
   active?: boolean
   expanded?: boolean
+  missing?: boolean
   sessions?: MockSession[]
+  automations?: MockAutomation[]
+  automationsExpanded?: boolean
+  workers?: MockWorker[]
+  hasMore?: boolean
+}
+
+export interface MockPinnedSession {
+  id: string
+  title: string
+  folderName: string
+}
+
+export interface MockApp {
+  id: string
+  name: string
+  description?: string
+  isDev?: boolean
+  fullscreen?: boolean
 }
 
 export interface DesktopShellProps {
   projects?: MockProject[]
+  pinnedSessions?: MockPinnedSession[]
+  apps?: MockApp[]
+  appsExpanded?: boolean
   headerTitle?: string
   sidebarTab?: SidebarTab
   fileTree?: ReactNode
   showTrafficLights?: boolean
   showActivityPanelToggle?: boolean
+  remoteOnline?: boolean
   height?: number | string
   children: ReactNode
   className?: string
+}
+
+const DEFAULT_PINNED: MockPinnedSession[] = [
+  { id: "p1", title: "Relay protocol redesign", folderName: "super-one" },
+  { id: "p2", title: "Hermès theme tokens", folderName: "marketing-site" },
+]
+
+const DEFAULT_APPS: MockApp[] = [
+  { id: "design-canvas", name: "Design Canvas", description: "Sketch UI with the agent", fullscreen: true },
+  { id: "db-explorer", name: "DB Explorer", description: "Browse the session SQLite DB" },
+  { id: "relay-inspector", name: "Relay Inspector", description: "Live mobile↔desktop frames", isDev: true },
+  { id: "todo-board", name: "Todo Board", description: "Kanban over agent todos" },
+]
+
+const APP_TILE_TINTS = [
+  "oklch(0.72 0.16 42)",
+  "oklch(0.70 0.13 165)",
+  "oklch(0.68 0.15 265)",
+  "oklch(0.74 0.14 95)",
+  "oklch(0.66 0.16 320)",
+]
+
+function tileTint(id: string): string {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+  return APP_TILE_TINTS[h % APP_TILE_TINTS.length]
 }
 
 const DEFAULT_PROJECTS: MockProject[] = [
@@ -64,12 +145,22 @@ const DEFAULT_PROJECTS: MockProject[] = [
     name: "super-one",
     active: true,
     expanded: true,
+    automations: [
+      { id: "a1", name: "Nightly typecheck", status: "idle" },
+      { id: "a2", name: "Sync bun.lock", status: "running" },
+      { id: "a3", name: "Stale PR sweep", status: "error" },
+    ],
+    automationsExpanded: true,
+    workers: [{ id: "w1", name: "design-canvas", uptime: "12m 4s" }],
     sessions: [
       { id: "s1", title: "Refactor sidebar layout", active: true, status: "running" },
       { id: "s2", title: "Fix relay reconnect bug", status: "unseen", pendingReason: "Allow Bash?" },
-      { id: "s3", title: "Polish miniapp permissions", status: "unseen", pendingReason: "Review plan" },
+      { id: "s3", title: "Polish miniapp permissions", status: "background" },
       { id: "s4", title: "Worktree merge experiment", status: "worktree" },
+      { id: "s5", title: "Mobile pairing QR flow", status: "remote" },
+      { id: "s6", title: "Weekly changelog draft", status: "automation" },
     ],
+    hasMore: true,
   },
   {
     name: "marketing-site",
@@ -77,15 +168,23 @@ const DEFAULT_PROJECTS: MockProject[] = [
   {
     name: "experiments",
   },
+  {
+    name: "archived-prototype",
+    missing: true,
+  },
 ]
 
 export function DesktopShell({
   projects = DEFAULT_PROJECTS,
+  pinnedSessions = DEFAULT_PINNED,
+  apps = DEFAULT_APPS,
+  appsExpanded = false,
   headerTitle,
   sidebarTab = "sessions",
   fileTree,
   showTrafficLights = true,
   showActivityPanelToggle = false,
+  remoteOnline = true,
   height = "100%",
   children,
   className,
@@ -102,10 +201,14 @@ export function DesktopShell({
     >
       <DesktopSidebar
         projects={projects}
+        pinnedSessions={pinnedSessions}
+        apps={apps}
+        appsExpanded={appsExpanded}
         sidebarTab={sidebarTab}
         fileTree={fileTree}
         showTrafficLights={showTrafficLights}
         showActivityPanelToggle={showActivityPanelToggle}
+        remoteOnline={remoteOnline}
       />
       <div className="flex min-w-0 flex-1 flex-col bg-card">
         <DesktopMainHeader title={resolvedHeaderTitle} />
@@ -117,30 +220,42 @@ export function DesktopShell({
 
 export interface DesktopSidebarProps {
   projects?: MockProject[]
+  pinnedSessions?: MockPinnedSession[]
+  apps?: MockApp[]
+  appsExpanded?: boolean
   sidebarTab?: SidebarTab
   fileTree?: ReactNode
   showTrafficLights?: boolean
   showActivityPanelToggle?: boolean
+  remoteOnline?: boolean
   width?: number | string
   layoutToggleSide?: "right" | "left"
 }
 
 export function DesktopSidebar({
   projects = DEFAULT_PROJECTS,
+  pinnedSessions = DEFAULT_PINNED,
+  apps = DEFAULT_APPS,
+  appsExpanded = false,
   sidebarTab = "sessions",
   fileTree,
   showTrafficLights = true,
   showActivityPanelToggle = false,
+  remoteOnline = true,
   width,
   layoutToggleSide = "right",
 }: DesktopSidebarProps) {
   return (
     <Sidebar
       projects={projects}
+      pinnedSessions={pinnedSessions}
+      apps={apps}
+      appsExpanded={appsExpanded}
       sidebarTab={sidebarTab}
       fileTree={fileTree}
       showTrafficLights={showTrafficLights}
       showActivityPanelToggle={showActivityPanelToggle}
+      remoteOnline={remoteOnline}
       width={width}
       layoutToggleSide={layoutToggleSide}
     />
@@ -176,23 +291,32 @@ function MainHeader({ title }: { title: string }) {
 
 function Sidebar({
   projects,
+  pinnedSessions,
+  apps,
+  appsExpanded,
   sidebarTab,
   fileTree,
   showTrafficLights,
   showActivityPanelToggle,
+  remoteOnline,
   width,
   layoutToggleSide = "right",
 }: {
   projects: MockProject[]
+  pinnedSessions: MockPinnedSession[]
+  apps: MockApp[]
+  appsExpanded: boolean
   sidebarTab: SidebarTab
   fileTree?: ReactNode
   showTrafficLights: boolean
   showActivityPanelToggle: boolean
+  remoteOnline: boolean
   width?: number | string
   layoutToggleSide?: "right" | "left"
 }) {
   const t = useMockT()
   const showFileTree = sidebarTab === "files" && !!fileTree
+  const showPinned = sidebarTab === "sessions" && pinnedSessions.length > 0
   const resolvedWidth = width ?? 320
   return (
     <aside
@@ -222,13 +346,33 @@ function Sidebar({
             {t("sidebar.tabs.sessions")}
           </TabsTrigger>
           <TabsTrigger value="files" className="py-1">
-            <Folder className="size-3.5" />
+            <FolderClosed className="size-3.5" />
             {t("sidebar.tabs.files")}
           </TabsTrigger>
         </TabsList>
       </Tabs>
 
-      <AppsDrawerRow />
+      <AppsDrawer apps={apps} expanded={appsExpanded} />
+
+      {showPinned && (
+        <div className="flex flex-col px-1.5 pb-1">
+          <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">{t("sidebar.pinned")}</span>
+          {pinnedSessions.map((s) => (
+            <div
+              key={s.id}
+              className="group/pin flex cursor-pointer items-center justify-between overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
+            >
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="min-w-0 truncate text-[13px]">{s.title}</span>
+                <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
+              </div>
+              <button className="box-content ml-1 w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/pin:w-3 group-hover/pin:opacity-100">
+                <Pin className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col">
         {showFileTree ? (
@@ -255,19 +399,25 @@ function Sidebar({
               </div>
             </div>
             <div className="min-h-0 flex-1">
-              <ScrollArea className="h-full">
-                <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
-                  {projects.map((project) => (
-                    <ProjectRow key={project.name} project={project} />
-                  ))}
+              {projects.length === 0 ? (
+                <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
+                  {t("sidebar.empty")}
                 </div>
-              </ScrollArea>
+              ) : (
+                <ScrollArea className="h-full">
+                  <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
+                    {projects.map((project) => (
+                      <ProjectRow key={project.name} project={project} />
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
             </div>
           </>
         )}
       </div>
 
-      <SidebarFooter />
+      <SidebarFooter remoteOnline={remoteOnline} />
     </aside>
   )
 }
@@ -275,42 +425,170 @@ function Sidebar({
 function ProjectRow({ project }: { project: MockProject }) {
   const t = useMockT()
   const isExpanded = project.expanded ?? false
-  const Icon = isExpanded ? FolderOpen : Folder
+  const isMissing = project.missing ?? false
+  const automations = project.automations ?? []
+  const workers = project.workers ?? []
+  const sessions = project.sessions ?? []
+  const automationsExpanded = project.automationsExpanded ?? false
   return (
     <div>
       <div
         className={cn(
           "group flex h-9 items-center overflow-hidden rounded-md px-2.5 transition-colors",
-          "cursor-pointer hover:bg-sidebar-accent",
+          isMissing ? "cursor-default opacity-60" : "cursor-pointer hover:bg-sidebar-accent",
         )}
       >
         <ChevronRight
           className={cn(
             "hidden size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 group-hover:block",
             isExpanded && "rotate-90",
+            isMissing && "!hidden",
           )}
         />
-        <Icon className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
-        <span className="ml-2 min-w-0 truncate text-md">{project.name}</span>
-        <div className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
-          <button
-            className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
-            aria-label={t("sidebar.newSession")}
-          >
-            <SquarePen className="size-4" />
-          </button>
-        </div>
+        {isMissing ? (
+          <FolderX className="size-4.5 shrink-0 text-destructive" />
+        ) : isExpanded ? (
+          <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
+        ) : (
+          <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
+        )}
+        <span
+          className={cn(
+            "ml-2 min-w-0 truncate text-md",
+            isMissing && "text-muted-foreground line-through",
+          )}
+        >
+          {project.name}
+        </span>
+        {!isMissing && (
+          <div className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
+            <button
+              className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+              aria-label={t("tooltips.newAutomation")}
+            >
+              <CalendarClock className="size-4" />
+            </button>
+            <button
+              className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+              aria-label={t("tooltips.newSession")}
+            >
+              <SquarePen className="size-4" />
+            </button>
+          </div>
+        )}
       </div>
 
-      {isExpanded && project.sessions && project.sessions.length > 0 && (
+      {isExpanded && automations.length > 0 && (
+        <AutomationGroup automations={automations} expanded={automationsExpanded} />
+      )}
+
+      {isExpanded && workers.length > 0 && <WorkerGroup workers={workers} />}
+
+      {isExpanded && sessions.length > 0 && (
         <div className="overflow-hidden">
-          <div className="flex flex-col py-0.5 pl-5">
-            {project.sessions.map((session) => (
+          <div className="flex flex-col py-0.5 pl-2.5">
+            {sessions.map((session) => (
               <SessionRow key={session.id} session={session} />
             ))}
+            {project.hasMore && (
+              <button className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70">
+                <ChevronDown className="size-3.5 shrink-0" />
+                <span>{t("sidebar.contextMenu.showMore")}</span>
+              </button>
+            )}
           </div>
         </div>
       )}
+
+      {isExpanded && sessions.length === 0 && !isMissing && (
+        <div className="pl-2.5">
+          <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">
+            {t("sidebar.contextMenu.noSessions")}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AutomationGroup({
+  automations,
+  expanded,
+}: {
+  automations: MockAutomation[]
+  expanded: boolean
+}) {
+  const t = useMockT()
+  return (
+    <div className="overflow-hidden pl-2.5">
+      <button className="group/auto flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70">
+        <ChevronRight
+          className={cn(
+            "hidden size-3.5 shrink-0 transition-transform duration-200 group-hover/auto:block",
+            expanded && "rotate-90",
+          )}
+        />
+        <CalendarClock className="size-3.5 shrink-0 group-hover/auto:hidden" />
+        <span>{t("sidebar.contextMenu.automations")}</span>
+        <span className="ml-auto text-[10px] text-sidebar-foreground/30">{automations.length}</span>
+      </button>
+      {expanded && (
+        <div className="flex flex-col py-0.5 pl-2">
+          {automations.map((automation) => (
+            <button
+              key={automation.id}
+              className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent"
+            >
+              <span className="flex items-center gap-1.5 truncate">
+                <CalendarClock className="size-3 shrink-0 text-sidebar-foreground/50" />
+                <span className="truncate">{automation.name}</span>
+              </span>
+              <span
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  automation.status === "error"
+                    ? "bg-red-500"
+                    : automation.status === "running"
+                      ? "bg-yellow-500"
+                      : automation.status === "disabled"
+                        ? "bg-muted-foreground/30"
+                        : "bg-green-500",
+                )}
+              />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WorkerGroup({ workers }: { workers: MockWorker[] }) {
+  const t = useMockT()
+  return (
+    <div className="overflow-hidden pl-2.5">
+      <button className="group/worker flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70">
+        <ChevronRight className="hidden size-3.5 shrink-0 rotate-90 transition-transform duration-200 group-hover/worker:block" />
+        <LayoutGrid className="size-3.5 shrink-0 group-hover/worker:hidden" />
+        <span>{t("sidebar.contextMenu.miniApps")}</span>
+        <span className="ml-auto text-[10px] text-sidebar-foreground/30">{workers.length}</span>
+      </button>
+      <div className="flex flex-col py-0.5 pl-2">
+        {workers.map((worker) => (
+          <button
+            key={worker.id}
+            className="group/wrow flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <LayoutGrid className="size-4 shrink-0 text-sidebar-foreground/50" />
+              <span className="truncate">{worker.name}</span>
+            </span>
+            <span className="min-w-0 shrink truncate text-[10px] text-sidebar-foreground/40">
+              {worker.uptime ?? "0s"}
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -324,13 +602,21 @@ function SessionRow({ session }: { session: MockSession }) {
           session.active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent",
         )}
       >
-        <span className="flex size-3 shrink-0 items-center justify-center">
-          <SessionStatusIcon status={session.status} />
-        </span>
+        <div className="relative flex size-3 shrink-0 items-center justify-center">
+          <span className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity group-hover/session:opacity-100">
+            <EyeOff className="size-3" />
+          </span>
+          <span className="pointer-events-none transition-opacity group-hover/session:opacity-0">
+            <SessionStatusIcon status={session.status} />
+          </span>
+        </div>
         <span className="min-w-0 truncate text-[13px]">{session.title}</span>
+        <button className="ml-auto box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100">
+          <Pin className="size-3" />
+        </button>
       </div>
       {session.pendingReason && (
-        <div className="ml-5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1">
+        <div className="ml-2.5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1">
           <Bot className="size-3 shrink-0 text-green-600 dark:text-green-400" />
           <span className="min-w-0 truncate text-[11px] text-green-600 dark:text-green-400">
             {session.pendingReason}
@@ -343,12 +629,15 @@ function SessionRow({ session }: { session: MockSession }) {
 
 function SessionStatusIcon({ status }: { status?: SessionStatus }) {
   if (status === "running") return <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
+  if (status === "background") return <SquareActivity className="size-3 animate-pulse text-sidebar-foreground/70" />
   if (status === "unseen") return <CircleCheck className="size-3 text-green-600 dark:text-green-400" />
+  if (status === "automation") return <CalendarClock className="size-3 text-sidebar-foreground/70" />
   if (status === "worktree") return <GitFork className="size-3 text-sidebar-foreground/70" />
+  if (status === "remote") return <Smartphone className="size-3 text-sidebar-foreground/70" />
   return <MessageSquare className="size-3 text-sidebar-foreground/70" />
 }
 
-function SidebarFooter() {
+function SidebarFooter({ remoteOnline }: { remoteOnline: boolean }) {
   const t = useMockT()
   return (
     <div className="flex items-center gap-1 px-3 py-2">
@@ -369,23 +658,118 @@ function SidebarFooter() {
         aria-label="Remote"
       >
         <Smartphone className="size-3.5" />
-        <span className="absolute top-1 right-1 size-1.5 rounded-full bg-green-500" />
+        <span
+          className={cn(
+            "absolute top-1 right-1 size-1.5 rounded-full",
+            remoteOnline ? "bg-green-500" : "bg-red-500",
+          )}
+        />
       </button>
     </div>
   )
 }
 
-function AppsDrawerRow() {
+function MockAppIcon({ id, name, className }: { id: string; name: string; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-center text-[10px] font-semibold uppercase text-white/95",
+        className,
+      )}
+      style={{ background: tileTint(id) }}
+    >
+      {name.slice(0, 1)}
+    </div>
+  )
+}
+
+function AppsDrawer({ apps, expanded }: { apps: MockApp[]; expanded: boolean }) {
+  const total = apps.length
+  const stacked = apps.slice(0, 10)
+  const collapsedAsApps = !expanded && total > 0
   return (
     <div className="mx-2 mt-1 mb-1 shrink-0">
       <div className="overflow-hidden rounded-lg border border-sidebar-border">
         <button className="flex min-h-[30px] w-full cursor-pointer items-center justify-between px-2.5 py-1 transition-colors hover:bg-sidebar-accent">
-          <span className="flex items-center gap-2">
-            <Blocks className="size-3.5 text-sidebar-foreground/50" />
-            <span className="text-xs text-sidebar-foreground/50">Apps</span>
-          </span>
-          <ChevronRight className="size-3.5 text-sidebar-foreground/50" />
+          <div className="flex items-center gap-2">
+            {collapsedAsApps ? (
+              <>
+                <div className="flex items-center">
+                  {stacked.map((app, i) => (
+                    <div
+                      key={app.id}
+                      className={cn("shrink-0 rounded-[6px] ring-1 ring-sidebar", i > 0 && "-ml-[6px]")}
+                      style={{ zIndex: i }}
+                    >
+                      <MockAppIcon id={app.id} name={app.name} className="size-[22px] rounded-[5px]" />
+                    </div>
+                  ))}
+                </div>
+                <span className="text-xs text-sidebar-foreground/50">
+                  {total} App{total > 1 ? "s" : ""}
+                </span>
+              </>
+            ) : (
+              <>
+                <Blocks className="size-3.5 text-sidebar-foreground/50" />
+                <span className="text-xs text-sidebar-foreground/50">Apps</span>
+              </>
+            )}
+          </div>
+          {expanded ? (
+            <ChevronDown className="size-3.5 text-sidebar-foreground/50" />
+          ) : (
+            <ChevronRight className="size-3.5 text-sidebar-foreground/50" />
+          )}
         </button>
+
+        {expanded && (
+          <div className="overflow-hidden">
+            <div className="px-1 py-1">
+              {apps.map((app, i) => (
+                <div
+                  key={app.id}
+                  className="group/sapp flex cursor-grab items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent active:cursor-grabbing"
+                >
+                  <MockAppIcon id={app.id} name={app.name} className="size-6 shrink-0 rounded-[6px]" />
+                  <div className="flex w-0 flex-1 flex-col overflow-hidden">
+                    <span className="flex items-center gap-1.5 text-[13px]">
+                      <span className="truncate">{app.name}</span>
+                      {app.isDev && (
+                        <span className="inline-flex h-4 shrink-0 items-center rounded bg-orange-500/15 px-1 text-[10px] leading-none text-orange-500">
+                          Dev
+                        </span>
+                      )}
+                      {i <= 9 && (
+                        <span className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sidebar-accent text-[10px] leading-none text-sidebar-foreground/60">
+                          {i < 9 ? i + 1 : 0}
+                        </span>
+                      )}
+                    </span>
+                    {app.description && (
+                      <span className="truncate text-[11px] text-sidebar-foreground/50">{app.description}</span>
+                    )}
+                  </div>
+                  {app.fullscreen && (
+                    <button className="ml-1 shrink-0 rounded p-1 text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent-foreground/10 hover:text-sidebar-foreground/80 group-hover/sapp:opacity-100">
+                      <Maximize className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-1 px-1 pb-1">
+              <button className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70">
+                <Store className="size-3" />
+                Marketplace
+              </button>
+              <button className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70">
+                <Plus className="size-3" />
+                Build Your Own
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -4,6 +4,14 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.35.1-alpha] - 2026-05-18
+
+### Fixed
+
+- Codex: todo list now reaches mobile via the dedicated todo result channel
+- Codex: chat todos no longer render the composite task id prefix
+- Terminal: per-session open state, with per-project shared terminal instances
+
 ## [0.35.0-alpha] - 2026-05-17
 
 ### Added

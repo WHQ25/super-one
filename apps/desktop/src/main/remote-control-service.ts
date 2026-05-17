@@ -263,6 +263,7 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         summary = String(p.query ?? '')
         break
     }
+    if (!summary && block.toolName.endsWith('__session_rename')) summary = p.title ? String(p.title) : undefined
     return { toolSummary: summary, toolFilePath: filePath || undefined, toolLineDelta, toolDiff, toolDiffTokens, toolTodos }
   } catch { return {} }
 }

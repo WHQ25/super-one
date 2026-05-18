@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react'
+import { useEffect, useCallback, useRef, useState } from 'react'
 import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
@@ -161,7 +161,10 @@ function App(): React.JSX.Element {
     return { width: newApW, outer, inner }
   }, [])
 
+  const [sidebarResizing, setSidebarResizing] = useState(false)
+
   const onSidebarDragEnd = useCallback(() => {
+    setSidebarResizing(false)
     const outer = document.querySelector<HTMLElement>('[data-activity-outer]')
     if (!outer) return
     const w = parseFloat(outer.style.width)
@@ -171,7 +174,7 @@ function App(): React.JSX.Element {
     }
   }, [])
 
-  const onResizeStart = useResizeHandle({
+  const baseSidebarResizeStart = useResizeHandle({
     getWidth: () => useAppStore.getState().sidebarWidth,
     setWidth: setSidebarWidth,
     minWidth: MIN_SIDEBAR,
@@ -188,6 +191,11 @@ function App(): React.JSX.Element {
     getLinkedPanel,
     onDragEnd: onSidebarDragEnd,
   })
+
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    setSidebarResizing(true)
+    baseSidebarResizeStart(e)
+  }, [baseSidebarResizeStart])
 
   useEffect(() => {
     let raf = 0
@@ -329,7 +337,7 @@ function App(): React.JSX.Element {
             onMouseDown={onResizeStart}
             className="group absolute inset-y-0 -right-1 w-2 cursor-col-resize"
           >
-            <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
+            <div className={`pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent transition-opacity ${sidebarResizing ? 'opacity-40' : 'opacity-0 group-hover:opacity-40'}`} />
           </div>
         )}
       </motion.div>

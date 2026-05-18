@@ -64,3 +64,30 @@ describe('terminal instances are shared per project across session switches', ()
     expect(useTerminalStore.getState().byProject['/proj'].tabs).toHaveLength(0)
   })
 })
+
+describe('tab title auto-updates from the shell OSC title sequence', () => {
+  beforeEach(() => {
+    useTerminalStore.setState({ openBySession: {}, byProject: {}, instances: new Map() })
+  })
+
+  it('renames the owning project tab when the shell emits a new title', () => {
+    const s = useTerminalStore.getState()
+    s.addTab('/proj-a', item('a1', 'zsh'))
+    s.addTab('/proj-b', item('b1', 'zsh'))
+    s.renameTab('a1', '~/super-one — vitest')
+    expect(useTerminalStore.getState().byProject['/proj-a'].tabs[0].title).toBe(
+      '~/super-one — vitest',
+    )
+    expect(useTerminalStore.getState().byProject['/proj-b'].tabs[0].title).toBe('zsh')
+  })
+
+  it('ignores blank titles and no-ops when the title is unchanged or the terminal is gone', () => {
+    const s = useTerminalStore.getState()
+    s.addTab('/proj', item('t1', 'zsh'))
+    const before = useTerminalStore.getState().byProject
+    s.renameTab('t1', '   ')
+    s.renameTab('t1', 'zsh')
+    s.renameTab('missing', 'x')
+    expect(useTerminalStore.getState().byProject).toBe(before)
+  })
+})

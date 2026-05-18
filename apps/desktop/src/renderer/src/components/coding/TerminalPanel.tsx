@@ -32,6 +32,7 @@ export function TerminalPanel() {
   const addTab = useTerminalStore((s) => s.addTab)
   const removeTab = useTerminalStore((s) => s.removeTab)
   const setActive = useTerminalStore((s) => s.setActive)
+  const renameTab = useTerminalStore((s) => s.renameTab)
 
   const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   const [find, setFind] = useState<string | null>(null)
@@ -112,11 +113,12 @@ export function TerminalPanel() {
         if (instances.get(terminalId)?.writable === false) return
         void window.terminal.write(terminalId, data)
       })
+      xterm.onTitleChange((t) => renameTab(terminalId, t))
       inst = { xterm, fit, search, lastSeq: 0, writable: true, chunks: new Map() }
       instances.set(terminalId, inst)
       return inst
     },
-    [instances],
+    [instances, renameTab],
   )
 
   useEffect(() => {

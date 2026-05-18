@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.35.3-alpha] - 2026-05-18
+
+### Fixed
+
+- Activity bar: unified drag-split overlay across mini-app and file panels
+- Sidebar: resize indicator stays visible while dragging
+- Terminal: readable light-mode theme, now using the Canvas renderer
+- Plugins: settings page max-width aligned with the other resource pages
+
+### Changed
+
+- Chat: the @ mention placeholder now notes mini-app mentions (Claude & Codex)
+
 ## [0.35.2-alpha] - 2026-05-18
 
 ### Added

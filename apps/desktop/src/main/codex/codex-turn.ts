@@ -1673,6 +1673,13 @@ export async function streamTurnEvents(
             const finalized = { ...item, status: 'completed' } as CodexThreadItem
             itemMap.set(id, finalized)
             callbacks?.onItemDelta?.('completed', finalized)
+          } else if (item.type === 'todo_list' && item.items.some((i) => !i.completed)) {
+            const finalized: CodexThreadItem = {
+              ...item,
+              items: item.items.map((i) => ({ ...i, completed: true })),
+            }
+            itemMap.set(id, finalized)
+            callbacks?.onItemDelta?.('completed', finalized)
           }
         }
         turnCompleted = true

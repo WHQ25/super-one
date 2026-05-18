@@ -1,0 +1,92 @@
+{
+  "appId": "api-showcase-mpb8fxj3",
+  "name": "API Showcase",
+  "isDev": true,
+  "version": "0.1.0",
+  "author": { "name": "SuperOne", "url": "https://github.com/WHQ25/super-one" },
+  "description": "Interactive showcase of every SuperOne mini-app API, with live demos and React + vanilla JS code samples",
+  "logo": "logo.png",
+  "fullscreen": true,
+  "preferWidth": 640,
+  "toolSlug": "showcase",
+  "background": { "entry": "background.html" },
+  "permissions": {
+    "fs": [
+      { "scope": "project", "path": ".", "access": "readwrite", "reason": "Demo: read/write/list/watch project files" },
+      { "scope": "app", "reason": "Demo: persist app-scoped data" }
+    ],
+    "network": [
+      { "domain": "cdn.jsdelivr.net", "reason": "Demo: background worker external download" }
+    ],
+    "media": [
+      { "kind": "microphone", "reason": "Demo: microphone recording" },
+      { "kind": "camera", "reason": "Demo: camera preview & snapshot" }
+    ],
+    "background": { "reason": "Demo: keep a download running after the panel is closed" }
+  },
+  "templates": {
+    "confirm": "confirm.html",
+    "receipt": "receipt.html",
+    "counter": "counter.html",
+    "detail": "detail.html"
+  },
+  "tools": [
+    {
+      "name": "show_message",
+      "description": "Display a message banner inside the open API Showcase panel. Use this to demonstrate a panel-bound tool whose handler lives in the running React app.",
+      "displayName": "Show message",
+      "runningText": "Showing message…",
+      "resultSummaryField": "summary",
+      "showResult": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "The message text to display in the panel" }
+        },
+        "required": ["text"]
+      }
+    },
+    {
+      "name": "confirm_action",
+      "description": "Propose an action the user must confirm in an inline UI before it runs. The agent provides an action label and optional detail; the user approves or edits it in the confirm card, then a receipt is rendered inline.",
+      "displayName": "Confirm action",
+      "runningText": "Awaiting confirmation…",
+      "resultSummaryField": "summary",
+      "showResult": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "description": "Short label of the action to confirm" },
+          "detail": { "type": "string", "description": "Optional extra detail shown to the user" }
+        },
+        "required": ["action"]
+      },
+      "renderer": {
+        "intercept": {
+          "template": "confirm",
+          "inputMerge": "shallow-merge",
+          "onCancel": "resolve-empty"
+        },
+        "result": {
+          "template": "receipt",
+          "autoExpand": true
+        }
+      }
+    },
+    {
+      "name": "bump_counter",
+      "description": "Increment a persistent counter and render the result as a self-contained card inline in chat. Works even when the app panel is closed (standalone tool).",
+      "displayName": "Bump counter",
+      "runningText": "Bumping counter…",
+      "resultSummaryField": "summary",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "by": { "type": "number", "description": "Amount to add to the counter (default 1)" }
+        }
+      },
+      "standalone": true,
+      "renderer": { "result": { "template": "counter" } }
+    }
+  ]
+}

@@ -1122,6 +1122,46 @@ describe('streamTurnEvents finalizes stale in_progress items on turn/completed',
     })
   })
 
+  it('finalizes todo_list with trailing incomplete items when final plan update never arrives', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const mockConnection = makeStreamingConnection([
+      {
+        method: 'turn/plan/updated',
+        params: {
+          plan: [
+            { step: 'Investigate', status: 'completed' },
+            { step: 'Fix', status: 'in_progress' },
+            { step: 'Verify', status: 'pending' },
+          ],
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ])
+    const onItemDelta = vi.fn()
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta },
+    )
+
+    const todo = result.items.find((item) => item.type === 'todo_list')
+    expect(todo).toBeDefined()
+    expect(todo?.type === 'todo_list' && todo.items.every((i) => i.completed)).toBe(true)
+    expect(
+      onItemDelta.mock.calls.some(([phase, item]) =>
+        phase === 'completed' &&
+        item?.type === 'todo_list' &&
+        item.items.every((i: { completed: boolean }) => i.completed),
+      ),
+    ).toBe(true)
+  })
+
   it('preserves already-completed status (does not downgrade)', async () => {
     const session = { ...makeSession(), threadId: 'main-thread' }
     const mockConnection = makeStreamingConnection([

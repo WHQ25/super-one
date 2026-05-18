@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, session, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, session, shell, systemPreferences } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir, open } from 'fs/promises'
@@ -2240,16 +2240,48 @@ app.whenReady().then(async () => {
       return
     }
     const ok = mediaTypes.every((t) => isMediaAllowed(appId, t === 'audio' ? 'microphone' : 'camera'))
-    callback(ok)
+    if (!ok) {
+      callback(false)
+      return
+    }
+    if (process.platform === 'darwin') {
+      // Granting the Electron permission does NOT request macOS AVFoundation
+      // access. Without askForMediaAccess the OS prompt never shows and
+      // getUserMedia hangs forever (no dialog, perpetual "Requesting…").
+      Promise.all(
+        mediaTypes.map((t) =>
+          systemPreferences.askForMediaAccess(t === 'audio' ? 'microphone' : 'camera'),
+        ),
+      )
+        .then((results) => callback(results.every(Boolean)))
+        .catch(() => callback(false))
+      return
+    }
+    callback(true)
   })
   ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
     const appId = appIdFromUrl(requestingOrigin) ?? appIdFromUrl((details as { requestingUrl?: string }).requestingUrl ?? '')
     if (!appId) return true
     if (permission !== 'media') return false
     const mediaType = (details as { mediaType?: 'audio' | 'video' | 'unknown' }).mediaType
-    if (mediaType === 'audio') return isMediaAllowed(appId, 'microphone')
-    if (mediaType === 'video') return isMediaAllowed(appId, 'camera')
-    return isMediaAllowed(appId, 'microphone') || isMediaAllowed(appId, 'camera')
+    const manifestOk =
+      mediaType === 'audio'
+        ? isMediaAllowed(appId, 'microphone')
+        : mediaType === 'video'
+          ? isMediaAllowed(appId, 'camera')
+          : isMediaAllowed(appId, 'microphone') || isMediaAllowed(appId, 'camera')
+    if (!manifestOk) return false
+    if (process.platform !== 'darwin') return true
+    // Only report "granted" when macOS TCC is actually granted. Returning true
+    // while TCC is still not-determined short-circuits the request handler, so
+    // askForMediaAccess never runs, the OS prompt never shows, and
+    // getUserMedia hangs forever. Returning false here routes Chromium through
+    // setPermissionRequestHandler, which prompts and then grants.
+    const granted = (k: 'microphone' | 'camera') =>
+      systemPreferences.getMediaAccessStatus(k) === 'granted'
+    if (mediaType === 'audio') return granted('microphone')
+    if (mediaType === 'video') return granted('camera')
+    return granted('microphone') || granted('camera')
   })
 
   createWindow()

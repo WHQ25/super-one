@@ -27,6 +27,9 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   notarize: true
+  extendInfo:
+    NSCameraUsageDescription: SuperOne mini-apps can access the camera when you grant permission.
+    NSMicrophoneUsageDescription: SuperOne mini-apps can access the microphone when you grant permission.
 
 win:
   target:

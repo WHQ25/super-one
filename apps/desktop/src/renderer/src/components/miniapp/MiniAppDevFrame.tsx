@@ -5,6 +5,7 @@ import { onThemeChange, readThemeVars } from './miniapp-theme'
 import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/miniapp-message-handler'
 import { useContextConsumedEvent } from '@/hooks/useContextConsumedEvent'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useMiniAppMediaStore } from '@/stores/miniapp-media'
 import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 
 export interface MiniAppDevFrameHandle {
@@ -40,6 +41,13 @@ export const MiniAppDevFrame = forwardRef<MiniAppDevFrameHandle, MiniAppDevFrame
     useEffect(() => {
       window.miniapp.getPreloadPath().then(setPreloadPath)
     }, [])
+
+    // Parity with the production iframe path (useMiniAppBridge): a live
+    // MediaStreamTrack outlives the webview, so clear the host recording
+    // indicator for this app when the dev frame unmounts (app/panel closed).
+    useEffect(() => {
+      return () => useMiniAppMediaStore.getState().clearApp(appId)
+    }, [appId])
 
     const reload = useCallback(() => {
       webviewRef.current?.reload()

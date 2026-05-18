@@ -43,7 +43,6 @@ export function MiniAppMediaIndicator() {
           </span>
           {kindsInUse.has('microphone') && <Mic className="size-3" />}
           {kindsInUse.has('camera') && <Video className="size-3" />}
-          <span>{entries.length}</span>
         </button>
       </PopoverTrigger>
       <AnimatePresence>

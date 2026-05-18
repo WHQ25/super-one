@@ -1737,7 +1737,7 @@ export function PluginsPage() {
     const summary = marketplaceSummaries.find((m) => m.name === selectedMarketplace)
     if (summary) {
       return (
-        <div className="mx-auto max-w-2xl">
+        <div className="mx-auto max-w-4xl">
           <MarketplaceDetailView
             summary={summary}
             plugins={selectedPlugins}
@@ -1762,7 +1762,7 @@ export function PluginsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">{t('resources.plugins.title')}</h2>

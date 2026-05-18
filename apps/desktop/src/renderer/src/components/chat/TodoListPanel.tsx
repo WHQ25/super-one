@@ -118,13 +118,13 @@ export function TodoListPanel({
                 </div>
 
                 {autoDesc && (
-                  <div className="ml-[26px] border-l border-border pl-2 pb-1 pr-2 text-[11px] leading-relaxed text-muted-foreground">
+                  <div className="ml-[15px] border-l border-border pl-3 pb-1 pr-2 text-[11px] leading-relaxed text-muted-foreground">
                     {item.description}
                   </div>
                 )}
 
                 {detail && isOpen && (
-                  <div className="ml-[26px] border-l border-border pl-2 pb-1 pr-2 text-[11px] leading-relaxed text-muted-foreground">
+                  <div className="ml-[15px] border-l border-border pl-3 pb-1 pr-2 text-[11px] leading-relaxed text-muted-foreground">
                     {item.description}
                   </div>
                 )}

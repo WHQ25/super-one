@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { Terminal as XTerm } from '@xterm/xterm'
 import type { FitAddon } from '@xterm/addon-fit'
 import type { SearchAddon } from '@xterm/addon-search'
-import type { CanvasAddon } from '@xterm/addon-canvas'
+import type { WebglAddon } from '@xterm/addon-webgl'
 import type { TerminalListItem } from '@superone/shared/agent-types'
 
 export const NO_SESSION_KEY = '__no_session__'
@@ -11,7 +11,7 @@ export interface TermInstance {
   xterm: XTerm
   fit: FitAddon
   search: SearchAddon
-  canvas?: CanvasAddon
+  webgl?: WebglAddon
   lastSeq: number
   writable: boolean
   chunks: Map<string, { total: number; parts: Map<number, string>; lastSeq?: number }>

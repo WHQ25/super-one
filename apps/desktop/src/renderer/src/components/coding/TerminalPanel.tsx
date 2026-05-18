@@ -4,7 +4,7 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
-import { CanvasAddon } from '@xterm/addon-canvas'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { requestOpenExternalLink } from '@/lib/external-link'
@@ -123,7 +123,10 @@ export function TerminalPanel() {
     return onTerminalThemeChange(() => {
       const theme = getTerminalTheme()
       themeRef.current = theme
-      for (const inst of instances.values()) inst.xterm.options.theme = theme
+      for (const inst of instances.values()) {
+        inst.xterm.options.theme = theme
+        inst.xterm.clearTextureAtlas()
+      }
     })
   }, [instances])
 
@@ -224,11 +227,20 @@ export function TerminalPanel() {
       host.replaceChildren()
       inst.xterm.open(host)
       try {
-        const canvas = new CanvasAddon()
-        inst.xterm.loadAddon(canvas)
-        inst.canvas = canvas
+        const webgl = new WebglAddon()
+        webgl.onContextLoss(() => {
+          try {
+            webgl.dispose()
+          } catch {
+            /* renderer internals already gone — xterm reverts to the DOM renderer */
+          }
+          inst.webgl = undefined
+        })
+        inst.xterm.loadAddon(webgl)
+        inst.webgl = webgl
+        inst.xterm.clearTextureAtlas()
       } catch {
-        /* Canvas renderer unavailable — xterm falls back to the DOM renderer */
+        /* WebGL unavailable — xterm falls back to the DOM renderer */
       }
     }
     inst.fit.fit()

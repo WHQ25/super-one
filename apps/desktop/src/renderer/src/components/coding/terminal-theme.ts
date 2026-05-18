@@ -30,18 +30,37 @@ function resolve(varExpr: string): string {
   }
   probe.style.color = varExpr
   const computed = getComputedStyle(probe).color
-  if (!ctx) ctx = document.createElement('canvas').getContext('2d')
+  if (!ctx) ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
   if (!ctx) return computed
-  ctx.fillStyle = '#000000'
+  ctx.clearRect(0, 0, 1, 1)
   ctx.fillStyle = computed
-  return ctx.fillStyle as string
+  ctx.fillRect(0, 0, 1, 1)
+  const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+  return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${a / 255})`
 }
 
-function withAlpha(hex: string, a: number): string {
-  const m = /^#([0-9a-f]{6})$/i.exec(hex)
-  if (!m) return hex
-  const n = parseInt(m[1], 16)
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`
+function rgb(color: string): [number, number, number] | null {
+  const hex = /^#([0-9a-f]{6})$/i.exec(color)
+  if (hex) {
+    const n = parseInt(hex[1], 16)
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  }
+  const short = /^#([0-9a-f]{3})$/i.exec(color)
+  if (short) {
+    const c = short[1]
+    return [c[0], c[1], c[2]].map((h) => parseInt(h + h, 16)) as [number, number, number]
+  }
+  const fn = /^rgba?\(\s*([0-9.]+)\s*[, ]\s*([0-9.]+)\s*[, ]\s*([0-9.]+)/i.exec(color)
+  if (fn) return [Math.round(+fn[1]), Math.round(+fn[2]), Math.round(+fn[3])]
+  return null
+}
+
+function mix(fg: string, bg: string, a: number): string {
+  const f = rgb(fg)
+  const b = rgb(bg)
+  if (!f || !b) return fg
+  const c = f.map((v, i) => Math.round(v * a + b[i] * (1 - a)))
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`
 }
 
 export function getTerminalTheme(): ITheme {
@@ -53,7 +72,7 @@ export function getTerminalTheme(): ITheme {
     foreground: resolve('var(--card-foreground)'),
     cursor: primary,
     cursorAccent: card,
-    selectionBackground: withAlpha(primary, 0.3),
+    selectionBackground: mix(primary, card, 0.3),
   }
   return isDark ? base : { ...base, ...LIGHT_ANSI }
 }

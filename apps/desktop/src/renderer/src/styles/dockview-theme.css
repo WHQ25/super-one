@@ -100,3 +100,32 @@
 .dockview-theme-superone .dv-tab {
   -webkit-app-region: no-drag;
 }
+
+.dockview-theme-superone .dv-drop-target > .dv-drop-target-dropzone {
+  display: none !important;
+}
+
+.activity-drop-indicator {
+  pointer-events: none;
+  border-radius: 10px;
+  background-color: oklch(from var(--primary) l c h / 0.08);
+  backdrop-filter: blur(6px);
+  transition:
+    left 0.07s ease-out,
+    top 0.07s ease-out,
+    width 0.07s ease-out,
+    height 0.07s ease-out;
+}
+
+.activity-drop-indicator > svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.activity-drop-indicator > svg rect {
+  fill: none;
+  stroke: oklch(from var(--primary) l c h / 0.55);
+  stroke-width: 1.5;
+  stroke-dasharray: 10 7;
+}

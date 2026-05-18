@@ -6,6 +6,8 @@ import 'dockview/dist/styles/dockview.css'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
+import { useActivityDropStore } from '@/stores/activity-drop'
+import { useMiniAppStore } from '@/stores/miniapp'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { LAYOUT } from '@/lib/layout-constants'
@@ -100,9 +102,43 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     const d4 = event.api.onWillShowOverlay((e) => {
       const data = e.options.getData()
       if (!data) return
+
+      const setIndicator = useActivityDropStore.getState().setIndicator
+
       if (e.group && data.groupId === e.group.id && e.group.panels.length <= 1) {
+        setIndicator(null)
         e.preventDefault()
+        return
       }
+
+      const activeId = e.group?.activePanel?.id
+      const instanceKey = activeId?.startsWith('miniapp-') ? activeId.slice('miniapp-'.length) : null
+      const slot = instanceKey ? useMiniAppStore.getState().slots[instanceKey] : null
+
+      let area: { left: number; top: number; width: number; height: number } | null = null
+      if (slot && slot.width > 0 && slot.height > 0) {
+        area = { left: slot.left, top: slot.top, width: slot.width, height: slot.height }
+      } else if (e.group) {
+        const content = e.group.element.querySelector('.dv-content-container') ?? e.group.element
+        const r = content.getBoundingClientRect()
+        if (r.width > 0 && r.height > 0) area = { left: r.left, top: r.top, width: r.width, height: r.height }
+      }
+
+      if (!area) {
+        setIndicator(null)
+        return
+      }
+
+      const half = e.kind === 'content' ? e.position : 'center'
+      const halfW = area.width / 2
+      const halfH = area.height / 2
+      const box =
+        half === 'left' ? { left: area.left, top: area.top, width: halfW, height: area.height }
+        : half === 'right' ? { left: area.left + halfW, top: area.top, width: halfW, height: area.height }
+        : half === 'top' ? { left: area.left, top: area.top, width: area.width, height: halfH }
+        : half === 'bottom' ? { left: area.left, top: area.top + halfH, width: area.width, height: halfH }
+        : { left: area.left, top: area.top, width: area.width, height: area.height }
+      setIndicator({ ...box, position: half })
     })
 
     const container = innerRef.current?.querySelector<HTMLElement>('.dockview-theme-superone')

@@ -989,6 +989,13 @@ export type Messages = {
       readOnly: string
       readWrite: string
       network: string
+      dropHint: {
+        left: string
+        right: string
+        top: string
+        bottom: string
+        center: string
+      }
     }
     devAppLibrary: {
       toggleButton: string
@@ -2059,6 +2066,13 @@ export const en: Messages = {
       readOnly: 'Read only',
       readWrite: 'Read & Write',
       network: 'Network',
+      dropHint: {
+        left: 'Split left',
+        right: 'Split right',
+        top: 'Split up',
+        bottom: 'Split down',
+        center: 'Open here',
+      },
     },
     devAppLibrary: {
       toggleButton: 'Dev Apps',

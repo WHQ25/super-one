@@ -1003,6 +1003,13 @@ export const zh: Messages = {
       readOnly: '只读',
       readWrite: '读写',
       network: '网络',
+      dropHint: {
+        left: '在左侧分屏',
+        right: '在右侧分屏',
+        top: '在上方分屏',
+        bottom: '在下方分屏',
+        center: '在此打开',
+      },
     },
     devAppLibrary: {
       toggleButton: '开发中',

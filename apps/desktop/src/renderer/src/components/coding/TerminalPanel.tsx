@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Terminal as TerminalIcon, Plus, X, ArrowUp, ArrowDown } from 'lucide-react'
+import { Terminal as TerminalIcon, Plus, X, ArrowUp, ArrowDown, PanelBottomClose } from 'lucide-react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -291,7 +291,7 @@ export function TerminalPanel() {
           className={`${HEADER_ITEM} shrink-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground`}
           title="Hide terminal (⌘J)"
         >
-          <X className="size-4" />
+          <PanelBottomClose className="size-4" />
         </button>
       </div>
       {tabs.length === 0 ? (

@@ -33,6 +33,7 @@ import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
+import { useTerminalStore } from '@/stores/terminal'
 import { useActiveSession, extractSessionTitle, useChatStore } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { useSettingsStore } from '@/stores/settings'
@@ -56,6 +57,9 @@ function App(): React.JSX.Element {
   const { t } = useTranslation()
   const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode })))
   const { open: terminalOpen, toggle: toggleTerminal } = useTerminalPanel()
+  const hasTerminals = useTerminalStore(
+    (s) => (currentFolder ? (s.byProject[currentFolder]?.tabs.length ?? 0) : 0) > 0,
+  )
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
   const isFullscreen = useFullscreen()
@@ -380,7 +384,9 @@ function App(): React.JSX.Element {
                         terminalOpen ? 'text-foreground' : 'text-muted-foreground/60',
                       )}
                     >
-                      <SquareTerminal className="size-3.5" />
+                      <SquareTerminal
+                        className={cn('size-3.5', !terminalOpen && hasTerminals && 'animate-pulse')}
+                      />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top"><span>Toggle terminal</span> <CommandShortcut>{isMac ? '⌘J' : 'Ctrl+J'}</CommandShortcut></TooltipContent>

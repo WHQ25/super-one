@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.35.4-alpha] - 2026-05-19
+
+### Added
+
+- Mini-apps: new API Showcase example app demonstrating the bridge APIs
+- Terminal: tab title now auto-updates from the shell's OSC title sequence
+
+### Fixed
+
+- Mini-apps: camera and media capture fixes
+- Terminal: WebGL renderer falls back gracefully on GPU context loss; selection highlight resolved to an opaque sRGB color
+
+### Changed
+
+- Terminal: clearer hide-panel icon; the chat toggle pulses when the panel is collapsed
+
 ## [0.35.3-alpha] - 2026-05-18
 
 ### Fixed

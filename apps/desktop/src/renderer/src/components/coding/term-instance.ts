@@ -2,10 +2,10 @@ import type { TermInstance } from '@/stores/terminal'
 
 export function disposeTermInstance(inst: TermInstance): void {
   try {
-    inst.webgl?.dispose()
+    inst.canvas?.dispose()
   } catch {
-    /* webgl renderer already torn down (context lost) */
+    /* canvas renderer already torn down */
   }
-  inst.webgl = undefined
+  inst.canvas = undefined
   inst.xterm.dispose()
 }

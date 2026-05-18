@@ -4,11 +4,12 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
-import { WebglAddon } from '@xterm/addon-webgl'
+import { CanvasAddon } from '@xterm/addon-canvas'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { setCloseActiveTerminal } from './terminal-panel-api'
+import { getTerminalTheme, onTerminalThemeChange } from './terminal-theme'
 import { disposeTermInstance } from './term-instance'
 import type { TerminalEvent } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
@@ -35,6 +36,7 @@ export function TerminalPanel() {
   const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   const [find, setFind] = useState<string | null>(null)
   const [findHits, setFindHits] = useState({ idx: -1, count: 0 })
+  const themeRef = useRef(getTerminalTheme())
   const hostRef = useRef<HTMLDivElement>(null)
   const findInputRef = useRef<HTMLInputElement>(null)
   const openFindRef = useRef<() => void>(() => {})
@@ -81,7 +83,7 @@ export function TerminalPanel() {
         fontFamily: 'Monaco, ui-monospace, SFMono-Regular, Menlo, monospace',
         cursorBlink: true,
         allowProposedApi: true,
-        theme: { background: '#00000000' },
+        theme: themeRef.current,
       })
       const fit = new FitAddon()
       xterm.loadAddon(fit)
@@ -116,6 +118,14 @@ export function TerminalPanel() {
     },
     [instances],
   )
+
+  useEffect(() => {
+    return onTerminalThemeChange(() => {
+      const theme = getTerminalTheme()
+      themeRef.current = theme
+      for (const inst of instances.values()) inst.xterm.options.theme = theme
+    })
+  }, [instances])
 
   useEffect(() => {
     const off = window.terminal.onTerminalEvent((event: TerminalEvent) => {
@@ -214,19 +224,11 @@ export function TerminalPanel() {
       host.replaceChildren()
       inst.xterm.open(host)
       try {
-        const webgl = new WebglAddon()
-        webgl.onContextLoss(() => {
-          try {
-            webgl.dispose()
-          } catch {
-            /* renderer internals already gone */
-          }
-          inst.webgl = undefined
-        })
-        inst.xterm.loadAddon(webgl)
-        inst.webgl = webgl
+        const canvas = new CanvasAddon()
+        inst.xterm.loadAddon(canvas)
+        inst.canvas = canvas
       } catch {
-        /* WebGL unavailable — xterm falls back to the DOM renderer */
+        /* Canvas renderer unavailable — xterm falls back to the DOM renderer */
       }
     }
     inst.fit.fit()

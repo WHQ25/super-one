@@ -159,19 +159,40 @@ function Demo() {
   )
 }
 
-const react = `function Recorder() {
-  const rec = useRef<MediaRecorder | null>(null)
+const react = `import { useEffect, useRef } from 'react'
+
+function Recorder() {
+  const recRef = useRef(null)
+  const streamRef = useRef(null)
 
   const start = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    rec.current = new MediaRecorder(stream)
-    rec.current.start()
+    streamRef.current = stream
+    const chunks = []
+    const rec = new MediaRecorder(stream)
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data)
+    rec.onstop = () => {
+      const blob = new Blob(chunks, { type: 'audio/webm' })
+      // play or upload the blob…
+    }
+    rec.start()
+    recRef.current = rec
   }
+
   const stop = () => {
-    rec.current?.stop()
-    rec.current?.stream.getTracks().forEach((t) => t.stop())  // free the device
+    recRef.current?.stop()
+    streamRef.current?.getTracks().forEach((t) => t.stop()) // clears host rec dot
   }
-  return <button onClick={start}>Record</button>
+
+  // Stop tracks on unmount so the host indicator clears
+  useEffect(() => () => streamRef.current?.getTracks().forEach((t) => t.stop()), [])
+
+  return (
+    <>
+      <button onClick={start}>Record</button>
+      <button onClick={stop}>Stop</button>
+    </>
+  )
 }`
 
 const vanilla = `// permissions.media must declare { kind: 'microphone' | 'camera' }

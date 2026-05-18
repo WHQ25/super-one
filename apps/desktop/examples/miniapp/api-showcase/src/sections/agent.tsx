@@ -57,17 +57,35 @@ function Demo() {
   )
 }
 
-const react = `function SearchForm() {
-  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const q = new FormData(e.currentTarget).get('q')
-    // Pre-fills chat input — the user chooses to send it
-    window.superone.agent.sendPrompt(\`Search the codebase for: \${q}\`)
-  }
+const react = `import { useEffect } from 'react'
+
+function AgentActions() {
+  useEffect(() => {
+    const off = window.superone.agent.onContextConsumed(() => {
+      // context was sent with a message — re-inject if still relevant
+    })
+    return off
+  }, [])
+
   return (
-    <form onSubmit={onSubmit}>
-      <input name="q" />
-    </form>
+    <>
+      <button onClick={() => window.superone.agent.sendPrompt('Summarize this file')}>
+        Suggest prompt
+      </button>
+      <button
+        onClick={() =>
+          window.superone.agent.setContext({
+            summary: 'showcase selection',
+            content: 'src/App.tsx',
+            mode: 'inject',
+            color: '#c4873a',
+          })
+        }
+      >
+        Attach context
+      </button>
+      <button onClick={() => window.superone.agent.clearContext()}>Clear</button>
+    </>
   )
 }`
 

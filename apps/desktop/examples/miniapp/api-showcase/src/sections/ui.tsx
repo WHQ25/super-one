@@ -84,25 +84,57 @@ function Demo() {
   )
 }
 
-const react = `function Overlays() {
-  const btn = useRef<HTMLButtonElement>(null)
+const react = `import { useRef } from 'react'
 
-  const openPopover = () => {
-    const r = btn.current!.getBoundingClientRect()
+function Overlays() {
+  const btn = useRef(null)
+
+  const tip = (el, show) => {
+    if (!show) return window.superone.ui.hideTooltip()
+    const r = el.getBoundingClientRect()
+    window.superone.ui.showTooltip(
+      { x: r.left, y: r.top, width: r.width, height: r.height },
+      'Host-rendered tooltip',
+      'top',
+    )
+  }
+
+  const menu = async (e) => {
+    e.preventDefault()
+    const id = await window.superone.ui.showContextMenu(
+      { x: e.clientX, y: e.clientY },
+      [
+        { id: 'edit', label: 'Edit', icon: 'pencil' },
+        { id: 'del', label: 'Delete', icon: 'trash-2', variant: 'destructive' },
+      ],
+    )
+    console.log('picked', id)
+  }
+
+  const popover = () => {
+    const r = btn.current.getBoundingClientRect()
     const h = window.superone.ui.showPopover({
-      template: 'detail',                       // manifest.templates key
-      data: { title: 'Hi' },
+      template: 'detail', // manifest.templates key
+      data: { title: 'Detail' },
       anchorRect: { x: r.left, y: r.top, width: r.width, height: r.height },
       side: 'bottom',
     })
-    h.onMessage((m) => console.log('from popover', m))
+    h.onMessage(() => h.postMessage({ reply: 'got it' }))
+    h.onClose(() => {})
   }
 
   return (
-    <button ref={btn}
-      onClick={() => window.superone.ui.toast('Saved', 'success')}>
-      Toast
-    </button>
+    <>
+      <button onClick={() => window.superone.ui.toast('Saved ✓', 'success')}>Toast</button>
+      <span
+        onMouseEnter={(e) => tip(e.currentTarget, true)}
+        onMouseLeave={(e) => tip(e.currentTarget, false)}
+        onContextMenu={menu}
+      >
+        Hover / right-click
+      </span>
+      <button ref={btn} onClick={popover}>Popover</button>
+    </>
   )
 }`
 

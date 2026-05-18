@@ -80,17 +80,35 @@ function Demo() {
 const react = `import { useEffect, useState } from 'react'
 
 function ToolHost() {
-  const [data, setData] = useState<unknown>(null)
+  const [log, setLog] = useState([])
 
   useEffect(() => {
-    // Register once on mount. Return value → MCP tool result.
+    // Panel-bound: handler lives in the open panel. Return value → MCP result.
     window.superone.tools.handle('show_message', (args) => {
-      setData(args)
+      setLog((l) => [String(args.text), ...l])
       return { success: true, summary: String(args.text).slice(0, 40) }
     })
+
+    // Intercept + result: confirm template merges { approved, note } onto args
+    window.superone.tools.handle('confirm_action', (args) => ({
+      action: String(args.action),
+      approved: args.approved === true,
+      summary: String(args.action),
+    }))
   }, [])
 
-  return <pre>{JSON.stringify(data, null, 2)}</pre>
+  return (
+    <>
+      <button
+        onClick={() =>
+          window.superone.agent.sendPrompt('Call showcase__show_message with text=hi')
+        }
+      >
+        Ask agent
+      </button>
+      <pre>{log.join('\\n')}</pre>
+    </>
+  )
 }`
 
 const vanilla = `// manifest.json: { toolSlug: 'showcase', tools: [{ name: 'show_message', ... }] }

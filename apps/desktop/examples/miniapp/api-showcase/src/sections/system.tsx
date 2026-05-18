@@ -54,15 +54,24 @@ function Demo() {
   )
 }
 
-const react = `function Toolbar() {
+const react = `function SystemActions() {
+  const paste = async () => {
+    try {
+      const text = await window.superone.clipboard.read() // permission prompt
+      console.log(text)
+    } catch {
+      // user denied clipboard access
+    }
+  }
+
   return (
     <>
-      <button onClick={() => window.superone.openFolder('src')}>
-        Reveal src/
+      <button onClick={() => window.superone.openFolder('.')}>Reveal folder</button>
+      <button onClick={() => window.superone.openExternalLink('https://super-one.dev')}>
+        Open link
       </button>
-      <button onClick={() => window.superone.clipboard.write('hi')}>
-        Copy
-      </button>
+      <button onClick={() => window.superone.clipboard.write('Copied ✨')}>Copy</button>
+      <button onClick={paste}>Paste</button>
     </>
   )
 }`

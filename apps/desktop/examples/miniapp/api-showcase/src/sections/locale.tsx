@@ -39,7 +39,13 @@ const I18N = {
 
 function SaveButton() {
   const [lang, setLang] = useState(window.superone.locale.get())
-  useEffect(() => window.superone.locale.onChange(setLang), [])
+
+  useEffect(() => {
+    // onChange fires only on real changes — seed with get()
+    const off = window.superone.locale.onChange(setLang)
+    return off
+  }, [])
+
   return <button>{(I18N[lang] ?? I18N.en).save}</button>
 }`
 

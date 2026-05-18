@@ -65,28 +65,31 @@ function Demo() {
 const react = `import { useEffect, useState } from 'react'
 
 function Notes() {
-  const [rows, setRows] = useState<any[]>([])
+  const [rows, setRows] = useState([])
+
+  const refresh = async () => {
+    setRows(await window.superone.db.query('SELECT * FROM notes ORDER BY id DESC'))
+  }
 
   useEffect(() => {
-    const init = async () => {
-      await window.superone.db.exec(
-        \`CREATE TABLE IF NOT EXISTS notes (
-           id INTEGER PRIMARY KEY,
-           content TEXT NOT NULL,
-           created_at INTEGER NOT NULL)\`,
-      )
-      setRows(await window.superone.db.query('SELECT * FROM notes'))
-    }
-    init()
+    window.superone.db
+      .exec('CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER NOT NULL)')
+      .then(refresh)
   }, [])
 
-  const add = async (content: string) => {
+  const add = async (content) => {
+    // Always bind params — never concatenate user input
     await window.superone.db.exec(
       'INSERT INTO notes (content, created_at) VALUES (?, ?)',
       [content, Date.now()],
     )
-    setRows(await window.superone.db.query('SELECT * FROM notes'))
+    refresh()
   }
+  const clear = async () => {
+    await window.superone.db.exec('DELETE FROM notes')
+    refresh()
+  }
+
   return <ul>{rows.map((r) => <li key={r.id}>{r.content}</li>)}</ul>
 }`
 

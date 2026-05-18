@@ -40,23 +40,32 @@ function Demo() {
   )
 }
 
-const react = `import { useEffect, useState } from 'react'
+const react = `import { useState } from 'react'
 
-function GitHeader() {
-  const [branch, setBranch] = useState('')
+function GitDemo() {
+  const [out, setOut] = useState('')
 
-  useEffect(() => {
-    const load = async () => {
-      const info = await window.superone.git.info()
-      setBranch(info.branch)
-    }
-    load()
-    // Re-fetch on branch switch / commit / rebase
-    const unsub = window.superone.git.onHeadChange(load)
-    return unsub
-  }, [])
+  const info = async () => {
+    const i = await window.superone.git.info()
+    setOut('on ' + i.branch + (i.dirty ? ' · ' + i.dirty.files + ' changed' : ' · clean'))
+  }
+  const log = async () => {
+    const commits = await window.superone.git.log({ limit: 5 })
+    setOut(commits.map((c) => c.sha.slice(0, 7) + '  ' + c.message).join('\\n'))
+  }
+  const status = async () => {
+    const files = await window.superone.git.status()
+    setOut(files.map((f) => f.status + '  ' + f.path).join('\\n') || 'working tree clean')
+  }
 
-  return <span>on {branch}</span>
+  return (
+    <>
+      <button onClick={info}>info</button>
+      <button onClick={log}>log</button>
+      <button onClick={status}>status</button>
+      <pre>{out}</pre>
+    </>
+  )
 }`
 
 const vanilla = `// Read-only. Writes (commit/push) go via superone.agent.sendPrompt()

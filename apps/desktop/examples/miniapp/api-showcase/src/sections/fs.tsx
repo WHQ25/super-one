@@ -33,24 +33,27 @@ function Demo() {
 
 const react = `import { useState } from 'react'
 
-function FileList() {
-  const [files, setFiles] = useState<string[]>([])
+function FileDemo() {
+  const [out, setOut] = useState('')
 
-  async function load() {
+  const list = async () => {
     const entries = await window.superone.fs.readDir('.')
-    setFiles(entries.map((e) => e.name))
+    setOut(entries.map((e) => (e.isDir ? '📁 ' : '📄 ') + e.name).join('\\n'))
   }
 
-  async function roundTrip() {
+  const roundTrip = async () => {
     await window.superone.fs.writeFile('note.txt', 'hello')
     const text = await window.superone.fs.readFile('note.txt')
-    console.log(text) // "hello"
+    const stat = await window.superone.fs.stat('note.txt')
+    setOut(text + ' · ' + stat.size + ' bytes')
+    window.superone.ui.toast('File round-trip complete', 'success')
   }
 
   return (
     <>
-      <button onClick={load}>List</button>
-      <ul>{files.map((f) => <li key={f}>{f}</li>)}</ul>
+      <button onClick={list}>List</button>
+      <button onClick={roundTrip}>Write → read → stat</button>
+      <pre>{out}</pre>
     </>
   )
 }`

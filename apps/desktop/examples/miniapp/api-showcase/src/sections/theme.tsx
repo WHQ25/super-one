@@ -54,13 +54,18 @@ const react = `import { useEffect, useState } from 'react'
 
 function ThemeAware() {
   const [dark, setDark] = useState(window.superone.isDarkMode())
+  const [vars, setVars] = useState(window.superone.theme.getVars())
 
   useEffect(() => {
-    const off = window.superone.onDarkModeChange(setDark)
-    return off
+    const offDark = window.superone.onDarkModeChange(setDark)
+    const offVars = window.superone.theme.onChange(setVars)
+    return () => {
+      offDark()
+      offVars()
+    }
   }, [])
 
-  // Best practice: drive colors from CSS vars, no JS needed
+  // Prefer CSS vars over JS; read getVars() only when you must
   return <div style={{ background: 'var(--card)' }}>{dark ? '🌙' : '☀️'}</div>
 }`
 

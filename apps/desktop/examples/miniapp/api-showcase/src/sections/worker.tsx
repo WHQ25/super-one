@@ -83,17 +83,29 @@ function Downloader() {
   const [pct, setPct] = useState(0)
 
   useEffect(() => {
-    const off = window.superone.worker.onMessage((m: any) => {
+    const off = window.superone.worker.onMessage((m) => {
       if (m.type === 'progress') setPct(m.percent)
+      if (m.type === 'done') window.superone.ui.toast('Saved ' + m.path, 'success')
+    })
+    // Re-sync if a worker is already running from a previous session
+    window.superone.worker.status().then((s) => {
+      if (s.running) window.superone.worker.postMessage({ type: 'query' })
     })
     return off
   }, [])
 
   const go = async () => {
     await window.superone.worker.start()
-    window.superone.worker.postMessage({ type: 'download', src: url })
+    window.superone.worker.postMessage({ type: 'download', src: 'logo.png', dest: 'out.png' })
   }
-  return <><button onClick={go}>Start</button><progress value={pct} max={100} /></>
+
+  return (
+    <>
+      <button onClick={go}>Start</button>
+      <button onClick={() => window.superone.worker.stop()}>Stop</button>
+      <progress value={pct} max={100} />
+    </>
+  )
 }`
 
 const vanilla = `// manifest: background.entry + permissions.background

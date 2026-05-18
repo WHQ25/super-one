@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.35.2-alpha] - 2026-05-18
+
+### Added
+
+- Terminal: clickable links, WebGL renderer, Unicode 11 support, and ⌘F in-terminal search
+- ⌘W closes the active tab, falling back to closing the window when no tab is focused
+
+### Fixed
+
+- Pending interactions are now tagged with session/project so they survive a window reopen
+
+### Tests
+
+- Terminal instance teardown extracted into a pure function with a crash regression test
+- ⌘W focus routing extracted into a pure function with regression tests
+
 ## [0.35.1-alpha] - 2026-05-18
 
 ### Fixed

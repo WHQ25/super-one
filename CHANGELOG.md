@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.35.6-alpha] - 2026-05-19
+
+### Added
+
+- Codex: images generated during a turn are now collected into a single gallery shown at the end of the turn
+
+### Changed
+
+- Terminal & Activity: tabs can now be reordered by dragging (Chrome-style tab chips)
+
 ## [0.35.5-alpha] - 2026-05-19
 
 ### Added

@@ -1511,6 +1511,18 @@ function registerIpcHandlers(): void {
     clipboard.writeText(text)
   })
 
+  ipcMain.handle(AgentIpcChannels.CLIPBOARD_WRITE_IMAGE, async (_event, absPath: string) => {
+    const { nativeImage } = await import('electron')
+    const img = nativeImage.createFromPath(absPath)
+    if (img.isEmpty()) return { ok: false, error: 'Failed to read image' }
+    clipboard.writeImage(img)
+    return { ok: true }
+  })
+
+  ipcMain.handle(AgentIpcChannels.REVEAL_FILE, (_event, absPath: string) => {
+    shell.showItemInFolder(absPath)
+  })
+
   const testInstall = process.env.TEST_INSTALL_CLAUDE === '1'
 
   ipcMain.handle(AgentIpcChannels.SETUP_CHECK_CLAUDE, () => {

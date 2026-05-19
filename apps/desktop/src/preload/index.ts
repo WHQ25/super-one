@@ -586,6 +586,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_READ) as Promise<string>,
   clipboardWrite: (text: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_WRITE, text),
+  clipboardWriteImage: (absPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_WRITE_IMAGE, absPath),
+  revealFile: (absPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.REVEAL_FILE, absPath),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   startDrag: (paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }) =>
     ipcRenderer.send(AgentIpcChannels.START_DRAG, paths, iconOpts),

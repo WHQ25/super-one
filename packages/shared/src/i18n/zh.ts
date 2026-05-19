@@ -395,6 +395,13 @@ export const zh: Messages = {
       modelFallback: 'Codex 模型',
       permissionPreset: '权限预设',
     },
+    codexImage: {
+      copyImage: '复制图片',
+      openFolder: '打开文件夹',
+      addToChat: '添加到对话',
+      copied: '图片已复制到剪贴板',
+      copyFailed: '复制失败：{{error}}',
+    },
     worktree: {
       searchPlaceholder: '搜索 worktree 与分支…',
       existingHeading: '已有 worktree',

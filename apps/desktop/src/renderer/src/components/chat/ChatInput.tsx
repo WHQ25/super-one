@@ -38,7 +38,8 @@ import { StopButton } from './StopButton'
 
 export const chatInputAPI: {
   insertMention: ((kind: MentionKind, value: string, displayName: string) => void) | null
-} = { insertMention: null }
+  addImageFromPath: ((absPath: string) => void) | null
+} = { insertMention: null, addImageFromPath: null }
 
 export function ChatInput() {
     const { t } = useTranslation()
@@ -661,6 +662,24 @@ export function ChatInput() {
       [addAttachment, insertFileMention]
     )
     processSelectedFilesRef.current = processSelectedFiles
+
+    const addImageFromPath = useCallback(
+      async (absPath: string) => {
+        const res = await window.app.readFileAsDataUri(absPath)
+        if (!res.ok) return
+        const [meta, b64] = res.dataUri.split(',')
+        if (!b64) return
+        const mime = meta.match(/data:([^;]+)/)?.[1] ?? 'image/png'
+        const bin = atob(b64)
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        const name = absPath.split(/[\\/]/).pop() || 'image.png'
+        const att = await buildImageAttachment(new File([bytes], name, { type: mime }))
+        if (att) addAttachment(att)
+      },
+      [addAttachment],
+    )
+    chatInputAPI.addImageFromPath = addImageFromPath
 
     const handleFileSelect = useCallback(
       (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -1,9 +1,18 @@
-import { useEffect, useState } from 'react'
-import { Download, Loader2, X, Info, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@superone/ui/components/ui/context-menu'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
+import { toast } from 'sonner'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
+import { chatInputAPI } from './ChatInput'
 import type { CodexImageGenerationItem } from '@superone/shared/agent-types'
 
 export function buildImageFileName(item: CodexImageGenerationItem): string {
@@ -42,6 +51,106 @@ export function useImageDataUri(savedPath: string | undefined, isFailed: boolean
   }, [savedPath, isFailed])
 
   return { dataUri, loadError }
+}
+
+function CodexImageMenuItems({ savedPath }: { savedPath: string }) {
+  const { t } = useTranslation()
+  const handleCopy = async () => {
+    const res = await window.app.clipboardWriteImage(savedPath)
+    if (res.ok) toast.success(t('chat.codexImage.copied'))
+    else toast.error(t('chat.codexImage.copyFailed', { error: res.error }))
+  }
+
+  return (
+    <>
+      <ContextMenuItem onClick={handleCopy}>
+        <Copy className="mr-2 size-3.5" />
+        {t('chat.codexImage.copyImage')}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={() => chatInputAPI.addImageFromPath?.(savedPath)}>
+        <MessageSquarePlus className="mr-2 size-3.5" />
+        {t('chat.codexImage.addToChat')}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={() => window.app.revealFile(savedPath)}>
+        <FolderOpen className="mr-2 size-3.5" />
+        {t('chat.codexImage.openFolder')}
+      </ContextMenuItem>
+    </>
+  )
+}
+
+function buildImageDragPng(img: HTMLImageElement): { buffer: ArrayBuffer; scaleFactor: number } | null {
+  if (!img.complete || img.naturalWidth === 0) return null
+  const MAX = 160
+  const dpr = Math.max(1, window.devicePixelRatio || 1)
+  const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight))
+  const w = Math.round(img.naturalWidth * scale)
+  const h = Math.round(img.naturalHeight * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(w * dpr)
+  canvas.height = Math.round(h * dpr)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.scale(dpr, dpr)
+  ctx.drawImage(img, 0, 0, w, h)
+  const base64 = canvas.toDataURL('image/png').split(',')[1]
+  if (!base64) return null
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return { buffer: bytes.buffer, scaleFactor: dpr }
+}
+
+interface InteractiveProps {
+  savedPath: string
+  onOpen: () => void
+  className: string
+  ariaLabel: string
+  children: React.ReactNode
+}
+
+export function CodexImageInteractive({ savedPath, onOpen, className, ariaLabel, children }: InteractiveProps) {
+  const dragEndRef = useRef(0)
+
+  const handleDragStart = (e: React.DragEvent) => {
+    e.preventDefault()
+    const imgEl = e.currentTarget.querySelector('img')
+    const dragImage = imgEl ? buildImageDragPng(imgEl) : null
+    if (dragImage) window.app.startDrag([savedPath], { png: dragImage.buffer, scaleFactor: dragImage.scaleFactor })
+    else window.app.startDrag([savedPath])
+    const cleanup = () => {
+      dragEndRef.current = Date.now()
+      document.removeEventListener('mouseup', cleanup)
+      document.removeEventListener('dragend', cleanup)
+    }
+    document.addEventListener('mouseup', cleanup)
+    document.addEventListener('dragend', cleanup)
+  }
+
+  const handleClick = () => {
+    if (Date.now() - dragEndRef.current < 200) return
+    onOpen()
+  }
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <button
+          type="button"
+          draggable
+          onDragStart={handleDragStart}
+          onClick={handleClick}
+          aria-label={ariaLabel}
+          className={className}
+        >
+          {children}
+        </button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <CodexImageMenuItems savedPath={savedPath} />
+      </ContextMenuContent>
+    </ContextMenu>
+  )
 }
 
 interface ViewerProps {
@@ -105,9 +214,22 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
         className="left-0 top-0 h-screen max-h-none w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-0 bg-background/95 p-0 shadow-none sm:max-w-none"
       >
         <DialogTitle className="sr-only">{item.revisedPrompt ?? 'Generated image'}</DialogTitle>
-        <div className="absolute inset-0 px-[5vw] py-[5vh]">
-          {dataUri && <ImagePreview src={dataUri} alt={item.revisedPrompt ?? 'Generated image'} />}
-        </div>
+        {(() => {
+          const imageArea = (
+            <div className="absolute inset-0 px-[5vw] py-[5vh]">
+              {dataUri && <ImagePreview src={dataUri} alt={item.revisedPrompt ?? 'Generated image'} />}
+            </div>
+          )
+          if (!item.savedPath) return imageArea
+          return (
+            <ContextMenu>
+              <ContextMenuTrigger asChild>{imageArea}</ContextMenuTrigger>
+              <ContextMenuContent>
+                <CodexImageMenuItems savedPath={item.savedPath} />
+              </ContextMenuContent>
+            </ContextMenu>
+          )
+        })()}
 
         {multi && (
           <>

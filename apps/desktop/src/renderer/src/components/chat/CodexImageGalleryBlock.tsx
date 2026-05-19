@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ImageIcon, Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { CodexImageGenerationItem } from '@superone/shared/agent-types'
-import { CodexImageViewer, useImageDataUri } from './codex-image-shared'
+import { CodexImageInteractive, CodexImageViewer, useImageDataUri } from './codex-image-shared'
 
 const TILE = 'h-40 flex-none overflow-hidden rounded-md border border-border'
 
@@ -29,17 +29,18 @@ function GalleryThumb({ item, onOpen }: { item: CodexImageGenerationItem; onOpen
   }
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={cn(TILE, 'cursor-zoom-in bg-muted/30 transition-shadow hover:shadow-sm')}
+    <CodexImageInteractive
+      savedPath={savedPath!}
+      onOpen={onOpen}
+      ariaLabel={item.revisedPrompt ?? 'Generated image'}
+      className={cn(TILE, 'cursor-pointer bg-muted/30 transition-shadow hover:shadow-sm')}
     >
       <img
         src={dataUri}
         alt={item.revisedPrompt ?? 'Generated image'}
         className="block h-40 w-auto object-contain"
       />
-    </button>
+    </CodexImageInteractive>
   )
 }
 

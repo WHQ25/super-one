@@ -176,6 +176,8 @@ interface AppAPI {
   openExternalLink(url: string): Promise<void>
   clipboardRead(): Promise<string>
   clipboardWrite(text: string): Promise<void>
+  clipboardWriteImage(absPath: string): Promise<{ ok: true } | { ok: false; error: string }>
+  revealFile(absPath: string): Promise<void>
   getPathForFile(file: File): string
   startDrag(paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }): void
   pathStat(path: string): Promise<{ isFile: boolean; isDirectory: boolean } | null>

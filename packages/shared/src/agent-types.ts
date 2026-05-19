@@ -1618,6 +1618,8 @@ export const AgentIpcChannels = {
   SAVE_FILE: 'app:save-file',
   READ_FILE_AS_DATA_URI: 'app:read-file-as-data-uri',
   SAVE_FILE_AS: 'app:save-file-as',
+  CLIPBOARD_WRITE_IMAGE: 'app:clipboard-write-image',
+  REVEAL_FILE: 'app:reveal-file',
 
   // Concurrent session management
   PARK_SESSION: 'agent:park-session',

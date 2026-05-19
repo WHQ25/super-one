@@ -381,6 +381,13 @@ export type Messages = {
       modelFallback: string
       permissionPreset: string
     }
+    codexImage: {
+      copyImage: string
+      openFolder: string
+      addToChat: string
+      copied: string
+      copyFailed: string
+    }
     worktree: {
       searchPlaceholder: string
       existingHeading: string
@@ -1461,6 +1468,13 @@ export const en: Messages = {
       followUp: 'Follow-up',
       modelFallback: 'Codex model',
       permissionPreset: 'Permission Preset',
+    },
+    codexImage: {
+      copyImage: 'Copy Image',
+      openFolder: 'Open Folder',
+      addToChat: 'Add to Chat',
+      copied: 'Image copied to clipboard',
+      copyFailed: 'Copy failed: {{error}}',
     },
     worktree: {
       searchPlaceholder: 'Search worktrees and branches…',

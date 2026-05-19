@@ -78,3 +78,47 @@ export const FrameDriven: Story = {
     expandAtSec: 2,
   },
 }
+
+const richItems: TodoPopupItem[] = [
+  {
+    id: "1",
+    text: "Audit relay frame encoder",
+    status: "completed",
+    description: "Confirmed every desktop→mobile frame carries mobileDeviceId; no targeting regressions.",
+  },
+  {
+    id: "2",
+    text: "Refactor ownership into Session class",
+    status: "in_progress",
+    description: "Moving claim/release/subscribe off RemoteControlService onto Session so lock checks live with the data.",
+    owner: "session-refactor agent",
+  },
+  {
+    id: "3",
+    text: "Wire device-disconnect cleanup",
+    status: "pending",
+    description: "handleDeviceDisconnected walks forEachSession and releases + unsubscribes the dropped deviceId.",
+    blockedBy: ["2"],
+  },
+  {
+    id: "4",
+    text: "Add multi-mobile integration test",
+    status: "pending",
+    blockedBy: ["2", "3"],
+  },
+]
+
+export const WithDescriptionsAndOwners: Story = {
+  args: {
+    items: richItems,
+    expanded: true,
+  },
+}
+
+export const DetailRowExpanded: Story = {
+  args: {
+    items: richItems,
+    expanded: true,
+    openRowIds: ["1"],
+  },
+}

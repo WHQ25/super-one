@@ -4,6 +4,28 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.35.7-alpha] - 2026-05-19
+
+### Added
+
+- Chat: file attachments now render as chips in Claude messages, with a right-click context menu and native drag-out support
+- Skills: Codex skills under `~/.codex/skills` (including `.system`) are now discovered
+
+### Fixed
+
+- Chat: @-mention popup now closes once a query yields no matches
+- Chat: clicking to place the cursor no longer mis-triggers text selection
+- Codex: file-link chips now also apply to fallback markdown paths
+- Plugins: the "unknown" CLI version sentinel is now hidden on the settings page
+- Plugins: skill-only marketplaces now surface via their `marketplace.json` manifest
+
+### Changed
+
+- Chat: inline media in messages is now size-constrained
+- Chat: app drawer is now localized
+- Input: `/` hint now mentions skills
+- Activity: drop indicator now has a dark-mode background
+
 ## [0.35.6-alpha] - 2026-05-19
 
 ### Added

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 
 - Codex: images generated during a turn are now collected into a single gallery shown at the end of the turn
+- Codex: right-click a generated image to copy it, reveal it in its folder, or add it to chat; images can also be dragged out to copy or into the chat input
 
 ### Changed
 

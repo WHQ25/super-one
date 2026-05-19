@@ -3,7 +3,10 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { chatActions, activeSessionState, editorState, useChatStore } = vi.hoisted(() => {
+const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup } = vi.hoisted(() => {
+  const mentionPopup = {
+    props: null as null | { query: string; onResultState?: (q: string, isEmpty: boolean) => void },
+  }
   const activeSessionState = {
     draftText: '',
     status: 'idle' as const,
@@ -79,7 +82,7 @@ const { chatActions, activeSessionState, editorState, useChatStore } = vi.hoiste
     editor: null as unknown,
   }
 
-  return { chatActions, activeSessionState, editorState, useChatStore }
+  return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup }
 })
 
 vi.mock('@tiptap/react', () => {
@@ -227,7 +230,10 @@ vi.mock('./ContextUsage', () => ({
 }))
 
 vi.mock('./MentionPopup', () => ({
-  MentionPopup: () => null,
+  MentionPopup: (props: { query: string; onResultState?: (q: string, isEmpty: boolean) => void }) => {
+    mentionPopup.props = props
+    return <div data-testid="mention-popup" data-query={props.query} />
+  },
 }))
 
 vi.mock('./AttachmentBar', () => ({
@@ -276,7 +282,14 @@ beforeEach(() => {
   activeSessionState.sessionProvider = null
   activeSessionState.showDirManager = false
   activeSessionState.showReviewPanel = false
+  mentionPopup.props = null
 })
+
+function typeInEditor(value: string) {
+  const editor = screen.getByTestId('editor')
+  editor.textContent = value
+  fireEvent.input(editor)
+}
 
 describe('ChatInput', () => {
   it('opens the Codex review panel after switching providers without remounting', () => {
@@ -301,5 +314,53 @@ describe('ChatInput', () => {
 
     expect(chatActions.setShowReviewPanel).toHaveBeenCalledWith(true)
     expect(chatActions.setDraftText).toHaveBeenCalledWith('')
+  })
+})
+
+describe('ChatInput @-mention no-match suppression', () => {
+  it('keeps the popup hidden while typing further past a query that returned no matches', () => {
+    render(<ChatInput />)
+
+    typeInEditor('@zzz')
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'zzz')
+
+    mentionPopup.props!.onResultState!('zzz', true)
+
+    typeInEditor('@zzzz')
+    expect(screen.queryByTestId('mention-popup')).toBeNull()
+
+    typeInEditor('@zzzzz')
+    expect(screen.queryByTestId('mention-popup')).toBeNull()
+  })
+
+  it('does not re-flash the popup on each backspace, only re-showing once the query is below the no-match length', () => {
+    render(<ChatInput />)
+
+    typeInEditor('@zzz')
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'zzz')
+    mentionPopup.props!.onResultState!('zzz', true)
+
+    typeInEditor('@zzzz')
+    expect(screen.queryByTestId('mention-popup')).toBeNull()
+
+    typeInEditor('@zzz')
+    expect(screen.queryByTestId('mention-popup')).toBeNull()
+
+    typeInEditor('@zz')
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'zz')
+  })
+
+  it('tracks the no-match length per @ token so a later @ is not suppressed by an earlier one', () => {
+    const { rerender } = render(<ChatInput />)
+
+    typeInEditor('@aaa')
+    rerender(<ChatInput />)
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'aaa')
+    mentionPopup.props!.onResultState!('aaa', true)
+
+    typeInEditor('@aaa@bbb')
+    rerender(<ChatInput />)
+
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'bbb')
   })
 })

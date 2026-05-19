@@ -21,6 +21,7 @@ interface MentionPopupProps {
   onSelect: (value: string, action: 'navigate' | 'select', kind?: MentionKind, displayName?: string) => void
   onSetSelectedIndex: (index: number) => void
   onClose: () => void
+  onResultState?: (query: string, isEmpty: boolean) => void
   showAgents?: boolean
 }
 
@@ -69,7 +70,7 @@ function getSelectPath(item: FlatItem): string {
 }
 
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
-  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, showAgents = true }, ref) {
+  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onResultState, showAgents = true }, ref) {
     const activeProject = useChatStore((s) => s.activeProject)
     const agents = useActiveSession((s) => s.agents)
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
@@ -163,6 +164,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
       return items
     }, [isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedMiniApps])
+
+    useEffect(() => {
+      if (!searchCompleted) return
+      onResultState?.(query, flatItems.length === 0)
+    }, [searchCompleted, flatItems.length, query, onResultState])
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {

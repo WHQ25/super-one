@@ -122,6 +122,7 @@ export function ChatInput() {
     const addDirRef = useRef<AddDirPopupHandle>(null)
 
     const mentionInfoRef = useRef<{ atPos: number; query: string } | null>(null)
+    const mentionEmptyByAtRef = useRef<Map<number, number>>(new Map())
     const mentionActiveRef = useRef(mentionActive)
     mentionActiveRef.current = mentionActive
     const placeholderTextRef = useRef('')
@@ -402,9 +403,22 @@ export function ChatInput() {
         setMentionActive(false)
         setMentionIndex(0)
         mentionInfoRef.current = null
+        mentionEmptyByAtRef.current.clear()
       },
       [agents, addMention, showAgentMentions]
     )
+
+    const handleMentionResultState = useCallback((q: string, isEmpty: boolean) => {
+      const info = mentionInfoRef.current
+      if (!info || !q) return
+      const map = mentionEmptyByAtRef.current
+      const cur = map.get(info.atPos)
+      if (isEmpty) {
+        if (cur === undefined || q.length < cur) map.set(info.atPos, q.length)
+      } else if (cur !== undefined && q.length >= cur) {
+        map.set(info.atPos, q.length + 1)
+      }
+    }, [])
 
     const serializeAndClear = useCallback(() => {
       const ed = editorRef.current
@@ -443,6 +457,7 @@ export function ChatInput() {
       setMentionActive(false)
       setMentionIndex(0)
       mentionInfoRef.current = null
+      mentionEmptyByAtRef.current.clear()
       return { segments, mentions: collectedMentions }
     }, [text])
 
@@ -527,6 +542,7 @@ export function ChatInput() {
             setMentionActive(false)
             setMentionIndex(0)
             mentionInfoRef.current = null
+            mentionEmptyByAtRef.current.clear()
             return true
           }
         }
@@ -875,18 +891,27 @@ export function ChatInput() {
         if (lastAt !== -1) {
           const afterAt = textInParent.slice(lastAt + 1)
           if (!afterAt.includes(' ') && !afterAt.includes('\0')) {
-            if (!mentionActiveRef.current) {
-              setMentionIndex(0)
+            const atPos = $pos.start() + lastAt
+            const firstEmptyLen = mentionEmptyByAtRef.current.get(atPos)
+            if (firstEmptyLen !== undefined && afterAt.length >= firstEmptyLen) {
+              setMentionActive(false)
+              mentionInfoRef.current = null
+            } else {
+              if (!mentionActiveRef.current) {
+                setMentionIndex(0)
+              }
+              setMentionActive(true)
+              mentionInfoRef.current = { atPos, query: afterAt }
             }
-            setMentionActive(true)
-            mentionInfoRef.current = { atPos: $pos.start() + lastAt, query: afterAt }
           } else {
             setMentionActive(false)
             mentionInfoRef.current = null
+            mentionEmptyByAtRef.current.clear()
           }
         } else {
           setMentionActive(false)
           mentionInfoRef.current = null
+          mentionEmptyByAtRef.current.clear()
         }
       },
     })
@@ -1083,7 +1108,8 @@ export function ChatInput() {
             selectedIndex={mentionIndex}
             onSelect={handleMentionSelect}
             onSetSelectedIndex={setMentionIndex}
-            onClose={() => { setMentionActive(false); setMentionIndex(0); mentionInfoRef.current = null }}
+            onResultState={handleMentionResultState}
+            onClose={() => { setMentionActive(false); setMentionIndex(0); mentionInfoRef.current = null; mentionEmptyByAtRef.current.clear() }}
             showAgents={showAgentMentions}
           />
         )}

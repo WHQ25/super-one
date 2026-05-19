@@ -1072,6 +1072,7 @@ export interface SkillInfo {
   description: string
   argumentHint?: string
   hasConfig: boolean
+  builtin?: boolean
 }
 
 export interface SkillFileEntry {

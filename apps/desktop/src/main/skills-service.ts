@@ -1,13 +1,14 @@
 import { join, resolve, basename } from 'path'
 import log from './logger'
 import { homedir } from 'os'
-import { existsSync, readdirSync, readFileSync, statSync, cpSync, rmSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, statSync, cpSync, rmSync, type Dirent } from 'fs'
 import type { ResourceScope, SkillInfo, SkillDetail, SkillFileEntry } from '@superone/shared/agent-types'
 
 export interface SkillDir {
   dir: string
   scope: ResourceScope
   namePrefix?: string
+  readOnly?: boolean
 }
 
 function getSkillDirs(cwd: string): SkillDir[] {
@@ -42,11 +43,26 @@ function getSkillDirs(cwd: string): SkillDir[] {
   return dirs
 }
 
+function codexHome(): string {
+  const envHome = process.env.CODEX_HOME?.trim()
+  return envHome ? envHome : join(homedir(), '.codex')
+}
+
 export function getCodexSkillDirs(cwd: string): SkillDir[] {
-  return [
+  const home = codexHome()
+  const dirs: SkillDir[] = [
     { dir: join(homedir(), '.agents', 'skills'), scope: 'user' },
-    { dir: join(cwd, '.agents', 'skills'), scope: 'project' },
+    { dir: join(home, 'skills'), scope: 'user' },
+    { dir: join(home, 'skills', '.system'), scope: 'user', readOnly: true },
   ]
+  if (process.platform !== 'win32') {
+    dirs.push({ dir: join('/etc', 'codex', 'skills'), scope: 'user', readOnly: true })
+  }
+  dirs.push(
+    { dir: join(cwd, '.agents', 'skills'), scope: 'project' },
+    { dir: join(cwd, '.codex', 'skills'), scope: 'project' },
+  )
+  return dirs
 }
 
 function parseFrontmatter(filePath: string): { name: string; description: string; argumentHint: string } {
@@ -82,32 +98,70 @@ function parseFrontmatter(filePath: string): { name: string; description: string
   }
 }
 
+// Codex scans skill roots breadth-first up to MAX_SCAN_DEPTH directories deep
+// (codex-rs/core-skills/src/loader.rs). Mirror that bound here so nested
+// skills (e.g. `skills/category/my-skill/SKILL.md`) are discovered.
+const MAX_SKILL_SCAN_DEPTH = 6
+
+function isDirLike(dirPath: string, entry: { name: string; isDirectory: () => boolean; isSymbolicLink: () => boolean }): boolean {
+  if (entry.isDirectory()) return true
+  if (entry.isSymbolicLink()) {
+    try {
+      return statSync(join(dirPath, entry.name)).isDirectory()
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
 // --- Core functions that accept SkillDir[] ---
 
 export function listSkillsFromDirs(dirs: SkillDir[]): SkillInfo[] {
   const skills: SkillInfo[] = []
   const seen = new Set<string>()
 
-  for (const { dir, scope, namePrefix } of dirs) {
-    if (!existsSync(dir)) continue
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
-      const skillMd = join(dir, entry.name, 'SKILL.md')
-      if (!existsSync(skillMd)) continue
-      const name = (namePrefix ?? '') + entry.name
-      const key = `${scope}:${name}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      const fm = parseFrontmatter(skillMd)
-      skills.push({
-        name,
-        displayName: fm.name || name,
-        scope,
-        description: fm.description,
-        argumentHint: fm.argumentHint,
-        hasConfig: existsSync(join(dir, entry.name, 'config.json')),
-      })
+  const walk = (root: string, relPrefix: string, depth: number, scope: ResourceScope, namePrefix?: string, readOnly?: boolean): void => {
+    const absDir = relPrefix ? join(root, relPrefix) : root
+    let entries: Dirent[]
+    try {
+      entries = readdirSync(absDir, { withFileTypes: true })
+    } catch {
+      return
     }
+    for (const entry of entries) {
+      // Codex skips dot-prefixed entries during traversal; the embedded
+      // `.system` root is scanned via its own SkillDir, not by descending here.
+      if (entry.name.startsWith('.')) continue
+      if (!isDirLike(absDir, entry)) continue
+      const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name
+      const skillDir = join(absDir, entry.name)
+      if (existsSync(join(skillDir, 'SKILL.md'))) {
+        const name = (namePrefix ?? '') + relPath
+        const key = `${scope}:${name}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          const fm = parseFrontmatter(join(skillDir, 'SKILL.md'))
+          skills.push({
+            name,
+            displayName: fm.name || entry.name,
+            scope,
+            description: fm.description,
+            argumentHint: fm.argumentHint,
+            hasConfig: existsSync(join(skillDir, 'config.json')),
+            ...(readOnly ? { builtin: true } : {}),
+          })
+        }
+      }
+      if (depth + 1 < MAX_SKILL_SCAN_DEPTH) {
+        walk(root, relPath, depth + 1, scope, namePrefix, readOnly)
+      }
+    }
+  }
+
+  for (const { dir, scope, namePrefix, readOnly } of dirs) {
+    if (!existsSync(dir)) continue
+    walk(dir, '', 0, scope, namePrefix, readOnly)
   }
 
   return skills
@@ -226,7 +280,19 @@ export function installSkill(sourcePath: string): SkillInfo {
   }
 }
 
+// Refuse names that would escape the skills root or target a hidden tree.
+// `.system` is Codex's embedded built-in skill cache — never user-deletable;
+// any dot-prefixed or `..` segment is also unsafe (path traversal).
+function isUnsafeSkillName(name: string): boolean {
+  const segments = name.split(/[/\\]/)
+  return segments.some((seg) => seg === '' || seg === '.' || seg === '..' || seg.startsWith('.'))
+}
+
 function deleteSkillFromBaseDir(baseDirName: '.claude' | '.agents', name: string, scope: ResourceScope, cwd: string): void {
+  if (isUnsafeSkillName(name)) {
+    log.warn(`[skills] refusing to delete protected/unsafe skill: ${name}`)
+    return
+  }
   const dir = scope === 'user'
     ? join(homedir(), baseDirName, 'skills', name)
     : join(cwd, baseDirName, 'skills', name)

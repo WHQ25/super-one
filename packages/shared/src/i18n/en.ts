@@ -1643,7 +1643,7 @@ export const en: Messages = {
       subtitleCodex: 'Manage Codex skills',
       empty: 'No skills found',
       emptyHintClaude: 'User: ~/.claude/skills/ | Project: .claude/skills/',
-      emptyHintCodex: 'User: ~/.agents/skills/ | Project: .agents/skills/',
+      emptyHintCodex: 'User: ~/.agents/skills/, ~/.codex/skills/ (incl. .system) | Project: .agents/skills/, .codex/skills/',
       install: 'Install Skill',
       selectFile: 'Select a file to preview',
       deleteTitle: 'Delete Skill?',

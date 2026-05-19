@@ -569,7 +569,7 @@ export const zh: Messages = {
       subtitleCodex: '管理 Codex 技能',
       empty: '未找到技能',
       emptyHintClaude: '用户目录：~/.claude/skills/ ｜ 项目目录：.claude/skills/',
-      emptyHintCodex: '用户目录：~/.agents/skills/ ｜ 项目目录：.agents/skills/',
+      emptyHintCodex: '用户目录：~/.agents/skills/、~/.codex/skills/（含 .system）｜ 项目目录：.agents/skills/、.codex/skills/',
       install: '安装技能',
       selectFile: '选择一个文件进行预览',
       deleteTitle: '删除技能？',

@@ -45,7 +45,7 @@ vi.mock('child_process', () => ({
   execFile: execFileMock,
 }))
 
-import { listPlugins, readPluginContent, readPluginFile, deletePlugin } from './plugins-service'
+import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, readMarketplacePluginContent } from './plugins-service'
 
 const PLUGINS_DIR = join('/home/testuser', '.claude', 'plugins')
 const INSTALLED_FILE = join(PLUGINS_DIR, 'installed_plugins.json')
@@ -221,6 +221,249 @@ describe('listPlugins', () => {
 
     const result = listPlugins('/proj')
     expect(result).toEqual([])
+  })
+})
+
+describe('listMarketplacePlugins', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it('enumerates skill-only plugins declared in marketplace.json with source "./"', () => {
+    const mpDir = '/mp/anthropic-agent-skills'
+    const manifestPath = join(mpDir, '.claude-plugin', 'marketplace.json')
+    readFileSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE) {
+        return JSON.stringify({
+          'anthropic-agent-skills': {
+            source: { source: 'github', repo: 'anthropics/skills' },
+            installLocation: mpDir,
+            lastUpdated: '2026-05-19T00:00:00.000Z',
+          },
+        })
+      }
+      if (path === manifestPath) {
+        return JSON.stringify({
+          name: 'anthropic-agent-skills',
+          owner: { name: 'Anthropic' },
+          plugins: [
+            { name: 'document-skills', source: './', description: 'Docs', skills: ['./skills/docx'] },
+            { name: 'example-skills', source: './', description: 'Examples', skills: ['./skills/skill-creator'] },
+            { name: 'claude-api', source: './', description: 'API', version: '1.0.0', skills: ['./skills/claude-api'] },
+          ],
+        })
+      }
+      return '{}'
+    })
+    existsSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE) return true
+      if (path === mpDir) return true
+      if (path === manifestPath) return true
+      return false
+    })
+
+    const result = listMarketplacePlugins('/proj')
+    expect(result.map(p => p.name).sort()).toEqual(['claude-api', 'document-skills', 'example-skills'])
+    const claudeApi = result.find(p => p.name === 'claude-api')!
+    expect(claudeApi.key).toBe('claude-api@anthropic-agent-skills')
+    expect(claudeApi.marketplace).toBe('anthropic-agent-skills')
+    expect(claudeApi.description).toBe('API')
+    expect(claudeApi.version).toBe('1.0.0')
+    expect(claudeApi.hasSkills).toBe(true)
+    expect(claudeApi.marketplaceLastUpdated).toBe('2026-05-19T00:00:00.000Z')
+  })
+
+  it('still resolves plugins whose source points to a subdir with its own plugin.json', () => {
+    const mpDir = '/mp/classic'
+    const manifestPath = join(mpDir, '.claude-plugin', 'marketplace.json')
+    const pluginDir = join(mpDir, 'plugins', 'dev-toolkit')
+    const pluginManifestPath = join(pluginDir, '.claude-plugin', 'plugin.json')
+    readFileSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE) {
+        return JSON.stringify({ classic: { installLocation: mpDir } })
+      }
+      if (path === manifestPath) {
+        return JSON.stringify({
+          name: 'classic',
+          plugins: [{ name: 'dev-toolkit', source: './plugins/dev-toolkit', description: 'from manifest' }],
+        })
+      }
+      if (path === pluginManifestPath) {
+        return JSON.stringify({ description: 'from plugin.json', author: { name: 'Bob' }, version: '2.1' })
+      }
+      return '{}'
+    })
+    existsSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE || path === mpDir || path === manifestPath) return true
+      if (path === pluginDir || path === pluginManifestPath) return true
+      if (path === join(pluginDir, 'commands')) return true
+      return false
+    })
+
+    const result = listMarketplacePlugins('/proj')
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('dev-toolkit')
+    expect(result[0].author).toBe('Bob')
+    expect(result[0].version).toBe('2.1')
+    expect(result[0].hasCommands).toBe(true)
+  })
+
+  it('labels an unsettled directory-source marketplace as local, not official', () => {
+    const mpDir = '/Users/me/Dev/my-mp'
+    const manifestPath = join(mpDir, '.claude-plugin', 'marketplace.json')
+    readFileSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE) {
+        return JSON.stringify({
+          'my-mp': {
+            source: { source: 'directory', path: mpDir },
+            installLocation: mpDir,
+          },
+          'claude-plugins-official': {
+            source: { source: 'github', repo: 'anthropics/claude-plugins-official' },
+            installLocation: '/mp/official',
+          },
+        })
+      }
+      if (path === manifestPath) {
+        return JSON.stringify({ name: 'my-mp', plugins: [{ name: 'p1', source: './', description: 'd' }] })
+      }
+      if (path === join('/mp/official', '.claude-plugin', 'marketplace.json')) {
+        return JSON.stringify({ name: 'official', plugins: [{ name: 'op', source: './', description: 'o' }] })
+      }
+      return '{}'
+    })
+    existsSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE) return true
+      if (path === mpDir || path === manifestPath) return true
+      if (path === '/mp/official' || path === join('/mp/official', '.claude-plugin', 'marketplace.json')) return true
+      return false
+    })
+
+    const result = listMarketplacePlugins('/proj')
+    expect(result.find(p => p.marketplace === 'my-mp')!.marketplaceScope).toBe('local')
+    expect(result.find(p => p.marketplace === 'claude-plugins-official')!.marketplaceScope).toBe('official')
+  })
+
+  it('keeps the settings-declared scope over the directory-source fallback', () => {
+    const mpDir = '/Users/me/Dev/declared-mp'
+    const manifestPath = join(mpDir, '.claude-plugin', 'marketplace.json')
+    const userSettings = join('/home/testuser', '.claude', 'settings.json')
+    readFileSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE) {
+        return JSON.stringify({
+          'declared-mp': { source: { source: 'directory', path: mpDir }, installLocation: mpDir },
+        })
+      }
+      if (path === userSettings) {
+        return JSON.stringify({ extraKnownMarketplaces: { 'declared-mp': { source: { source: 'directory', path: mpDir } } } })
+      }
+      if (path === manifestPath) {
+        return JSON.stringify({ name: 'declared-mp', plugins: [{ name: 'p1', source: './', description: 'd' }] })
+      }
+      return '{}'
+    })
+    existsSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE || path === userSettings) return true
+      if (path === mpDir || path === manifestPath) return true
+      return false
+    })
+
+    const result = listMarketplacePlugins('/proj')
+    expect(result.find(p => p.marketplace === 'declared-mp')!.marketplaceScope).toBe('user')
+  })
+
+  it('falls back to directory scan when marketplace.json is absent', () => {
+    const mpDir = '/mp/legacy'
+    const pluginDir = join(mpDir, 'plugins', 'legacy-plugin')
+    const pluginManifestPath = join(pluginDir, '.claude-plugin', 'plugin.json')
+    readFileSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE) {
+        return JSON.stringify({ legacy: { installLocation: mpDir } })
+      }
+      if (path === pluginManifestPath) {
+        return JSON.stringify({ description: 'legacy', version: '0.1' })
+      }
+      return '{}'
+    })
+    existsSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE || path === mpDir) return true
+      if (path === join(mpDir, 'plugins')) return true
+      if (path === pluginManifestPath) return true
+      return false
+    })
+    readdirSyncMock.mockImplementation((path: string) => {
+      if (path === join(mpDir, 'plugins')) {
+        return [{ name: 'legacy-plugin', isDirectory: () => true, isSymbolicLink: () => false }]
+      }
+      return []
+    })
+
+    const result = listMarketplacePlugins('/proj')
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('legacy-plugin')
+    expect(result[0].description).toBe('legacy')
+  })
+})
+
+describe('readMarketplacePluginContent', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it('returns detail for a skill-only plugin (source "./", no own plugin.json)', () => {
+    const mpDir = '/mp/anthropic-agent-skills'
+    const manifestPath = join(mpDir, '.claude-plugin', 'marketplace.json')
+    readFileSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE) {
+        return JSON.stringify({
+          'anthropic-agent-skills': {
+            source: { source: 'github', repo: 'anthropics/skills' },
+            installLocation: mpDir,
+            lastUpdated: '2026-05-19T00:00:00.000Z',
+          },
+        })
+      }
+      if (path === manifestPath) {
+        return JSON.stringify({
+          name: 'anthropic-agent-skills',
+          plugins: [
+            { name: 'claude-api', source: './', description: 'API skill', version: '1.0.0', skills: ['./skills/claude-api'] },
+          ],
+        })
+      }
+      return '{}'
+    })
+    existsSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE || path === mpDir || path === manifestPath) return true
+      return false
+    })
+    readdirSyncMock.mockReturnValue([])
+
+    const result = readMarketplacePluginContent('anthropic-agent-skills', 'claude-api')
+    expect(result).not.toBeNull()
+    expect(result!.name).toBe('claude-api')
+    expect(result!.key).toBe('claude-api@anthropic-agent-skills')
+    expect(result!.description).toBe('API skill')
+    expect(result!.version).toBe('1.0.0')
+    expect(result!.hasSkills).toBe(true)
+    expect(result!.sourcePath).toBe(mpDir)
+    expect(result!.marketplaceSource).toBe('anthropics/skills')
+  })
+
+  it('returns null when neither plugin.json nor marketplace.json entry exists', () => {
+    const mpDir = '/mp/empty'
+    readFileSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE) {
+        return JSON.stringify({ empty: { installLocation: mpDir } })
+      }
+      return '{}'
+    })
+    existsSyncMock.mockImplementation((path: string) => {
+      if (path === MARKETPLACES_FILE || path === mpDir) return true
+      return false
+    })
+
+    expect(readMarketplacePluginContent('empty', 'ghost')).toBeNull()
   })
 })
 

@@ -1770,7 +1770,15 @@ export function PluginsPage() {
             {isCodex ? t('resources.plugins.subtitleCodex') : t('resources.plugins.subtitleClaude')}
           </p>
         </div>
-        <ProjectSelector mode="switch" />
+        <div className="flex items-center gap-2">
+          <ProjectSelector mode="switch" />
+          {tab === 'marketplace' && canManageMarketplaces && (
+            <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
+              <Plus className="size-3.5" />
+              {t('resources.plugins.addMarketplace')}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -1797,14 +1805,6 @@ export function PluginsPage() {
       {/* Marketplace tab */}
       {tab === 'marketplace' && (
         <div>
-          {canManageMarketplaces && (
-            <div className="mb-3 flex justify-end">
-              <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
-                <Plus className="size-3.5" />
-                {t('resources.plugins.addMarketplace')}
-              </Button>
-            </div>
-          )}
           {marketplaceSummaries.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-8 text-center">
               <p className="text-sm text-muted-foreground">{t('resources.plugins.emptyMarketplace')}</p>

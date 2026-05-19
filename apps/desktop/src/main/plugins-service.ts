@@ -97,8 +97,69 @@ interface InstalledEntry {
   gitCommitSha?: string
 }
 
+interface MarketplaceManifestPlugin {
+  name: string
+  source?: string
+  description?: string
+  version?: string
+  author?: { name?: string } | string
+  skills?: string[]
+}
+
 interface MarketplaceManifest {
-  plugins?: Array<{ name: string; version?: string }>
+  plugins?: MarketplaceManifestPlugin[]
+}
+
+function readMarketplaceManifestPlugins(mpDir: string): MarketplaceManifestPlugin[] {
+  const manifest = readJson<MarketplaceManifest>(join(mpDir, '.claude-plugin', 'marketplace.json'))
+  return Array.isArray(manifest?.plugins) ? manifest!.plugins.filter(p => p && typeof p.name === 'string') : []
+}
+
+/**
+ * Resolve a marketplace.json plugin `source` to an on-disk directory.
+ * `source` is a path relative to the marketplace root ("./", "./plugins/x").
+ * Falls back to the conventional plugins/ and external_plugins/ subdirs, then root.
+ */
+function resolvePluginSourceDir(mpDir: string, name: string, source?: string): string {
+  if (typeof source === 'string' && source.trim()) {
+    const rel = source.replace(/^\.\/?/, '')
+    const resolved = rel ? join(mpDir, rel) : mpDir
+    if (existsSync(resolved)) return resolved
+  }
+  for (const subDir of ['plugins', 'external_plugins']) {
+    const candidate = join(mpDir, subDir, name)
+    if (existsSync(candidate)) return candidate
+  }
+  return mpDir
+}
+
+function manifestAuthorName(author: MarketplaceManifestPlugin['author']): string | undefined {
+  if (!author) return undefined
+  return typeof author === 'string' ? author : author.name
+}
+
+function marketplaceSourceLabel(mpInfo: { source?: { source: string; repo?: string; path?: string } }): string | undefined {
+  const s = mpInfo.source
+  if (s?.source === 'github' && s.repo) return s.repo
+  if (s?.source === 'directory' && s.path) return s.path
+  return undefined
+}
+
+/**
+ * Resolve a marketplace's display scope. A scope declared in any settings.json
+ * `extraKnownMarketplaces` wins (local > project > user). Otherwise a
+ * directory-source marketplace is the user's own local checkout → `local`;
+ * anything else (the genuine official github marketplace) → `official`.
+ */
+function resolveMarketplaceScope(
+  mpName: string,
+  mpInfo: { source?: { source: string } },
+  scopeMap: Map<string, MarketplaceScope>,
+): MarketplaceScope {
+  const declared = scopeMap.get(mpName)
+  if (declared) return declared
+  if (mpInfo.source?.source === 'directory') return 'local'
+  return 'official'
 }
 
 interface InstalledPluginsData {
@@ -264,6 +325,12 @@ function getPluginNewVersion(mpDir: string, pluginName: string): string | null {
 
 /** Find the source directory for a plugin inside a marketplace */
 function findPluginSourceDir(mpDir: string, pluginName: string): string | null {
+  const entry = readMarketplaceManifestPlugins(mpDir).find(p => p.name === pluginName)
+  if (entry && typeof entry.source === 'string' && entry.source.trim()) {
+    const rel = entry.source.replace(/^\.\/?/, '')
+    const resolved = rel ? join(mpDir, rel) : mpDir
+    if (existsSync(resolved)) return resolved
+  }
   for (const subDir of ['plugins', 'external_plugins']) {
     const candidate = join(mpDir, subDir, pluginName)
     if (existsSync(candidate)) return candidate
@@ -443,7 +510,46 @@ export function listMarketplacePlugins(cwd: string): MarketplacePlugin[] {
     const mpDir = mpInfo.installLocation
     if (!mpDir || !existsSync(mpDir)) continue
 
-    // Scan both plugins/ and external_plugins/ directories
+    const marketplaceSource = marketplaceSourceLabel(mpInfo)
+
+    const pushPlugin = (
+      name: string,
+      sourceDir: string,
+      manifestEntry?: MarketplaceManifestPlugin,
+    ): void => {
+      const ownManifest = readPluginManifest(sourceDir)
+      const key = `${name}@${mpName}`
+      const contents = detectPluginContents(sourceDir)
+      if (manifestEntry?.skills?.length) contents.hasSkills = true
+      plugins.push({
+        name,
+        marketplace: mpName,
+        key,
+        description: manifestEntry?.description ?? ownManifest?.description ?? '',
+        author: ownManifest?.author?.name ?? manifestAuthorName(manifestEntry?.author),
+        version: manifestEntry?.version ?? ownManifest?.version,
+        installCount: countMap.get(key),
+        installed: installedMap.has(key),
+        installedScope: installedMap.get(key),
+        marketplaceLastUpdated: mpInfo.lastUpdated,
+        marketplaceSource,
+        marketplaceScope: resolveMarketplaceScope(mpName, mpInfo, scopeMap),
+        ...contents,
+      })
+    }
+
+    // Prefer the marketplace.json plugins[] manifest (canonical, handles
+    // source:"./" / skills[] / subdir sources). Fall back to scanning the
+    // conventional plugins/ + external_plugins/ directories for older
+    // marketplaces that ship no marketplace.json.
+    const manifestPlugins = readMarketplaceManifestPlugins(mpDir)
+    if (manifestPlugins.length > 0) {
+      for (const mp of manifestPlugins) {
+        pushPlugin(mp.name, resolvePluginSourceDir(mpDir, mp.name, mp.source), mp)
+      }
+      continue
+    }
+
     for (const subDir of ['plugins', 'external_plugins']) {
       const pluginsDir = join(mpDir, subDir)
       if (!existsSync(pluginsDir)) continue
@@ -452,30 +558,8 @@ export function listMarketplacePlugins(cwd: string): MarketplacePlugin[] {
         for (const entry of readdirSync(pluginsDir, { withFileTypes: true })) {
           if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
           const pluginDir = join(pluginsDir, entry.name)
-          const manifest = readPluginManifest(pluginDir)
-          if (!manifest) continue
-
-          const key = `${entry.name}@${mpName}`
-          const contents = detectPluginContents(pluginDir)
-          plugins.push({
-            name: entry.name,
-            marketplace: mpName,
-            key,
-            description: manifest.description ?? '',
-            author: manifest.author?.name,
-            version: manifest.version,
-            installCount: countMap.get(key),
-            installed: installedMap.has(key),
-            installedScope: installedMap.get(key),
-            marketplaceLastUpdated: mpInfo.lastUpdated,
-            marketplaceSource: mpInfo.source?.source === 'github' && mpInfo.source.repo
-              ? mpInfo.source.repo
-              : mpInfo.source?.source === 'directory' && mpInfo.source.path
-                ? mpInfo.source.path
-                : undefined,
-            marketplaceScope: scopeMap.get(mpName) ?? 'official',
-            ...contents,
-          })
+          if (!readPluginManifest(pluginDir)) continue
+          pushPlugin(entry.name, pluginDir)
         }
       } catch {
         // ignore unreadable directories
@@ -623,9 +707,11 @@ export function readMarketplacePluginContent(marketplace: string, name: string):
   if (!sourceDir) return null
 
   const manifest = readPluginManifest(sourceDir)
-  if (!manifest) return null
+  const manifestEntry = readMarketplaceManifestPlugins(mpInfo.installLocation).find(p => p.name === name)
+  if (!manifest && !manifestEntry) return null
 
   const contents = detectPluginContents(sourceDir)
+  if (manifestEntry?.skills?.length) contents.hasSkills = true
 
   // Check installed state from installed_plugins.json
   const installed = readJson<InstalledPluginsData>(INSTALLED_FILE)
@@ -648,19 +734,15 @@ export function readMarketplacePluginContent(marketplace: string, name: string):
     name,
     marketplace,
     key,
-    description: manifest.description ?? '',
-    author: manifest.author?.name,
-    version: manifest.version,
+    description: manifestEntry?.description ?? manifest?.description ?? '',
+    author: manifest?.author?.name ?? manifestAuthorName(manifestEntry?.author),
+    version: manifestEntry?.version ?? manifest?.version,
     installCount,
     installed: installedFlag,
     installedScope,
     marketplaceLastUpdated: mpInfo.lastUpdated,
-    marketplaceSource: mpInfo.source?.source === 'github' && mpInfo.source.repo
-      ? mpInfo.source.repo
-      : mpInfo.source?.source === 'directory' && mpInfo.source.path
-        ? mpInfo.source.path
-        : undefined,
-    marketplaceScope: getMarketplaceScopeMap('').get(marketplace) ?? 'official',
+    marketplaceSource: marketplaceSourceLabel(mpInfo),
+    marketplaceScope: resolveMarketplaceScope(marketplace, mpInfo, getMarketplaceScopeMap('')),
     ...contents,
     sourcePath: sourceDir,
     files: scanDir(sourceDir),

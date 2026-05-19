@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.35.5-alpha] - 2026-05-19
+
+### Added
+
+- Terminal: `⌘T` opens a new terminal (only fires when the terminal panel is focused)
+- Settings: macOS "Crisp Text" toggle in General → Appearance to opt out of grayscale font smoothing
+
+### Fixed
+
+- macOS: text now renders with grayscale font smoothing for sharper, thinner glyphs (on by default; can be disabled in Appearance)
+- Mini-apps: `⌘W` now closes the focused panel mini-app tab instead of the whole window
+- Chat: todo description divider is now vertically centered on the status circle
+
+### Changed
+
+- Mini-apps: dev reload / devtools icons moved into the tab chip and fullscreen header
+
 ## [0.35.4-alpha] - 2026-05-19
 
 ### Added

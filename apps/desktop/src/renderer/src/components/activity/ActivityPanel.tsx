@@ -177,6 +177,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
         <div className="min-h-0 flex-1">
           <DockviewReact
             className="dockview-theme-superone"
+            tabAnimation="smooth"
             onReady={onReady}
             components={activityPanelComponents}
             tabComponents={activityTabComponents}

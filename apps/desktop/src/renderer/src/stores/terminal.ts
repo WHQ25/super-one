@@ -32,6 +32,7 @@ interface TerminalStore {
   removeTab: (projectPath: string, terminalId: string) => void
   setActive: (projectPath: string, terminalId: string) => void
   renameTab: (terminalId: string, title: string) => void
+  reorderTabs: (projectPath: string, fromId: string, toId: string) => void
 }
 
 const sessionKey = (sessionId: string | null): string => sessionId ?? NO_SESSION_KEY
@@ -92,5 +93,18 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
         return { byProject: { ...s.byProject, [path]: { ...pt, tabs } } }
       }
       return s
+    }),
+
+  reorderTabs: (projectPath, fromId, toId) =>
+    set((s) => {
+      const cur = s.byProject[projectPath]
+      if (!cur) return s
+      const from = cur.tabs.findIndex((t) => t.terminalId === fromId)
+      const to = cur.tabs.findIndex((t) => t.terminalId === toId)
+      if (from === -1 || to === -1 || from === to) return s
+      const tabs = cur.tabs.slice()
+      const [moved] = tabs.splice(from, 1)
+      tabs.splice(to, 0, moved)
+      return { byProject: { ...s.byProject, [projectPath]: { ...cur, tabs } } }
     }),
 }))

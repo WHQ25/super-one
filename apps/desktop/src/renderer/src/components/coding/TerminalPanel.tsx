@@ -7,11 +7,14 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { setCloseActiveTerminal, setCreateTerminal } from './terminal-panel-api'
 import { getTerminalTheme, onTerminalThemeChange } from './terminal-theme'
 import { disposeTermInstance } from './term-instance'
-import type { TerminalEvent } from '@superone/shared/agent-types'
+import type { TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { EMPTY_TABS, useTerminalStore } from '@/stores/terminal'
@@ -20,6 +23,44 @@ import { HoverCloseSlot } from '@/components/activity/ActivityTab'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
 
 const HEADER_ITEM = 'flex items-center rounded-lg px-1.5 py-1 transition-colors'
+
+function SortableTerminalTab({
+  tab,
+  active,
+  onActivate,
+  onClose,
+}: {
+  tab: TerminalListItem
+  active: boolean
+  onActivate: () => void
+  onClose: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: tab.terminalId,
+  })
+  const style = {
+    transform: CSS.Transform.toString(transform ? { ...transform, y: 0 } : null),
+    transition,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={onActivate}
+      className={`${HEADER_ITEM} gap-1.5 shrink-0 cursor-pointer ${
+        active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
+      } ${isDragging ? 'z-10 opacity-80' : ''}`}
+    >
+      <HoverCloseSlot onClose={onClose}>
+        <TerminalIcon className="size-3 shrink-0" />
+      </HoverCloseSlot>
+      <span className="max-w-40 truncate text-xs">{tab.title}</span>
+    </div>
+  )
+}
 
 export function TerminalPanel() {
   const projectPath = useAppStore((s) => s.currentFolder)
@@ -33,6 +74,17 @@ export function TerminalPanel() {
   const removeTab = useTerminalStore((s) => s.removeTab)
   const setActive = useTerminalStore((s) => s.setActive)
   const renameTab = useTerminalStore((s) => s.renameTab)
+  const reorderTabs = useTerminalStore((s) => s.reorderTabs)
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const handleTabDragEnd = useCallback(
+    (e: DragEndEvent) => {
+      const { active, over } = e
+      if (!over || active.id === over.id || !projectPath) return
+      reorderTabs(projectPath, active.id as string, over.id as string)
+    },
+    [projectPath, reorderTabs],
+  )
 
   const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   const [find, setFind] = useState<string | null>(null)
@@ -266,22 +318,22 @@ export function TerminalPanel() {
     <div className="flex h-full flex-col">
       <div className="flex h-9 shrink-0 items-center gap-1 px-2">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {tabs.map((tab) => (
-            <div
-              key={tab.terminalId}
-              onClick={() => projectPath && setActive(projectPath, tab.terminalId)}
-              className={`${HEADER_ITEM} gap-1.5 shrink-0 cursor-pointer ${
-                tab.terminalId === activeId
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleTabDragEnd}>
+            <SortableContext
+              items={tabs.map((t) => t.terminalId)}
+              strategy={horizontalListSortingStrategy}
             >
-              <HoverCloseSlot onClose={() => closeTab(tab.terminalId)}>
-                <TerminalIcon className="size-3 shrink-0" />
-              </HoverCloseSlot>
-              <span className="max-w-40 truncate text-xs">{tab.title}</span>
-            </div>
-          ))}
+              {tabs.map((tab) => (
+                <SortableTerminalTab
+                  key={tab.terminalId}
+                  tab={tab}
+                  active={tab.terminalId === activeId}
+                  onActivate={() => projectPath && setActive(projectPath, tab.terminalId)}
+                  onClose={() => closeTab(tab.terminalId)}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
           <button
             onClick={() => void createTerminal()}
             disabled={!projectPath}

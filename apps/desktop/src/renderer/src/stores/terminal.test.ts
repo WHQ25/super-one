@@ -65,6 +65,35 @@ describe('terminal instances are shared per project across session switches', ()
   })
 })
 
+describe('terminal tabs reorder by drag', () => {
+  beforeEach(() => {
+    useTerminalStore.setState({ openBySession: {}, byProject: {}, instances: new Map() })
+  })
+
+  it('moves a dragged tab to the drop target slot while keeping the active tab', () => {
+    const s = useTerminalStore.getState()
+    s.addTab('/proj', item('t1'))
+    s.addTab('/proj', item('t2'))
+    s.addTab('/proj', item('t3'))
+    s.setActive('/proj', 't1')
+    s.reorderTabs('/proj', 't1', 't3')
+    const proj = useTerminalStore.getState().byProject['/proj']
+    expect(proj.tabs.map((t) => t.terminalId)).toEqual(['t2', 't3', 't1'])
+    expect(proj.activeId).toBe('t1')
+  })
+
+  it('no-ops on unknown ids, same source/target, or missing project', () => {
+    const s = useTerminalStore.getState()
+    s.addTab('/proj', item('t1'))
+    s.addTab('/proj', item('t2'))
+    const before = useTerminalStore.getState().byProject
+    s.reorderTabs('/proj', 't1', 't1')
+    s.reorderTabs('/proj', 't1', 'missing')
+    s.reorderTabs('/nope', 't1', 't2')
+    expect(useTerminalStore.getState().byProject).toBe(before)
+  })
+})
+
 describe('tab title auto-updates from the shell OSC title sequence', () => {
   beforeEach(() => {
     useTerminalStore.setState({ openBySession: {}, byProject: {}, instances: new Map() })

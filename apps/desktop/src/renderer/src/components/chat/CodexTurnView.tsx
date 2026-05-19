@@ -4,6 +4,7 @@ import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { renderCodexItem, CodexCommandBlock } from './codex-item-renderer'
+import { fileLinkComponents } from './chat-markdown-components'
 import { CodexCollabBlock } from './CodexCollabBlock'
 import { CodexImageGalleryBlock } from './CodexImageGalleryBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
@@ -190,6 +191,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
             .map((b) => (b.type === 'text' ? b.text : ''))
             .join('\n')}
           isStreaming={false}
+          components={fileLinkComponents}
         />
       </div>
     )
@@ -318,7 +320,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
 
       {!isStreaming && !hasAssistantMessage && fallbackText && (
         <div className="my-0.5">
-          <CopyableMarkdown text={fallbackText} isStreaming={isStreaming} />
+          <CopyableMarkdown text={fallbackText} isStreaming={isStreaming} components={fileLinkComponents} />
         </div>
       )}
 

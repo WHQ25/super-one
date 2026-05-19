@@ -1938,6 +1938,7 @@ export type UpdateChannel = 'alpha' | 'beta' | 'stable'
 
 export interface AppSettings {
   analyticsEnabled: boolean
+  crispText: boolean
   locale: Locale | ''
   updateChannel: UpdateChannel | null
   miniAppOrder: Record<string, string[]>
@@ -1962,6 +1963,7 @@ export interface AppSettings {
 
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
+  crispText?: boolean
   locale?: Locale | ''
   updateChannel?: UpdateChannel | null
   miniAppOrder?: Record<string, string[]>

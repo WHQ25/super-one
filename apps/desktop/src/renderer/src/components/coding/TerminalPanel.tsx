@@ -8,7 +8,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { requestOpenExternalLink } from '@/lib/external-link'
-import { setCloseActiveTerminal } from './terminal-panel-api'
+import { setCloseActiveTerminal, setCreateTerminal } from './terminal-panel-api'
 import { getTerminalTheme, onTerminalThemeChange } from './terminal-theme'
 import { disposeTermInstance } from './term-instance'
 import type { TerminalEvent } from '@superone/shared/agent-types'
@@ -208,6 +208,11 @@ export function TerminalPanel() {
     setCloseActiveTerminal(activeId ? () => closeTab(activeId) : null)
     return () => setCloseActiveTerminal(null)
   }, [activeId, closeTab])
+
+  useEffect(() => {
+    setCreateTerminal(() => void createTerminal())
+    return () => setCreateTerminal(null)
+  }, [createTerminal])
 
   useEffect(() => {
     if (open && projectPath && tabs.length === 0 && !creatingRef.current) {

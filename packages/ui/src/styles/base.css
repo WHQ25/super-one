@@ -7,6 +7,11 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  html[data-crisp-text="off"] {
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+  }
+
   *,
   ::before,
   ::after {

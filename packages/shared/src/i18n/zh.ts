@@ -150,6 +150,10 @@ export const zh: Messages = {
         enabled: '已开启使用情况分析',
         disabled: '已关闭使用情况分析',
       },
+      crispText: {
+        label: '锐利文本',
+        description: '使用灰度抗锯齿,让文字更纤细锐利。仅 macOS 生效。',
+      },
       language: {
         label: '语言',
         description: 'SuperOne 界面语言，切换后立即生效。',

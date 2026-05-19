@@ -42,6 +42,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
 import { initAnalytics } from '@/lib/analytics'
+import { applyCrispText } from '@/lib/font-smoothing'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
 import { LAYOUT } from '@/lib/layout-constants'
 
@@ -73,7 +74,10 @@ function App(): React.JSX.Element {
       console.error('[skills] failed to load disabledSkills', err)
     )
     window.app.getAppSettings()
-      .then((s) => { if (s.analyticsEnabled) initAnalytics() })
+      .then((s) => {
+        applyCrispText(s.crispText)
+        if (s.analyticsEnabled) initAnalytics()
+      })
       .catch((err) => console.error('[analytics] failed to load app settings', err))
     preloadFileHighlighter()
   }, [])

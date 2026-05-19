@@ -10,24 +10,34 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { initAnalytics, shutdownAnalytics } from '@/lib/analytics'
+import { applyCrispText } from '@/lib/font-smoothing'
 import { changeLocale } from '@/i18n'
 import type { Locale } from '@superone/shared/agent-types'
 
 export function AppSettingsPage() {
   const { t, i18n } = useTranslation()
   const [analyticsEnabled, setAnalyticsEnabled] = useState(false)
+  const [crispText, setCrispText] = useState(true)
   const [loading, setLoading] = useState(true)
   const [savingLocale, setSavingLocale] = useState(false)
+  const isMac = window.app.platform === 'darwin'
 
   useEffect(() => {
     let mounted = true
     window.app.getAppSettings().then((settings) => {
       if (!mounted) return
       setAnalyticsEnabled(settings.analyticsEnabled)
+      setCrispText(settings.crispText)
       setLoading(false)
     })
     return () => { mounted = false }
   }, [])
+
+  async function handleCrispTextToggle(enabled: boolean) {
+    applyCrispText(enabled)
+    const result = await window.app.saveAppSettings({ crispText: enabled })
+    setCrispText(result.crispText)
+  }
 
   async function handleAnalyticsToggle(enabled: boolean) {
     const result = await window.app.saveAppSettings({ analyticsEnabled: enabled })
@@ -97,6 +107,21 @@ export function AppSettingsPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          {isMac && (
+            <div className="flex items-center justify-between gap-4 border-t border-border p-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{t('settings.general.crispText.label')}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {t('settings.general.crispText.description')}
+                </p>
+              </div>
+              <Switch
+                checked={crispText}
+                onCheckedChange={handleCrispTextToggle}
+                disabled={loading}
+              />
+            </div>
+          )}
         </div>
 
         <div className="rounded-lg border border-border">

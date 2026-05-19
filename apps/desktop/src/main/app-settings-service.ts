@@ -11,6 +11,7 @@ type CodexPref = AppSettings['agentPreference']['codex']
 
 const defaults: AppSettings = {
   analyticsEnabled: true,
+  crispText: true,
   locale: '',
   updateChannel: null,
   miniAppOrder: {},
@@ -136,6 +137,7 @@ export function readAppSettings(): AppSettings {
     const data = JSON.parse(readFileSync(getSettingsPath(), 'utf-8'))
     return {
       analyticsEnabled: typeof data.analyticsEnabled === 'boolean' ? data.analyticsEnabled : defaults.analyticsEnabled,
+      crispText: typeof data.crispText === 'boolean' ? data.crispText : defaults.crispText,
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
       updateChannel: data.updateChannel === null || isUpdateChannel(data.updateChannel) ? data.updateChannel : defaults.updateChannel,
       miniAppOrder: readMiniAppOrder(data.miniAppOrder),
@@ -147,6 +149,7 @@ export function readAppSettings(): AppSettings {
   } catch {
     return {
       analyticsEnabled: defaults.analyticsEnabled,
+      crispText: defaults.crispText,
       locale: defaults.locale,
       updateChannel: defaults.updateChannel,
       miniAppOrder: {},
@@ -162,6 +165,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
   const current = readAppSettings()
   const merged: AppSettings = {
     analyticsEnabled: patch.analyticsEnabled ?? current.analyticsEnabled,
+    crispText: patch.crispText ?? current.crispText,
     locale: patch.locale ?? current.locale,
     updateChannel: patch.updateChannel === undefined ? current.updateChannel : patch.updateChannel,
     miniAppOrder: patch.miniAppOrder

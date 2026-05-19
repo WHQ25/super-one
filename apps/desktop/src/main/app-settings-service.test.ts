@@ -46,6 +46,7 @@ describe('app-settings-service', () => {
   }
   const defaultSettings = {
     analyticsEnabled: true,
+    crispText: true,
     locale: '',
     updateChannel: null,
     miniAppOrder: {},
@@ -79,6 +80,7 @@ describe('app-settings-service', () => {
       }))
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
+        crispText: true,
         locale: '',
         updateChannel: null,
         miniAppOrder: {},
@@ -143,6 +145,7 @@ describe('app-settings-service', () => {
       }))
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
+        crispText: true,
         locale: '',
         updateChannel: null,
         miniAppOrder: {},

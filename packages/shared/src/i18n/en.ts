@@ -136,6 +136,10 @@ export type Messages = {
         enabled: string
         disabled: string
       }
+      crispText: {
+        label: string
+        description: string
+      }
       language: {
         label: string
         description: string
@@ -1212,6 +1216,10 @@ export const en: Messages = {
         description: 'Send anonymous usage data to help improve SuperOne. No personal data or conversation content is collected.',
         enabled: 'Analytics enabled',
         disabled: 'Analytics disabled',
+      },
+      crispText: {
+        label: 'Crisp Text',
+        description: 'Use grayscale font smoothing so text renders thinner and sharper. macOS only.',
       },
       language: {
         label: 'Language',

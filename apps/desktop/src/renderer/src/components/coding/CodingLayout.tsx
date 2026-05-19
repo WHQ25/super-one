@@ -6,7 +6,7 @@ import { TerminalPanel } from '@/components/coding/TerminalPanel'
 import { useChatScroll } from '@/hooks/useChatScroll'
 import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
-import { closeActiveTerminal } from '@/components/coding/terminal-panel-api'
+import { closeActiveTerminal, createNewTerminal } from '@/components/coding/terminal-panel-api'
 import { getDockApi } from '@/components/activity/activity-panel-api'
 import { routeCloseTabShortcut } from '@/components/coding/close-tab-router'
 
@@ -32,6 +32,13 @@ export const CodingLayout = memo(function CodingLayout() {
       if (e.key === 'j' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
         toggleTerminal()
+      } else if (
+        e.key === 't' &&
+        (e.metaKey || e.ctrlKey) &&
+        document.activeElement?.closest('.xterm')
+      ) {
+        e.preventDefault()
+        createNewTerminal()
       }
     }
     window.addEventListener('keydown', handler)

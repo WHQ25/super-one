@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
-import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal } from 'lucide-react'
+import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -371,6 +371,7 @@ function App(): React.JSX.Element {
           {/* Mini-app controls + theme */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <MiniAppMediaIndicator />
+            <CanvasDevControls />
             <CanvasReturnToPanelButton />
             <CanvasCloseButton />
             {layoutMode === 'coding' && (
@@ -440,6 +441,31 @@ function CanvasCloseButton() {
     >
       <X className="size-3.5" />
     </button>
+  )
+}
+
+function CanvasDevControls() {
+  const layoutMode = useAppStore((s) => s.layoutMode)
+  const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
+  const devControls = useMiniAppStore((s) => (fullscreenApp ? s.devControls[fullscreenApp.instanceKey] : undefined))
+  if (layoutMode !== 'canvas' || !fullscreenApp || !devControls) return null
+  return (
+    <>
+      <button
+        onClick={() => devControls.reload()}
+        className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+        title="Reload"
+      >
+        <RotateCw className="size-3.5" />
+      </button>
+      <button
+        onClick={() => devControls.openDevTools()}
+        className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+        title="Open devtools"
+      >
+        <Bug className="size-3.5" />
+      </button>
+    </>
   )
 }
 

@@ -40,6 +40,11 @@ export interface OpenAppEntry {
   holderSessions: Set<string>
 }
 
+export interface MiniAppDevControls {
+  reload: () => void
+  openDevTools: () => void
+}
+
 export interface MiniAppSlot {
   left: number
   top: number
@@ -62,6 +67,10 @@ interface MiniAppStoreState {
   workers: MiniAppWorkerInfo[]
 
   fullscreenApp: { instanceKey: string; entry: MiniAppEntry } | null
+
+  devControls: Record<string, MiniAppDevControls>
+  registerDevControls: (instanceKey: string, controls: MiniAppDevControls) => void
+  unregisterDevControls: (instanceKey: string) => void
 
   fetchApps: (projectDir?: string) => Promise<void>
   refreshApps: (projectDir?: string) => Promise<void>
@@ -145,6 +154,17 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     workers: [],
 
     fullscreenApp: null,
+
+    devControls: {},
+    registerDevControls: (instanceKey, controls) =>
+      set((s) => ({ devControls: { ...s.devControls, [instanceKey]: controls } })),
+    unregisterDevControls: (instanceKey) =>
+      set((s) => {
+        if (!(instanceKey in s.devControls)) return s
+        const next = { ...s.devControls }
+        delete next[instanceKey]
+        return { devControls: next }
+      }),
 
     fetchApps: async (projectDir?: string) => {
       const state = get()

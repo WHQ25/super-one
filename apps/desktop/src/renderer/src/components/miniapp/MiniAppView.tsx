@@ -1,6 +1,4 @@
 import { forwardRef, useRef, useImperativeHandle, useCallback, useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
-import { RotateCw, Bug } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useMiniAppOverlay } from '@/hooks/useMiniAppOverlay'
@@ -21,10 +19,11 @@ interface MiniAppViewProps {
 
 export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
   function MiniAppView({ instanceKey, appId, className }, ref) {
-    const { t } = useTranslation()
     const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
     const projectDir = useMiniAppStore((s) => s.openApps[instanceKey]?.projectDir ?? '')
     const isFullscreenActive = useMiniAppStore((s) => s.fullscreenApp?.instanceKey === instanceKey)
+    const registerDevControls = useMiniAppStore((s) => s.registerDevControls)
+    const unregisterDevControls = useMiniAppStore((s) => s.unregisterDevControls)
     const isDev = app?.manifest.isDev
     const templates = app?.manifest.templates
     const devRef = useRef<MiniAppDevFrameHandle>(null)
@@ -42,6 +41,12 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
     }, [isDev])
 
     useImperativeHandle(ref, () => ({ reload, openDevTools }), [reload, openDevTools])
+
+    useEffect(() => {
+      if (!isDev) return
+      registerDevControls(instanceKey, { reload, openDevTools })
+      return () => unregisterDevControls(instanceKey)
+    }, [isDev, instanceKey, reload, openDevTools, registerDevControls, unregisterDevControls])
 
     useEffect(() => {
       if (!isFullscreenActive) return
@@ -64,24 +69,6 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
 
     return (
       <div ref={containerRef} className={cn('relative', className)}>
-        {isDev && (
-          <div className="absolute bottom-2 left-2 z-10 flex items-center gap-0.5 rounded-md bg-black/60 p-0.5 backdrop-blur-sm">
-            <button
-              onClick={reload}
-              className="rounded p-1 text-white/70 hover:text-white"
-              title={t('tooltips.reload')}
-            >
-              <RotateCw className="size-3.5" />
-            </button>
-            <button
-              onClick={openDevTools}
-              className="rounded p-1 text-white/70 hover:text-white"
-              title={t('tooltips.devTools')}
-            >
-              <Bug className="size-3.5" />
-            </button>
-          </div>
-        )}
         {isDev
           ? <MiniAppDevFrame ref={devRef} instanceKey={instanceKey} appId={appId} projectDir={projectDir} className="h-full w-full" overlay={overlayCallbacks} />
           : <MiniAppFrame ref={iframeRef} instanceKey={instanceKey} appId={appId} projectDir={projectDir} className="h-full w-full" overlay={overlayCallbacks} />

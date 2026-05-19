@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Maximize, MessageSquare, X } from 'lucide-react'
+import { Bug, Maximize, MessageSquare, RotateCw, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
@@ -57,12 +57,43 @@ export function FilePreviewTab(props: IDockviewPanelHeaderProps<{ filePath: stri
   )
 }
 
+function TabActionButton({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean
+  onClick: (e: React.MouseEvent) => void
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <motion.button
+      initial={false}
+      animate={{
+        width: active ? 16 : 0,
+        marginLeft: active ? 2 : 0,
+        opacity: active ? 1 : 0,
+      }}
+      transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+      onClick={onClick}
+      className="flex h-4 shrink-0 items-center justify-center overflow-hidden rounded text-foreground/60 hover:text-foreground"
+      title={title}
+    >
+      {children}
+    </motion.button>
+  )
+}
+
 export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: string; appId: string }>) {
   const { instanceKey, appId } = props.params
   const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
   const moveAppToCanvas = useMiniAppStore((s) => s.moveAppToCanvas)
   const closeApp = useMiniAppStore((s) => s.closeApp)
+  const devControls = useMiniAppStore((s) => s.devControls[instanceKey])
   const canFullscreen = app?.manifest.fullscreen === true
+  const isDev = app?.manifest.isDev === true
   const active = useIsActive(props.api)
 
   return (
@@ -71,21 +102,32 @@ export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: strin
         <MiniAppIcon appId={appId} className="size-3.5 shrink-0" />
       </HoverCloseSlot>
       <span className="truncate text-xs">{props.api.title}</span>
+      {isDev && devControls && (
+        <>
+          <TabActionButton
+            active={active}
+            onClick={(e) => { e.stopPropagation(); devControls.reload() }}
+            title="Reload"
+          >
+            <RotateCw className="size-3 shrink-0" />
+          </TabActionButton>
+          <TabActionButton
+            active={active}
+            onClick={(e) => { e.stopPropagation(); devControls.openDevTools() }}
+            title="Open devtools"
+          >
+            <Bug className="size-3 shrink-0" />
+          </TabActionButton>
+        </>
+      )}
       {canFullscreen && (
-        <motion.button
-          initial={false}
-          animate={{
-            width: active ? 16 : 0,
-            marginLeft: active ? 2 : 0,
-            opacity: active ? 1 : 0,
-          }}
-          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+        <TabActionButton
+          active={active}
           onClick={(e) => { e.stopPropagation(); moveAppToCanvas(instanceKey) }}
-          className="flex h-4 shrink-0 items-center justify-center overflow-hidden rounded text-foreground/60 hover:text-foreground"
           title="Open in fullscreen"
         >
           <Maximize className="size-3 shrink-0" />
-        </motion.button>
+        </TabActionButton>
       )}
     </div>
   )

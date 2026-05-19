@@ -30,6 +30,7 @@ import {
   Smartphone,
   SquareActivity,
   SquarePen,
+  SquareTerminal,
   Store,
   Sun,
 } from "lucide-react"
@@ -38,6 +39,7 @@ import { ScrollArea } from "@superone/ui/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@superone/ui/components/ui/tabs"
 import { cn } from "@superone/ui/lib/utils"
 import { useMockT } from "./i18n"
+import { TerminalPanelMock } from "./terminal-panel-mock"
 
 export type SidebarTab = "sessions" | "files"
 export type SessionStatus =
@@ -108,6 +110,10 @@ export interface DesktopShellProps {
   fileTree?: ReactNode
   showTrafficLights?: boolean
   showActivityPanelToggle?: boolean
+  showTerminalToggle?: boolean
+  terminalOpen?: boolean
+  terminal?: ReactNode
+  terminalHeight?: number
   remoteOnline?: boolean
   height?: number | string
   children: ReactNode
@@ -192,6 +198,10 @@ export function DesktopShell({
   fileTree,
   showTrafficLights = true,
   showActivityPanelToggle = false,
+  showTerminalToggle = false,
+  terminalOpen = false,
+  terminal,
+  terminalHeight = 240,
   remoteOnline = true,
   height = "100%",
   children,
@@ -219,8 +229,25 @@ export function DesktopShell({
         remoteOnline={remoteOnline}
       />
       <div className="flex min-w-0 flex-1 flex-col bg-card">
-        <DesktopMainHeader title={resolvedHeaderTitle} />
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+        <DesktopMainHeader
+          title={resolvedHeaderTitle}
+          showTerminalToggle={showTerminalToggle}
+          terminalOpen={terminalOpen}
+        />
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+          {terminalOpen && (
+            <div
+              className="relative flex shrink-0 flex-col border-t border-border bg-card"
+              style={{ height: terminalHeight }}
+            >
+              <div className="absolute inset-x-0 -top-1 z-10 h-2">
+                <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-linear-to-r from-transparent via-foreground to-transparent opacity-40" />
+              </div>
+              <div className="min-h-0 flex-1">{terminal ?? <TerminalPanelMock />}</div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -272,18 +299,46 @@ export function DesktopSidebar({
 
 export interface DesktopMainHeaderProps {
   title: string
+  showTerminalToggle?: boolean
+  terminalOpen?: boolean
 }
 
-export function DesktopMainHeader({ title }: DesktopMainHeaderProps) {
-  return <MainHeader title={title} />
+export function DesktopMainHeader({
+  title,
+  showTerminalToggle = false,
+  terminalOpen = false,
+}: DesktopMainHeaderProps) {
+  return (
+    <MainHeader title={title} showTerminalToggle={showTerminalToggle} terminalOpen={terminalOpen} />
+  )
 }
 
-function MainHeader({ title }: { title: string }) {
+function MainHeader({
+  title,
+  showTerminalToggle,
+  terminalOpen,
+}: {
+  title: string
+  showTerminalToggle: boolean
+  terminalOpen: boolean
+}) {
   return (
     <div className="flex h-11 shrink-0 items-center bg-card pl-3 pt-[2px]">
       <span className="max-w-[260px] truncate text-xs text-muted-foreground">{title}</span>
       <div className="flex-1" />
       <div className="mr-3 flex items-center gap-1.5">
+        {showTerminalToggle && (
+          <button
+            type="button"
+            aria-label="Toggle terminal"
+            className={cn(
+              "rounded-md p-1.5 transition-colors hover:bg-muted hover:text-foreground",
+              terminalOpen ? "text-foreground" : "text-muted-foreground/60",
+            )}
+          >
+            <SquareTerminal className="size-3.5" />
+          </button>
+        )}
         <button
           type="button"
           aria-label="Toggle theme"

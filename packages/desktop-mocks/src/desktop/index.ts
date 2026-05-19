@@ -25,6 +25,14 @@ export {
   type SessionStatus,
   type SidebarTab,
 } from "./desktop-shell"
+export {
+  TerminalPanelMock,
+  type TerminalPanelMockProps,
+  type MockTerminalTab,
+  type MockTerminalLine,
+  type MockTerminalSegment,
+  type MockTerminalColor,
+} from "./terminal-panel-mock"
 export { ChatInputMock, type ChatInputMockProps } from "./chat-input-mock"
 export {
   ChatInputAdvancedMock,

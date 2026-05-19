@@ -204,6 +204,37 @@ describe('listPlugins', () => {
     expect(result[0].latestVersion).toBe('2.0')
   })
 
+  it('drops the CLI "unknown" version sentinel and does not flag a false update', () => {
+    const installPath = '/cache/code-review/unknown'
+    const mpDir = '/marketplaces/official'
+    readFileSyncMock.mockImplementation((path: string) => {
+      if (path === INSTALLED_FILE) {
+        return JSON.stringify(makeInstalledData({
+          'code-review@official': [{ scope: 'user', installPath, version: 'unknown' }],
+        }))
+      }
+      if (path === MARKETPLACES_FILE) {
+        return JSON.stringify({ official: { installLocation: mpDir } })
+      }
+      if (path === join(mpDir, '.claude-plugin', 'marketplace.json')) {
+        return JSON.stringify({ plugins: [{ name: 'code-review', source: './plugins/code-review' }] })
+      }
+      return '{}'
+    })
+    existsSyncMock.mockImplementation((path: string) => {
+      if (path === INSTALLED_FILE || path === MARKETPLACES_FILE) return true
+      if (path === join(mpDir, '.claude-plugin', 'marketplace.json')) return true
+      if (path === join(mpDir, 'plugins', 'code-review')) return true
+      if (path === join(mpDir, '.git')) return true
+      return false
+    })
+
+    const result = listPlugins('/proj')
+    expect(result).toHaveLength(1)
+    expect(result[0].version).toBeUndefined()
+    expect(result[0].hasUpdate).toBe(false)
+  })
+
   it('skips entries without installPath', () => {
     readFileSyncMock.mockImplementation((path: string) => {
       if (path === INSTALLED_FILE) {

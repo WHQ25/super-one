@@ -323,6 +323,14 @@ function getPluginNewVersion(mpDir: string, pluginName: string): string | null {
   return sha ? sha.slice(0, 12) : null
 }
 
+/**
+ * The `claude plugin install` CLI writes the literal string "unknown" into
+ * installed_plugins.json when a plugin ships no version. Treat it as absent.
+ */
+function normalizePluginVersion(version?: string): string | undefined {
+  return version && version.toLowerCase() !== 'unknown' ? version : undefined
+}
+
 /** Find the source directory for a plugin inside a marketplace */
 function findPluginSourceDir(mpDir: string, pluginName: string): string | null {
   const entry = readMarketplaceManifestPlugins(mpDir).find(p => p.name === pluginName)
@@ -359,7 +367,8 @@ export function listPlugins(cwd: string): PluginInfo[] {
       const contents = detectPluginContents(entry.installPath)
       const mpDir = mpLocations.get(marketplace)
       const latestVersion = mpDir ? getPluginNewVersion(mpDir, name) ?? undefined : undefined
-      const hasUpdate = !!(latestVersion && entry.version && latestVersion !== entry.version)
+      const version = normalizePluginVersion(entry.version)
+      const hasUpdate = !!(latestVersion && version && latestVersion !== version)
 
       plugins.push({
         name,
@@ -368,7 +377,7 @@ export function listPlugins(cwd: string): PluginInfo[] {
         scope: isUser ? 'user' : 'project',
         description: manifest?.description ?? '',
         author: manifest?.author?.name,
-        version: entry.version,
+        version,
         installPath: entry.installPath,
         installedAt: entry.installedAt,
         ...contents,
@@ -399,7 +408,8 @@ export function readPluginContent(cwd: string, key: string): PluginDetail | null
     const mpLocations = getMarketplaceLocations()
     const mpDir = mpLocations.get(marketplace)
     const latestVersion = mpDir ? getPluginNewVersion(mpDir, name) ?? undefined : undefined
-    const hasUpdate = !!(latestVersion && entry.version && latestVersion !== entry.version)
+    const version = normalizePluginVersion(entry.version)
+    const hasUpdate = !!(latestVersion && version && latestVersion !== version)
     const mcpServerConfigs = readMcpServersMap(entry.installPath)
     const hookEvents = readHookEvents(entry.installPath)
 
@@ -410,7 +420,7 @@ export function readPluginContent(cwd: string, key: string): PluginDetail | null
       scope: isUser ? 'user' : 'project',
       description: manifest?.description ?? '',
       author: manifest?.author?.name,
-      version: entry.version,
+      version,
       installPath: entry.installPath,
       installedAt: entry.installedAt,
       ...contents,

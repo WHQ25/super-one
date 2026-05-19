@@ -43,8 +43,10 @@ const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.ogg', '.mov'])
 const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.opus', '.weba'])
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif'])
 
+const MEDIA_STYLE = { maxHeight: '20rem', maxWidth: '100%', width: 'auto', height: 'auto', borderRadius: '8px', display: 'block' } as const
+
 function MediaVideo(props: ComponentProps<'video'>) {
-  return createElement('video', { ...props, src: localFileToMediaUrl(props.src), controls: true, style: { width: '100%', borderRadius: '8px' } })
+  return createElement('video', { ...props, src: localFileToMediaUrl(props.src), controls: true, preload: 'metadata', style: MEDIA_STYLE })
 }
 
 function MediaAudio(props: ComponentProps<'audio'>) {
@@ -69,7 +71,7 @@ function MediaImage(props: ComponentProps<'img'>) {
     const { alt: _, ...rest } = props
     return MediaAudio(rest as ComponentProps<'audio'>)
   }
-  return createElement('img', { ...props, src: localFileToMediaUrl(props.src) })
+  return createElement('img', { ...props, src: localFileToMediaUrl(props.src), style: MEDIA_STYLE })
 }
 
 /** Shared Streamdown code component. */

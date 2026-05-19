@@ -18,6 +18,10 @@ export function routeCloseTabShortcut(
     handlers.closeDock()
     return 'dock'
   }
+  if (activeElement?.closest('[data-miniapp-host][data-miniapp-presentation="panel"]')) {
+    handlers.closeDock()
+    return 'dock'
+  }
   handlers.closeWindow()
   return 'window'
 }

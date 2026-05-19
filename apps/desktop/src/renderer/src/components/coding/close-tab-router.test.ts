@@ -24,14 +24,33 @@ describe('⌘W close-tab routing by focused region', () => {
     expect(handlers.closeWindow).not.toHaveBeenCalled()
   })
 
-  it('closes the active dockview panel when focus is inside a mini-app iframe (the reported regression)', () => {
-    document.body.innerHTML = `<div data-activity-outer=""><div><iframe id="mini"></iframe></div></div>`
+  it('closes the active dockview panel when focus is inside a panel mini-app iframe (the reported regression)', () => {
+    // The mini-app iframe is portaled into the fixed host layer, NOT nested
+    // inside [data-activity-outer]. Only the panel-presentation marker links
+    // it back to its dock tab.
+    document.body.innerHTML = `
+      <div data-activity-outer=""></div>
+      <div data-miniapp-host-layer="">
+        <div data-miniapp-host="" data-miniapp-presentation="panel"><iframe id="mini"></iframe></div>
+      </div>`
     const iframe = document.getElementById('mini')!
 
     expect(routeCloseTabShortcut(iframe, handlers)).toBe('dock')
     expect(handlers.closeDock).toHaveBeenCalledOnce()
     expect(handlers.closeTerminal).not.toHaveBeenCalled()
     expect(handlers.closeWindow).not.toHaveBeenCalled()
+  })
+
+  it('closes the window when focus is inside a canvas mini-app (no dock tab to close)', () => {
+    document.body.innerHTML = `
+      <div data-miniapp-host-layer="">
+        <div data-miniapp-host="" data-miniapp-presentation="canvas"><iframe id="mini"></iframe></div>
+      </div>`
+    const iframe = document.getElementById('mini')!
+
+    expect(routeCloseTabShortcut(iframe, handlers)).toBe('window')
+    expect(handlers.closeWindow).toHaveBeenCalledOnce()
+    expect(handlers.closeDock).not.toHaveBeenCalled()
   })
 
   it('closes the window when focus is outside both the terminal and the activity panel', () => {

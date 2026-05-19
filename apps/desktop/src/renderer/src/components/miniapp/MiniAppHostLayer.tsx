@@ -120,6 +120,7 @@ function PersistentMiniAppContainer({ instanceKey, layoutMode, dragging }: { ins
       data-miniapp-host=""
       data-instance-key={instanceKey}
       data-app-id={appId}
+      data-miniapp-presentation={presentation}
       style={{
         position: 'absolute',
         left: slot?.left ?? 0,

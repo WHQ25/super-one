@@ -1214,6 +1214,69 @@ describe('streamTurnEvents finalizes stale in_progress items on turn/completed',
   })
 })
 
+describe('streamTurnEvents image generation duration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('stamps generationMs as the wall-clock gap from the previous item to the image landing', async () => {
+    let now = 1_000_000
+    const dateSpy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+
+    // Codex emits nothing during generation, then synthesizes started+completed
+    // back-to-back AFTER the image is done. The real duration is the silent gap
+    // between the prior item completing and the image item arriving.
+    const GENERATION_GAP_MS = 149_000
+    const notifications = [
+      { method: 'item/started', params: { threadId: 'main-thread', item: { id: 'msg-1', type: 'agentMessage', text: '' } } },
+      { method: 'item/completed', params: { threadId: 'main-thread', item: { id: 'msg-1', type: 'agentMessage', text: 'I will generate one image.' } } },
+      { method: 'item/started', params: { threadId: 'main-thread', item: { id: 'ig-1', type: 'imageGeneration', status: 'in_progress' }, __advanceMs: GENERATION_GAP_MS } },
+      { method: 'item/completed', params: { threadId: 'main-thread', item: { id: 'ig-1', type: 'imageGeneration', status: 'generating', savedPath: '/tmp/codex/ig-1.png' } } },
+      { method: 'turn/completed', params: { turn: { status: 'completed' } } },
+    ]
+    const remaining = [...notifications]
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = remaining.shift()
+        if (!next) throw new Error('no notification')
+        const advance = (next.params as Record<string, unknown>).__advanceMs
+        if (typeof advance === 'number') now += advance
+        return next
+      }),
+    } as never
+
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const onItemDelta = vi.fn()
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta },
+    )
+
+    const image = result.items.find((item) => item.type === 'image_generation')
+    expect(image).toMatchObject({ id: 'ig-1', type: 'image_generation', generationMs: GENERATION_GAP_MS })
+
+    const completedEmit = onItemDelta.mock.calls.find(
+      ([phase, item]) => phase === 'completed' && item?.id === 'ig-1',
+    )
+    expect(completedEmit?.[1]).toMatchObject({ generationMs: GENERATION_GAP_MS })
+
+    // The synthetic started emit precedes generation knowledge — no duration yet.
+    const startedEmit = onItemDelta.mock.calls.find(
+      ([phase, item]) => phase === 'started' && item?.id === 'ig-1',
+    )
+    expect(startedEmit?.[1]?.generationMs).toBeUndefined()
+
+    dateSpy.mockRestore()
+  })
+})
+
 describe('interruptCodex during a running turn', () => {
   beforeEach(() => {
     vi.clearAllMocks()

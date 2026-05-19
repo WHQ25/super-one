@@ -16,6 +16,18 @@ vi.mock('./ToolBlock', () => ({
   FileChip: ({ name }: { name: string }) => <div>{name}</div>,
 }))
 
+vi.mock('./CodexImageGalleryBlock', () => ({
+  CodexImageGalleryBlock: ({ items }: { items: Array<{ id: string }> }) => (
+    <div data-testid="gallery">gallery:{items.length}</div>
+  ),
+}))
+
+vi.mock('./CodexImageGenerationBlock', () => ({
+  CodexImageGenerationBlock: ({ item }: { item: { id: string } }) => (
+    <div data-testid="single">single:{item.id}</div>
+  ),
+}))
+
 function createMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: 'msg-1',
@@ -558,6 +570,91 @@ describe('CodexTurnView', () => {
     fireEvent.click(screen.getByText('Reject'))
 
     expect(mockRejectCodexPlan).toHaveBeenCalledWith(undefined)
+  })
+
+  it('collects every image of a turn into one gallery rendered after the turn content', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                { id: 'agent-1', type: 'agent_message', text: 'here are the renders' },
+                { id: 'img-1', type: 'image_generation', status: 'completed', savedPath: '/a.png' },
+                { id: 'img-2', type: 'image_generation', status: 'completed', savedPath: '/b.png' },
+                { id: 'img-3', type: 'image_generation', status: 'completed', savedPath: '/c.png' },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    const gallery = screen.getByTestId('gallery')
+    const text = screen.getByText('here are the renders')
+    expect(gallery.textContent).toBe('gallery:3')
+    expect(screen.queryByTestId('single')).toBeNull()
+    expect(text.compareDocumentPosition(gallery) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('renders even a lone image through the gallery, never the standalone single block', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                { id: 'img-1', type: 'image_generation', status: 'completed', savedPath: '/a.png' },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getByTestId('gallery').textContent).toBe('gallery:1')
+    expect(screen.queryByTestId('single')).toBeNull()
+  })
+
+  it('merges images interleaved with other items into a single end gallery', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                { id: 'img-1', type: 'image_generation', status: 'completed', savedPath: '/a.png' },
+                { id: 'img-2', type: 'image_generation', status: 'completed', savedPath: '/b.png' },
+                { id: 'agent-1', type: 'agent_message', text: 'between images' },
+                { id: 'img-3', type: 'image_generation', status: 'completed', savedPath: '/c.png' },
+                { id: 'img-4', type: 'image_generation', status: 'completed', savedPath: '/d.png' },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    const galleries = screen.getAllByTestId('gallery')
+    expect(galleries).toHaveLength(1)
+    expect(galleries[0].textContent).toBe('gallery:4')
+    const text = screen.getByText('between images')
+    expect(text.compareDocumentPosition(galleries[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('renders persisted rejected state for a reviewed plan', () => {

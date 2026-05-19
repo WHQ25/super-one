@@ -465,6 +465,18 @@ export async function createAppServerConnection(
           ? (msg.id as JsonRpcRequestId)
           : undefined
 
+        if (process.env.NODE_ENV === 'development') {
+          const kind = method
+            ? (rawId !== undefined ? 'request' : 'notification')
+            : ('error' in msg && msg.error ? 'error' : 'response')
+          trace(
+            'codex.wire',
+            method ?? `${kind}:${rawId ?? 'unknown'}`,
+            { kind, ...msg },
+            rawId !== undefined ? String(rawId) : undefined,
+          )
+        }
+
         if (method) {
           dispatchNotification({
             requestIdRaw: rawId,

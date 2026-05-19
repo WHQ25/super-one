@@ -457,12 +457,14 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
       const status = readString(rec.status) ?? prev?.status ?? 'in_progress'
       const revisedPrompt = readString(rec.revisedPrompt ?? rec.revised_prompt) ?? prev?.revisedPrompt
       const savedPath = readString(rec.savedPath ?? rec.saved_path) ?? prev?.savedPath
+      const generationMs = prev?.generationMs
       return {
         id,
         type: 'image_generation',
         status,
         ...(revisedPrompt ? { revisedPrompt } : {}),
         ...(savedPath ? { savedPath } : {}),
+        ...(generationMs !== undefined ? { generationMs } : {}),
       }
     }
 
@@ -1199,6 +1201,7 @@ export async function streamTurnEvents(
   const itemMap = new Map<string, CodexThreadItem>()
   let usage: CodexUsageInfo | null = null
   let turnCompleted = false
+  let lastTurnItemCompletedAt = Date.now()
 
   const subscribedChildThreads = new Set<string>()
   const childItemMaps = new Map<string, { order: string[]; map: Map<string, CodexThreadItem> }>()
@@ -1493,13 +1496,19 @@ export async function streamTurnEvents(
         const previous = itemId ? itemMap.get(itemId) : undefined
         if (previous?.type === 'plan' && method === 'item/completed') {
           callbacks?.onItemDelta?.('completed', previous)
+          lastTurnItemCompletedAt = Date.now()
           break
         }
         const mapped = mapThreadItemFromAppServer(rawItem, previous)
         if (!mapped) break
 
+        if (mapped.type === 'image_generation' && method === 'item/completed' && mapped.generationMs === undefined) {
+          mapped.generationMs = Date.now() - lastTurnItemCompletedAt
+        }
+
         upsertItem(itemOrder, itemMap, mapped)
         callbacks?.onItemDelta?.(method === 'item/started' ? 'started' : 'completed', mapped)
+        if (method === 'item/completed') lastTurnItemCompletedAt = Date.now()
 
         if (mapped.type === 'collab_tool_call') {
           if (process.env.NODE_ENV === 'development') {

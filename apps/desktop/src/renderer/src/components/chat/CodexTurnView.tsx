@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, CodexMcpToolCallItem, CodexThreadItem } from '@superone/shared/agent-types'
+import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, CodexImageGenerationItem, CodexMcpToolCallItem, CodexThreadItem } from '@superone/shared/agent-types'
 import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { renderCodexItem, CodexCommandBlock } from './codex-item-renderer'
 import { CodexCollabBlock } from './CodexCollabBlock'
+import { CodexImageGalleryBlock } from './CodexImageGalleryBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -220,6 +221,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     | { kind: 'collab'; items: CodexCollabToolCallItem[] }
     | { kind: 'app-tools'; appId: string; items: CodexMcpToolCallItem[] }
   const segments: Segment[] = []
+  const imageItems: CodexImageGenerationItem[] = []
   let cmdGroup: CodexCommandExecutionItem[] = []
   let collabGroup: CodexCollabToolCallItem[] = []
   let appGroup: CodexMcpToolCallItem[] = []
@@ -233,6 +235,10 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
   }
   for (let i = 0; i < codex.items.length; i++) {
     const item = codex.items[i]
+    if (item.type === 'image_generation') {
+      imageItems.push(item)
+      continue
+    }
     const appIdForItem = item.type === 'mcp_tool_call' ? groupableAppForMcpItem(item) : null
     if (appIdForItem) {
       flushCmd()
@@ -315,6 +321,8 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
           <CopyableMarkdown text={fallbackText} isStreaming={isStreaming} />
         </div>
       )}
+
+      {imageItems.length > 0 && <CodexImageGalleryBlock items={imageItems} />}
     </div>
   )
 }

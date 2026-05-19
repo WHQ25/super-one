@@ -235,6 +235,7 @@ export interface CodexImageGenerationItem {
   status: 'in_progress' | 'completed' | 'failed' | string
   revisedPrompt?: string
   savedPath?: string
+  generationMs?: number
 }
 
 export interface CodexPlanApprovalState {

@@ -5,20 +5,17 @@ import { ToolBlock } from './ToolBlock'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { MarkdownView } from '@/components/MarkdownPreview'
 import { ReasoningBlock } from './ReasoningBlock'
-import { useActiveSession } from '@/stores/chat'
+import { useActiveSession, useChatStore } from '@/stores/chat'
+import { resolveMarkdownMedia } from './chat-shared'
 import { shortenPath } from './tool-display'
 import type { ToolIcon as ToolIconName } from './tool-display'
 import { ToolIcon } from './ToolIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { AnsiText } from '@/lib/ansi'
 import { FileChip } from './ToolBlock'
-import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
 import { CodexImageGenerationBlock } from './CodexImageGenerationBlock'
-import { openFileTab } from '@/components/activity/activity-panel-api'
-import { useChatStore } from '@/stores/chat'
-import { useSourceControlStore } from '@/stores/source-control'
-import { parseFileLinkTarget } from '@/lib/file-link'
+import { fileLinkComponents } from './chat-markdown-components'
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '@superone/shared/agent-types'
@@ -48,47 +45,10 @@ function toToolStatus(status: ItemStatus): 'streaming' | 'complete' {
   return status === 'in_progress' ? 'streaming' : 'complete'
 }
 
-function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath: string; lineNumber?: number }) {
-  const handleClick = (e: React.MouseEvent): void => {
-    e.stopPropagation()
-    const projectPath = useChatStore.getState().activeProject
-    if (!projectPath) return
-    const relative = filePath.startsWith(projectPath + '/') ? filePath.slice(projectPath.length + 1) : filePath
-    useSourceControlStore.getState().selectFile(projectPath, relative, lineNumber)
-    openFileTab(relative)
-  }
-  return (
-    <span
-      role="button"
-      onClick={handleClick}
-      title={filePath}
-      className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-muted px-1 text-[0.9em] text-foreground whitespace-nowrap align-baseline translate-y-[1px] hover:bg-muted/80 transition-colors"
-    >
-      <FileIcon name={name} size={12} />
-      <span>{name}</span>
-      {lineNumber != null && <span className="text-muted-foreground text-[0.85em]">#L{lineNumber}</span>}
-    </span>
-  )
-}
-
-function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-  const { href: rawHref, children, ...rest } = props
-  const projectPath = useChatStore.getState().activeProject
-  const href = rawHref ? decodeURIComponent(rawHref) : rawHref
-  if (href && projectPath) {
-    const { filePath, lineNumber } = parseFileLinkTarget(href)
-    if (filePath.startsWith(projectPath + '/')) {
-      const text = typeof children === 'string' ? children : (filePath.split('/').pop() || '')
-      return <InlineFileChip name={text} filePath={filePath} lineNumber={lineNumber} />
-    }
-  }
-  return <a href={rawHref} {...rest}>{children}</a>
-}
-
-const codexComponents = { a: FileLink }
-
 function StreamingAgentMessage({ text, isStreaming }: { text: string; isStreaming: boolean }) {
-  return <CopyableMarkdown text={text} isStreaming={isStreaming} components={codexComponents} />
+  const projectPath = useChatStore((s) => s.activeProject)
+  const resolved = projectPath ? resolveMarkdownMedia(text, projectPath) : text
+  return <CopyableMarkdown text={resolved} isStreaming={isStreaming} components={fileLinkComponents} />
 }
 
 export function getCommandDisplay(item: CodexCommandExecutionItem, cwd?: string, homedir?: string): { icon: ToolIconName; label: string; summary: string } {

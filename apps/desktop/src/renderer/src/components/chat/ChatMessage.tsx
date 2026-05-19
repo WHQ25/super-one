@@ -26,6 +26,7 @@ import { RewindButton } from './RewindButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { tryCopy } from '@/lib/clipboard'
 import { CopyableMarkdown } from './CopyableMarkdown'
+import { fileLinkComponents } from './chat-markdown-components'
 import { ReasoningBlock } from './ReasoningBlock'
 import { parseUserMentions, type UserMentionKind } from './user-mention-parser'
 import { replaceMiniAppTagsWithMention } from '@superone/shared/miniapp-prompt-tags'
@@ -233,7 +234,7 @@ function renderBlock(
       const text = projectPath ? resolveMarkdownMedia(block.text, projectPath) : block.text
       return (
         <div key={index} className={prevBlockType === 'thinking' ? 'mt-1 after-thinking' : undefined}>
-          <CopyableMarkdown text={text} isStreaming={isStreaming} />
+          <CopyableMarkdown text={text} isStreaming={isStreaming} components={fileLinkComponents} />
         </div>
       )
     }

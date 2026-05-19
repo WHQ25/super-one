@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, type DragEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Blocks, ChevronDown, ChevronRight, Maximize, PackagePlus, Plus, Store } from 'lucide-react'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { useAppStore } from '@/stores/app'
@@ -83,6 +84,7 @@ function SortableAppRow({ app, index, onClick, onOpenFullscreen }: { app: MiniAp
 }
 
 export function AppDrawer() {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const currentProjectId = useAppStore((s) => s.currentProjectId)
@@ -227,8 +229,8 @@ export function AppDrawer() {
   }, [])
 
   const handleBuildApp = useCallback(() => {
-    setDraftText('Help me build a mini app for SuperOne. Guide me through the process step by step.')
-  }, [setDraftText])
+    setDraftText(t('sidebar.appDrawer.buildAppPrompt'))
+  }, [setDraftText, t])
 
   return (
     <div
@@ -320,14 +322,14 @@ export function AppDrawer() {
                     className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
                   >
                     <Store className="size-3" />
-                    Marketplace
+                    {t('sidebar.appDrawer.marketplace')}
                   </button>
                   <button
                     onClick={handleBuildApp}
                     className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
                   >
                     <Plus className="size-3" />
-                    Build Your Own
+                    {t('sidebar.appDrawer.buildYourOwn')}
                   </button>
                 </div>
               </div>

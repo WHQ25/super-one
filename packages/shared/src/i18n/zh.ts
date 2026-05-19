@@ -83,6 +83,11 @@ export const zh: Messages = {
       copyPath: '复制路径',
       copyRelativePath: '复制相对路径',
     },
+    appDrawer: {
+      buildYourOwn: '专属定制',
+      marketplace: '小程序市场',
+      buildAppPrompt: '帮我构建一个 SuperOne 小程序。请先调用 `miniapp_dev_read_guide` 工具(通过 `superone` MCP 服务器)读取开发指南,然后一步步引导我完成整个流程。',
+    },
   },
   shell: {
     startup: {

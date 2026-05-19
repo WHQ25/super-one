@@ -81,6 +81,11 @@ export type Messages = {
       copyPath: string
       copyRelativePath: string
     }
+    appDrawer: {
+      buildYourOwn: string
+      marketplace: string
+      buildAppPrompt: string
+    }
   }
   shell: {
     startup: {
@@ -1156,6 +1161,11 @@ export const en: Messages = {
       addToChat: 'Add to Chat',
       copyPath: 'Copy Path',
       copyRelativePath: 'Copy Relative Path',
+    },
+    appDrawer: {
+      buildYourOwn: 'Build Your Own',
+      marketplace: 'Marketplace',
+      buildAppPrompt: 'Help me build a mini app for SuperOne. First call the `miniapp_dev_read_guide` tool (via the `superone` MCP server) to load the development guide, then guide me through the process step by step.',
     },
   },
   shell: {

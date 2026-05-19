@@ -25,7 +25,7 @@ import { ToolRendererFrame } from './ToolRendererFrame'
 import { StandaloneToolBlock } from './StandaloneToolBlock'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { parseFileLinkTarget } from '@/lib/file-link'
+import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
@@ -662,6 +662,7 @@ export function FileChip({ name, title, filePath, lineNumber, className }: { nam
   const targetLineNumber = lineNumber ?? parsed?.lineNumber
 
   const handleClick = (e: React.MouseEvent): void => {
+    if (clickReleasedOnSelection(e.currentTarget)) return
     e.stopPropagation()
     if (!targetPath) return
     const projectPath = useChatStore.getState().activeProject

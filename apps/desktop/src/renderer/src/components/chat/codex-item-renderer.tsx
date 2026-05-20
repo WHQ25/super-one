@@ -401,7 +401,7 @@ export function renderCodexItem(
           key={`${item.id}-${index}`}
           toolName="WebSearch"
           input={JSON.stringify({ query: item.query })}
-          status="complete"
+          status={toToolStatus(item.status)}
         />
       )
 

@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Bot, ChevronRight, Check, Loader2, Wrench } from 'lucide-react'
+import { Bot, ChevronRight, Check, Loader2, Wrench, Terminal, FileEdit, Search, ArrowUp, ArrowDown, GitBranch, Maximize2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { Streamdown } from 'streamdown'
 import type { CodexCollabToolCallItem, CodexThreadItem } from '@superone/shared/agent-types'
-import { renderCodexItem } from './codex-item-renderer'
-import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from './chat-shared'
+import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety, formatTokens } from './chat-shared'
+import { NestedToolContext } from './nested-tool-context'
+import { useForkNavigation } from './fork-navigation-context'
 
 const TOOL_LABEL: Record<string, string> = {
   spawnAgent: 'Task',
@@ -25,9 +26,11 @@ function getAgentDisplay(items: CodexCollabToolCallItem[]): { name: string; role
 }
 
 function resolveStatus(items: CodexCollabToolCallItem[], isStreaming: boolean) {
-  if (isStreaming && items.some((i) => i.status === 'in_progress')) return 'running' as const
   const allStates = items.flatMap((i) => Object.values(i.agentsStates))
+  if (items.some((i) => i.status === 'failed')) return 'errored' as const
   if (allStates.some((s) => s.status === 'errored')) return 'errored' as const
+  if (isStreaming) return 'running' as const
+  if (allStates.some((s) => s.status === 'running' || s.status === 'pendingInit')) return 'running' as const
   if (items.every((i) => i.status === 'completed')) return 'completed' as const
   return 'running' as const
 }
@@ -70,6 +73,79 @@ function separateOutput(turns: ChatTurn[]): { turns: ChatTurn[]; output?: string
 
 function countItems(turns: ChatTurn[]): number {
   return turns.reduce((sum, t) => sum + t.items.length, 0)
+}
+
+function filterTaskCardItems(turns: ChatTurn[]): ChatTurn[] {
+  return turns.map((turn) => ({
+    ...turn,
+    items: turn.items.filter((item) => {
+      switch (item.type) {
+        case 'command_execution':
+        case 'mcp_tool_call':
+        case 'file_change':
+        case 'web_search':
+          return true
+        default:
+          return false
+      }
+    }),
+  }))
+}
+
+function aggregateAgentTokens(items: CodexCollabToolCallItem[]): { input: number; output: number } {
+  let input = 0
+  let output = 0
+  for (const item of items) {
+    for (const state of Object.values(item.agentsStates)) {
+      if (state.tokens) {
+        input = Math.max(input, state.tokens.input)
+        output = Math.max(output, state.tokens.output)
+      }
+    }
+  }
+  return { input, output }
+}
+
+function MiniToolChip({ item }: { item: CodexThreadItem }) {
+  if (item.type === 'command_execution') {
+    return (
+      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-[11px]">
+        <Terminal className="size-3 shrink-0 text-muted-foreground" />
+        <span className="shrink-0 font-medium text-foreground">Bash</span>
+        <span className="min-w-0 truncate text-muted-foreground">{item.command}</span>
+      </div>
+    )
+  }
+  if (item.type === 'file_change') {
+    const first = item.changes[0]
+    return (
+      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-[11px]">
+        <FileEdit className="size-3 shrink-0 text-muted-foreground" />
+        <span className="shrink-0 font-medium text-foreground">Edit</span>
+        <span className="min-w-0 truncate text-muted-foreground">{first?.path ?? `${item.changes.length} files`}</span>
+      </div>
+    )
+  }
+  if (item.type === 'mcp_tool_call') {
+    return (
+      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-[11px]">
+        <Wrench className="size-3 shrink-0 text-muted-foreground" />
+        <span className="shrink-0 font-medium text-foreground">
+          {item.server} · {item.tool}
+        </span>
+      </div>
+    )
+  }
+  if (item.type === 'web_search') {
+    return (
+      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-[11px]">
+        <Search className="size-3 shrink-0 text-muted-foreground" />
+        <span className="shrink-0 font-medium text-foreground">Web search</span>
+        <span className="min-w-0 truncate text-muted-foreground">{item.query}</span>
+      </div>
+    )
+  }
+  return null
 }
 
 function PromptPreview({ prompt, label }: { prompt: string; label: string }) {
@@ -155,39 +231,47 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
   const status = useMemo(() => resolveStatus(items, isStreaming), [items, isStreaming])
   const isRunning = status === 'running'
   const isComplete = status === 'completed'
-  const [expanded, setExpanded] = useState(isRunning || !isComplete)
-
-  useEffect(() => {
-    if (isRunning) setExpanded(true)
-  }, [isRunning])
+  const isErrored = status === 'errored'
+  const [expanded, setExpanded] = useState(false)
 
   const allTurns = useMemo(() => buildChatTurns(items), [items])
-  const { turns, output } = useMemo(
-    () => (isComplete ? separateOutput(allTurns) : { turns: allTurns, output: undefined }),
-    [allTurns, isComplete],
-  )
+  const { turns, output } = useMemo(() => {
+    const base = isComplete ? separateOutput(allTurns) : { turns: allTurns, output: undefined as string | undefined }
+    return { turns: filterTaskCardItems(base.turns), output: base.output }
+  }, [allTurns, isComplete])
   const hasContent = useMemo(() => turns.some((t) => t.prompt || t.items.length > 0), [turns])
   const firstPrompt = turns[0]?.prompt
   const firstLabel = turns[0]?.label ?? 'Prompt'
   const itemCount = useMemo(() => countItems(turns), [turns])
+  const tokens = useMemo(() => aggregateAgentTokens(items), [items])
+  const hasTokens = tokens.input > 0 || tokens.output > 0
 
   return (
+    <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
     <div className="subagent-container my-1 min-w-0 overflow-hidden rounded border border-border/50 bg-muted/20">
       <button
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-start gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"
       >
-        <ChevronRight className={cn('mt-0.5 size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
-        <Bot className="mt-0.5 size-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
+        <Bot className={cn('mt-0.5 size-3.5 shrink-0 text-purple-600 dark:text-purple-400', isRunning && !expanded && 'animate-pulse')} />
         <span className="font-medium text-foreground">{name}</span>
         {role && (
           <span className="mt-px shrink-0 rounded bg-purple-500/15 px-1 py-px text-[10px] text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
             {role}
           </span>
         )}
-        {!role && name === 'Subagent' && (
-          <span className="min-w-0 truncate text-left text-muted-foreground">Spawning subagent...</span>
+        {!role && name === 'Subagent' && !isErrored && (
+          <span className="min-w-0 truncate text-left text-muted-foreground">
+            {isRunning ? 'Spawning subagent...' : 'Subagent'}
+          </span>
         )}
+        {isErrored && (
+          <span className="ml-1 inline-flex shrink-0 items-center gap-1 text-red-600 dark:text-red-400">
+            <span className="size-2 rounded-full bg-red-600 dark:bg-red-400" />
+            <span className="text-[11px] font-medium">Failed</span>
+          </span>
+        )}
+        <ChevronRight className={cn('ml-auto mt-0.5 size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </button>
 
       <AnimatePresence initial={false}>
@@ -210,9 +294,9 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
                       <span className="min-w-0 truncate">{turn.prompt.slice(0, 80)}{turn.prompt.length > 80 ? '…' : ''}</span>
                     </div>
                   )}
-                  {turn.items.map((item, i) =>
-                    renderCodexItem(item, i, isStreaming && ti === turns.length - 1, turn.items[i + 1]),
-                  )}
+                  {turn.items.map((item, i) => (
+                    <MiniToolChip key={`${item.id}-${i}`} item={item} />
+                  ))}
                 </div>
               ))}
             </CollabScrollArea>
@@ -240,14 +324,79 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
               <span>Done</span>
             </>
           )}
-          {itemCount > 0 && (
-            <span className="ml-auto inline-flex items-center gap-0.5">
-              <Wrench className="size-3" />
-              {itemCount}
-            </span>
-          )}
+          <span className="ml-auto flex items-center gap-1.5">
+            {itemCount > 0 && (
+              <span className="inline-flex items-center gap-0.5">
+                <Wrench className="size-3" />
+                {itemCount}
+              </span>
+            )}
+            {hasTokens && (
+              <>
+                {itemCount > 0 && <span>·</span>}
+                {tokens.input > 0 && (
+                  <span className="inline-flex items-center gap-0.5 tabular-nums">
+                    <ArrowUp className="size-2.5" />
+                    {formatTokens(tokens.input)}
+                  </span>
+                )}
+                {tokens.output > 0 && (
+                  <span className="inline-flex items-center gap-0.5 tabular-nums">
+                    <ArrowDown className="size-2.5" />
+                    {formatTokens(tokens.output)}
+                  </span>
+                )}
+              </>
+            )}
+          </span>
         </div>
       )}
+    </div>
+    </NestedToolContext.Provider>
+  )
+}
+
+export function isForkedSpawn(item: CodexCollabToolCallItem): boolean {
+  if (item.tool !== 'spawnAgent') return false
+  return Object.values(item.agentsStates).some((s) => !!s.forkedFromId)
+}
+
+export function isSpawnReady(item: CodexCollabToolCallItem): boolean {
+  return item.receiverThreadIds.length > 0
+}
+
+export function CodexForkMarker({ item }: { item: CodexCollabToolCallItem }) {
+  const forkNav = useForkNavigation()
+  const childCount = useMemo(() => {
+    if (!item.childItems) return 0
+    return Object.values(item.childItems).reduce((sum, items) => sum + items.length, 0)
+  }, [item.childItems])
+  const totalTokens = useMemo(() => {
+    return Object.values(item.agentsStates).reduce((sum, s) => sum + (s.tokens?.input ?? 0) + (s.tokens?.output ?? 0), 0)
+  }, [item.agentsStates])
+  const firstThreadId = item.receiverThreadIds[0] ?? Object.keys(item.agentsStates)[0]
+
+  return (
+    <div className="my-1 flex items-center gap-2 rounded border border-dashed border-border/60 bg-muted/20 px-2.5 py-1.5 text-xs text-muted-foreground">
+      <GitBranch className="size-3.5 shrink-0" />
+      <span className="font-medium text-foreground">Forked branch</span>
+      {item.prompt && (
+        <span className="min-w-0 truncate italic">"{item.prompt}"</span>
+      )}
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {childCount > 0 && <span className="tabular-nums">{childCount} tools</span>}
+        {totalTokens > 0 && <span className="tabular-nums">{formatTokens(totalTokens)} tokens</span>}
+        {firstThreadId && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); forkNav.open({ collabId: item.id, threadId: firstThreadId }) }}
+            className="inline-flex items-center gap-1 rounded border border-border/60 bg-background px-2 py-0.5 text-[11px] text-foreground hover:bg-muted"
+          >
+            <Maximize2 className="size-3" />
+            Open
+          </button>
+        )}
+      </span>
     </div>
   )
 }

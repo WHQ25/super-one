@@ -14,6 +14,8 @@ import { TodoPopup } from './TodoPopup'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
 import { PlanFullscreenContext } from './codex-item-renderer'
 import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
+import { ForkNavigationContext, type ForkViewState } from './fork-navigation-context'
+import { ForkedThreadView } from './ForkedThreadView'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
@@ -149,11 +151,20 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     prevScrollHeightRef.current = 0
   }, [expandLevel])
 
+  const [fork, setFork] = useState<ForkViewState | null>(null)
+  const forkNav = useMemo(() => ({
+    current: fork,
+    open: (state: ForkViewState) => setFork(state),
+    close: () => setFork(null),
+  }), [fork])
 
   return (
+    <ForkNavigationContext.Provider value={forkNav}>
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
     <div ref={containerRef} className={cn('relative flex min-h-0 min-w-0 flex-col bg-card', zoom <= 1 && 'w-full flex-1')} style={zoom > 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : zoom < 1 ? { zoom } : undefined}>
-      {fullscreenPlan ? (
+      {fork ? (
+        <ForkedThreadView fork={fork} />
+      ) : fullscreenPlan ? (
         <CodexPlanFullscreenView
           text={fullscreenPlan.text}
           onApprovePlan={fullscreenPlan.onApprovePlan}
@@ -278,5 +289,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       )}
     </div>
     </PlanFullscreenContext.Provider>
+    </ForkNavigationContext.Provider>
   )
 }

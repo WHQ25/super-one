@@ -203,6 +203,7 @@ export interface CodexWebSearchItem {
   id: string
   type: 'web_search'
   query: string
+  status: CodexMcpToolCallStatus
 }
 
 export interface CodexTodoListItem {
@@ -251,13 +252,15 @@ export interface CodexCollabAgentState {
   nickname?: string
   role?: string
   message?: string
+  forkedFromId?: string
+  tokens?: { input: number; output: number }
 }
 
 export interface CodexCollabToolCallItem {
   id: string
   type: 'collab_tool_call'
   tool: CodexCollabTool
-  status: 'in_progress' | 'completed'
+  status: 'in_progress' | 'completed' | 'failed'
   senderThreadId?: string
   receiverThreadIds: string[]
   prompt?: string

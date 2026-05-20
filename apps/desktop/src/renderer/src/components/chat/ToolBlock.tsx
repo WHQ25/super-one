@@ -18,6 +18,7 @@ import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
 import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, computeStreamingEditDelta, tryPrettifyJson, parseQAPairs, extractToolError } from './tool-block-utils'
 import { WidgetBlock } from './WidgetBlock'
+import { useNestedToolDefaults } from './nested-tool-context'
 import { CanvasEditDiff } from './CanvasEditDiff'
 import { RollingNumber } from './RollingNumber'
 import { parseWidgetResult, parsePartialWidgetInput } from '@superone/shared/generative-ui/types'
@@ -227,8 +228,10 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 
-export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand = true, backgroundActivity = false, grouped = false }: ToolBlockProps) {
+export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand, backgroundActivity = false, grouped = false }: ToolBlockProps) {
   const { t } = useTranslation()
+  const nestedDefaults = useNestedToolDefaults()
+  const effectiveAutoExpand = autoExpand ?? nestedDefaults?.defaultAutoExpand ?? true
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const streamingInputPreview = useActiveSession((s) => toolUseId ? s._streamingToolInputPreviews[toolUseId] : undefined)
@@ -281,7 +284,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         isTimedOut={isTimedOut}
         resultOutputPath={resultOutputPath}
         runInBackground={runInBackground}
-        autoExpand={autoExpand}
+        autoExpand={effectiveAutoExpand}
         backgroundActivity={backgroundActivity}
       />
     )
@@ -338,7 +341,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   const gridRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
-    if (DIFF_TOOLS.has(toolName) && hasDiff) {
+    if (DIFF_TOOLS.has(toolName) && hasDiff && effectiveAutoExpand) {
       setExpanded(true)
       const grid = gridRef.current
       if (grid && !isStreaming) {
@@ -346,7 +349,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         requestAnimationFrame(() => { grid.style.transition = '' })
       }
     }
-  }, [isStreaming, hasDiff, toolName])
+  }, [isStreaming, hasDiff, toolName, effectiveAutoExpand])
 
   useLayoutEffect(() => {
     if (isError) setExpanded(false)

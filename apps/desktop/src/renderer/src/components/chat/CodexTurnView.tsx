@@ -5,7 +5,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { renderCodexItem, CodexCommandBlock } from './codex-item-renderer'
 import { fileLinkComponents } from './chat-markdown-components'
-import { CodexCollabBlock } from './CodexCollabBlock'
+import { CodexCollabBlock, CodexForkMarker, isForkedSpawn, isSpawnReady } from './CodexCollabBlock'
 import { CodexImageGalleryBlock } from './CodexImageGalleryBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -221,6 +221,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     | { kind: 'item'; item: CodexThreadItem; index: number }
     | { kind: 'group'; items: CodexCommandExecutionItem[] }
     | { kind: 'collab'; items: CodexCollabToolCallItem[] }
+    | { kind: 'fork'; item: CodexCollabToolCallItem }
     | { kind: 'app-tools'; appId: string; items: CodexMcpToolCallItem[] }
   const segments: Segment[] = []
   const imageItems: CodexImageGenerationItem[] = []
@@ -251,7 +252,15 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     } else if (item.type === 'collab_tool_call' && item.tool === 'spawnAgent') {
       flushCmd()
       flushAppGroup()
-      collabGroup.push(item)
+      if (!isSpawnReady(item)) {
+        continue
+      }
+      if (isForkedSpawn(item)) {
+        flushCollab()
+        segments.push({ kind: 'fork', item })
+      } else {
+        collabGroup.push(item)
+      }
     } else if (item.type === 'collab_tool_call') {
       flushCmd()
       flushCollab()
@@ -277,6 +286,9 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
       {segments.map((seg, segIdx) => {
         if (seg.kind === 'collab') {
           return <CodexCollabBlock key={`cb-${segIdx}`} items={seg.items} isStreaming={isStreaming} />
+        }
+        if (seg.kind === 'fork') {
+          return <CodexForkMarker key={`fk-${seg.item.id}`} item={seg.item} />
         }
         if (seg.kind === 'group') {
           if (seg.items.length === 1) {

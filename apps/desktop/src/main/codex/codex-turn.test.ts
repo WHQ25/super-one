@@ -668,8 +668,6 @@ describe('streamTurnEvents child-thread routing', () => {
       agentsStates: {
         'child-2': {
           status: 'pendingInit',
-          nickname: 'worker-2',
-          role: 'explorer',
         },
       },
       childItems: {
@@ -681,6 +679,253 @@ describe('streamTurnEvents child-thread routing', () => {
           },
         ],
       },
+    })
+  })
+
+  it('marks sub-agent running on child turn/started and completed on child turn/completed', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<{ method: string; params: Record<string, unknown> }> = [
+      {
+        method: 'item/completed',
+        params: {
+          thread_id: 'main-thread',
+          item: {
+            id: 'collab-7',
+            type: 'collabAgentToolCall',
+            tool: 'spawnAgent',
+            status: 'completed',
+            receiver_thread_ids: ['child-7'],
+            agents_states: { 'child-7': { status: 'pendingInit', message: null } },
+          },
+        },
+      },
+      {
+        method: 'turn/started',
+        params: { threadId: 'child-7', turn: { id: 'turn-1' } },
+      },
+      {
+        method: 'turn/completed',
+        params: { threadId: 'child-7', turn: { id: 'turn-1', status: 'completed' } },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ]
+    const mockConnection = {
+      request: vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'thread/resume') throw new Error('no rollout found')
+        if (method === 'thread/read') return { thread: { id: 'child-7', agentNickname: 'Bob' } }
+        return {}
+      }),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+
+    const updates: Array<{ status: string | undefined }> = []
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      {
+        onItemDelta: (_phase, item) => {
+          if (item.type === 'collab_tool_call' && item.id === 'collab-7') {
+            updates.push({ status: item.agentsStates['child-7']?.status })
+          }
+        },
+      },
+    )
+
+    expect(result.items[0]).toMatchObject({
+      id: 'collab-7',
+      type: 'collab_tool_call',
+      agentsStates: { 'child-7': { status: 'completed', nickname: 'Bob' } },
+    })
+    expect(updates.some((u) => u.status === 'running')).toBe(true)
+    expect(updates[updates.length - 1]?.status).toBe('completed')
+  })
+
+  it('reads sub-agent nickname/role via thread/read on subscribe and merges into agentsStates', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<{ method: string; params: Record<string, unknown> }> = [
+      {
+        method: 'item/completed',
+        params: {
+          thread_id: 'main-thread',
+          item: {
+            id: 'collab-3',
+            type: 'collabAgentToolCall',
+            tool: 'spawnAgent',
+            status: 'completed',
+            receiver_thread_ids: ['child-3'],
+            agents_states: {
+              'child-3': { status: 'pendingInit', message: null },
+            },
+          },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ]
+    const requestCalls: Array<{ method: string; params: unknown }> = []
+    const mockConnection = {
+      request: vi.fn().mockImplementation(async (method: string, params: unknown) => {
+        requestCalls.push({ method, params })
+        if (method === 'thread/resume') throw new Error('no rollout found')
+        if (method === 'thread/read') {
+          return {
+            thread: {
+              id: 'child-3',
+              agentNickname: 'Epicurus',
+              agentRole: 'researcher',
+            },
+          }
+        }
+        return {}
+      }),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta: vi.fn() },
+    )
+
+    expect(requestCalls).toContainEqual({
+      method: 'thread/read',
+      params: { threadId: 'child-3', includeTurns: false },
+    })
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]).toMatchObject({
+      id: 'collab-3',
+      type: 'collab_tool_call',
+      agentsStates: {
+        'child-3': {
+          nickname: 'Epicurus',
+          role: 'researcher',
+        },
+      },
+    })
+  })
+
+  it('marks orphan collab spawn as failed when turn completes without item/completed', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<{ method: string; params: Record<string, unknown> }> = [
+      {
+        method: 'item/started',
+        params: {
+          thread_id: 'main-thread',
+          item: {
+            id: 'collab-orphan',
+            type: 'collabAgentToolCall',
+            tool: 'spawnAgent',
+            status: 'inProgress',
+            sender_thread_id: 'main-thread',
+            receiver_thread_ids: [],
+            agents_states: {},
+            prompt: 'do something',
+          },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ]
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta: vi.fn() },
+    )
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]).toMatchObject({
+      id: 'collab-orphan',
+      type: 'collab_tool_call',
+      tool: 'spawnAgent',
+      status: 'failed',
+      receiverThreadIds: [],
+      agentsStates: {},
+    })
+  })
+
+  it('passes through item/completed status="failed" from the protocol', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<{ method: string; params: Record<string, unknown> }> = [
+      {
+        method: 'item/completed',
+        params: {
+          thread_id: 'main-thread',
+          item: {
+            id: 'collab-fail',
+            type: 'collabAgentToolCall',
+            tool: 'spawnAgent',
+            status: 'failed',
+            sender_thread_id: 'main-thread',
+            receiver_thread_ids: [],
+            agents_states: {},
+            prompt: 'bad args',
+          },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ]
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta: vi.fn() },
+    )
+
+    expect(result.items[0]).toMatchObject({
+      id: 'collab-fail',
+      type: 'collab_tool_call',
+      status: 'failed',
     })
   })
 })
@@ -1016,6 +1261,63 @@ describe('mapThreadItemFromAppServer image generation', () => {
     expect(result).toMatchObject({
       savedPath: '/tmp/bar.png',
       revisedPrompt: 'a city skyline',
+    })
+  })
+})
+
+describe('mapThreadItemFromAppServer web search', () => {
+  it('maps an in-progress web_search item with snake_case type', () => {
+    const result = mapThreadItemFromAppServer({
+      id: 'ws-1',
+      type: 'web_search',
+      status: 'in_progress',
+      query: 'electron 41 esm spawn',
+    })
+
+    expect(result).toEqual({
+      id: 'ws-1',
+      type: 'web_search',
+      query: 'electron 41 esm spawn',
+      status: 'in_progress',
+    })
+  })
+
+  it('upgrades a previously in_progress web_search to completed on follow-up event', () => {
+    const previous = {
+      id: 'ws-2',
+      type: 'web_search' as const,
+      query: 'codex protocol thread items',
+      status: 'in_progress' as const,
+    }
+    const result = mapThreadItemFromAppServer(
+      {
+        id: 'ws-2',
+        type: 'webSearch',
+        status: 'completed',
+      },
+      previous,
+    )
+
+    expect(result).toEqual({
+      id: 'ws-2',
+      type: 'web_search',
+      query: 'codex protocol thread items',
+      status: 'completed',
+    })
+  })
+
+  it('defaults missing status to completed on a one-shot event', () => {
+    const result = mapThreadItemFromAppServer({
+      id: 'ws-3',
+      type: 'web_search',
+      query: 'react server components',
+    })
+
+    expect(result).toEqual({
+      id: 'ws-3',
+      type: 'web_search',
+      query: 'react server components',
+      status: 'completed',
     })
   })
 })

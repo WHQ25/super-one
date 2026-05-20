@@ -444,12 +444,15 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
     }
 
     case 'web_search':
-    case 'webSearch':
+    case 'webSearch': {
+      const prevWeb = previous?.type === 'web_search' ? previous : null
       return {
         id,
         type: 'web_search',
-        query: readString(rec.query) ?? (previous?.type === 'web_search' ? previous.query : ''),
+        query: readString(rec.query) ?? prevWeb?.query ?? '',
+        status: mapMcpToolCallStatus(rec.status ?? prevWeb?.status),
       }
+    }
 
     case 'image_generation':
     case 'imageGeneration': {
@@ -522,7 +525,10 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
       const prevCollab = previous?.type === 'collab_tool_call' ? previous : null
       const tool = normalizeCollabTool(rec.tool) ?? prevCollab?.tool ?? 'spawnAgent'
       const statusStr = readString(rec.status)
-      const status: 'in_progress' | 'completed' = statusStr === 'completed' ? 'completed' : 'in_progress'
+      const status: 'in_progress' | 'completed' | 'failed' =
+        statusStr === 'completed' ? 'completed'
+          : statusStr === 'failed' ? 'failed'
+          : 'in_progress'
       const senderThreadId = readString(rec.senderThreadId) ?? readString(rec.sender_thread_id) ?? prevCollab?.senderThreadId
       const receiverThreadIds = uniqueStrings([
         ...readStringArray(rec.receiverThreadIds ?? rec.receiver_thread_ids),
@@ -541,8 +547,6 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
           agentsStates[agentId] = {
             ...prevAgentState,
             status: normalizeCollabAgentStatus(stateRec.status) ?? prevAgentState?.status ?? 'running',
-            ...(stateRec.nickname != null ? { nickname: readString(stateRec.nickname) ?? undefined } : {}),
-            ...(stateRec.role != null ? { role: readString(stateRec.role) ?? undefined } : {}),
             ...(stateRec.message != null ? { message: readString(stateRec.message) ?? undefined } : {}),
           }
         }
@@ -556,8 +560,6 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
           agentsStates[agentId] = {
             ...prevAgentState,
             status: normalizeCollabAgentStatus(agentStatusRec?.status ?? rawAgentStatus) ?? prevAgentState?.status ?? 'running',
-            ...(agentStatusRec?.nickname != null ? { nickname: readString(agentStatusRec.nickname) ?? undefined } : {}),
-            ...(agentStatusRec?.role != null ? { role: readString(agentStatusRec.role) ?? undefined } : {}),
             ...(agentStatusRec?.message != null ? { message: readString(agentStatusRec.message) ?? undefined } : {}),
           }
         }
@@ -1223,6 +1225,37 @@ export async function streamTurnEvents(
     data.map.set(item.id, item)
   }
 
+  const applyAgentMeta = (
+    callId: string | null,
+    threadId: string | null,
+    nickname: string | null,
+    role: string | null,
+    forkedFromId: string | null = null,
+  ): void => {
+    if (!callId || !threadId || (!nickname && !role && !forkedFromId)) return
+    const collab = itemMap.get(callId)
+    if (!collab || collab.type !== 'collab_tool_call') return
+    const prev = collab.agentsStates[threadId] ?? { status: 'pendingInit' as CodexCollabAgentStatus }
+    collab.agentsStates[threadId] = {
+      ...prev,
+      ...(nickname ? { nickname } : {}),
+      ...(role ? { role } : {}),
+      ...(forkedFromId ? { forkedFromId } : {}),
+    }
+    upsertItem(itemOrder, itemMap, collab)
+    callbacks?.onItemDelta?.('updated', collab)
+  }
+
+  const setChildAgentStatus = (callId: string, threadId: string, status: CodexCollabAgentStatus): void => {
+    const collab = itemMap.get(callId)
+    if (!collab || collab.type !== 'collab_tool_call') return
+    const prev = collab.agentsStates[threadId] ?? { status: 'pendingInit' as CodexCollabAgentStatus }
+    if (prev.status === status) return
+    collab.agentsStates[threadId] = { ...prev, status }
+    upsertItem(itemOrder, itemMap, collab)
+    callbacks?.onItemDelta?.('updated', collab)
+  }
+
   const emitCollabUpdate = (collabId: string, trigger?: string): void => {
     const collab = itemMap.get(collabId)
     if (!collab || collab.type !== 'collab_tool_call') return
@@ -1259,6 +1292,19 @@ export async function streamTurnEvents(
       log.info('[codex] Subscribed to child thread %s for collab %s', threadId, collabId)
     } catch (err) {
       log.info('[codex] thread/resume skipped for child %s (events still tracked): %s', threadId, err)
+    }
+    try {
+      const readRes = asRecord(await connection.request('thread/read', { threadId, includeTurns: false }))
+      const thread = asRecord(readRes?.thread)
+      const nickname = readString(thread?.agentNickname ?? thread?.agent_nickname)
+      const role = readString(thread?.agentRole ?? thread?.agent_role)
+      const forkedFromId = readString(thread?.forkedFromId ?? thread?.forked_from_id)
+      if (process.env.NODE_ENV === 'development') {
+        trace('codex.collab', 'read_child', { threadId, collabId, nickname, role, forkedFromId }, collabId)
+      }
+      applyAgentMeta(collabId, threadId, nickname, role, forkedFromId)
+    } catch (err) {
+      log.info('[codex] thread/read failed for child %s: %s', threadId, err)
     }
     if (process.env.NODE_ENV === 'development') {
       trace('codex.collab', 'subscribe_child', { threadId, collabId }, collabId)
@@ -1480,6 +1526,29 @@ export async function streamTurnEvents(
           break
         }
 
+        case 'turn/started':
+          setChildAgentStatus(collabId, notifThreadId, 'running')
+          break
+
+        case 'turn/completed':
+          setChildAgentStatus(collabId, notifThreadId, 'completed')
+          break
+
+        case 'thread/tokenUsage/updated': {
+          const usage = mapUsageFromTokenUsage(params.tokenUsage ?? params)
+          if (!usage) break
+          const collab = itemMap.get(collabId)
+          if (!collab || collab.type !== 'collab_tool_call') break
+          const prev = collab.agentsStates[notifThreadId] ?? { status: 'pendingInit' as CodexCollabAgentStatus }
+          collab.agentsStates[notifThreadId] = {
+            ...prev,
+            tokens: { input: usage.totalInputTokens, output: usage.totalOutputTokens },
+          }
+          upsertItem(itemOrder, itemMap, collab)
+          callbacks?.onItemDelta?.('updated', collab)
+          break
+        }
+
         default:
           break
       }
@@ -1679,7 +1748,14 @@ export async function streamTurnEvents(
           const item = itemMap.get(id)
           if (!item) continue
           if ('status' in item && (item as { status?: string }).status === 'in_progress') {
-            const finalized = { ...item, status: 'completed' } as CodexThreadItem
+            const finalStatus =
+              item.type === 'collab_tool_call'
+                && item.tool === 'spawnAgent'
+                && item.receiverThreadIds.length === 0
+                && Object.keys(item.agentsStates).length === 0
+                ? 'failed'
+                : 'completed'
+            const finalized = { ...item, status: finalStatus } as CodexThreadItem
             itemMap.set(id, finalized)
             callbacks?.onItemDelta?.('completed', finalized)
           } else if (item.type === 'todo_list' && item.items.some((i) => !i.completed)) {
@@ -1692,31 +1768,6 @@ export async function streamTurnEvents(
           }
         }
         turnCompleted = true
-        break
-      }
-
-      case 'codex/event/collab_agent_spawn_end': {
-        const msg = asRecord(params.msg)
-        if (!msg) break
-        const callId = readString(msg.call_id)
-        const newThreadId = readString(msg.new_thread_id)
-        const nickname = readString(msg.new_agent_nickname)
-        const role = readString(msg.new_agent_role)
-        if (!callId) break
-        const collab = itemMap.get(callId)
-        if (!collab || collab.type !== 'collab_tool_call') break
-        if (newThreadId && (nickname || role)) {
-          const prev = collab.agentsStates[newThreadId] ?? {
-            status: 'pendingInit' as CodexCollabAgentStatus,
-          }
-          collab.agentsStates[newThreadId] = {
-            ...prev,
-            ...(nickname ? { nickname } : {}),
-            ...(role ? { role } : {}),
-          }
-          upsertItem(itemOrder, itemMap, collab)
-          callbacks?.onItemDelta?.('updated', collab)
-        }
         break
       }
 
